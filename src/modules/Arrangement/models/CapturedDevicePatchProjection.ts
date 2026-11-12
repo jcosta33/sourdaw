@@ -21,7 +21,7 @@ export function projectCapturedDevicePatch(
     if (keys.length !== nextKeys.length || keys.some((key) => !Object.hasOwn(next.parameterValues, key))) {
         return null;
     }
-    const parameterValues = { ...device.parameterValues };
+    const parameterValues = structuredClone(device.parameterValues);
     for (const key of keys) {
         const previous = expected.parameterValues[key];
         const value = next.parameterValues[key];

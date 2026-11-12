@@ -1,10 +1,10 @@
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { planDevicePatchWrite } from '../../models/DevicePatchWritePlan';
+import { readPlannedDeviceOwnerSource } from '../../models/PlannedDeviceOwnerSource';
 import { type PlannedDevicePresence, type PlannedDeviceWriteStep } from '../../models/PlannedDeviceWrite';
-import { planDevicePatchWrite } from '../../models/planDevicePatchWrite';
-import { readPlannedDeviceOwnerSource } from '../../models/readPlannedDeviceOwnerSource';
-import { getTrackStoreState } from '../getTrackStoreState';
 import { getPlatformPlugins } from '../getPlatformPlugins';
+import { getTrackStoreState } from '../getTrackStoreState';
 
 type Input = {
     deviceId: string;
@@ -13,16 +13,12 @@ type Input = {
     context?: HandlerValidationContext;
 };
 
-/** Plan only prior siblings from the initial projection; execution checks its actual midpoint separately. */
-export function getPlannedDevicePatchState(input: Input): Extract<PlannedDevicePresence, { kind: 'device' }> | null {
-    const source = (getTrackStoreState()?.tracks ?? []).map(readPlannedDeviceOwnerSource);
-    if (source.some((owner) => owner === null)) {
-        return null;
-    }
-    const owners = source.filter((owner) => owner !== null);
-    const trackIds = new Set(owners.map((owner) => owner.id));
+function adaptPriorSiblingActions(
+    context: HandlerValidationContext | undefined,
+    trackIds: Set<string>
+): PlannedDeviceWriteStep[] | null {
     const steps: PlannedDeviceWriteStep[] = [];
-    for (const action of input.context?.actions.slice(0, input.context.actionIndex) ?? []) {
+    for (const action of context?.actions.slice(0, context.actionIndex) ?? []) {
         if (action.type === 'setFermenterPatch') {
             steps.push({
                 kind: 'patch',
@@ -49,6 +45,21 @@ export function getPlannedDevicePatchState(input: Input): Extract<PlannedDeviceP
             }
             steps.push({ kind: 'command', action });
         }
+    }
+    return steps;
+}
+
+/** Plan only prior siblings from the initial projection; execution checks its actual midpoint separately. */
+export function getPlannedDevicePatchState(input: Input): Extract<PlannedDevicePresence, { kind: 'device' }> | null {
+    const source = (getTrackStoreState()?.tracks ?? []).map(readPlannedDeviceOwnerSource);
+    if (source.some((owner) => owner === null)) {
+        return null;
+    }
+    const owners = source.filter((owner) => owner !== null);
+    const trackIds = new Set(owners.map((owner) => owner.id));
+    const steps = adaptPriorSiblingActions(input.context, trackIds);
+    if (!steps) {
+        return null;
     }
     const matches: Array<Extract<PlannedDevicePresence, { kind: 'device' }>> = [];
     for (const trackId of input.trackId ? [input.trackId] : trackIds) {

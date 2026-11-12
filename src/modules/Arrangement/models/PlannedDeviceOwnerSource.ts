@@ -55,6 +55,50 @@ function readChunk(value: unknown): DeviceStateChunk | null {
     return { version: value.version, data };
 }
 
+function readDevice(item: unknown): Device | null {
+    if (
+        !isRecord(item) ||
+        typeof item.id !== 'string' ||
+        typeof item.type !== 'string' ||
+        typeof item.name !== 'string' ||
+        typeof item.bypassed !== 'boolean' ||
+        !isRecord(item.parameterValues)
+    ) {
+        return null;
+    }
+    const parameters: Array<[string, number]> = [];
+    for (const [key, entry] of Object.entries(item.parameterValues)) {
+        if (typeof entry !== 'number' || !Number.isFinite(entry)) {
+            return null;
+        }
+        parameters.push([key, entry]);
+    }
+    const device: Device = {
+        id: item.id,
+        type: item.type,
+        name: item.name,
+        bypassed: item.bypassed,
+        parameterValues: Object.fromEntries(parameters),
+    };
+    if (Object.hasOwn(item, 'deviceState')) {
+        const chunk = readChunk(item.deviceState);
+        if (!chunk) {
+            return null;
+        }
+        device.deviceState = chunk;
+    }
+    for (const key of ['externalPluginId', 'externalInstanceId', 'externalStateChunk'] as const) {
+        if (Object.hasOwn(item, key)) {
+            const entry = item[key];
+            if (typeof entry !== 'string') {
+                return null;
+            }
+            device[key] = entry;
+        }
+    }
+    return device;
+}
+
 /** Decode only the current owner fields planning reads; no defaults or snapshot migration. */
 export function readPlannedDeviceOwnerSource(value: unknown): PlannedDeviceOwnerSource | null {
     if (
@@ -67,47 +111,15 @@ export function readPlannedDeviceOwnerSource(value: unknown): PlannedDeviceOwner
     }
     const devices: Device[] = [];
     for (const item of value.devices) {
-        if (
-            !isRecord(item) ||
-            typeof item.id !== 'string' ||
-            typeof item.type !== 'string' ||
-            typeof item.name !== 'string' ||
-            typeof item.bypassed !== 'boolean' ||
-            !isRecord(item.parameterValues)
-        ) {
+        const device = readDevice(item);
+        if (!device) {
             return null;
-        }
-        const parameters: Array<[string, number]> = [];
-        for (const [key, entry] of Object.entries(item.parameterValues)) {
-            if (typeof entry !== 'number' || !Number.isFinite(entry)) {
-                return null;
-            }
-            parameters.push([key, entry]);
-        }
-        const device: Device = {
-            id: item.id,
-            type: item.type,
-            name: item.name,
-            bypassed: item.bypassed,
-            parameterValues: Object.fromEntries(parameters),
-        };
-        if (Object.hasOwn(item, 'deviceState')) {
-            const chunk = readChunk(item.deviceState);
-            if (!chunk) {
-                return null;
-            }
-            device.deviceState = chunk;
-        }
-        for (const key of ['externalPluginId', 'externalInstanceId', 'externalStateChunk'] as const) {
-            if (Object.hasOwn(item, key)) {
-                const entry = item[key];
-                if (typeof entry !== 'string') {
-                    return null;
-                }
-                device[key] = entry;
-            }
         }
         devices.push(device);
     }
-    return { id: value.id, ...(typeof value.frozen === 'boolean' ? { frozen: value.frozen } : {}), devices };
+    const owner: PlannedDeviceOwnerSource = { id: value.id, devices };
+    if (typeof value.frozen === 'boolean') {
+        owner.frozen = value.frozen;
+    }
+    return owner;
 }

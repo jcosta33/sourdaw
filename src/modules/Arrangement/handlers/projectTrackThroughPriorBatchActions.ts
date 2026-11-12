@@ -1,12 +1,11 @@
 import { CLIP_GAIN_LAW, resolveLevelFields, SEND_LEVEL_LAW, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { projectDeviceChainAction } from '../models/DeviceChainActionProjection';
 import { type Track } from '../stores/trackStore';
 import { clampClipGain } from '../transformers/clampClipGain';
 import { getPlatformPlugins } from '../useCases/getPlatformPlugins';
 import { clampTrackGain } from '../useCases/setTrackGainPan/clampTrackGain';
-
-import { projectDeviceChainAction } from '../models/projectDeviceChainAction';
 
 export function projectTrackThroughPriorBatchActions(track: Track, context: HandlerValidationContext): Track {
     const projected = structuredClone(track);

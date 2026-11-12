@@ -40,7 +40,7 @@ export function projectFermenterPatchState(
     patch: FermenterPatch,
     clamp: (key: string, value: number) => number
 ): FermenterPatchProjectState {
-    const parameterValues = { ...current.parameterValues };
+    const parameterValues = structuredClone(current.parameterValues);
     const previous = new Map(Object.entries(projectPatch));
     for (const [key, value] of Object.entries(patch)) {
         if (typeof value === 'number' && (parameterValues[key] !== null || previous.get(key) !== value)) {

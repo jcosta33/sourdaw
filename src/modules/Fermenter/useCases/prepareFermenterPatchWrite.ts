@@ -10,7 +10,6 @@ import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type FermenterPatch } from '../models/FermenterPatch';
-import { type PreparedFermenterPatchWrite } from '../models/PreparedFermenterPatchWrite';
 import { captureFermenterPatchProjectState, projectFermenterPatchState } from '../models/FermenterPatchProjectState';
 import {
     cloneFermenterPatch,
@@ -18,13 +17,13 @@ import {
     readFermenterPatchFromProjectDevice,
     toFermenterDeviceState,
 } from '../models/FermenterPatchState';
+import { type PreparedFermenterPatchWrite } from '../models/PreparedFermenterPatchWrite';
 import { fermenterStore } from '../stores/fermenterStore';
 
-import { getFermenterDependencies } from './getFermenterDependencies';
-import { fermenterPatchWriteOperations } from './fermenterPatchWriteOperations';
-import { reconcileFermenterPatchFromProject } from './reconcileFermenterPatchFromProject';
-
 import { cancelPendingFermenterPatchWrites } from './fermenterParamBridge/cancelPendingFermenterPatchWrites';
+import { fermenterPatchWriteOperations } from './fermenterPatchWriteOperations';
+import { getFermenterDependencies } from './getFermenterDependencies';
+import { reconcileFermenterPatchFromProject } from './reconcileFermenterPatchFromProject';
 
 type PrepareFermenterPatchWriteInput = {
     deviceId: string;
@@ -40,8 +39,7 @@ function currentProjectPatch(deviceId: string): FermenterPatch | null {
     return device ? readFermenterPatchFromProjectDevice(device) : null;
 }
 
-/** Capture an edit before a frame or Command transaction can yield to another owner. */
-export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInput): PreparedFermenterPatchWrite | null {
+function capturePatchWriteSource(input: PrepareFermenterPatchWriteInput) {
     let target: DeviceWriteTargetResolution;
     if (input.continuous) {
         target = getFermenterDependencies().resolveEligibleDeviceWriteTarget(input.deviceId);
@@ -83,9 +81,48 @@ export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInpu
         }
     }
     const expectedProject = captureFermenterPatchProjectState(device);
-    const beforeProject = fermenterPatchesEqual(before, projectBefore)
-        ? expectedProject
-        : projectFermenterPatchState(expectedProject, projectBefore, before, clamp);
+    let beforeProject = expectedProject;
+    if (!fermenterPatchesEqual(before, projectBefore)) {
+        beforeProject = projectFermenterPatchState(expectedProject, projectBefore, before, clamp);
+    }
+    return { admittedOwner, device, projectBefore, before, patch, clamp, expectedProject, beforeProject };
+}
+
+type CommittablePatchWrite = Pick<
+    PreparedFermenterPatchWrite,
+    'patch' | 'action' | 'isCurrent' | 'reconcileRefusal' | 'markCommitted' | 'settle' | 'release'
+>;
+
+async function commitPreparedPatch(
+    input: PrepareFermenterPatchWriteInput,
+    projectBefore: FermenterPatch,
+    write: CommittablePatchWrite
+): Promise<boolean> {
+    try {
+        if (!write.isCurrent()) {
+            write.reconcileRefusal();
+            return false;
+        }
+        if (fermenterPatchesEqual(projectBefore, write.patch)) {
+            return true;
+        }
+        await executeUserAppAction(write.action(), {
+            shouldExecute: write.isCurrent,
+            onCommitted: write.markCommitted,
+            skipUndo: input.continuous === true,
+            skipMacroRecording: input.continuous === true,
+        });
+        return write.settle();
+    } catch (error) {
+        write.reconcileRefusal();
+        notifyUser(error instanceof Error ? error.message : 'Fermenter patch change failed', 'error');
+        return false;
+    } finally {
+        write.release();
+    }
+}
+
+function supersedePreviousWrite(input: PrepareFermenterPatchWriteInput): void {
     const olderCommit = fermenterPatchWriteOperations.get(input.deviceId);
     if (olderCommit) {
         olderCommit.superseded = true;
@@ -96,6 +133,16 @@ export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInpu
             reconcileFermenterPatchFromProject(input.deviceId);
         }
     }
+}
+
+/** Capture an edit before a frame or Command transaction can yield to another owner. */
+export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInput): PreparedFermenterPatchWrite | null {
+    const source = capturePatchWriteSource(input);
+    if (!source) {
+        return null;
+    }
+    const { admittedOwner, device, projectBefore, before, patch, clamp, expectedProject, beforeProject } = source;
+    supersedePreviousWrite(input);
     const authority = captureProjectTransitionAuthority();
     const identity = captureProjectIdentity();
     const revision = captureProjectRevision();
@@ -183,29 +230,16 @@ export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInpu
                 Object.assign(patch, { [key]: value });
             }
         },
-        async commit(): Promise<boolean> {
-            try {
-                if (!isCurrent()) {
-                    reconcileRefusal();
-                    return false;
-                }
-                if (fermenterPatchesEqual(projectBefore, patch)) {
-                    return true;
-                }
-                await executeUserAppAction(action(), {
-                    shouldExecute: isCurrent,
-                    onCommitted: markCommitted,
-                    skipUndo: input.continuous === true,
-                    skipMacroRecording: input.continuous === true,
-                });
-                return settle();
-            } catch (error) {
-                reconcileRefusal();
-                notifyUser(error instanceof Error ? error.message : 'Fermenter patch change failed', 'error');
-                return false;
-            } finally {
-                release();
-            }
+        commit(): Promise<boolean> {
+            return commitPreparedPatch(input, projectBefore, {
+                patch,
+                action,
+                isCurrent,
+                reconcileRefusal,
+                markCommitted,
+                settle,
+                release,
+            });
         },
     };
 }

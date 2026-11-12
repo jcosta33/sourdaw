@@ -7,8 +7,8 @@ import { type HandlerCommitValidation } from '#/utils/handlerContract';
 import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
+import { projectCapturedDevicePatch } from '../../models/CapturedDevicePatchProjection';
 import { type DevicePatchState } from '../../models/DevicePatchState';
-import { projectCapturedDevicePatch } from '../../models/projectCapturedDevicePatch';
 import { trackStore } from '../../stores/trackStore';
 
 type Input = { trackId: string; deviceId: string; parameterIds: readonly string[] };
@@ -67,6 +67,104 @@ function read(document: Readonly<Record<string, unknown>>, input: Input): Snapsh
     return { value: { track: trackValue, owners: values }, track: selectedTrack, owners };
 }
 
+function startWrittenIntentObservation(
+    input: Input,
+    before: Snapshot,
+    trackIdentity: ReturnType<typeof getObjectId>,
+    deviceIdentity: ReturnType<typeof getObjectId>,
+    headsAtAdmission: ReturnType<typeof getHeads>,
+    matchesSource: (document: Readonly<Record<string, unknown>>) => boolean
+) {
+    const owner = getCurrentAutomergeStorageMutationOwner();
+    const current = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
+    if (!owner || !current || !matchesSource(current)) {
+        return null;
+    }
+    const projected = (): Snapshot | null => {
+        const published = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
+        return published ? read({ ...published, tracks: trackStore.value }, input) : null;
+    };
+    let observed = projected();
+    let expected: string | null = null;
+    let observedHeads = getHeads(current).toSorted();
+    let authorityIntervened = !valuesEqual(headsAtAdmission, observedHeads);
+    let deviceRetired = before.owners.length === 0;
+    let trackRetired = before.track === null;
+    const observe = (): void => {
+        const published = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
+        if (!published) {
+            observed = null;
+            authorityIntervened = true;
+            return;
+        }
+        const next = projected();
+        const heads = getHeads(published).toSorted();
+        // Matching mutation provenance alone cannot authenticate a peer hydration inside that scope.
+        authorityIntervened ||= !valuesEqual(observedHeads, heads);
+        if (
+            expected !== null &&
+            observed &&
+            next &&
+            !authorityIntervened &&
+            getCurrentAutomergeStorageMutationOwner() === owner
+        ) {
+            deviceRetired ||= observed.owners.length > 0 && next.owners.length === 0;
+            trackRetired ||= observed.track !== null && next.track === null;
+            expected = JSON.stringify(next.value);
+        }
+        observed = next;
+        observedHeads = heads;
+    };
+    const unsubscribe = trackStore.subscribe(observe);
+    const sourceFailure = (): string | null => {
+        const published = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
+        return published && matchesSource(published) ? null : 'Device patch source changed before publication';
+    };
+    const validation: HandlerCommitValidation = {
+        documentId: 'root',
+        beforeCommit: sourceFailure,
+        beforeMutation: (document) => (matchesSource(document) ? null : 'Device patch source changed before mutation'),
+        validateDocument: (document) => {
+            const next = read(document, input);
+            if (expected === null || !next || !matchesJsonFingerprint(next.value, expected)) {
+                return 'Device patch did not reach its owned written intent';
+            }
+            if (!trackRetired && next.track && getObjectId(next.track) !== trackIdentity) {
+                return 'Device patch track incarnation changed';
+            }
+            if (!deviceRetired && next.owners[0] && getObjectId(next.owners[0].device) !== deviceIdentity) {
+                return 'Device patch incarnation changed';
+            }
+            return null;
+        },
+        release: unsubscribe,
+    };
+    return {
+        validation,
+        captureWrittenState(written: DevicePatchState): boolean {
+            const tracks = trackStore.value?.tracks ?? [];
+            const devices = tracks.flatMap((track) =>
+                track.devices.filter((device) => device.id === input.deviceId).map((device) => ({ track, device }))
+            );
+            const target = devices.length === 1 ? devices[0] : undefined;
+            if (
+                !target ||
+                target.track.id !== input.trackId ||
+                !projectCapturedDevicePatch(target.device, written, written)
+            ) {
+                return false;
+            }
+            const next = projected();
+            if (!next) {
+                return false;
+            }
+            expected = JSON.stringify(next.value);
+            observed = next;
+            return true;
+        },
+    };
+}
+
 /** Capture published admission before any batch member yields; observe written intent only during execution. */
 export function captureDevicePatchCommitValidation(input: Input) {
     const root = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
@@ -97,97 +195,14 @@ export function captureDevicePatchCommitValidation(input: Input) {
             return current !== undefined && matchesSource(current);
         },
         start() {
-            const owner = getCurrentAutomergeStorageMutationOwner();
-            const current = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
-            if (!owner || !current || !matchesSource(current)) {
-                return null;
-            }
-            const projected = (): Snapshot | null => {
-                const published = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
-                return published ? read({ ...published, tracks: trackStore.value }, input) : null;
-            };
-            let observed = projected();
-            let expected: string | null = null;
-            let observedHeads = getHeads(current).toSorted();
-            let authorityIntervened = !valuesEqual(headsAtAdmission, observedHeads);
-            let deviceRetired = before.owners.length === 0;
-            let trackRetired = before.track === null;
-            const observe = (): void => {
-                const published = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
-                if (!published) {
-                    observed = null;
-                    authorityIntervened = true;
-                    return;
-                }
-                const next = projected();
-                const heads = getHeads(published).toSorted();
-                // Matching mutation provenance alone cannot authenticate a peer hydration inside that scope.
-                authorityIntervened ||= !valuesEqual(observedHeads, heads);
-                if (
-                    expected !== null &&
-                    observed &&
-                    next &&
-                    !authorityIntervened &&
-                    getCurrentAutomergeStorageMutationOwner() === owner
-                ) {
-                    deviceRetired ||= observed.owners.length > 0 && next.owners.length === 0;
-                    trackRetired ||= observed.track !== null && next.track === null;
-                    expected = JSON.stringify(next.value);
-                }
-                observed = next;
-                observedHeads = heads;
-            };
-            const unsubscribe = trackStore.subscribe(observe);
-            const sourceFailure = (): string | null => {
-                const published = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
-                return published && matchesSource(published) ? null : 'Device patch source changed before publication';
-            };
-            const validation: HandlerCommitValidation = {
-                documentId: 'root',
-                beforeCommit: sourceFailure,
-                beforeMutation: (document) =>
-                    matchesSource(document) ? null : 'Device patch source changed before mutation',
-                validateDocument: (document) => {
-                    const next = read(document, input);
-                    if (expected === null || !next || !matchesJsonFingerprint(next.value, expected)) {
-                        return 'Device patch did not reach its owned written intent';
-                    }
-                    if (!trackRetired && next.track && getObjectId(next.track) !== trackIdentity) {
-                        return 'Device patch track incarnation changed';
-                    }
-                    if (!deviceRetired && next.owners[0] && getObjectId(next.owners[0].device) !== deviceIdentity) {
-                        return 'Device patch incarnation changed';
-                    }
-                    return null;
-                },
-                release: unsubscribe,
-            };
-            return {
-                validation,
-                captureWrittenState(written: DevicePatchState): boolean {
-                    const tracks = trackStore.value?.tracks ?? [];
-                    const devices = tracks.flatMap((track) =>
-                        track.devices
-                            .filter((device) => device.id === input.deviceId)
-                            .map((device) => ({ track, device }))
-                    );
-                    const target = devices.length === 1 ? devices[0] : undefined;
-                    if (
-                        !target ||
-                        target.track.id !== input.trackId ||
-                        !projectCapturedDevicePatch(target.device, written, written)
-                    ) {
-                        return false;
-                    }
-                    const next = projected();
-                    if (!next) {
-                        return false;
-                    }
-                    expected = JSON.stringify(next.value);
-                    observed = next;
-                    return true;
-                },
-            };
+            return startWrittenIntentObservation(
+                input,
+                before,
+                trackIdentity,
+                deviceIdentity,
+                headsAtAdmission,
+                matchesSource
+            );
         },
     };
 }

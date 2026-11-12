@@ -1,7 +1,4 @@
 import { change, from, type Doc } from '@automerge/automerge';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, waitFor } from '@testing-library/react';
-import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
@@ -23,11 +20,13 @@ import {
     clampDeviceParameterValue,
     createTrack,
     getAllTracks,
+    getPlannedDevicePatchState,
     persistDevicePatch,
     setTrackStoreState,
 } from '#/modules/Arrangement/useCases';
 import { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
+import { leaveSession } from '#/modules/Collaboration/useCases';
 import {
     createCrdtDoc,
     getCrdtDoc,
@@ -36,20 +35,19 @@ import {
     registerCrdtStorageRuntime,
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
-import { leaveSession } from '#/modules/Collaboration/useCases';
-import { FermenterPanel } from '#/modules/Fermenter/presentations/views';
 import { fermenterStore } from '#/modules/Fermenter/stores';
 import { hydrateFermenterFromProject, setFermenterDependencies } from '#/modules/Fermenter/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type DeviceStateChunkSnapshot } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '../../stores/handlerRegistry';
 import { undoStore } from '../../stores/undoStore';
 import { clearUndoHistory } from '../clearUndoHistory';
+import { executeAppAction } from '../executeAppAction';
 import { getCommandHandler } from '../getCommandHandler';
 import { materializeCommandHandlerArguments } from '../materializeCommandHandlerArguments';
 
@@ -361,11 +359,7 @@ function createFermenterConflictFixture(): DivergedFixture {
             const audio = vi.fn<NonNullable<Parameters<typeof setFermenterDependencies>[0]['updateDevicePatch']>>();
             const previousFermenter = fermenterStore.value;
             const previousProject = projectStore.value;
-            const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-            let panel: ReturnType<typeof render> | undefined;
             releaseFixture = () => {
-                panel?.unmount();
-                client.clear();
                 setFermenterDependencies(productionDependencies);
                 fermenterStore.set(previousFermenter);
                 projectStore.set(previousProject);
@@ -419,13 +413,59 @@ function createFermenterConflictFixture(): DivergedFixture {
                 return device;
             };
             expect(rawDevice().deviceState).toBeUndefined();
-            panel = render(createElement(QueryClientProvider, { client }, createElement(FermenterPanel, { deviceId })));
-            fireEvent.click(panel.getByRole('button', { name: 'Superloaf', exact: true }));
-            await waitFor(() => {
-                expect(undoStore.value?.past).toHaveLength(1);
-                expect(audio).toHaveBeenCalledOnce();
+            const baseline = hydrateFermenterFromProject(deviceId);
+            if (!baseline) {
+                throw new Error('Expected the public full-patch baseline');
+            }
+            const parameterIds = Object.entries(baseline).flatMap(([key, value]) => {
+                if (typeof value === 'number') {
+                    return [key];
+                }
+                return [];
             });
-            expect(rawDevice()).toMatchObject({ deviceState: { data: { patch: { name: 'Superloaf' } } } });
+            for (const index of baseline.macros.keys()) {
+                parameterIds.push(`macro${index}`);
+            }
+            const current = getPlannedDevicePatchState({
+                deviceId,
+                trackId: 'fermenter-owner',
+                parameterIds,
+            });
+            if (!current) {
+                throw new Error('Expected the public current raw patch footprint');
+            }
+            const nextPatch = structuredClone(baseline);
+            nextPatch.name = 'Registry patch';
+            nextPatch.filterCutoff = 1800;
+            const before: DeviceStateChunkSnapshot = { version: 1, data: { patch: structuredClone(baseline) } };
+            const after: DeviceStateChunkSnapshot = { version: 1, data: { patch: nextPatch } };
+            const afterProject = {
+                deviceState: after,
+                parameterValues: structuredClone(current.state.parameterValues),
+            };
+            afterProject.parameterValues.filterCutoff = 1800;
+            const action: Extract<AppAction, { type: 'setFermenterPatch' }> = {
+                type: 'setFermenterPatch',
+                payload: {
+                    deviceId,
+                    before,
+                    after,
+                    expectedCurrent: before,
+                    beforeProject: structuredClone(current.state),
+                    afterProject,
+                    expectedProject: structuredClone(current.state),
+                    expectedTrackId: current.trackId,
+                    expectedDeviceIds: current.deviceIds,
+                    expectedTrackFrozen: current.frozen,
+                    label: 'Registry patch',
+                },
+            };
+            await executeAppAction(action);
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(audio).toHaveBeenCalledOnce();
+            expect(rawDevice()).toMatchObject({
+                deviceState: { data: { patch: { name: 'Registry patch', filterCutoff: 1800 } } },
+            });
             expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
             const entry = undoStore.value?.past[0];
             if (
@@ -444,7 +484,7 @@ function createFermenterConflictFixture(): DivergedFixture {
             const rawBeforeValidProbe = JSON.stringify(getCrdtDoc('root'));
             const projectionBeforeValidProbe = structuredClone(trackStore.value);
             const historyBeforeValidProbe = structuredClone(undoStore.value);
-            await act(async () => {
+            {
                 const transaction = runWithAutomergeStorageTransaction(undefined, () => handler.execute(inverse));
                 let releaseProof: (() => void) | undefined;
                 try {
@@ -469,7 +509,7 @@ function createFermenterConflictFixture(): DivergedFixture {
                         transaction.abort();
                     }
                 }
-            });
+            }
             expect(JSON.stringify(getCrdtDoc('root'))).toBe(rawBeforeValidProbe);
             expect(trackStore.value).toEqual(projectionBeforeValidProbe);
             expect(undoStore.value).toEqual(historyBeforeValidProbe);
@@ -479,17 +519,15 @@ function createFermenterConflictFixture(): DivergedFixture {
             if (!published) {
                 throw new Error('Expected the committed patch before raw divergence');
             }
-            expect(published.name).toBe('Superloaf');
+            expect(published.name).toBe('Registry patch');
             const peerCutoff = published.filterCutoff === 1234 ? 2345 : 1234;
-            act(() => {
-                mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
-                    id: 'root',
-                    changeFn: (document) => {
-                        document.tracks.tracks[0]!.devices[0]!.parameterValues.filterCutoff = peerCutoff;
-                    },
-                });
-                trackStore.hydrate();
+            mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.tracks.tracks[0]!.devices[0]!.parameterValues.filterCutoff = peerCutoff;
+                },
             });
+            trackStore.hydrate();
             expect(rawDevice().parameterValues.filterCutoff).toBe(peerCutoff);
             expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
             const rawBeforeRefusal = JSON.stringify(getCrdtDoc('root'));

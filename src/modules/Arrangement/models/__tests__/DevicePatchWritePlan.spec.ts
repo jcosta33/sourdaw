@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { getPluginById } from '../DeviceParameter';
 import { type DevicePatchState } from '../DevicePatchState';
+import { planDevicePatchWrite } from '../DevicePatchWritePlan';
 import {
     type CapturedDevicePatchStep,
     type PlannedDeviceOwnerSource,
     type PlannedDeviceWriteStep,
 } from '../PlannedDeviceWrite';
-import { planDevicePatchWrite } from '../planDevicePatchWrite';
 
 const p: DevicePatchState = { deviceState: null, parameterValues: { filterCutoff: 600, filterModel: null } };
 const m: DevicePatchState = {

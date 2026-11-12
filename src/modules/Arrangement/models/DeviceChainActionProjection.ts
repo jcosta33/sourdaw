@@ -1,9 +1,9 @@
 import { type AppAction } from '#/utils/handlerContract';
 
-import { type PluginDescriptor } from './DeviceParameterTypes';
+import { projectCapturedDevicePatch } from './CapturedDevicePatchProjection';
 import { clampDeviceParameterValue } from './DeviceParameterLaw';
-import { projectDeviceSnapshots } from './projectDeviceSnapshots';
-import { projectCapturedDevicePatch } from './projectCapturedDevicePatch';
+import { type PluginDescriptor } from './DeviceParameterTypes';
+import { projectDeviceSnapshots } from './DeviceSnapshotProjection';
 import { type Device } from './Track';
 
 const DEVICE_ACTIONS = new Set<AppAction['type']>([
@@ -16,6 +16,49 @@ const DEVICE_ACTIONS = new Set<AppAction['type']>([
     'setDeviceState',
     'setFermenterPatch',
 ]);
+
+function projectAddedDevice(
+    chain: Device[],
+    action: Extract<AppAction, { type: 'addDevice' }>,
+    plugins: readonly PluginDescriptor[]
+): Device[] {
+    if (!action.payload.deviceId) {
+        return chain;
+    }
+    const plugin = plugins.find(
+        (candidate) =>
+            candidate.id === action.payload.deviceType ||
+            candidate.name.toLowerCase() === action.payload.deviceType.toLowerCase()
+    );
+    const parameterValues = Object.fromEntries<number>(Object.entries(plugin?.internalParameterValues ?? {}));
+    for (const parameter of plugin?.parameters ?? []) {
+        parameterValues[parameter.id] = parameter.value;
+    }
+    const device: Device = {
+        id: action.payload.deviceId,
+        name: plugin?.name ?? action.payload.deviceType,
+        type: plugin?.id ?? action.payload.deviceType,
+        bypassed: false,
+        parameterValues,
+    };
+    let anchor = chain.length - 1;
+    if (action.payload.afterDeviceId) {
+        anchor = chain.findIndex((candidate) => candidate.id === action.payload.afterDeviceId);
+    }
+    chain.splice(anchor + 1, 0, device);
+    return chain;
+}
+
+function projectReorderedDevice(chain: Device[], action: Extract<AppAction, { type: 'reorderDevices' }>): Device[] {
+    const index = chain.findIndex((device) => device.id === action.payload.deviceId);
+    if (index >= 0 && action.payload.targetIndex >= 0 && action.payload.targetIndex < chain.length) {
+        const [device] = chain.splice(index, 1);
+        if (device) {
+            chain.splice(action.payload.targetIndex, 0, device);
+        }
+    }
+    return chain;
+}
 
 /** Shared owner projection of the existing device-chain command rules; never writes a store. */
 export function projectDeviceChainAction(
@@ -30,7 +73,7 @@ export function projectDeviceChainAction(
     if (action.payload && 'trackId' in action.payload && action.payload.trackId !== trackId) {
         return null;
     }
-    const devices = structuredClone(source);
+    const devices = source.map((device) => structuredClone(device));
     if (action.type === 'setFermenterPatch') {
         const index = devices.findIndex((device) => device.id === action.payload.deviceId);
         const current = devices[index];
@@ -42,43 +85,13 @@ export function projectDeviceChainAction(
         return devices;
     }
     if (action.type === 'addDevice') {
-        if (!action.payload.deviceId) {
-            return devices;
-        }
-        const plugin = plugins.find(
-            (candidate) =>
-                candidate.id === action.payload.deviceType ||
-                candidate.name.toLowerCase() === action.payload.deviceType.toLowerCase()
-        );
-        const parameterValues = { ...plugin?.internalParameterValues };
-        for (const parameter of plugin?.parameters ?? []) {
-            parameterValues[parameter.id] = parameter.value;
-        }
-        const device: Device = {
-            id: action.payload.deviceId,
-            name: plugin?.name ?? action.payload.deviceType,
-            type: plugin?.id ?? action.payload.deviceType,
-            bypassed: false,
-            parameterValues,
-        };
-        const anchor = action.payload.afterDeviceId
-            ? devices.findIndex((candidate) => candidate.id === action.payload.afterDeviceId)
-            : devices.length - 1;
-        devices.splice(anchor + 1, 0, device);
-        return devices;
+        return projectAddedDevice(devices, action, plugins);
     }
     if (action.type === 'removeDevice') {
         return devices.filter((device) => device.id !== action.payload.deviceId);
     }
     if (action.type === 'reorderDevices') {
-        const index = devices.findIndex((device) => device.id === action.payload.deviceId);
-        if (index >= 0 && action.payload.targetIndex >= 0 && action.payload.targetIndex < devices.length) {
-            const [device] = devices.splice(index, 1);
-            if (device) {
-                devices.splice(action.payload.targetIndex, 0, device);
-            }
-        }
-        return devices;
+        return projectReorderedDevice(devices, action);
     }
     if (action.type === 'restorePresetDeviceChain') {
         return projectDeviceSnapshots(action.payload.replacementDevices);

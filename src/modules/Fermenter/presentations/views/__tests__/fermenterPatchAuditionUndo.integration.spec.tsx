@@ -76,17 +76,17 @@ import {
     readFermenterPatchFromProjectDevice,
 } from '../../../models/FermenterPatchState';
 import { fermenterStore, getFermenterState, loadFermenterPatch } from '../../../stores/fermenterStore';
-import { commitFermenterPatchFrame } from '../../../useCases/commitFermenterPatchFrame';
-import { prepareFermenterPatchWrite } from '../../../useCases/prepareFermenterPatchWrite';
 import { commitFermenterPatch } from '../../../useCases/commitFermenterPatch';
+import { commitFermenterPatchFrame } from '../../../useCases/commitFermenterPatchFrame';
+import { setFermenterDependencies } from '../../../useCases/fermenterDependencies';
 import { loadFermenterPatchWithAudio } from '../../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio';
 import { setFermenterParamWithAudio } from '../../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
-import { hydrateFermenterFromProject } from '../../../useCases/hydrateFermenterFromProject';
 import { resolveFermenterPresetPatch } from '../../../useCases/fermenterPatchOperations';
-import { applyMorphedPatch } from '../../../useCases/presetMorph/applyMorphedPatch';
-import { setFermenterDependencies } from '../../../useCases/fermenterDependencies';
 import { FERMENTER_PRESETS } from '../../../useCases/fermenterQueries/helpers';
 import { getFermenterHandlers } from '../../../useCases/getFermenterHandlers';
+import { hydrateFermenterFromProject } from '../../../useCases/hydrateFermenterFromProject';
+import { prepareFermenterPatchWrite } from '../../../useCases/prepareFermenterPatchWrite';
+import { applyMorphedPatch } from '../../../useCases/presetMorph/applyMorphedPatch';
 import { selectFermenterFilterChoice } from '../../../useCases/selectFermenterFilterChoice';
 import { FermenterPanel } from '../FermenterPanel';
 
@@ -819,11 +819,11 @@ describe('Fermenter whole-patch auditioning through Command', () => {
             if (!macro) {
                 throw new Error('Expected the recorded macro');
             }
-            expect(macro.actions.map((action) => action.type)).toEqual(
-                order === 'patch-first'
-                    ? ['setFermenterPatch', 'setDeviceParameter']
-                    : ['setDeviceParameter', 'setFermenterPatch']
-            );
+            let expectedActionTypes = ['setDeviceParameter', 'setFermenterPatch'];
+            if (order === 'patch-first') {
+                expectedActionTypes = ['setFermenterPatch', 'setDeviceParameter'];
+            }
+            expect(macro.actions.map((action) => action.type)).toEqual(expectedActionTypes);
             const expected = readFermenterPatchFromProjectDevice(rawDevice());
             await act(() => undo());
             await act(() => undo());
@@ -861,13 +861,11 @@ describe('Fermenter whole-patch auditioning through Command', () => {
             };
             startMacroRecording();
             expect(await commit(patchNamed('Before removal', 1800))).toBe(true);
-            await act(() =>
-                executeUserAppAction(
-                    removed === 'device'
-                        ? { type: 'removeDevice', payload: { deviceId: DEVICE_ID } }
-                        : { type: 'removeTrack', payload: { trackId: TRACK_ID } }
-                )
-            );
+            if (removed === 'device') {
+                await act(() => executeUserAppAction({ type: 'removeDevice', payload: { deviceId: DEVICE_ID } }));
+            } else {
+                await act(() => executeUserAppAction({ type: 'removeTrack', payload: { trackId: TRACK_ID } }));
+            }
             expect(present()).toBe(false);
             stopMacroRecording('Patch and removal');
             const macro = macroStore.value?.macros.at(-1);

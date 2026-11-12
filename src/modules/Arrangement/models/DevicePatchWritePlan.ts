@@ -1,19 +1,21 @@
 import { type AppAction } from '#/utils/handlerContract';
 
+import { projectCapturedDevicePatch } from './CapturedDevicePatchProjection';
+import { projectDeviceChainAction } from './DeviceChainActionProjection';
 import { type PluginDescriptor } from './DeviceParameterTypes';
 import { type DevicePatchState } from './DevicePatchState';
+import { projectDeviceSnapshots } from './DeviceSnapshotProjection';
 import {
     type PlannedDeviceOwnerSource,
     type PlannedDevicePresence,
     type PlannedDeviceWrite,
     type PlannedDeviceWriteStep,
 } from './PlannedDeviceWrite';
-import { projectCapturedDevicePatch } from './projectCapturedDevicePatch';
-import { projectDeviceChainAction } from './projectDeviceChainAction';
-import { projectDeviceSnapshots } from './projectDeviceSnapshots';
 import { type Device, createTrack } from './Track';
 
 type Owner = { id: string; frozen?: boolean; devices: Device[] };
+type PlanFailure = Exclude<PlannedDeviceWrite, { status: 'ready' }>;
+type OwnerProjection = { status: 'projected'; owners: Owner[] } | PlanFailure;
 type PlanInput = {
     source: readonly PlannedDeviceOwnerSource[];
     trackId: string;
@@ -39,9 +41,10 @@ function presence(owners: readonly Owner[], input: PlanInput): PlannedDevicePres
     }
     const owner = ownersWithId[0];
     if (!owner) {
-        return occurrences.length === 0
-            ? { kind: 'absent-track', trackId: input.trackId, deviceId: input.deviceId }
-            : null;
+        if (occurrences.length === 0) {
+            return { kind: 'absent-track', trackId: input.trackId, deviceId: input.deviceId };
+        }
+        return null;
     }
     const device = owner.devices.find((candidate) => candidate.id === input.deviceId);
     const shared = {
@@ -99,6 +102,107 @@ function parameterSourceMatches(
     );
 }
 
+function projectCapturedStep(
+    owners: Owner[],
+    step: Extract<PlannedDeviceWriteStep, { kind: 'patch' }>
+): PlanFailure | null {
+    const target = uniqueDevice(owners, step.deviceId);
+    if (
+        !target ||
+        target.owner.id !== step.trackId ||
+        (target.owner.frozen ?? false) !== step.expectedTrackFrozen ||
+        target.owner.frozen === true ||
+        target.owner.devices.length !== step.expectedDeviceIds.length ||
+        step.expectedDeviceIds.some((id, i) => target.owner.devices[i]?.id !== id)
+    ) {
+        return { status: 'conflict', reason: 'Captured patch owner changed within the plan' };
+    }
+    const device = projectCapturedDevicePatch(target.device, step.expected, step.after);
+    if (!device) {
+        return { status: 'conflict', reason: 'Captured patch source changed within the plan' };
+    }
+    target.owner.devices = target.owner.devices.map((candidate) => {
+        if (candidate.id === step.deviceId) {
+            return device;
+        }
+        return candidate;
+    });
+    return null;
+}
+
+function projectMaterializedTrack(
+    owners: Owner[],
+    action: Extract<AppAction, { type: 'addTrack' | 'createBus' }>
+): OwnerProjection {
+    const id = action.type === 'addTrack' ? action.payload.id : action.payload.busId;
+    if (!id || owners.some((owner) => owner.id === id)) {
+        return { status: 'conflict', reason: 'Planned track identity is unavailable' };
+    }
+    if (
+        action.type === 'addTrack' &&
+        action.payload.kind === 'midi' &&
+        !action.payload.withoutDefaultDevice &&
+        !action.payload.initialDeviceId
+    ) {
+        return { status: 'unsupported', reason: 'Track creation lacks its materialized device identity' };
+    }
+    let track: ReturnType<typeof createTrack>;
+    if (action.type === 'addTrack') {
+        track = createTrack({
+            id,
+            kind: action.payload.kind,
+            name: action.payload.name ?? id,
+            color: '#000000',
+            initialAlternativeId: `planned-${id}`,
+            initialDeviceId: action.payload.initialDeviceId,
+            withoutDefaultDevice: action.payload.withoutDefaultDevice,
+        });
+    } else {
+        track = createTrack({
+            id,
+            kind: 'bus',
+            name: action.payload.name,
+            color: '#000000',
+            initialAlternativeId: `planned-${id}`,
+        });
+    }
+    owners.push({ id, frozen: track.frozen, devices: track.devices });
+    return { status: 'projected', owners };
+}
+
+function projectCommandOwners(
+    owners: Owner[],
+    action: AppAction,
+    plugins: readonly PluginDescriptor[]
+): OwnerProjection {
+    if (action.type === 'setFermenterPatch') {
+        return { status: 'unsupported', reason: 'A current-format captured patch adapter is required' };
+    }
+    if (action.type === 'removeTrack') {
+        owners = owners.filter((owner) => owner.id !== action.payload.trackId);
+        return { status: 'projected', owners };
+    }
+    if (action.type === 'restoreTrack') {
+        return {
+            status: 'unsupported',
+            reason: 'The opaque track snapshot needs an owning planned-source adapter',
+        };
+    }
+    if (action.type === 'addTrack' || action.type === 'createBus') {
+        return projectMaterializedTrack(owners, action);
+    }
+    if (action.type === 'setDeviceParameter' && !parameterSourceMatches(owners, action)) {
+        return { status: 'conflict', reason: 'Planned parameter source changed' };
+    }
+    for (const owner of owners) {
+        const devices = projectDeviceChainAction(owner.id, owner.devices, action, plugins);
+        if (devices) {
+            owner.devices = devices;
+        }
+    }
+    return { status: 'projected', owners };
+}
+
 /** Plan from an explicit initial snapshot, never from an already-staged midpoint. */
 export function planDevicePatchWrite(input: PlanInput): PlannedDeviceWrite {
     if (
@@ -125,27 +229,10 @@ export function planDevicePatchWrite(input: PlanInput): PlannedDeviceWrite {
             prefix = presence(owners, input);
         }
         if (step.kind === 'patch') {
-            const target = uniqueDevice(owners, step.deviceId);
-            if (
-                !target ||
-                target.owner.id !== step.trackId ||
-                (target.owner.frozen ?? false) !== step.expectedTrackFrozen ||
-                target.owner.frozen === true ||
-                target.owner.devices.length !== step.expectedDeviceIds.length ||
-                step.expectedDeviceIds.some((id, i) => target.owner.devices[i]?.id !== id)
-            ) {
-                return { status: 'conflict', reason: 'Captured patch owner changed within the plan' };
+            const failure = projectCapturedStep(owners, step);
+            if (failure) {
+                return failure;
             }
-            const device = projectCapturedDevicePatch(target.device, step.expected, step.after);
-            if (!device) {
-                return { status: 'conflict', reason: 'Captured patch source changed within the plan' };
-            }
-            target.owner.devices = target.owner.devices.map((candidate) => {
-                if (candidate.id === step.deviceId) {
-                    return device;
-                }
-                return candidate;
-            });
             continue;
         }
         if (step.kind === 'restore-owner') {
@@ -159,63 +246,11 @@ export function planDevicePatchWrite(input: PlanInput): PlannedDeviceWrite {
             });
             continue;
         }
-        const action = step.action;
-        if (action.type === 'setFermenterPatch') {
-            return { status: 'unsupported', reason: 'A current-format captured patch adapter is required' };
+        const projection = projectCommandOwners(owners, step.action, input.plugins);
+        if (projection.status !== 'projected') {
+            return projection;
         }
-        if (action.type === 'removeTrack') {
-            owners = owners.filter((owner) => owner.id !== action.payload.trackId);
-            continue;
-        }
-        if (action.type === 'restoreTrack') {
-            return {
-                status: 'unsupported',
-                reason: 'The opaque track snapshot needs an owning planned-source adapter',
-            };
-        }
-        if (action.type === 'addTrack' || action.type === 'createBus') {
-            const id = action.type === 'addTrack' ? action.payload.id : action.payload.busId;
-            if (!id || owners.some((owner) => owner.id === id)) {
-                return { status: 'conflict', reason: 'Planned track identity is unavailable' };
-            }
-            if (
-                action.type === 'addTrack' &&
-                action.payload.kind === 'midi' &&
-                !action.payload.withoutDefaultDevice &&
-                !action.payload.initialDeviceId
-            ) {
-                return { status: 'unsupported', reason: 'Track creation lacks its materialized device identity' };
-            }
-            const track =
-                action.type === 'addTrack'
-                    ? createTrack({
-                          id,
-                          kind: action.payload.kind,
-                          name: action.payload.name ?? id,
-                          color: '#000000',
-                          initialAlternativeId: `planned-${id}`,
-                          initialDeviceId: action.payload.initialDeviceId,
-                          withoutDefaultDevice: action.payload.withoutDefaultDevice,
-                      })
-                    : createTrack({
-                          id,
-                          kind: 'bus',
-                          name: action.payload.name,
-                          color: '#000000',
-                          initialAlternativeId: `planned-${id}`,
-                      });
-            owners.push({ id, frozen: track.frozen, devices: track.devices });
-            continue;
-        }
-        if (action.type === 'setDeviceParameter' && !parameterSourceMatches(owners, action)) {
-            return { status: 'conflict', reason: 'Planned parameter source changed' };
-        }
-        for (const owner of owners) {
-            const devices = projectDeviceChainAction(owner.id, owner.devices, action, input.plugins);
-            if (devices) {
-                owner.devices = devices;
-            }
-        }
+        owners = projection.owners;
     }
     const terminal = presence(owners, input);
     if (input.actionIndex === input.steps.length) {

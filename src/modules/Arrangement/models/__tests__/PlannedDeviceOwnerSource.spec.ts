@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { readPlannedDeviceOwnerSource } from '../PlannedDeviceOwnerSource';
 import { type DeviceStateValue } from '../Track';
-import { readPlannedDeviceOwnerSource } from '../readPlannedDeviceOwnerSource';
 
 function source() {
     return {

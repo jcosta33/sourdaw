@@ -1066,9 +1066,9 @@ const DEVICE_DATA_COUNTS = {
         // Count provenance: measured 5/1/2 — pure working-owner snapshots,
         // preset reconstruction and current-owner decoding. These return values
         // and never publish project state.
-        'src/modules/Arrangement/models/planDevicePatchWrite.ts': 5,
-        'src/modules/Arrangement/models/projectDeviceSnapshots.ts': 1,
-        'src/modules/Arrangement/models/readPlannedDeviceOwnerSource.ts': 2,
+        'src/modules/Arrangement/models/DevicePatchWritePlan.ts': 5,
+        'src/modules/Arrangement/models/DeviceSnapshotProjection.ts': 1,
+        'src/modules/Arrangement/models/PlannedDeviceOwnerSource.ts': 2,
         // Guarded clip-state restoration rebuilds the stored device chain inside
         // the registered action transaction.
         'src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts': 3,

@@ -1,5 +1,5 @@
+import { projectCapturedDevicePatch } from '../../models/CapturedDevicePatchProjection';
 import { type DevicePatchState } from '../../models/DevicePatchState';
-import { projectCapturedDevicePatch } from '../../models/projectCapturedDevicePatch';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { resolveEligibleDeviceWriteTarget } from '../../stores/resolveEligibleDeviceWriteTarget';
