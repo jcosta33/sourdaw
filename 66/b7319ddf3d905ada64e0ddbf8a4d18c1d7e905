@@ -1,0 +1,20 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppEventHandlers.spec.ts
+  s_3ada54e7b1c8ad::t_306d5ebf3661b7 70,73
+  s_3ada54e7b1c8ad::t_c01449f4ff71a1 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "66b7319ddf3d905ada64e0ddbf8a4d18c1d7e905",
+  "prompts": {},
+  "sessions": {
+    "s_3ada54e7b1c8ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "03a5a80a-25dd-436b-aca5-abe9c78083de",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
