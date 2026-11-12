@@ -86,6 +86,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     // mid-drag can detach them; null when no drag is active.
     const dragCleanupRef = useRef<(() => void) | null>(null);
     const [canvasMetrics, setCanvasMetrics] = useState<CanvasMetrics>({ width: 0, dpr: 1 });
+    const [themeRevision, setThemeRevision] = useState(0);
 
     const trackState = useStore(trackStore, defaultTrackState);
     const markerState = useStore(markerStore, defaultMarkerStoreState);
@@ -110,6 +111,28 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     const visibleEndBeat = scrollStartBeat + canvasMetrics.width / readoutPixelsPerBeat;
     const sliderStartBar = getBarNumberAtBeat({ ...meter, beat: scrollStartBeat });
     const sliderEndBar = Math.max(sliderStartBar, getLastBarNumberBeforeBeat({ ...meter, beat: visibleEndBeat }));
+
+    useLayoutEffect(() => {
+        if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
+            return undefined;
+        }
+
+        const root = document.documentElement;
+        let subscribed = true;
+        const observer = new MutationObserver(() => {
+            queueMicrotask(() => {
+                if (subscribed) {
+                    setThemeRevision((revision) => revision + 1);
+                }
+            });
+        });
+        observer.observe(root, { attributes: true, attributeFilter: ['class', 'style'] });
+
+        return () => {
+            subscribed = false;
+            observer.disconnect();
+        };
+    }, []);
 
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
@@ -251,7 +274,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
             ctx.lineTo(boundedViewportStart + boundedViewportWidth - 0.5, 0.5);
             ctx.stroke();
         }
-    }, [tracks, sections, pixelsPerBeat, scrollX, canvasMetrics, activeHeight]);
+    }, [tracks, sections, pixelsPerBeat, scrollX, canvasMetrics, activeHeight, themeRevision]);
 
     useLayoutEffect(() => {
         const container = containerRef.current;

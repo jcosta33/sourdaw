@@ -78,7 +78,9 @@ describe('handleNavigateSection', () => {
         { playhead: 4, direction: 'next' as const, target: 16 },
         { playhead: 50, direction: 'next' as const, target: null },
         { playhead: 0, direction: 'previous' as const, target: null },
+        { playhead: 4, direction: 'previous' as const, target: null },
         { playhead: 5, direction: 'previous' as const, target: 4 },
+        { playhead: 16, direction: 'previous' as const, target: 4 },
         { playhead: 20, direction: 'previous' as const, target: 16 },
         { playhead: 50, direction: 'previous' as const, target: 32 },
     ])('moves $direction from playhead $playhead in musical order', ({ playhead, direction, target }) => {

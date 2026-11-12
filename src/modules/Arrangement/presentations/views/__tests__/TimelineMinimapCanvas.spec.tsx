@@ -1,7 +1,8 @@
 import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { resetResolvedTokenCache } from '#/utils/UI/resolveToken';
+import { applyDocumentTheme } from '#/utils/UI/applyDocumentTheme';
+import { resetResolvedTokenCache, resolveToken } from '#/utils/UI/resolveToken';
 
 import { type ArrangementSection } from '../../../models/Marker';
 import { TimelineMinimap } from '../TimelineMinimap';
@@ -268,6 +269,64 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
 
         expect(labelFillStyles).toEqual(['#123456', '#123456']);
         expect(measuredLabelFonts).toEqual(['9px sans-serif', '9px sans-serif']);
+    });
+
+    it('repaints section labels on a document theme change without resizing', async () => {
+        const root = document.documentElement;
+        const originalClass = root.className;
+        const originalStyle = root.getAttribute('style');
+        const themeColor = document.querySelector('meta[name="theme-color"]');
+        const originalThemeColor = themeColor?.getAttribute('content');
+        const style = document.createElement('style');
+        style.textContent =
+            ':root.dark { --color-text-primary: #eeeeee; } :root.light { --color-text-primary: #111111; }';
+        let unmount = (): void => {};
+
+        try {
+            document.head.append(style);
+            applyDocumentTheme('dark');
+            stores.markers.sections = [{ id: 'intro', name: 'Intro', startBeat: 0, endBeat: 16, color: '#aa3300' }];
+            const view = render(<TimelineMinimap height={28} />);
+            unmount = view.unmount;
+            expect(labelFillStyles.at(-1)).toBe('#eeeeee');
+
+            await act(async () => {
+                await new Promise<void>((resolve) => {
+                    const observer = new MutationObserver(() => {
+                        observer.disconnect();
+                        resolve();
+                    });
+                    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+                    applyDocumentTheme('light');
+                });
+            });
+
+            expect(resolveToken('--color-text-primary', 'missing')).toBe('#111111');
+            expect(labelFillStyles.at(-1)).toBe('#111111');
+
+            cssWidth = 201;
+            act(() => {
+                resizeObserverHarness.callback?.([], {} as ResizeObserver);
+            });
+            expect(labelFillStyles.at(-1)).toBe('#111111');
+        } finally {
+            unmount();
+            style.remove();
+            root.className = originalClass;
+            if (originalStyle === null) {
+                root.removeAttribute('style');
+            } else {
+                root.setAttribute('style', originalStyle);
+            }
+            if (themeColor) {
+                if (originalThemeColor === null) {
+                    themeColor.removeAttribute('content');
+                } else if (originalThemeColor !== undefined) {
+                    themeColor.setAttribute('content', originalThemeColor);
+                }
+            }
+            resetResolvedTokenCache();
+        }
     });
 
     it('suppresses labels at dense landmark spacing without dropping boundaries or the viewport', () => {
