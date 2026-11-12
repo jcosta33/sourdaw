@@ -913,13 +913,20 @@ own exit code covers that. The guard still owns
 resource enforcement and process-tree cleanup. An unrelated command's zero exit, an unmarked or
 foreign server at the recorded origin, a failed proof, signal, timeout, resource stop, cleanup
 leak, or concurrently replaced receipt preserves the stop. Explicit proofs require a recorded
-`pnpm dev` or `pnpm run dev` receipt; other scripts, including `dev:no-hmr`, are ineligible.
+`pnpm dev`, `pnpm run dev`, or literal `node scripts/e2eDevServer.ts PORT` receipt. The node launcher
+requires the lane root as its recorded cwd, a canonical script path belonging to that lane, and
+exactly one explicit decimal port from 1 through 65535; missing ports never use the current
+environment. Other scripts, including `dev:no-hmr`, and extra node arguments are ineligible.
 Explicit proofs cannot be combined with lint-target replacement; ordinary `--recover` replay is
 unchanged.
 
 Existing running commands and old lane copies keep their original guard. After this change lands,
 their next verification must invoke the updated guard, or merge the fix into the owned lane when
 needed. Do not rewrite or clean another agent's lane to upgrade it.
+To use an approved updated checkout without changing the stopped lane, invoke that checkout's
+`scripts/resourceGuard.ts` by absolute path with `node`, keeping the stopped lane as the working
+directory and passing `--recover -- <finite-proof-command>`; lane detection, dependency preflight,
+recorded cwd and receipt ownership still come from the stopped lane.
 
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 

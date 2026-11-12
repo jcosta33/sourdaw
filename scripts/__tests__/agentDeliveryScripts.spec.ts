@@ -1035,7 +1035,7 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
         expect(pkg.scripts['issue:claim']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:claim');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
-        expect(pkg.scripts['lane:cleanup']).toBe('node scripts/cleanupLanes.ts');
+        expect(pkg.scripts['lane:cleanup']).toBe('node scripts/cleanupLanesCli.ts');
         expect(pkg.scripts['lane:cleanup:install']).toBe('node scripts/installCleanupLanes.ts');
         expect(pkg.scripts.deliver).toBe('node scripts/trustedGithubWriteBootstrap.ts deliver');
     });
@@ -1156,6 +1156,7 @@ describe('package scripts and gitignore', () => {
             'pullRequestMutationLock.ts',
             'removeLane.ts',
             'cleanupLanes.ts',
+            'cleanupLanesCli.ts',
             'installCleanupLanes.ts',
             'laneActivity.ts',
             'resolveThread.ts',

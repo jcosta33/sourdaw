@@ -26,7 +26,7 @@ import {
     type MintPermissions,
 } from './githubAppIdentity.ts';
 import {
-    TITLE_PATTERN,
+    assertConventionalSubject,
     assertPullRequestBody,
     canonicalIssueReferenceFromBody,
     composeDeliveryReceipt,
@@ -453,9 +453,7 @@ function validatePullRequest(
     if (pullRequest.isDraft) {
         fail(`PR #${pullRequest.number} is still a draft`);
     }
-    if (!TITLE_PATTERN.test(pullRequest.title)) {
-        fail(`PR #${pullRequest.number} title is not conventional`);
-    }
+    assertConventionalSubject(pullRequest.title, `PR #${pullRequest.number} title`);
     validateCiAdmission(pullRequest, checks, ciAdmissionMode);
     if (pullRequest.reviewDecision === 'CHANGES_REQUESTED') {
         fail(`PR #${pullRequest.number} has requested changes`);

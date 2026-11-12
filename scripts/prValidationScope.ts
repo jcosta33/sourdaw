@@ -29,6 +29,7 @@ const REVIEW_TOOLING = new Set([
     'acceptReview',
     'claimTrackerIssue',
     'cleanupLanes',
+    'cleanupLanesCli',
     'installCleanupLanes',
     'laneActivity',
     'confirmReviewRepairs',
@@ -103,7 +104,7 @@ const RELEASE_TOOLING_METADATA = new Set([
 
 const OPERATIONAL_PACKAGE_SCRIPTS = new Map([
     ['retarget:plan', 'node scripts/retargetCapabilitySnapshot.ts'],
-    ['lane:cleanup', 'node scripts/cleanupLanes.ts'],
+    ['lane:cleanup', 'node scripts/cleanupLanesCli.ts'],
     ['lane:cleanup:install', 'node scripts/installCleanupLanes.ts'],
 ]);
 
