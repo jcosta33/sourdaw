@@ -6,11 +6,12 @@ import {
     useRef,
     useLayoutEffect,
     useState,
+    useId,
 } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { getBarNumberAtBeat, getLastBarNumberBeforeBeat } from '#/modules/Transport/useCases';
+import { formatMusicalPosition, getBarNumberAtBeat, getLastBarNumberBeforeBeat } from '#/modules/Transport/useCases';
 import {
     normalizeTimelineMinimapHeight,
     TIMELINE_MINIMAP_DEFAULT_HEIGHT,
@@ -48,6 +49,17 @@ function getDevicePixelRatio(): number {
     return dpr;
 }
 
+function getOrderedSections(sections: ArrangementSection[]): ArrangementSection[] {
+    return sections
+        .filter((section) => section.endBeat > section.startBeat)
+        .toSorted(
+            (first, second) =>
+                first.startBeat - second.startBeat ||
+                first.endBeat - second.endBeat ||
+                first.id.localeCompare(second.id)
+        );
+}
+
 /** The span the minimap draws: the project's last clip or section end plus headroom. */
 function getMinimapTotalBeats(tracks: TrackStoreState['tracks'], sections: ArrangementSection[]): number {
     let maxEndBeat = 0;
@@ -77,6 +89,7 @@ const defaultTimelineView: TimelineViewState = {
 };
 
 export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: TimelineMinimapProps): ReactElement => {
+    const sectionDescriptionId = useId();
     const activeHeight = normalizeTimelineMinimapHeight(height);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -111,6 +124,12 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     const visibleEndBeat = scrollStartBeat + canvasMetrics.width / readoutPixelsPerBeat;
     const sliderStartBar = getBarNumberAtBeat({ ...meter, beat: scrollStartBeat });
     const sliderEndBar = Math.max(sliderStartBar, getLastBarNumberBeforeBeat({ ...meter, beat: visibleEndBeat }));
+    const sectionDescriptions = getOrderedSections(sections)
+        .map(
+            (section) =>
+                `${section.name}, start ${formatMusicalPosition({ ...meter, beat: section.startBeat })}, end ${formatMusicalPosition({ ...meter, beat: section.endBeat })}.`
+        )
+        .join(' ');
 
     useLayoutEffect(() => {
         if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
@@ -203,14 +222,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
             ctx.globalAlpha = 1;
         }
 
-        const orderedSections = sections
-            .filter((section) => section.endBeat > section.startBeat)
-            .toSorted(
-                (first, second) =>
-                    first.startBeat - second.startBeat ||
-                    first.endBeat - second.endBeat ||
-                    first.id.localeCompare(second.id)
-            );
+        const orderedSections = getOrderedSections(sections);
         const sectionLabelColor = resolveToken('--color-text-primary', '#eaeaea');
         ctx.font = '9px sans-serif';
         ctx.textBaseline = 'middle';
@@ -472,23 +484,29 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     };
 
     return (
-        <TimelineChromeSurface
-            tone="subtle"
-            ref={containerRef}
-            className="cursor-pointer"
-            style={{ height: activeHeight }}
-            onMouseDown={handleMouseDown}
-            onKeyDown={handleKeyDown}
-            tabIndex={0}
-            aria-label="Timeline minimap — drag the viewport to scroll, click to jump, or use arrow keys"
-            data-testid="timeline-minimap"
-            role="slider"
-            aria-valuemin={0}
-            aria-valuemax={sliderMaxBeats}
-            aria-valuenow={sliderStartBeat}
-            aria-valuetext={`Bars ${sliderStartBar} to ${sliderEndBar}`}
-        >
-            <canvas ref={canvasRef} className="absolute inset-0" style={{ width: '100%', height: activeHeight }} />
-        </TimelineChromeSurface>
+        <>
+            <TimelineChromeSurface
+                tone="subtle"
+                ref={containerRef}
+                className="cursor-pointer"
+                style={{ height: activeHeight }}
+                onMouseDown={handleMouseDown}
+                onKeyDown={handleKeyDown}
+                tabIndex={0}
+                aria-label="Timeline minimap — drag the viewport to scroll, click to jump, or use arrow keys"
+                aria-describedby={sectionDescriptionId}
+                data-testid="timeline-minimap"
+                role="slider"
+                aria-valuemin={0}
+                aria-valuemax={sliderMaxBeats}
+                aria-valuenow={sliderStartBeat}
+                aria-valuetext={`Bars ${sliderStartBar} to ${sliderEndBar}`}
+            >
+                <canvas ref={canvasRef} className="absolute inset-0" style={{ width: '100%', height: activeHeight }} />
+            </TimelineChromeSurface>
+            <span id={sectionDescriptionId} className="sr-only">
+                {sectionDescriptions ? `Sections: ${sectionDescriptions}` : 'No sections.'}
+            </span>
+        </>
     );
 };
