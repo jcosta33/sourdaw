@@ -24,7 +24,12 @@ import {
     TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT,
 } from '#/modules/Arrangement/presentations/views';
 import { adjustmentLayerStore, timelineViewStore, markerStore } from '#/modules/Arrangement/stores';
-import { createTrack, importMidiFile, setTimelineHorizontalScrollbarScrollX } from '#/modules/Arrangement/useCases';
+import {
+    createTrack,
+    getTimelineHorizontalContentWidth,
+    importMidiFile,
+    setTimelineHorizontalScrollbarScrollX,
+} from '#/modules/Arrangement/useCases';
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppActionBatch, executeUserAppAction } from '#/modules/Command/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
@@ -44,8 +49,8 @@ import {
     allocateMainFirstWidths,
     ARRANGE_RESIZE_HANDLE_WIDTH,
     MIN_TIMELINE_COLUMN_WIDTH,
-    MIN_TRACK_LIST_WIDTH,
 } from '#/utils/Layout/allocateMainFirstWidths';
+import { SESSION_VIEW_WIDTH_BOUNDS, TRACK_LIST_WIDTH_BOUNDS } from '#/utils/Layout/panelDimensionBounds';
 import { clamp } from '#/utils/Math/clamp';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { normalizeTimelineMinimapHeight } from '#/utils/TimelineMinimap/timelineMinimapHeight';
@@ -59,11 +64,6 @@ import { getArrangementChromeHeight } from './arrangementLayout';
 import { ChordTrackLane } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
 import { TimelineMinimapResizeHandle } from './TimelineMinimapResizeHandle';
-
-const TRACK_LIST_MAX = 400;
-
-const SESSION_VIEW_MIN = 200;
-const SESSION_VIEW_MAX = 800;
 
 export const ArrangeView = (): ReactElement => {
     const { tracks } = useTracks();
@@ -102,14 +102,14 @@ export const ArrangeView = (): ReactElement => {
 
     const handleTrackListResize = (delta: number): void => {
         setLocalTrackListWidth((prev) => {
-            const next = clamp(prev + delta, MIN_TRACK_LIST_WIDTH, TRACK_LIST_MAX);
+            const next = clamp(prev + delta, TRACK_LIST_WIDTH_BOUNDS.min, TRACK_LIST_WIDTH_BOUNDS.max);
             trackListWidthRef.current = next;
             return next;
         });
     };
 
     const handleTrackListSetSize = (size: number): void => {
-        const next = clamp(size, MIN_TRACK_LIST_WIDTH, TRACK_LIST_MAX);
+        const next = clamp(size, TRACK_LIST_WIDTH_BOUNDS.min, TRACK_LIST_WIDTH_BOUNDS.max);
         trackListWidthRef.current = next;
         setLocalTrackListWidth(next);
         setTrackListWidth(next);
@@ -121,14 +121,14 @@ export const ArrangeView = (): ReactElement => {
 
     const handleSessionResize = (delta: number): void => {
         setLocalSessionWidth((prev) => {
-            const next = clamp(prev + delta, SESSION_VIEW_MIN, SESSION_VIEW_MAX);
+            const next = clamp(prev + delta, SESSION_VIEW_WIDTH_BOUNDS.min, SESSION_VIEW_WIDTH_BOUNDS.max);
             sessionWidthRef.current = next;
             return next;
         });
     };
 
     const handleSessionSetSize = (size: number): void => {
-        const next = clamp(size, SESSION_VIEW_MIN, SESSION_VIEW_MAX);
+        const next = clamp(size, SESSION_VIEW_WIDTH_BOUNDS.min, SESSION_VIEW_WIDTH_BOUNDS.max);
         sessionWidthRef.current = next;
         setLocalSessionWidth(next);
         setSessionViewWidth(next);
@@ -247,8 +247,8 @@ export const ArrangeView = (): ReactElement => {
     }
 
     const arrangeSides = [
-        ...(dualViewOpen ? [{ preferred: localSessionWidth, min: SESSION_VIEW_MIN }] : []),
-        ...(trackListOpen ? [{ preferred: localTrackListWidth, min: MIN_TRACK_LIST_WIDTH }] : []),
+        ...(dualViewOpen ? [{ preferred: localSessionWidth, min: SESSION_VIEW_WIDTH_BOUNDS.min }] : []),
+        ...(trackListOpen ? [{ preferred: localTrackListWidth, min: TRACK_LIST_WIDTH_BOUNDS.min }] : []),
     ];
     const arrangeHandleCount = (dualViewOpen ? 1 : 0) + (trackListOpen ? 1 : 0);
     const arranged = allocateMainFirstWidths({
@@ -277,8 +277,8 @@ export const ArrangeView = (): ReactElement => {
                         direction="vertical"
                         label="Resize session view"
                         valueNow={displayedSessionWidth}
-                        valueMin={Math.min(SESSION_VIEW_MIN, Math.round(displayedSessionWidth))}
-                        valueMax={SESSION_VIEW_MAX}
+                        valueMin={Math.min(SESSION_VIEW_WIDTH_BOUNDS.min, Math.round(displayedSessionWidth))}
+                        valueMax={SESSION_VIEW_WIDTH_BOUNDS.max}
                         onResize={handleSessionResize}
                         onSetSize={handleSessionSetSize}
                         onResizeEnd={handleSessionResizeEnd}
@@ -300,8 +300,8 @@ export const ArrangeView = (): ReactElement => {
                         direction="vertical"
                         label="Resize track list"
                         valueNow={displayedTrackListWidth}
-                        valueMin={Math.min(MIN_TRACK_LIST_WIDTH, Math.round(displayedTrackListWidth))}
-                        valueMax={TRACK_LIST_MAX}
+                        valueMin={Math.min(TRACK_LIST_WIDTH_BOUNDS.min, Math.round(displayedTrackListWidth))}
+                        valueMax={TRACK_LIST_WIDTH_BOUNDS.max}
                         onResize={handleTrackListResize}
                         onSetSize={handleTrackListSetSize}
                         onResizeEnd={handleTrackListResizeEnd}
@@ -366,14 +366,7 @@ const TimelineHScrollbar = ({
     tracks: HScrollbarTrack[];
     viewportWidth: number;
 }): ReactElement => {
-    // Reduce rather than `Math.max(256, ...allEndBeats)`: a project with enough
-    // clips blows the engine's call-argument limit and throws
-    // `RangeError: Maximum call stack size exceeded` instead of computing a width.
-    const maxEndBeat = tracks.reduce(
-        (outerMax, track) => track.clips.reduce((innerMax, clip) => Math.max(innerMax, clip.endBeat), outerMax),
-        256
-    );
-    const totalContentWidth = maxEndBeat * pixelsPerBeat;
+    const totalContentWidth = getTimelineHorizontalContentWidth(tracks, pixelsPerBeat);
 
     // The strip is always reserved, because the track list ends with a spacer of
     // the same height; only the thumb depends on the content overflowing.

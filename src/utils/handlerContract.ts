@@ -176,13 +176,13 @@ export type ClipStateSnapshot = {
     readonly sourceScaleName?: string;
     readonly overrides?: Readonly<Record<string, boolean>>;
     readonly kneadState?: {
-        readonly blobs: readonly {
+        readonly blobs: {
             readonly id: string;
             readonly startTime: number;
             readonly endTime: number;
             readonly pitchCenterCents: number;
             readonly originalPitchCenterCents?: number;
-            readonly pitchCurveCents: readonly number[];
+            readonly pitchCurveCents: number[];
             readonly voicedConfidence: number;
         }[];
         readonly retuneSpeedMs: number;

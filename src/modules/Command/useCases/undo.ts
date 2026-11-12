@@ -73,31 +73,38 @@ type ExecuteUndoInput = {
  * older undoable entries. Dropped inert entries never reach `future` — nothing
  * was undone, so redo must not re-apply their action.
  */
-function executeUndo(input: ExecuteUndoInput): Promise<UndoOutcome> {
+type AppliedUndoOutcome =
+    Exclude<UndoOutcome, { status: 'undone' }> | { readonly status: 'undone'; readonly applied: boolean };
+
+function executeUndo(input: ExecuteUndoInput): Promise<AppliedUndoOutcome> {
     return runPreparedUndoReplay({ entries: [input.entry] }, () => applyUndo(input));
 }
 
-async function applyUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Promise<UndoOutcome> {
+async function applyUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Promise<AppliedUndoOutcome> {
     if (entry.kind === 'callback') {
         entry.undo();
-        return { status: 'undone' };
+        return { status: 'undone', applied: true };
     }
     if (!entry.inverseAction) {
         return { status: 'inert' };
     }
 
+    let applied = false;
     try {
         const inverseAction = normalizeLegacyLoopAnchorInverse(entry.inverseAction);
         const options: ExecuteAppActionOptions = {
             undoEntryId: entry.id,
             skipUndo: true,
             skipMacroRecording: true,
+            onCommitted: () => {
+                applied = true;
+            },
         };
         if (inverseAction.type === 'trimClipStart' && inverseAction.payload.midiOffsetBeats === undefined) {
             options.authorizeFirstHandler = () => getLegacyInverseReplayFailure([inverseAction], 'undo');
         }
         await runExecuteAppAction(inverseAction, options);
-        return { status: 'undone' };
+        return { status: 'undone', applied };
     } catch (error) {
         if (error instanceof AppActionConflictError) {
             return { status: 'conflict' };
@@ -184,6 +191,7 @@ type CandidateOutcome =
     /** At least one entry was undone. `retained` keeps its place on `past`. */
     | {
           readonly status: 'undone';
+          readonly applied: boolean;
           readonly undone: readonly UndoEntry[];
           readonly retained: readonly UndoEntry[];
           /** An older member of the same unit conflicted after the undone ones ran. */
@@ -200,6 +208,7 @@ type CandidateOutcome =
  *  entries and actions, whose members can only be replayed one at a time. */
 async function undoEntriesNewestFirst(entries: readonly UndoEntry[]): Promise<CandidateOutcome> {
     const undone: UndoEntry[] = [];
+    let applied = false;
 
     for (let index = entries.length - 1; index >= 0; index--) {
         const entry = entries[index]!;
@@ -214,13 +223,15 @@ async function undoEntriesNewestFirst(entries: readonly UndoEntry[]): Promise<Ca
             const retained = entries.slice(0, index + 1);
             return undone.length === 0
                 ? { status: 'conflict', retained }
-                : { status: 'undone', undone, retained, partialConflict: true };
+                : { status: 'undone', undone, retained, partialConflict: true, applied };
         }
 
+        applied ||= outcome.status === 'committed' || outcome.applied === true;
         undone.unshift(entry);
         if (outcome.status === 'committed') {
             return {
                 status: 'undone',
+                applied,
                 undone,
                 retained: entries.slice(0, index),
                 partialConflict: false,
@@ -231,7 +242,7 @@ async function undoEntriesNewestFirst(entries: readonly UndoEntry[]): Promise<Ca
 
     return undone.length === 0
         ? { status: 'inert' }
-        : { status: 'undone', undone, retained: [], partialConflict: false };
+        : { status: 'undone', undone, retained: [], partialConflict: false, applied };
 }
 
 async function undoCandidate(candidate: UndoCandidate): Promise<CandidateOutcome> {
@@ -239,7 +250,12 @@ async function undoCandidate(candidate: UndoCandidate): Promise<CandidateOutcome
         return undoEntriesNewestFirst(candidate.entries);
     }
 
-    const outcome = await executeActionGroupUndo(candidate.entries);
+    let applied = false;
+    const outcome = await executeActionGroupUndo(candidate.entries, {
+        onCommitted: (actions) => {
+            applied = actions.length > 0;
+        },
+    });
     if (outcome.status === 'conflict') {
         return { status: 'conflict', retained: candidate.entries };
     }
@@ -248,6 +264,7 @@ async function undoCandidate(candidate: UndoCandidate): Promise<CandidateOutcome
     }
     return {
         status: 'undone',
+        applied: applied || outcome.status === 'committed',
         undone: candidate.entries,
         retained: [],
         partialConflict: false,
@@ -293,6 +310,7 @@ type StepOverInput = {
     readonly retained: readonly UndoEntry[];
     /** `past` beneath the conflicted unit. */
     readonly beneath: readonly UndoEntry[];
+    readonly onCommitted?: (() => void) | undefined;
 };
 
 /**
@@ -313,6 +331,7 @@ async function stepOverConflictedHeadOrSettle({
     conflictedHead,
     retained,
     beneath,
+    onCommitted,
 }: StepOverInput): Promise<UndoResult> {
     const beneathPastInert = dropInertTopUnits(beneath);
     const next = takeCandidate(beneathPastInert);
@@ -347,13 +366,20 @@ async function stepOverConflictedHeadOrSettle({
         retainedPast: [...next.below, ...outcome.retained, ...retained],
         undoneEntries: outcome.undone,
     });
+    try {
+        if (outcome.applied) {
+            onCommitted?.();
+        }
+    } catch (error) {
+        throw outcome.committedError ?? error;
+    }
     if (outcome.committedError) {
         throw outcome.committedError;
     }
     return result;
 }
 
-async function undoImpl(stepOverConflicts: boolean): Promise<UndoResult> {
+async function undoImpl(stepOverConflicts: boolean, onCommitted?: () => void): Promise<UndoResult> {
     const stored = undoStore.value;
     if (!stored || stored.past.length === 0) {
         return { headConsumed: false };
@@ -430,6 +456,7 @@ async function undoImpl(stepOverConflicts: boolean): Promise<UndoResult> {
                 conflictedHead: candidate.head,
                 retained: outcome.retained,
                 beneath: past,
+                onCommitted,
             });
         }
 
@@ -442,6 +469,13 @@ async function undoImpl(stepOverConflicts: boolean): Promise<UndoResult> {
             retainedPast: [...past, ...outcome.retained],
             undoneEntries: outcome.undone,
         });
+        try {
+            if (outcome.applied) {
+                onCommitted?.();
+            }
+        } catch (error) {
+            throw outcome.committedError ?? error;
+        }
         if (outcome.committedError) {
             throw outcome.committedError;
         }
@@ -459,8 +493,10 @@ export type UndoOptions = {
      * would undo the row the user clicked to keep.
      */
     readonly stepOverConflicts?: boolean;
+    /** Called once after an inverse applies, including a step beneath a retained conflict or a committed error. */
+    readonly onCommitted?: () => void;
 };
 
 export function undo(options: UndoOptions = {}): Promise<UndoResult> {
-    return runUndoRedoExclusive(() => undoImpl(options.stepOverConflicts ?? true));
+    return runUndoRedoExclusive(() => undoImpl(options.stepOverConflicts ?? true, options.onCommitted));
 }
