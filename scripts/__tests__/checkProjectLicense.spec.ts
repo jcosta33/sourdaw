@@ -690,18 +690,18 @@ describe('project license', () => {
         });
         expect(() => collectNpmLockDependencyLicenses(root)).toThrow('platform-restricted server dependency may ship');
 
-        const source = 'https://registry.npmjs.org/ws/-/ws-8.22.1.tgz';
+        const source = 'https://registry.npmjs.org/ws/-/ws-8.22.2.tgz';
         const revision =
-            'sha512-oyL6OPYme/CmiFvNuGzeoxCJ4nOrZE2O1FwM9MWM1AsGri6nLXB2pg+lNA8aLeXMSav0J6eIVS1j6vUPzUtK9g==';
+            'sha512-/rEZ2ejown2N5gxVTHUu9bVVC7ttu0/Tgzf5hbTOixR3Fs7mbbXgn2DbdbcKgJOmpQMtrIUWivtYuVMnp/W/yA==';
         lock({
             '': { dependencies: { parent: '1.0.0' } },
             'node_modules/parent': {
                 version: '1.0.0',
                 license: 'MIT',
-                dependencies: { ws: '8.22.1' },
+                dependencies: { ws: '8.22.2' },
             },
             'node_modules/parent/node_modules/ws': {
-                version: '8.22.1',
+                version: '8.22.2',
                 license: 'MIT',
                 resolved: source,
                 integrity: revision,
@@ -709,7 +709,7 @@ describe('project license', () => {
         });
         const nested = collectNpmLockDependencyLicenses(root).find(({ name }) => name === 'ws')!;
         expect(nested.serverLockPath).toBe('node_modules/parent/node_modules/ws');
-        const archivePath = 'release/dependency-license-proofs/ws-8.22.1.tgz';
+        const archivePath = 'release/dependency-license-proofs/ws-8.22.2.tgz';
         mkdirSync(dirname(join(root, archivePath)), { recursive: true });
         writeFileSync(join(root, archivePath), readFileSync(join(process.cwd(), archivePath)));
         expect(
@@ -810,23 +810,23 @@ describe('project license', () => {
         const record: DependencyLicenseRecord = {
             ecosystem: 'npm',
             name: 'ws',
-            version: '8.22.1',
+            version: '8.22.2',
             license: 'MIT',
             legalFiles: [],
             serverLockPath: 'node_modules/ws',
             graphs: ['server/package-lock.json'],
         };
-        const source = 'https://registry.npmjs.org/ws/-/ws-8.22.1.tgz';
+        const source = 'https://registry.npmjs.org/ws/-/ws-8.22.2.tgz';
         const revision =
-            'sha512-oyL6OPYme/CmiFvNuGzeoxCJ4nOrZE2O1FwM9MWM1AsGri6nLXB2pg+lNA8aLeXMSav0J6eIVS1j6vUPzUtK9g==';
+            'sha512-/rEZ2ejown2N5gxVTHUu9bVVC7ttu0/Tgzf5hbTOixR3Fs7mbbXgn2DbdbcKgJOmpQMtrIUWivtYuVMnp/W/yA==';
         const writeLock = (integrity: string): void =>
             write(
                 root,
                 'server/package-lock.json',
-                JSON.stringify({ packages: { 'node_modules/ws': { version: '8.22.1', resolved: source, integrity } } })
+                JSON.stringify({ packages: { 'node_modules/ws': { version: '8.22.2', resolved: source, integrity } } })
             );
         writeLock(revision);
-        const archivePath = 'release/dependency-license-proofs/ws-8.22.1.tgz';
+        const archivePath = 'release/dependency-license-proofs/ws-8.22.2.tgz';
         mkdirSync(dirname(join(root, archivePath)), { recursive: true });
         writeFileSync(join(root, archivePath), readFileSync(join(process.cwd(), archivePath)));
         const proof: DependencyLicenseProof = {
@@ -869,7 +869,7 @@ describe('project license', () => {
         );
 
         proof.revision = revision;
-        proof.files![0]!.archivePath = 'ws-8.22.1.tgz';
+        proof.files![0]!.archivePath = 'ws-8.22.2.tgz';
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'proof archive path must be canonical and confined'
         );
@@ -879,20 +879,20 @@ describe('project license', () => {
         const record: DependencyLicenseRecord = {
             ecosystem: 'npm',
             name: 'ws',
-            version: '8.22.1',
+            version: '8.22.2',
             license: 'MIT',
             legalFiles: [],
             serverLockPath: 'node_modules/ws',
             graphs: ['server/package-lock.json'],
         };
-        const source = 'https://registry.npmjs.org/ws/-/ws-8.22.1.tgz';
+        const source = 'https://registry.npmjs.org/ws/-/ws-8.22.2.tgz';
         const revision =
-            'sha512-oyL6OPYme/CmiFvNuGzeoxCJ4nOrZE2O1FwM9MWM1AsGri6nLXB2pg+lNA8aLeXMSav0J6eIVS1j6vUPzUtK9g==';
+            'sha512-/rEZ2ejown2N5gxVTHUu9bVVC7ttu0/Tgzf5hbTOixR3Fs7mbbXgn2DbdbcKgJOmpQMtrIUWivtYuVMnp/W/yA==';
         write(
             root,
             'server/package-lock.json',
             JSON.stringify({
-                packages: { 'node_modules/ws': { version: '8.22.1', resolved: source, integrity: revision } },
+                packages: { 'node_modules/ws': { version: '8.22.2', resolved: source, integrity: revision } },
             })
         );
         const proof: DependencyLicenseProof = {
@@ -900,7 +900,7 @@ describe('project license', () => {
             revision,
             files: [
                 {
-                    archivePath: 'release/dependency-license-proofs/../ws-8.22.1.tgz',
+                    archivePath: 'release/dependency-license-proofs/../ws-8.22.2.tgz',
                     sourcePath: 'LICENSE',
                     sha256: '2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef',
                 },
@@ -908,24 +908,24 @@ describe('project license', () => {
         };
         write(root, 'release/dependency-license-proofs/placeholder', 'x');
         writeFileSync(
-            join(root, 'release/ws-8.22.1.tgz'),
-            readFileSync(join(process.cwd(), 'release/dependency-license-proofs/ws-8.22.1.tgz'))
+            join(root, 'release/ws-8.22.2.tgz'),
+            readFileSync(join(process.cwd(), 'release/dependency-license-proofs/ws-8.22.2.tgz'))
         );
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'proof archive path must be canonical and confined under release/dependency-license-proofs/'
         );
 
-        proof.files![0]!.archivePath = 'release/dependency-license-proofs-confused/ws-8.22.1.tgz';
+        proof.files![0]!.archivePath = 'release/dependency-license-proofs-confused/ws-8.22.2.tgz';
         mkdirSync(dirname(join(root, proof.files![0]!.archivePath)), { recursive: true });
         writeFileSync(
             join(root, proof.files![0]!.archivePath),
-            readFileSync(join(process.cwd(), 'release/dependency-license-proofs/ws-8.22.1.tgz'))
+            readFileSync(join(process.cwd(), 'release/dependency-license-proofs/ws-8.22.2.tgz'))
         );
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'proof archive path must be canonical and confined under release/dependency-license-proofs/'
         );
 
-        proof.files![0]!.archivePath = 'release/dependency-license-proofs/./ws-8.22.1.tgz';
+        proof.files![0]!.archivePath = 'release/dependency-license-proofs/./ws-8.22.2.tgz';
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'proof archive path must be canonical and confined under release/dependency-license-proofs/'
         );

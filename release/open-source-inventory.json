@@ -169,8 +169,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:b640b863db1fa8cb7a9d55a6cb3b798bf2395e11c34e63e71161e965fb318d84:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:d8cffa30ad711d95996e1b540631c8ae0d6e551ea0b9567baca07b95912e37c4:release/dependency-license-proofs.json"
+                "sha256:c0c1a268c557a6a1d946c6ef0fbbc543079d311e8e66c7893ca114a063349039:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:1f37e372f74bb075f1e0700d5886f27e19c204c4e2b86b564c310b166773c58d:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -221,15 +221,15 @@
                 "release/desktop-runtime-material.json"
             ],
             "revisions": [
-                "electron 45.2.3 d0a18d02058b21ff292e25d5f53f00bd120f2f61",
-                "Chromium 156.0.8078.80 fb096c0011f9d50f0a264a9376420cdea9c421e3",
+                "electron 45.3.1 3025e0491e87674c112f7a7d2646292c0efa4599",
+                "Chromium 156.0.8078.96 2ad9b7f5a86846e0b264090723a6a78964bb84c4",
                 "Node v24.22.2 f7f273a9bb6445f6f7fb6349105e7532972045fb",
                 "FFmpeg 9db86ce5b5b454dfc96c435f9f0723012980c37f",
                 "pnpm-lock.yaml",
                 "release-proof:exact-candidate-revision"
             ],
             "digests": [
-                "npm-integrity:sha512-Vurzu5UOA5nTGT4LqIwXD16QFGrOZdiXxF+1UP4KNsAOo/YtDcT3/u0jhP4WSwNJ0iLrLDi85hzBJ0arnGDhyw==",
+                "npm-integrity:sha512-1oYau2B4RXF27Df2fzvrFDJoy8AOSVlgS6gklo6wkLZ/QWJemJCJHkY4+uuacvSFUtR8IimiLukLNFoYP0fmjA==",
                 "sha256:5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
                 "public/legal/ELECTRON-SOURCES.json",
                 "release-proof:desktop-mac-arm64-artifact"
@@ -268,22 +268,36 @@
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
                 "pnpm-workspace.yaml",
-                "patches/vite@8.3.6.patch"
+                "patches/vite@8.3.8.patch",
+                "public/legal/MLC-WEB-NOTICES.txt",
+                "public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "sources": [
                 "package.json",
                 "server/package.json",
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
-                "patches/vite@8.3.6.patch"
+                "patches/vite@8.3.8.patch",
+                "https://raw.githubusercontent.com/mlc-ai/xgrammar/ace2321a29471130f3f64fb1882741a5547c6f36/NOTICE",
+                "https://raw.githubusercontent.com/msgpack/msgpack-c/8c602e8579c7e7d65d6f9c6703c9699db3fb0488/COPYING",
+                "https://raw.githubusercontent.com/msgpack/msgpack-c/8c602e8579c7e7d65d6f9c6703c9699db3fb0488/NOTICE",
+                "https://raw.githubusercontent.com/msgpack/msgpack-c/8c602e8579c7e7d65d6f9c6703c9699db3fb0488/LICENSE_1_0.txt",
+                "https://raw.githubusercontent.com/google/sentencepiece/f2219b53e24ff5deee4cacdc2d0ca3074e529a07/LICENSE",
+                "https://raw.githubusercontent.com/google/sentencepiece/f2219b53e24ff5deee4cacdc2d0ca3074e529a07/third_party/absl/LICENSE",
+                "https://raw.githubusercontent.com/google/sentencepiece/f2219b53e24ff5deee4cacdc2d0ca3074e529a07/third_party/darts_clone/LICENSE",
+                "https://raw.githubusercontent.com/google/sentencepiece/f2219b53e24ff5deee4cacdc2d0ca3074e529a07/third_party/protobuf-lite/LICENSE",
+                "https://raw.githubusercontent.com/mlc-ai/xgrammar/ace2321a29471130f3f64fb1882741a5547c6f36/3rdparty/picojson/picojson.h",
+                "https://registry.npmjs.org/@mlc-ai/web-runtime/-/web-runtime-0.28.0-dev2.tgz"
             ],
             "revisions": [
                 "exact pnpm lock graph",
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:bc6999447c2fda05dce2f9510e3412eba1c2d82f66234746c5dea40dfe7c389a",
-                "sha256:d5943b73cb367ddf580983190df0e0c073383c75ebce9611aefb3340c1a380b7"
+                "sha256:5e5e833c5f03d0fa417676644777cb403135bf4f1187af613bb07e6d79c7ed67",
+                "sha256:4ce2f2f1a4fc0959b7f9fce2a16cf95e6c75af942e0b691407c73270720ab968",
+                "sha256:da20539796075e22f2ad7f835eb6f1be13a6b540a503d633a85173c02c2aa5c7:public/legal/MLC-WEB-NOTICES.txt",
+                "sha256:f8f2f6584d10be8db232c7886f148507081ecd0be2c48445c9fbf44bba88ce8e:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "per-package declared terms, retained legal files, or assembled license records"
@@ -294,7 +308,8 @@
                 "collaboration server"
             ],
             "evidence": [
-                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs; pnpm applies the pinned Vite patch as part of dependency source."
+                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs; pnpm applies the pinned Vite patch as part of dependency source.",
+                "MLC-WEB-NOTICES.txt preserves separately sourced SDK and bundled third-party notices; assembled dependency records bind installed metadata and canonical terms without authenticating package attribution or proving the SDK build genealogy."
             ],
             "obligations": [
                 "Reconcile every distributed dependency license and notice before release."
@@ -358,7 +373,7 @@
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:f8f2f6584d10be8db232c7886f148507081ecd0be2c48445c9fbf44bba88ce8e:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
@@ -405,7 +420,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:9310e8f1debd75adf4b82f062948457313b89b0a18b02763ba531707344c4010",
+                "sha256:87cdca75040bd33b6807332dd8bb82dbf525e5396ed4aed895015b1703f0ef60",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -587,7 +602,7 @@
                 "sha256:d412ab9d5ac17e6931705aac01e5a0d323da5acd2e89a2c19aa8fc05becc59ad:@mlc-ai/web-llm-0.2.84-LICENSE",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
                 "sha256:b9adf0d5d38c111db457713cb7d8684ec9a255c848f75671fed5dd632805f431:public/legal/Qwen-NOTICE.txt",
-                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:f8f2f6584d10be8db232c7886f148507081ecd0be2c48445c9fbf44bba88ce8e:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "admission-evidence:Apache-2.0-Qwen3-1.7B-4B-8B-licensed-candidates-with-unproven-conversion-mapping",
@@ -797,7 +812,7 @@
                 "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
                 "sha256:f09ba74cf3d2213f7d69c8370aaeedf6414c57d7c00578c8a2ca94261a5c8ac5:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
-                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:f8f2f6584d10be8db232c7886f148507081ecd0be2c48445c9fbf44bba88ce8e:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
                 "sha256:f764dafcb6a2fc5f328d023726c09d17aa5e39ca48bc5740f08aa10d4d01d496:src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
                 "sha256:93020ca3edba6d1712fa3d68779fc0e1ade24b9c12cd9919e24c780ee43386f7:src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts",
@@ -1070,7 +1085,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:d5943b73cb367ddf580983190df0e0c073383c75ebce9611aefb3340c1a380b7"
+                "sha256:4ce2f2f1a4fc0959b7f9fce2a16cf95e6c75af942e0b691407c73270720ab968"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1124,7 +1139,7 @@
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
                 "sha256:22f658d32f65c7c535005368d589dc056c0f8417f3f15190d151233de60957a0:public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
-                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:f8f2f6584d10be8db232c7886f148507081ecd0be2c48445c9fbf44bba88ce8e:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "MIT"
@@ -1216,7 +1231,7 @@
                 "tracked-set-sha256:eaa809018aea8e96f598f3b55ad0711e475c6a79f06c87491af507ad88d346bd:grand-boule-live-runtime",
                 "tracked-set-sha256:ce12132e241739ab5ce1efe2b8093e28f2126e76ae68679267d335afb31cc0d4:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:fdada292f3fbbf2b5cdd14ce381ac79cc710cebe78e05024e67861cfca822381:grand-boule-release-proof"
+                "tracked-set-sha256:0451675f7f314b233a193e3fbbeefc63f93e78f83bd3216f327ba4b4314602dd:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1293,34 +1308,51 @@
                 "public/legal/RELINKING.md",
                 "public/legal/SOURCES.json",
                 "public/legal/THIRD-PARTY-NOTICES.md",
-                "public/legal/faustwasm-COPYING.txt"
+                "public/legal/faustwasm-COPYING.txt",
+                "public/legal/faustwasm-0.20.2-corresponding-source.tar.gz",
+                "public/legal/FAUST-CURRENT-SOUND-NOTICE.txt",
+                "src/helpers/faustCurrentSound.lib",
+                "src/helpers/faustCurrentSound.sources.json"
             ],
             "sources": [
                 "https://github.com/grame-cncm/faustwasm",
                 "https://github.com/grame-cncm/faust",
-                "public/legal/SOURCES.json"
+                "public/legal/SOURCES.json",
+                "https://github.com/grame-cncm/faust/archive/21884a6d63713ff99dca2fef95c33aecaedfe643.tar.gz",
+                "https://github.com/grame-cncm/faustlibraries",
+                "https://github.com/grame-cncm/faustlibraries/archive/42fab480c778df7bad5c6b620ca4fd005b2bfe9b.tar.gz",
+                "https://github.com/grame-cncm/faustlibraries/tree/36661b5efd702e0e21b3ad49864e10201aecc602"
             ],
             "revisions": [
-                "@grame/faustwasm@0.18.5",
-                "ba611eaeefcb41f935cab1481ea9580b470ae8eb",
-                "libfaust 2.89.2 at ada86ab32fe875f5d1d028c3a99f17e3a83e0ad8"
+                "@grame/faustwasm@0.20.2",
+                "registry gitHead 4403c779a3e92af4e4f44b5abda98b3ac5fa57d9 unavailable upstream; shipped wrapper source capsule reconstructs entrypoints and build script",
+                "libfaust 2.90.19 at 21884a6d63713ff99dca2fef95c33aecaedfe643; bundled libraries 42fab480c778df7bad5c6b620ca4fd005b2bfe9b",
+                "stock device sound adaptations from faustlibraries 36661b5efd702e0e21b3ad49864e10201aecc602"
             ],
             "digests": [
-                "pnpm-integrity:sha512-mJhyTMv1b6V+ICm/XKcNgOFtxJVX4nAIrTDLqJdB5PW6xTIMeJtNHkUBIg+RlWMrbs0QhGYYBVsq22Y6e87v3w==",
-                "public/legal/SOURCES.json"
+                "pnpm-integrity:sha512-Xtr5w73+3SVfXDA7HMATxQJy5wjfDRH10b6nHv1iximJQz4vnOh9D1f5z+l2kFKmuo5ZzkIOx9y5WI2/vtEI7w==",
+                "public/legal/SOURCES.json",
+                "sha256:7a6f0939e8905e40b7733f8e17cf5c806f3c89fb6c5291985dcc6deb883b3682:public/legal/faustwasm-0.20.2-corresponding-source.tar.gz",
+                "sha256:44b07e51e4984fce1dee5dacdc895d159ca36adbcaf3814ee702d2ce5a614ffe:public/legal/FAUST-CURRENT-SOUND-NOTICE.txt",
+                "sha256:982731adfb34ff859560ec6874edd4fdd3a7f0a11b13b5cd8f7ccd5c5193221b:src/helpers/faustCurrentSound.lib",
+                "sha256:209e3455a2b6474c1a5a5322d79c9aa6a83b85021f52874ab8e12e876b7b91e3:src/helpers/faustCurrentSound.sources.json"
             ],
             "licenses": [
-                "LGPL-2.1-or-later"
+                "LGPL-2.1-or-later",
+                "STK-4.3:adapted-stock-device-sections"
             ],
             "productSurfaces": [
                 "browser Faust compiler",
                 "desktop Faust compiler"
             ],
             "evidence": [
-                "Shipped compiler bytes match the pinned package and embedded compiler source version."
+                "Shipped compiler bytes match the pinned package; reconstructed preferred wrapper sources reproduce its released main wrapper and worklets, and embedded compiler/library identities match the recorded sources.",
+                "Corresponding-source capsule reconstructs the unavailable wrapper entrypoints and build script; released main wrapper and three worklets were reproduced byte-for-byte, while compiler WASM reproducibility is not claimed.",
+                "The adapted stock-device source retains the existing control-to-sound laws and source-specific license notices."
             ],
             "obligations": [
-                "Keep exact source, LGPL text, attribution, modification status, and relink instructions beside every build."
+                "Keep exact source, LGPL text, attribution, modification status, and relink instructions beside every build.",
+                "Preserve the stock-device adaptation source and its GRAME and STK notices alongside distributions."
             ]
         },
         {
@@ -1343,17 +1375,17 @@
                 "crates/scoring/"
             ],
             "revisions": [
-                "rust nightly-2026-04-14",
+                "rust 1.99.1",
                 "wasm-pack 0.15.1",
                 "wasm-bindgen 0.2.130",
                 "wasm-opt bundled-by-wasm-pack@0.15.1",
-                "daw-dsp sha256:dec050feae2a21549cf21e877cb11f0ccf9ec156d40c539b08dabdcfab66b524",
-                "daw-wasm-decoder sha256:955945d152e1d77ca32d1c40e2863e781c983ec411670ad9f402fb553e4ccc9a",
-                "proof-chamber sha256:585883d0b78a8689d8bdaf4f38e566ddefc235d84dfa348838fb12c87e3c826a",
-                "scoring sha256:e8b5a91f9f4409062b70b5431911a970f3d4f8e20ab79bbd57012a5710fba6b6"
+                "daw-dsp sha256:e35d74b6a22ed0814b1dd9a9a6f1508451fea6c009519b43ad64b2e5659f6274",
+                "daw-wasm-decoder sha256:e6fb1f3b2796b0dd2b66fbffc9ce1e14769859e07dd1fd145ea2fbb23cea83b1",
+                "proof-chamber sha256:929525974036b4805e38589140a67bbb067dc4ea0dbcbb1cb72c0931f3e905de",
+                "scoring sha256:65a6fbbbfee3d3620910d808ac9b0f0a7f0f5459460fd88e9d746c3c9c212fdd"
             ],
             "digests": [
-                "sha256:a04f1c3e6d0389b60ee1b3c3ceafc1374587c3ead2deb0586e2fccd2311ccdcb:public/wasm/manifest.json"
+                "sha256:c38fdba35ec0d29c7a363fdc4422c3d1da11e4e6a2df1f6c66383a87d76c438c:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1824,7 +1856,7 @@
                 "sha256:4e3ab01320777977abfccaedaf0166a2b1ea49e8adf12831996c570b7461bbe2:release/upstream-proofs/audio-export-codecs/BUILD.md",
                 "sha256:95c070480aa027041f59caa2b7b4b989f8c0fbf85195cfd681716de5c2ce7a96:release/upstream-proofs/audio-export-codecs/reproduction-commands.json",
                 "sha256:dff24941db687b3a453063d7647cf4ea67c78a4c651eaceba481615ccb0c1133:release/upstream-proofs/audio-export-codecs/provenance.json",
-                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:f8f2f6584d10be8db232c7886f148507081ecd0be2c48445c9fbf44bba88ce8e:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c4bd7e21a0acd609df3f850f98a6eb006626a41cea907a0af0232b69e8ee3d6c:release/upstream-proofs/audio-export-codecs/vorbis-primer-page.patch",
                 "sha256:49ddc53f865c69d4ec9e6cb4d4594afe22ffc805a5920d828d8009cc68c09789:release/upstream-proofs/audio-export-codecs/vorbis-short-leading-context.patch"
             ],
@@ -1859,19 +1891,19 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "cc324f3a33c951740cc602a8fd5c0450fcf72f04e66384ad109061f02ec89b81"
+            "sha256": "f91c2fc84fb76070ae2da12a61fd63ebb1bd5afc925299b45b448bd2e6bc2cc4"
         },
         {
             "path": "server/package.json",
-            "sha256": "3f262992a4157509c6fe9030a5263cabc4c27961eb83fb872b6a68b71bd32964"
+            "sha256": "fc658dc1a5a1074119cd022710a7b5f3ac43a093bc2b32966ee47c2521c274f0"
         },
         {
             "path": "server/package-lock.json",
-            "sha256": "d5943b73cb367ddf580983190df0e0c073383c75ebce9611aefb3340c1a380b7"
+            "sha256": "4ce2f2f1a4fc0959b7f9fce2a16cf95e6c75af942e0b691407c73270720ab968"
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "bc6999447c2fda05dce2f9510e3412eba1c2d82f66234746c5dea40dfe7c389a"
+            "sha256": "5e5e833c5f03d0fa417676644777cb403135bf4f1187af613bb07e6d79c7ed67"
         },
         {
             "path": "Cargo.toml",
@@ -1879,7 +1911,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "9310e8f1debd75adf4b82f062948457313b89b0a18b02763ba531707344c4010"
+            "sha256": "87cdca75040bd33b6807332dd8bb82dbf525e5396ed4aed895015b1703f0ef60"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -1887,7 +1919,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "a04f1c3e6d0389b60ee1b3c3ceafc1374587c3ead2deb0586e2fccd2311ccdcb"
+            "sha256": "c38fdba35ec0d29c7a363fdc4422c3d1da11e4e6a2df1f6c66383a87d76c438c"
         }
     ],
     "externalReferences": [
@@ -2071,17 +2103,7 @@
         {
             "surface": "faust-runtime",
             "file": "public/legal/SOURCES.json",
-            "value": "https://github.com/grame-cncm/faust/archive/ada86ab32fe875f5d1d028c3a99f17e3a83e0ad8.tar.gz"
-        },
-        {
-            "surface": "faust-runtime",
-            "file": "public/legal/SOURCES.json",
             "value": "https://github.com/grame-cncm/faustwasm"
-        },
-        {
-            "surface": "faust-runtime",
-            "file": "public/legal/SOURCES.json",
-            "value": "https://github.com/grame-cncm/faustwasm/archive/ba611eaeefcb41f935cab1481ea9580b470ae8eb.tar.gz"
         },
         {
             "surface": "kokoro-model",
@@ -2527,6 +2549,46 @@
             "surface": "whisper-model",
             "file": "src/modules/AiRuntime/repositories/voiceInput/whisperModelArtifact.ts",
             "value": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en.bin"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faust/archive/21884a6d63713ff99dca2fef95c33aecaedfe643.tar.gz"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faustlibraries"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faustlibraries/archive/42fab480c778df7bad5c6b620ca4fd005b2bfe9b.tar.gz"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/grame-cncm/faustlibraries"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "src/helpers/faustCurrentSound.sources.json",
+            "value": "https://github.com/grame-cncm/faustlibraries/blob/36661b5efd702e0e21b3ad49864e10201aecc602/analyzers.lib"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "src/helpers/faustCurrentSound.sources.json",
+            "value": "https://github.com/grame-cncm/faustlibraries/blob/36661b5efd702e0e21b3ad49864e10201aecc602/filters.lib"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "src/helpers/faustCurrentSound.sources.json",
+            "value": "https://github.com/grame-cncm/faustlibraries/blob/36661b5efd702e0e21b3ad49864e10201aecc602/oscillators.lib"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "src/helpers/faustCurrentSound.sources.json",
+            "value": "https://github.com/grame-cncm/faustlibraries/blob/36661b5efd702e0e21b3ad49864e10201aecc602/reverbs.lib"
         }
     ],
     "marks": [

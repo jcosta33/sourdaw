@@ -94,6 +94,18 @@ Sourdaw does not bundle or redistribute those artifacts; the user's browser down
 pinned bytes directly from Magenta only after an explicit download action and verifies them before
 publication or use.
 
+## WebLLM SDK notices
+
+WebLLM's SDK dependency metadata selects @mlc-ai/web-runtime 0.28.0-dev2,
+@mlc-ai/web-tokenizers 0.1.6, and @mlc-ai/web-xgrammar 0.1.27. Their authenticated npm archives
+omit standalone license and NOTICE files; the dependency report retains hash-pinned metadata and
+canonical Apache-2.0 terms. Separately sourced upstream notices, relevant bundled third-party terms,
+and the runtime archive's own notice headers are retained in [MLC-WEB-NOTICES.txt](./MLC-WEB-NOTICES.txt).
+The runtime package has no published source revision; [Apache-TVM/NOTICE](./Apache-TVM/NOTICE)
+preserves independently observed identical TVM notice bytes, not a source-version claim for that
+package. These records preserve observed attribution and do not establish reproducible SDK
+compilation or a complete embedded build-input genealogy.
+
 ## WebLLM Qwen models
 
 Web and desktop builds can download three pinned MLC-format Qwen models for browser-local WebLLM
