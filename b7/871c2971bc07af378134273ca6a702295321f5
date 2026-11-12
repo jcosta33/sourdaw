@@ -1,0 +1,19 @@
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_06dcf8d0ba2c30::t_73dfaa562f914a 3291-3347
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b7871c2971bc07af378134273ca6a702295321f5",
+  "prompts": {},
+  "sessions": {
+    "s_06dcf8d0ba2c30": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c76beb82-00ef-484b-9721-53d783564d85",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
