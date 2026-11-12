@@ -1,0 +1,23 @@
+src/modules/ElasticAudio/useCases/elasticAudio/detectTransientsForClip.ts
+  s_eec9d24f84ae15::t_7e3e1947168d41 13,22,33-34,49-56
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/detectTransientsForClip.spec.ts
+  s_eec9d24f84ae15::t_272a616949eaaf 212-224,241,245
+  s_eec9d24f84ae15::t_c7fa4bfffca8a7 225-240,242-244,246,265-267
+  s_eec9d24f84ae15::t_d5074611cec91f 25-52,190-211,247-264,268-301
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5ea8ed572b3c9018aa6623aed41873c112f5f2a8",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
