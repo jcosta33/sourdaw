@@ -62,7 +62,7 @@ const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const INSTALL_DRAIN_SECONDS = 15;
 // Every remaining root apt route must retain the signed-source filter.
 const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
-const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d';
+const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe';
 const BROWSER_RUNTIME_STEP = 'Verify preinstalled browser runtime';
 // The ALSA headers are one small apt install, but `apt-get update` is the slow
 // part on a slow mirror, so the single transaction carries the same 8 minute
@@ -1387,7 +1387,7 @@ function addonLoadingSpecs(directory: string): string[] {
 function assertNativeParityJob(candidate: UnknownRecord): void {
     const job = jobAt(candidate, NATIVE_PARITY_JOB);
     if (job.name !== NATIVE_PARITY_JOB_NAME || job['runs-on'] !== NATIVE_PARITY_RUNNER) {
-        throw new Error('native parity must run on the one platform the native crate compiles on');
+        throw new Error('native parity must retain its macOS runner');
     }
     if (job.needs !== 'decide' || job.if !== NATIVE_PARITY_CONDITION) {
         throw new Error('native parity must answer to both the Rust and the web scopes');
@@ -4477,6 +4477,11 @@ describe('health gates workflow contract', () => {
         expect(() => assertPnpmBeforeNodeOrder(reversedHeavySetup)).toThrow(
             `e2e must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
         );
+    });
+
+    it('limits the native parity job to two Vitest workers', () => {
+        const run = stepNamed(jobAt(validationWorkflow, NATIVE_PARITY_JOB), NATIVE_PARITY_RUN_STEP);
+        expect(recordAt(run, 'env').VITEST_MAX_WORKERS).toBe(2);
     });
 
     // Measured budget, not the 5 s default: discovering addon-loading specs

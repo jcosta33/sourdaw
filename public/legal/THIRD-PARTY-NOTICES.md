@@ -2,9 +2,9 @@
 
 ## Desktop runtime
 
-Desktop builds bundle [Electron 45.2.3](https://github.com/electron/electron/tree/d0a18d02058b21ff292e25d5f53f00bd120f2f61)
+Desktop builds bundle [Electron 45.3.1](https://github.com/electron/electron/tree/3025e0491e87674c112f7a7d2646292c0efa4599)
 under the MIT license. That release embeds
-[Chromium 156.0.8078.80](https://chromium.googlesource.com/chromium/src/+/fb096c0011f9d50f0a264a9376420cdea9c421e3)
+[Chromium 156.0.8078.96](https://chromium.googlesource.com/chromium/src/+/2ad9b7f5a86846e0b264090723a6a78964bb84c4)
 and [Node v24.22.2](https://github.com/nodejs/node/tree/f7f273a9bb6445f6f7fb6349105e7532972045fb).
 Its media runtime includes
 [FFmpeg](https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/9db86ce5b5b454dfc96c435f9f0723012980c37f)

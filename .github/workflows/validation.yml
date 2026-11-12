@@ -602,7 +602,7 @@ jobs:
     if: github.event.pull_request != null && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d
+      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
       options: --init --ipc=host
     defaults:
       run:
@@ -780,9 +780,9 @@ jobs:
     # release build turns every real-time allocation guard into a no-op that
     # passes while proving nothing.
     #
-    # `sourdaw-native` is excluded from the Linux Rust leg because its manifest
-    # unconditionally enables whisper-rs's `metal` feature. A macOS runner is
-    # the only place it compiles, and public repositories get those free.
+    # This leg checks the macOS native target, including whisper-rs's
+    # target-scoped `metal` feature. Windows has its own native leg below;
+    # the Linux Rust leg keeps its separate library-crate scope.
     if: (needs.decide.outputs.rust == 'true')
     runs-on: macos-latest
     timeout-minutes: 60
@@ -923,9 +923,9 @@ jobs:
     # proof for #3068, and it — like the two offline-render legs beside it —
     # loads the napi addon from `crates/sourdaw-native/sourdaw-native.node` and
     # skips observably when that artifact is absent. Nothing else here builds
-    # it, so without this job the proof runs on developer machines only. macOS
-    # is the one platform the crate compiles on, for the reason `native-macos`
-    # records above. A TypeScript producer can break parity exactly as a Rust
+    # it, so without this job the proof runs on developer machines only. This
+    # parity leg uses the macOS addon; native-windows separately checks its
+    # target. A TypeScript producer can break parity exactly as a Rust
     # consumer can, so this leg answers to both scopes rather than to `rust`.
     if: (needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')
     runs-on: macos-latest
@@ -995,10 +995,10 @@ jobs:
 
       # This leg exists to make the parity proof decide a merge, so it must
       # fail hard: a leg that cannot fail decides nothing.
-      # Three spec files, so a fourth worker would idle.
+      # Keep the parity leg within the repository two-worker policy.
       - name: Run the addon parity specs
         env:
-          VITEST_MAX_WORKERS: 3
+          VITEST_MAX_WORKERS: 2
         run: >-
           pnpm run test:run
           src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
