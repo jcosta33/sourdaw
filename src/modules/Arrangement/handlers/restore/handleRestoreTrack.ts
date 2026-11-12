@@ -54,14 +54,8 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
             return { status: 'conflict' };
         }
         const batchRestoreTrackIds = new Set(batchRestoreTracks.map((track) => track.trackId));
-        for (const patch of routingPatches) {
-            if (batchRestoreTrackIds.has(patch.trackId)) {
-                continue;
-            }
-            const current = state.tracks.find((track) => track.id === patch.trackId);
-            if (!current || !hasExpectedRoutingState(current, patch.expected)) {
-                return { status: 'conflict' };
-            }
+        if (!liveRoutingMatches(state.tracks, routingPatches, batchRestoreTrackIds)) {
+            return { status: 'conflict' };
         }
         const routingPatchById = new Map(routingPatches.map((patch) => [patch.trackId, patch]));
         const tracks = state.tracks.map((track) => {
@@ -249,6 +243,22 @@ function holdsOnlyOwnClips(track: Track): boolean {
     return [track.clips, ...track.alternatives.map((alternative) => alternative.clips)].every((clips) =>
         clips.every((clip) => clip.trackId === track.id)
     );
+}
+
+type RoutingPatch = RestoreTrackPayload['routingPatches'][number];
+
+function liveRoutingMatches(
+    tracks: readonly Track[],
+    routingPatches: readonly RoutingPatch[],
+    batchRestoreTrackIds: ReadonlySet<string>
+): boolean {
+    return routingPatches.every((patch) => {
+        if (batchRestoreTrackIds.has(patch.trackId)) {
+            return true;
+        }
+        const current = tracks.find((track) => track.id === patch.trackId);
+        return current !== undefined && hasExpectedRoutingState(current, patch.expected);
+    });
 }
 
 type RoutingState = {
