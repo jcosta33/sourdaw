@@ -1,0 +1,21 @@
+scripts/__tests__/stampLaneIdentity.spec.ts
+  s_811eda6b90ae34::t_783cecdd39fdec 156-171
+scripts/stampLaneIdentity.ts
+  s_811eda6b90ae34::t_6eafb5e582888d 14,46,51-52,70-72,117-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "929a69eb059a89f3eeb1a362cd00aef3f4ce9c71",
+  "prompts": {},
+  "sessions": {
+    "s_811eda6b90ae34": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_811eda6b90ae34",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
