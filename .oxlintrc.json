@@ -295,6 +295,11 @@
     },
     "overrides": [
         {
+            // ESLint loads this configuration from the module's default export.
+            "files": ["eslint.config.mjs"],
+            "rules": { "import/no-default-export": "off" }
+        },
+        {
             // Non-JSX files: the jsx-a11y-x recommended preset enforces these at
             // error on .ts files (the .tsx-only warn/off relaxations in
             // eslint.config.mjs never matched them).

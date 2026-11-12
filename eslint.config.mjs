@@ -35,7 +35,9 @@ import { sizeBaselineFiles } from './eslint.size-baseline.mjs';
  * @param {(node: any) => void} visit
  */
 function traverse(node, visit) {
-    if (!node || typeof node !== 'object') return;
+    if (!node || typeof node !== 'object') {
+        return;
+    }
     visit(node);
 
     for (const key of Object.keys(node)) {
@@ -69,7 +71,9 @@ function traverse(node, visit) {
  * @returns {boolean}
  */
 function isReactEffectCall(node) {
-    if (!node || node.type !== 'CallExpression') return false;
+    if (!node || node.type !== 'CallExpression') {
+        return false;
+    }
     return (
         (node.callee.type === 'Identifier' &&
             (node.callee.name === 'useEffect' || node.callee.name === 'useLayoutEffect')) ||
@@ -93,7 +97,9 @@ function isFunctionLike(node) {
  * @returns {boolean}
  */
 function isInjectCallExpression(node, injectBindings) {
-    if (node?.type !== 'CallExpression') return false;
+    if (node?.type !== 'CallExpression') {
+        return false;
+    }
 
     let callee = node.callee;
     while (callee?.type === 'CallExpression') {
@@ -118,9 +124,13 @@ function isFunctionValue(node, injectBindings) {
  */
 function getEffectBody(callNode) {
     const callback = callNode.arguments?.[0];
-    if (!isFunctionLike(callback)) return null;
+    if (!isFunctionLike(callback)) {
+        return null;
+    }
 
-    if (callback.body?.type === 'BlockStatement') return callback.body;
+    if (callback.body?.type === 'BlockStatement') {
+        return callback.body;
+    }
     return callback.body ?? null;
 }
 
@@ -129,10 +139,14 @@ function getEffectBody(callNode) {
  * @returns {boolean}
  */
 function isFetchLikeCall(node) {
-    if (!node || node.type !== 'CallExpression') return false;
+    if (!node || node.type !== 'CallExpression') {
+        return false;
+    }
 
     // fetch(...)
-    if (node.callee.type === 'Identifier' && node.callee.name === 'fetch') return true;
+    if (node.callee.type === 'Identifier' && node.callee.name === 'fetch') {
+        return true;
+    }
 
     // axios.get/post/request(...)
     if (
@@ -185,7 +199,9 @@ function isUseStateSetterCall(node) {
 function bodyContainsAsyncOrFetch(body) {
     let found = false;
     traverse(body, (node) => {
-        if (found) return;
+        if (found) {
+            return;
+        }
         if (node.type === 'AwaitExpression' || isFetchLikeCall(node)) {
             found = true;
         }
@@ -261,8 +277,12 @@ function normalizeFilePath(value) {
  * @returns {boolean}
  */
 function isInjectImportSource(filename, source) {
-    if (source === '#/infra/di/inject') return true;
-    if (!source.startsWith('.')) return false;
+    if (source === '#/infra/di/inject') {
+        return true;
+    }
+    if (!source.startsWith('.')) {
+        return false;
+    }
 
     const resolvedSource = normalizeFilePath(resolve(dirname(filename), source));
     return resolvedSource.endsWith('/src/infra/di/inject') || resolvedSource.endsWith('/src/infra/di/inject.ts');
@@ -276,8 +296,12 @@ function isInjectImportSource(filename, source) {
  */
 function collectInjectBindings(node, filename, injectBindings) {
     const value = node.source?.value;
-    if (typeof value !== 'string') return;
-    if (!isInjectImportSource(filename, value)) return;
+    if (typeof value !== 'string') {
+        return;
+    }
+    if (!isInjectImportSource(filename, value)) {
+        return;
+    }
 
     for (const specifier of node.specifiers ?? []) {
         if (
@@ -311,7 +335,9 @@ function resolveSourceExportFile(filename, source) {
         basePath = resolve(dirname(filename), source);
     } else if (source.startsWith('#/')) {
         const sourceRoot = getSourceRoot(filename);
-        if (!sourceRoot) return null;
+        if (!sourceRoot) {
+            return null;
+        }
 
         basePath = resolve(sourceRoot, source.slice(2));
     } else {
@@ -359,16 +385,24 @@ function collectExportedFunctionNamesFromProgram(program, filename, seenFiles) {
 
         if (statement.type === 'VariableDeclaration') {
             for (const declarator of statement.declarations ?? []) {
-                if (declarator.id?.type !== 'Identifier') continue;
-                if (!isFunctionValue(declarator.init, injectBindings)) continue;
+                if (declarator.id?.type !== 'Identifier') {
+                    continue;
+                }
+                if (!isFunctionValue(declarator.init, injectBindings)) {
+                    continue;
+                }
 
                 localFunctionValues.set(declarator.id.name, declarator.id);
             }
             continue;
         }
 
-        if (statement.type !== 'ExportNamedDeclaration') continue;
-        if (statement.exportKind === 'type') continue;
+        if (statement.type !== 'ExportNamedDeclaration') {
+            continue;
+        }
+        if (statement.exportKind === 'type') {
+            continue;
+        }
 
         if (statement.declaration?.type === 'FunctionDeclaration') {
             if (statement.declaration.id?.name) {
@@ -379,8 +413,12 @@ function collectExportedFunctionNamesFromProgram(program, filename, seenFiles) {
 
         if (statement.declaration?.type === 'VariableDeclaration') {
             for (const declarator of statement.declaration.declarations ?? []) {
-                if (declarator.id?.type !== 'Identifier') continue;
-                if (!isFunctionValue(declarator.init, injectBindings)) continue;
+                if (declarator.id?.type !== 'Identifier') {
+                    continue;
+                }
+                if (!isFunctionValue(declarator.init, injectBindings)) {
+                    continue;
+                }
 
                 exportedFunctionNames.add(declarator.id.name);
             }
@@ -389,13 +427,21 @@ function collectExportedFunctionNamesFromProgram(program, filename, seenFiles) {
 
         if (statement.source) {
             const value = statement.source.value;
-            if (typeof value !== 'string') continue;
+            if (typeof value !== 'string') {
+                continue;
+            }
 
             const sourceFunctionNames = getExportedFunctionNamesFromSource(filename, value, seenFiles);
             for (const specifier of statement.specifiers ?? []) {
-                if (specifier.exportKind === 'type') continue;
-                if (specifier.local?.type !== 'Identifier') continue;
-                if (!sourceFunctionNames.has(specifier.local.name)) continue;
+                if (specifier.exportKind === 'type') {
+                    continue;
+                }
+                if (specifier.local?.type !== 'Identifier') {
+                    continue;
+                }
+                if (!sourceFunctionNames.has(specifier.local.name)) {
+                    continue;
+                }
 
                 const exportedName = specifier.exported?.name ?? specifier.local.name;
                 exportedFunctionNames.add(exportedName);
@@ -404,9 +450,15 @@ function collectExportedFunctionNamesFromProgram(program, filename, seenFiles) {
         }
 
         for (const specifier of statement.specifiers ?? []) {
-            if (specifier.exportKind === 'type') continue;
-            if (specifier.local?.type !== 'Identifier') continue;
-            if (!localFunctionValues.has(specifier.local.name)) continue;
+            if (specifier.exportKind === 'type') {
+                continue;
+            }
+            if (specifier.local?.type !== 'Identifier') {
+                continue;
+            }
+            if (!localFunctionValues.has(specifier.local.name)) {
+                continue;
+            }
 
             const exportedName = specifier.exported?.name ?? specifier.local.name;
             exportedFunctionNames.add(exportedName);
@@ -414,11 +466,17 @@ function collectExportedFunctionNamesFromProgram(program, filename, seenFiles) {
     }
 
     for (const statement of program.body ?? []) {
-        if (statement.type !== 'ExportAllDeclaration') continue;
-        if (statement.exportKind === 'type') continue;
+        if (statement.type !== 'ExportAllDeclaration') {
+            continue;
+        }
+        if (statement.exportKind === 'type') {
+            continue;
+        }
 
         const value = statement.source?.value;
-        if (typeof value !== 'string') continue;
+        if (typeof value !== 'string') {
+            continue;
+        }
 
         const sourceFunctionNames = getExportedFunctionNamesFromSource(filename, value, seenFiles);
         for (const name of sourceFunctionNames) {
@@ -437,11 +495,17 @@ function collectExportedFunctionNamesFromProgram(program, filename, seenFiles) {
  */
 function getExportedFunctionNamesFromSource(filename, source, seenFiles) {
     const sourceFile = resolveSourceExportFile(filename, source);
-    if (!sourceFile) return new Set();
-    if (seenFiles.has(sourceFile)) return new Set();
+    if (!sourceFile) {
+        return new Set();
+    }
+    if (seenFiles.has(sourceFile)) {
+        return new Set();
+    }
 
     const cached = exportedFunctionNamesCache.get(sourceFile);
-    if (cached) return cached;
+    if (cached) {
+        return cached;
+    }
 
     seenFiles.add(sourceFile);
     try {
@@ -583,20 +647,38 @@ function isProductionModelFile(filename) {
  */
 function isApprovedReactImportFile(filename) {
     const sourceRelativePath = getSourceRelativePath(filename);
-    if (!sourceRelativePath) return false;
+    if (!sourceRelativePath) {
+        return false;
+    }
 
-    if (sourceRelativePath.startsWith('components/')) return true;
-    if (sourceRelativePath === 'app/App.tsx') return true;
-    if (sourceRelativePath === 'app/main.tsx') return true;
-    if (/^routes\/.+\.tsx?$/.test(sourceRelativePath)) return true;
-    if (/^modules\/.+\/presentations\/(?:views|components|hooks|helpers)\//.test(sourceRelativePath)) return true;
-    if (sourceRelativePath === 'infra/store/useStore.ts') return true;
-    if (sourceRelativePath === 'infra/store/useStoreSelector.ts') return true;
+    if (sourceRelativePath.startsWith('components/')) {
+        return true;
+    }
+    if (sourceRelativePath === 'app/App.tsx') {
+        return true;
+    }
+    if (sourceRelativePath === 'app/main.tsx') {
+        return true;
+    }
+    if (/^routes\/.+\.tsx?$/.test(sourceRelativePath)) {
+        return true;
+    }
+    if (/^modules\/.+\/presentations\/(?:views|components|hooks|helpers)\//.test(sourceRelativePath)) {
+        return true;
+    }
+    if (sourceRelativePath === 'infra/store/useStore.ts') {
+        return true;
+    }
+    if (sourceRelativePath === 'infra/store/useStoreSelector.ts') {
+        return true;
+    }
     // DialogService is an approved React UI subsystem (confirm / prompt / notify
     // views + hooks) relocated from Workspace's presentation layer into the
     // shared kernel at src/infra/dialogService (ADR 0011 W6.1). Same rationale as
     // the infra/store React-binding entries above.
-    if (/^infra\/dialogService\//.test(sourceRelativePath)) return true;
+    if (sourceRelativePath.startsWith('infra/dialogService/')) {
+        return true;
+    }
 
     return sourceRelativePath === 'utils/UI/useContextMenuDismiss.ts';
 }
@@ -619,11 +701,15 @@ const moduleSubgroupFolders = new Set(['Common', 'Supporting']);
  */
 function parseModulePath(modulePath) {
     const segments = modulePath.split('/').filter(Boolean);
-    if (segments.length === 0) return null;
+    if (segments.length === 0) {
+        return null;
+    }
 
     const [firstSegment, secondSegment] = segments;
     if (moduleSubgroupFolders.has(firstSegment)) {
-        if (!secondSegment) return null;
+        if (!secondSegment) {
+            return null;
+        }
 
         return {
             moduleName: `${firstSegment}/${secondSegment}`,
@@ -644,10 +730,14 @@ function parseModulePath(modulePath) {
 function getModuleLocation(filename) {
     const normalizedFilename = normalizeFilePath(filename);
     const match = /^(.*\/src\/modules\/)(.+)$/.exec(normalizedFilename);
-    if (!match) return null;
+    if (!match) {
+        return null;
+    }
 
     const modulePath = parseModulePath(match[2]);
-    if (!modulePath) return null;
+    if (!modulePath) {
+        return null;
+    }
 
     return { moduleName: modulePath.moduleName, moduleRoot: `${match[1]}${modulePath.moduleName}` };
 }
@@ -683,13 +773,17 @@ function isSameModuleRepositoryRelativePath(filename, moduleLocation, source) {
  */
 function isSameModuleRepositoryReexportPath(filename, source) {
     const moduleLocation = getModuleLocation(filename);
-    if (!moduleLocation) return false;
+    if (!moduleLocation) {
+        return false;
+    }
 
     if (source.startsWith('#/modules/')) {
         return isSameModuleRepositoryAliasPath(moduleLocation, source);
     }
 
-    if (!source.startsWith('.')) return false;
+    if (!source.startsWith('.')) {
+        return false;
+    }
     return isSameModuleRepositoryRelativePath(filename, moduleLocation, source);
 }
 
@@ -704,7 +798,9 @@ function getModuleImportLocation(filename, source) {
         return parseModulePath(aliasMatch[1]);
     }
 
-    if (!source.startsWith('.')) return null;
+    if (!source.startsWith('.')) {
+        return null;
+    }
 
     const resolvedSource = normalizeFilePath(resolve(dirname(filename), source));
     const sourceRoot = getSourceRoot(filename);
@@ -715,7 +811,9 @@ function getModuleImportLocation(filename, source) {
 
     const moduleMarker = '/src/modules/';
     const moduleMarkerIndex = resolvedSource.lastIndexOf(moduleMarker);
-    if (moduleMarkerIndex < 0) return null;
+    if (moduleMarkerIndex < 0) {
+        return null;
+    }
 
     return parseModulePath(resolvedSource.slice(moduleMarkerIndex + moduleMarker.length));
 }
@@ -785,12 +883,18 @@ function getSourceRelativePath(filename) {
  */
 function getNonModuleImporterFolder(filename) {
     const normalized = normalizeFilePath(filename);
-    if (!isProductionSourceFile(normalized)) return null;
+    if (!isProductionSourceFile(normalized)) {
+        return null;
+    }
 
     const sourceRelativePath = getSourceRelativePath(normalized);
     const sourceFolder = sourceRelativePath?.split('/')[0];
-    if (!sourceFolder) return null;
-    if (!nonModuleImporterFolders.has(sourceFolder)) return null;
+    if (!sourceFolder) {
+        return null;
+    }
+    if (!nonModuleImporterFolders.has(sourceFolder)) {
+        return null;
+    }
 
     return sourceFolder;
 }
@@ -835,8 +939,12 @@ function isUseCaseImportPath(importPath) {
  */
 function getModelLayerImportTarget(importPath) {
     const [firstSegment] = importPath.split('/').filter(Boolean);
-    if (firstSegment === 'useCases') return 'useCases';
-    if (firstSegment === 'stores') return 'stores';
+    if (firstSegment === 'useCases') {
+        return 'useCases';
+    }
+    if (firstSegment === 'stores') {
+        return 'stores';
+    }
 
     return null;
 }
@@ -848,7 +956,9 @@ function getModelLayerImportTarget(importPath) {
 function isStoresContractImportPath(importPath) {
     const segments = importPath.split('/').filter(Boolean);
     const [firstSegment, secondSegment] = segments;
-    if (firstSegment !== 'stores') return false;
+    if (firstSegment !== 'stores') {
+        return false;
+    }
 
     return segments.length === 1 || (segments.length === 2 && /^index(?:\.[cm]?tsx?)?$/.test(secondSegment));
 }
@@ -860,17 +970,23 @@ function isStoresContractImportPath(importPath) {
  */
 function getForeignStoresContractImportLocation(filename, source) {
     const importedModule = getModuleImportLocation(filename, source);
-    if (!importedModule) return null;
-    if (!isStoresContractImportPath(importedModule.importPath)) return null;
+    if (!importedModule) {
+        return null;
+    }
+    if (!isStoresContractImportPath(importedModule.importPath)) {
+        return null;
+    }
 
     const importerModule = getModuleLocation(filename);
-    if (importerModule?.moduleName === importedModule.moduleName) return null;
+    if (importerModule?.moduleName === importedModule.moduleName) {
+        return null;
+    }
 
     return importedModule;
 }
 
 /**
- * @param {any} specifier
+ * @param {import('@typescript-eslint/utils').TSESTree.ImportSpecifier} specifier
  * @returns {string | null}
  */
 function getImportSpecifierImportedName(specifier) {
@@ -886,7 +1002,7 @@ function getImportSpecifierImportedName(specifier) {
 }
 
 /**
- * @param {any} specifier
+ * @param {import('@typescript-eslint/utils').TSESTree.ExportSpecifier} specifier
  * @returns {string | null}
  */
 function getExportSpecifierLocalName(specifier) {
@@ -902,7 +1018,7 @@ function getExportSpecifierLocalName(specifier) {
 }
 
 /**
- * @param {any} specifier
+ * @param {import('@typescript-eslint/utils').TSESTree.ExportSpecifier} specifier
  * @returns {string | null}
  */
 function getExportSpecifierExportedName(specifier) {
@@ -923,8 +1039,12 @@ function getExportSpecifierExportedName(specifier) {
  * @returns {boolean}
  */
 function isCreateStoreImportSource(filename, source) {
-    if (source === '#/infra/store/createStore') return true;
-    if (!source.startsWith('.')) return false;
+    if (source === '#/infra/store/createStore') {
+        return true;
+    }
+    if (!source.startsWith('.')) {
+        return false;
+    }
 
     const resolvedSource = normalizeFilePath(resolve(dirname(filename), source));
     return (
@@ -939,8 +1059,12 @@ function isCreateStoreImportSource(filename, source) {
  * @returns {boolean}
  */
 function isStoreConstructorImportSource(filename, source) {
-    if (source === '#/helpers/Store/Store' || source === '#/infra/store/Store') return true;
-    if (!source.startsWith('.')) return false;
+    if (source === '#/helpers/Store/Store' || source === '#/infra/store/Store') {
+        return true;
+    }
+    if (!source.startsWith('.')) {
+        return false;
+    }
 
     const resolvedSource = normalizeFilePath(resolve(dirname(filename), source));
     return (
@@ -952,8 +1076,8 @@ function isStoreConstructorImportSource(filename, source) {
 }
 
 /**
- * @param {any} node
- * @returns {any}
+ * @param {import('@typescript-eslint/utils').TSESTree.Expression | null | undefined} node
+ * @returns {import('@typescript-eslint/utils').TSESTree.Expression | null | undefined}
  */
 function unwrapTypeScriptExpression(node) {
     let current = node;
@@ -990,10 +1114,14 @@ function collectExportedStoreInstanceNamesFromProgram(program, filename, seenFil
     const exportedStoreInstanceNames = new Set();
 
     for (const statement of program.body ?? []) {
-        if (statement.type !== 'ImportDeclaration') continue;
+        if (statement.type !== 'ImportDeclaration') {
+            continue;
+        }
 
         const value = statement.source?.value;
-        if (typeof value !== 'string') continue;
+        if (typeof value !== 'string') {
+            continue;
+        }
 
         for (const specifier of statement.specifiers ?? []) {
             if (specifier.type === 'ImportSpecifier' && isCreateStoreImportSource(filename, value)) {
@@ -1046,11 +1174,17 @@ function collectExportedStoreInstanceNamesFromProgram(program, filename, seenFil
      * @returns {void}
      */
     function collectLocalStoreInstanceNames(declaration) {
-        if (declaration?.type !== 'VariableDeclaration') return;
+        if (declaration?.type !== 'VariableDeclaration') {
+            return;
+        }
 
         for (const declarator of declaration.declarations ?? []) {
-            if (declarator.id?.type !== 'Identifier') continue;
-            if (!isStoreInstanceExpression(declarator.init)) continue;
+            if (declarator.id?.type !== 'Identifier') {
+                continue;
+            }
+            if (!isStoreInstanceExpression(declarator.init)) {
+                continue;
+            }
 
             localStoreInstanceNames.add(declarator.id.name);
         }
@@ -1069,7 +1203,9 @@ function collectExportedStoreInstanceNamesFromProgram(program, filename, seenFil
 
     for (const statement of program.body ?? []) {
         if (statement.type === 'ExportNamedDeclaration') {
-            if (statement.exportKind === 'type') continue;
+            if (statement.exportKind === 'type') {
+                continue;
+            }
 
             if (statement.declaration?.type === 'VariableDeclaration') {
                 for (const declarator of statement.declaration.declarations ?? []) {
@@ -1082,16 +1218,24 @@ function collectExportedStoreInstanceNamesFromProgram(program, filename, seenFil
 
             if (statement.source) {
                 const value = statement.source.value;
-                if (typeof value !== 'string') continue;
+                if (typeof value !== 'string') {
+                    continue;
+                }
 
                 const sourceStoreInstanceNames = getExportedStoreInstanceNamesFromSource(filename, value, seenFiles);
                 for (const specifier of statement.specifiers ?? []) {
-                    if (specifier.exportKind === 'type') continue;
+                    if (specifier.exportKind === 'type') {
+                        continue;
+                    }
 
                     const localName = getExportSpecifierLocalName(specifier);
                     const exportedName = getExportSpecifierExportedName(specifier);
-                    if (!localName || !exportedName) continue;
-                    if (!sourceStoreInstanceNames.has(localName)) continue;
+                    if (!localName || !exportedName) {
+                        continue;
+                    }
+                    if (!sourceStoreInstanceNames.has(localName)) {
+                        continue;
+                    }
 
                     exportedStoreInstanceNames.add(exportedName);
                 }
@@ -1099,23 +1243,35 @@ function collectExportedStoreInstanceNamesFromProgram(program, filename, seenFil
             }
 
             for (const specifier of statement.specifiers ?? []) {
-                if (specifier.exportKind === 'type') continue;
+                if (specifier.exportKind === 'type') {
+                    continue;
+                }
 
                 const localName = getExportSpecifierLocalName(specifier);
                 const exportedName = getExportSpecifierExportedName(specifier);
-                if (!localName || !exportedName) continue;
-                if (!localStoreInstanceNames.has(localName)) continue;
+                if (!localName || !exportedName) {
+                    continue;
+                }
+                if (!localStoreInstanceNames.has(localName)) {
+                    continue;
+                }
 
                 exportedStoreInstanceNames.add(exportedName);
             }
             continue;
         }
 
-        if (statement.type !== 'ExportAllDeclaration') continue;
-        if (statement.exportKind === 'type') continue;
+        if (statement.type !== 'ExportAllDeclaration') {
+            continue;
+        }
+        if (statement.exportKind === 'type') {
+            continue;
+        }
 
         const value = statement.source?.value;
-        if (typeof value !== 'string') continue;
+        if (typeof value !== 'string') {
+            continue;
+        }
 
         const sourceStoreInstanceNames = getExportedStoreInstanceNamesFromSource(filename, value, seenFiles);
         for (const name of sourceStoreInstanceNames) {
@@ -1134,11 +1290,17 @@ function collectExportedStoreInstanceNamesFromProgram(program, filename, seenFil
  */
 function getExportedStoreInstanceNamesFromSource(filename, source, seenFiles) {
     const sourceFile = resolveSourceExportFile(filename, source);
-    if (!sourceFile) return new Set();
-    if (seenFiles.has(sourceFile)) return new Set();
+    if (!sourceFile) {
+        return new Set();
+    }
+    if (seenFiles.has(sourceFile)) {
+        return new Set();
+    }
 
     const cached = exportedStoreInstanceNamesCache.get(sourceFile);
-    if (cached) return cached;
+    if (cached) {
+        return cached;
+    }
 
     seenFiles.add(sourceFile);
     try {
@@ -1163,7 +1325,7 @@ function getExportedStoreInstanceNamesFromSource(filename, source, seenFiles) {
 }
 
 /**
- * @param {any} node
+ * @param {import('@typescript-eslint/utils').TSESTree.MemberExpression} node
  * @returns {string | null}
  */
 function getStaticMemberPropertyName(node) {
@@ -1192,7 +1354,7 @@ function getNonModulePrivateImportTarget(importPath) {
 }
 
 /**
- * @param {any} node
+ * @param {import('@typescript-eslint/utils').TSESTree.Node | null | undefined} node
  * @returns {string | null}
  */
 function getLiteralStringValue(node) {
@@ -1217,7 +1379,7 @@ function getLiteralStringValue(node) {
 }
 
 /**
- * @param {any} node
+ * @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node
  * @returns {boolean}
  */
 function isTypeOnlyImportDeclaration(node) {
@@ -1233,7 +1395,7 @@ function isTypeOnlyImportDeclaration(node) {
 }
 
 /**
- * @param {any} node
+ * @param {import('@typescript-eslint/utils').TSESTree.TSImportType} node
  * @returns {string | null}
  */
 function getTypeQueryImportSource(node) {
@@ -1258,38 +1420,48 @@ function getTypeQueryImportSource(node) {
  */
 function createReactImportSourceVisitors(reportSource) {
     return {
-        /** @param {any} node */
+        /** @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node */
         ImportDeclaration(node) {
             const value = node.source.value;
-            if (typeof value !== 'string') return;
+            if (typeof value !== 'string') {
+                return;
+            }
 
             reportSource(node, value);
         },
-        /** @param {any} node */
+        /** @param {import('@typescript-eslint/utils').TSESTree.ExportAllDeclaration} node */
         ExportAllDeclaration(node) {
             const value = getLiteralStringValue(node.source);
-            if (!value) return;
+            if (!value) {
+                return;
+            }
 
             reportSource(node, value);
         },
-        /** @param {any} node */
+        /** @param {import('@typescript-eslint/utils').TSESTree.ExportNamedDeclaration} node */
         ExportNamedDeclaration(node) {
             const value = getLiteralStringValue(node.source);
-            if (!value) return;
+            if (!value) {
+                return;
+            }
 
             reportSource(node, value);
         },
-        /** @param {any} node */
+        /** @param {import('@typescript-eslint/utils').TSESTree.ImportExpression} node */
         ImportExpression(node) {
             const value = getLiteralStringValue(node.source);
-            if (!value) return;
+            if (!value) {
+                return;
+            }
 
             reportSource(node, value);
         },
-        /** @param {any} node */
+        /** @param {import('@typescript-eslint/utils').TSESTree.TSImportType} node */
         TSImportType(node) {
             const value = getTypeQueryImportSource(node);
-            if (!value) return;
+            if (!value) {
+                return;
+            }
 
             reportSource(node, value);
         },
@@ -1317,15 +1489,21 @@ const sourdawPlugin = {
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.CallExpression} node */
                     CallExpression(node) {
-                        if (!isReactEffectCall(node)) return;
+                        if (!isReactEffectCall(node)) {
+                            return;
+                        }
                         const body = getEffectBody(node);
-                        if (!body) return;
+                        if (!body) {
+                            return;
+                        }
 
                         let found = false;
                         traverse(body, (inner) => {
-                            if (found) return;
+                            if (found) {
+                                return;
+                            }
                             if (isFetchLikeCall(inner)) {
                                 found = true;
                                 context.report({
@@ -1354,13 +1532,21 @@ const sourdawPlugin = {
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.CallExpression} node */
                     CallExpression(node) {
-                        if (!isReactEffectCall(node)) return;
+                        if (!isReactEffectCall(node)) {
+                            return;
+                        }
                         const body = getEffectBody(node);
-                        if (!body || body.type !== 'BlockStatement') return;
-                        if (bodyContainsAsyncOrFetch(body)) return;
-                        if (!bodyLooksLikeDerivedStateEffect(body)) return;
+                        if (!body || body.type !== 'BlockStatement') {
+                            return;
+                        }
+                        if (bodyContainsAsyncOrFetch(body)) {
+                            return;
+                        }
+                        if (!bodyLooksLikeDerivedStateEffect(body)) {
+                            return;
+                        }
 
                         context.report({
                             node,
@@ -1394,9 +1580,11 @@ const sourdawPlugin = {
                 const reactMemoBindings = new Set();
 
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node */
                     ImportDeclaration(node) {
-                        if (node.source.value !== 'react') return;
+                        if (node.source.value !== 'react') {
+                            return;
+                        }
                         for (const spec of node.specifiers) {
                             if (
                                 spec.type === 'ImportSpecifier' &&
@@ -1407,7 +1595,7 @@ const sourdawPlugin = {
                             }
                         }
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.CallExpression} node */
                     CallExpression(node) {
                         if (
                             node.callee.type === 'Identifier' &&
@@ -1458,13 +1646,17 @@ const sourdawPlugin = {
             },
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
-                if (!isPresentationFile(context.filename)) return {};
+                if (!isPresentationFile(context.filename)) {
+                    return {};
+                }
 
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node */
                     ImportDeclaration(node) {
                         const value = node.source.value;
-                        if (typeof value !== 'string') return;
+                        if (typeof value !== 'string') {
+                            return;
+                        }
 
                         if (value.startsWith('@tauri-apps/api')) {
                             context.report({
@@ -1492,10 +1684,14 @@ const sourdawPlugin = {
             },
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
-                if (!isDomainLogicFile(context.filename)) return {};
+                if (!isDomainLogicFile(context.filename)) {
+                    return {};
+                }
 
                 return createReactImportSourceVisitors((node, source) => {
-                    if (!isReactImportSource(source)) return;
+                    if (!isReactImportSource(source)) {
+                        return;
+                    }
 
                     context.report({
                         node,
@@ -1520,9 +1716,15 @@ const sourdawPlugin = {
             },
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
-                if (!isProductionSourceFile(context.filename) || isFixtureFile(context.filename)) return {};
-                if (isDomainLogicFile(context.filename)) return {};
-                if (isApprovedReactImportFile(context.filename)) return {};
+                if (!isProductionSourceFile(context.filename) || isFixtureFile(context.filename)) {
+                    return {};
+                }
+                if (isDomainLogicFile(context.filename)) {
+                    return {};
+                }
+                if (isApprovedReactImportFile(context.filename)) {
+                    return {};
+                }
 
                 /**
                  * @param {any} node
@@ -1530,7 +1732,9 @@ const sourdawPlugin = {
                  * @returns {void}
                  */
                 function reportIfReactImport(node, source) {
-                    if (!isReactImportSource(source)) return;
+                    if (!isReactImportSource(source)) {
+                        return;
+                    }
 
                     context.report({
                         node,
@@ -1557,7 +1761,9 @@ const sourdawPlugin = {
             },
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
-                if (!isProductionSourceFile(context.filename)) return {};
+                if (!isProductionSourceFile(context.filename)) {
+                    return {};
+                }
 
                 /**
                  * @param {any} node
@@ -1566,13 +1772,19 @@ const sourdawPlugin = {
                  */
                 function reportIfPrivateTypeImport(node, source) {
                     const importedModule = getModuleImportLocation(context.filename, source);
-                    if (!importedModule) return;
+                    if (!importedModule) {
+                        return;
+                    }
 
                     const importerModule = getModuleLocation(context.filename);
-                    if (importerModule?.moduleName === importedModule.moduleName) return;
+                    if (importerModule?.moduleName === importedModule.moduleName) {
+                        return;
+                    }
 
                     const folder = getPrivateImportFolder(importedModule.importPath);
-                    if (!folder) return;
+                    if (!folder) {
+                        return;
+                    }
 
                     context.report({
                         node,
@@ -1582,19 +1794,25 @@ const sourdawPlugin = {
                 }
 
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node */
                     ImportDeclaration(node) {
-                        if (!isTypeOnlyImportDeclaration(node)) return;
+                        if (!isTypeOnlyImportDeclaration(node)) {
+                            return;
+                        }
 
                         const value = node.source.value;
-                        if (typeof value !== 'string') return;
+                        if (typeof value !== 'string') {
+                            return;
+                        }
 
                         reportIfPrivateTypeImport(node, value);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.TSImportType} node */
                     TSImportType(node) {
                         const value = getTypeQueryImportSource(node);
-                        if (!value) return;
+                        if (!value) {
+                            return;
+                        }
 
                         reportIfPrivateTypeImport(node, value);
                     },
@@ -1618,7 +1836,9 @@ const sourdawPlugin = {
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
                 const sourceFolder = getNonModuleImporterFolder(context.filename);
-                if (!sourceFolder) return {};
+                if (!sourceFolder) {
+                    return {};
+                }
 
                 /**
                  * @param {any} node
@@ -1628,15 +1848,21 @@ const sourdawPlugin = {
                  */
                 function reportIfPrivateModuleImport(node, source, includePrivateFolders) {
                     const importedModule = getModuleImportLocation(context.filename, source);
-                    if (!importedModule) return;
+                    if (!importedModule) {
+                        return;
+                    }
 
                     const importerModule = getModuleLocation(context.filename);
-                    if (importerModule?.moduleName === importedModule.moduleName) return;
+                    if (importerModule?.moduleName === importedModule.moduleName) {
+                        return;
+                    }
 
                     const target = includePrivateFolders
                         ? getNonModulePrivateImportTarget(importedModule.importPath)
                         : getDeepContractImportFolder(importedModule.importPath);
-                    if (!target) return;
+                    if (!target) {
+                        return;
+                    }
 
                     context.report({
                         node,
@@ -1646,38 +1872,48 @@ const sourdawPlugin = {
                 }
 
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node */
                     ImportDeclaration(node) {
                         const value = node.source.value;
-                        if (typeof value !== 'string') return;
+                        if (typeof value !== 'string') {
+                            return;
+                        }
 
                         reportIfPrivateModuleImport(node, value, !isTypeOnlyImportDeclaration(node));
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ExportAllDeclaration} node */
                     ExportAllDeclaration(node) {
                         const value = getLiteralStringValue(node.source);
-                        if (!value) return;
+                        if (!value) {
+                            return;
+                        }
 
                         reportIfPrivateModuleImport(node, value, true);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ExportNamedDeclaration} node */
                     ExportNamedDeclaration(node) {
                         const value = getLiteralStringValue(node.source);
-                        if (!value) return;
+                        if (!value) {
+                            return;
+                        }
 
                         reportIfPrivateModuleImport(node, value, true);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportExpression} node */
                     ImportExpression(node) {
                         const value = getLiteralStringValue(node.source);
-                        if (!value) return;
+                        if (!value) {
+                            return;
+                        }
 
                         reportIfPrivateModuleImport(node, value, true);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.TSImportType} node */
                     TSImportType(node) {
                         const value = getTypeQueryImportSource(node);
-                        if (!value) return;
+                        if (!value) {
+                            return;
+                        }
 
                         reportIfPrivateModuleImport(node, value, false);
                     },
@@ -1699,7 +1935,9 @@ const sourdawPlugin = {
             },
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
-                if (!isProductionRepositoryFile(context.filename)) return {};
+                if (!isProductionRepositoryFile(context.filename)) {
+                    return {};
+                }
 
                 /**
                  * @param {any} node
@@ -1708,8 +1946,12 @@ const sourdawPlugin = {
                  */
                 function reportIfUseCaseImport(node, source) {
                     const importedModule = getModuleImportLocation(context.filename, source);
-                    if (!importedModule) return;
-                    if (!isUseCaseImportPath(importedModule.importPath)) return;
+                    if (!importedModule) {
+                        return;
+                    }
+                    if (!isUseCaseImportPath(importedModule.importPath)) {
+                        return;
+                    }
 
                     context.report({
                         node,
@@ -1718,38 +1960,48 @@ const sourdawPlugin = {
                 }
 
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node */
                     ImportDeclaration(node) {
                         const value = node.source.value;
-                        if (typeof value !== 'string') return;
+                        if (typeof value !== 'string') {
+                            return;
+                        }
 
                         reportIfUseCaseImport(node, value);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ExportAllDeclaration} node */
                     ExportAllDeclaration(node) {
                         const value = getLiteralStringValue(node.source);
-                        if (!value) return;
+                        if (!value) {
+                            return;
+                        }
 
                         reportIfUseCaseImport(node, value);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ExportNamedDeclaration} node */
                     ExportNamedDeclaration(node) {
                         const value = getLiteralStringValue(node.source);
-                        if (!value) return;
+                        if (!value) {
+                            return;
+                        }
 
                         reportIfUseCaseImport(node, value);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportExpression} node */
                     ImportExpression(node) {
                         const value = getLiteralStringValue(node.source);
-                        if (!value) return;
+                        if (!value) {
+                            return;
+                        }
 
                         reportIfUseCaseImport(node, value);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.TSImportType} node */
                     TSImportType(node) {
                         const value = getTypeQueryImportSource(node);
-                        if (!value) return;
+                        if (!value) {
+                            return;
+                        }
 
                         reportIfUseCaseImport(node, value);
                     },
@@ -1771,7 +2023,9 @@ const sourdawPlugin = {
             },
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
-                if (!isProductionModelFile(context.filename)) return {};
+                if (!isProductionModelFile(context.filename)) {
+                    return {};
+                }
 
                 /**
                  * @param {any} node
@@ -1780,10 +2034,14 @@ const sourdawPlugin = {
                  */
                 function reportIfModelLayerImport(node, source) {
                     const importedModule = getModuleImportLocation(context.filename, source);
-                    if (!importedModule) return;
+                    if (!importedModule) {
+                        return;
+                    }
 
                     const target = getModelLayerImportTarget(importedModule.importPath);
-                    if (!target) return;
+                    if (!target) {
+                        return;
+                    }
 
                     context.report({
                         node,
@@ -1793,38 +2051,48 @@ const sourdawPlugin = {
                 }
 
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node */
                     ImportDeclaration(node) {
                         const value = node.source.value;
-                        if (typeof value !== 'string') return;
+                        if (typeof value !== 'string') {
+                            return;
+                        }
 
                         reportIfModelLayerImport(node, value);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ExportAllDeclaration} node */
                     ExportAllDeclaration(node) {
                         const value = getLiteralStringValue(node.source);
-                        if (!value) return;
+                        if (!value) {
+                            return;
+                        }
 
                         reportIfModelLayerImport(node, value);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ExportNamedDeclaration} node */
                     ExportNamedDeclaration(node) {
                         const value = getLiteralStringValue(node.source);
-                        if (!value) return;
+                        if (!value) {
+                            return;
+                        }
 
                         reportIfModelLayerImport(node, value);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportExpression} node */
                     ImportExpression(node) {
                         const value = getLiteralStringValue(node.source);
-                        if (!value) return;
+                        if (!value) {
+                            return;
+                        }
 
                         reportIfModelLayerImport(node, value);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.TSImportType} node */
                     TSImportType(node) {
                         const value = getTypeQueryImportSource(node);
-                        if (!value) return;
+                        if (!value) {
+                            return;
+                        }
 
                         reportIfModelLayerImport(node, value);
                     },
@@ -1847,7 +2115,9 @@ const sourdawPlugin = {
             },
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
-                if (!isProductionSourceFile(context.filename) || isFixtureFile(context.filename)) return {};
+                if (!isProductionSourceFile(context.filename) || isFixtureFile(context.filename)) {
+                    return {};
+                }
 
                 const sourceCode = context.sourceCode;
 
@@ -1882,15 +2152,21 @@ const sourdawPlugin = {
                 }
 
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node */
                     ImportDeclaration(node) {
-                        if (isTypeOnlyImportDeclaration(node)) return;
+                        if (isTypeOnlyImportDeclaration(node)) {
+                            return;
+                        }
 
                         const value = node.source.value;
-                        if (typeof value !== 'string') return;
+                        if (typeof value !== 'string') {
+                            return;
+                        }
 
                         const importedModule = getForeignStoresContractImportLocation(context.filename, value);
-                        if (!importedModule) return;
+                        if (!importedModule) {
+                            return;
+                        }
 
                         const storeExportNames = getExportedStoreInstanceNamesFromSource(
                             context.filename,
@@ -1899,16 +2175,28 @@ const sourdawPlugin = {
                         );
 
                         for (const specifier of node.specifiers ?? []) {
-                            if (specifier.type !== 'ImportSpecifier') continue;
-                            if (specifier.importKind === 'type') continue;
-                            if (specifier.local?.type !== 'Identifier') continue;
+                            if (specifier.type !== 'ImportSpecifier') {
+                                continue;
+                            }
+                            if (specifier.importKind === 'type') {
+                                continue;
+                            }
+                            if (specifier.local?.type !== 'Identifier') {
+                                continue;
+                            }
 
                             const storeName = getImportSpecifierImportedName(specifier);
-                            if (!storeName) continue;
-                            if (!storeExportNames.has(storeName)) continue;
+                            if (!storeName) {
+                                continue;
+                            }
+                            if (!storeExportNames.has(storeName)) {
+                                continue;
+                            }
 
                             const importedVariable = getImportVariable(specifier);
-                            if (!importedVariable) continue;
+                            if (!importedVariable) {
+                                continue;
+                            }
 
                             foreignStoreBindings.set(importedVariable, {
                                 storeName,
@@ -1916,38 +2204,60 @@ const sourdawPlugin = {
                             });
                         }
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.VariableDeclarator} node */
                     VariableDeclarator(node) {
-                        if (node.parent?.kind !== 'const') return;
-                        if (node.id?.type !== 'Identifier') return;
-                        if (node.init?.type !== 'Identifier') return;
+                        if (node.parent?.kind !== 'const') {
+                            return;
+                        }
+                        if (node.id?.type !== 'Identifier') {
+                            return;
+                        }
+                        if (node.init?.type !== 'Identifier') {
+                            return;
+                        }
 
                         const sourceVariable = getResolvedVariable(node.init);
-                        if (!sourceVariable) return;
+                        if (!sourceVariable) {
+                            return;
+                        }
 
                         const binding = foreignStoreBindings.get(sourceVariable);
-                        if (!binding) return;
+                        if (!binding) {
+                            return;
+                        }
 
                         const variables = sourceCode.getDeclaredVariables(node);
                         const aliasVariable = variables.find((variable) => variable.name === node.id.name);
-                        if (!aliasVariable) return;
+                        if (!aliasVariable) {
+                            return;
+                        }
 
                         foreignStoreBindings.set(aliasVariable, binding);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.CallExpression} node */
                     CallExpression(node) {
                         const callee = node.callee;
-                        if (callee?.type !== 'MemberExpression') return;
+                        if (callee?.type !== 'MemberExpression') {
+                            return;
+                        }
 
                         const method = getStaticMemberPropertyName(callee);
-                        if (method !== 'set' && method !== 'update') return;
-                        if (callee.object?.type !== 'Identifier') return;
+                        if (method !== 'set' && method !== 'update') {
+                            return;
+                        }
+                        if (callee.object?.type !== 'Identifier') {
+                            return;
+                        }
 
                         const resolvedVariable = getResolvedVariable(callee.object);
-                        if (!resolvedVariable) return;
+                        if (!resolvedVariable) {
+                            return;
+                        }
 
                         const binding = foreignStoreBindings.get(resolvedVariable);
-                        if (!binding) return;
+                        if (!binding) {
+                            return;
+                        }
 
                         context.report({
                             node,
@@ -1978,7 +2288,9 @@ const sourdawPlugin = {
             },
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
-                if (!isProductionUseCaseFile(context.filename)) return {};
+                if (!isProductionUseCaseFile(context.filename)) {
+                    return {};
+                }
 
                 /**
                  * @param {any} node
@@ -1986,8 +2298,12 @@ const sourdawPlugin = {
                  */
                 function reportIfRepositoryReexport(node) {
                     const value = node.source?.value;
-                    if (typeof value !== 'string') return;
-                    if (!isSameModuleRepositoryReexportPath(context.filename, value)) return;
+                    if (typeof value !== 'string') {
+                        return;
+                    }
+                    if (!isSameModuleRepositoryReexportPath(context.filename, value)) {
+                        return;
+                    }
 
                     context.report({
                         node,
@@ -1996,11 +2312,11 @@ const sourdawPlugin = {
                 }
 
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ExportAllDeclaration} node */
                     ExportAllDeclaration(node) {
                         reportIfRepositoryReexport(node);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ExportNamedDeclaration} node */
                     ExportNamedDeclaration(node) {
                         reportIfRepositoryReexport(node);
                     },
@@ -2023,7 +2339,9 @@ const sourdawPlugin = {
             },
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
-                if (!isProductionUseCaseOrRepositoryFile(context.filename)) return {};
+                if (!isProductionUseCaseOrRepositoryFile(context.filename)) {
+                    return {};
+                }
 
                 /** @type {Map<string, any>} */
                 const localFunctionValues = new Map();
@@ -2042,7 +2360,9 @@ const sourdawPlugin = {
                  * @returns {void}
                  */
                 function registerFunctionValue(node, name) {
-                    if (!name) return;
+                    if (!name) {
+                        return;
+                    }
                     localFunctionValues.set(name, node);
                 }
 
@@ -2053,7 +2373,9 @@ const sourdawPlugin = {
                  */
                 function registerDirectExport(node, name) {
                     registerFunctionValue(node, name);
-                    if (!name) return;
+                    if (!name) {
+                        return;
+                    }
                     directlyExportedNames.add(name);
                 }
 
@@ -2063,7 +2385,9 @@ const sourdawPlugin = {
                  * @returns {void}
                  */
                 function registerSourceExport(node, name) {
-                    if (!name) return;
+                    if (!name) {
+                        return;
+                    }
                     sourceExportedFunctionValues.set(name, node);
                 }
 
@@ -2072,8 +2396,12 @@ const sourdawPlugin = {
                  * @returns {void}
                  */
                 function registerVariableFunctionValue(declarator) {
-                    if (declarator.id?.type !== 'Identifier') return;
-                    if (!isFunctionValue(declarator.init, injectBindings)) return;
+                    if (declarator.id?.type !== 'Identifier') {
+                        return;
+                    }
+                    if (!isFunctionValue(declarator.init, injectBindings)) {
+                        return;
+                    }
 
                     registerFunctionValue(declarator.id, declarator.id.name);
                 }
@@ -2083,8 +2411,12 @@ const sourdawPlugin = {
                  * @returns {void}
                  */
                 function registerExportedVariableFunctionValue(declarator) {
-                    if (declarator.id?.type !== 'Identifier') return;
-                    if (!isFunctionValue(declarator.init, injectBindings)) return;
+                    if (declarator.id?.type !== 'Identifier') {
+                        return;
+                    }
+                    if (!isFunctionValue(declarator.init, injectBindings)) {
+                        return;
+                    }
 
                     registerDirectExport(declarator.id, declarator.id.name);
                 }
@@ -2099,7 +2431,9 @@ const sourdawPlugin = {
 
                     for (const name of directlyExportedNames) {
                         const node = localFunctionValues.get(name);
-                        if (!node || seenNames.has(name)) continue;
+                        if (!node || seenNames.has(name)) {
+                            continue;
+                        }
 
                         exportedFunctionValues.push({ name, node });
                         seenNames.add(name);
@@ -2107,14 +2441,18 @@ const sourdawPlugin = {
 
                     for (const name of explicitlyExportedNames) {
                         const node = localFunctionValues.get(name);
-                        if (!node || seenNames.has(name)) continue;
+                        if (!node || seenNames.has(name)) {
+                            continue;
+                        }
 
                         exportedFunctionValues.push({ name, node });
                         seenNames.add(name);
                     }
 
                     for (const [name, node] of sourceExportedFunctionValues) {
-                        if (!node || seenNames.has(name)) continue;
+                        if (!node || seenNames.has(name)) {
+                            continue;
+                        }
 
                         exportedFunctionValues.push({ name, node });
                         seenNames.add(name);
@@ -2124,18 +2462,20 @@ const sourdawPlugin = {
                 }
 
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node */
                     ImportDeclaration(node) {
                         collectInjectBindings(node, context.filename, injectBindings);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.FunctionDeclaration} node */
                     FunctionDeclaration(node) {
                         const parentType = node.parent?.type;
-                        if (parentType !== 'Program' && parentType !== 'ExportNamedDeclaration') return;
+                        if (parentType !== 'Program' && parentType !== 'ExportNamedDeclaration') {
+                            return;
+                        }
 
                         registerFunctionValue(node, node.id?.name);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.VariableDeclarator} node */
                     VariableDeclarator(node) {
                         const declaration = node.parent;
                         const parentType = declaration?.parent?.type;
@@ -2148,13 +2488,17 @@ const sourdawPlugin = {
 
                         registerVariableFunctionValue(node);
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ExportNamedDeclaration} node */
                     ExportNamedDeclaration(node) {
-                        if (node.exportKind === 'type') return;
+                        if (node.exportKind === 'type') {
+                            return;
+                        }
 
                         if (node.source) {
                             const value = node.source.value;
-                            if (typeof value !== 'string') return;
+                            if (typeof value !== 'string') {
+                                return;
+                            }
 
                             const sourceFunctionNames = getExportedFunctionNamesFromSource(
                                 context.filename,
@@ -2162,9 +2506,15 @@ const sourdawPlugin = {
                                 new Set()
                             );
                             for (const specifier of node.specifiers ?? []) {
-                                if (specifier.exportKind === 'type') continue;
-                                if (specifier.local?.type !== 'Identifier') continue;
-                                if (!sourceFunctionNames.has(specifier.local.name)) continue;
+                                if (specifier.exportKind === 'type') {
+                                    continue;
+                                }
+                                if (specifier.local?.type !== 'Identifier') {
+                                    continue;
+                                }
+                                if (!sourceFunctionNames.has(specifier.local.name)) {
+                                    continue;
+                                }
 
                                 const exportedName = specifier.exported?.name ?? specifier.local.name;
                                 registerSourceExport(specifier, exportedName);
@@ -2185,18 +2535,26 @@ const sourdawPlugin = {
                         }
 
                         for (const specifier of node.specifiers ?? []) {
-                            if (specifier.exportKind === 'type') continue;
-                            if (specifier.local?.type !== 'Identifier') continue;
+                            if (specifier.exportKind === 'type') {
+                                continue;
+                            }
+                            if (specifier.local?.type !== 'Identifier') {
+                                continue;
+                            }
 
                             explicitlyExportedNames.add(specifier.local.name);
                         }
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ExportAllDeclaration} node */
                     ExportAllDeclaration(node) {
-                        if (node.exportKind === 'type') return;
+                        if (node.exportKind === 'type') {
+                            return;
+                        }
 
                         const value = node.source?.value;
-                        if (typeof value !== 'string') return;
+                        if (typeof value !== 'string') {
+                            return;
+                        }
 
                         const sourceFunctionNames = getExportedFunctionNamesFromSource(
                             context.filename,
@@ -2208,9 +2566,11 @@ const sourdawPlugin = {
                         }
                     },
                     /** @param {any} node */
-                    'Program:exit'(node) {
+                    'Program:exit': function (node) {
                         const exportedFunctionValues = getExportedFunctionValues();
-                        if (exportedFunctionValues.length <= 1) return;
+                        if (exportedFunctionValues.length <= 1) {
+                            return;
+                        }
 
                         const reportTarget = exportedFunctionValues[1]?.node ?? node;
                         context.report({
@@ -2242,7 +2602,7 @@ const sourdawPlugin = {
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.TSEnumDeclaration} node */
                     TSEnumDeclaration(node) {
                         context.report({ node, messageId: 'noEnum' });
                     },
@@ -2268,10 +2628,12 @@ const sourdawPlugin = {
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node */
                     ImportDeclaration(node) {
                         const source = node.source.value;
-                        if (source === 'zod' || (typeof source === 'string' && source.startsWith('zod/'))) return;
+                        if (source === 'zod' || (typeof source === 'string' && source.startsWith('zod/'))) {
+                            return;
+                        }
 
                         for (const specifier of node.specifiers ?? []) {
                             if (specifier.type === 'ImportNamespaceSpecifier') {
@@ -2303,7 +2665,7 @@ const sourdawPlugin = {
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
                 return {
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.TSAsExpression} node */
                     TSAsExpression(node) {
                         // `x as any`
                         if (node.typeAnnotation?.type === 'TSAnyKeyword') {
@@ -2835,6 +3197,15 @@ export default defineConfig(
     },
 
     // ─── Root-level data config ──────────────────────────────────────────────
+    {
+        files: ['eslint.config.mjs'],
+        languageOptions: {
+            parserOptions: {
+                project: './tsconfig.eslint-config.json',
+            },
+        },
+    },
+
     // eslint.size-baseline.mjs and oxlint.craft-baseline.mjs sit at the repo
     // root, not under scripts/ (this config imports the former; the oxlintCraft
     // plugin imports the latter, and both ship in the release inventory);
