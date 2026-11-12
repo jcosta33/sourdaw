@@ -1,0 +1,24 @@
+scripts/__tests__/repairReviewFinding.spec.ts
+  s_0207af29e0b307::t_afe848ea021bdf 42
+  s_0207af29e0b307::t_5509046fe943aa 405,729-741,752
+scripts/repairReviewFinding.ts
+  s_0207af29e0b307::t_86586852582eb8 46
+scripts/reviewRepair.ts
+  s_0207af29e0b307::t_86586852582eb8 718-762
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0b7691f3dcb520bf3ba0742ed9e8faf1b780c038",
+  "prompts": {},
+  "sessions": {
+    "s_0207af29e0b307": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f246cd62-2d2d-4584-ad3e-050fad80f22b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
