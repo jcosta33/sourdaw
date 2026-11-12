@@ -386,7 +386,9 @@ author App's git commit identity (stamped at `lane:open`, restamped by `pnpm lan
 For owned staging and checkpoint commits, run `node scripts/gitCheckpoint.ts add -- <paths>` or
 `node scripts/gitCheckpoint.ts commit <git arguments>` from the lane. The command runs Git once
 with its ordinary environment and hooks, streams stderr, and prints a private receipt location and
-writer PID. Receipts contain selected source and index hashes, Git metadata, bounded stderr and a
+writer PID. The initial private receipt must be created before Git starts; failure to create it
+refuses the checkpoint. Once Git starts, a diagnostic storage failure does not change its result.
+Receipts contain selected source and index hashes, Git metadata, bounded stderr and a
 stall observation; retain them when a checkpoint fails. They may contain private paths and Git
 output. Set `SOURDAW_CHECKPOINT_DIR` to a private directory outside the worktree to choose their
 location. The watchdog does not stop a stalled writer or prevent Trace2 backpressure. Writer sampling uses a

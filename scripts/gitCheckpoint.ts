@@ -3,6 +3,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
     appendFileSync,
+    constants as fsConstants,
     chmodSync,
     closeSync,
     fstatSync,
@@ -11,6 +12,7 @@ import {
     mkdtempSync,
     openSync,
     readFileSync,
+    readlinkSync,
     readdirSync,
     readSync,
     writeFileSync,
@@ -30,6 +32,17 @@ function parseRecord(text: string): Record<string, unknown> | null {
     try {
         const value: unknown = JSON.parse(text);
         return isRecord(value) ? value : null;
+    } catch {
+        return null;
+    }
+}
+function parseJsonString(text: string | undefined): string | null {
+    if (text === undefined) {
+        return null;
+    }
+    try {
+        const value: unknown = JSON.parse(text);
+        return typeof value === 'string' ? value : null;
     } catch {
         return null;
     }
@@ -71,10 +84,11 @@ function command(executable: string, args: string[], env = diagnosticEnv, timeou
     return result.status === 0 ? result.stdout.trim() : null;
 }
 let hashBudget = 32 * 1024 * 1024;
-function hash(path: string): { sha256: string } | { error: string } {
+function hash(path: string, noFollow = false): { sha256: string } | { error: string } {
     let fd: number | undefined;
     try {
-        fd = openSync(path, 'r');
+        const flags = noFollow ? fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW : fsConstants.O_RDONLY;
+        fd = openSync(path, flags);
         const before = fstatSync(fd);
         if (!before.isFile() || before.size > hashBudget) {
             return { error: 'not a regular file or aggregate hash budget exceeded' };
@@ -100,6 +114,36 @@ function hash(path: string): { sha256: string } | { error: string } {
         if (fd !== undefined) {
             closeSync(fd);
         }
+    }
+}
+function hashSource(path: string): { sha256: string; kind?: 'symlink' } | { error: string } {
+    try {
+        const before = lstatSync(path);
+        if (!before.isSymbolicLink()) {
+            return hash(path, true);
+        }
+        if (before.size > hashBudget) {
+            return { error: 'aggregate hash budget exceeded' };
+        }
+        const link = readlinkSync(path, { encoding: 'buffer' });
+        const after = lstatSync(path);
+        if (
+            !after.isSymbolicLink() ||
+            before.dev !== after.dev ||
+            before.ino !== after.ino ||
+            before.size !== after.size ||
+            before.mtimeMs !== after.mtimeMs ||
+            link.length !== before.size
+        ) {
+            return { error: 'file changed while hashing' };
+        }
+        if (link.length > hashBudget) {
+            return { error: 'aggregate hash budget exceeded' };
+        }
+        hashBudget -= link.length;
+        return { kind: 'symlink', sha256: createHash('sha256').update(link).digest('hex') };
+    } catch (error) {
+        return { error: errorCode(error) };
     }
 }
 function info(path: string): object {
@@ -142,7 +186,7 @@ function observe(paths: string[], partialPath: string) {
     });
     const sources = new Map<string, object>();
     for (const path of selected) {
-        sources.set(path, hash(path));
+        sources.set(path, hashSource(path));
         checkpoint('sources', Object.fromEntries(sources));
     }
     let fanouts: object = { error: unavailable };
@@ -419,50 +463,56 @@ async function main(args: string[]) {
 if (process.argv[2] === '--sample') {
     const pid = Number(process.argv[3]);
     const initial = process.argv[4] || null;
-    const current = processIdentity(pid);
-    const rawTrace: unknown = JSON.parse(process.argv[5]);
-    const trace = typeof rawTrace === 'string' ? rawTrace : '';
-    const socket = trace.match(/af_unix:(?:stream:|dgram:)?(\/[^\s]+)/)?.[1];
-    const capturedAtNs = process.hrtime.bigint().toString();
-    let holders: string | null = null;
-    if (socket) {
-        holders = command('/usr/sbin/lsof', ['-t', '-n', '-a', '-U', socket], diagnosticEnv, 1000);
+    const trace = parseJsonString(process.argv[5]);
+    if (!Number.isSafeInteger(pid) || pid <= 0 || trace === null || process.argv[4] === undefined) {
+        console.error('invalid sample arguments');
+        process.exitCode = 2;
+    } else {
+        const current = processIdentity(pid);
+        const socket = trace.match(/af_unix:(?:stream:|dgram:)?(\/[^\s]+)/)?.[1];
+        const capturedAtNs = process.hrtime.bigint().toString();
+        let holders: string | null = null;
+        if (socket) {
+            holders = command('/usr/sbin/lsof', ['-t', '-n', '-a', '-U', socket], diagnosticEnv, 1000);
+        }
+        const holderPids =
+            holders
+                ?.split(/\s+/)
+                .filter((value) => /^\d+$/.test(value))
+                .slice(0, 32) ?? [];
+        const holderIdentities = holderPids.map((value) =>
+            command('ps', ['-p', value, '-o', 'pid=,ppid=,pgid=,state=,lstart='])
+        );
+        let netstat: ReturnType<typeof spawnSync> | null = null;
+        if (socket && process.platform === 'darwin') {
+            netstat = spawnSync('/usr/sbin/netstat', ['-anv', '-f', 'unix'], {
+                encoding: 'utf8',
+                timeout: 1000,
+                maxBuffer: 8 * 1024 * 1024,
+            });
+        }
+        let queue: string[] | null = null;
+        if (socket && netstat?.status === 0 && typeof netstat.stdout === 'string') {
+            queue = checkpointSocketRows(netstat.stdout, socket, pid);
+        }
+        console.log(
+            JSON.stringify({
+                capturedAtNs,
+                identity: current,
+                identityMatches: sameProcess(initial, current),
+                sample: sample(pid, initial),
+                socket,
+                socketHolderIdentities: holderIdentities,
+                queue: queue ?? unavailable,
+            })
+        );
     }
-    const holderPids =
-        holders
-            ?.split(/\s+/)
-            .filter((value) => /^\d+$/.test(value))
-            .slice(0, 32) ?? [];
-    const holderIdentities = holderPids.map((value) =>
-        command('ps', ['-p', value, '-o', 'pid=,ppid=,pgid=,state=,lstart='])
-    );
-    let netstat: ReturnType<typeof spawnSync> | null = null;
-    if (socket && process.platform === 'darwin') {
-        netstat = spawnSync('/usr/sbin/netstat', ['-anv', '-f', 'unix'], {
-            encoding: 'utf8',
-            timeout: 1000,
-            maxBuffer: 8 * 1024 * 1024,
-        });
-    }
-    const queue =
-        socket && netstat?.status === 0 && typeof netstat.stdout === 'string'
-            ? checkpointSocketRows(netstat.stdout, socket, pid)
-            : null;
-    console.log(
-        JSON.stringify({
-            capturedAtNs,
-            identity: current,
-            identityMatches: sameProcess(initial, current),
-            sample: sample(pid, initial),
-            socket,
-            socketHolderIdentities: holderIdentities,
-            queue: queue ?? unavailable,
-        })
-    );
 } else if (process.argv[2] === '--observe') {
-    const paths = parseStrings(process.argv[3]);
-    if (paths) {
-        console.log(JSON.stringify(observe(paths, process.argv[4])));
+    const rawPaths = process.argv[3];
+    const partialPath = process.argv[4];
+    const paths = rawPaths === undefined ? null : parseStrings(rawPaths);
+    if (paths && partialPath) {
+        console.log(JSON.stringify(observe(paths, partialPath)));
     } else {
         console.error('invalid observer paths');
         process.exitCode = 2;

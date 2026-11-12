@@ -24,7 +24,7 @@ function fixture() {
     roots.push(root);
     const receiptRoot = mkdtempSync(join(tmpdir(), 'checkpoint-receipts-'));
     roots.push(receiptRoot);
-    const env = {
+    const env: NodeJS.ProcessEnv = {
         ...process.env,
         SOURDAW_CHECKPOINT_DIR: receiptRoot,
         GIT_CONFIG_GLOBAL: '/dev/null',
@@ -110,6 +110,32 @@ describe('Git checkpoint diagnostic', () => {
                 .digest('hex')
         );
     });
+    it('records dangling symlink text without opening its missing target', async () => {
+        const { root, env } = fixture();
+        symlinkSync('missing-target', join(root, 'dangling'));
+        const result = await run(root, env, 'add', '--', 'dangling');
+        expect(result.code).toBe(0);
+        const source = receipt(result.stderr).value.before.sources.dangling;
+        expect(source.kind).toBe('symlink');
+        expect(source.sha256).toBe(createHash('sha256').update('missing-target').digest('hex'));
+    });
+    it('rejects malformed observer arguments without an internal stack', () => {
+        for (const args of [
+            ['--observe'],
+            ['--observe', '{', '/tmp/unwritten'],
+            ['--observe', '[1]', '/tmp/unwritten'],
+            ['--observe', '[]'],
+            ['--sample'],
+            ['--sample', '0', '', JSON.stringify('')],
+            ['--sample', '1', '', '{'],
+            ['--sample', '1', '', '42'],
+        ]) {
+            const result = spawnSync(process.execPath, [runner, ...args], { encoding: 'utf8' });
+            expect(result.status).toBe(2);
+            expect(result.stderr).toContain('invalid');
+            expect(result.stderr).not.toContain('node:internal');
+        }
+    });
     it('records source filenames that are object prototype keys', async () => {
         const { root, env } = fixture();
         writeFileSync(join(root, '__proto__'), 'source');
@@ -117,7 +143,7 @@ describe('Git checkpoint diagnostic', () => {
         expect(result.code).toBe(0);
         const observed = receipt(result.stderr).value;
         expect(Object.hasOwn(observed.before.sources, '__proto__')).toBe(true);
-        expect(observed.before.sources['__proto__'].sha256).toMatch(/^[a-f0-9]{64}$/);
+        expect(observed.before.sources.__proto__.sha256).toMatch(/^[a-f0-9]{64}$/);
     });
     it('retains the first failed command stderr and status without retrying', async () => {
         const { root, env, git } = fixture();
@@ -234,9 +260,9 @@ exit 23
             connections.push(connection);
             connection.pause();
         });
-        await new Promise<void>((resolveListen, reject) => {
+        await new Promise<void>((resolve, reject) => {
             server.on('error', reject);
-            server.listen(socket, resolveListen);
+            server.listen(socket, resolve);
         });
         const name = 's'.repeat(100);
         writeFileSync(join(root, name), 'content');
@@ -255,7 +281,11 @@ exit 23
                 () => {
                     const dirs = readdirSync(receiptRoot);
                     expect(dirs).toHaveLength(1);
-                    const data = JSON.parse(readFileSync(join(receiptRoot, dirs[0], 'receipt.json'), 'utf8'));
+                    const directory = dirs[0];
+                    if (directory === undefined) {
+                        throw new Error('missing checkpoint receipt directory');
+                    }
+                    const data = JSON.parse(readFileSync(join(receiptRoot, directory, 'receipt.json'), 'utf8'));
                     expect(data.pid).toBeGreaterThan(0);
                     expect(connections.length, gitStderr).toBeGreaterThan(0);
                     expect(child.exitCode, gitStderr).toBeNull();
@@ -266,11 +296,15 @@ exit 23
             );
             server.close();
             // Drain the exact connection only after observing the blocked writer.
-            for (const connection of connections) connection.resume();
-            const code = await new Promise<number | null>((resolveClose) => child.on('close', resolveClose));
+            for (const connection of connections) {
+                connection.resume();
+            }
+            const code = await new Promise<number | null>((resolve) => child.on('close', resolve));
             expect(code).toBe(0);
         } finally {
-            for (const connection of connections) connection.destroy();
+            for (const connection of connections) {
+                connection.destroy();
+            }
             server.close();
             if (child.exitCode === null) {
                 child.kill();
