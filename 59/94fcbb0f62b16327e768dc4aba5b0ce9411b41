@@ -1,0 +1,188 @@
+.agents/skills/review-stances/README.md
+  h_beb54bf43b47b7 33-36,50-95,120-122,167-169
+.agents/skills/review-stances/ai-request-authority.md
+  h_beb54bf43b47b7 64-69,76-93
+.agents/skills/review-stances/asset-cache-publication.md
+  h_beb54bf43b47b7 4-8,12-18,43-81
+.agents/skills/review-stances/async-file-imports.md
+  h_beb54bf43b47b7 12-26,31-45,48-53
+.agents/skills/review-stances/audio-source-time.md
+  h_beb54bf43b47b7 6-9,13-14,16-73,75-88,90-136,138-141
+.agents/skills/review-stances/audio-timing-format-laws.md
+  h_beb54bf43b47b7 5-7,11-149
+.agents/skills/review-stances/bundled-model-assets.md
+  h_beb54bf43b47b7 9-16,18-23,28-35,38-44
+.agents/skills/review-stances/closure-authority-proof.md
+  h_beb54bf43b47b7 14,22,28-33,40-44,49-52,58,60-61,68-70,94-97,100-108,117-118,126-128,134-135
+.agents/skills/review-stances/code-craft.md
+  h_beb54bf43b47b7 3-8,12-52
+.agents/skills/review-stances/collaboration-teardown.md
+  h_beb54bf43b47b7 5,48-52
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  h_beb54bf43b47b7 4-5,40-48,60,69,75,81-103,105-130,132-133
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 37,44-46,49-51,142-146,162,164,178-185
+.agents/skills/review-stances/guard-reclamation-proof.md
+  h_beb54bf43b47b7 7-9,13-19,26-37,45-117,119-120
+.agents/skills/review-stances/input-monitoring-ownership.md
+  h_beb54bf43b47b7 25-26,59-60,71-74,82-83,88-89,104,108,114,157,165,167-172
+.agents/skills/review-stances/keyboard-action-accessibility.md
+  h_beb54bf43b47b7 3-7,11-42
+.agents/skills/review-stances/maintained-e2e-specs.md
+  h_beb54bf43b47b7 5,14-18,26-27,31,35-38,42-43,47-48,50-55,58-62,66-72,76-86,90-97,101-106
+.agents/skills/review-stances/meter-reading-ownership.md
+  h_beb54bf43b47b7 1,3-7,17,21-22,24-33
+.agents/skills/review-stances/moving-coordinate-inverses.md
+  h_beb54bf43b47b7 1,13-53,55,68-88
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 6-12,15-16,117-124,126-136,145-166,173-182
+.agents/skills/review-stances/provider-egress.md
+  h_beb54bf43b47b7 3-9,13-63
+.agents/skills/review-stances/public-repair-records.md
+  h_beb54bf43b47b7 4-5,14,20-23,28,58-60,66-68,71,78-80,86-97
+.agents/skills/review-stances/release-provenance-drift.md
+  h_beb54bf43b47b7 3-9,13-38
+.agents/skills/review-stances/rendered-ui-layout.md
+  h_beb54bf43b47b7 1,3-9,13-23,25-67,69-83
+.agents/skills/review-stances/replay-authority.md
+  h_beb54bf43b47b7 72,79,106-108,125-128,141-143,150,159-162
+.agents/skills/review-stances/review-authorization.md
+  h_beb54bf43b47b7 11,19,21-22,41-46,68-72,75-82
+.agents/skills/review-stances/runtime-instance-lifetimes.md
+  h_beb54bf43b47b7 6-8,13-15,17-35,49-51,54-126
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 5-6,10-21,23-48,50-81,83-147,155,169,174
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 3-7,9-12,16-38,40-59,61-127,129-134,136-151,157-159,167,169
+.agents/skills/review-stances/startup-entry-availability.md
+  h_beb54bf43b47b7 10-12,16-68,70,72-81,84-91,93-99,103-107
+.agents/skills/review-stances/test-observation-scope.md
+  h_beb54bf43b47b7 4,36,89-90,103-104,114-117
+.agents/skills/review-stances/test-timing-and-isolation.md
+  h_beb54bf43b47b7 22-26,29-30,38-40,45-46,53-54,68-69,97-114
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 23-25,52-54,84-96,147-150,185-196
+.agents/skills/review-stances/trusted-script-delivery.md
+  h_beb54bf43b47b7 22-28,31,35,52-56,61-63,65-67,70
+.agents/skills/review-stances/validation-scope-selection.md
+  h_beb54bf43b47b7 5-9,13-22,26-36,38-71
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 10
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 87,258-286,290-291,953,966,3937,3946,4004,4013,4541,4552
+scripts/__tests__/codeqlNightlyEvidence.spec.ts
+  h_beb54bf43b47b7 16
+scripts/__tests__/deliverPullRequest.spec.ts
+  h_beb54bf43b47b7 29,46,319-324,575-578,647-653,657,708-835,1035-1037,1154,1266-1273,1318-1326,1330,1875-1880,1883,1914-1920,1924,2050-2060,6894-6955,7793,7804-7821,8662-8756,8767,8773,8777,8831,8837,8843,8867-9066,10145-10150,11980-11983,12928,12949-12950,12959-13069
+scripts/__tests__/reconcileTrackerIssue.spec.ts
+  h_beb54bf43b47b7 1,3,7,14-16,326-553
+scripts/deliverPullRequest.ts
+  h_beb54bf43b47b7 70-71,104-105,113-141,149-162,199-206,288,468-575,783-785,789,1570-1575,1578,1600-1621,2985-3022,3092-3094,3122,3197,3235-3241,3828-3979,3998,4102,4156-4169,4186
+scripts/reconcileTrackerIssue.ts
+  h_beb54bf43b47b7 28,36-45,54-56,132-241,248-254,260,485-493,499-506,512
+src/components/daw/RotaryKnob.tsx
+  h_beb54bf43b47b7 213
+src/components/ui/slider-gesture.ts
+  h_beb54bf43b47b7 170-171
+src/modules/Arrangement/models/PluginDescriptors/CrustDescriptor.ts
+  h_beb54bf43b47b7 72-73
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  h_beb54bf43b47b7 38-39
+src/modules/Automation/useCases/automationRecording/__tests__/flushPendingPoints.spec.ts
+  h_beb54bf43b47b7 6,19
+src/modules/Automation/useCases/automationRecording/__tests__/flushPendingPointsThinning.spec.ts
+  h_beb54bf43b47b7 6,45
+src/modules/Automation/useCases/automationRecording/__tests__/heldBoundaryCommit.spec.ts
+  h_beb54bf43b47b7 12,130
+src/modules/Automation/useCases/automationRecording/__tests__/loopPassBoundary.spec.ts
+  h_beb54bf43b47b7 10,98
+src/modules/Automation/useCases/automationRecording/__tests__/recordAutomationValue.spec.ts
+  h_beb54bf43b47b7 12-29,63,76,149
+src/modules/Automation/useCases/automationRecording/__tests__/releaseTouchAutomation.spec.ts
+  h_beb54bf43b47b7 3,5,8-24,36-37,49-50,52,125-312
+src/modules/Automation/useCases/automationRecording/__tests__/startAutomationRecording.spec.ts
+  h_beb54bf43b47b7 14,23,34,71,98
+src/modules/Automation/useCases/automationRecording/__tests__/stopAutomationRecording.spec.ts
+  h_beb54bf43b47b7 25,37,46,96,129
+src/modules/Automation/useCases/automationRecording/captureAutomationRecordingRollback.ts
+  h_beb54bf43b47b7 6,20-23,34,41
+src/modules/Automation/useCases/automationRecording/captureTouchAutomationRecordingAuthority.ts
+  h_beb54bf43b47b7 3,18-20
+src/modules/Automation/useCases/automationRecording/commitRecordedPass.ts
+  h_beb54bf43b47b7 1-2,8,15-30,79,108
+src/modules/Automation/useCases/automationRecording/discardTouchAutomation.ts
+  h_beb54bf43b47b7 1-66
+src/modules/Automation/useCases/automationRecording/flushPendingPoints.ts
+  h_beb54bf43b47b7 6,32
+src/modules/Automation/useCases/automationRecording/recordAutomationValue.ts
+  h_beb54bf43b47b7 10,48,107-110
+src/modules/Automation/useCases/automationRecording/recordingSessionState.ts
+  h_beb54bf43b47b7 60-68,85,100
+src/modules/Automation/useCases/automationRecording/startAutomationRecording.ts
+  h_beb54bf43b47b7 7-14,19,56
+src/modules/Automation/useCases/automationRecording/stopAutomationRecording.ts
+  h_beb54bf43b47b7 9,121
+src/modules/Crust/presentations/components/CrustControlZone.tsx
+  h_beb54bf43b47b7 17,29-39,41,84,87-88,105-106,136,141-142,155-156,185-186,190-192,203-219,223,312,339-340,352-353,365-366,381-385,390-394,400,447-448,463-464,505,560-561,665-666,683-685,689,694-696
+src/modules/Crust/presentations/components/CrustGainStrip.tsx
+  h_beb54bf43b47b7 6,8,13-15,28,30-92,95-112,116-120,124-127,129-135,138-141,145-152,154-157,204-206
+src/modules/Crust/presentations/components/__tests__/CrustGainStripBranches.spec.tsx
+  h_beb54bf43b47b7 72,79,86,93,100,107
+src/modules/Crust/presentations/components/__tests__/CrustGainStripInteraction.spec.tsx
+  h_beb54bf43b47b7 62,73,82,91,127,140,152
+src/modules/Crust/presentations/hooks/useCrustParameterGesture.ts
+  h_beb54bf43b47b7 1-29
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  h_beb54bf43b47b7 1,37,135,141-155,159-167,300-305,374-375,414-439
+src/modules/Crust/presentations/views/__tests__/CrustControls.integration.spec.tsx
+  h_beb54bf43b47b7 4,11,13,15,17-19,24-31,89-94,100-111,119-126,145-149,318-324,343-349,358-359,372-375,377,379-385,409-415,425-431,450-456,481-487,601-607,728-734,752-758,819-825,851-857
+src/modules/Crust/presentations/views/__tests__/CrustPanel.spec.tsx
+  h_beb54bf43b47b7 2,13,89,251,253-262,267-270
+src/modules/Crust/presentations/views/__tests__/crustParameterUndo.integration.spec.tsx
+  h_beb54bf43b47b7 1-481
+src/modules/Crust/useCases/__tests__/createCrustParameterGesture.spec.ts
+  h_beb54bf43b47b7 1-1061
+src/modules/Crust/useCases/createCrustParameterGesture.ts
+  h_beb54bf43b47b7 1-452
+src/modules/Crust/useCases/crustParamBridge/__tests__/hydrateCrustPatchFromProject.spec.ts
+  h_beb54bf43b47b7 5-6,50-97
+src/modules/Crust/useCases/crustParamBridge/hydrateCrustPatchFromProject.ts
+  h_beb54bf43b47b7 4-9,81,153-156,171-187
+src/modules/Transport/models/LoopAudioScheduleState.ts
+  h_beb54bf43b47b7 44-47,53
+src/modules/Transport/models/SourceWithFade.ts
+  h_beb54bf43b47b7 26
+src/modules/Transport/useCases/playheadScheduler/__tests__/createLoopAudioSchedule.spec.ts
+  h_beb54bf43b47b7 13,22,38-44,121,136-157,278-313
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopAudioStall.spec.ts
+  h_beb54bf43b47b7 5,12,19,50-78,84-114,116,120,122-125,266-267,269,276,281,309,419-480,589-598,603-605,607-621,623,661-665,667-671,675-691,693-699,712,764-1369
+src/modules/Transport/useCases/playheadScheduler/loopAudio/createLoopAudioProgramme.ts
+  h_beb54bf43b47b7 50-51,86,146-172,177-178,185-187
+src/modules/Transport/useCases/playheadScheduler/retireSupersededMidiMedia.ts
+  h_beb54bf43b47b7 1-191
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  h_beb54bf43b47b7 69,421,909-927,1656-1709,1803-1811,1822,1837-1838,1898-1906,1917,1927-1928,1972-1980,1991,2001-2002
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  h_beb54bf43b47b7 655-681,689-718,730-745,752-753
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  h_beb54bf43b47b7 911-960
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  h_beb54bf43b47b7 27,708-710,764-769,771,774-777,786-787,800-807,811-814,829-844,932
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  h_beb54bf43b47b7 496-497,537-542,544-545,547-548,550,776-780,783,811,819,919-926,1181-1198,1201-1203,1474
+tests/e2e/crustParameterUndo.spec.ts
+  h_beb54bf43b47b7 1-221
+tests/e2e/midiTrackAudioPlayback.spec.ts
+  h_beb54bf43b47b7 1-260
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5994fcbb0f62b16327e768dc4aba5b0ce9411b41",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
