@@ -1,0 +1,21 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_9307cedd8951f1::t_4f3126b9dbe24b 470-472
+  s_9307cedd8951f1::t_20128a6a155d7d 486-487,489
+  s_9307cedd8951f1::t_405b88e451fc29 10638-10653
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bfe9ac47b84ac243e9c5b4d03e3f0d424edf5e37",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
