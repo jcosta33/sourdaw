@@ -6,9 +6,9 @@ import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { logger } from '#/infra/logger/appLogger';
 
+import { LocalModelRefusalError } from '../../errors/LocalModelRefusalError';
 import { DEFAULT_WEBLLM_MODEL_ID, WEBLLM_CONTEXT_WINDOW_TOKENS, WEBLLM_MODELS } from '../../models/ModelInfo';
 import { llmStatusStore } from '../../stores/llmStatusStore';
-import { LocalModelRefusalError } from '../../errors/LocalModelRefusalError';
 import { createWebLlmAppConfig } from '../webLlm/createWebLlmAppConfig';
 import { engineState } from '../webLlm/engineLifecycleState';
 import { getWebLlmArtifactUrl } from '../webLlm/getWebLlmArtifactUrl';
@@ -957,7 +957,9 @@ describe('WebLLM provider artifact admission', () => {
                 availableBytes: 1_000_000_000,
             });
 
-            expect(refusal.message).toContain('needs 1.01 GB to download, but this browser has 1.00 GB of storage left');
+            expect(refusal.message).toContain(
+                'needs 1.01 GB to download, but this browser has 1.00 GB of storage left'
+            );
         });
 
         it('rounds the room left down, so a byte short of the need never reads as enough', () => {
@@ -968,7 +970,9 @@ describe('WebLLM provider artifact admission', () => {
                 availableBytes: 999_999_999,
             });
 
-            expect(refusal.message).toContain('needs 1.00 GB to download, but this browser has 0.99 GB of storage left');
+            expect(refusal.message).toContain(
+                'needs 1.00 GB to download, but this browser has 0.99 GB of storage left'
+            );
         });
 
         it('admits a download that exactly fits the remaining storage', async () => {
