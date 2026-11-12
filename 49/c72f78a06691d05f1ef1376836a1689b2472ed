@@ -1,0 +1,28 @@
+src/modules/PluginHost/__tests__/faustSoundOracle.ts
+  s_126e3d478b4f75::t_c8ecab0dc166a8 25-26,54-60,84-88,108,138-141,189-198,228-230,244-245,261-263,319-322
+  s_126e3d478b4f75::t_d03e13bc271778 1-24,27-53,61-83,89-107,109-137,142-188,199-227,231-243,246-260,264-318,323-325
+src/modules/PluginHost/useCases/faustEngine/__tests__/shippedDspSoundPreservation.spec.ts
+  s_126e3d478b4f75::t_fe2cedbba6d24c 1-17,19-46,53-73,87-91,93,95-110,118-127,134-152,156-179,186-217,258-259,267,271-273
+  s_126e3d478b4f75::t_4188c3a7dbeb7e 18,92,260-263,266,268
+  s_126e3d478b4f75::t_c8ecab0dc166a8 47-52,74-86,94,111-117,128-133,153-155,180-185,218-257,264-265
+  s_126e3d478b4f75::t_700fa5fe52066f 269-270
+src/modules/PluginHost/__tests__/faustSoundProfiles.ts
+  s_126e3d478b4f75::t_efdee196a95f77 1-51,63-67,78-81,85-86,90-91,127,135-136,151-153,175-178
+  s_126e3d478b4f75::t_c8ecab0dc166a8 52-62,68-77,82-84,87-89,92-126,128-134,137-150,154-174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "49c72f78a06691d05f1ef1376836a1689b2472ed",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
