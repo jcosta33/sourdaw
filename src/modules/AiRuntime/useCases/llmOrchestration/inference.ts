@@ -5,6 +5,7 @@ import { selectExecutableAppActionToolSchemasForPrompt } from '#/modules/Command
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError';
+import { NoAiBackendError } from '../../errors/NoAiBackendError';
 import { isHostedToolCallingProtocolError } from '../../errors/HostedToolCallingProtocolError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
@@ -552,9 +553,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         }
 
         if (chain.length === 0) {
-            throw createAiRuntimeError(
-                'No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.'
-            );
+            throw new NoAiBackendError();
         }
 
         const previousStatus = llmStatusStore.value;

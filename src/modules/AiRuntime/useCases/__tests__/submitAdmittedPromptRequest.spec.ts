@@ -10,12 +10,15 @@ import {
     persistCrdtProject,
     projectRevisionMatchesLiveIgnoringSaveWrites,
 } from '#/modules/CrdtDocument/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
-import { chatStore, clearChatMessages } from '../../stores/chatStore';
+import { chatStore, clearChatMessages, setChatGenerating } from '../../stores/chatStore';
+import { hostedLlmProviderStatusStore } from '../../stores/hostedLlmProviderStatusStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
@@ -35,6 +38,7 @@ import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
+import { describeNoAiBackendRemedy } from '../describeNoAiBackendRemedy';
 import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
@@ -53,6 +57,8 @@ const mocks = vi.hoisted(() => ({
     parseVersionedCommandBatchEnvelope: vi.fn(),
     planPromptActions: vi.fn(),
     parsePromptToActions: vi.fn(),
+    sendChatMessage: vi.fn(async () => undefined),
+    toggleChatPanel: vi.fn(),
 }));
 
 vi.mock('../stopMeasuredPreviewAudition', () => ({ stopMeasuredPreviewAudition: mocks.stopMeasuredPreviewAudition }));
@@ -123,6 +129,16 @@ vi.mock('../notifyAiAnswer', () => ({ notifyAiAnswer: mocks.notifyAiAnswer }));
 vi.mock('../notifyAiChange', () => ({ notifyAiChange: mocks.notifyAiChange }));
 vi.mock('../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
 vi.mock('../parsePromptToActions', () => ({ parsePromptToActions: mocks.parsePromptToActions }));
+vi.mock('../sendChatMessage', () => ({ sendChatMessage: mocks.sendChatMessage }));
+vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/WorkspaceShell/useCases')>()),
+    toggleChatPanel: mocks.toggleChatPanel,
+}));
+// The real thread reader by default; a case states a pending proposal only where it needs one.
+vi.mock('../readChatThreadContext', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../readChatThreadContext')>();
+    return { readChatThreadContext: vi.fn(original.readChatThreadContext) };
+});
 
 const RUN_ID = 'agent-run-00000000-0000-0000-0000-000000000001';
 const STALE_PROVIDER_COMPLETION_WARNING =
@@ -1541,6 +1557,204 @@ describe('submitAdmittedPromptRequest', () => {
         }
         expect(getPendingActionConfirmation(result.confirmationId)).toMatchObject({
             approvalSnapshot: { adoptedRecipes },
+        });
+    });
+
+    describe('hand-off to the agent chat', () => {
+        const HAND_OFF_PROMPT = 'Mute every layer track';
+
+        function planHandOff(reason: 'brief' | 'scheduled-batches'): void {
+            mocks.planPromptActions.mockResolvedValue({
+                context: { tracks: [] },
+                result: {
+                    actions: [],
+                    rawText: HAND_OFF_PROMPT,
+                    requiresConfirmation: false,
+                    planningOutcome: { kind: 'chat-hand-off', reason },
+                },
+                projectRevision: 'revision-1',
+            });
+        }
+
+        function setChatPanelOpen(chatPanelOpen: boolean): void {
+            const current = workspaceStore.value;
+            if (current === null) {
+                throw new Error('The workspace store has no state.');
+            }
+            workspaceStore.set({ ...current, chatPanelOpen });
+        }
+
+        function pendingThreadProposal(): ReturnType<typeof readChatThreadContext> {
+            return {
+                requests: ['Turn the drums down'],
+                pendingProposal: { runId: 'agent-run-pending', confirmationId: 'confirmation-pending', batchPosition: null, commands: [] },
+                lastCommit: null,
+            };
+        }
+
+        beforeEach(() => {
+            setChatPanelOpen(false);
+            aiBackendPreferenceStore.set('auto');
+            hostedLlmProviderStatusStore.set(null);
+        });
+
+        it.each([
+            { reason: 'scheduled-batches' as const, notice: 'Opened in the agent chat: this request runs as successive batches, each approved there one at a time.' },
+            { reason: 'brief' as const, notice: 'Opened in the agent chat: this request writes a production brief, which you approve there before any batch it plans.' },
+        ])('runs a $reason request in the chat instead of the Prompt Bar', async ({ reason, notice }) => {
+            planHandOff(reason);
+
+            const result = await submitAdmittedPromptRequest({ prompt: HAND_OFF_PROMPT, source: 'prompt-bar' });
+
+            expect(result).toEqual({ status: 'handed-off', runId: RUN_ID });
+            expect(mocks.planPromptActions).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ chatHandOff: true }));
+            expect(mocks.sendChatMessage).toHaveBeenCalledExactlyOnceWith(HAND_OFF_PROMPT, { mode: 'apply' });
+            expect(mocks.toggleChatPanel).toHaveBeenCalledOnce();
+            expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(notice, []);
+            expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+            expect(pendingActionConfirmationStore.value?.confirmations ?? []).toEqual([]);
+            expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ phase: 'completed', batches: [] });
+        });
+
+        it('leaves an open chat panel open when it hands off', async () => {
+            planHandOff('scheduled-batches');
+            setChatPanelOpen(true);
+
+            await submitAdmittedPromptRequest({ prompt: HAND_OFF_PROMPT, source: 'prompt-bar' });
+
+            expect(mocks.sendChatMessage).toHaveBeenCalledOnce();
+            expect(mocks.toggleChatPanel).not.toHaveBeenCalled();
+        });
+
+        it('never hands the Prompt Bar signal to the chat run', async () => {
+            planHandOff('scheduled-batches');
+            const controller = new AbortController();
+
+            await submitAdmittedPromptRequest({ prompt: HAND_OFF_PROMPT, source: 'prompt-bar', signal: controller.signal });
+            controller.abort();
+
+            expect(mocks.sendChatMessage).toHaveBeenCalledExactlyOnceWith(HAND_OFF_PROMPT, { mode: 'apply' });
+            expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('completed');
+        });
+
+        it('keeps Automatic local: the hand-off selects no backend for the chat run', async () => {
+            planHandOff('brief');
+            hostedLlmProviderStatusStore.set({
+                provider: 'openai-compatible',
+                model: 'hosted-model',
+                baseUrl: 'https://provider.example/v1',
+                authentication: 'api-key',
+                reasoningEffort: null,
+                thinking: null,
+            });
+
+            await submitAdmittedPromptRequest({ prompt: HAND_OFF_PROMPT, source: 'prompt-bar' });
+
+            // The chat resolves its route from the preference, so neither may name the hosted provider.
+            expect(mocks.sendChatMessage).toHaveBeenCalledExactlyOnceWith(HAND_OFF_PROMPT, { mode: 'apply' });
+            expect(aiBackendPreferenceStore.value).toBe('auto');
+        });
+
+        it('refuses while the chat thread has a proposal waiting, and leaves the chat untouched', async () => {
+            planHandOff('scheduled-batches');
+            vi.mocked(readChatThreadContext).mockReturnValueOnce(pendingThreadProposal());
+            const messagesBefore = chatStore.value?.messages;
+
+            const result = await submitAdmittedPromptRequest({ prompt: HAND_OFF_PROMPT, source: 'prompt-bar' });
+
+            expect(result).toEqual({ status: 'rejected', runId: RUN_ID });
+            expect(mocks.sendChatMessage).not.toHaveBeenCalled();
+            expect(mocks.toggleChatPanel).not.toHaveBeenCalled();
+            expect(chatStore.value?.messages).toEqual(messagesBefore);
+            expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+                'Command not executed: this request runs in the agent chat, which has a proposal waiting. Confirm or cancel it first.',
+                []
+            );
+            expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('failed');
+        });
+
+        it('refuses while the chat is working on another request', async () => {
+            planHandOff('brief');
+            setChatGenerating(true);
+
+            const result = await submitAdmittedPromptRequest({ prompt: HAND_OFF_PROMPT, source: 'prompt-bar' });
+
+            expect(result).toEqual({ status: 'rejected', runId: RUN_ID });
+            expect(mocks.sendChatMessage).not.toHaveBeenCalled();
+            expect(mocks.toggleChatPanel).not.toHaveBeenCalled();
+            expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+                'Command not executed: this request runs in the agent chat, which is still working on another request. Try again when it finishes.',
+                []
+            );
+        });
+
+        it('keeps a single batch in the Prompt Bar', async () => {
+            mocks.planPromptActions.mockResolvedValue({
+                context: { tracks: [] },
+                result: { actions: [action], rawText: 'Play', requiresConfirmation: true, planningOutcome: { kind: 'proposal' } },
+                projectRevision: 'revision-1',
+            });
+
+            const result = await submitAdmittedPromptRequest({ prompt: 'Play', source: 'prompt-bar' });
+
+            expect(result).toEqual({ status: 'awaiting-approval', runId: RUN_ID, confirmationId: expect.any(String) });
+            expect(mocks.sendChatMessage).not.toHaveBeenCalled();
+            expect(mocks.toggleChatPanel).not.toHaveBeenCalled();
+        });
+
+        it('still refuses a schedule that arrives without the hand-off outcome', async () => {
+            mocks.planPromptActions.mockResolvedValue({
+                context: { tracks: [] },
+                result: {
+                    actions: [action],
+                    rawText: HAND_OFF_PROMPT,
+                    requiresConfirmation: true,
+                    planningOutcome: { kind: 'proposal' },
+                    batchSchedule: { total: 2 },
+                },
+                projectRevision: 'revision-1',
+            });
+
+            const result = await submitAdmittedPromptRequest({ prompt: HAND_OFF_PROMPT, source: 'prompt-bar' });
+
+            expect(result).toEqual({ status: 'rejected', runId: RUN_ID });
+            expect(mocks.sendChatMessage).not.toHaveBeenCalled();
+            expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+        });
+
+        it('says how to enable a local model or a hosted provider when no backend can plan', async () => {
+            hostedLlmProviderStatusStore.set({
+                provider: 'anthropic',
+                model: 'hosted-model',
+                baseUrl: null,
+                authentication: 'api-key',
+                reasoningEffort: null,
+                thinking: null,
+            });
+            const reason = describeNoAiBackendRemedy();
+            mocks.planPromptActions.mockResolvedValue({
+                context: { tracks: [] },
+                result: {
+                    actions: [],
+                    rawText: 'Make the chorus warmer',
+                    requiresConfirmation: false,
+                    planningOutcome: { kind: 'denied', reason },
+                },
+                projectRevision: 'revision-1',
+            });
+
+            const result = await submitAdmittedPromptRequest({ prompt: 'Make the chorus warmer', source: 'prompt-bar' });
+
+            expect(result).toEqual({ status: 'no-op', runId: RUN_ID });
+            expect(mocks.sendChatMessage).not.toHaveBeenCalled();
+            const notice = mocks.notifyAiChange.mock.calls[0]?.[0];
+            expect(notice).toBe(reason);
+            expect(notice).toContain('Automatic uses only the local model and never sends requests to a hosted provider.');
+            expect(notice).toContain('load the local model in Settings > AI > AI Model Manager');
+            expect(notice).toContain(
+                'add a hosted provider in Settings > AI > Hosted AI provider (desktop app) and choose Hosted provider as the AI execution backend'
+            );
+            expect(notice).not.toMatch(/OpenAI|Anthropic|Claude|GPT|Gemini/iu);
         });
     });
 });
