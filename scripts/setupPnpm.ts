@@ -2,10 +2,13 @@ import { spawnSync } from 'node:child_process';
 import {
     appendFileSync,
     copyFileSync,
+    closeSync,
     lstatSync,
     mkdirSync,
     mkdtempSync,
+    openSync,
     readFileSync,
+    readSync,
     readdirSync,
     realpathSync,
     rmSync,
@@ -92,8 +95,8 @@ function targetVersion(workspace: string, manifest: string): string {
         throw new Error('Invalid pnpm manifest');
     }
     const declaration: unknown = Reflect.get(data, 'packageManager');
-    if (typeof declaration !== 'string' || !/^pnpm@(11\.\d+\.\d+)$/.test(declaration)) {
-        throw new Error('pnpm setup requires an exact JavaScript pnpm 11 packageManager declaration');
+    if (typeof declaration !== 'string' || !/^pnpm@(12\.\d+\.\d+)$/.test(declaration)) {
+        throw new Error('pnpm setup requires an exact native pnpm 12 packageManager declaration');
     }
     if (Reflect.get(data, 'devEngines') !== undefined) {
         const devEngines: unknown = Reflect.get(data, 'devEngines');
@@ -173,32 +176,62 @@ function isolatedEnvironment(env: NodeJS.ProcessEnv, root: string, config: strin
     };
 }
 
-function installedEntrypoint(dest: string, bin: string, version: string): string {
-    // pnpm's linker writes this marker on every platform, and self-update itself
-    // uses it to identify installed shim targets. Execute the JS with known Node
-    // so Windows never needs a terminal to launch a .cmd file.
-    const marker = readFileSync(join(bin, 'pnpm'), 'utf8').match(/^#\s*cmd-shim-target=(.+)$/m)?.[1];
-    if (!marker) {
-        throw new Error('pnpm target shim has no installed entrypoint');
-    }
-    const entrypoint = realpathSync(resolve(bin, marker));
+function installedEntrypoint(bin: string, platform: NodeJS.Platform): string {
+    const requested = join(bin, platform === 'win32' ? 'pnpm.exe' : 'pnpm');
+    const stat = lstatSync(requested);
     if (
-        (!within(join(dest, 'runtime'), entrypoint) && !within(join(dest, 'store'), entrypoint)) ||
-        basename(entrypoint) !== 'pnpm.mjs'
+        !stat.isFile() ||
+        realpathSync(requested) !== requested ||
+        (process.getuid !== undefined && stat.uid !== process.getuid()) ||
+        (process.platform !== 'win32' && ((stat.mode & 0o022) !== 0 || (stat.mode & 0o555) !== 0o555))
     ) {
-        throw new Error('pnpm target entrypoint must belong to its independent installation');
+        throw new Error('pnpm target executable must belong to its independent installation');
     }
-    const manifest: unknown = JSON.parse(readFileSync(join(dirname(entrypoint), '../package.json'), 'utf8'));
-    if (
-        manifest === null ||
-        typeof manifest !== 'object' ||
-        Reflect.get(manifest, 'name') !== 'pnpm' ||
-        Reflect.get(manifest, 'version') !== version
-    ) {
-        throw new Error('pnpm target package identity does not match the requested release');
+    // Inspect the actual executable, never an npm shim, shell script, or the
+    // Node wrapper. Its signed platform tarball was checked by get-pnpm.
+    const header = Buffer.alloc(256);
+    const descriptor = openSync(requested, 'r');
+    let length: number;
+    let native = false;
+    try {
+        length = readSync(descriptor, header, 0, header.length, 0);
+        if (platform === 'win32' && length >= 64 && header.toString('ascii', 0, 2) === 'MZ') {
+            const offset = header.readUInt32LE(60);
+            if (offset >= 64 && offset + 6 <= stat.size) {
+                const coff = Buffer.alloc(6);
+                native =
+                    readSync(descriptor, coff, 0, coff.length, offset) === coff.length &&
+                    coff.toString('ascii', 0, 4) === 'PE\0\0' &&
+                    coff.readUInt16LE(4) === (process.arch === 'arm64' ? 0xaa64 : 0x8664);
+            }
+        }
+    } finally {
+        closeSync(descriptor);
     }
-    return entrypoint;
+    if (platform === 'darwin' && length >= 8) {
+        native =
+            header.readUInt32LE(0) === 0xfeedfacf &&
+            header.readUInt32LE(4) === (process.arch === 'arm64' ? 0x0100000c : 0x01000007);
+    } else if (platform === 'linux' && length >= 20) {
+        native =
+            header.toString('ascii', 0, 4) === '\x7fELF' &&
+            header[4] === 2 &&
+            header[5] === 1 &&
+            header.readUInt16LE(18) === (process.arch === 'arm64' ? 183 : 62);
+    }
+    if (!native) {
+        throw new Error('pnpm target is not the expected platform executable');
+    }
+    return requested;
 }
+
+const downloadScript = `
+const { downloadPnpm } = await import(process.argv[1]);
+const result = await downloadPnpm({ versionSpec: process.argv[2], registry: process.argv[3], dest: process.argv[4] });
+if (result.version !== process.argv[2] || result.binPath !== process.argv[5]) {
+    throw new Error('pnpm downloader returned an unexpected target identity');
+}
+`;
 
 export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: string; version: string } {
     assertSafeEnvironment(options.env);
@@ -207,10 +240,10 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
     const dest = prepareDestination(options.dest, options.env, workspace);
     const bootstrap = join(dest, 'bootstrap');
     mkdirSync(bootstrap);
-    // pnpm 11.26 verifies the selected engine, so unused native signatures cannot
-    // block a JavaScript target (#5806). This reviewed repository lock replaces the external action's bootstrap
-    // byte pin. It authenticates the already signature-checked official release;
-    // target signature verification remains a separate runtime pnpm operation.
+    // npm authenticates the complete bootstrap closure against the reviewed
+    // lock without lifecycle scripts. Only its integrity-pinned JS downloader
+    // runs: it verifies the requested wrapper AND platform tarball signatures
+    // against its embedded npm keys before checking and extracting their bytes.
     for (const file of ['package.json', 'package-lock.json']) {
         copyFileSync(join(bootstrapDirectory, file), join(bootstrap, file));
     }
@@ -241,13 +274,24 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
             [npmEntrypoint, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'],
             'bootstrap installation'
         );
+        const platform = options.platform ?? process.platform;
+        const targetPath = join(bin, platform === 'win32' ? 'pnpm.exe' : 'pnpm');
         command(
             options.node,
-            [join(bootstrap, 'node_modules/pnpm/bin/pnpm.mjs'), 'self-update', version],
+            [
+                '--input-type=module',
+                '--eval',
+                downloadScript,
+                pathToFileURL(join(bootstrap, 'node_modules/pnpm/dist/node_modules/get-pnpm/lib/index.js')).href,
+                version,
+                registry,
+                bin,
+                targetPath,
+            ],
             'verified target installation'
         );
-        const target = installedEntrypoint(dest, bin, version);
-        const actual = command(options.node, [target, '--version'], 'target version check');
+        const target = installedEntrypoint(bin, platform);
+        const actual = command(target, ['--version'], 'target version check');
         if (actual !== version) {
             throw new Error(`pnpm setup target reports ${actual}, expected ${version}`);
         }
@@ -341,6 +385,6 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(p
             env: process.env,
             node: process.execPath,
         });
-        console.log(`Verified JavaScript pnpm ${result.version}`);
+        console.log(`Verified native pnpm ${result.version}`);
     }
 }

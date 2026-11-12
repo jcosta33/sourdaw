@@ -5,7 +5,7 @@ import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseDocument } from 'yaml';
+import { parseAllDocuments, parseDocument } from 'yaml';
 
 import {
     getBrowserAiWebGpuHardwareRequirement,
@@ -411,10 +411,13 @@ const DEVICE_WRITE_BOUNDARY_CENSUS_RUN =
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const parsedPackageManifest: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
 const packageManifest = asRecord(parsedPackageManifest, 'package manifest');
-const lockfile = asRecord(
-    parseDocument(readFileSync(join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8')).toJS(),
-    'lockfile'
-);
+const lockDocuments = parseAllDocuments(readFileSync(join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8'), {
+    uniqueKeys: true,
+});
+if (lockDocuments.length !== 2 || lockDocuments.some((document) => document.errors.length > 0)) {
+    throw new Error('pnpm lock must contain valid package-manager and application documents');
+}
+const lockfile = asRecord(lockDocuments[1]!.toJS(), 'application lockfile');
 const browserAiWebGpuConfig = asRecord(browserAiWebGpuAdmissionConfig, 'Browser AI WebGPU config');
 function loadWorkflow(fileName: string): { document: ReturnType<typeof parseDocument>; parsed: UnknownRecord } {
     const document = parseDocument(readFileSync(join(repositoryRoot, '.github/workflows', fileName), 'utf8'));
@@ -523,7 +526,7 @@ function assertRequiredScopePlan(candidate: UnknownRecord): void {
         throw new Error('required scope must install the repository package manager');
     }
     const node = recordAt(stepNamed(scope, 'Set up Node'), 'with');
-    if (node['node-version'] !== '24.22.2' || node.cache !== 'pnpm') {
+    if (node['node-version'] !== '26.13.1' || node.cache !== 'pnpm') {
         throw new Error('required scope must use the pinned Node version');
     }
     if (stepNamed(scope, 'Install dependencies').run !== 'pnpm install --frozen-lockfile --ignore-scripts') {
@@ -939,7 +942,7 @@ function assertVerifiedPnpmCallers(candidate: UnknownRecord, control: boolean): 
             const nodeVersion = recordAt(node, 'with')['node-version'];
             const selectedVersion =
                 nodeVersion === '${{ env.NODE_VERSION }}' ? recordAt(candidate, 'env').NODE_VERSION : nodeVersion;
-            if (selectedVersion !== '24.22.2') {
+            if (selectedVersion !== '26.13.1') {
                 throw new Error(`${jobName} later Node must match the verified bootstrap runtime`);
             }
             const checkout = steps
@@ -1522,7 +1525,7 @@ function assertNativeTransportMutationProof(candidate: UnknownRecord): void {
     expect(recordAt(stepNamed(job, 'Cache cargo build'), 'with')).toEqual({ 'save-if': 'false' });
     const setup = stepNamed(job, 'Set up Node for native mutation proof');
     expect(setup.uses).toBe('actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1');
-    expect(recordAt(setup, 'with')).toEqual({ 'node-version': '24.22.2' });
+    expect(recordAt(setup, 'with')).toEqual({ 'node-version': '26.13.1' });
     const probe = stepNamed(job, 'Verify native transport mutation sensitivity');
     expect(probe.run).toBe('node scripts/verifyNativeTransportMutations.ts');
     expect(probe.id).toBe('native-mutations');

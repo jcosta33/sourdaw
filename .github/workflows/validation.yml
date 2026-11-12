@@ -44,7 +44,7 @@ permissions:
   pull-requests: read
 
 env:
-  NODE_VERSION: 24.22.2
+  NODE_VERSION: 26.13.1
 
 jobs:
   decide:
@@ -309,7 +309,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.sha }}
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -413,7 +413,7 @@ jobs:
         timeout-minutes: 10
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -454,7 +454,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -503,7 +503,7 @@ jobs:
           mkdir -m 755 "$tool_root"
           printf 'root=%s\n' "$tool_root" >> "$GITHUB_OUTPUT"
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -612,7 +612,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -652,7 +652,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -684,7 +684,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -853,7 +853,7 @@ jobs:
       - name: Set up Node for native mutation proof
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.22.2
+          node-version: 26.13.1
 
       - name: Verify native transport mutation sensitivity
         id: native-mutations
@@ -953,7 +953,7 @@ jobs:
           restore-keys: |
             cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm

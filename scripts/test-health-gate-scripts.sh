@@ -165,7 +165,7 @@ esac
 SH
 chmod +x "$fake_bin/gh"
 
-WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" VALIDATION_WORKFLOW_PATH="$repo_root/.github/workflows/validation.yml" HEAVY_WORKFLOW_PATH="$repo_root/.github/workflows/heavy-gates.yml" NIGHTLY_PATH="$repo_root/.github/workflows/nightly.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" pnpm exec tsx --input-type=module <<'NODE'
+WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" VALIDATION_WORKFLOW_PATH="$repo_root/.github/workflows/validation.yml" HEAVY_WORKFLOW_PATH="$repo_root/.github/workflows/heavy-gates.yml" NIGHTLY_PATH="$repo_root/.github/workflows/nightly.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" node --input-type=module <<'NODE'
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { parse } from 'yaml';
@@ -440,7 +440,7 @@ const scopePlan = stepNamed(scope, 'Plan affected checks');
 const scopeCheckout = stepNamed(scope, 'Checkout');
 expect(scopeCheckout?.with?.['fetch-depth'] === 0 && scopeCheckout?.with?.['persist-credentials'] === false,
     'required scope must read complete history without persisting credentials');
-expect(stepNamed(scope, 'Set up Node')?.with?.['node-version'] === '24.22.2',
+expect(stepNamed(scope, 'Set up Node')?.with?.['node-version'] === '26.13.1',
     'required scope must use pinned Node');
 expect(scopePlan?.id === 'plan' && scopePlan?.run === 'node scripts/prValidationScope.ts plan' &&
     scopePlan?.env?.BASE_SHA === '${{ github.event.pull_request.base.sha }}' &&
