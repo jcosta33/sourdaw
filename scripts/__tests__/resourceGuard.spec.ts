@@ -461,8 +461,8 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
 
         expect(result.reason).toBe('timeout');
         expect(result.output).toContain('guard stop diagnostic:');
-        expect(result.output).toContain('\"reason\":\"timeout\"');
-        expect(result.output).toContain('\"processGroup\"');
+        expect(result.output).toContain('"reason":"timeout"');
+        expect(result.output).toContain('"processGroup"');
     });
 
     it('reports an unavailable snapshot and still stops the command', async () => {
@@ -476,7 +476,7 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             processSnapshot: () => ({ status: 'unavailable' }),
         });
         expect(result.reason).toBe('timeout');
-        expect(result.output).toContain('\"processGroup\":{\"status\":\"unavailable\"}');
+        expect(result.output).toContain('"processGroup":{"status":"unavailable"}');
     });
 
     it('kills detached descendants after a deadline', async () => {

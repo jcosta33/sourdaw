@@ -7,13 +7,14 @@ import { captureProcessGroupOfPid, type ProcessGroupSnapshot } from './processSn
 export const VITEST_PROGRESS_ENV = 'SOURDAW_VITEST_PROGRESS';
 
 type ProgressEvent =
-    'runner-start' | 'module-queued' | 'worker-setup' | 'module-collected' | 'test-start' | 'scan' | 'module-failure';
+    'runner-start' | 'module-queued' | 'worker-setup' | 'module-collected' | 'case-ready' | 'scan' | 'module-failure';
 
 /** Latest event per stage; slots are independent and do not form a correlated timeline. */
 export function recordVitestProgress(
     event: ProgressEvent,
     detail = '',
-    observation?: { monotonicNs: string; processGroup: ProcessGroupSnapshot }
+    observation?: { monotonicNs: string; processGroup: ProcessGroupSnapshot },
+    caseStatus?: { state: string; mode: string }
 ): void {
     const directory = process.env[VITEST_PROGRESS_ENV];
     if (!directory) {
@@ -29,6 +30,7 @@ export function recordVitestProgress(
             parentPid: number;
             detail: string;
             observation?: { monotonicNs: string; processGroup: ProcessGroupSnapshot };
+            caseStatus?: { state: string; mode: string };
         } = {
             event,
             monotonicNs: process.hrtime.bigint().toString(),
@@ -38,6 +40,9 @@ export function recordVitestProgress(
         };
         if (observation !== undefined) {
             record.observation = observation;
+        }
+        if (caseStatus !== undefined) {
+            record.caseStatus = caseStatus;
         }
         writeFileSync(temporary, JSON.stringify(record), { mode: 0o600, flag: 'wx' });
         owned = true;

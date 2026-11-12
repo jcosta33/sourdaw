@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -39,10 +39,14 @@ it('retains runner and process-group evidence when a real worker hook times out'
         const text = readdirSync(journalPath)
             .map((name) => readFileSync(join(journalPath, name), 'utf8'))
             .join('\n');
-        for (const event of ['runner-start', 'module-queued', 'worker-setup', 'module-collected', 'test-start']) {
+        for (const event of ['runner-start', 'module-queued', 'worker-setup', 'module-collected', 'case-ready']) {
             expect(text).toContain(event);
         }
         expect(result.stderr).toContain(journal);
+        const ready = JSON.parse(readFileSync(join(journalPath, 'case-ready.json'), 'utf8'));
+        expect(ready).toMatchObject({ event: 'case-ready', caseStatus: { mode: 'run' } });
+        // Vitest may deliver the ready callback after the worker has recorded the hook failure.
+        expect(['pending', 'failed']).toContain(ready.caseStatus.state);
         const runner = JSON.parse(readFileSync(join(journalPath, 'runner-start.json'), 'utf8'));
         const failure = JSON.parse(readFileSync(join(journalPath, 'module-failure.json'), 'utf8'));
         expect(failure).toMatchObject({
@@ -58,6 +62,40 @@ it('retains runner and process-group evidence when a real worker hook times out'
                 expect.objectContaining({ pid: runner.pid, parentPid: runner.parentPid })
             );
         }
+    } finally {
+        rmSync(fixture, { recursive: true, force: true });
+    }
+}, 30_000);
+
+it('reports filtered skipped cases as ready without claiming their bodies ran', () => {
+    const fixture = mkdtempSync(join(root, 'scripts/__tests__/vitest-progress-'));
+    try {
+        const spec = join(fixture, 'filtered.spec.ts');
+        const config = join(fixture, 'vitest.config.mjs');
+        const entered = join(fixture, 'body-entered');
+        writeFileSync(
+            spec,
+            `import { writeFileSync } from 'node:fs'; import { it, expect } from 'vitest'; it('filtered case', () => { writeFileSync(${JSON.stringify(entered)}, 'entered'); expect(true).toBe(true); });\n`
+        );
+        writeFileSync(
+            config,
+            `export default { test: { include: [${JSON.stringify(spec)}], environment: 'node' } };\n`
+        );
+        const result = spawnSync(
+            process.execPath,
+            [join(root, 'scripts/runVitestZeroTestGuard.ts'), '--config', config, '-t', 'does-not-match'],
+            { cwd: root, encoding: 'utf8', env: { ...process.env, SOURDAW_VITEST_DIAGNOSTICS_DIR: fixture } }
+        );
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('zero executed assertions');
+        expect(existsSync(entered)).toBe(false);
+        const journal = readdirSync(fixture).find((name) => name.startsWith('vitest-progress-'));
+        expect(journal).toBeDefined();
+        const journalPath = join(fixture, journal!);
+        const ready = JSON.parse(readFileSync(join(journalPath, 'case-ready.json'), 'utf8'));
+        expect(ready).toMatchObject({ event: 'case-ready', detail: 'filtered case', caseStatus: { state: 'skipped' } });
+        expect(['skip', 'run', 'only', 'todo']).toContain(ready.caseStatus.mode);
+        expect(existsSync(join(journalPath, 'test-start.json'))).toBe(false);
     } finally {
         rmSync(fixture, { recursive: true, force: true });
     }

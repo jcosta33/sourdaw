@@ -29,6 +29,9 @@ export default class VitestProgressReporter implements Reporter {
     }
 
     onTestCaseReady(test: TestCase): void {
-        recordVitestProgress('test-start', test.fullName);
+        recordVitestProgress('case-ready', test.fullName, undefined, {
+            state: test.result().state,
+            mode: test.options.mode,
+        });
     }
 }
