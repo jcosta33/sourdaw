@@ -7,12 +7,15 @@ import {
     type ScheduledVibeRunBatch,
     type VibeRunInitialEvidence,
     type VibeRunInitialWitness,
+    type VibeRunSilentRange,
+    type VibeRunSilentTarget,
     type VibeRunVerificationRange,
     type ScheduledVibeRunPlan,
     type VibeRunBatchTarget,
     type VibeRunExpectedDelta,
 } from '../models/VibeRunPlan';
 
+import { recordedSilenceHolds } from './isSilentVibeRunCell';
 import { readVibeRunInitialReceipt } from './readVibeRunInitialReceipt';
 
 const DIRECTIONS: readonly VibeRunExpectedDelta['direction'][] = ['increase', 'decrease', 'hold'];
@@ -117,10 +120,11 @@ function readBatch(value: unknown): ScheduledVibeRunBatch | null {
 function readBatchExtras(value: Record<string, unknown>, objective: Record<string, unknown> | null) {
     const ranges = value.verificationRanges === undefined ? undefined : readEvery(value.verificationRanges, readRange);
     const witnessIds = value.witnessIds === undefined ? undefined : readTexts(value.witnessIds);
+    const silentRanges = value.silentRanges === undefined ? undefined : readEvery(value.silentRanges, readSilentRange);
     const sections = objective?.sections === undefined ? undefined : readEvery(objective.sections, readSection);
     const sectionGoals =
         objective?.sectionGoals === undefined ? undefined : readEvery(objective.sectionGoals, readSectionGoal);
-    if (ranges === null || witnessIds === null || sections === null || sectionGoals === null) {
+    if (ranges === null || witnessIds === null || silentRanges === null || sections === null || sectionGoals === null) {
         return null;
     }
     const objectiveExtras: { sections?: typeof sections; sectionGoals?: typeof sectionGoals } = {};
@@ -130,14 +134,37 @@ function readBatchExtras(value: Record<string, unknown>, objective: Record<strin
     if (sectionGoals !== undefined) {
         objectiveExtras.sectionGoals = sectionGoals;
     }
-    const batchExtras: { verificationRanges?: typeof ranges; witnessIds?: typeof witnessIds } = {};
+    const batchExtras: {
+        verificationRanges?: typeof ranges;
+        witnessIds?: typeof witnessIds;
+        silentRanges?: typeof silentRanges;
+    } = {};
     if (ranges !== undefined) {
         batchExtras.verificationRanges = ranges;
     }
     if (witnessIds !== undefined) {
         batchExtras.witnessIds = witnessIds;
     }
+    if (silentRanges !== undefined) {
+        batchExtras.silentRanges = silentRanges;
+    }
     return { objectiveExtras, batchExtras };
+}
+
+function readSilentRange(value: unknown): VibeRunSilentRange | null {
+    if (!isRecord(value) || !isText(value.targetId) || !isText(value.receiptCallId) || !isText(value.receiptDigest)) {
+        return null;
+    }
+    const range = readRange(value.range);
+    if (range === null) {
+        return null;
+    }
+    return {
+        targetId: value.targetId,
+        range,
+        receiptCallId: value.receiptCallId,
+        receiptDigest: value.receiptDigest,
+    };
 }
 
 function readRange(value: unknown): VibeRunVerificationRange | null {
@@ -191,12 +218,21 @@ function validInitialRoles(value: unknown, targetIds: readonly string[]): boolea
     return true;
 }
 
-function readInitialTables(value: Record<string, unknown>, batches: readonly ScheduledVibeRunBatch[]) {
+function readInitialTables(
+    value: Record<string, unknown>,
+    batches: readonly ScheduledVibeRunBatch[],
+    sourceRevision: string
+) {
     const sections = readEvery(value.sections, readSection);
     const arrangement = readRange(value.arrangementRange);
     const receipts = readEvery(value.receipts, readVibeRunInitialReceipt);
     const targetIds = batches.flatMap((batch) => batch.targetIds);
+    const silentTargets = value.silentTargets === undefined ? [] : readEvery(value.silentTargets, readSilentTarget);
+    const silentTargetIds = silentTargets?.map((target) => target.targetId) ?? [];
     if (
+        silentTargets === null ||
+        new Set(silentTargetIds).size !== silentTargetIds.length ||
+        silentTargetIds.some((targetId) => targetIds.includes(targetId)) ||
         sections === null ||
         new Set(sections.map((section) => section.id)).size !== sections.length ||
         arrangement === null ||
@@ -223,12 +259,49 @@ function readInitialTables(value: Record<string, unknown>, batches: readonly Sch
                 receipt.revision !== value.sourceRevision ||
                 receipt.data.sourceRevisionDigest !== value.sourceRevisionDigest ||
                 !ranges.some((range) => sameRange(range, receipt.data.range)) ||
-                receipt.data.targets.some((target) => !targetIds.includes(target.targetId))
-        )
+                receipt.data.targets.some(
+                    (target) => !targetIds.includes(target.targetId) && !silentTargetIds.includes(target.targetId)
+                )
+        ) ||
+        !silentTargets.every((target) => silentInEveryRange(target, ranges, receipts, sourceRevision))
     ) {
         return null;
     }
-    return { sections, arrangement, receipts, targetIds, ranges };
+    return { sections, arrangement, receipts, targetIds, ranges, sourceRevision };
+}
+
+function readSilentTarget(value: unknown): VibeRunSilentTarget | null {
+    if (!isRecord(value) || !isText(value.targetId)) {
+        return null;
+    }
+    const metrics = readTexts(value.metrics);
+    const silences = readEvery(value.silences, readSilentRange);
+    if (metrics === null || metrics.length === 0 || silences === null) {
+        return null;
+    }
+    return { targetId: value.targetId, metrics, silences };
+}
+
+/**
+ * A target left out as silent everywhere carries the evidence a silent cell does, once per plan
+ * range: each silence names that target and binds the receipt that reads it silent for its metrics.
+ */
+function silentInEveryRange(
+    target: VibeRunSilentTarget,
+    ranges: readonly VibeRunVerificationRange[],
+    receipts: readonly NonNullable<ReturnType<typeof readVibeRunInitialReceipt>>[],
+    sourceRevision: string
+): boolean {
+    const expectedDeltas = target.metrics.map((metric) => ({ metric }));
+    return (
+        target.silences.length === ranges.length &&
+        ranges.every((range) => target.silences.filter((silence) => sameRange(silence.range, range)).length === 1) &&
+        target.silences.every(
+            (record) =>
+                record.targetId === target.targetId &&
+                recordedSilenceHolds({ record, expectedDeltas, receipts, sourceRevision })
+        )
+    );
 }
 
 type InitialTables = NonNullable<ReturnType<typeof readInitialTables>>;
@@ -326,6 +399,35 @@ function readWitness(
     };
 }
 
+/**
+ * Every silence record names a target of its batch over one of the plan's ranges, once, and still
+ * reads silent at the receipt it binds; a target silent over every range belongs in no batch.
+ */
+function validSilentRanges(batch: ScheduledVibeRunBatch, tables: InitialTables): boolean {
+    const records = batch.silentRanges ?? [];
+    if (new Set(records.map((record) => digest([record.targetId, record.range]))).size !== records.length) {
+        return false;
+    }
+    for (const record of records) {
+        const target = batch.targets.find((candidate) => candidate.targetId === record.targetId);
+        if (
+            target === undefined ||
+            !tables.ranges.some((range) => sameRange(range, record.range)) ||
+            !recordedSilenceHolds({
+                record,
+                expectedDeltas: target.expectedDeltas,
+                receipts: tables.receipts,
+                sourceRevision: tables.sourceRevision,
+            })
+        ) {
+            return false;
+        }
+    }
+    return batch.targets.every(
+        (target) => records.filter((record) => record.targetId === target.targetId).length < tables.ranges.length
+    );
+}
+
 function completeBatchCoverage(
     batch: ScheduledVibeRunBatch,
     tables: InitialTables,
@@ -349,11 +451,23 @@ function completeBatchCoverage(
     if (digest(expectedIds) !== digest(batch.witnessIds)) {
         return false;
     }
+    if (!validSilentRanges(batch, tables)) {
+        return false;
+    }
     for (const target of batch.targets) {
         for (const range of tables.ranges) {
             const standing = witnesses.filter(
                 (witness) => witness.targetId === target.targetId && sameRange(witness.range, range)
             );
+            const silent = (batch.silentRanges ?? []).some(
+                (cell) => cell.targetId === target.targetId && sameRange(cell.range, range)
+            );
+            if (silent) {
+                if (standing.length > 0) {
+                    return false;
+                }
+                continue;
+            }
             if (
                 target.expectedDeltas.some(
                     (delta) =>
@@ -383,7 +497,7 @@ function initialEvidence(value: unknown, batches: readonly ScheduledVibeRunBatch
     ) {
         return false;
     }
-    const tables = readInitialTables(value, batches);
+    const tables = readInitialTables(value, batches, value.sourceRevision);
     if (tables === null) {
         return false;
     }

@@ -2589,6 +2589,11 @@
             "surface": "faust-runtime",
             "file": "src/helpers/faustCurrentSound.sources.json",
             "value": "https://github.com/grame-cncm/faustlibraries/blob/36661b5efd702e0e21b3ad49864e10201aecc602/reverbs.lib"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/trustedGithubWriteBootstrap.ts",
+            "value": "https://github.com/jcosta33/sourdaw.git"
         }
     ],
     "marks": [

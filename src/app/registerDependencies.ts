@@ -21,7 +21,6 @@ import {
     type ConfirmPayload,
     type PromptPayload,
     type ZoomToSelectionPayload,
-    type ImportMidiPayload,
     type OpenPreferencesPayload,
 } from '#/modules/WorkspaceShell/events';
 import { type YeastNotesOffPayload } from '#/modules/Yeast/events';
@@ -42,14 +41,7 @@ export type AppEvents = {
     'dialog.openExport': VoidPayload;
     'dialog.openPreferences': OpenPreferencesPayload;
 
-    // Project actions
-    'project.save': VoidPayload;
-    'project.new': VoidPayload;
-    'command.undo': VoidPayload;
-    'command.redo': VoidPayload;
-
     // MIDI
-    'midi.import': ImportMidiPayload;
     'midi.out': MidiOutPayload;
     'midi.noteOn': MidiNoteOnPayload;
     'midi.noteOff': MidiNoteOffPayload;
@@ -70,9 +62,6 @@ export type AppEvents = {
     'ui.notify': NotifyPayload;
     'ui.confirm': ConfirmPayload;
     'ui.prompt': PromptPayload;
-
-    // Shortcut engine
-    'shortcut.fired': { action: string };
 };
 
 export const eventBus = createEventBus<AppEvents>();
