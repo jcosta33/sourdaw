@@ -1,0 +1,57 @@
+scripts/__tests__/stampLaneIdentity.spec.ts
+  s_76ccd61d453edf::t_5504fcf921683f 162-168
+  s_76ccd61d453edf::t_d8d1a1851f04ac 9,99,119,126,135-161,169-185
+scripts/__tests__/rulesetHardening.spec.ts
+  s_76ccd61d453edf::t_866dfb234b767c 121-129,133,139
+  s_76ccd61d453edf::t_6e1e7b21dd0958 527
+  s_76ccd61d453edf::t_c0eee4c586ac33 626-658
+scripts/__tests__/openLane.spec.ts
+  s_76ccd61d453edf::t_7e9863173d8819 13,29,131-149,496-500,515,517-519,521-522,551
+  s_76ccd61d453edf::t_dbae5d4804bdea 152-153,186-189,846-879
+  s_76ccd61d453edf::t_ed36d2739d9565 880
+.agents/skills/delivery-orchestration/references/trust-boundary.md
+  s_76ccd61d453edf::t_954e93b721e922 3-43
+scripts/githubAppIdentity.ts
+  s_76ccd61d453edf::t_42d61d4586b97d 5,794-797,819
+  s_76ccd61d453edf::t_9af2a1a06e7445 815-818
+  s_76ccd61d453edf::t_8fe93a7a5cf33f 764-766,782,789-793,798-814,820-823
+  s_76ccd61d453edf::t_1eb6798a0b748f 383-395,398-404,409,411-412,419,424-428
+  s_76ccd61d453edf::t_08e0afdbc0e5a9 648
+  s_76ccd61d453edf::t_b188872e691ba0 824-825
+scripts/openLane.ts
+  s_76ccd61d453edf::t_a97bb03e4379d2 385-387
+  s_76ccd61d453edf::t_e5daa6e22b09f7 10,31,389
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_76ccd61d453edf::t_93ffe7e04758e4 1323-1326,1357-1548,1550-1559,1561-1562,1565-1573,1575-1585
+  s_76ccd61d453edf::t_08f4a4d064609b 91-93,96-97,1191-1194,1560,1563-1564
+  s_76ccd61d453edf::t_831679a16a610c 1549,1574
+  s_76ccd61d453edf::t_cbba4854d4d866 3-14,40,54,64
+  s_76ccd61d453edf::t_f778cffc00e790 1586
+scripts/__tests__/stackedLanes.spec.ts
+  s_76ccd61d453edf::t_dea7b69540ef06 2,23-29,642-723
+  s_76ccd61d453edf::t_e4b3bbab412d10 724
+scripts/rulesetHardening.ts
+  s_76ccd61d453edf::t_5220d3b7194fad 383-392
+  s_76ccd61d453edf::t_5231dec698f8b5 437
+  s_76ccd61d453edf::t_bd35eb85a96ab4 398-399
+  s_76ccd61d453edf::t_c2d86ad70c8fbf 382
+scripts/stampLaneIdentity.ts
+  s_76ccd61d453edf::t_2940365770c193 14,46-48,51,65,67,69-74,94-107,115,151
+  s_76ccd61d453edf::t_e5daa6e22b09f7 21,29,146-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6bf1a6b7bcd1719ee5ced1f5296bf4f74d504f4a",
+  "prompts": {},
+  "sessions": {
+    "s_76ccd61d453edf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "108ea70a-a924-42ce-b7b8-fd9c1012e902",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
