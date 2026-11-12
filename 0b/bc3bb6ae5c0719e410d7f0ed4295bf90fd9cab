@@ -1,0 +1,69 @@
+.github/workflows/heavy-gates.yml
+  s_126e3d478b4f75::t_e19b35a274484d 22
+scripts/test-health-gate-scripts.sh
+  s_126e3d478b4f75::t_e19b35a274484d 443
+  s_126e3d478b4f75::t_eb1a421e610bd8 168
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_126e3d478b4f75::t_f09242befc906c 8,414-420
+  s_126e3d478b4f75::t_e19b35a274484d 529,945,1528
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_126e3d478b4f75::t_e19b35a274484d 77,163,284,585,1179,1442,2655,2794,2950
+.github/workflows/nightly.yml
+  s_126e3d478b4f75::t_e19b35a274484d 30
+.github/actions/setup-pnpm/action.yml
+  s_126e3d478b4f75::t_e19b35a274484d 1-2,21
+package.json
+  s_126e3d478b4f75::t_b7a35826484042 8,10
+.github/workflows/wasm-artifacts.yml
+  s_126e3d478b4f75::t_e19b35a274484d 85
+.github/workflows/validation.yml
+  s_126e3d478b4f75::t_e19b35a274484d 47,312,416,457,506,615,655,687,856,956
+scripts/hostedQuantumMeasurementWorkflowContract.ts
+  s_126e3d478b4f75::t_e19b35a274484d 209,215
+docs/06-testing.md
+  s_126e3d478b4f75::t_9b659aaa444590 831-836
+.github/workflows/health-gates.yml
+  s_126e3d478b4f75::t_e19b35a274484d 59,124
+scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts
+  s_126e3d478b4f75::t_9b659aaa444590 367
+.github/workflows/nightly-evidence-report.yml
+  s_126e3d478b4f75::t_e19b35a274484d 41
+.github/workflows/quantum-measurements.yml
+  s_126e3d478b4f75::t_e19b35a274484d 80
+scripts/__tests__/setupPnpm.spec.ts
+  s_126e3d478b4f75::t_e19b35a274484d 287-288,293-295,297-302,419-422,480,522-523,548-550,552,584-585,592-595,646,651-652,654,699
+  s_126e3d478b4f75::t_60b09fe0a1d174 286,290-292,296,303-304,379,383,388,398,411-412,416,418,474,479,484,521,524-530,532-535,538-539,542-544,546-547,551,553-564,566,570-574,583,586-591,596-605
+  s_126e3d478b4f75::t_9b659aaa444590 488,490-520,723-725,728-729,731-735
+  s_126e3d478b4f75::t_f09242befc906c 658-691
+  s_126e3d478b4f75::t_b7a35826484042 47,722,726-727,730,736
+  s_126e3d478b4f75::t_f83f8306d4135b 32-46,48-50,59,66,68,73-74,76,78,161,434,461,536-537,545,606,782
+.node-version
+  s_126e3d478b4f75::t_e19b35a274484d 1
+scripts/setupPnpm.ts
+  s_126e3d478b4f75::t_e19b35a274484d 212-213,216-219,282-284,286-289
+  s_126e3d478b4f75::t_9b659aaa444590 202-203
+  s_126e3d478b4f75::t_b7a35826484042 9,11,186,195,198-201,204-207,211
+  s_126e3d478b4f75::t_34deacf1b5f2a5 5,98-99,179-181,183-185,188,190-194,196-197,208-210,214-215,220,222-232,234,243-246,277-278,281,285,290,293-294,388
+.github/actions/setup-pnpm/bootstrap/package-lock.json
+  s_126e3d478b4f75::t_c796e239430d68 9,12-214,216-219,222-225,228-244
+.github/actions/setup-pnpm/bootstrap/package.json
+  s_126e3d478b4f75::t_f73ba913dc7f16 5
+pnpm-lock.yaml
+  s_126e3d478b4f75::t_f517b30c15bb33 1-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0bbc3bb6ae5c0719e410d7f0ed4295bf90fd9cab",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
