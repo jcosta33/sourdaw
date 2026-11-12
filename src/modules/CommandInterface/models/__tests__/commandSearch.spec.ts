@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { type CommandEntry } from '../../models/CommandEntry';
-import { discoverCommands, fuzzyMatch, searchCommands, updateRecentCommandIds } from '../commandSearch';
+import { discoverCommands, fuzzyMatch, searchCommands, updateRecentCommandIds } from '../CommandSearch';
 
 type TestCommandEntry = CommandEntry<() => void>;
 

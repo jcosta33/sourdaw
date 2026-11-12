@@ -18,7 +18,7 @@ import { type CallableCommandEntry, searchCommandRegistry } from '../../useCases
  * `../../useCases/commands/` and add it there. The data shape lives in
  * `../../models/CommandEntry.ts`; callable command ownership lives in
  * `../../useCases/searchCommandRegistry.ts`. Pure search helpers
- * (`fuzzyMatch`, `searchCommands`) live in `../../models/commandSearch.ts`.
+ * (`fuzzyMatch`, `searchCommands`) live in `../../models/CommandSearch.ts`.
  *
  * This file owns only the aggregation and a thin search wrapper bound to the
  * aggregated catalog. Re-exports the type and helpers so existing in-module
@@ -28,7 +28,7 @@ import { type CallableCommandEntry, searchCommandRegistry } from '../../useCases
 // ── Re-exports for in-module consumers ────────────────────────────────────
 
 export type CommandEntry = CallableCommandEntry;
-export { discoverCommands, updateRecentCommandIds } from '../../models/commandSearch';
+export { discoverCommands, updateRecentCommandIds } from '../../models/CommandSearch';
 
 // ── Aggregated registry ────────────────────────────────────────────────────
 
