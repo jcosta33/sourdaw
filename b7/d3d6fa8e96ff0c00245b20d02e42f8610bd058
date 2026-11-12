@@ -1,0 +1,21 @@
+scripts/gitCheckpointDaemon.ts
+  s_eec9d24f84ae15::t_7bc2dc75d2ad2e 108-112
+scripts/gitCheckpointProcess.ts
+  s_eec9d24f84ae15::t_7bc2dc75d2ad2e 146-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b7d3d6fa8e96ff0c00245b20d02e42f8610bd058",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
