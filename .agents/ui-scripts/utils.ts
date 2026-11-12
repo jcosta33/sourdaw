@@ -12,10 +12,10 @@ import {
 } from '../../scripts/e2eServerIdentity.ts';
 
 /**
- * Setup a headless browser for agent UI investigations.
- * @returns A tuple of [browser, page] that the caller must close when done.
+ * Set up a browser for agent UI investigations.
+ * @returns The browser and page; the caller must close the browser when done.
  */
-export async function setupAgentBrowser() {
+export async function setupAgentBrowser(options: { headless?: boolean } = {}) {
     // The local dev server, configurable via BASE_URL; without it the probe
     // follows the lane-scoped SOURDAW_E2E_PORT like e2e does.
     const baseUrl = process.env.BASE_URL || e2eOrigin(resolveE2ePort(process.env.SOURDAW_E2E_PORT));
@@ -26,7 +26,7 @@ export async function setupAgentBrowser() {
         await assertServingCheckoutIdentity(baseUrl, resolve(import.meta.dirname, '../..'));
     }
 
-    const browser = await chromium.launch();
+    const browser = await chromium.launch({ headless: options.headless ?? true });
     try {
         const context = await browser.newContext();
         const page = await context.newPage();

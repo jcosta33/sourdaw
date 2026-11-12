@@ -34,7 +34,7 @@ Export a lane-unique `SOURDAW_E2E_PORT` (derive it from the lane slug, root `AGE
 
 ### 3. Use `setupAgentBrowser` from the lane's `utils.ts`
 
-Import `setupAgentBrowser` from the lane's `.agents/ui-scripts/utils.ts` by absolute path, with the explicit `.ts` extension: Node type stripping does not resolve extensionless TypeScript imports. `utils.ts` resolves `playwright` and its checkout identity from its own location, so the identity check binds to the lane whose `utils.ts` you import. It launches headless Chromium, navigates to `process.env.BASE_URL` or, absent that, the port `SOURDAW_E2E_PORT` selects (5173 by default, like e2e), and returns `{ browser, page }`. Before navigating it asserts the serving checkout's identity and refuses a dev server belonging to another checkout.
+Import `setupAgentBrowser` from the lane's `.agents/ui-scripts/utils.ts` by absolute path, with the explicit `.ts` extension: Node type stripping does not resolve extensionless TypeScript imports. `utils.ts` resolves `playwright` and its checkout identity from its own location, so the identity check binds to the lane whose `utils.ts` you import. It launches headless Chromium by default; use `setupAgentBrowser({ headless: false })` for real hardware probes. It navigates to `process.env.BASE_URL` or, absent that, the port `SOURDAW_E2E_PORT` selects (5173 by default, like e2e), and returns `{ browser, page }`. Before navigating it asserts the serving checkout's identity and refuses a dev server belonging to another checkout.
 
 **Why:** one shared launcher is one place to fix flakiness, and importing it from the lane under test is what points its identity check at that lane.
 
