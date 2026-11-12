@@ -6,8 +6,6 @@ import { handleReplayGeneratedMidi } from '../handleReplayGeneratedMidi';
 
 const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
-    afterTrackAmbiguousCommit: vi.fn(),
-    afterTrackCommit: vi.fn(),
     getTrackStoreState: vi.fn(),
     hasDurableMidiGenerationResult: vi.fn(),
     restoreTrack: vi.fn(),
@@ -18,7 +16,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     addClip: mocks.addClip,
     getTrackStoreState: mocks.getTrackStoreState,
-    restoreTrackAtIndexWithDeferredAddedEvent: mocks.restoreTrack,
+    restoreTrackAtIndex: mocks.restoreTrack,
 }));
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
@@ -253,11 +251,7 @@ describe('handleReplayGeneratedMidi', () => {
             ],
         };
         const trackJson = JSON.stringify(generatedTrack);
-        mocks.restoreTrack.mockReturnValue({
-            track: generatedTrack,
-            afterCommit: mocks.afterTrackCommit,
-            afterAmbiguousCommit: mocks.afterTrackAmbiguousCommit,
-        });
+        mocks.restoreTrack.mockReturnValue(generatedTrack);
 
         const result = await handleReplayGeneratedMidi.execute({
             type: 'replayGeneratedMidi',
@@ -286,11 +280,7 @@ describe('handleReplayGeneratedMidi', () => {
         });
         expect(mocks.addClip).not.toHaveBeenCalled();
         expect(mocks.setNotesForClip).toHaveBeenCalledWith('generated-clip', generatedNotes);
-        if (result?.status !== 'written') {
-            throw new Error('Expected replay write');
-        }
-        await result.afterCommit?.();
-        expect(mocks.afterTrackCommit).toHaveBeenCalledOnce();
+        expect(result).toEqual({ status: 'written' });
     });
 
     it('conflicts before writing when a generated clip id now exists anywhere', async () => {

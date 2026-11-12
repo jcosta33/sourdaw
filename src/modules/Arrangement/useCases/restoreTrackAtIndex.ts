@@ -1,21 +1,10 @@
-import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
-
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 import { sanitizeTrackSnapshot, type Track } from '../stores/trackStore';
 
-import { getTrackById } from './getTrackById';
-import { publishTrackAdded } from './publishTrackAdded';
-
-type RestoreTrackAtIndexWithDeferredAddedEventInput = {
+type RestoreTrackAtIndexInput = {
     trackJson: string;
     trackIndex: number;
-};
-
-type RestoreTrackAtIndexWithDeferredAddedEventOutput = {
-    track: Track;
-    afterCommit: () => Promise<void>;
-    afterAmbiguousCommit: () => Promise<void>;
 };
 
 type RestoredTrackIdentities = {
@@ -118,9 +107,7 @@ function parseCanonicalTrack(trackJson: string): Track | null {
     return track;
 }
 
-export function restoreTrackAtIndexWithDeferredAddedEvent(
-    input: RestoreTrackAtIndexWithDeferredAddedEventInput
-): RestoreTrackAtIndexWithDeferredAddedEventOutput | null {
+export function restoreTrackAtIndex(input: RestoreTrackAtIndexInput): Track | null {
     const state = getTrackState();
     const track = parseCanonicalTrack(input.trackJson);
     if (
@@ -132,32 +119,13 @@ export function restoreTrackAtIndexWithDeferredAddedEvent(
     ) {
         return null;
     }
-    const restoredTrack = track;
-    const identities = collectRestoredTrackIdentities(restoredTrack);
-    if (!identities || hasRestoredIdentityCollision({ state, track: restoredTrack, identities })) {
+    const identities = collectRestoredTrackIdentities(track);
+    if (!identities || hasRestoredIdentityCollision({ state, track, identities })) {
         return null;
     }
 
     const tracks = [...state.tracks];
-    tracks.splice(input.trackIndex, 0, restoredTrack);
+    tracks.splice(input.trackIndex, 0, track);
     setTrackState({ ...state, tracks });
-
-    function publish(): Promise<void> {
-        return publishTrackAdded({
-            trackId: restoredTrack.id,
-            name: restoredTrack.name,
-            kind: restoredTrack.kind,
-        });
-    }
-
-    return {
-        track: restoredTrack,
-        afterCommit: publish,
-        afterAmbiguousCommit: async () => {
-            const durableTrack = getTrackById(restoredTrack.id);
-            if (durableTrack && matchesJsonFingerprint(durableTrack, input.trackJson)) {
-                await publish();
-            }
-        },
-    };
+    return track;
 }

@@ -4,7 +4,6 @@
 // ── Track ────────────────────────────────────────────────────────────────────
 
 export { addTrack } from './addTrack';
-export { addTrackWithDeferredAddedEvent } from './addTrackWithDeferredAddedEvent';
 export { setArrangementEventBus } from './arrangementEventBus';
 export { createTrack } from './createTrack';
 export { normalizeTrack } from './normalizeTrack';
@@ -30,7 +29,7 @@ export { getEligibleDeviceParameterValues } from './getEligibleDeviceParameterVa
 export { hydrateTracksForProject } from './hydrateTracksForProject';
 export { projectTrackToLiveStrip } from './projectTrackToLiveStrip';
 export { restoreTrackSnapshot } from './restoreTrackSnapshot';
-export { restoreTrackAtIndexWithDeferredAddedEvent } from './restoreTrackAtIndexWithDeferredAddedEvent';
+export { restoreTrackAtIndex } from './restoreTrackAtIndex';
 export { restoreMarkerSnapshot } from './restoreMarkerSnapshot';
 export { restoreArrangementMetadataSnapshot } from './restoreArrangementMetadataSnapshot';
 export { setTrackState } from './setTrackState';

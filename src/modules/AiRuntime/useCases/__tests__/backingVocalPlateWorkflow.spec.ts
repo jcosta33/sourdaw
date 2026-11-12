@@ -15,7 +15,6 @@ import {
     audioEngine,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
-    ensureBusStrip,
     getDeviceChainTailSeconds,
     initEngineDeviceCollaborators,
     removeBusStrip,
@@ -383,13 +382,6 @@ function isToolSchema(value: unknown): value is ToolSchema {
 
 function isUnknownArray(value: unknown): value is unknown[] {
     return Array.isArray(value);
-}
-
-function hasTrackKind(payload: { trackId: string | null } | { trackId: string; kind: string }): payload is {
-    trackId: string;
-    kind: string;
-} {
-    return typeof payload.trackId === 'string' && 'kind' in payload && typeof payload.kind === 'string';
 }
 
 function isAddSendAction(action: PendingAction): action is AddSendAction {
@@ -982,18 +974,7 @@ describe('backing-vocal plate workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         clearAgentSectionRenderArtifacts();
-        setArrangementEventBus({
-            emit: (event, payload) => {
-                if (event === 'track.added' && hasTrackKind(payload)) {
-                    if (payload.kind === 'bus') {
-                        ensureBusStrip(payload.trackId);
-                    } else {
-                        runtimeMocks.ensureTrackStrip(payload.trackId);
-                    }
-                }
-                return Promise.resolve();
-            },
-        });
+        setArrangementEventBus({ emit: () => Promise.resolve() });
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         configureRuntimeGraphProjectRevisionValidator(
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision

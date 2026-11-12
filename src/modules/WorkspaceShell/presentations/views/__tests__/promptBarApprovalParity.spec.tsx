@@ -80,9 +80,7 @@ describe('Prompt Bar canonical approval parity', () => {
         registerCrdtStorageRuntime();
         resetArrangementStoresForProject();
         setArrangementEventBus({ emit: async () => undefined });
-        expect(
-            addTrack({ id: 'review-track', name: 'Review track', kind: 'audio', suppressAddedEvent: true })
-        ).not.toBeNull();
+        expect(addTrack({ id: 'review-track', name: 'Review track', kind: 'audio' })).not.toBeNull();
         flushAutomergeStorageWrites();
         resetActionReplayAuthority();
         configureCommandBatchIdempotency({ canExecute: () => true });
