@@ -1,10 +1,10 @@
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { transportStore } from '#/modules/Transport/stores';
-import { resolveSendLevelFields, SEND_LEVEL_LAW } from '#/utils/audioLevelLaw';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { applySendAutomationRanges } from '../../useCases/automation/applySendAutomationRanges';
+import { getPlannedBus, getPlannedSend } from '../../useCases/automation/projectBatchSendState';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 type AutomateSendRangesAction = Extract<AppAction, { type: 'automateSendRanges' }>;
@@ -33,52 +33,8 @@ function getMaterializedPayload(action: AutomateSendRangesAction): MaterializedP
     };
 }
 
-function getPlannedBus(payload: MaterializedPayload, priorActions: readonly AppAction[]) {
-    let bus: { id: string; kind: string; name: string } | undefined = trackStore.value?.tracks.find(
-        (track) => track.id === payload.busId
-    );
-    for (const action of priorActions) {
-        if (action.type === 'createBus' && action.payload.busId === payload.busId) {
-            bus = { id: payload.busId, kind: 'bus', name: action.payload.name };
-        }
-        if (
-            (action.type === 'discardCreatedTrack' || action.type === 'removeTrack') &&
-            action.payload.trackId === payload.busId
-        ) {
-            bus = undefined;
-        }
-    }
-    return bus;
-}
-
-function getPlannedSend(trackId: string, busId: string, priorActions: readonly AppAction[]) {
-    const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
-    let send = track?.sends.find((candidate) => candidate.busId === busId);
-    for (const action of priorActions) {
-        if (action.type === 'addSend' && action.payload.trackId === trackId && action.payload.busId === busId) {
-            // A send the batch cannot land leaves the plan as it was: the
-            // decibel forms answer to the send law like the handler's do, and a
-            // refused request creates nothing to plan against.
-            const level = resolveSendLevelFields(action.payload, SEND_LEVEL_LAW.unity);
-            if (level.ok) {
-                send = { busId, level: level.linear, preFader: action.payload.preFader ?? false };
-            }
-        }
-        if (action.type === 'setSend' && action.payload.trackId === trackId && action.payload.busId === busId && send) {
-            const level = resolveSendLevelFields(action.payload, send.level);
-            if (level.ok) {
-                send = { ...send, level: level.linear };
-            }
-        }
-        if (action.type === 'removeSend' && action.payload.trackId === trackId && action.payload.busId === busId) {
-            send = undefined;
-        }
-    }
-    return send;
-}
-
 function currentStateMatches(payload: MaterializedPayload, priorActions: readonly AppAction[] = []): boolean {
-    const bus = getPlannedBus(payload, priorActions);
+    const bus = getPlannedBus(payload.busId, priorActions);
     const transport = transportStore.value;
     if (
         bus?.kind !== 'bus' ||

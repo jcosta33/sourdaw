@@ -72,6 +72,10 @@ export const handleRestoreAutomationLanePoints = createHandler<'restoreAutomatio
         }
         return !lane || pointsMatch(lane.points, action.payload.points);
     },
+    // The restore writes only while the lane still holds exactly the points it expects, so an
+    // inverse that names them can be reapplied inside an atomic batch without overwriting an edit.
+    canReapplyAfterDivergence: (action) =>
+        isRestorablePayload(action.payload) && Object.hasOwn(action.payload, 'expectedPoints'),
     describe: () => ({ label: 'Restore automation points' }),
     canReportConflict: true,
     previewExecution: 'isolated-project',

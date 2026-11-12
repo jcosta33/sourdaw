@@ -4,6 +4,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerDescribeResult, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { automateParameterRange } from '../../useCases/automateParameterRange';
+import { getSendAutomationBusId } from '../../useCases/automation/getSendAutomationBusId';
 import { planParameterRangeWrite } from '../../useCases/automation/planParameterRangeWrite';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
@@ -18,8 +19,19 @@ function ensureWriteId(action: AutomateParameterRangeAction): string {
     return writeId;
 }
 
-function planWrite(action: AutomateParameterRangeAction): ReturnType<typeof planParameterRangeWrite> {
-    return planParameterRangeWrite({ payload: action.payload, writeId: ensureWriteId(action) });
+function earlierMembers(context: HandlerValidationContext | undefined): readonly AppAction[] {
+    return context?.actions.slice(0, context.actionIndex) ?? [];
+}
+
+function planWrite(
+    action: AutomateParameterRangeAction,
+    context: HandlerValidationContext | undefined
+): ReturnType<typeof planParameterRangeWrite> {
+    return planParameterRangeWrite({
+        payload: action.payload,
+        writeId: ensureWriteId(action),
+        priorActions: earlierMembers(context),
+    });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -35,15 +47,38 @@ type RangeReadTarget = {
     parameterId: string;
     laneId: string | undefined;
     deviceId: string | null;
+    busId: string | null;
 };
+
+/**
+ * Whether the planner reads this earlier member's result rather than the live project: the send
+ * a send target ramps from, landed, moved or removed on exactly this track and bus. The write
+ * plans that send as the member leaves it, so describing it before the member runs still names
+ * the inverse of what it writes.
+ */
+function isPlannedSendMember(candidate: AppAction, target: RangeReadTarget): boolean {
+    return (
+        (candidate.type === 'addSend' || candidate.type === 'setSend' || candidate.type === 'removeSend') &&
+        target.busId !== null &&
+        candidate.payload.trackId === target.trackId &&
+        candidate.payload.busId === target.busId
+    );
+}
 
 function changesWhatRangeReads(candidate: AppAction, target: RangeReadTarget): boolean {
     const payload: unknown = 'payload' in candidate ? candidate.payload : undefined;
     if (!isRecord(payload)) {
         return false;
     }
-    if (candidate.type === 'automateParameterRange' || candidate.type === 'addAutomationLane') {
+    // An earlier range write on this lane is planned too: this write rewrites the points it leaves.
+    if (candidate.type === 'automateParameterRange') {
+        return false;
+    }
+    if (candidate.type === 'addAutomationLane') {
         return payload.trackId === target.trackId && payload.parameterId === target.parameterId;
+    }
+    if (isPlannedSendMember(candidate, target)) {
+        return false;
     }
     if (target.laneId !== undefined && payload.laneId === target.laneId) {
         return true;
@@ -131,6 +166,7 @@ function findEarlierBatchConflict(
             (lane) => !lane.clipId && lane.trackId === trackId && lane.parameterId === parameterId
         )?.id,
         deviceId: targetDeviceId(parameterId),
+        busId: getSendAutomationBusId(parameterId),
     };
     const conflicting = context?.actions
         .slice(0, context.actionIndex)
@@ -146,7 +182,7 @@ function findRefusal(action: AutomateParameterRangeAction, context: HandlerValid
     if (batchConflict !== null) {
         return batchConflict;
     }
-    const planned = planWrite(action);
+    const planned = planWrite(action, context);
     return planned.status === 'refused' ? planned.reason : null;
 }
 
@@ -160,8 +196,11 @@ function describeBeat(beat: number): string {
  * old points back. Redo replays the write itself, which reaches the same points from the same
  * state because the points carry the write's own identity.
  */
-function describeAutomateParameterRange(action: AutomateParameterRangeAction): HandlerDescribeResult {
-    const planned = planWrite(action);
+function describeAutomateParameterRange(
+    action: AutomateParameterRangeAction,
+    context: HandlerValidationContext | undefined
+): HandlerDescribeResult {
+    const planned = planWrite(action, context);
     if (planned.status !== 'planned') {
         return { label: 'Automate parameter range', inverseAction: null };
     }

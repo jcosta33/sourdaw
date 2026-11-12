@@ -10,6 +10,7 @@ import {
     createTrack,
     getArrangementHandlers,
     getAutomationParameterRange,
+    setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
@@ -157,6 +158,8 @@ describe('automateParameterRange', () => {
         notificationMocks.notifyUser.mockClear();
         clearHandlerRegistry();
         registerHandlerMap(getAutomationHandlers());
+        // Track publishers resolve the bus once per file, so it is in place before the first one runs.
+        setArrangementEventBus({ emit: () => Promise.resolve() });
         clearUndoHistory();
         setAutomationParameterRangeResolver(getAutomationParameterRange);
         timeSignatureMapStore.set({ changes: [] });
@@ -849,6 +852,187 @@ describe('automateParameterRange', () => {
                 executeAppActionBatch([{ type: 'addTrack', payload: { name: 'Pad', kind: 'audio' } }, panOverVerse])
             ).resolves.toMatchObject({ status: expect.stringMatching(/^committed/) });
             expect(laneFor('pan')).toBeDefined();
+        });
+    });
+
+    describe('(s) earlier members of the batch that land, move or remove the send a send range reads', () => {
+        const NEW_BUS_ID = 'bus-ai-plate';
+        const NEW_SEND = `send:${NEW_BUS_ID}`;
+        const NEW_SEND_LEVEL = dbToGain(-18);
+        const TARGET_LEVEL = dbToGain(-10);
+
+        function createPlateBus(): AppAction {
+            return { type: 'createBus', payload: { name: 'Plate', busId: NEW_BUS_ID } };
+        }
+
+        function addPlateSend(): AppAction {
+            return {
+                type: 'addSend',
+                payload: { trackId: VOCAL_ID, busId: NEW_BUS_ID, level: NEW_SEND_LEVEL, preFader: false },
+            };
+        }
+
+        /** The final four beats of each chorus: the tail EX-01 ramps into. */
+        function plateTail(startBeat: number, endBeat: number): AppAction {
+            return rangeAction({
+                parameterId: NEW_SEND,
+                range: { startBeat, endBeat },
+                valueDb: -10,
+                rampIn: endBeat - startBeat,
+            });
+        }
+
+        /** How an agent proposal lands: one group, and every member must carry a guarded inverse. */
+        const ATOMIC_GROUP = { groupId: 'plate-batch', requireCompensation: true } as const;
+
+        function expectConflict(reason: string) {
+            return expect.objectContaining({ status: 'conflicted', reason: expect.stringContaining(reason) });
+        }
+
+        beforeEach(() => {
+            registerHandlerMap(getArrangementHandlers());
+        });
+
+        it('ramps a send the same batch creates across two ranges, as one undo group that undoes and redoes exactly', async () => {
+            const tracksBefore = structuredClone(trackStore.value?.tracks);
+
+            await expect(
+                executeAppActionBatch(
+                    [createPlateBus(), addPlateSend(), plateTail(28, 32), plateTail(60, 64)],
+                    ATOMIC_GROUP
+                )
+            ).resolves.toMatchObject({ status: expect.stringMatching(/^committed/) });
+
+            const lane = laneFor(NEW_SEND);
+            expect(lane).toMatchObject({ parameterName: 'Send: Plate', minValue: 0, maxValue: 1 });
+            const laneId = lane?.id ?? '';
+            expectSameSamples(sampleLane(laneId, [0, 27.75, 28, 30, 31.75, 32, 40, 60, 62, 63.75, 64, 70]), [
+                NEW_SEND_LEVEL,
+                NEW_SEND_LEVEL,
+                NEW_SEND_LEVEL,
+                NEW_SEND_LEVEL + (TARGET_LEVEL - NEW_SEND_LEVEL) / 2,
+                NEW_SEND_LEVEL + ((TARGET_LEVEL - NEW_SEND_LEVEL) * 15) / 16,
+                NEW_SEND_LEVEL,
+                NEW_SEND_LEVEL,
+                NEW_SEND_LEVEL,
+                NEW_SEND_LEVEL + (TARGET_LEVEL - NEW_SEND_LEVEL) / 2,
+                NEW_SEND_LEVEL + ((TARGET_LEVEL - NEW_SEND_LEVEL) * 15) / 16,
+                NEW_SEND_LEVEL,
+                NEW_SEND_LEVEL,
+            ]);
+            const written = laneFor(NEW_SEND);
+
+            // One undo takes the whole batch back: the lanes, the send and the bus.
+            await undo();
+            expect(automationStore.value?.lanes).toEqual([]);
+            expect(trackStore.value?.tracks).toEqual(tracksBefore);
+
+            await redo();
+            expect(laneFor(NEW_SEND)).toEqual(written);
+
+            await undo();
+            expect(automationStore.value?.lanes).toEqual([]);
+            expect(trackStore.value?.tracks).toEqual(tracksBefore);
+        });
+
+        it('rewrites a lane the track already has inside an atomic batch, and undo restores its exact points', async () => {
+            seed({ lanes: [gainLane()] });
+            const before = laneFor('gain');
+
+            await expect(
+                executeAppActionBatch(
+                    [rangeAction({ parameterId: 'gain', range: { section: 'Bridge' }, valueDb: -3 })],
+                    ATOMIC_GROUP
+                )
+            ).resolves.toMatchObject({ status: expect.stringMatching(/^committed/) });
+            expect(laneFor('gain')).not.toEqual(before);
+
+            await undo();
+            expect(laneFor('gain')).toEqual(before);
+        });
+
+        it('ramps from the level an earlier setSend leaves on an existing send', async () => {
+            const moved = dbToGain(-20);
+
+            await expect(
+                executeAppActionBatch(
+                    [
+                        {
+                            type: 'setSend',
+                            payload: { trackId: VOCAL_ID, busId: BUS_ID, level: moved, expectedLevel: 0.5 },
+                        },
+                        rangeAction({ parameterId: `send:${BUS_ID}`, range: { section: 'Bridge' }, valueDb: -12 }),
+                    ],
+                    ATOMIC_GROUP
+                )
+            ).resolves.toMatchObject({ status: expect.stringMatching(/^committed/) });
+
+            expect(pointShapes(laneFor(`send:${BUS_ID}`))).toEqual([
+                { beat: 32, value: moved, curve: 'linear' },
+                { beat: 32, value: dbToGain(-12), curve: 'linear' },
+                { beat: 48, value: dbToGain(-12), curve: 'linear' },
+                { beat: 48, value: moved, curve: 'linear' },
+            ]);
+            await undo();
+            expect(laneFor(`send:${BUS_ID}`)).toBeUndefined();
+            expect(trackStore.value?.tracks.find((track) => track.id === VOCAL_ID)?.sends).toEqual([
+                { busId: BUS_ID, level: 0.5, preFader: false },
+            ]);
+        });
+
+        it.each<{ name: string; earlier: AppAction; range: AppAction; reason: string }>([
+            {
+                name: 'an earlier removeSend leaves the send absent',
+                earlier: { type: 'removeSend', payload: { trackId: VOCAL_ID, busId: BUS_ID } },
+                range: rangeAction({ parameterId: `send:${BUS_ID}`, range: { section: 'Bridge' }, valueDb: -12 }),
+                reason: `has no send to bus ${BUS_ID}`,
+            },
+            {
+                name: 'an earlier setTrackGain moves what a gain range ramps from',
+                earlier: { type: 'setTrackGain', payload: { trackId: VOCAL_ID, gain: 0.5, expectedGain: 1 } },
+                range: rangeAction({ parameterId: 'gain', range: { section: 'Bridge' }, valueDb: -3 }),
+                reason: 'An earlier setTrackGain in this batch changes what the gain range',
+            },
+            {
+                name: 'an earlier setDeviceParameter moves what a device range ramps from',
+                earlier: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'device-drive', paramId: 'dist-drive', value: 40 },
+                },
+                range: rangeAction({ parameterId: DRIVE_TARGET, range: { section: 'Bridge' }, value: 60 }),
+                reason: `An earlier setDeviceParameter in this batch changes what the ${DRIVE_TARGET} range`,
+            },
+            {
+                name: 'an earlier send to another bus on the same track',
+                earlier: {
+                    type: 'addSend',
+                    payload: { trackId: VOCAL_ID, busId: NEW_BUS_ID, level: NEW_SEND_LEVEL, preFader: false },
+                },
+                range: rangeAction({ parameterId: `send:${BUS_ID}`, range: { section: 'Bridge' }, valueDb: -12 }),
+                reason: `An earlier addSend in this batch changes what the send:${BUS_ID} range`,
+            },
+            {
+                name: 'an earlier addAutomationLane on the same parameter',
+                earlier: { type: 'addAutomationLane', payload: { trackId: VOCAL_ID, parameterId: 'pan' } },
+                range: rangeAction({ parameterId: 'pan', range: { section: 'Bridge' }, value: 0.5 }),
+                reason: 'An earlier addAutomationLane in this batch changes what the pan range',
+            },
+        ])('still refuses when $name', async ({ earlier, range, reason }) => {
+            const prefix: AppAction[] = earlier.type === 'addSend' ? [createPlateBus()] : [];
+            const tracksBefore = lanesSnapshot();
+            const trackState = structuredClone(trackStore.value?.tracks);
+
+            await expect(executeAppActionBatch([...prefix, earlier, range])).resolves.toEqual(expectConflict(reason));
+
+            expect(lanesSnapshot()).toBe(tracksBefore);
+            expect(trackStore.value?.tracks).toEqual(trackState);
+        });
+
+        it('still refuses a send range on a send the batch has not created yet', async () => {
+            await expect(executeAppActionBatch([createPlateBus(), plateTail(28, 32)])).resolves.toEqual(
+                expectConflict(`has no send to bus ${NEW_BUS_ID}`)
+            );
+            expect(automationStore.value?.lanes).toEqual([]);
         });
     });
 });

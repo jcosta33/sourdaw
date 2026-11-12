@@ -11,7 +11,7 @@ import {
 import { getDeviceAutomationParameterId } from '#/utils/automationDeviceTarget';
 import { type AppAction } from '#/utils/handlerContract';
 
-import { type AutomationLane, type AutomationPoint } from '../../models/Automation';
+import { createAutomationLane, type AutomationLane, type AutomationPoint } from '../../models/Automation';
 import { buildParameterRangePoints } from '../../services/buildParameterRangePoints';
 import { sampleStoredLaneCurve } from '../../services/sampleStoredLaneCurve';
 import { automationStore } from '../../stores/automationStore';
@@ -20,6 +20,7 @@ import { getAutomationLaneCeiling } from './getAutomationLaneCeiling';
 import { getAutomationParameterRangeResolver } from './getAutomationParameterRangeResolver';
 import { getSendAutomationBusId } from './getSendAutomationBusId';
 import { isLinearGainAutomationLane } from './isLinearGainAutomationLane';
+import { getPlannedBus, getPlannedSend } from './projectBatchSendState';
 
 type AutomateParameterRangePayload = Extract<AppAction, { type: 'automateParameterRange' }>['payload'];
 
@@ -75,6 +76,12 @@ type ParameterTarget = {
 type PlanParameterRangeWriteInput = {
     payload: AutomateParameterRangePayload;
     writeId: string;
+    /**
+     * The members of the same batch that run before this write. A batch describes every member
+     * before any runs, so the send and the lane this write reads are planned as those members
+     * will leave them.
+     */
+    priorActions?: readonly AppAction[];
 };
 
 function refuse(refusal: ParameterRangeWriteRefusal, reason: string): Refused {
@@ -86,12 +93,12 @@ function createdLaneId(writeId: string): string {
     return `${writeId}-lane`;
 }
 
-function sendTarget(track: Track, busId: string): ParameterTarget | Refused {
-    const send = track.sends.find((candidate) => candidate.busId === busId);
+function sendTarget(track: Track, busId: string, priorActions: readonly AppAction[]): ParameterTarget | Refused {
+    const send = getPlannedSend(track.id, busId, priorActions);
     if (!send) {
         return refuse('no-send', `Track "${track.name}" has no send to bus ${busId}.`);
     }
-    const bus = trackStore.value?.tracks.find((candidate) => candidate.id === busId);
+    const bus = getPlannedBus(busId, priorActions);
     return {
         kind: 'send',
         parameterName: `Send: ${bus?.name ?? busId}`,
@@ -130,7 +137,11 @@ function deviceTarget(track: Track, parameterId: string): ParameterTarget | Refu
     };
 }
 
-function resolveParameterTarget(track: Track, parameterId: string): ParameterTarget | Refused {
+function resolveParameterTarget(
+    track: Track,
+    parameterId: string,
+    priorActions: readonly AppAction[]
+): ParameterTarget | Refused {
     if (parameterId === 'gain') {
         return { kind: 'gain', parameterName: 'Gain', minValue: 0, maxValue: FADER_MAX_GAIN, staticValue: track.gain };
     }
@@ -139,7 +150,7 @@ function resolveParameterTarget(track: Track, parameterId: string): ParameterTar
     }
     const busId = getSendAutomationBusId(parameterId);
     if (busId !== null) {
-        return sendTarget(track, busId);
+        return sendTarget(track, busId, priorActions);
     }
     if (parameterId.startsWith('send:')) {
         return refuse('unknown-parameter', 'A send target names its bus: send:<busId>.');
@@ -151,6 +162,59 @@ function findTrackLevelLane(trackId: string, parameterId: string): AutomationLan
     return automationStore.value?.lanes.find(
         (lane) => !lane.clipId && lane.trackId === trackId && lane.parameterId === parameterId
     );
+}
+
+type AutomateParameterRangeAction = Extract<AppAction, { type: 'automateParameterRange' }>;
+
+function isSameLaneRangeWrite(
+    action: AppAction,
+    trackId: string,
+    parameterId: string
+): action is AutomateParameterRangeAction {
+    return (
+        action.type === 'automateParameterRange' &&
+        action.payload.trackId === trackId &&
+        action.payload.parameterId === parameterId
+    );
+}
+
+/**
+ * The lane this write lands on as the earlier members of its batch leave it: the live lane, or
+ * the lane the latest earlier range write on the same parameter plans, which is itself planned
+ * against the members before it. An earlier write that cannot be planned refuses this one too.
+ */
+function resolvePlannedLane(
+    track: Track,
+    parameterId: string,
+    priorActions: readonly AppAction[]
+): AutomationLane | undefined | Refused {
+    const earlierIndex = priorActions.findLastIndex((action) => isSameLaneRangeWrite(action, track.id, parameterId));
+    const earlier = priorActions[earlierIndex];
+    if (earlier === undefined || !isSameLaneRangeWrite(earlier, track.id, parameterId)) {
+        return findTrackLevelLane(track.id, parameterId);
+    }
+    const before = priorActions.slice(0, earlierIndex);
+    const writeId = earlier.payload.writeId;
+    if (writeId === undefined) {
+        return refuse(
+            'invalid-range',
+            `An earlier ${parameterId} range in this batch has no write identity to plan from.`
+        );
+    }
+    const planned = planParameterRangeWrite({ payload: earlier.payload, writeId, priorActions: before });
+    if (planned.status === 'refused') {
+        return planned;
+    }
+    if (planned.creation === null) {
+        const lane = resolvePlannedLane(track, parameterId, before);
+        return lane === undefined || 'status' in lane ? lane : { ...lane, points: planned.pointsAfter };
+    }
+    const { trackId, parameterName, minValue, maxValue } = planned.creation;
+    return {
+        ...createAutomationLane(trackId, parameterId, parameterName, minValue, maxValue),
+        id: planned.laneId,
+        points: planned.pointsAfter,
+    };
 }
 
 /** The interval the range covers: the beats admission materialized, or the range resolved now. */
@@ -294,7 +358,11 @@ function resolveRamps(payload: AutomateParameterRangePayload): { rampIn: number;
  * command all reach the same plan. The write's lane and point identities come from `writeId`,
  * which is what lets a redo land exactly the points the original write did.
  */
-export function planParameterRangeWrite({ payload, writeId }: PlanParameterRangeWriteInput): ParameterRangeWriteResult {
+export function planParameterRangeWrite({
+    payload,
+    writeId,
+    priorActions = [],
+}: PlanParameterRangeWriteInput): ParameterRangeWriteResult {
     const track = trackStore.value?.tracks.find((candidate) => candidate.id === payload.trackId);
     if (!track) {
         return refuse('unknown-track', `Track is unavailable: ${payload.trackId}`);
@@ -302,11 +370,14 @@ export function planParameterRangeWrite({ payload, writeId }: PlanParameterRange
     if (track.automationMode === 'off') {
         return refuse('automation-off', `Track "${track.name}" has automation turned off, so no lane would play.`);
     }
-    const target = resolveParameterTarget(track, payload.parameterId);
+    const target = resolveParameterTarget(track, payload.parameterId, priorActions);
     if ('status' in target) {
         return target;
     }
-    const lane = findTrackLevelLane(track.id, payload.parameterId);
+    const lane = resolvePlannedLane(track, payload.parameterId, priorActions);
+    if (lane !== undefined && 'status' in lane) {
+        return lane;
+    }
     if (lane?.linkedLaneId !== undefined) {
         return refuse(
             'linked-follower',
