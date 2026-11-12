@@ -15,7 +15,7 @@ import {
 import { basename, dirname, join } from 'node:path';
 
 import { guardFailureReceiptPath, parseGuardFailureReceipt } from './prContract.ts';
-import { inside, type LaneIdentity } from './removeLane.ts';
+import { inside, LaneSafetyRefusal, type LaneIdentity } from './removeLane.ts';
 import { clearGuardFailureReceiptIfUnchanged } from './resourceGuard.ts';
 
 import type { CleanupPort, CleanupRecord } from './cleanupLanes.ts';
@@ -157,7 +157,7 @@ function removedWorktreeAbsent(record: CleanupRecord, port: CleanupPort): boolea
     const path = record.identity.path;
     const roots = ['worktrees', 'review-worktrees'].map((name) => join(record.primaryRoot, '.agents', name));
     if (!roots.some((root) => path !== root && inside(root, path)) || realpathSync(dirname(path)) !== dirname(path)) {
-        throw new Error('queued worktree removal path is not canonical within managed roots');
+        throw new LaneSafetyRefusal('queued worktree removal path is not canonical within managed roots');
     }
     if (port.removal.worktrees().some((lane) => lane.path === path)) {
         return false;
@@ -176,7 +176,7 @@ function removedWorktreeAbsent(record: CleanupRecord, port: CleanupPort): boolea
 export function finishRemovedWorktree(record: CleanupRecord, port: CleanupPort): string {
     if (!removedWorktreeAbsent(record, port)) {
         delete record.removal;
-        throw new Error('queued worktree removal path was reused; preserving its bookkeeping');
+        throw new LaneSafetyRefusal('queued worktree removal path was reused; preserving its bookkeeping');
     }
     const completed = 'worktree absent from filesystem and registry; removal bookkeeping completed';
     const expected = record.removal?.guardFailure;
@@ -193,6 +193,7 @@ export function finishRemovedWorktree(record: CleanupRecord, port: CleanupPort):
         return 'worktree absent from filesystem and registry; newer guard bookkeeping preserved';
     }
     const receipt = parseGuardFailureReceipt(file.bytes.toString('utf8'), path);
+    const replaced = 'guard bookkeeping changed during removal cleanup';
     const result = clearGuardFailureReceiptIfUnchanged(record.primaryRoot, laneName, receipt, {
         rmSync: (claimed, options) => {
             // The native receipt helper claims atomically; recheck file identity and bytes on that
@@ -202,13 +203,15 @@ export function finishRemovedWorktree(record: CleanupRecord, port: CleanupPort):
                 !removedWorktreeAbsent(record, port) ||
                 JSON.stringify(guardReceiptFingerprint(claimed)) !== JSON.stringify(expected)
             ) {
-                throw new Error('guard bookkeeping changed during removal cleanup');
+                throw new Error(replaced);
             }
             rmSync(claimed, options);
         },
     });
     if (result.status === 'error') {
-        throw new Error(result.message);
+        // The receipt helper relays the claim callback's throw as a bare message. Only that exact
+        // refusal, with the claim restored, is lane state; anything else is an inspection failure.
+        throw result.message === replaced ? new LaneSafetyRefusal(replaced) : new Error(result.message);
     }
     return result.status === 'mismatch' ? 'worktree absent; changed guard bookkeeping preserved' : completed;
 }

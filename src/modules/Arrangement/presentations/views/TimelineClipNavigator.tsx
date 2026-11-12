@@ -9,14 +9,18 @@ import {
     useSyncExternalStore,
 } from 'react';
 
+import { Button } from '#/components/ui/button';
+import { Input } from '#/components/ui/input';
+
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { trackStore } from '../../stores/trackStore';
 import { selectClipWithFocus } from '../../useCases/clipSelection/selectClipWithFocus';
-import { setClipSelection } from '../../useCases/clipSelection/setClipSelection';
 import { getTimelineClipNavigationSnapshot } from '../../useCases/getTimelineClipNavigationSnapshot';
+import { revealTimelineClip } from '../../useCases/revealTimelineClip';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 
-type TimelineClip = ReturnType<typeof getTimelineClipNavigationSnapshot>[number];
+import { getTimelineClipNavigatorKeyboardHandlers } from './timelineClipNavigatorKeyboard';
+import { type ClipTypeFilter, filterTimelineClips, type TimelineClip } from './timelineClipNavigatorModel';
 
 function describeClip(item: TimelineClip): string {
     const { clip, track } = item;
@@ -43,29 +47,39 @@ function selectionStatus(ids: string[], focused: TimelineClip | undefined): stri
 
 export function TimelineClipNavigator({ onClose }: { onClose: () => void }): ReactElement {
     const clips = useSyncExternalStore(trackStore.subscribeReact, getTimelineClipNavigationSnapshot);
+    const selectedTrackId = useSyncExternalStore(
+        trackStore.subscribeReact,
+        () => trackStore.getSnapshot()?.selectedTrackId ?? null
+    );
     const selection = useSyncExternalStore(
         clipSelectionStore.subscribeReact,
         () => clipSelectionStore.getSnapshot() ?? defaultClipSelectionState
     );
+    const searchRef = useRef<HTMLInputElement>(null);
     const listboxRef = useRef<HTMLDivElement>(null);
     const id = useId();
+    const [query, setQuery] = useState('');
+    const [typeFilter, setTypeFilter] = useState<ClipTypeFilter>('all');
+    const [currentTrackOnly, setCurrentTrackOnly] = useState(false);
+    const effectiveCurrentTrackOnly = currentTrackOnly && selectedTrackId !== null;
     const [activeClipId, setActiveClipId] = useState<string | null>(() => {
         const selected = new Set(selectedClipIds(selection));
         return clips.find((item) => selected.has(item.clip.id))?.clip.id ?? clips[0]?.clip.id ?? null;
     });
+    const filteredClips = filterTimelineClips(clips, query, typeFilter, effectiveCurrentTrackOnly, selectedTrackId);
     const lastIndex = useRef(0);
-    const foundIndex = clips.findIndex((item) => item.clip.id === activeClipId);
-    const activeIndex = foundIndex >= 0 ? foundIndex : Math.min(lastIndex.current, clips.length - 1);
-    const active = clips[activeIndex];
+    const foundIndex = filteredClips.findIndex((item) => item.clip.id === activeClipId);
+    const activeIndex = foundIndex >= 0 ? foundIndex : Math.min(lastIndex.current, filteredClips.length - 1);
+    const active = filteredClips[activeIndex];
     const first = Math.max(0, activeIndex - 4);
-    const visible = clips.slice(first, first + 9);
+    const visible = filteredClips.slice(first, first + 9);
     const selectedIds = selectedClipIds(selection);
     const selected = new Set(selectedIds);
     const focused = clips.find((item) => item.clip.id === selection.selectedClipId);
     const status = selectionStatus(selectedIds, focused);
 
     useEffect(() => {
-        listboxRef.current?.focus();
+        searchRef.current?.focus();
     }, []);
 
     useEffect(() => {
@@ -80,7 +94,7 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
     }, [active, activeClipId, activeIndex]);
 
     function moveTo(index: number): void {
-        const next = clips[index];
+        const next = filteredClips[index];
         if (!next) {
             return;
         }
@@ -88,60 +102,47 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
         setActiveClipId(next.clip.id);
     }
 
-    function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
-        const claimed = ['ArrowDown', 'ArrowUp', 'Home', 'End', ' ', 'Spacebar', 'Enter', 'Escape'];
-        if (!claimed.includes(event.key)) {
-            event.stopPropagation();
+    function commitActive(): void {
+        if (!active) {
             return;
         }
-        event.preventDefault();
-        event.stopPropagation();
-
-        switch (event.key) {
-            case 'ArrowDown':
-                moveTo(Math.min(activeIndex + 1, clips.length - 1));
-                break;
-            case 'ArrowUp':
-                moveTo(Math.max(activeIndex - 1, 0));
-                break;
-            case 'Home':
-                moveTo(0);
-                break;
-            case 'End':
-                moveTo(clips.length - 1);
-                break;
-            case ' ':
-            case 'Spacebar':
-                if (active) {
-                    if (selected.has(active.clip.id)) {
-                        setClipSelection(selectedIds.filter((clipId) => clipId !== active.clip.id));
-                    } else {
-                        setClipSelection([...selectedIds, active.clip.id]);
-                    }
-                }
-                break;
-            case 'Enter':
-                if (active) {
-                    selectTrack(active.track.id);
-                    selectClipWithFocus(active.clip.id);
-                }
-                break;
-            case 'Escape':
-                onClose();
-                break;
-        }
+        selectTrack(active.track.id);
+        selectClipWithFocus(active.clip.id);
+        revealTimelineClip(active.clip.id);
     }
+
+    const { handleKeyDown, handleSearchKeyDown } = getTimelineClipNavigatorKeyboardHandlers({
+        active,
+        activeIndex,
+        filteredClips,
+        selected,
+        selectedIds,
+        listboxRef,
+        moveTo,
+        commitActive,
+        onClose,
+    });
 
     return (
         <TimelineClipNavigatorView
             id={id}
+            searchRef={searchRef}
             listboxRef={listboxRef}
+            query={query}
+            onQueryChange={setQuery}
+            onSearchKeyDown={handleSearchKeyDown}
+            typeFilter={typeFilter}
+            onTypeFilterChange={setTypeFilter}
+            currentTrackOnly={effectiveCurrentTrackOnly}
+            currentTrackAvailable={selectedTrackId !== null}
+            onCurrentTrackOnlyChange={setCurrentTrackOnly}
             onKeyDown={handleKeyDown}
             active={active}
             first={first}
             visible={visible}
             selected={selected}
-            total={clips.length}
+            total={filteredClips.length}
+            unfilteredTotal={clips.length}
             status={status}
         />
     );
@@ -149,44 +150,135 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
 
 type TimelineClipNavigatorViewProps = {
     readonly id: string;
+    readonly searchRef: RefObject<HTMLInputElement | null>;
     readonly listboxRef: RefObject<HTMLDivElement | null>;
+    readonly query: string;
+    readonly onQueryChange: (query: string) => void;
+    readonly onSearchKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+    readonly typeFilter: ClipTypeFilter;
+    readonly onTypeFilterChange: (filter: ClipTypeFilter) => void;
+    readonly currentTrackOnly: boolean;
+    readonly currentTrackAvailable: boolean;
+    readonly onCurrentTrackOnlyChange: (enabled: boolean) => void;
     readonly onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
     readonly active: TimelineClip | undefined;
     readonly first: number;
     readonly visible: readonly TimelineClip[];
     readonly selected: ReadonlySet<string>;
     readonly total: number;
+    readonly unfilteredTotal: number;
     readonly status: string;
 };
 
+type TimelineClipNavigatorFiltersProps = Pick<
+    TimelineClipNavigatorViewProps,
+    'typeFilter' | 'onTypeFilterChange' | 'currentTrackOnly' | 'currentTrackAvailable' | 'onCurrentTrackOnlyChange'
+>;
+
+function TimelineClipNavigatorFilters({
+    typeFilter,
+    onTypeFilterChange,
+    currentTrackOnly,
+    currentTrackAvailable,
+    onCurrentTrackOnlyChange,
+}: TimelineClipNavigatorFiltersProps): ReactElement {
+    const filters: readonly { value: ClipTypeFilter; label: string }[] = [
+        { value: 'all', label: 'All' },
+        { value: 'midi', label: 'MIDI' },
+        { value: 'audio', label: 'Audio' },
+    ];
+    return (
+        <div role="group" aria-label="Clip filters" className="mb-2 flex flex-wrap gap-1">
+            {filters.map((filter) => (
+                <Button
+                    key={filter.value}
+                    type="button"
+                    size="sm"
+                    variant={typeFilter === filter.value ? 'secondary' : 'ghost'}
+                    aria-pressed={typeFilter === filter.value}
+                    onClick={() => onTypeFilterChange(filter.value)}
+                >
+                    {filter.label}
+                </Button>
+            ))}
+            <Button
+                type="button"
+                size="sm"
+                variant={currentTrackOnly ? 'secondary' : 'ghost'}
+                aria-pressed={currentTrackOnly}
+                disabled={!currentTrackAvailable}
+                onClick={() => onCurrentTrackOnlyChange(!currentTrackOnly)}
+            >
+                Current track
+            </Button>
+        </div>
+    );
+}
+
 function TimelineClipNavigatorView({
     id,
+    searchRef,
     listboxRef,
+    query,
+    onQueryChange,
+    onSearchKeyDown,
+    typeFilter,
+    onTypeFilterChange,
+    currentTrackOnly,
+    currentTrackAvailable,
+    onCurrentTrackOnlyChange,
     onKeyDown,
     active,
     first,
     visible,
     selected,
     total,
+    unfilteredTotal,
     status,
 }: TimelineClipNavigatorViewProps): ReactElement {
     return (
         <div className="max-w-sm rounded border border-border bg-surface-base p-2 text-sm shadow-lg">
+            <Input
+                ref={searchRef}
+                type="search"
+                aria-label="Search clips"
+                aria-controls={`${id}-listbox`}
+                aria-describedby={`${id}-help ${id}-count`}
+                placeholder="Search clip or track names"
+                value={query}
+                onChange={(event) => onQueryChange(event.target.value)}
+                onKeyDown={onSearchKeyDown}
+                className="mb-2"
+                autoComplete="off"
+            />
+            <TimelineClipNavigatorFilters
+                typeFilter={typeFilter}
+                onTypeFilterChange={onTypeFilterChange}
+                currentTrackOnly={currentTrackOnly}
+                currentTrackAvailable={currentTrackAvailable}
+                onCurrentTrackOnlyChange={onCurrentTrackOnlyChange}
+            />
             <p id={`${id}-help`} className="mb-2 text-foreground/70">
-                Arrow keys, Home and End browse clips. Space toggles selection; Enter selects one clip. Escape closes.
+                Type to filter. Arrow Down enters results; arrows, Home and End browse. Space toggles selection; Enter
+                selects and reveals. Escape closes.
+            </p>
+            <p id={`${id}-count`} aria-live="polite" aria-atomic="true" className="mb-1 text-xs text-foreground/70">
+                {total} of {unfilteredTotal} clips
             </p>
             <div
+                id={`${id}-listbox`}
                 ref={listboxRef}
                 role="listbox"
                 aria-label="Timeline clips"
                 aria-multiselectable="true"
-                aria-describedby={`${id}-help`}
+                aria-describedby={`${id}-help ${id}-count`}
                 aria-activedescendant={active ? `${id}-${active.key}` : undefined}
                 tabIndex={0}
                 onKeyDown={onKeyDown}
                 className="max-h-64 overflow-auto rounded border border-border p-1 outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-                {total === 0 ? <p>No clips</p> : null}
+                {unfilteredTotal === 0 ? <p>No clips</p> : null}
+                {unfilteredTotal > 0 && total === 0 ? <p>No matching clips</p> : null}
                 {visible.map((item, offset) => (
                     <div
                         key={item.key}

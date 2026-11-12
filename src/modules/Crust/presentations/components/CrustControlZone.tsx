@@ -99,10 +99,10 @@ const Knob = ({
         aria-disabled={disabled}
     >
         <RotaryKnob
+            aria-label={label}
             value={value}
             onChange={disabled ? () => {} : onChange}
             gestureAuthority={gestureAuthority}
-            aria-label={label}
             min={min}
             max={max}
             step={step}
@@ -148,10 +148,10 @@ const AutoKnob = ({
 }): ReactElement => (
     <Stack align="center" gap={0.5}>
         <RotaryKnob
+            aria-label={label}
             value={value}
             onChange={onChange}
             gestureAuthority={gestureAuthority}
-            aria-label={label}
             min={min}
             max={max}
             step={step}

@@ -88,6 +88,9 @@ describe('GrinderPanel', () => {
         render(<GrinderPanel deviceId={device_id} />);
 
         expect(screen.getByRole('button', { name: 'Overdrive' })).toHaveAttribute('aria-pressed', 'true');
+        for (const parameter of ['Drive', 'Tone', 'Level']) {
+            expect(screen.getByRole('slider', { name: `Overdrive ${parameter}` })).toBeInTheDocument();
+        }
     });
 
     it('should show non-duplicated neural status content instead of a repeated mode guide', () => {
@@ -274,6 +277,13 @@ describe('GrinderPanel', () => {
 
         const enabled_view = render(<GrinderPanel deviceId={device_id} />);
         expect(within(enabled_view.container).getByText('Mic 2')).toBeInTheDocument();
+        for (const mic of ['Mic 1', 'Mic 2']) {
+            for (const parameter of ['horizontal position', 'vertical position', 'distance']) {
+                expect(
+                    within(enabled_view.container).getByRole('slider', { name: `${mic} ${parameter}` })
+                ).toBeInTheDocument();
+            }
+        }
         enabled_view.unmount();
 
         grinderStore.set({

@@ -249,8 +249,8 @@ describe('Fermenter real controls', () => {
             'Effects',
             'Chorus/Phaser',
             [
-                ['Rate', 'chorusRate', 1.2, 1.3],
-                ['Mix', 'chorusMix', 0, 0.01],
+                ['Chorus Rate', 'chorusRate', 1.2, 1.3],
+                ['Chorus Mix', 'chorusMix', 0, 0.01],
             ],
         ],
     ] as const)('routes %s keyboard steps to their matching parameters', async (name, section, tab, controls) => {
