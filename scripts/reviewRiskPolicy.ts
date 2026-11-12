@@ -166,6 +166,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/prContract.ts',
     'scripts/prepareReview.ts',
     'scripts/pruneRemoteBranches.ts',
+    'scripts/pruneRemoteBranchesGithub.ts',
     'scripts/publishLane.ts',
     'scripts/publishReview.ts',
     'scripts/pullRequestMutationLock.ts',

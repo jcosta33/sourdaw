@@ -424,6 +424,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
     'branch:prune': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/pruneRemoteBranches.ts',
+        'scripts/pruneRemoteBranchesGithub.ts',
         'scripts/measurementRevisionHolders.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',

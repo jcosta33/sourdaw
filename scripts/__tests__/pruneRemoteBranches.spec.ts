@@ -4,19 +4,21 @@ import { REQUIRED_REPOSITORY } from '../githubAppIdentity.ts';
 import { branchHoldsRevision, recordedRevisionsInTables, type RemoteBranch } from '../measurementRevisionHolders.ts';
 import {
     classifyRemoteBranch,
-    deleteRemoteBranch,
     parsePruneRemoteBranchesArgs,
-    parsePullRequestListing,
     pruneRemoteBranches,
-    queryBaseDependents,
     runPruneRemoteBranchesCli,
     trustedPruneRuntime,
-    type BranchPullRequest,
-    type DeleteOutcome,
     type PruneRemoteBranchesArgs,
     type PruneRemoteBranchesPort,
-    type PullRequestListing,
 } from '../pruneRemoteBranches.ts';
+import {
+    deleteRemoteBranch,
+    parsePullRequestListing,
+    queryBaseDependents,
+    type BranchPullRequest,
+    type DeleteOutcome,
+    type PullRequestListing,
+} from '../pruneRemoteBranchesGithub.ts';
 
 function branch(name: string, tip: string): RemoteBranch {
     return { name, tip };
