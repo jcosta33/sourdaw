@@ -1,0 +1,16 @@
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  h_beb54bf43b47b7 282
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  h_beb54bf43b47b7 206,208,248,287,305,324,334,354,386,502,541,557,600,603,612,712,737,758,766
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "31bb18d130e09975b383c78fd2f909dd624ea282",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
