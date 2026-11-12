@@ -1,0 +1,37 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_126e3d478b4f75::t_e318cb8ef1e9d5 1
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_126e3d478b4f75::t_fd4b281dfbda1d 1
+public/wasm/manifest.json
+  s_126e3d478b4f75::t_81bf64bdf53ee0 6,12,16-18,21,26,30-32,35,40,44-46,49,54,58
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_126e3d478b4f75::t_16edc32a1cc5c6 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_126e3d478b4f75::t_fd4b281dfbda1d 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_126e3d478b4f75::t_e318cb8ef1e9d5 1
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_126e3d478b4f75::t_e318cb8ef1e9d5 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_126e3d478b4f75::t_fd4b281dfbda1d 1
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_126e3d478b4f75::t_16edc32a1cc5c6 1
+public/wasm/scoring/scoring.d.ts
+  s_126e3d478b4f75::t_16edc32a1cc5c6 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d78038eb29b7ec0897787af3e762cf3dcb0f9b18",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
