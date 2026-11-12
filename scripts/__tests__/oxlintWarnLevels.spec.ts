@@ -36,8 +36,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isWarnSeverity(severity: unknown): boolean {
+    return severity === 'warn' || severity === 1;
+}
+
 function isWarn(setting: unknown): boolean {
-    return Array.isArray(setting) ? setting[0] === 'warn' : setting === 'warn';
+    return isWarnSeverity(Array.isArray(setting) ? setting[0] : setting);
 }
 
 function warnEntries(scope: string, rules: unknown): string[] {
@@ -57,22 +61,45 @@ function overrideScope(override: Record<string, unknown>): string {
     return files[0];
 }
 
-function configuredWarnEntries(): string[] {
+function warnEntriesOf(config: Record<string, unknown>): string[] {
+    const overrides: unknown[] = Array.isArray(config.overrides) ? config.overrides : [];
+    return [
+        ...warnEntries('category', config.categories),
+        ...warnEntries('root', config.rules),
+        ...overrides.filter(isRecord).flatMap((override) => warnEntries(overrideScope(override), override.rules)),
+    ];
+}
+
+function parsedOxlintConfig(): Record<string, unknown> {
     const parsed = ts.parseConfigFileTextToJson('.oxlintrc.json', readFileSync('.oxlintrc.json', 'utf8'));
     if (parsed.error !== undefined || !isRecord(parsed.config)) {
         throw new Error('.oxlintrc.json did not parse as a JSONC object');
     }
-    const overrides: unknown[] = Array.isArray(parsed.config.overrides) ? parsed.config.overrides : [];
-    return [
-        ...warnEntries('root', parsed.config.rules),
-        ...overrides.filter(isRecord).flatMap((override) => warnEntries(overrideScope(override), override.rules)),
-    ];
+    return parsed.config;
 }
 
 describe('.oxlintrc.json warn levels', () => {
     it('configures exactly the tracked rules at warn', () => {
         const allowed = ALLOWED_WARN_RULES.map(([entry]) => entry).sort();
-        expect(configuredWarnEntries().sort()).toEqual(allowed);
+        expect(warnEntriesOf(parsedOxlintConfig()).sort()).toEqual(allowed);
+    });
+
+    it.each([
+        [{ rules: { a: 1 } }, ['root:a']],
+        [{ rules: { a: [1, {}] } }, ['root:a']],
+        [{ rules: { a: 'warn' } }, ['root:a']],
+        [{ rules: { a: ['warn'] } }, ['root:a']],
+        [{ categories: { pedantic: 'warn' } }, ['category:pedantic']],
+        [{ categories: { pedantic: 1 } }, ['category:pedantic']],
+        [{ overrides: [{ files: ['x/**'], rules: { a: 1 } }] }, ['x/**:a']],
+        [{ rules: { a: 'error' } }, []],
+        [{ rules: { a: 2 } }, []],
+        [{ rules: { a: 'off' } }, []],
+        [{ rules: { a: 0 } }, []],
+        [{ categories: { pedantic: 'off' } }, []],
+        [{ categories: { pedantic: 'error' } }, []],
+    ])('reports %j as %j', (config, expected) => {
+        expect(warnEntriesOf(config)).toEqual(expected);
     });
 
     it('fails the lint gate on a new violation of a promoted promise rule', () => {
