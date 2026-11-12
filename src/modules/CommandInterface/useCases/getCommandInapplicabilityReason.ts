@@ -1,4 +1,4 @@
-import { getCommandInapplicabilityReason as getInapplicabilityReason } from '../services/commandSearch';
+import { getCommandInapplicabilityReason as getInapplicabilityReason } from '../models/commandSearch';
 
 import { type CallableCommandEntry } from './searchCommandRegistry';
 

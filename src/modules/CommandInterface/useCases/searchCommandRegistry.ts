@@ -1,7 +1,7 @@
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type CommandEntry } from '../models/CommandEntry';
-import { searchCommands } from '../services/commandSearch';
+import { searchCommands } from '../models/commandSearch';
 
 export type CommandAction = AppAction | ((onCommitted?: () => void) => void);
 export type CallableCommandEntry = CommandEntry<CommandAction>;

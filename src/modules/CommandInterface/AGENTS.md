@@ -8,7 +8,7 @@ Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/ind
 
 ## Key Subsystems
 
-- **Command Catalog & Search**: Categorized command lists in `useCases/commands/*` (Audio, Midi, Clip, Edit, View, Transport, etc.) indexed and searched via `services/commandSearch.ts`.
+- **Command Catalog & Search**: Categorized command lists in `useCases/commands/*` (Audio, Midi, Clip, Edit, View, Transport, etc.) indexed and searched via `models/commandSearch.ts`.
 - **Shortcut Store & Storage**: `stores/shortcutStore.ts` persists user keybindings to `localStorage` with fallback defaults. `useCases/findShortcutConflicts.ts` finds every other binding that holds a combo, and `setShortcutMapping` moves a reassigned combo off them.
 - **Global Keybinding Hook**: `presentations/views/keyboardShortcutsContract.ts` listens for global hotkeys, handling macOS/Windows modifier normalization and suppressing events in text inputs.
 
