@@ -279,6 +279,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                                                 variant="bare"
                                                 size="bare"
                                                 type="button"
+                                                role="menuitem"
                                                 aria-label={`Rename ${arr.name}`}
                                                 className={cn(
                                                     'rounded p-0.5 transition-all hover:bg-background/80',
