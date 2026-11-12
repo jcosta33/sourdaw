@@ -8,6 +8,7 @@ import { basename, dirname, isAbsolute, posix, relative, resolve, sep } from 'no
 import parseSpdxExpression from 'spdx-expression-parse';
 import { list as listTarArchive } from 'tar';
 
+import { cargoMetadata } from './cargoMetadata.ts';
 import { parsePnpmLock } from './pnpmLock.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 
@@ -856,11 +857,7 @@ export function collectCargoDependencyLicensesFromInstalledMetadata(root: string
         CARGO_RUNTIME_FEATURE_SELECTION.features.join(','),
     ];
     const metadata = parseJsonWithUniqueKeys<CargoMetadata>(
-        execFileSync('cargo', metadataArguments, {
-            cwd: root,
-            encoding: 'utf8',
-            maxBuffer: 100 * 1024 * 1024,
-        }),
+        cargoMetadata(root, metadataArguments.slice(1), 100 * 1024 * 1024),
         `cargo ${metadataArguments.join(' ')}`
     );
     const workspace = new Set(metadata.workspace_members);

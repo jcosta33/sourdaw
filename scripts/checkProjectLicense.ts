@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -12,6 +11,7 @@ import {
     SERVER_THIRD_PARTY_NOTICES_PATH,
     type DependencyLicenseArtifacts,
 } from './dependencyLicenseReport.ts';
+import { cargoMetadata } from './cargoMetadata.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 
 export const PROJECT_LICENSE_ID = 'Apache-2.0';
@@ -169,10 +169,7 @@ export function checkProjectLicense(
     inventoryContents?: string
 ): void {
     const cargo = parseJsonWithUniqueKeys<CargoMetadata>(
-        execFileSync('cargo', ['metadata', '--no-deps', '--format-version', '1'], {
-            cwd: root,
-            encoding: 'utf8',
-        }),
+        cargoMetadata(root, ['--no-deps', '--format-version', '1']),
         'cargo metadata --no-deps --format-version 1'
     );
     const artifacts = artifactBuilder(root);
