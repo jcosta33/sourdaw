@@ -34,10 +34,10 @@ function toggleActiveSelection(options: KeyboardOptions): void {
 }
 
 function handleSearchKeyDown(options: KeyboardOptions, event: KeyboardEvent<HTMLInputElement>): void {
-    event.stopPropagation();
     if (!['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(event.key)) {
         return;
     }
+    event.stopPropagation();
     event.preventDefault();
     if (event.key === 'Enter') {
         options.commitActive();

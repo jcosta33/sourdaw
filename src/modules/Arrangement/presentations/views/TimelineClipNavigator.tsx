@@ -61,11 +61,12 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
     const [query, setQuery] = useState('');
     const [typeFilter, setTypeFilter] = useState<ClipTypeFilter>('all');
     const [currentTrackOnly, setCurrentTrackOnly] = useState(false);
+    const effectiveCurrentTrackOnly = currentTrackOnly && selectedTrackId !== null;
     const [activeClipId, setActiveClipId] = useState<string | null>(() => {
         const selected = new Set(selectedClipIds(selection));
         return clips.find((item) => selected.has(item.clip.id))?.clip.id ?? clips[0]?.clip.id ?? null;
     });
-    const filteredClips = filterTimelineClips(clips, query, typeFilter, currentTrackOnly, selectedTrackId);
+    const filteredClips = filterTimelineClips(clips, query, typeFilter, effectiveCurrentTrackOnly, selectedTrackId);
     const lastIndex = useRef(0);
     const foundIndex = filteredClips.findIndex((item) => item.clip.id === activeClipId);
     const activeIndex = foundIndex >= 0 ? foundIndex : Math.min(lastIndex.current, filteredClips.length - 1);
@@ -132,7 +133,7 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
             onSearchKeyDown={handleSearchKeyDown}
             typeFilter={typeFilter}
             onTypeFilterChange={setTypeFilter}
-            currentTrackOnly={currentTrackOnly}
+            currentTrackOnly={effectiveCurrentTrackOnly}
             currentTrackAvailable={selectedTrackId !== null}
             onCurrentTrackOnlyChange={setCurrentTrackOnly}
             onKeyDown={handleKeyDown}

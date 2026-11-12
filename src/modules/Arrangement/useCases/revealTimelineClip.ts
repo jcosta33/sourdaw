@@ -21,8 +21,12 @@ export function revealTimelineClip(clipId: string): void {
     const viewportWidth = view.viewportWidth ?? 0;
     const clipVisibleX = viewportWidth > 0 && clipStartX >= view.scrollX && clipEndX <= view.scrollX + viewportWidth;
     if (!clipVisibleX) {
-        const nextScrollX =
-            viewportWidth <= 0 || clipEndX - clipStartX > viewportWidth ? clipStartX : clipEndX - viewportWidth;
+        let nextScrollX: number;
+        if (viewportWidth <= 0 || clipEndX - clipStartX > viewportWidth || clipStartX < view.scrollX) {
+            nextScrollX = clipStartX;
+        } else {
+            nextScrollX = clipEndX - viewportWidth;
+        }
         setScrollX(nextScrollX);
     }
 
@@ -31,8 +35,12 @@ export function revealTimelineClip(clipId: string): void {
     const viewportHeight = view.viewportHeight ?? 0;
     const clipVisibleY = viewportHeight > 0 && trackTop >= view.scrollY && trackBottom <= view.scrollY + viewportHeight;
     if (!clipVisibleY) {
-        const nextScrollY =
-            viewportHeight <= 0 || track.height > viewportHeight ? trackTop : trackBottom - viewportHeight;
+        let nextScrollY: number;
+        if (viewportHeight <= 0 || track.height > viewportHeight || trackTop < view.scrollY) {
+            nextScrollY = trackTop;
+        } else {
+            nextScrollY = trackBottom - viewportHeight;
+        }
         setScrollY(nextScrollY);
     }
 }

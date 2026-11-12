@@ -12,6 +12,7 @@ import { useGlobalKeyboardShortcuts } from '#/modules/CommandInterface/presentat
 import { ElasticEditorPanel } from '#/modules/ElasticAudio/presentations/views';
 import { elasticAudioStore } from '#/modules/ElasticAudio/stores';
 import { defaultProjectStoreState, projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
+import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { type ActionHandler } from '#/utils/handlerContract';
 
 import { createTrack, type Clip, type Track } from '../../../models/Track';
@@ -351,6 +352,26 @@ describe('TimelineClipNavigator', () => {
         }
     });
 
+    it('allows the palette shortcut from navigator search like a normal input', () => {
+        registerHandlerMap({ togglePlayback: togglePlaybackHandler });
+        act(() => workspaceStore.set({ ...defaultWorkspaceState, commandPaletteOpen: false }));
+        render(
+            <>
+                <ShortcutHost />
+                <input aria-label="ordinary input" />
+            </>
+        );
+        const ordinary = screen.getByRole('textbox', { name: 'ordinary input' });
+        fireEvent.keyDown(ordinary, { key: 'k', code: 'KeyK', metaKey: true });
+        expect(workspaceStore.value?.commandPaletteOpen).toBe(true);
+
+        act(() => workspaceStore.set({ ...defaultWorkspaceState, commandPaletteOpen: false }));
+        openNavigator();
+        const search = screen.getByRole('searchbox', { name: 'Search clips' });
+        fireEvent.keyDown(search, { key: 'k', code: 'KeyK', metaKey: true });
+        expect(workspaceStore.value?.commandPaletteOpen).toBe(true);
+    });
+
     it('keeps an Elastic marker intact when Delete is pressed in the timeline listbox', async () => {
         const audioClip: Clip = { ...clip('one', 'voice', 0), type: 'audio' };
         act(() => trackStore.set({ ...defaultTrackState, tracks: [track('voice', 'Voice', [audioClip])] }));
@@ -457,6 +478,7 @@ describe('TimelineClipNavigator', () => {
 
         act(() => trackStore.set({ ...trackStore.value!, selectedTrackId: null }));
         expect(screen.getByRole('button', { name: 'Current track' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Current track' })).toHaveAttribute('aria-pressed', 'false');
         expect(within(listbox).getAllByRole('option')).toHaveLength(2);
         expect(screen.getByText('2 of 3 clips')).toBeInTheDocument();
 
@@ -507,6 +529,32 @@ describe('TimelineClipNavigator', () => {
 
         fireEvent.keyDown(search, { key: 'Enter' });
         expect(timelineViewStore.value).toMatchObject({ scrollX: 820, scrollY: 80, pixelsPerBeat: 10 });
+    });
+
+    it('minimally reveals a clip before an already scrolled viewport', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: Array.from({ length: 10 }, (_, index) =>
+                    track(
+                        `track-${index}`,
+                        `Track ${index}`,
+                        index === 4 ? [clip('target', 'track-4', 30, 'Target')] : []
+                    )
+                ),
+            });
+            timelineViewStore.set({
+                scrollX: 500,
+                scrollY: 500,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+                viewportHeight: 200,
+                viewportWidth: 100,
+            });
+        });
+        openNavigator();
+        fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search clips' }), { key: 'Enter' });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 300, scrollY: 320 });
     });
 
     it('retargets a filtered active descendant after deletion and undo restoration', () => {
