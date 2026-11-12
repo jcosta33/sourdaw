@@ -1,0 +1,485 @@
+scripts/nativeCommand.ts
+  s_eec9d24f84ae15::t_4360efa4c40f32 10,17,24,26-32,34-37,42,59-60,90-92,94,111,117,137,144,169,174-175,194,200-201,208-209,238,242,263,266,277,279-281,296
+  s_eec9d24f84ae15::t_be9d3fac535062 93,120
+  s_eec9d24f84ae15::t_5db9ac00e11d09 239-241
+  s_eec9d24f84ae15::t_d4e64ee8e43463 3-7,9,188-193,195-199,202-207,210-213,278
+scripts/__tests__/verifyNativeTransportMutations.spec.ts
+  s_eec9d24f84ae15::t_93e489d7b5ed67 452-455,1083-1085
+  s_eec9d24f84ae15::t_980044499e14a6 1081-1082
+  s_eec9d24f84ae15::t_8fde4b1b866068 444,1077-1080
+  s_eec9d24f84ae15::t_e0fcff82edd92f 435-436,445-446,448-451,456-457,567,985-990,1042-1044,1074-1076
+  s_eec9d24f84ae15::t_c4745854c30879 419-422,447,1086
+  s_eec9d24f84ae15::t_f5c4d5728d7c01 1070,1072
+  s_eec9d24f84ae15::t_470b83d99e6b37 1071
+scripts/processSnapshot.ts
+  s_eec9d24f84ae15::t_4360efa4c40f32 1-2,12,14,18-25,29-31,38-41,44-50,52-53,92
+  s_9307cedd8951f1::t_c030916121b00e 27,37,51
+  s_eec9d24f84ae15::t_5d758faff26170 35,42
+  s_eec9d24f84ae15::t_0d57ce5d8ead69 3-11,15-17,26,28,32-34,36,43,54-89
+  s_eec9d24f84ae15::t_fce9512b6c9b39 13,90-91
+scripts/verifyNativeTransportMutations.ts
+  s_eec9d24f84ae15::t_4360efa4c40f32 59,71,131,190,201,263-272,463
+  s_eec9d24f84ae15::t_258a06a8e7dcba 51-58,60
+scripts/__tests__/processSnapshot.spec.ts
+  s_eec9d24f84ae15::t_8fde4b1b866068 8
+  s_eec9d24f84ae15::t_d631288fdfb236 1-5,7,9-19,23-56,60-62
+  s_eec9d24f84ae15::t_735952954a4f91 20-22,57-59
+  s_eec9d24f84ae15::t_fce9512b6c9b39 6,63-75
+scripts/checkBarrelMockCoverage.ts
+  s_eec9d24f84ae15::t_c692330f1e1f0c 62-69,1080-1081,1084-1085,1087,1120-1123,1284-1293,1299-1301
+  s_eec9d24f84ae15::t_dcccbe1a0114db 1294-1298
+scripts/vitestProgressDiagnostics.ts
+  s_eec9d24f84ae15::t_e3fe726bc898a2 2-4,7-8,18,26,42,67-68,76-78,80,82-90,96-107
+  s_eec9d24f84ae15::t_dd65ae7ecbd2bc 70-74,81
+  s_eec9d24f84ae15::t_aaf2f4cb3508ee 1,19,40-41,65-66,69,75,79,92
+  s_eec9d24f84ae15::t_795ca6bafd444f 91,93
+  s_eec9d24f84ae15::t_1c603efeedefd1 27-29,94-95
+  s_eec9d24f84ae15::t_fce9512b6c9b39 9
+  s_eec9d24f84ae15::t_0d57ce5d8ead69 6,20-22,25
+  s_eec9d24f84ae15::t_c034d2e9cd89eb 43-49,51-60,64
+  s_eec9d24f84ae15::t_619b1f1b888701 23-24,50,61-63
+  s_eec9d24f84ae15::t_c20853adc17e5b 5
+  s_eec9d24f84ae15::t_92da7ed3db6db1 10-17
+  s_eec9d24f84ae15::t_d3f5c248672e5d 30-39
+scripts/__tests__/vitestZeroTestReport.spec.ts
+  s_eec9d24f84ae15::t_dd65ae7ecbd2bc 206,210,217,228,318,351,384,429-445
+  s_eec9d24f84ae15::t_1b078d9d63883d 446-449
+  s_eec9d24f84ae15::t_f6f34fa1586422 1,395-396,404-408,412-413
+  s_eec9d24f84ae15::t_0ace1fb3d1ad35 393-394,397-403,409-411,414-428
+scripts/__tests__/vitestProgressDiagnostics.spec.ts
+  s_eec9d24f84ae15::t_742e4e99017db4 111
+  s_eec9d24f84ae15::t_2433677d56b64d 1,6,36,104-110,116-123,136-137,143-144
+  s_eec9d24f84ae15::t_dd65ae7ecbd2bc 37-38
+  s_eec9d24f84ae15::t_6793c52c5d9504 3-5,7-9,12-14,32,34-35,43-45,103,145-147
+  s_eec9d24f84ae15::t_f1257c5f15881f 11
+  s_eec9d24f84ae15::t_e3fe726bc898a2 19-20,22-31,39-41,112-115,124-135,138-142
+  s_eec9d24f84ae15::t_fce9512b6c9b39 10,15-18,21,33,50-64
+  s_eec9d24f84ae15::t_6ccd8b9a1d5d61 47-49
+  s_eec9d24f84ae15::t_696a58ea6f6ade 2,42,46,70-77,79-86,92-102
+  s_eec9d24f84ae15::t_698c7ce9004855 103-107
+  s_eec9d24f84ae15::t_4b4ff10a70fccd 78,87-91
+  s_eec9d24f84ae15::t_9f48456f7a9921 156-157,167-171
+scripts/__tests__/checkBarrelMockCoverage.spec.ts
+  s_eec9d24f84ae15::t_70972e7173068f 45,629,640-643,646-649,659-664
+  s_eec9d24f84ae15::t_e3fe726bc898a2 650-658
+  s_eec9d24f84ae15::t_e86bba965cd299 630
+  s_eec9d24f84ae15::t_a26e2b822b6f5a 43-44,627-628,631-639,644
+  s_eec9d24f84ae15::t_403919721780e6 645,665-693
+  s_eec9d24f84ae15::t_8b85d413ac95fe 694
+scripts/runVitestZeroTestGuard.ts
+  s_eec9d24f84ae15::t_e3fe726bc898a2 14-15,17-20,54,58-65,93,96,102
+  s_3df76396fbd4b1::t_ed12e91c567281 46-48,71
+  s_eec9d24f84ae15::t_dcccbe1a0114db 49-50,52-53,97-101
+  s_eec9d24f84ae15::t_d3f5c248672e5d 16,51
+scripts/__tests__/resourceGuard.spec.ts
+  s_eec9d24f84ae15::t_8e3132b3552480 463,466-478
+  s_eec9d24f84ae15::t_c02f04bc527904 464-465,479
+scripts/resourceGuard.ts
+  s_eec9d24f84ae15::t_e3fe726bc898a2 134,2269-2277,2279-2290
+  s_3df76396fbd4b1::t_25e0925888b82e 2278
+  s_eec9d24f84ae15::t_c20853adc17e5b 42
+.agents/skills/review-stances/test-validity.md
+  s_eec9d24f84ae15::t_d72c8034a84d31 165-172
+scripts/vitestProgressReporter.ts
+  s_3df76396fbd4b1::t_d1df759b798766 4-5,19-22,25,27-37,46,51-52
+  s_eec9d24f84ae15::t_0d57ce5d8ead69 23-24,26,38-43
+  s_eec9d24f84ae15::t_aa248f41894986 44-45
+  s_eec9d24f84ae15::t_3f1947c957b7f8 47-50
+  s_eec9d24f84ae15::t_c20853adc17e5b 1-3,6-18
+scripts/vitestProgressSetup.ts
+  s_3df76396fbd4b1::t_2b024de245d07a 1-3
+vite.config.ts
+  s_3df76396fbd4b1::t_f083edcd858b20 220-223
+scripts/__tests__/gitCheckpoint.spec.ts
+  s_eec9d24f84ae15::t_5f45c5d958577b 340-346,348,506
+  s_eec9d24f84ae15::t_8e463440b686c5 492-494
+  s_eec9d24f84ae15::t_6e26ad19ca19df 488,495-501
+  s_eec9d24f84ae15::t_b4b7f77a1847f9 502-505
+  s_eec9d24f84ae15::t_e742019468fc5e 2-12,105-113,114,116-121
+  s_eec9d24f84ae15::t_5e2f1ab2719abc 122
+  s_eec9d24f84ae15::t_6c30d707f83ecd 115
+  s_eec9d24f84ae15::t_f8bf6ca822cbc0 32,134-145,147-157,347,537,539,570,613-616,620-622
+  s_eec9d24f84ae15::t_0f7c6a00487bf6 14,16,18,23,146
+  s_eec9d24f84ae15::t_54e2c966abd4fa 123-133,565,583-587,589-596,599-600,606-609
+  s_eec9d24f84ae15::t_21237fc3cb6ee9 300-319,326
+  s_eec9d24f84ae15::t_14de75781a0116 289-299
+  s_eec9d24f84ae15::t_88f9a998a40e3c 19-20,94-98,415-428,432-450,454-469,473-487,601-605
+  s_eec9d24f84ae15::t_7499feb9b98a95 429-431
+  s_eec9d24f84ae15::t_ef34c9cd8b2d80 22,470-472
+  s_eec9d24f84ae15::t_6c9b36ef0e5b1b 451-453
+  s_eec9d24f84ae15::t_bb5a63aa6638bc 543-545,553-555,561,566-571,573-582,588,597-598,610,619
+  s_eec9d24f84ae15::t_36bb15cffd3e96 551-552,556-560,563
+  s_eec9d24f84ae15::t_51d9f277dae88d 572
+  s_eec9d24f84ae15::t_f6f34fa1586422 172,174,176,191-192,197-198
+  s_eec9d24f84ae15::t_28ec9cc93c03e1 320-325
+  s_eec9d24f84ae15::t_0ace1fb3d1ad35 170-171,173,175,177-190,193-196,199-201
+  s_eec9d24f84ae15::t_7f48f4f4dd5803 262-280,288
+  s_eec9d24f84ae15::t_5520d401b6fb97 281-287
+  s_eec9d24f84ae15::t_7d47d6e942a400 203-206,213,215,223-228
+  s_eec9d24f84ae15::t_472ca7350ef4ce 202,207-212,214,216-222,229
+  s_eec9d24f84ae15::t_9f48456f7a9921 230-261
+scripts/gitCheckpoint.ts
+  s_eec9d24f84ae15::t_5f45c5d958577b 199,202,212,216-225,228
+  s_eec9d24f84ae15::t_c9457d4892ca7b 544
+  s_eec9d24f84ae15::t_6e26ad19ca19df 411
+  s_eec9d24f84ae15::t_ee33e5367342c1 330-335,338-349,375-383,385-386,388-392,394-397,399,404-410
+  s_eec9d24f84ae15::t_e235f95ce27755 6,15,44-54,81,84-85,113-123,132-142,201,538-542
+  s_eec9d24f84ae15::t_f8bf6ca822cbc0 124-131,552,556,569,581
+  s_eec9d24f84ae15::t_1703a411aaea53 151-155,159,245,548-552,560-564,568-569,581
+  s_eec9d24f84ae15::t_54e2c966abd4fa 350-359,361-374,384,387
+  s_eec9d24f84ae15::t_0f7c6a00487bf6 21,23,240-244,249,260-264,266,271-272,546-547,553-559,583
+  s_eec9d24f84ae15::t_802fce714798fd 2,27,543
+  s_eec9d24f84ae15::t_88f9a998a40e3c 24,166,173-174,185-188,323-326,336-337,360,393,398,400-403,412-435,450,466-469,493,504-513,522,525
+  s_eec9d24f84ae15::t_3d70e7745dac33 25,189-198
+  s_eec9d24f84ae15::t_92da7ed3db6db1 156-158,246-248,252-259,565-567,570-580
+  s_eec9d24f84ae15::t_7b2e77f30ef1b1 452-460
+  s_eec9d24f84ae15::t_533cd96fba4b23 448
+  s_eec9d24f84ae15::t_ab249913f759b8 451
+  s_eec9d24f84ae15::t_2dafd63b21a8e4 175-184
+scripts/gitCheckpointMount.ts
+  s_eec9d24f84ae15::t_6e26ad19ca19df 1,7-8,11-12
+AGENTS.md
+  s_eec9d24f84ae15::t_f8bf6ca822cbc0 389-391
+scripts/nativeCommandDiagnostics.ts
+  s_eec9d24f84ae15::t_d4e64ee8e43463 1-70
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_eec9d24f84ae15::t_2cec9d754ce313 1201,1355
+  s_eec9d24f84ae15::t_3e814131a43677 66,78,81-82,533,535,559,596,598,678,1033-1034,2599,3071,3180-3181,4724-4735,4739,4743-4746,4748-4749,4752,4762,4765-4773,4776,4778-4780,4782-4785,4787-4803,4805-4819
+scripts/reviewRiskPolicy.ts
+  s_eec9d24f84ae15::t_492e8232717951 168
+  s_eec9d24f84ae15::t_3e814131a43677 152,164,169-170,179-180
+scripts/trustedGithubWriteBootstrap.ts
+  s_eec9d24f84ae15::t_492e8232717951 193
+  s_eec9d24f84ae15::t_3e814131a43677 3,18-32,49-51,425-440,475-476,6123-6136,6138-6146,6149,6168,6172-6174,6176,6224-6248,6250,6256-6291,6294,6297-6351,6353-6370,6372-6475,6480-6481,6503-6505,6510
+scripts/gitCheckpointArguments.ts
+  s_eec9d24f84ae15::t_445e00b8270c66 1-2,4-5,7-12,14-18,20-27,30-31,33-34,38-39
+  s_eec9d24f84ae15::t_75517868741cc8 3,6,13,19,28-29,32,35-37,40-42
+scripts/gitCheckpointDaemon.ts
+  s_eec9d24f84ae15::t_48d7c8b6e9a05d 1,25
+  s_eec9d24f84ae15::t_5b2757ad947ed7 14,16-24,28-32,71-77,105-109,140-141,143-148
+  s_eec9d24f84ae15::t_7326a01ca82460 51-56
+  s_eec9d24f84ae15::t_5b72c4dc15e8c9 35
+  s_eec9d24f84ae15::t_9de48986a40c13 2-13,26-27,33-34,36-50,57-70,78-84,96-104,110-116,118-119,129,135,139,149
+  s_eec9d24f84ae15::t_838efbcbd2e471 15,130,133-134
+  s_eec9d24f84ae15::t_dd0ebb6a0dec43 136,138
+  s_eec9d24f84ae15::t_7bc2dc75d2ad2e 118-119
+scripts/gitCheckpointProcess.ts
+  s_eec9d24f84ae15::t_48d7c8b6e9a05d 64-68,105-106,132-133
+  s_eec9d24f84ae15::t_802fce714798fd 1-30,32-63,69-79,88-104,107-109,111-115,122-131,134-135,137-142,144,153-155
+  s_eec9d24f84ae15::t_ef34c9cd8b2d80 80-87,110
+  s_eec9d24f84ae15::t_6a7eecd9636cc8 116-121
+  s_eec9d24f84ae15::t_d81d556067cecf 31,136,143,145,149-152
+  s_eec9d24f84ae15::t_7bc2dc75d2ad2e 146-148
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 18,40,427-545,567,570,578-580,1927
+scripts/__tests__/openLane.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 13,29,131-149,152-153,186-189,496-500,515,517-519,521-522,551,846-879
+  s_eec9d24f84ae15::t_f042ec200c0215 880
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 9,16-17,23-33,36-37,39,41-43,45,47,49,53,55-63,66-90,149,205,356,477,2843-3361
+src/modules/AiRuntime/AGENTS.md
+  s_eec9d24f84ae15::t_3e814131a43677 41-42
+tests/e2e/llmBadgeDownload.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 41
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 461-515,692,10635-10654,11226,11295,11370-11375,11382,11441,11501,11961,12525,12583,13384-13504,13535-13563,13565-13647,13652,13654-13655,13665,13670,13677-13678,13687-13698
+scripts/__tests__/retargetCapabilitySnapshot.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 304
+scripts/measurementRevisionHolders.ts
+  s_eec9d24f84ae15::t_3e814131a43677 10
+scripts/openLane.ts
+  s_eec9d24f84ae15::t_3e814131a43677 10,31,385-387,389
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 13,39,525-529,693,817,821-822,848-849,852-859,861-869,873-885
+  s_eec9d24f84ae15::t_194112bb130f05 886
+src/modules/Toaster/presentations/components/__tests__/PadMixer.spec.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 120,125,134,153-178
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 576-580
+src/modules/Toaster/presentations/components/PadMixer.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 30,126,131-134,148-151
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.disclosureRuntime.integration.spec.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 293
+tests/e2e/toasterPadMixerTestId.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 17,23
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 2052-2054
+src/modules/Crust/presentations/components/__tests__/CrustMeteringStripBranches.spec.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 80-87
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 82-87
+src/modules/AiRuntime/useCases/aiRuntimeQueries/modelInfo.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1,20-26
+src/modules/WorkspaceShell/presentations/views/Prompt/__tests__/LlmStatusBadge.spec.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 72,84-85
+  s_eec9d24f84ae15::t_dd06a26a21ba3f 86
+src/modules/Arrangement/handlers/scratchPad/isRestorableSectionCollection.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1-39
+scripts/__tests__/laneAdoption.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 15,45-46,393-394,484-485,648,651-657
+src/modules/AiRuntime/useCases/metricGoalStateCodec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 179-180
+.agents/skills/architecture-violations/SKILL.md
+  s_eec9d24f84ae15::t_3e814131a43677 46
+src/modules/AiRuntime/useCases/__tests__/vibeRunInitialBaselines.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 785-789,807,810-824,865-866,874,882-890,892-899
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 11,63-73,182,267-268,283-291,305-564
+  s_eec9d24f84ae15::t_0bcfd820713d4e 565-566
+src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts
+  s_eec9d24f84ae15::t_3e814131a43677 4,22-34,68-160,239-415,446-457,459-464,473-475,477,480-481,484,491-514,516,522-523,532-551,561-567,575-580
+src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts
+  s_eec9d24f84ae15::t_3e814131a43677 16-17,67,127-139,152,154,156,162-166,224-240,251,282-330,339,354-357,377,433-452,454,468-473
+src/modules/Toaster/presentations/views/__tests__/ToasterPadSoloWiring.spec.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 83
+tests/e2e/browserAiAdmittedPresentation.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 59,64-65
+src/modules/AiRuntime/useCases/evaluateMetricGoalAdmission.ts
+  s_eec9d24f84ae15::t_3e814131a43677 296-301
+src/modules/AiRuntime/validators/isSilentVibeRunCell.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1-74
+scripts/__tests__/rulesetHardening.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 121-129,133,139,527,626-658
+release/dependency-license-proofs.json
+  s_eec9d24f84ae15::t_3e814131a43677 64
+scripts/__tests__/stampLaneIdentity.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 9,99,119,126,135-201
+scripts/__tests__/stackedLanes.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 2,9-15,658-739
+  s_eec9d24f84ae15::t_39106befcdafb5 740
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 3-14,40,54,64,91-93,96-97,1191-1194,1323-1326,1357-1741
+  s_eec9d24f84ae15::t_5607aa20cdeaa0 1742
+src/modules/AiRuntime/validators/readPerceptualConstraintReading.ts
+  s_eec9d24f84ae15::t_3e814131a43677 2-3,27-33,44-45,48-57,59
+src/modules/Fermenter/presentations/components/PresetBrowser.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 104,118,120-123,133-136,144,164-165,168,188,191,195-196
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppEventHandlers.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 2,70,73
+src/modules/AiRuntime/useCases/perceptualConstraints/findExcludedDimensionEdit.ts
+  s_eec9d24f84ae15::t_3e814131a43677 5-9,431-436,447,467-472,476,480
+docs/architecture/decisions/0013-client-side-hosted-llm-adapters.md
+  s_eec9d24f84ae15::t_3e814131a43677 5-6,39,49-51
+src/modules/AiRuntime/useCases/perceptualConstraints/perceptualConstraintInvariants.ts
+  s_eec9d24f84ae15::t_3e814131a43677 4-15,28-48,54-56,62-64,67-86,106-109
+scripts/pruneRemoteBranchesGithub.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1-230
+src/utils/Notification/__tests__/notifyUser.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 28-34
+docs/architecture/03-typescript-module.md
+  s_eec9d24f84ae15::t_3e814131a43677 926
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  s_eec9d24f84ae15::t_3e814131a43677 693,705
+.agents/skills/review-stances/trusted-script-delivery.md
+  s_eec9d24f84ae15::t_3e814131a43677 29-44
+scripts/__tests__/fixtures/trustedLauncherOrigin.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1-46
+src/infra/dialogService/NotificationToast.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 1,3,7,11,15-29,31-87,90-165,167-170,172,174,179-188,190-192,194-195,197-220,222
+package.json
+  s_eec9d24f84ae15::t_3e814131a43677 40,70
+src/modules/Yeast/presentations/components/ProcessorParams.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 90,117-120,130,710,713-715
+scripts/rulesetHardening.ts
+  s_eec9d24f84ae15::t_3e814131a43677 383-395,401-404,441
+  s_eec9d24f84ae15::t_551f174cc088b4 382
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleRestoreTrackAlternativeState.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 256-393
+scripts/__tests__/cutRelease.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 3-10,239-265
+  s_eec9d24f84ae15::t_cd02dbd34d372e 266
+src/modules/AiRuntime/transformers/localContextWindowRefusal.ts
+  s_eec9d24f84ae15::t_3e814131a43677 2,13-20
+  s_eec9d24f84ae15::t_a43b874854f9a8 21
+src/modules/AiRuntime/useCases/__tests__/mixHealthAnalysis.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 4,6,10-12,19-37,51-52,55-88,110-114,119,127,131-140,164,201,223,226,231,235,240-288
+.dependency-cruiser.cjs
+  s_eec9d24f84ae15::t_3e814131a43677 235-237,242,250-252
+src/modules/AiRuntime/models/ThreadContext.ts
+  s_eec9d24f84ae15::t_3e814131a43677 12
+scripts/__tests__/claimTrackerIssue.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 424-426
+src/infra/dialogService/__tests__/useNotificationQueue.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 11-19,85-204
+  s_eec9d24f84ae15::t_19b20d7da9dade 205
+src/modules/AiRuntime/useCases/hasContradictoryMetricGoals.ts
+  s_eec9d24f84ae15::t_3e814131a43677 16-17
+src/modules/AiRuntime/models/PerceptualConstraint.ts
+  s_eec9d24f84ae15::t_3e814131a43677 3-5,7-17,21-36,47,51-54,58-63
+  s_eec9d24f84ae15::t_052a25d27ed576 64
+src/modules/AiRuntime/validators/readScheduledVibeRunPlan.ts
+  s_eec9d24f84ae15::t_3e814131a43677 10-11,18,123,127,137-141,148-150,154-169,221-225,230-231,233-235,262-266,270-304,402-430,454-456,462-470,500
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 214-224
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_eec9d24f84ae15::t_3e814131a43677 18,395-419,435,462-463,474-480
+docs/architecture/05-boundary-enforcement-limits.md
+  s_eec9d24f84ae15::t_3e814131a43677 59-60
+src/modules/Arrangement/stores/markerStore.ts
+  s_eec9d24f84ae15::t_3e814131a43677 86
+src/utils/Notification/notifyUser.ts
+  s_eec9d24f84ae15::t_3e814131a43677 3,7-12
+scripts/__tests__/publishLane.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 15,90-91,794-797,809,854-858,1002,1019
+scripts/__tests__/pruneRemoteBranches.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 9-16,21,26-27,30,33,62,64-85,247,279,564,727,1181-1189,1191-1211,1214,1216,1218,1221,1223,1225,1228-1229,1235,1240,1244-1246,1248,1250-1255,1257-1305
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 10,273,349-351,368-369
+scripts/cutRelease.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1,17-23,298-324,332,336,338
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_eec9d24f84ae15::t_3e814131a43677 19,22,48,59,396-398,401,412-415,456-458,510,790-801,805
+src/modules/Yeast/presentations/components/__tests__/ProcessorParams.spec.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 295-311
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_eec9d24f84ae15::t_3e814131a43677 61-70
+src/modules/Arrangement/handlers/scratchPad/__tests__/handleRestoreScratchPadState.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 131-168
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/detectTransientsForClip.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 25-52,190-303
+scripts/stampLaneIdentity.ts
+  s_eec9d24f84ae15::t_3e814131a43677 14,21,29,46-48,51-52,66,68,70-76,96-109,117-123,154-157,159
+src/infra/dialogService/useNotificationQueue.ts
+  s_eec9d24f84ae15::t_3e814131a43677 5-11,16-19,22-59,62-63,65-67,69-71,74,80-82,84-86,88-91,96-98,104,109-148,150-152,154-166,168
+src/modules/AiRuntime/useCases/__tests__/briefFromRequest.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 673-684
+.agents/skills/delivery-orchestration/references/trust-boundary.md
+  s_eec9d24f84ae15::t_3e814131a43677 3-67
+src/modules/AiRuntime/useCases/runMixHealthModelText.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1-61
+src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 19-25,114
+src/modules/AiRuntime/useCases/__tests__/vibeRunSilentRanges.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1-719
+src/utils/Notification/notificationEventBus.ts
+  s_eec9d24f84ae15::t_3e814131a43677 8-19,21-25
+tests/e2e/elasticTransientWorkerPerformance.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1,36-334,457,464-465,481-492,502,516,537,552-553,559,668,671,679,682,889-890,911-922,932,952,973,987-988,997-998,1004
+src/infra/dialogService/__tests__/NotificationToast.spec.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 110-130
+scripts/__tests__/historicalStackAdmission.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 38-39,1992,2056,2110
+src/modules/Toaster/presentations/views/__tests__/ToasterPadMuteWiring.spec.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 85
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 13,1826
+src/modules/Bacteria/presentations/components/BandStrip.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 34,51-57,70-76
+scripts/githubAppIdentity.ts
+  s_eec9d24f84ae15::t_3e814131a43677 5,383-423,426-432,437,439-440,447,452-456,676,701-806,813-814,816,843-844,846,902-904,920,927-962
+  s_eec9d24f84ae15::t_d9236de1cb7767 963
+src/modules/Bacteria/presentations/components/__tests__/BandStrip.spec.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 26-56
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 132,169,172,177-192,573,580-615,617-618,635-672,677,687,741-757
+src/modules/AiRuntime/useCases/perceptualConstraints/describePerceptualConstraintFailure.ts
+  s_eec9d24f84ae15::t_3e814131a43677 31-38
+src/modules/AiRuntime/useCases/aiRuntimeQueries/generateWebLlmCompletion.ts
+  s_eec9d24f84ae15::t_3e814131a43677 2,13
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  s_eec9d24f84ae15::t_3e814131a43677 35-38
+src/modules/AiRuntime/useCases/vibeRun/readVibeBatchRecipeGoals.ts
+  s_eec9d24f84ae15::t_3e814131a43677 15-21,24,49-51
+src/modules/AiRuntime/models/LocalPlanningBudget.ts
+  s_eec9d24f84ae15::t_3e814131a43677 10-12
+.agents/skills/architecture/SKILL.md
+  s_eec9d24f84ae15::t_3e814131a43677 47,81
+src/modules/Arrangement/handlers/trackAlternative/isRestorableAlternativeState.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1-30
+src/modules/AiRuntime/useCases/planWholeProjectVibeRun.ts
+  s_eec9d24f84ae15::t_3e814131a43677 4,23,54-55,274-301,308,315,332,341-346,353-391,403-405,414,446-450,452,479-481,493
+src/modules/Crust/presentations/components/CrustMeteringStrip.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 223-233
+src/modules/AiRuntime/useCases/mixHealthAnalysis.ts
+  s_eec9d24f84ae15::t_3e814131a43677 6,111,113-114
+src/modules/AiRuntime/models/VibeRunPlan.ts
+  s_eec9d24f84ae15::t_3e814131a43677 99-100,104,124-125,147-162,206-210
+scripts/deliverPullRequest.ts
+  s_eec9d24f84ae15::t_3e814131a43677 3,4052-4056,4068-4073,4075-4081,4085-4107
+src/modules/AiRuntime/useCases/streamHostedModelText.ts
+  s_eec9d24f84ae15::t_3e814131a43677 19,43-56,74,77,85-89
+src/modules/AiRuntime/models/ModelInfo.ts
+  s_eec9d24f84ae15::t_3e814131a43677 28,37,39,46,48,60-61,63,66-71,73
+src/utils/handlerContract.ts
+  s_eec9d24f84ae15::t_3e814131a43677 179,185
+src/modules/AiRuntime/useCases/explainMixHealthReport.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1-21
+.agents/decisions/0006-contract-folder-barrels-no-module-root-index.md
+  s_eec9d24f84ae15::t_3e814131a43677 57,80
+src/modules/Fermenter/presentations/components/__tests__/PresetBrowser.spec.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 87,90-91,93-94,196-207
+  s_eec9d24f84ae15::t_94f59298a763b9 208
+src/modules/AiRuntime/useCases/__tests__/explainMixHealthReport.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1-139
+release/open-source-inventory.json
+  s_eec9d24f84ae15::t_3e814131a43677 173,1217,1862,2397-2400
+  s_eec9d24f84ae15::t_375475dfa1fffe 2401
+scripts/pruneRemoteBranches.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1,23-43,52,140-142,146-157,229,239,289,308,312-313,376-377,446,452-455,468-494,499,503,516
+src/modules/ElasticAudio/useCases/elasticAudio/detectTransientsForClip.ts
+  s_eec9d24f84ae15::t_3e814131a43677 13,22,33-34,49-56
+src/modules/AiRuntime/useCases/__tests__/perceptualConstraints.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 9,14-20,26,28,31-32,1151-1931
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_eec9d24f84ae15::t_3e814131a43677 22,321-340,391-392
+src/modules/AiRuntime/useCases/index.ts
+  s_eec9d24f84ae15::t_3e814131a43677 5,16
+src/modules/AiRuntime/useCases/perceptualConstraints/readPerceptualConstraintGoals.ts
+  s_eec9d24f84ae15::t_3e814131a43677 9,28
+src/modules/AiRuntime/validators/__tests__/readPerceptualConstraintReading.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1-48
+src/modules/Arrangement/stores/isExactClipSnapshot.ts
+  s_eec9d24f84ae15::t_3e814131a43677 113-118,121-122,124-125,136-143
+  s_eec9d24f84ae15::t_a7b8085793581e 144-145
+src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 14-18,61,90-91,104,130
+src/modules/Arrangement/handlers/scratchPad/handleRestoreScratchPadState.ts
+  s_eec9d24f84ae15::t_3e814131a43677 7-8,36-38,44-45
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MixHealthDialog.spec.tsx
+  s_eec9d24f84ae15::t_3e814131a43677 8-9,13,17-19,24,58,61-62,66-67,71,76,78,86-87,98,100,112-126,188,190
+src/modules/Arrangement/handlers/trackAlternative/handleRestoreTrackAlternativeState.ts
+  s_eec9d24f84ae15::t_3e814131a43677 8,40-46,62,78,80
+src/modules/AiRuntime/useCases/__tests__/streamHostedModelText.spec.ts
+  s_eec9d24f84ae15::t_3e814131a43677 1,4,7,15-28,56-116
+  s_eec9d24f84ae15::t_c293f61d9994b2 117
+scripts/gitCheckpointDiscovery.ts
+  s_eec9d24f84ae15::t_3d70e7745dac33 80-89,91,96-97,100,107-109,111,113-117
+  s_eec9d24f84ae15::t_28ec9cc93c03e1 18
+  s_eec9d24f84ae15::t_f4deeb12fdf449 92-95
+  s_eec9d24f84ae15::t_533cd96fba4b23 3-17,19,21-42,51-53,55-60,62-64,66-67,73,79
+  s_eec9d24f84ae15::t_2dafd63b21a8e4 1-2,43-50,54,61,65,68-69,90,110
+  s_eec9d24f84ae15::t_17d30344a81ed7 70-72,98-99
+  s_eec9d24f84ae15::t_40a340a3ddba87 20,74-78,101-106,112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dc7cfe20457e625d2f5a5c57d387f3036ea58bcd",
+  "prompts": {},
+  "sessions": {
+    "s_3df76396fbd4b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8caa473-e64a-4fad-b579-cf6c36add2c2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
