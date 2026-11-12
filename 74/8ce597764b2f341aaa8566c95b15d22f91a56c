@@ -1,0 +1,18 @@
+src/modules/CommandInterface/presentations/views/commandRegistry.ts
+  h_beb54bf43b47b7 12,14,33
+src/modules/CommandInterface/useCases/discoverCommands.ts
+  h_beb54bf43b47b7 1-10
+src/modules/CommandInterface/useCases/updateRecentCommandIds.ts
+  h_beb54bf43b47b7 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "748ce597764b2f341aaa8566c95b15d22f91a56c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
