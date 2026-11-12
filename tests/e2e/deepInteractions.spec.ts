@@ -59,20 +59,27 @@ test.describe('Command palette deep interactions', () => {
         await launch_new_project(page);
     });
 
-    test('Searching filters the option list to a subset', async ({ page }) => {
+    test('Search expands bounded discovery and ranks matching commands', async ({ page }) => {
         await page.keyboard.press(`${MOD}+k`);
-        const input = page.getByPlaceholder('Type a command...', { exact: true });
-        await expect(input).toBeVisible({ timeout: 5000 });
-
-        const count_all = await page.getByRole('option').count();
-        expect(count_all).toBeGreaterThan(0);
+        const palette = page.getByRole('dialog', { name: 'Command Palette' });
+        const input = palette.getByRole('combobox');
+        await expect(input).toBeVisible();
+        const options = palette.getByRole('option');
+        await expect(options).toHaveCount(8);
+        await expect(palette.getByRole('group', { name: 'Transport', exact: true })).toBeVisible();
 
         await input.fill('track');
-        await page.waitForTimeout(500);
-        const count_filtered = await page.getByRole('option').count();
+        await expect(palette.getByRole('option', { name: /^Add Audio Track/ })).toBeVisible();
+        await expect(palette.getByRole('option', { name: /^Delete Track/ })).toBeVisible();
+        await expect(palette.getByRole('option', { name: /^Toggle Playback/ })).toHaveCount(0);
 
-        expect(count_filtered).toBeLessThanOrEqual(count_all);
-        expect(count_filtered).toBeGreaterThan(0);
+        await input.fill('Add Audio Track');
+        await expect(options.first()).toHaveAttribute('id', 'command-palette-option-add-audio-track');
+        await expect(options.first()).toHaveAttribute('aria-selected', 'true');
+
+        await input.fill('no-command-matches-this-query');
+        await expect(options).toHaveCount(0);
+        await expect(palette.getByText('No commands found')).toBeVisible();
     });
 
     test('Escape closes the command palette', async ({ page }) => {

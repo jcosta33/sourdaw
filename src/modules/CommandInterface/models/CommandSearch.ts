@@ -1,3 +1,5 @@
+import { type CommandContext } from './CommandContext';
+
 /**
  * Pure command-palette search and discovery helpers. No state or I/O: the view
  * supplies the session's recent ids and owns the resulting ephemeral UI state.
@@ -8,7 +10,7 @@ type SearchableCommandEntry = {
     label: string;
     description: string;
     category: string;
-    getInapplicabilityReason?: () => string | null;
+    getInapplicabilityReason?: (context?: CommandContext) => string | null;
 };
 
 export type CommandDiscoveryGroup<Entry> = {
@@ -78,12 +80,15 @@ export function searchCommands<Entry extends SearchableCommandEntry>(registry: E
 }
 
 /** A broken context gate fails closed instead of dispatching an unknown action. */
-export function getCommandInapplicabilityReason(command: SearchableCommandEntry): string | null {
+export function getCommandInapplicabilityReason(
+    command: SearchableCommandEntry,
+    context?: CommandContext
+): string | null {
     if (!command.getInapplicabilityReason) {
         return null;
     }
     try {
-        const reason = command.getInapplicabilityReason();
+        const reason = command.getInapplicabilityReason(context);
         if (reason === null) {
             return null;
         }
@@ -106,15 +111,16 @@ export function updateRecentCommandIds(recentIds: readonly string[], executedId:
  */
 export function discoverCommands<Entry extends SearchableCommandEntry>(
     registry: Entry[],
-    recentIds: readonly string[]
+    recentIds: readonly string[],
+    context?: CommandContext
 ): CommandDiscoveryGroup<Entry>[] {
     const byId = new Map(registry.map((command) => [command.id, command]));
     const recents = recentIds.map((id) => byId.get(id)).filter((command): command is Entry => command !== undefined);
     const recentIdSet = new Set(recents.map((command) => command.id));
     const candidates = registry.filter((command) => !recentIdSet.has(command.id));
     const orderedCandidates = [
-        ...candidates.filter((command) => getCommandInapplicabilityReason(command) === null),
-        ...candidates.filter((command) => getCommandInapplicabilityReason(command) !== null),
+        ...candidates.filter((command) => getCommandInapplicabilityReason(command, context) === null),
+        ...candidates.filter((command) => getCommandInapplicabilityReason(command, context) !== null),
     ];
 
     const suggestions: Entry[] = [];

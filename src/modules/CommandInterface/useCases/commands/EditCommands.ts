@@ -15,11 +15,7 @@ export const editCommands: CallableCommandEntry[] = [
         category: 'Edit',
         shortcut: '⌘Z',
         action: (onCommitted?: () => void) => {
-            void undo().then((result) => {
-                if (result.headConsumed) {
-                    onCommitted?.();
-                }
-            });
+            void undo({ onCommitted });
         },
     },
     {
@@ -39,8 +35,9 @@ export const editCommands: CallableCommandEntry[] = [
         category: 'Edit',
         shortcut: '⌘C',
         action: (onCommitted?: () => void) => {
-            copySelectedClip();
-            onCommitted?.();
+            if (copySelectedClip()) {
+                onCommitted?.();
+            }
         },
     },
     {

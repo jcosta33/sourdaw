@@ -52,34 +52,18 @@ describe('editCommands', () => {
         expect(mockRedo).toHaveBeenCalledTimes(1);
     });
 
-    it('records undo and redo only when they consume a history head', async () => {
-        mockUndo.mockResolvedValueOnce({ headConsumed: true });
-        mockRedo.mockImplementationOnce((options) => {
-            options.onCommitted();
-            return Promise.resolve();
-        });
-        const undoCommitted = vi.fn();
-        const redoCommitted = vi.fn();
-
-        runAction('undo', undoCommitted);
-        runAction('redo', redoCommitted);
-
-        await vi.waitFor(() => {
-            expect(undoCommitted).toHaveBeenCalledOnce();
-            expect(redoCommitted).toHaveBeenCalledOnce();
-        });
+    it.each(['undo', 'redo'])('passes the successful-outcome observer to %s', (id) => {
+        const onCommitted = vi.fn();
+        runAction(id, onCommitted);
+        expect(id === 'undo' ? mockUndo : mockRedo).toHaveBeenCalledWith({ onCommitted });
+        expect(onCommitted).not.toHaveBeenCalled();
     });
 
-    it('does not record empty or refused undo and redo attempts', async () => {
-        const undoCommitted = vi.fn();
-        const redoCommitted = vi.fn();
-
-        runAction('undo', undoCommitted);
-        runAction('redo', redoCommitted);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        expect(undoCommitted).not.toHaveBeenCalled();
-        expect(redoCommitted).not.toHaveBeenCalled();
+    it.each([false, true])('records copy only when copySelectedClip returns %s', (copied) => {
+        mockCopy.mockReturnValueOnce(copied);
+        const onCommitted = vi.fn();
+        runAction('copy-clip', onCommitted);
+        expect(onCommitted).toHaveBeenCalledTimes(copied ? 1 : 0);
     });
 
     it('copy-clip calls copySelectedClip', () => {

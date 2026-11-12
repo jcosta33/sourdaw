@@ -1,14 +1,10 @@
-import { useState } from 'react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { CommandPalette } from '../CommandPalette';
 import { searchCommands } from '../commandRegistry';
-
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store, defaultValue) => defaultValue),
-}));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
@@ -22,16 +18,21 @@ vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
     closeCommandPalette: () => closeHook.onClose(),
 }));
 
-const { useStore } = await import('#/infra/store/useStore');
 const { executeUserAppAction } = await import('#/modules/Command/useCases');
 
 describe('CommandPalette', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(useStore).mockReturnValue({ commandPaletteOpen: true });
+        workspaceStore.set({ ...defaultWorkspaceState, commandPaletteOpen: true });
+        closeHook.onClose = () => {};
         vi.mocked(executeUserAppAction).mockImplementation(async (_action, options) => {
             options?.onCommitted?.();
         });
+    });
+
+    afterEach(() => {
+        cleanup();
+        workspaceStore.set(defaultWorkspaceState);
     });
 
     it('exposes ARIA combobox and listbox active-descendant relationships when open', () => {
@@ -79,20 +80,19 @@ describe('CommandPalette', () => {
     });
 
     it('returns focus to the control that had it when Escape closes the palette', async () => {
-        const Host = () => {
-            const [open, setOpen] = useState(false);
-            closeHook.onClose = () => setOpen(false);
-            vi.mocked(useStore).mockReturnValue({ commandPaletteOpen: open });
-            return (
-                <>
-                    <button type="button" onClick={() => setOpen(true)}>
-                        Undo
-                    </button>
-                    <CommandPalette />
-                </>
-            );
-        };
-        render(<Host />);
+        workspaceStore.set(defaultWorkspaceState);
+        closeHook.onClose = () => workspaceStore.set({ ...defaultWorkspaceState, commandPaletteOpen: false });
+        render(
+            <>
+                <button
+                    type="button"
+                    onClick={() => workspaceStore.set({ ...defaultWorkspaceState, commandPaletteOpen: true })}
+                >
+                    Undo
+                </button>
+                <CommandPalette />
+            </>
+        );
         const opener = screen.getByRole('button', { name: 'Undo' });
         opener.focus();
         fireEvent.click(opener);

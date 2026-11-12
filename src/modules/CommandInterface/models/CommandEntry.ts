@@ -2,6 +2,8 @@
 
 import { type AppAction } from '#/utils/handlerContract';
 
+import { type CommandContext } from './CommandContext';
+
 export type CommandEntry<Action = AppAction> = {
     id: string;
     label: string;
@@ -25,5 +27,5 @@ export type CommandEntry<Action = AppAction> = {
      * right now. A human-readable reason keeps the entry visible but blocks
      * dispatch; null means the current context supports execution.
      */
-    getInapplicabilityReason?: () => string | null;
+    getInapplicabilityReason?: (context?: CommandContext) => string | null;
 };

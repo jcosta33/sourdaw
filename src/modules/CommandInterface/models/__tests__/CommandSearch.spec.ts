@@ -139,6 +139,26 @@ describe('command discovery', () => {
         });
     });
 
+    it('uses the supplied snapshot context when deciding discovery order', () => {
+        const registry = [
+            entry({
+                id: 'clip',
+                category: 'Clip',
+                getInapplicabilityReason: (context) =>
+                    context?.selectedClipType === 'midi' ? null : 'Select a MIDI clip.',
+            }),
+            entry({ id: 'play', category: 'Transport' }),
+        ];
+        const context = {
+            selectedClipId: 'midi',
+            selectedClipIds: ['midi'],
+            selectedClipType: 'midi' as const,
+            hasAutomationLane: false,
+        };
+        expect(discoverCommands(registry, [], context).map((group) => group.entries[0]!.id)).toEqual(['clip', 'play']);
+        expect(discoverCommands(registry, []).map((group) => group.entries[0]!.id)).toEqual(['play', 'clip']);
+    });
+
     it('caps discovery at eight categories with every applicable command ahead of gated commands', () => {
         const gated = () => 'Select a clip first.';
         const registry = [

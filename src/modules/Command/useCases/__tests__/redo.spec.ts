@@ -206,6 +206,7 @@ describe('redo', () => {
             skipUndo: true,
             skipMacroRecording: true,
             source: 'ai',
+            onCommitted: expect.any(Function),
         });
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [entry], future: [] });
     });
@@ -247,6 +248,7 @@ describe('redo', () => {
             skipUndo: true,
             skipMacroRecording: true,
             source: 'ai',
+            onCommitted: expect.any(Function),
         });
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [entry], future: [] });
@@ -298,6 +300,7 @@ describe('redo', () => {
             skipUndo: true,
             skipMacroRecording: true,
             source: 'ai',
+            onCommitted: expect.any(Function),
         });
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.recordAction).not.toHaveBeenCalled();
@@ -375,6 +378,24 @@ describe('redo', () => {
             future: [expect.not.objectContaining({ groupId: 'legacy-group' })],
         });
     });
+
+    it.each([false, true])(
+        'notifies once for a redo group only when its batch reports applied actions: %s',
+        async (written) => {
+            const first = actionEntry({ id: 'group-1', groupId: 'group', source: 'ai' });
+            const second = actionEntry({ id: 'group-2', groupId: 'group', source: 'ai' });
+            mocks.undoStoreValue.value = { past: [], future: [first, second] };
+            mocks.executeAppActionBatch.mockImplementation(async (actions, options) => {
+                options?.onCommitted?.(written ? actions : []);
+                return { status: written ? 'committed' : 'no-op', actions: [] };
+            });
+            const onCommitted = vi.fn();
+            await redo({ onCommitted });
+            expect(onCommitted).toHaveBeenCalledTimes(written ? 1 : 0);
+            expect(mocks.undoStoreValue.value).toEqual({ past: [first, second], future: [] });
+            expect(mocks.recordAction).not.toHaveBeenCalled();
+        }
+    );
 
     it('keeps an entire grouped redo pending when its atomic batch conflicts', async () => {
         const first = actionEntry({ id: 'group-1', groupId: 'group' });

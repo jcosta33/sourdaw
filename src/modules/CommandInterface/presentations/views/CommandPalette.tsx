@@ -6,26 +6,37 @@ import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
 import { useStore } from '#/infra/store/useStore';
+import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
+import { automationStore } from '#/modules/Automation/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { closeCommandPalette } from '#/modules/WorkspaceShell/useCases';
 import { cn } from '#/utils/Styles/cn';
 
+import { type CommandContext } from '../../models/CommandContext';
+import { getCommandContext } from '../../useCases/getCommandContext';
 import { getCommandInapplicabilityReason } from '../../useCases/getCommandInapplicabilityReason';
 
 import { discoverCommands, searchCommands, updateRecentCommandIds, type CommandEntry } from './commandRegistry';
 
 type CommandOptionProps = {
     cmd: CommandEntry;
+    inapplicabilityReason: string | null;
     index: number;
     activeIndex: number;
     onSelect: () => void;
     onHover: () => void;
 };
 
-const CommandOption = ({ cmd, index, activeIndex, onSelect, onHover }: CommandOptionProps): ReactElement => {
+const CommandOption = ({
+    cmd,
+    inapplicabilityReason,
+    index,
+    activeIndex,
+    onSelect,
+    onHover,
+}: CommandOptionProps): ReactElement => {
     const isSelected = index === activeIndex;
-    const inapplicabilityReason = getCommandInapplicabilityReason(cmd);
 
     return (
         <Button
@@ -68,7 +79,7 @@ const CommandOption = ({ cmd, index, activeIndex, onSelect, onHover }: CommandOp
 type CommandGroup = {
     id: string;
     label: string | null;
-    entries: CommandEntry[];
+    entries: Array<{ command: CommandEntry; inapplicabilityReason: string | null }>;
 };
 
 type CommandListboxProps = {
@@ -83,7 +94,7 @@ const CommandListbox = ({ id, groups, activeIndex, onSelect, onHover }: CommandL
     let nextIndex = 0;
     const indexedGroups = groups.map((group) => ({
         ...group,
-        entries: group.entries.map((cmd) => ({ cmd, index: nextIndex++ })),
+        entries: group.entries.map((entry) => ({ ...entry, index: nextIndex++ })),
     }));
     const resultCount = groups.reduce((count, group) => count + group.entries.length, 0);
 
@@ -91,10 +102,11 @@ const CommandListbox = ({ id, groups, activeIndex, onSelect, onHover }: CommandL
         <div id={id} role="listbox" aria-label="Commands" className="max-h-72 overflow-y-auto bg-surface-base py-1">
             {indexedGroups.map((group, groupIndex) => {
                 const headingId = `command-palette-group-${groupIndex}`;
-                const options = group.entries.map(({ cmd, index }) => (
+                const options = group.entries.map(({ command: cmd, inapplicabilityReason, index }) => (
                     <CommandOption
                         key={cmd.id}
                         cmd={cmd}
+                        inapplicabilityReason={inapplicabilityReason}
                         index={index}
                         activeIndex={activeIndex}
                         onSelect={() => onSelect(cmd)}
@@ -124,24 +136,35 @@ const CommandListbox = ({ id, groups, activeIndex, onSelect, onHover }: CommandL
     );
 };
 
-function getCommandGroups(query: string, recentCommandIds: readonly string[]): CommandGroup[] {
+function getCommandGroups(query: string, recentCommandIds: readonly string[], context: CommandContext): CommandGroup[] {
     const results = searchCommands(query);
-    if (query.trim()) {
-        return [{ id: 'search-results', label: null, entries: results }];
-    }
-    return discoverCommands(results, recentCommandIds);
+    const groups = query.trim()
+        ? [{ id: 'search-results', label: null, entries: results }]
+        : discoverCommands(results, recentCommandIds, context);
+    return groups.map((group) => ({
+        ...group,
+        entries: group.entries.map((command) => ({
+            command,
+            inapplicabilityReason: getCommandInapplicabilityReason(command, context),
+        })),
+    }));
 }
 
 export const CommandPalette = (): ReactElement | null => {
     const commandPaletteOpen = useStore(workspaceStore)?.commandPaletteOpen ?? false;
+    // Context gates read these public stores; their changes must refresh both
+    // discovery ordering and the availability shown on already visible options.
+    const tracks = useStore(trackStore);
+    const selection = useStore(clipSelectionStore);
+    const automation = useStore(automationStore);
     const [query, setQuery] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
     // Session-only component state: recents never enter project or undo history.
     const [recentCommandIds, setRecentCommandIds] = useState<string[]>([]);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const groups = getCommandGroups(query, recentCommandIds);
-    const flattenedResults = groups.flatMap((group) => group.entries);
+    const groups = getCommandGroups(query, recentCommandIds, getCommandContext({ tracks, selection, automation }));
+    const flattenedResults = groups.flatMap((group) => group.entries.map((entry) => entry.command));
 
     // Every keyboard and active-descendant lookup uses the same visual order
     // as the grouped list, including when recents reorder empty-query results.
