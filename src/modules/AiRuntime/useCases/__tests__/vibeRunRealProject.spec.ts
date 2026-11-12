@@ -9,6 +9,8 @@ import { getProjectHandlers } from '#/modules/Project/useCases';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { MAX_METRIC_GOAL_STATE_BYTES } from '../../models/MetricGoalAdmission';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS, MAX_PLAN_CAPABILITIES } from '../../stores/agentRunStore';
+import { chatStore } from '../../stores/chatStore';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import {
@@ -27,6 +29,7 @@ import {
     ORDINARY_SONG_SECTIONS as SECTIONS,
     ORDINARY_SONG_TRACKS as TRACKS,
     prepareVibeRunEngine,
+    proposedVibeCards,
     releaseVibeRunEngine,
     renderVibeTimeline,
     requireOnlyProposedVibeCard,
@@ -109,10 +112,12 @@ vi.hoisted(() => {
         disconnect: () => undefined,
     });
     // The wide recipes' devices build more node kinds than the test context offers: any it lacks is
-    // an inert node whose every other property is an inert param.
+    // an inert node whose every other property is an inert member.
+    // An inert member serves as either an AudioParam (`frequency.value`) or a method (`start()`).
+    const createInertMember = () => Object.assign(() => undefined, createAudioParam(0));
     const createInertNode = (): unknown =>
         new Proxy(createNode(), {
-            get: (node: Record<string | symbol, unknown>, key) => (key in node ? node[key] : createAudioParam(0)),
+            get: (node: Record<string | symbol, unknown>, key) => (key in node ? node[key] : createInertMember()),
         });
     const withInertNodes = (context: AudioContext): AudioContext =>
         new Proxy(context, {
@@ -177,13 +182,6 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 
 /** Two dozen tracks render real buffers through the real measurement path, which takes longer than a unit case. */
 const REAL_PROJECT_TIMEOUT_MS = 60_000;
-
-/**
- * The batches the whole-run case drives. Each batch preview adds its verification receipts to the run
- * plan, and the run store keeps at most 256 entries in any collection, so the next preview after these
- * takes the plan past it and the store refuses the run.
- */
-const BATCHES_WITHIN_RECEIPT_COLLECTION = 5;
 
 /** The acoustic guitar rests through the intro. */
 const RESTING_ID = 'track-acoustic';
@@ -286,7 +284,7 @@ describe('a whole-project vibe run on a song of ordinary size', () => {
     );
 
     it(
-        'proposes each batch with its measured goal state admitted, under the persistence ceiling',
+        'proposes every batch with its measured goal state admitted and finishes the run',
         async () => {
             admission.admitsOutOfTolerance = true;
             scriptVibeBriefRoute({ descriptors: ['warm', 'wide'] });
@@ -298,13 +296,13 @@ describe('a whole-project vibe run on a song of ordinary size', () => {
             }
             const plan = readScheduledVibeRunPlan(schedule.serializedPlan);
             const batchCount = plan?.batches.length ?? 0;
-            expect(batchCount).toBeGreaterThan(BATCHES_WITHIN_RECEIPT_COLLECTION);
+            expect(batchCount).toBeGreaterThan(1);
             await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toEqual({
                 status: 'executed',
             });
 
             const stateBytes: number[] = [];
-            for (let position = 2; position <= BATCHES_WITHIN_RECEIPT_COLLECTION + 1; position += 1) {
+            for (let position = 2; position <= batchCount + 1; position += 1) {
                 const card = requireOnlyProposedVibeCard();
                 expect(card.approvalSnapshot.batchPosition?.index).toBe(position);
                 const serialized = card.approvalSnapshot.metricGoalState ?? '';
@@ -324,6 +322,22 @@ describe('a whole-project vibe run on a song of ordinary size', () => {
                 });
             }
 
+            expect(proposedVibeCards()).toEqual([]);
+            expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('completed');
+            expect(chatStore.value?.messages.at(-1)?.content).toMatch(
+                new RegExp(
+                    `^The vibe run finished: the brief and ${String(batchCount)} of ${String(batchCount)} batches were applied\\.`,
+                    'u'
+                )
+            );
+            const receiptCount = agentRunLifecycle.get(brief.runId)?.plan?.applicationToolReceipts.length ?? 0;
+            // The plan keeps every batch's verification receipts, and one capability per receipt: both
+            // outgrow the 256 every other run-store collection keeps and stay within their own bounds.
+            const capabilityCount = agentRunLifecycle.get(brief.runId)?.plan?.capabilities.length ?? 0;
+            expect(receiptCount).toBeGreaterThan(256);
+            expect(receiptCount).toBeLessThanOrEqual(MAX_PLAN_APPLICATION_TOOL_RECEIPTS);
+            expect(capabilityCount).toBeGreaterThan(256);
+            expect(capabilityCount).toBeLessThanOrEqual(MAX_PLAN_CAPABILITIES);
             const largest = Math.max(...stateBytes);
             // A batch's proofs outgrow the old 64 KiB ceiling, and each batch stays under the one that bounds it now.
             expect(largest).toBeGreaterThan(65_536);

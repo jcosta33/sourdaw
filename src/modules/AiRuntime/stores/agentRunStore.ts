@@ -54,6 +54,20 @@ import { readScheduledVibeRunPlan } from '../validators/readScheduledVibeRunPlan
 const MAX_PENDING_EFFECT_RECOVERIES = 256;
 const MAX_PREPARED_STEM_IMPORT_RECOVERIES = 256;
 const MAX_COLLECTION_LENGTH = 256;
+/**
+ * Every batch preview of a run appends its verification receipts to the plan, so the list grows
+ * with the run rather than with one turn. Their bytes are bounded by
+ * `APPLICATION_VERIFICATION_RECEIPT_LIMITS`; this count admits every batch's receipts for an
+ * ordinary song, whose complete vibe run (24 tracks, eight sections, eleven batches) persisted 487,
+ * with about twice that as headroom.
+ */
+export const MAX_PLAN_APPLICATION_TOOL_RECEIPTS = 1024;
+/**
+ * `planAgentRun` derives one capability per application-tool receipt beside the action-catalog,
+ * budget, asset and data-policy entries, so a plan's capabilities are bounded by its receipts plus
+ * the allowance every other collection keeps.
+ */
+export const MAX_PLAN_CAPABILITIES = MAX_PLAN_APPLICATION_TOOL_RECEIPTS + MAX_COLLECTION_LENGTH;
 const MAX_TEXT_LENGTH = 128 * 1024;
 const MAX_SERIALIZED_BATCH_LENGTH = 1024 * 1024;
 
@@ -898,8 +912,12 @@ function readWorkLease(value: unknown): AgentRunWorkLease | null {
     };
 }
 
-function readCollection<TItem>(value: unknown, readItem: (candidate: unknown) => TItem | null): TItem[] | null {
-    if (!Array.isArray(value) || value.length > MAX_COLLECTION_LENGTH) {
+function readCollection<TItem>(
+    value: unknown,
+    readItem: (candidate: unknown) => TItem | null,
+    maxLength: number = MAX_COLLECTION_LENGTH
+): TItem[] | null {
+    if (!Array.isArray(value) || value.length > maxLength) {
         return null;
     }
     const result: TItem[] = [];
@@ -1446,7 +1464,11 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
     const applicationToolReceipts =
         value.applicationToolReceipts === undefined
             ? []
-            : readCollection(value.applicationToolReceipts, readApplicationToolReceipt);
+            : readCollection(
+                  value.applicationToolReceipts,
+                  readApplicationToolReceipt,
+                  MAX_PLAN_APPLICATION_TOOL_RECEIPTS
+              );
     if (
         summary === null ||
         commandIds === null ||
@@ -1516,20 +1538,24 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
                           : null,
               }
             : null;
-    const capabilities = readCollection(value.capabilities, (candidate) => {
-        if (!isRecord(candidate)) {
-            return null;
-        }
-        const id = readString(candidate.id);
-        const prerequisite = readString(candidate.prerequisite);
-        const source = ['action-catalog', 'application-tool-catalog', 'budget', 'asset', 'data-policy'].find(
-            (entry) => entry === candidate.source
-        );
-        const status = ['available', 'required', 'unavailable'].find((entry) => entry === candidate.status);
-        return id === null || prerequisite === null || source === undefined || status === undefined
-            ? null
-            : { id, prerequisite, source, status };
-    });
+    const capabilities = readCollection(
+        value.capabilities,
+        (candidate) => {
+            if (!isRecord(candidate)) {
+                return null;
+            }
+            const id = readString(candidate.id);
+            const prerequisite = readString(candidate.prerequisite);
+            const source = ['action-catalog', 'application-tool-catalog', 'budget', 'asset', 'data-policy'].find(
+                (entry) => entry === candidate.source
+            );
+            const status = ['available', 'required', 'unavailable'].find((entry) => entry === candidate.status);
+            return id === null || prerequisite === null || source === undefined || status === undefined
+                ? null
+                : { id, prerequisite, source, status };
+        },
+        MAX_PLAN_CAPABILITIES
+    );
     const risks = readStringArray(value.risks);
     const approvalPoints = readCollection(value.approvalPoints, (candidate) => {
         if (!isRecord(candidate)) {
