@@ -315,7 +315,10 @@ function readMeasuredSilences(
     const batches = plan.batches.map((batch): ScheduledVibeRunBatch => {
         const silentRanges = batch.silentRanges.flatMap((cell) => bind(cell.targetId, cell.range));
         const scheduled = { ...toScheduledBatch(batch), verificationRanges: ranges };
-        return silentRanges.length === 0 ? scheduled : { ...scheduled, silentRanges };
+        if (silentRanges.length === 0) {
+            return scheduled;
+        }
+        return { ...scheduled, silentRanges };
     });
     const silentTargets = plan.silentTargets.map((target): VibeRunSilentTarget => ({
         targetId: target.targetId,
@@ -348,6 +351,10 @@ function buildMeasuredPlan(input: {
             )
             .map((witness) => witness.id),
     }));
+    const silentEvidence: { silentTargets?: readonly VibeRunSilentTarget[] } = {};
+    if (input.silentTargets.length > 0) {
+        silentEvidence.silentTargets = input.silentTargets;
+    }
     const initial: MeasuredScheduledVibeRunPlan['initial'] = {
         origin: 'vibe-run-initial-baselines',
         sourceRevision: source.sourceRevision,
@@ -367,7 +374,7 @@ function buildMeasuredPlan(input: {
         arrangementRange: input.arrangementRange,
         receipts: input.collected.receipts,
         witnesses,
-        ...(input.silentTargets.length === 0 ? {} : { silentTargets: input.silentTargets }),
+        ...silentEvidence,
     };
     const initialDigest = digest(initial);
     return {

@@ -21,7 +21,11 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type ToolCallResult } from '../../models/ToolCallResult';
 import { type ToolSchema } from '../../models/ToolDefinitions';
-import { type MeasuredScheduledVibeRunPlan } from '../../models/VibeRunPlan';
+import {
+    type MeasuredScheduledVibeRunPlan,
+    type VibeRunSilentRange,
+    type VibeRunSilentTarget,
+} from '../../models/VibeRunPlan';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
@@ -340,24 +344,26 @@ function rebound(plan: MeasuredScheduledVibeRunPlan): MeasuredScheduledVibeRunPl
         ...entry,
         receiptDigest: digestOf(entry.receiptCallId),
     });
-    return {
-        ...plan,
-        batches: plan.batches.map((batch) =>
-            batch.silentRanges === undefined ? batch : { ...batch, silentRanges: batch.silentRanges.map(rebind) }
-        ),
-        initial: {
-            ...plan.initial,
-            witnesses: plan.initial.witnesses.map(rebind),
-            ...(plan.initial.silentTargets === undefined
-                ? {}
-                : {
-                      silentTargets: plan.initial.silentTargets.map((entry) => ({
-                          ...entry,
-                          silences: entry.silences.map(rebind),
-                      })),
-                  }),
-        },
-    };
+    const silentEvidence: { silentTargets?: VibeRunSilentTarget[] } = {};
+    if (plan.initial.silentTargets !== undefined) {
+        silentEvidence.silentTargets = plan.initial.silentTargets.map((entry) => ({
+            ...entry,
+            silences: entry.silences.map(rebind),
+        }));
+    }
+    const initial = { ...plan.initial, witnesses: plan.initial.witnesses.map(rebind), ...silentEvidence };
+    return { ...plan, batches: plan.batches.map((batch) => withSilentRanges(batch, rebind)), initial };
+}
+
+/** The batch with each of its silence records mapped; a batch with none is returned as it is. */
+function withSilentRanges(
+    batch: MeasuredScheduledVibeRunPlan['batches'][number],
+    map: (record: VibeRunSilentRange) => VibeRunSilentRange
+): MeasuredScheduledVibeRunPlan['batches'][number] {
+    if (batch.silentRanges === undefined) {
+        return batch;
+    }
+    return { ...batch, silentRanges: batch.silentRanges.map(map) };
 }
 
 const CHORUS = { startBeat: 2, endBeat: 4, sectionId: 'chorus' };
@@ -670,9 +676,7 @@ describe('a vibe run around silent verification ranges', () => {
         const stale = {
             ...plan,
             batches: plan.batches.map((batch) =>
-                batch.silentRanges === undefined
-                    ? batch
-                    : { ...batch, silentRanges: batch.silentRanges.map((r) => ({ ...r, receiptDigest: 'stale' })) }
+                withSilentRanges(batch, (record) => ({ ...record, receiptDigest: 'stale' }))
             ),
         };
         expect(groundVibeRunBatch(run, { ...schedule, serializedPlan: resealed(stale) }, 2)).toEqual({

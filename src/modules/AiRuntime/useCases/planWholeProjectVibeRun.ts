@@ -20,7 +20,6 @@ import {
     type VibeRunUnplannedRole,
     type VibeRunVerificationRange,
 } from '../models/VibeRunPlan';
-
 import { isSilentVibeRunCell } from '../validators/isSilentVibeRunCell';
 
 import { resolveRoleFamily } from './canonicalRoleFamilies';
@@ -278,15 +277,16 @@ function readExactRangeFigures(
     targetId: string,
     range: VibeRunVerificationRange
 ): VibeRunMeasurement['targets'][number]['measurements'][] {
-    return measurements
-        .filter(
-            (measurement) =>
-                measurement.range.startBeat === range.startBeat &&
-                measurement.range.endBeat === range.endBeat &&
-                measurement.range.sectionId === range.sectionId
-        )
-        .flatMap((measurement) => measurement.targets.filter((candidate) => candidate.targetId === targetId))
-        .map((candidate) => candidate.measurements);
+    const exact = measurements.filter(
+        (measurement) =>
+            measurement.range.startBeat === range.startBeat &&
+            measurement.range.endBeat === range.endBeat &&
+            measurement.range.sectionId === range.sectionId
+    );
+    const targets = exact.flatMap((measurement) =>
+        measurement.targets.filter((candidate) => candidate.targetId === targetId)
+    );
+    return targets.map((candidate) => candidate.measurements);
 }
 
 function readSilentRanges(
@@ -351,6 +351,45 @@ function readCoverageRefusals(
 }
 
 /**
+ * Sorts one role's tracks into the targets a batch may carry and those it may not: no applicable
+ * recipe, recipes past one batch, or silent over every required range.
+ */
+function classifyRoleTracks(
+    input: PlanWholeProjectVibeRunInput,
+    roleTracks: readonly ProjectContextTrack[],
+    rolePlanRecipes: readonly MixRecipe[]
+) {
+    const plannable: PlannableTarget[] = [];
+    const oversizedTargetIds: string[] = [];
+    const excludedTargets: VibeRunExcludedTarget[] = [];
+    const silentTargets: VibeRunPlan['silentTargets'][number][] = [];
+    for (const track of roleTracks) {
+        const recipes = rolePlanRecipes.filter((recipe) => canApplyEditSteps(recipe, track));
+        const commandCount = recipes.reduce((total, recipe) => total + countRecipeExpansionCommands(recipe), 0);
+        if (recipes.length === 0) {
+            excludedTargets.push({ targetId: track.id, reason: 'no-applicable-recipe' });
+            continue;
+        }
+        if (commandCount > MAX_LLM_ACTIONS_PER_BATCH) {
+            oversizedTargetIds.push(track.id);
+            continue;
+        }
+        const expectedDeltas = readExpectedDeltas(recipes);
+        const silentRanges = readSilentRanges(input, track.id, expectedDeltas);
+        if (silentRanges.length > 0 && silentRanges.length === input.requiredRanges?.length) {
+            excludedTargets.push({ targetId: track.id, reason: 'silent' });
+            silentTargets.push({
+                targetId: track.id,
+                metrics: [...new Set(expectedDeltas.map((delta) => delta.metric))],
+            });
+            continue;
+        }
+        plannable.push({ id: track.id, recipes, expectedDeltas, commandCount, silentRanges });
+    }
+    return { plannable, oversizedTargetIds, excludedTargets, silentTargets };
+}
+
+/**
  * Decompose a whole-project vibe request into an ordered run of bounded batches, from project truth
  * alone. Nothing here hardcodes a section name or an output-group name: a batch's scope is a role
  * family (read through the canonical role table from each track's derived role) and the project's own
@@ -404,33 +443,13 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
             unplannedRoles.push({ role, reason: 'no-expected-deltas', targetIds: roleTracks.map((track) => track.id) });
             continue;
         }
-        const plannable: PlannableTarget[] = [];
-        const oversizedTargetIds: string[] = [];
-        for (const track of roleTracks) {
-            const recipes = rolePlanRecipes.filter((recipe) => canApplyEditSteps(recipe, track));
-            const commandCount = recipes.reduce((total, recipe) => total + countRecipeExpansionCommands(recipe), 0);
-            if (recipes.length === 0) {
-                excludedTargets.push({ targetId: track.id, reason: 'no-applicable-recipe' });
-            } else if (commandCount > MAX_LLM_ACTIONS_PER_BATCH) {
-                oversizedTargetIds.push(track.id);
-            } else {
-                const expectedDeltas = readExpectedDeltas(recipes);
-                const silentRanges = readSilentRanges(input, track.id, expectedDeltas);
-                if (silentRanges.length > 0 && silentRanges.length === input.requiredRanges?.length) {
-                    excludedTargets.push({ targetId: track.id, reason: 'silent' });
-                    silentTargets.push({
-                        targetId: track.id,
-                        metrics: [...new Set(expectedDeltas.map((delta) => delta.metric))],
-                    });
-                } else {
-                    plannable.push({ id: track.id, recipes, expectedDeltas, commandCount, silentRanges });
-                }
-            }
+        const classified = classifyRoleTracks(input, roleTracks, rolePlanRecipes);
+        excludedTargets.push(...classified.excludedTargets);
+        silentTargets.push(...classified.silentTargets);
+        if (classified.oversizedTargetIds.length > 0) {
+            unplannedRoles.push({ role, reason: 'target-exceeds-batch-cap', targetIds: classified.oversizedTargetIds });
         }
-        if (oversizedTargetIds.length > 0) {
-            unplannedRoles.push({ role, reason: 'target-exceeds-batch-cap', targetIds: oversizedTargetIds });
-        }
-        for (const group of packWithinCommandCap(plannable, input.maxTargetsPerBatch)) {
+        for (const group of packWithinCommandCap(classified.plannable, input.maxTargetsPerBatch)) {
             const targetIds = group.map((target) => target.id);
             const ordinal = batches.length + 1;
             const { baselines, baselineConflicts } = readBatchBaselines(input.measurements, group, sections);
