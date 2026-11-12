@@ -36,6 +36,7 @@ import { getWebLlmContextWindowSize } from '../../../repositories/webLlm/getWebL
 import { initWebLlmEngine } from '../../../repositories/webLlm/initWebLlmEngine';
 import { agentReferenceStore } from '../../../stores/agentReferenceStore';
 import { readAgentResourceLimits } from '../../../stores/agentResourceLimitsStore';
+import { llmStatusStore } from '../../../stores/llmStatusStore';
 import { buildPlanningSystemPrompt } from '../../../transformers/buildPlanningSystemPrompt';
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { describeLocalContextWindowShortfall } from '../../../transformers/localContextWindowRefusal';
@@ -823,6 +824,20 @@ describe('mandatory planning tools', () => {
                     expect(LOCAL_PLANNER_REQUIRED_FAILURE_CODE).not.toBe(LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE);
                 }
             );
+
+            it('reports the loaded non-planning model, not the default, after refusing on it', async () => {
+                engineState.activeModelId = 'Qwen3-4B-q4f16_1-MLC';
+                mocks.isWebLlmLoaded.mockReturnValue(true);
+
+                const { outcome } = await sendLocalRequest(emptyProject());
+
+                expect(outcome.status).toBe('rejected');
+                expect(llmStatusStore.value).toEqual({
+                    state: 'ready',
+                    backend: 'webllm',
+                    modelId: 'Qwen3-4B-q4f16_1-MLC',
+                });
+            });
 
             it("refuses the request the same way when the engine's own count overflows the window", async () => {
                 mocks.generateWebLlmCompletion.mockRejectedValue(
