@@ -26,12 +26,22 @@ concrete break or none.
    head. When the base tip moved after the head's last run, especially in the same file, require evidence covering
    base plus head: the job's checked-out merge commit must contain the current base tip, and reverting either
    contributing hunk must fail that combined typecheck.
-3. **A forced notes fetch must not drop a divergent local notes history (#4271).** A forced fetch can replace a
-   local notes history that is not an ancestor of the remote; a local preimage was later absent from the
-   refreshed notes. In `scripts/__tests__/publishLane.spec.ts`, with a disposable bare remote holding independent local and remote notes histories, check
-   reachability of the exact observed local commit and its unique note blob after the actual fetch, not the
-   refspec or the later non-forced push. Probe refusal before fetch when inspection or create-only recovery
-   pinning fails. A recovery ref preserves an observation, not concurrent writers or a union.
+3. **A forced notes fetch preserves the history observed at replacement (#4271, #5802).** The forced
+   refresh introduced by #4271 could discard divergent local history; #5802 pinned the initial delivery
+   observation but left a concurrent local writer during network I/O unpreserved and let Git's stale
+   expected-old check abort delivery. The missed probe was a second writer, not another single-writer
+   preimage assertion. In `scripts/__tests__/deliverPullRequest.spec.ts`, use a real bare remote with
+   divergent notes and inject a canonical writer at the fetch boundary: its exact commit and unique blob
+   must remain reachable under the recovery namespace while the canonical ref takes the captured remote
+   commit. Inject another writer after the latest pin and before installation: compare-and-swap must
+   refuse, retaining that newer canonical ref without retry. Run both authenticated routes, initial
+   absence and missing remote notes, and retain the before-fetch inspection/pinning refusal controls.
+   Move the invocation's capture ref before installation and immediately before cleanup; its changed
+   identity must refuse replacement or deletion. Restoring a direct canonical fetch must fail the
+   concurrent-preimage case; removing the canonical expected-old argument must fail the late-writer
+   case; removing the cleanup expected-old argument must fail the capture-change case. The equivalent
+   divergent-preimage probe in `scripts/__tests__/publishLane.spec.ts` remains required for publication.
+   Recovery refs preserve observations, never a merged notes union.
 4. **Optional notes publication preserves concurrent writers (#4271).** The forced
    `+refs/notes/ai:refs/notes/ai` publication, tested only by a single-writer fixture, let a later title-only
    republish replace divergent remote notes with its stale local map. Publish the exact reviewed source commit
