@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
@@ -4049,8 +4049,11 @@ export function shellPort(
                 }
                 return match[1];
             };
-            const notes = readRef('refs/notes/ai');
-            if (notes !== undefined) {
+            const preserveLocalNotes = (): string | undefined => {
+                const notes = readRef('refs/notes/ai');
+                if (notes === undefined) {
+                    return undefined;
+                }
                 if (shell.capture('git', ['cat-file', '-t', notes]).trim() !== 'commit') {
                     fail('local authorship notes ref does not point to a commit');
                 }
@@ -4062,29 +4065,47 @@ export function shellPort(
                 if (existing === undefined) {
                     shell.run('git', ['update-ref', '--no-deref', recoveryRef, notes, '0'.repeat(notes.length)]);
                 }
+                return notes;
+            };
+            preserveLocalNotes();
+            const captureRef = `refs/agents/fetched-ai-notes/${randomUUID()}`;
+            if (readRef(captureRef) !== undefined) {
+                fail(`authorship notes capture ref ${captureRef} already exists`);
             }
+            const fetchArgs = [
+                'fetch',
+                '--prune',
+                options.gitToken === undefined ? 'origin' : GITHUB_HTTPS_REMOTE,
+                '+refs/heads/*:refs/remotes/origin/*',
+                `refs/notes/ai:${captureRef}`,
+            ];
             if (options.gitToken !== undefined) {
                 const helperDir =
                     options.helperDir ?? fail('authenticated git fetch requires a credential helper directory');
-                shell.run(
-                    'git',
-                    gitAuthenticatedArgs(options.gitToken, helperDir, [
-                        'fetch',
-                        '--prune',
-                        GITHUB_HTTPS_REMOTE,
-                        '+refs/heads/*:refs/remotes/origin/*',
-                        '+refs/notes/ai:refs/notes/ai',
-                    ])
-                );
-                return;
+                shell.run('git', gitAuthenticatedArgs(options.gitToken, helperDir, fetchArgs));
+            } else {
+                shell.run('git', fetchArgs);
             }
-            shell.run('git', [
-                'fetch',
-                '--prune',
-                'origin',
-                '+refs/heads/*:refs/remotes/origin/*',
-                '+refs/notes/ai:refs/notes/ai',
-            ]);
+            const fetched = readRef(captureRef) ?? fail('fetched authorship notes ref is missing');
+            if (shell.capture('git', ['cat-file', '-t', fetched]).trim() !== 'commit') {
+                fail('fetched authorship notes ref does not point to a commit');
+            }
+            try {
+                // Network I/O can outlast another notes writer; pin its latest history before replacing it.
+                const latest = preserveLocalNotes();
+                if (readRef(captureRef) !== fetched) {
+                    fail(`authorship notes capture ref ${captureRef} changed after fetch`);
+                }
+                shell.run('git', [
+                    'update-ref',
+                    '--no-deref',
+                    'refs/notes/ai',
+                    fetched,
+                    latest ?? '0'.repeat(fetched.length),
+                ]);
+            } finally {
+                shell.run('git', ['update-ref', '--no-deref', '-d', captureRef, fetched]);
+            }
         },
         pullRequest: (number) => {
             const snapshot = toPullRequestSnapshot(
