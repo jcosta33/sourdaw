@@ -795,6 +795,7 @@ file in the same change.
 - **Nesting depth**: Control-flow blocks nest at most 4 deep; deeper nesting buries the happy path and calls for the guard clauses and early returns covered under _Prefer explicit control flow_. ([`max-depth`](https://eslint.org/docs/latest/rules/max-depth))
 - **Cyclomatic complexity**: A function's cyclomatic complexity stays at most 20; past that, its branching cannot be reasoned about or tested exhaustively and should be split. ([`complexity`](https://eslint.org/docs/latest/rules/complexity))
 - **Burn-down baseline**: Files that already exceed one of the four limits above are listed in `eslint.size-baseline.mjs`, which holds those files to `warn` instead of `error` so they keep reporting without failing the build. A file leaves the list only once it complies with all four rules; no file is ever added.
+- **Baseline line ceilings**: Because `warn` alone would let a baselined file grow without bound, each baselined file may not exceed its recorded line ceiling in `scripts/lintSizeCeilings.json` (its newline count, never below the 600-line limit). Ceilings only move down: a file that shrinks well below its ceiling must have the ceiling lowered, and an over-ceiling file is fixed by extracting code, never by raising the ceiling. A file leaving the baseline leaves the ceilings file too. `scripts/__tests__/lintSizeBaseline.spec.ts` enforces all three.
 
 ### Parameter patterns
 
