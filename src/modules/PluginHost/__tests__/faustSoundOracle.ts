@@ -29,6 +29,8 @@ export const OLD_FAUST_IDENTITY = {
 
 export type SoundUi = {
     type: string;
+    index?: number;
+    varname?: string;
     address?: string;
     init?: number;
     min?: number;
@@ -36,6 +38,19 @@ export type SoundUi = {
     step?: number;
     items?: SoundUi[];
 };
+
+/** Compiler memory offsets and generated variable names are outside the address-based control contract. */
+export function publicSoundUi(items: SoundUi[]): SoundUi[] {
+    return items.map((item) => {
+        const publicItem = { ...item };
+        delete publicItem.index;
+        delete publicItem.varname;
+        if (item.items) {
+            publicItem.items = publicSoundUi(item.items);
+        }
+        return publicItem;
+    });
+}
 
 type Processor = FaustMonoWebAudioDsp | FaustPolyWebAudioDsp;
 export type CompiledSoundDevice = { ui: SoundUi[]; create(profile: SoundProfile): Promise<Processor> };

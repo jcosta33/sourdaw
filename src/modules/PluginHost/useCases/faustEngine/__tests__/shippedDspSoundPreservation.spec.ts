@@ -15,6 +15,7 @@ import {
     compileSoundDevice,
     encodeSoundStreams,
     OLD_FAUST_IDENTITY,
+    publicSoundUi,
     renderSoundProfile,
     soundHash,
     type CompiledSoundDevice,
@@ -243,18 +244,55 @@ describe('shipped Faust PCM against immutable pre-upgrade sound', () => {
             expect(soundHash(zipped)).toBe(frozen.gzipSha256);
             const baseline = gunzipSync(zipped);
             expect(soundHash(baseline)).toBe(frozen.pcmSha256);
-            expect(device.ui).toEqual(frozen.ui);
+            const difference = compareSoundStreams(baseline, actual, manifest.tolerance);
+            expect(publicSoundUi(device.ui)).toEqual(publicSoundUi(frozen.ui));
             expect(actual.appliedControls).toEqual(frozen.appliedControls);
             expect(actual.inputSha256).toBe(frozen.inputSha256);
             expect(
                 actual.streams.map(({ kind, address, samples }) => ({ kind, address, frames: samples.length }))
             ).toEqual(frozen.streams.map(({ kind, address, frames }) => ({ kind, address, frames })));
-            const difference = compareSoundStreams(baseline, actual, manifest.tolerance);
             expect(difference.maxAbsolute).toBeLessThanOrEqual(1e-5);
             expect(difference.rms).toBeLessThanOrEqual(1e-6);
         },
         240_000
     );
+
+    it('ignores only compiler UI offsets and variable names while retaining the public control contract', () => {
+        const ui = [
+            {
+                type: 'vgroup',
+                label: 'EQ',
+                items: [
+                    {
+                        type: 'hslider',
+                        index: 8,
+                        address: '/EQ/Q',
+                        label: 'Q',
+                        min: 0.1,
+                        max: 10,
+                        init: 1,
+                        step: 0.1,
+                        meta: [{ unit: 'ratio', index: 'public metadata is retained' }],
+                    },
+                ],
+            },
+        ];
+        const relocated = structuredClone(ui);
+        relocated[0]!.items[0]!.index = 24;
+        expect(publicSoundUi(relocated)).toEqual(publicSoundUi(ui));
+        const renamed = ui.map((group) => ({
+            ...group,
+            items: group.items.map((item) => ({ ...item, varname: 'fHslider99' })),
+        }));
+        expect(publicSoundUi(renamed)).toEqual(publicSoundUi(ui));
+        for (const change of [{ max: 20 }, { address: '/EQ/another' }, { init: 2 }, { step: 0.2 }]) {
+            const changed = structuredClone(ui);
+            Object.assign(changed[0]!.items[0]!, change);
+            expect(() => expect(publicSoundUi(changed)).toEqual(publicSoundUi(ui))).toThrow();
+        }
+        expect(ui[0]!.items[0]!.index).toBe(8);
+        expect(publicSoundUi(ui)[0]!.items?.[0]).toMatchObject({ meta: [{ index: 'public metadata is retained' }] });
+    });
 
     it('rejects an output-sample perturbation without changing the frozen fixture', () => {
         if (!firstRender || !profiles[0]) {

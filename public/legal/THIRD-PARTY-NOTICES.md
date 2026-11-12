@@ -61,6 +61,12 @@ runtime notices below remain authoritative for their narrower component closures
 
 ## Adapted DSP source
 
+The stock Faust oscillator, filter and reverb definitions in `src/helpers/faustCurrentSound.lib`
+are adapted from faustlibraries revision `36661b5efd702e0e21b3ad49864e10201aecc602`. Exact upstream
+file hashes and the selected function closure are retained in `faustCurrentSound.sources.json`.
+Attribution and the LGPL Faust exception / STK 4.3 terms are distributed in
+[FAUST-CURRENT-SOUND-NOTICE.txt](./FAUST-CURRENT-SOUND-NOTICE.txt).
+
 `crates/daw-dsp/src/toaster/engines/kick_808.rs` adapts mi-plaits-dsp-rs at commit
 `6d3f7a5b84b25ec45d66c9f6be7109474690d795` under the MIT license. Copyright (c) 2022 Oliver
 Rockstedt. The exact upstream terms are in [MI-PLAITS-DSP-RS-MIT.txt](./MI-PLAITS-DSP-RS-MIT.txt).
