@@ -206,12 +206,15 @@ export function replaceTimelineWorkingView(
         scrollX = clampScrollX(view?.scrollX ?? 0, pixelsPerBeat, 0);
         scrollY = Math.max(0, view?.scrollY ?? 0);
     }
-    timelineViewStore.set({
+    const nextState: TimelineViewState = {
         ...state,
         pixelsPerBeat,
         scrollX,
         scrollY,
         autoScrollEnabled: view ? state.autoScrollEnabled : true,
-        ...(deferViewportClamp ? { viewportMeasurementRevision: (state.viewportMeasurementRevision ?? 0) + 1 } : {}),
-    });
+    };
+    if (deferViewportClamp) {
+        nextState.viewportMeasurementRevision = (state.viewportMeasurementRevision ?? 0) + 1;
+    }
+    timelineViewStore.set(nextState);
 }
