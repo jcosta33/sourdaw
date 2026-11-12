@@ -108,8 +108,10 @@ replays — the exact same review must stand live: actor, head, state, body, and
 comments — instead of re-posting, and a recorded publication that no longer
 stands exact fails closed before any write. `review:accept` refuses a
 plan-carrying bundle whose dossier is missing, records no publication, or
-leaves an accepted finding without its public comment binding; a bundle without
-a risk plan publishes and accepts as before only under the legacy-tolerance cutover above.
+leaves an accepted finding without its public comment binding. A bundle without
+a risk plan publishes only under the legacy-tolerance cutover above; `review:accept`
+applies no cutover and admits it unless the bundle manifest records generating
+`risk-plan.json`.
 
 `pnpm review:reconstruct <pr>` is read-only: it rebuilds every governed round
 from public channels alone — reviews, review comments, author
@@ -145,8 +147,9 @@ authorization (#4584): a reviewer APPROVE on a plan-carrying bundle records one
 dossier digest, in the same persisted write as the publication bindings.
 `review.json` carrying `authorization` is refused. `review:accept` refuses a
 plan-carrying head whose dossier already carries that reviewer-recorded
-authorization — refusing the duplicate — and keeps working for plan-less bundles
-the legacy cutover admits. New deliveries never call it.
+authorization — refusing the duplicate — and keeps accepting plan-less bundles
+whatever the pull request's age; only `deliver` holds them to the cutover. New
+deliveries never call it.
 
 A pre-policy plan-carrying head is not deliverable and cannot be re-authorized
 in place: re-publication replays the recorded publication rather than posting a
