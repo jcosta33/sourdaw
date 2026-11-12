@@ -271,21 +271,24 @@ const discoverGainRange: ScriptedPlanningTurn = () => [
     {
         id: 'gain-range-schema',
         name: 'agent.catalog.discover',
-        arguments: { category: 'command', names: ['automateTrackGainRange'] },
+        arguments: { category: 'command', names: ['automateParameterRange'] },
     },
 ];
+
+/** One section-wide gain lift per bus: the fader steps up by the stated decibels over the section. */
+function gainLift(trackId: (typeof IMPACT_BUS_IDS)[number]) {
+    return {
+        name: 'automateParameterRange',
+        arguments: { trackId, parameterId: 'gain', range: { section: 'Chorus Two' }, deltaDb: 1.5 },
+    };
+}
 
 const proposeNamedGainRange: ScriptedPlanningTurn = () => [
     {
         id: 'gain-range-proposal',
         name: 'command.batch.propose',
         arguments: {
-            commands: [
-                {
-                    name: 'automateTrackGainRange',
-                    arguments: { trackIds: [...IMPACT_BUS_IDS], sectionName: 'Chorus Two', gainDb: 1.5 },
-                },
-            ],
+            commands: IMPACT_BUS_IDS.map(gainLift),
             plan: {
                 semantic: { classification: 'simple', uncertainty: [] },
                 objective: 'Lift the Drum Bus and Bass Bus by 1.5 dB in Chorus Two.',
@@ -296,7 +299,7 @@ const proposeNamedGainRange: ScriptedPlanningTurn = () => [
                     protectedTargetIds: [],
                     protectedRanges: [],
                 },
-                capabilityIds: ['automateTrackGainRange'],
+                capabilityIds: ['automateParameterRange'],
                 assetIds: [],
                 alternatives: [],
                 validationStrategy: ['Validate the named buses, the section and the stated gain.'],
@@ -381,28 +384,38 @@ function getGainLanes() {
     return automationStore.value?.lanes.filter((lane) => lane.parameterId === 'gain') ?? [];
 }
 
-/** The section gain trajectory the literal lift commits on each bus: a step up over Chorus Two and back. */
+/**
+ * The section gain trajectory the literal lift commits on each bus: an instant step up at the start
+ * of Chorus Two, held, and an instant step back at its end, each step two points on one beat.
+ */
 function expectExactGainAutomation(): void {
     const liftedGain = 0.8 * 10 ** (1.5 / 20);
+    const point = (beat: number, value: number) => ({
+        id: expect.any(String),
+        beat,
+        value,
+        curve: 'linear',
+        tension: 0,
+    });
     const trajectory = [
-        { beat: 0, value: 0.8, curve: 'step', tension: 0 },
-        { beat: CHORUS_TWO.startBeat, value: liftedGain, curve: 'step', tension: 0 },
-        { beat: CHORUS_TWO.endBeat, value: 0.8, curve: 'step', tension: 0 },
+        point(CHORUS_TWO.startBeat, 0.8),
+        point(CHORUS_TWO.startBeat, liftedGain),
+        point(CHORUS_TWO.endBeat, liftedGain),
+        point(CHORUS_TWO.endBeat, 0.8),
     ];
-    expect(getGainLanes()).toEqual([
-        expect.objectContaining({
-            id: 'auto-gain-bus-drums',
-            trackId: 'bus-drums',
-            parameterName: 'Drum Bus Gain',
-            points: trajectory,
-        }),
-        expect.objectContaining({
-            id: 'auto-gain-bus-bass',
-            trackId: 'bus-bass',
-            parameterName: 'Bass Bus Gain',
-            points: trajectory,
-        }),
-    ]);
+    expect(getGainLanes()).toEqual(
+        IMPACT_BUS_IDS.map((trackId) =>
+            expect.objectContaining({ trackId, parameterId: 'gain', parameterName: 'Gain', points: trajectory })
+        )
+    );
+}
+
+/**
+ * The lift's undo entries: one range write per bus. The public undo store shows entries by label
+ * only, so their grouping is observed by each case's single `undo()` or `redo()` moving all of them.
+ */
+function expectOneLiftGroup(entries: NonNullable<typeof undoStore.value>['past'] | undefined): void {
+    expect(entries).toHaveLength(IMPACT_BUS_IDS.length);
 }
 
 /** Plans the literal lift through the chat and returns the card it waits on. */
@@ -563,19 +576,86 @@ describe('retired whole-project vibe-mix workflow (AC-002 of #4372)', () => {
 
         expectNoRetiredCapability(requests);
         expect(result.rejectionReason).toBeUndefined();
-        expect(result.actions).toEqual([
-            expect.objectContaining({
-                type: 'automateTrackGainRange',
-                payload: expect.objectContaining({
-                    trackIds: [...IMPACT_BUS_IDS],
-                    sectionName: 'Chorus Two',
-                    gainDb: 1.5,
-                    sectionId: 'section-chorus-two',
-                    ...CHORUS_TWO,
-                }),
-            }),
-        ]);
+        expect(result.actions).toEqual(
+            IMPACT_BUS_IDS.map((trackId) =>
+                expect.objectContaining({
+                    type: 'automateParameterRange',
+                    payload: expect.objectContaining({
+                        trackId,
+                        parameterId: 'gain',
+                        range: { section: 'Chorus Two' },
+                        deltaDb: 1.5,
+                        ...CHORUS_TWO,
+                    }),
+                })
+            )
+        );
         expect(result).not.toHaveProperty('wholeProjectVibeMixPlan');
+        expect(snapshotProject()).toEqual(before);
+    });
+
+    // The legacy gain-lift tool stays executable for stored batches only: a provider that asks for it
+    // is answered as for any command it was never offered, and nothing it names runs.
+    it('refuses a provider that names the retired gain-lift tool and runs none of it', async () => {
+        const discoverRetired: ScriptedPlanningTurn = () => [
+            {
+                id: 'retired-schema',
+                name: 'agent.catalog.discover',
+                arguments: { category: 'command', names: ['automateTrackGainRange'] },
+            },
+        ];
+        const proposeRetired: ScriptedPlanningTurn = () => [
+            {
+                id: 'retired-proposal',
+                name: 'command.batch.propose',
+                arguments: {
+                    commands: [
+                        {
+                            name: 'automateTrackGainRange',
+                            arguments: { trackIds: [...IMPACT_BUS_IDS], sectionName: 'Chorus Two', gainDb: 1.5 },
+                        },
+                    ],
+                    plan: {
+                        semantic: { classification: 'simple', uncertainty: [] },
+                        objective: 'Lift the Drum Bus and Bass Bus by 1.5 dB in Chorus Two.',
+                        constraints: [],
+                        scope: {
+                            targetIds: [...IMPACT_BUS_IDS],
+                            targetRanges: [CHORUS_TWO],
+                            protectedTargetIds: [],
+                            protectedRanges: [],
+                        },
+                        capabilityIds: ['automateTrackGainRange'],
+                        assetIds: [],
+                        alternatives: [],
+                        validationStrategy: ['Validate the named buses, the section and the stated gain.'],
+                        stoppingConditions: ['Stop if the revision, the section or a bus changes.'],
+                    },
+                },
+            },
+        ];
+        const requests = scriptPlanningTurns([
+            literalIntake,
+            discoverRetired,
+            proposeRetired,
+            ...Array.from({ length: 6 }, () => askWhichTracks),
+        ]);
+        const before = snapshotProject();
+
+        await sendChatMessage(LITERAL_PROMPT);
+
+        const discovery = decodeReceiptContext(readReceiptSummary(requests[2]?.userMessage ?? '').value).find(
+            (receipt) => isRecord(receipt) && receipt.callId === 'retired-schema'
+        );
+        expect(discovery).toMatchObject({
+            status: 'failure',
+            data: null,
+            error: { code: 'invalid-tool-arguments' },
+        });
+        expect(chatStore.value?.messages.some((message) => message.pendingActionConfirmationId !== undefined)).toBe(
+            false
+        );
+        expect(getGainLanes()).toEqual([]);
         expect(snapshotProject()).toEqual(before);
     });
 
@@ -602,37 +682,22 @@ describe('retired whole-project vibe-mix workflow (AC-002 of #4372)', () => {
             const confirmation = await proposeLiteralLift();
 
             expect(confirmation.executionMode).toBe('atomic');
-            expect(confirmation.risk?.level).toBe('authority-sensitive');
-            expect(confirmation.affectedIds).toEqual(['bus-drums', 'bus-bass', 'section-chorus-two']);
-            expect(confirmation.actions).toEqual([
-                {
-                    type: 'automateTrackGainRange',
+            // Two bounded-reversible range writes across two buses: the risk policy's multi-target class.
+            expect(confirmation.risk?.level).toBe('broad-reversible');
+            // A range write names the tracks it writes; the section only places the range.
+            expect(confirmation.affectedIds).toEqual(['bus-drums', 'bus-bass']);
+            expect(confirmation.actions).toEqual(
+                IMPACT_BUS_IDS.map((trackId) => ({
+                    type: 'automateParameterRange',
                     payload: {
-                        trackIds: [...IMPACT_BUS_IDS],
-                        sectionName: 'Chorus Two',
-                        gainDb: 1.5,
-                        sectionId: 'section-chorus-two',
+                        trackId,
+                        parameterId: 'gain',
+                        range: { section: 'Chorus Two' },
+                        deltaDb: 1.5,
                         ...CHORUS_TWO,
-                        expectedTracks: [
-                            {
-                                trackId: 'bus-drums',
-                                trackName: 'Drum Bus',
-                                gain: 0.8,
-                                automationMode: 'read',
-                                frozen: false,
-                            },
-                            {
-                                trackId: 'bus-bass',
-                                trackName: 'Bass Bus',
-                                gain: 0.8,
-                                automationMode: 'read',
-                                frozen: false,
-                            },
-                        ],
-                        expectedSection: { name: 'Chorus Two', ...CHORUS_TWO },
                     },
-                },
-            ]);
+                }))
+            );
 
             const revisionBefore = captureProjectRevision();
             await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
@@ -656,16 +721,20 @@ describe('retired whole-project vibe-mix workflow (AC-002 of #4372)', () => {
                 (message) => message.pendingActionConfirmationId === confirmation.id
             );
             expect(receipt?.content).toContain('Outcome: committed');
-            expect(receipt?.content).toContain('Affected IDs: bus-drums, bus-bass, section-chorus-two');
-            expect(undoStore.value?.past).toHaveLength(1);
+            for (const busId of IMPACT_BUS_IDS) {
+                expect(receipt?.content).toContain(`- Affected IDs: ${busId}\n  - Outcome: committed`);
+            }
+            expectOneLiftGroup(undoStore.value?.past);
 
             await undo();
             expect(getGainLanes()).toEqual([]);
-            expect(undoStore.value?.future).toHaveLength(1);
+            expect(undoStore.value?.past).toEqual([]);
+            expectOneLiftGroup(undoStore.value?.future);
 
             await redo();
             expectExactGainAutomation();
-            expect(undoStore.value?.past).toHaveLength(1);
+            expect(undoStore.value?.future).toEqual([]);
+            expectOneLiftGroup(undoStore.value?.past);
         });
 
         // The edit below changes automation mode for a target this plan names, and the refusal names
@@ -753,7 +822,8 @@ describe('retired whole-project vibe-mix workflow (AC-002 of #4372)', () => {
             automationStore.set(committed);
             await undo();
             expect(getGainLanes()).toEqual([]);
-            expect(undoStore.value?.future).toHaveLength(1);
+            expect(undoStore.value?.past).toEqual([]);
+            expectOneLiftGroup(undoStore.value?.future);
         });
     });
 });

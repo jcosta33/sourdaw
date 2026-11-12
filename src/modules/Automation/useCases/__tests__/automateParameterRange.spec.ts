@@ -989,6 +989,55 @@ describe('automateParameterRange', () => {
             expect(laneFor('gain')).toEqual(before);
         });
 
+        // EX-01 drew these tails with the retired `automateSendRanges`; the range writes it now asks
+        // for must sound the same on the send the batch creates.
+        it('draws on a send the same batch creates the tails the retired automateSendRanges drew', async () => {
+            const beats = quarterBeats(20, 70);
+            const sampleBatchRide = async (ride: readonly AppAction[]) => {
+                await expect(
+                    executeAppActionBatch([createPlateBus(), addPlateSend(), ...ride], ATOMIC_GROUP)
+                ).resolves.toMatchObject({ status: expect.stringMatching(/^committed/) });
+                const samples = sampleLane(laneFor(NEW_SEND)?.id ?? '', beats);
+                await undo();
+                expect(automationStore.value?.lanes).toEqual([]);
+                return samples;
+            };
+            const chorusTails = [
+                { sectionId: 'section-chorus-one', startBeat: 16, endBeat: 32, automationStartBeat: 28 },
+                { sectionId: 'section-chorus-two', startBeat: 48, endBeat: 64, automationStartBeat: 60 },
+            ];
+
+            const drawn = await sampleBatchRide([
+                {
+                    type: 'automateSendRanges',
+                    payload: {
+                        trackIds: [VOCAL_ID],
+                        busId: NEW_BUS_ID,
+                        sectionIds: chorusTails.map((tail) => tail.sectionId),
+                        tailBars: 1,
+                        targetLevelDb: -10,
+                        busName: 'Plate',
+                        expectedTimeSignature: [4, 4],
+                        ranges: chorusTails.map((tail) => ({ ...tail, sectionName: 'Chorus' })),
+                        expectedTracks: [
+                            {
+                                trackId: VOCAL_ID,
+                                trackName: 'Lead Vocal',
+                                frozen: false,
+                                automationMode: 'read',
+                                sendLevel: NEW_SEND_LEVEL,
+                                sendPreFader: false,
+                            },
+                        ],
+                    },
+                },
+            ]);
+            const redrawn = await sampleBatchRide([plateTail(28, 32), plateTail(60, 64)]);
+
+            expect(drawn).not.toContain(null);
+            expectSameSamples(redrawn, drawn);
+        });
+
         it('ramps from the level an earlier setSend leaves on an existing send', async () => {
             const moved = dbToGain(-20);
 

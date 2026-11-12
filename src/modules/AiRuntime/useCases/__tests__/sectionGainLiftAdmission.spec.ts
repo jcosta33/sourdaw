@@ -60,7 +60,27 @@ const vibeShapedContext: ProjectContext = {
     playheadPosition: 0,
 };
 
-describe('automateTrackGainRange admission on a vibe-shaped project', () => {
+/** One section gain lift per bus, in the order the provider lists them. */
+function liftCalls(trackIds: readonly string[]) {
+    return trackIds.map((trackId) => ({
+        name: 'automateParameterRange',
+        arguments: { trackId, parameterId: 'gain', range: { section: 'Chorus Two' }, deltaDb: 1.5 },
+    }));
+}
+
+function liftAction(trackId: string) {
+    return expect.objectContaining({
+        type: 'automateParameterRange',
+        payload: expect.objectContaining({
+            trackId,
+            parameterId: 'gain',
+            range: { section: 'Chorus Two' },
+            deltaDb: 1.5,
+        }),
+    });
+}
+
+describe('section gain lift admission on a vibe-shaped project', () => {
     it('cannot reach outside the frozen generic subjects', () => {
         const prompt = 'Make Lead Guitar warmer';
         const catalog = prepareCreativeInterpretationCatalog({
@@ -91,23 +111,17 @@ describe('automateTrackGainRange admission on a vibe-shaped project', () => {
         }
         const frozen = JSON.stringify(admitted.authority);
         const result = bridgeGroundedLlmToolCalls({
-            calls: [
-                {
-                    name: 'automateTrackGainRange',
-                    arguments: { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 },
-                },
-            ],
+            calls: liftCalls(['bus-drums', 'bus-bass']),
             context: vibeShapedContext,
             prompt,
             creativeAuthority: admitted.authority,
             sectionSignatures: [{ name: 'Chorus Two', sectionId: 'section-chorus-two', startBeat: 56, endBeat: 72 }],
         });
         expect(result.actions).toEqual([]);
-        expect(result.rejections).toEqual([
-            expect.objectContaining({
-                reason: 'Creative authority does not extend to automation effects',
-            }),
-        ]);
+        expect(result.rejections.length).toBeGreaterThan(0);
+        expect(new Set(result.rejections.map((rejection) => rejection.reason))).toEqual(
+            new Set(['Creative authority does not extend to automation effects'])
+        );
         expect(JSON.stringify(admitted.authority)).toBe(frozen);
     });
 
@@ -129,80 +143,46 @@ describe('automateTrackGainRange admission on a vibe-shaped project', () => {
 
     it('grounds a bus gain lift whose request names both buses', () => {
         const result = bridgeGroundedLlmToolCalls({
-            calls: [
-                {
-                    name: 'automateTrackGainRange',
-                    arguments: { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 },
-                },
-            ],
+            calls: liftCalls(['bus-drums', 'bus-bass']),
             context: vibeShapedContext,
             sectionSignatures: [{ name: 'Chorus Two', sectionId: 'section-chorus-two', startBeat: 56, endBeat: 72 }],
             prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two',
         });
 
         expect(result.rejections).toEqual([]);
-        expect(result.actions).toEqual([
-            expect.objectContaining({
-                type: 'automateTrackGainRange',
-                payload: expect.objectContaining({
-                    trackIds: ['bus-drums', 'bus-bass'],
-                    sectionName: 'Chorus Two',
-                    gainDb: 1.5,
-                }),
-            }),
-        ]);
+        expect(result.actions).toEqual([liftAction('bus-drums'), liftAction('bus-bass')]);
     });
 
-    // The set reading checks membership, so the command takes the order the request names the
-    // buses in, never the order the provider listed them.
-    it('grounds the request order when the provider reverses the named buses', () => {
+    // Each bus is its own call, so the provider's order is the batch's order and both still ground.
+    it('grounds both lifts when the provider lists the buses in the other order', () => {
         const result = bridgeGroundedLlmToolCalls({
-            calls: [
-                {
-                    name: 'automateTrackGainRange',
-                    arguments: { trackIds: ['bus-bass', 'bus-drums'], sectionName: 'Chorus Two', gainDb: 1.5 },
-                },
-            ],
+            calls: liftCalls(['bus-bass', 'bus-drums']),
             context: vibeShapedContext,
             sectionSignatures: [{ name: 'Chorus Two', sectionId: 'section-chorus-two', startBeat: 56, endBeat: 72 }],
             prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two',
         });
 
-        expect(result).toEqual({
-            actions: [
-                {
-                    type: 'automateTrackGainRange',
-                    payload: { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 },
-                },
-            ],
-            rejections: [],
-        });
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([liftAction('bus-bass'), liftAction('bus-drums')]);
     });
 
     // The retired workflow admitted this lift from the project's shape whatever the request said;
     // a request stating the lift, its figure and its section but naming no bus now grounds no bus.
     it('refuses a bus gain lift whose request names no bus', () => {
         const result = bridgeGroundedLlmToolCalls({
-            calls: [
-                {
-                    name: 'automateTrackGainRange',
-                    arguments: { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 },
-                },
-            ],
+            calls: liftCalls(['bus-drums', 'bus-bass']),
             context: vibeShapedContext,
             sectionSignatures: [{ name: 'Chorus Two', sectionId: 'section-chorus-two', startBeat: 56, endBeat: 72 }],
             prompt: 'Lift the rhythm section by 1.5 dB in Chorus Two',
         });
 
-        expect(result).toEqual({
-            actions: [],
-            rejections: [
-                {
-                    index: 0,
-                    name: 'automateTrackGainRange',
-                    reason: 'Target trackIds is not grounded in the user request',
-                },
-            ],
-        });
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual(
+            [0, 1].map((index) => ({
+                index,
+                name: 'automateParameterRange',
+                reason: 'Provider action is not grounded in the user request',
+            }))
+        );
     });
 });

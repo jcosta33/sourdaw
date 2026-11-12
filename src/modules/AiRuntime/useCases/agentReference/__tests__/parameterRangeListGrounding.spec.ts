@@ -88,6 +88,7 @@ function busCalls(change: Record<string, unknown>, range: Record<string, unknown
 
 describe('range automation grounds the decibel figure and the shared target list its words state', () => {
     it.each([
+        ['Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two', { deltaDb: 1.5 }, CHORUS_TWO],
         ['Dip Drum Bus and Bass Bus by 1.5 dB in Chorus Two', { deltaDb: -1.5 }, CHORUS_TWO],
         ['Dip Drum Bus and Bass Bus by 1.5 dB over bars 5 to 8.', { deltaDb: -1.5 }, { startBar: 5, endBar: 8 }],
     ])('grounds one call per listed track for "%s"', (prompt, change, range) => {

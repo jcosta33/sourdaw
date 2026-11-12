@@ -2461,6 +2461,9 @@ export const executableAppActionDescriptors = [
         actionType: 'automateSendRange',
         risk: 'authority-sensitive',
         description: 'Lower an exact set of existing sends by a relative dB amount inside one named section.',
+        // Retired from provider offers: `automateParameterRange` draws this range. Kept executable so
+        // stored batches, ledger entries and undo groups that name it still read, replay and undo.
+        discoverability: 'hidden',
         intentPhrases: ['lower every vocal send', 'lower vocal sends', 'lower send', 'automate send'],
         targetRules: [
             {
@@ -2506,6 +2509,9 @@ export const executableAppActionDescriptors = [
         risk: 'authority-sensitive',
         description:
             'Lift each named bus by a bounded relative dB amount as gain automation inside one named arrangement section.',
+        // Retired from provider offers: `automateParameterRange` draws this range. Kept executable so
+        // stored batches, ledger entries and undo groups that name it still read, replay and undo.
+        discoverability: 'hidden',
         intentPhrases: ['lift', 'gain lift'],
         targetRules: [
             {
@@ -2543,6 +2549,9 @@ export const executableAppActionDescriptors = [
         risk: 'authority-sensitive',
         description:
             'Ramp an exact set of sends to one bounded absolute dB level across the tail of exact arrangement sections.',
+        // Retired from provider offers: `automateParameterRange` draws this range. Kept executable so
+        // stored batches, ledger entries and undo groups that name it still read, replay and undo.
+        discoverability: 'hidden',
         intentPhrases: ['automate them to', 'final four bars of every chorus'],
         targetRules: [
             {
