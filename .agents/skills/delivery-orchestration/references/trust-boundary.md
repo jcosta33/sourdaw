@@ -15,7 +15,9 @@ rewrite. Its `ls-remote` and fetch never read the shared repository's config, be
 plant transport keys there. They run in a fresh bare repository the launcher creates and removes,
 with global and system config ignored, so the only config read is the one the launcher writes. That
 repository shares the primary's object store, so the fetched objects land where later reads find them.
-Objects are content-addressed, so a planted object cannot pass for the pinned commit. The primary's
+Git does not re-hash a stored object on read, so a lane can plant forged bytes under a real id. The
+launcher therefore hashes every commit, tree and blob it reads for the pinned commit and refuses a
+mismatch. It verifies only sha1 repositories. The primary's
 tracking ref seeds the fetch only as a negotiation hint, never as the pin. After verification the
 launcher sets the tracking ref to the pinned commit. Every failure refuses; there is no offline mode.
 

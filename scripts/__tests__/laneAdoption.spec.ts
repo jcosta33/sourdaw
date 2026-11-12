@@ -481,7 +481,7 @@ export async function authenticatePublishingAuthor(input) {
         `#!${process.execPath}
 const fs=require('node:fs');const cp=require('node:child_process');const args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(join(root, 'git-calls'))},JSON.stringify(args)+'\\n');const control=JSON.parse(fs.readFileSync(${JSON.stringify(control)},'utf8'));
 if(control.failFetch&&args.includes('fetch')&&args.includes(${JSON.stringify(pathToFileURL(remote).href)})){process.stderr.write('controlled origin fetch failure');process.exit(86)}
-const result=cp.spawnSync(${JSON.stringify(gitPath)},args,{env:process.env,encoding:'utf8'});process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');process.exitCode=result.status??87;
+const result=cp.spawnSync(${JSON.stringify(gitPath)},args,{env:process.env});process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');process.exitCode=result.status??87;
 `,
         { mode: 0o755 }
     );

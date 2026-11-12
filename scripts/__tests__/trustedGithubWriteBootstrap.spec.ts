@@ -14,6 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { deflateSync } from 'node:zlib';
 
 import { describe, expect, it } from 'vitest';
 
@@ -42,7 +43,9 @@ import {
     GITHUB_ORIGIN_URL,
     type OriginFetchSpawn,
     forwardTrustedSnapshotSignal,
+    defaultPort,
     resolveTrustedExecutable,
+    verifiedObjectReader,
     resolveTrustedLauncherBinding,
     resolveTrustedPowerShellExecutable,
     snapshotComputedDynamicSpecifiers,
@@ -3154,6 +3157,88 @@ describe('fetchOriginMain', () => {
             expect(gitAt(primary, 'cat-file', '-t', truth)).toBe('commit');
             expect(gitAt(primary, 'for-each-ref', '--format=%(refname)', 'refs/pinned')).toBe('');
             expect(existsSync(hookRan)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+});
+
+/**
+ * Git does not re-hash a loose object on read, so a lane can plant forged bytes under a real id in the
+ * shared object store. Each pinned read must hash every object it walks and refuse a mismatch.
+ */
+describe('verifiedObjectReader', () => {
+    function objectRepository(root: string, objectFormat = 'sha1') {
+        const gitPath = resolveTrustedExecutable('git');
+        const git = (...args: string[]) => {
+            const result = spawnSync(gitPath, args, {
+                cwd: root,
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    GIT_CONFIG_GLOBAL: '/dev/null',
+                    GIT_CONFIG_NOSYSTEM: '1',
+                    GIT_AUTHOR_NAME: 'Fixture',
+                    GIT_AUTHOR_EMAIL: 'fixture@example.test',
+                    GIT_COMMITTER_NAME: 'Fixture',
+                    GIT_COMMITTER_EMAIL: 'fixture@example.test',
+                },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            return result.stdout.trim();
+        };
+        git('init', '--quiet', '-b', 'main', `--object-format=${objectFormat}`);
+        mkdirSync(join(root, 'scripts'));
+        writeFileSync(join(root, 'scripts', 'closure.ts'), 'export const trusted = true;\n');
+        git('add', 'scripts');
+        git('commit', '--quiet', '--no-gpg-sign', '-m', 'closure');
+        return { git, gitPath, commit: git('rev-parse', 'HEAD') };
+    }
+
+    it('returns the pinned bytes of a regular file and refuses a path that is not one', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-verified-read-')));
+        try {
+            const { gitPath, commit } = objectRepository(root);
+            const read = verifiedObjectReader(root, gitPath);
+
+            expect(read(commit, 'scripts/closure.ts')).toBe('export const trusted = true;\n');
+            expect(() => read(commit, 'scripts')).toThrow(`scripts is not a regular file at ${commit}`);
+            expect(() => read(commit, 'scripts/missing.ts')).toThrow('scripts/missing.ts is not a regular file');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses forged bytes a lane planted under a real loose blob id', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-forged-blob-')));
+        try {
+            const { git, gitPath, commit } = objectRepository(root);
+            const blob = git('rev-parse', `${commit}:scripts/closure.ts`);
+            const forged = Buffer.from('export const trusted = false;\n');
+            const loose = join(root, '.git', 'objects', blob.slice(0, 2), blob.slice(2));
+            chmodSync(loose, 0o644);
+            writeFileSync(loose, deflateSync(Buffer.concat([Buffer.from(`blob ${String(forged.length)}\0`), forged])));
+            // The store now serves the forged bytes under the real id, which is what a lane can do.
+            expect(git('show', `${commit}:scripts/closure.ts`)).toBe('export const trusted = false;');
+
+            expect(() => verifiedObjectReader(root, gitPath)(commit, 'scripts/closure.ts')).toThrow(
+                `blob object ${blob} hashes to`
+            );
+            const port = defaultPort({ primaryRoot: root, commonDir: join(root, '.git'), gitPath, ghPath: gitPath });
+            expect(() => port.readOriginSource(commit, 'scripts/closure.ts')).toThrow(`blob object ${blob} hashes to`);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a repository whose objects are not sha1', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-sha256-read-')));
+        try {
+            const { gitPath, commit } = objectRepository(root, 'sha256');
+
+            expect(() => verifiedObjectReader(root, gitPath)(commit, 'scripts/closure.ts')).toThrow(
+                'repository object format is sha256; the launcher verifies only sha1 objects'
+            );
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

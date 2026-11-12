@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
     accessSync,
     constants,
@@ -6221,8 +6222,10 @@ function commandRequiresTrustedPowerShell(
  * The commit every trusted write executes is the one GitHub reports for main, never a local ref. Both
  * `refs/remotes/origin/main` and the `origin` URL live in the shared repository any lane can write, so
  * resolving either would let a lane choose the code that runs beside an App key. The launcher asks
- * GitHub by explicit URL and pins the reported SHA; the fetch only brings that commit's objects, which
- * are content-addressed, so a lane cannot forge them.
+ * GitHub by explicit URL and pins the reported SHA; the fetch only brings that commit's objects. The
+ * store skips objects it already holds and does not re-hash them on read, so a lane can plant forged
+ * bytes under a real id; `verifiedObjectReader` hashes every object it reads for the pin and refuses
+ * a mismatch.
  *
  * The shared repository's config is lane-writable too, and plain keys in it (`http.curloptResolve`,
  * `http.sslCAInfo`, `url.<base>.insteadOf`, hooks) steer a transport no denylist can enumerate. So the
@@ -6366,11 +6369,113 @@ function seedNegotiationHint(
     pinGit(['update-ref', SEED_REF, seed]);
 }
 
+type GitObjectType = 'commit' | 'tree' | 'blob';
+
+/**
+ * Git does not re-hash a loose object when it reads one, and the fetch skips objects already in the
+ * store, so a lane can plant forged bytes under a real object id in the shared `.git/objects`. Every
+ * object the launcher reads for the pinned commit is therefore hashed here and refused unless it hashes
+ * to the id it was read by, from the pinned commit down through each tree to the blob.
+ */
+export function verifiedObjectReader(
+    repositoryRoot: string,
+    gitPath: string
+): (commit: string, path: string) => string {
+    const env = trustedGitReadEnv();
+    let objectFormatChecked = false;
+    const trees = new Map<string, Map<string, { mode: string; id: string }>>();
+    const commitTrees = new Map<string, string>();
+
+    const readObject = (type: GitObjectType, id: string): Buffer => {
+        const result = spawnSync(gitPath, ['cat-file', type, id], {
+            cwd: repositoryRoot,
+            env,
+            shell: false,
+            maxBuffer: 64 * 1024 * 1024,
+        });
+        if (result.error !== undefined) {
+            throw result.error;
+        }
+        if (result.status !== 0) {
+            throw new Error(result.stderr.toString().trim() || `git cat-file ${type} ${id} failed`);
+        }
+        const header = Buffer.from(`${type} ${String(result.stdout.length)}\0`);
+        const actual = createHash('sha1').update(header).update(result.stdout).digest('hex');
+        if (actual !== id) {
+            throw new Error(`${type} object ${id} hashes to ${actual}; refusing to run a forged pinned source`);
+        }
+        return result.stdout;
+    };
+
+    const treeEntries = (id: string): Map<string, { mode: string; id: string }> => {
+        const cached = trees.get(id);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const raw = readObject('tree', id);
+        const entries = new Map<string, { mode: string; id: string }>();
+        let offset = 0;
+        while (offset < raw.length) {
+            const space = raw.indexOf(0x20, offset);
+            const nul = raw.indexOf(0, space + 1);
+            if (space === -1 || nul === -1 || nul + 21 > raw.length) {
+                throw new Error(`tree object ${id} is malformed`);
+            }
+            entries.set(raw.subarray(space + 1, nul).toString('utf8'), {
+                mode: raw.subarray(offset, space).toString('ascii'),
+                id: raw.subarray(nul + 1, nul + 21).toString('hex'),
+            });
+            offset = nul + 21;
+        }
+        trees.set(id, entries);
+        return entries;
+    };
+
+    const assertSha1Repository = () => {
+        if (objectFormatChecked) {
+            return;
+        }
+        const format = captureGit(repositoryRoot, gitPath, ['rev-parse', '--show-object-format']).trim();
+        if (format !== 'sha1') {
+            throw new Error(`repository object format is ${format}; the launcher verifies only sha1 objects`);
+        }
+        objectFormatChecked = true;
+    };
+
+    const commitTree = (commit: string): string => {
+        const cached = commitTrees.get(commit);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const tree = /^tree ([0-9a-f]{40})\n/u.exec(readObject('commit', commit).toString('latin1'))?.[1];
+        if (tree === undefined) {
+            throw new Error(`commit object ${commit} names no tree`);
+        }
+        commitTrees.set(commit, tree);
+        return tree;
+    };
+
+    return (commit, path) => {
+        assertSha1Repository();
+        const components = path.split('/');
+        let current = commitTree(commit);
+        for (const [index, component] of components.entries()) {
+            const entry = treeEntries(current).get(component);
+            const last = index === components.length - 1;
+            const expected = last ? entry?.mode === '100644' || entry?.mode === '100755' : entry?.mode === '40000';
+            if (entry === undefined || !expected) {
+                throw new Error(`${path} is not a regular file at ${commit}`);
+            }
+            current = entry.id;
+        }
+        return readObject('blob', current).toString('utf8');
+    };
+}
+
 export function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
     return {
         resolveOriginMain: () => fetchOriginMain(binding).commit,
-        readOriginSource: (commit, path) =>
-            captureGit(binding.primaryRoot, binding.gitPath, ['show', `${commit}:${path}`]),
+        readOriginSource: verifiedObjectReader(binding.primaryRoot, binding.gitPath),
         executeSnapshot: (command, args, snapshot) =>
             executeTrustedSnapshot(command, args, { ...snapshot, launcher: binding }),
     };
