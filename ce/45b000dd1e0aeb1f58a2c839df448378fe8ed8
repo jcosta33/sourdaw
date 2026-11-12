@@ -1,0 +1,27 @@
+scripts/__tests__/vitestProgressDiagnostics.spec.ts
+  s_eec9d24f84ae15::t_6ccd8b9a1d5d61 47-49
+  s_eec9d24f84ae15::t_696a58ea6f6ade 2,42,46,70-98
+  s_eec9d24f84ae15::t_698c7ce9004855 99-103
+scripts/__tests__/resourceGuard.spec.ts
+  s_eec9d24f84ae15::t_c02f04bc527904 464-465,479
+scripts/vitestProgressDiagnostics.ts
+  s_eec9d24f84ae15::t_619b1f1b888701 10,16-17,33,44-46
+scripts/vitestProgressReporter.ts
+  s_eec9d24f84ae15::t_3f1947c957b7f8 32-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ce45b000dd1e0aeb1f58a2c839df448378fe8ed8",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
