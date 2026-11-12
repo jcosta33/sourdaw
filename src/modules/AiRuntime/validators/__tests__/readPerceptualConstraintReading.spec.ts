@@ -22,8 +22,9 @@ describe('reading a stored perceptual constraint reading', () => {
         expect(readPerceptualConstraintReading(structuredClone(stored))).toEqual(stored);
     });
 
-    it('reads a measured hold beside an exclusion', () => {
-        const stored = { constraints: [lowEnd, notRaised], unsupported: [] };
+    it('reads a measured hold beside an exclusion, on the mix and on one or more tracks', () => {
+        const onTwo = { ...notRaised, scope: { kind: 'tracks', trackIds: ['drums', 'bass'] } };
+        const stored = { constraints: [lowEnd, notRaised, onTwo], unsupported: [] };
         expect(readPerceptualConstraintReading(structuredClone(stored))).toEqual(stored);
     });
 
@@ -39,6 +40,8 @@ describe('reading a stored perceptual constraint reading', () => {
         ],
         ['an unknown id', { ...notRaised, constraintId: 'loudness-held-v2' }],
         ['a measured hold with no scope', { ...notRaised, scope: undefined }],
+        ['a measured hold on an empty track list', { ...notRaised, scope: { kind: 'tracks', trackIds: [] } }],
+        ['an exclusion on an empty track list', { ...lowEnd, scope: { kind: 'tracks', trackIds: [] } }],
     ])('refuses the whole reading for %s', (_label, constraint) => {
         expect(readPerceptualConstraintReading({ constraints: [lowEnd, constraint], unsupported: [] })).toBeNull();
     });

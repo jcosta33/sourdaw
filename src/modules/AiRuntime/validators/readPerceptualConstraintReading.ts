@@ -24,7 +24,13 @@ function readScope(value: unknown): PerceptualConstraint['scope'] | null {
     if (value.kind === 'mix') {
         return { kind: 'mix' };
     }
-    if (value.kind !== 'tracks' || !Array.isArray(value.trackIds) || !value.trackIds.every(isText)) {
+    // A track scope with no track holds nothing, so a constraint stored on one reads as no constraint.
+    if (
+        value.kind !== 'tracks' ||
+        !Array.isArray(value.trackIds) ||
+        value.trackIds.length === 0 ||
+        !value.trackIds.every(isText)
+    ) {
         return null;
     }
     return { kind: 'tracks', trackIds: [...value.trackIds] };

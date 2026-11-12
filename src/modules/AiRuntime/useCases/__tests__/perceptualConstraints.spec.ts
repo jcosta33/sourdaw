@@ -23,6 +23,7 @@ import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { compilePreviewMeasurementProposal } from '../compilePreviewMeasurementProposal';
+import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
 import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
@@ -1244,7 +1245,7 @@ describe('reading measured holds and bounds', () => {
         ['keep the mix as wide as it is', [measured('stereo-width-held-v1', 'keep the mix as wide', MIX)], []],
         [
             'keep the drums as dynamic as they are',
-            [measured('dynamics-held-v1', 'keep the drums as dynamic as they are', onTracks('drums'))],
+            [measured('dynamics-held-v1', 'keep the drums as dynamic', onTracks('drums'))],
             [],
         ],
         [
@@ -1257,6 +1258,138 @@ describe('reading measured holds and bounds', () => {
             'keep the brightness of the Bass',
             [measured('brightness-held-v1', 'keep the brightness of the Bass', onTracks('bass'))],
             [],
+        ],
+        // coordinated qualities share their object, each held in its own family
+        [
+            'keep the vocal intimate and dynamic',
+            [
+                {
+                    constraintId: 'vocal-intimacy-v1',
+                    clause: 'keep the vocal intimate and dynamic',
+                    scope: onTracks('vocal'),
+                    protection: { kind: 'exclude-dimension', dimension: 'ambience' },
+                },
+                measured('dynamics-held-v1', 'keep the vocal intimate and dynamic', onTracks('vocal')),
+            ],
+            [],
+        ],
+        [
+            'keep the mix wide and dynamic',
+            [
+                measured('stereo-width-held-v1', 'keep the mix wide and dynamic', MIX),
+                measured('dynamics-held-v1', 'keep the mix wide and dynamic', MIX),
+            ],
+            [],
+        ],
+        [
+            'keep the vocal bright but dynamic',
+            [
+                measured('brightness-held-v1', 'keep the vocal bright but dynamic', onTracks('vocal')),
+                measured('dynamics-held-v1', 'keep the vocal bright but dynamic', onTracks('vocal')),
+            ],
+            [],
+        ],
+        [
+            'keep the width and dynamics of the vocal',
+            [
+                measured('stereo-width-held-v1', 'keep the width and dynamics of the vocal', onTracks('vocal')),
+                measured('dynamics-held-v1', 'keep the width and dynamics of the vocal', onTracks('vocal')),
+            ],
+            [],
+        ],
+        [
+            'keep the level and the width of the vocal',
+            [
+                measured('loudness-held-v1', 'keep the level and the width of the vocal', onTracks('vocal')),
+                measured('stereo-width-held-v1', 'keep the level and the width of the vocal', onTracks('vocal')),
+            ],
+            [],
+        ],
+        [
+            'keep the loudness of the vocal and the drums',
+            [measured('loudness-held-v1', 'keep the loudness of the vocal and the drums', onTracks('vocal', 'drums'))],
+            [],
+        ],
+        [
+            'keep the level of the vocal and drums the same',
+            [
+                measured(
+                    'loudness-held-v1',
+                    'keep the level of the vocal and drums the same',
+                    onTracks('vocal', 'drums')
+                ),
+            ],
+            [],
+        ],
+        [
+            'keep the width and the dynamics',
+            [
+                measured('stereo-width-held-v1', 'keep the width and the dynamics', MIX),
+                measured('dynamics-held-v1', 'keep the width and the dynamics', MIX),
+            ],
+            [],
+        ],
+        [
+            'keep the level of the vocal and brighten the drums',
+            [measured('loudness-held-v1', 'keep the level of the vocal', onTracks('vocal'))],
+            [],
+        ],
+        [
+            "don't make the vocal, the bass and the drums louder",
+            [
+                measured(
+                    'loudness-not-raised-v1',
+                    "don't make the vocal, the bass and the drums louder",
+                    onTracks('vocal', 'bass', 'drums')
+                ),
+            ],
+            [],
+        ],
+        [
+            "don't make the vocal brighter and louder",
+            [],
+            [
+                unread(
+                    "don't make the vocal brighter and louder",
+                    '“the vocal brighter and” names no track or mix whose loudness can be measured.'
+                ),
+            ],
+        ],
+        // a linking verb, an object before the noun, and every modal negation
+        ["don't make it sound louder", [measured('loudness-not-raised-v1', "don't make it sound louder", MIX)], []],
+        [
+            "don't make the mix sound louder",
+            [measured('loudness-not-raised-v1', "don't make the mix sound louder", MIX)],
+            [],
+        ],
+        [
+            "don't make the drums sound louder",
+            [measured('loudness-not-raised-v1', "don't make the drums sound louder", onTracks('drums'))],
+            [],
+        ],
+        [
+            'keep the vocal level the same',
+            [measured('loudness-held-v1', 'keep the vocal level the same', onTracks('vocal'))],
+            [],
+        ],
+        ['keep the mix loudness the same', [measured('loudness-held-v1', 'keep the mix loudness the same', MIX)], []],
+        [
+            "don't change the drums volume",
+            [measured('loudness-held-v1', "don't change the drums volume", onTracks('drums'))],
+            [],
+        ],
+        ["the mix doesn't get louder", [measured('loudness-not-raised-v1', "the mix doesn't get louder", MIX)], []],
+        // a pronoun means the mix only while nothing narrower is named before it
+        ['keep it wide', [measured('stereo-width-held-v1', 'keep it wide', MIX)], []],
+        [
+            'brighten the drums but keep it at the same level',
+            [],
+            [
+                unread(
+                    'keep it at the same level',
+                    '“it” names no single scope: the request names a track or role before it.'
+                ),
+            ],
         ],
         // what states no measured hold
         ['make the drums louder', [], []],
@@ -1284,7 +1417,7 @@ describe('reading measured holds and bounds', () => {
     );
 
     it('reads no clause from a track named like one, though the same words outside a name are a bound', () => {
-        const prompt = "Lift the Vocal but don't make it louder";
+        const prompt = "Lift the trim but don't make it louder";
         expect(compilePerceptualConstraints(prompt, grammarContext()).constraints).toEqual([
             measured('loudness-not-raised-v1', "don't make it louder", MIX),
         ]);
@@ -1386,6 +1519,13 @@ const ADMITTED_ROWS: AdmissionRow[] = [
     ['keep the dynamics of the Vocal', 'vocal', 'crestFactor', 12, 11.1],
     ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 1049],
     ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 951],
+    // Exactly at each tolerance, in figures exact in binary floating point.
+    ['keep the dynamics of the Vocal', 'vocal', 'crestFactor', 12, 13],
+    ['keep the dynamics of the Vocal', 'vocal', 'crestFactor', 12, 11],
+    ['keep the stereo width of the Vocal', 'vocal', 'sideEnergyFraction', 0.01, 0.02],
+    ['keep the stereo width of the Vocal', 'vocal', 'sideEnergyFraction', 0.02, 0.01],
+    ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 1050],
+    ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 950],
 ];
 const BLOCKED_ROWS: AdmissionRow[] = [
     ["don't make it louder", 'master', 'integratedLoudness', -20, -19.4],
@@ -1398,11 +1538,18 @@ const BLOCKED_ROWS: AdmissionRow[] = [
     ['keep the dynamics of the Vocal', 'vocal', 'crestFactor', 12, 10.9],
     ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 1051],
     ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 949],
+    // Just past each tolerance, by less than 1% of it.
+    ['keep the dynamics of the Vocal', 'vocal', 'crestFactor', 12, 13.0078125],
+    ['keep the dynamics of the Vocal', 'vocal', 'crestFactor', 12, 10.9921875],
+    ['keep the stereo width of the Vocal', 'vocal', 'sideEnergyFraction', 0.01, 0.02005],
+    ['keep the stereo width of the Vocal', 'vocal', 'sideEnergyFraction', 0.02, 0.00995],
+    ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 1050.25],
+    ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 949.75],
 ];
 
 /** The batch the clause rides, compiled for real, then admitted against one proof of the given figures. */
 function admitHeldFigures([clause, targetId, metricId, baseline, preview]: AdmissionRow) {
-    const { compiled, state } = compiledState(`Lower the Vocal Trim but ${clause}`);
+    const { compiled, state } = compiledState(`Lower the trim but ${clause}`);
     expect(
         state.authorities.flatMap((authority) => authority.goals.map((goal) => [goal.metricId, goal.targetIds]))
     ).toEqual([[metricId, [targetId]]]);
@@ -1425,7 +1572,7 @@ describe('measured holds and bounds at admission', () => {
     });
 
     it('names the direction a bound was broken in', () => {
-        const { compiled, state } = compiledState("Lower the Vocal Trim but don't make it louder");
+        const { compiled, state } = compiledState("Lower the trim but don't make it louder");
         const evaluation = evaluateMetricGoalAdmission({
             state: withFigures(state, 'master', 'integratedLoudness', { baseline: -20, preview: -19 }),
             commandBatch: compiled.commandBatch,
@@ -1435,8 +1582,19 @@ describe('measured holds and bounds at admission', () => {
         );
     });
 
+    it('names the fall that broke a bound down', () => {
+        const { compiled, state } = compiledState("Lower the trim but don't make it quieter");
+        const evaluation = evaluateMetricGoalAdmission({
+            state: withFigures(state, 'master', 'integratedLoudness', { baseline: -20, preview: -21 }),
+            commandBatch: compiled.commandBatch,
+        });
+        expect(evaluation.reason).toMatch(
+            /integrated loudness on .* fell from -20 to -21 LUFS, beyond its 0\.5 LUFS tolerance/u
+        );
+    });
+
     it('refuses a bound goal stored as a hold, since its invariant states only the bound', () => {
-        const { compiled, state } = compiledState("Lower the Vocal Trim but don't make it louder");
+        const { compiled, state } = compiledState("Lower the trim but don't make it louder");
         const tampered: MetricGoalState = {
             ...state,
             authorities: state.authorities.map((authority) => ({
@@ -1477,7 +1635,7 @@ describe('measured holds and bounds at admission', () => {
 describe('stored bound goals', () => {
     it('round-trips a state carrying both bounds', () => {
         const { compiled, state } = compiledState(
-            "Lower the Vocal Trim but don't make it louder and don't make the Vocal quieter"
+            "Lower the trim but don't make it louder and don't make the Vocal quieter"
         );
         expect(
             state.authorities.flatMap((authority) => authority.goals.map((goal) => [goal.relation, goal.targetIds]))
@@ -1500,16 +1658,14 @@ describe('stored bound goals', () => {
     });
 
     it('still refuses a relation outside the contract', () => {
-        const { state } = compiledState("Lower the Vocal Trim but don't make it louder");
+        const { state } = compiledState("Lower the trim but don't make it louder");
         const unknown = JSON.stringify(state).replace('"no-increase"', '"no-change"');
         expect(unknown).toContain('"no-change"');
         expect(metricGoalStateCodec(unknown)).toBeNull();
     });
 
     it('reads a movement against a bound on the same axis as a contradiction, and the free direction as none', () => {
-        const { state } = compiledState(
-            "Lower the Vocal Trim but don't make it louder and don't make the Vocal quieter"
-        );
+        const { state } = compiledState("Lower the trim but don't make it louder and don't make the Vocal quieter");
         const goals = state.authorities.flatMap((authority) => authority.goals);
         const [notRaised, notLowered] = goals;
         if (notRaised === undefined || notLowered === undefined) {
@@ -1529,6 +1685,18 @@ describe('stored bound goals', () => {
 });
 
 describe('the card a constraint criterion is shown on', () => {
+    it('adds no unmeasured-clause line to a batch that changes sound, whose criteria already state it', () => {
+        const { content } = describePendingActionConfirmation({
+            actions: [setParameter('vocal-trim', 'gain-level', -1)],
+            context: getProjectContext(),
+            prompt: 'Lower the Vocal Trim and keep it warm',
+        });
+        expect(
+            compilePerceptualConstraints('Lower the Vocal Trim and keep it warm', getProjectContext()).unsupported
+        ).toHaveLength(1);
+        expect(content).not.toContain('Not measured:');
+    });
+
     function criterionTexts(prompt: string): string[] {
         const compiled = compile(prompt, [setParameter('vocal-trim', 'gain-level', -1)]);
         if (compiled.agentApproval === null) {
@@ -1570,7 +1738,7 @@ describe('the card a constraint criterion is shown on', () => {
     }
 
     it('states a bound as the one direction it limits, with its tolerance and unit', () => {
-        expect(criterionTexts("Lower the Vocal Trim but don't make it louder")).toEqual([
+        expect(criterionTexts("Lower the trim but don't make it louder")).toEqual([
             expect.stringMatching(
                 /^Constraint “don't make it louder”: integrated loudness on “Master output”, beats 0–4, must not rise by more than 0\.5 LUFS\. /u
             ),
