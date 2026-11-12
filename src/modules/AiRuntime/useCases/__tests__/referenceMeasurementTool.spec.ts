@@ -400,7 +400,7 @@ describe('analysis.compareReference execution', () => {
         expect(Object.keys(target?.deltas as object)).toEqual(['integratedLoudness', 'truePeak']);
     });
 
-    // Red when four targets with every metric overflow the per-call receipt budget, which would drop the comparison.
+    // Red when three targets with every metric overflow the per-call receipt budget, which would drop the comparison.
     it('keeps three track targets with every metric inside the per-call receipt budget', async () => {
         await loadReference();
 

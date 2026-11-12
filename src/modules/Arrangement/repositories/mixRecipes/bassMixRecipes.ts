@@ -134,10 +134,7 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip when no kick shares the low register with this part; the duck then has nothing to make room for.',
             'Skip when the release cannot recover before the next kick at this tempo.',
         ],
-        metrics: [
-            { metric: 'transientDensity', direction: 'hold' },
-            { metric: 'rms', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'transientDensity', direction: 'hold' }],
         source: 'Punch in the low end is mostly a question of who occupies the first fifty milliseconds after each kick, so the first stage steadies the bass level and the second clears that window. A release tied to the gap between kicks restores the bass fully before the next note rather than pumping across the bar.',
     },
     {
