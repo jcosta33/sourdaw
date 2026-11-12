@@ -1,3 +1,5 @@
+/// <reference types="node" />
+/// <reference path="./scripts/types/eslint-plugin-promise.d.ts" />
 // @ts-check
 // Retained ESLint config for Sourdaw — only the rules oxlint 1.74 cannot run.
 // oxlint (.oxlintrc.json) is the primary linter: ESLint core/recommended,
@@ -17,6 +19,8 @@ import eslintPluginReact from '@eslint-react/eslint-plugin';
 import eslintPluginComments from '@eslint-community/eslint-plugin-eslint-comments/configs';
 import eslintPluginStylistic from '@stylistic/eslint-plugin';
 import { defineConfig } from 'eslint/config';
+import { parseForESLint } from '@typescript-eslint/parser';
+import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import eslintPluginImport, { createNodeResolver } from 'eslint-plugin-import-x';
 import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
 import eslintPluginJsxA11yX from 'eslint-plugin-jsx-a11y-x';
@@ -29,88 +33,93 @@ import tseslint from 'typescript-eslint';
 
 import { sizeBaselineFiles } from './eslint.size-baseline.mjs';
 
+const astVisitorKeys = parseForESLint('').visitorKeys;
+
+/**
+ * Values reached through the parser's visitor keys are AST nodes or node arrays.
+ * @param {unknown} value
+ * @returns {value is import('@typescript-eslint/utils').TSESTree.Node}
+ */
+function isAstNode(value) {
+    return typeof value === 'object' && value !== null && 'type' in value && typeof value.type === 'string';
+}
+
 /**
  * Small recursive AST walker for local custom rules.
- * @param {any} node
- * @param {(node: any) => void} visit
+ * @param {import('@typescript-eslint/utils').TSESTree.Node} node
+ * @param {(node: import('@typescript-eslint/utils').TSESTree.Node) => void} visit
  */
 function traverse(node, visit) {
-    if (!node || typeof node !== 'object') {
-        return;
-    }
     visit(node);
 
-    for (const key of Object.keys(node)) {
-        if (
-            key === 'parent' ||
-            key === 'loc' ||
-            key === 'range' ||
-            key === 'tokens' ||
-            key === 'comments' ||
-            key === 'leadingComments' ||
-            key === 'trailingComments'
-        ) {
+    /** @type {Array<[string, unknown]>} */
+    const entries = Object.entries(node);
+    const keys = astVisitorKeys[node.type] ?? [];
+    for (const [key, value] of entries) {
+        if (!keys.includes(key)) {
             continue;
         }
 
-        const value = node[key];
-
         if (Array.isArray(value)) {
             for (const item of value) {
-                traverse(item, visit);
+                if (isAstNode(item)) {
+                    traverse(item, visit);
+                }
             }
             continue;
         }
 
-        traverse(value, visit);
+        if (isAstNode(value)) {
+            traverse(value, visit);
+        }
     }
 }
 
 /**
- * @param {any} node
+ * @param {import('@typescript-eslint/utils').TSESTree.Node | null | undefined} node
  * @returns {boolean}
  */
 function isReactEffectCall(node) {
-    if (!node || node.type !== 'CallExpression') {
+    if (!node || node.type !== AST_NODE_TYPES.CallExpression) {
         return false;
     }
     return (
-        (node.callee.type === 'Identifier' &&
+        (node.callee.type === AST_NODE_TYPES.Identifier &&
             (node.callee.name === 'useEffect' || node.callee.name === 'useLayoutEffect')) ||
-        (node.callee.type === 'MemberExpression' &&
-            node.callee.property?.type === 'Identifier' &&
+        (node.callee.type === AST_NODE_TYPES.MemberExpression &&
+            node.callee.property?.type === AST_NODE_TYPES.Identifier &&
             (node.callee.property.name === 'useEffect' || node.callee.property.name === 'useLayoutEffect'))
     );
 }
 
 /**
- * @param {any} node
- * @returns {boolean}
+ * @param {import('@typescript-eslint/utils').TSESTree.Node | null | undefined} node
+ * @returns {node is import('@typescript-eslint/utils').TSESTree.ArrowFunctionExpression | import('@typescript-eslint/utils').TSESTree.FunctionExpression}
  */
 function isFunctionLike(node) {
-    return node?.type === 'ArrowFunctionExpression' || node?.type === 'FunctionExpression';
+    return node?.type === AST_NODE_TYPES.ArrowFunctionExpression || node?.type === AST_NODE_TYPES.FunctionExpression;
 }
 
 /**
- * @param {any} node
+ * @param {import('@typescript-eslint/utils').TSESTree.Node | null | undefined} node
  * @param {Set<string>} injectBindings
  * @returns {boolean}
  */
 function isInjectCallExpression(node, injectBindings) {
-    if (node?.type !== 'CallExpression') {
+    if (node?.type !== AST_NODE_TYPES.CallExpression) {
         return false;
     }
 
     let callee = node.callee;
-    while (callee?.type === 'CallExpression') {
+    while (callee?.type === AST_NODE_TYPES.CallExpression) {
         callee = callee.callee;
     }
 
-    return callee?.type === 'Identifier' && injectBindings.has(callee.name);
+    return callee?.type === AST_NODE_TYPES.Identifier && injectBindings.has(callee.name);
 }
 
 /**
- * @param {any} node
+ * @param {import('@typescript-eslint/utils').TSESTree.Node | null | undefined} node
  * @param {Set<string>} injectBindings
  * @returns {boolean}
  */
@@ -119,8 +128,8 @@ function isFunctionValue(node, injectBindings) {
 }
 
 /**
- * @param {any} callNode
- * @returns {any | null}
+ * @param {import('@typescript-eslint/utils').TSESTree.CallExpression} callNode
+ * @returns {import('@typescript-eslint/utils').TSESTree.BlockStatement | import('@typescript-eslint/utils').TSESTree.Expression | null}
  */
 function getEffectBody(callNode) {
     const callback = callNode.arguments?.[0];
@@ -128,32 +137,32 @@ function getEffectBody(callNode) {
         return null;
     }
 
-    if (callback.body?.type === 'BlockStatement') {
+    if (callback.body?.type === AST_NODE_TYPES.BlockStatement) {
         return callback.body;
     }
     return callback.body ?? null;
 }
 
 /**
- * @param {any} node
+ * @param {import('@typescript-eslint/utils').TSESTree.Node | null | undefined} node
  * @returns {boolean}
  */
 function isFetchLikeCall(node) {
-    if (!node || node.type !== 'CallExpression') {
+    if (!node || node.type !== AST_NODE_TYPES.CallExpression) {
         return false;
     }
 
     // fetch(...)
-    if (node.callee.type === 'Identifier' && node.callee.name === 'fetch') {
+    if (node.callee.type === AST_NODE_TYPES.Identifier && node.callee.name === 'fetch') {
         return true;
     }
 
     // axios.get/post/request(...)
     if (
-        node.callee.type === 'MemberExpression' &&
-        node.callee.object?.type === 'Identifier' &&
+        node.callee.type === AST_NODE_TYPES.MemberExpression &&
+        node.callee.object?.type === AST_NODE_TYPES.Identifier &&
         node.callee.object.name === 'axios' &&
-        node.callee.property?.type === 'Identifier' &&
+        node.callee.property?.type === AST_NODE_TYPES.Identifier &&
         ['get', 'post', 'put', 'patch', 'delete', 'request'].includes(node.callee.property.name)
     ) {
         return true;
@@ -161,8 +170,8 @@ function isFetchLikeCall(node) {
 
     // queryClient.fetchQuery / prefetchQuery / ensureQueryData / refetchQueries / invalidateQueries
     if (
-        node.callee.type === 'MemberExpression' &&
-        node.callee.property?.type === 'Identifier' &&
+        node.callee.type === AST_NODE_TYPES.MemberExpression &&
+        node.callee.property?.type === AST_NODE_TYPES.Identifier &&
         ['fetchQuery', 'prefetchQuery', 'ensureQueryData', 'refetchQueries', 'invalidateQueries'].includes(
             node.callee.property.name
         )
@@ -172,8 +181,8 @@ function isFetchLikeCall(node) {
 
     // common API client patterns
     if (
-        node.callee.type === 'MemberExpression' &&
-        node.callee.object?.type === 'Identifier' &&
+        node.callee.type === AST_NODE_TYPES.MemberExpression &&
+        node.callee.object?.type === AST_NODE_TYPES.Identifier &&
         ['api', 'apiClient', 'client', 'http', 'httpClient'].includes(node.callee.object.name)
     ) {
         return true;
@@ -183,17 +192,19 @@ function isFetchLikeCall(node) {
 }
 
 /**
- * @param {any} node
+ * @param {import('@typescript-eslint/utils').TSESTree.Node | null | undefined} node
  * @returns {boolean}
  */
 function isUseStateSetterCall(node) {
     return (
-        node?.type === 'CallExpression' && node.callee?.type === 'Identifier' && /^set[A-Z0-9_]/.test(node.callee.name)
+        node?.type === AST_NODE_TYPES.CallExpression &&
+        node.callee?.type === AST_NODE_TYPES.Identifier &&
+        /^set[A-Z0-9_]/.test(node.callee.name)
     );
 }
 
 /**
- * @param {any} body
+ * @param {import('@typescript-eslint/utils').TSESTree.Node} body
  * @returns {boolean}
  */
 function bodyContainsAsyncOrFetch(body) {
@@ -202,7 +213,7 @@ function bodyContainsAsyncOrFetch(body) {
         if (found) {
             return;
         }
-        if (node.type === 'AwaitExpression' || isFetchLikeCall(node)) {
+        if (node.type === AST_NODE_TYPES.AwaitExpression || isFetchLikeCall(node)) {
             found = true;
         }
     });
@@ -210,7 +221,7 @@ function bodyContainsAsyncOrFetch(body) {
 }
 
 /**
- * @param {any} body
+ * @param {import('@typescript-eslint/utils').TSESTree.Node} body
  * @returns {boolean}
  */
 function bodyLooksLikeDerivedStateEffect(body) {
@@ -219,15 +230,22 @@ function bodyLooksLikeDerivedStateEffect(body) {
     let assignments = 0;
 
     traverse(body, (node) => {
-        if (node.type === 'CallExpression') {
+        if (node.type === AST_NODE_TYPES.CallExpression) {
             if (isUseStateSetterCall(node)) {
                 setterCalls += 1;
-            } else if (node.callee?.type !== 'Identifier' || !['console', 'Math'].includes(node.callee.name)) {
+            } else if (
+                node.callee?.type !== AST_NODE_TYPES.Identifier ||
+                !['console', 'Math'].includes(node.callee.name)
+            ) {
                 nonSetterCalls += 1;
             }
         }
 
-        if (node.type === 'AssignmentExpression' || node.type === 'UpdateExpression' || node.type === 'NewExpression') {
+        if (
+            node.type === AST_NODE_TYPES.AssignmentExpression ||
+            node.type === AST_NODE_TYPES.UpdateExpression ||
+            node.type === AST_NODE_TYPES.NewExpression
+        ) {
             assignments += 1;
         }
     });
@@ -289,7 +307,7 @@ function isInjectImportSource(filename, source) {
 }
 
 /**
- * @param {any} node
+ * @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node
  * @param {string} filename
  * @param {Set<string>} injectBindings
  * @returns {void}
@@ -305,8 +323,8 @@ function collectInjectBindings(node, filename, injectBindings) {
 
     for (const specifier of node.specifiers ?? []) {
         if (
-            specifier.type === 'ImportSpecifier' &&
-            specifier.imported?.type === 'Identifier' &&
+            specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+            specifier.imported?.type === AST_NODE_TYPES.Identifier &&
             specifier.imported.name === 'inject'
         ) {
             injectBindings.add(specifier.local.name);
@@ -345,9 +363,10 @@ function resolveSourceExportFile(filename, source) {
     }
 
     const normalizedBasePath = normalizeFilePath(basePath);
-    const candidates = normalizedBasePath.endsWith('.ts')
-        ? [normalizedBasePath]
-        : [`${normalizedBasePath}.ts`, `${normalizedBasePath}/index.ts`];
+    let candidates = [normalizedBasePath];
+    if (!normalizedBasePath.endsWith('.ts')) {
+        candidates = [`${normalizedBasePath}.ts`, `${normalizedBasePath}/index.ts`];
+    }
 
     return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
@@ -356,13 +375,13 @@ function resolveSourceExportFile(filename, source) {
 const exportedFunctionNamesCache = new Map();
 
 /**
- * @param {any} program
+ * @param {import('@typescript-eslint/utils').TSESTree.Program} program
  * @param {string} filename
  * @param {Set<string>} seenFiles
  * @returns {Set<string>}
  */
 function collectExportedFunctionNamesFromProgram(program, filename, seenFiles) {
-    /** @type {Map<string, any>} */
+    /** @type {Map<string, import('@typescript-eslint/utils').TSESTree.Node>} */
     const localFunctionValues = new Map();
     /** @type {Set<string>} */
     const exportedFunctionNames = new Set();
@@ -370,22 +389,22 @@ function collectExportedFunctionNamesFromProgram(program, filename, seenFiles) {
     const injectBindings = new Set();
 
     for (const statement of program.body ?? []) {
-        if (statement.type === 'ImportDeclaration') {
+        if (statement.type === AST_NODE_TYPES.ImportDeclaration) {
             collectInjectBindings(statement, filename, injectBindings);
         }
     }
 
     for (const statement of program.body ?? []) {
-        if (statement.type === 'FunctionDeclaration') {
+        if (statement.type === AST_NODE_TYPES.FunctionDeclaration) {
             if (statement.id?.name) {
                 localFunctionValues.set(statement.id.name, statement);
             }
             continue;
         }
 
-        if (statement.type === 'VariableDeclaration') {
+        if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
             for (const declarator of statement.declarations ?? []) {
-                if (declarator.id?.type !== 'Identifier') {
+                if (declarator.id?.type !== AST_NODE_TYPES.Identifier) {
                     continue;
                 }
                 if (!isFunctionValue(declarator.init, injectBindings)) {
@@ -397,23 +416,23 @@ function collectExportedFunctionNamesFromProgram(program, filename, seenFiles) {
             continue;
         }
 
-        if (statement.type !== 'ExportNamedDeclaration') {
+        if (statement.type !== AST_NODE_TYPES.ExportNamedDeclaration) {
             continue;
         }
         if (statement.exportKind === 'type') {
             continue;
         }
 
-        if (statement.declaration?.type === 'FunctionDeclaration') {
+        if (statement.declaration?.type === AST_NODE_TYPES.FunctionDeclaration) {
             if (statement.declaration.id?.name) {
                 exportedFunctionNames.add(statement.declaration.id.name);
             }
             continue;
         }
 
-        if (statement.declaration?.type === 'VariableDeclaration') {
+        if (statement.declaration?.type === AST_NODE_TYPES.VariableDeclaration) {
             for (const declarator of statement.declaration.declarations ?? []) {
-                if (declarator.id?.type !== 'Identifier') {
+                if (declarator.id?.type !== AST_NODE_TYPES.Identifier) {
                     continue;
                 }
                 if (!isFunctionValue(declarator.init, injectBindings)) {
@@ -436,14 +455,17 @@ function collectExportedFunctionNamesFromProgram(program, filename, seenFiles) {
                 if (specifier.exportKind === 'type') {
                     continue;
                 }
-                if (specifier.local?.type !== 'Identifier') {
+                if (specifier.local?.type !== AST_NODE_TYPES.Identifier) {
                     continue;
                 }
                 if (!sourceFunctionNames.has(specifier.local.name)) {
                     continue;
                 }
 
-                const exportedName = specifier.exported?.name ?? specifier.local.name;
+                const exportedName =
+                    specifier.exported.type === AST_NODE_TYPES.Identifier
+                        ? specifier.exported.name
+                        : specifier.local.name;
                 exportedFunctionNames.add(exportedName);
             }
             continue;
@@ -453,20 +475,21 @@ function collectExportedFunctionNamesFromProgram(program, filename, seenFiles) {
             if (specifier.exportKind === 'type') {
                 continue;
             }
-            if (specifier.local?.type !== 'Identifier') {
+            if (specifier.local?.type !== AST_NODE_TYPES.Identifier) {
                 continue;
             }
             if (!localFunctionValues.has(specifier.local.name)) {
                 continue;
             }
 
-            const exportedName = specifier.exported?.name ?? specifier.local.name;
+            const exportedName =
+                specifier.exported.type === AST_NODE_TYPES.Identifier ? specifier.exported.name : specifier.local.name;
             exportedFunctionNames.add(exportedName);
         }
     }
 
     for (const statement of program.body ?? []) {
-        if (statement.type !== 'ExportAllDeclaration') {
+        if (statement.type !== AST_NODE_TYPES.ExportAllDeclaration) {
             continue;
         }
         if (statement.exportKind === 'type') {
@@ -510,7 +533,7 @@ function getExportedFunctionNamesFromSource(filename, source, seenFiles) {
     seenFiles.add(sourceFile);
     try {
         const text = readFileSync(sourceFile, 'utf8');
-        const parsed = tseslint.parser.parseForESLint(text, {
+        const parsed = parseForESLint(text, {
             filePath: sourceFile,
             sourceType: 'module',
             ecmaVersion: 'latest',
@@ -929,7 +952,7 @@ function getDeepContractImportFolder(importPath) {
  * @returns {boolean}
  */
 function isUseCaseImportPath(importPath) {
-    const [firstSegment] = importPath.split('/').filter(Boolean);
+    const firstSegment = importPath.split('/').find(Boolean);
     return firstSegment === 'useCases';
 }
 
@@ -938,7 +961,7 @@ function isUseCaseImportPath(importPath) {
  * @returns {string | null}
  */
 function getModelLayerImportTarget(importPath) {
-    const [firstSegment] = importPath.split('/').filter(Boolean);
+    const firstSegment = importPath.split('/').find(Boolean);
     if (firstSegment === 'useCases') {
         return 'useCases';
     }
@@ -990,11 +1013,11 @@ function getForeignStoresContractImportLocation(filename, source) {
  * @returns {string | null}
  */
 function getImportSpecifierImportedName(specifier) {
-    if (specifier.imported?.type === 'Identifier') {
+    if (specifier.imported?.type === AST_NODE_TYPES.Identifier) {
         return specifier.imported.name;
     }
 
-    if (specifier.imported?.type === 'Literal' && typeof specifier.imported.value === 'string') {
+    if (specifier.imported?.type === AST_NODE_TYPES.Literal && typeof specifier.imported.value === 'string') {
         return specifier.imported.value;
     }
 
@@ -1006,11 +1029,11 @@ function getImportSpecifierImportedName(specifier) {
  * @returns {string | null}
  */
 function getExportSpecifierLocalName(specifier) {
-    if (specifier.local?.type === 'Identifier') {
+    if (specifier.local?.type === AST_NODE_TYPES.Identifier) {
         return specifier.local.name;
     }
 
-    if (specifier.local?.type === 'Literal' && typeof specifier.local.value === 'string') {
+    if (specifier.local?.type === AST_NODE_TYPES.Literal && typeof specifier.local.value === 'string') {
         return specifier.local.value;
     }
 
@@ -1022,11 +1045,11 @@ function getExportSpecifierLocalName(specifier) {
  * @returns {string | null}
  */
 function getExportSpecifierExportedName(specifier) {
-    if (specifier.exported?.type === 'Identifier') {
+    if (specifier.exported?.type === AST_NODE_TYPES.Identifier) {
         return specifier.exported.name;
     }
 
-    if (specifier.exported?.type === 'Literal' && typeof specifier.exported.value === 'string') {
+    if (specifier.exported?.type === AST_NODE_TYPES.Literal && typeof specifier.exported.value === 'string') {
         return specifier.exported.value;
     }
 
@@ -1082,11 +1105,11 @@ function isStoreConstructorImportSource(filename, source) {
 function unwrapTypeScriptExpression(node) {
     let current = node;
     while (
-        current?.type === 'TSAsExpression' ||
-        current?.type === 'TSTypeAssertion' ||
-        current?.type === 'TSNonNullExpression' ||
-        current?.type === 'TSInstantiationExpression' ||
-        current?.type === 'TSSatisfiesExpression'
+        current?.type === AST_NODE_TYPES.TSAsExpression ||
+        current?.type === AST_NODE_TYPES.TSTypeAssertion ||
+        current?.type === AST_NODE_TYPES.TSNonNullExpression ||
+        current?.type === AST_NODE_TYPES.TSInstantiationExpression ||
+        current?.type === AST_NODE_TYPES.TSSatisfiesExpression
     ) {
         current = current.expression;
     }
@@ -1098,7 +1121,7 @@ function unwrapTypeScriptExpression(node) {
 const exportedStoreInstanceNamesCache = new Map();
 
 /**
- * @param {any} program
+ * @param {import('@typescript-eslint/utils').TSESTree.Program} program
  * @param {string} filename
  * @param {Set<string>} seenFiles
  * @returns {Set<string>}
@@ -1114,7 +1137,7 @@ function collectExportedStoreInstanceNamesFromProgram(program, filename, seenFil
     const exportedStoreInstanceNames = new Set();
 
     for (const statement of program.body ?? []) {
-        if (statement.type !== 'ImportDeclaration') {
+        if (statement.type !== AST_NODE_TYPES.ImportDeclaration) {
             continue;
         }
 
@@ -1124,7 +1147,7 @@ function collectExportedStoreInstanceNamesFromProgram(program, filename, seenFil
         }
 
         for (const specifier of statement.specifiers ?? []) {
-            if (specifier.type === 'ImportSpecifier' && isCreateStoreImportSource(filename, value)) {
+            if (specifier.type === AST_NODE_TYPES.ImportSpecifier && isCreateStoreImportSource(filename, value)) {
                 const importedName = getImportSpecifierImportedName(specifier);
                 if (importedName === 'createStore') {
                     createStoreBindings.add(specifier.local.name);
@@ -1133,12 +1156,12 @@ function collectExportedStoreInstanceNamesFromProgram(program, filename, seenFil
             }
 
             if (isStoreConstructorImportSource(filename, value)) {
-                if (specifier.type === 'ImportDefaultSpecifier') {
+                if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
                     storeConstructorBindings.add(specifier.local.name);
                     continue;
                 }
 
-                if (specifier.type === 'ImportSpecifier') {
+                if (specifier.type === AST_NODE_TYPES.ImportSpecifier) {
                     const importedName = getImportSpecifierImportedName(specifier);
                     if (importedName === 'Store') {
                         storeConstructorBindings.add(specifier.local.name);
@@ -1149,37 +1172,37 @@ function collectExportedStoreInstanceNamesFromProgram(program, filename, seenFil
     }
 
     /**
-     * @param {any} expression
+     * @param {import('@typescript-eslint/utils').TSESTree.Expression | null | undefined} expression
      * @returns {boolean}
      */
     function isStoreInstanceExpression(expression) {
         const unwrappedExpression = unwrapTypeScriptExpression(expression);
         if (
-            unwrappedExpression?.type === 'CallExpression' &&
-            unwrappedExpression.callee?.type === 'Identifier' &&
+            unwrappedExpression?.type === AST_NODE_TYPES.CallExpression &&
+            unwrappedExpression.callee?.type === AST_NODE_TYPES.Identifier &&
             createStoreBindings.has(unwrappedExpression.callee.name)
         ) {
             return true;
         }
 
         return (
-            unwrappedExpression?.type === 'NewExpression' &&
-            unwrappedExpression.callee?.type === 'Identifier' &&
+            unwrappedExpression?.type === AST_NODE_TYPES.NewExpression &&
+            unwrappedExpression.callee?.type === AST_NODE_TYPES.Identifier &&
             storeConstructorBindings.has(unwrappedExpression.callee.name)
         );
     }
 
     /**
-     * @param {any} declaration
+     * @param {import('@typescript-eslint/utils').TSESTree.Node | null | undefined} declaration
      * @returns {void}
      */
     function collectLocalStoreInstanceNames(declaration) {
-        if (declaration?.type !== 'VariableDeclaration') {
+        if (declaration?.type !== AST_NODE_TYPES.VariableDeclaration) {
             return;
         }
 
         for (const declarator of declaration.declarations ?? []) {
-            if (declarator.id?.type !== 'Identifier') {
+            if (declarator.id?.type !== AST_NODE_TYPES.Identifier) {
                 continue;
             }
             if (!isStoreInstanceExpression(declarator.init)) {
@@ -1191,25 +1214,28 @@ function collectExportedStoreInstanceNamesFromProgram(program, filename, seenFil
     }
 
     for (const statement of program.body ?? []) {
-        if (statement.type === 'VariableDeclaration') {
+        if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
             collectLocalStoreInstanceNames(statement);
             continue;
         }
 
-        if (statement.type === 'ExportNamedDeclaration') {
+        if (statement.type === AST_NODE_TYPES.ExportNamedDeclaration) {
             collectLocalStoreInstanceNames(statement.declaration);
         }
     }
 
     for (const statement of program.body ?? []) {
-        if (statement.type === 'ExportNamedDeclaration') {
+        if (statement.type === AST_NODE_TYPES.ExportNamedDeclaration) {
             if (statement.exportKind === 'type') {
                 continue;
             }
 
-            if (statement.declaration?.type === 'VariableDeclaration') {
+            if (statement.declaration?.type === AST_NODE_TYPES.VariableDeclaration) {
                 for (const declarator of statement.declaration.declarations ?? []) {
-                    if (declarator.id?.type === 'Identifier' && localStoreInstanceNames.has(declarator.id.name)) {
+                    if (
+                        declarator.id?.type === AST_NODE_TYPES.Identifier &&
+                        localStoreInstanceNames.has(declarator.id.name)
+                    ) {
                         exportedStoreInstanceNames.add(declarator.id.name);
                     }
                 }
@@ -1261,7 +1287,7 @@ function collectExportedStoreInstanceNamesFromProgram(program, filename, seenFil
             continue;
         }
 
-        if (statement.type !== 'ExportAllDeclaration') {
+        if (statement.type !== AST_NODE_TYPES.ExportAllDeclaration) {
             continue;
         }
         if (statement.exportKind === 'type') {
@@ -1305,7 +1331,7 @@ function getExportedStoreInstanceNamesFromSource(filename, source, seenFiles) {
     seenFiles.add(sourceFile);
     try {
         const text = readFileSync(sourceFile, 'utf8');
-        const parsed = tseslint.parser.parseForESLint(text, {
+        const parsed = parseForESLint(text, {
             filePath: sourceFile,
             sourceType: 'module',
             ecmaVersion: 'latest',
@@ -1329,11 +1355,11 @@ function getExportedStoreInstanceNamesFromSource(filename, source, seenFiles) {
  * @returns {string | null}
  */
 function getStaticMemberPropertyName(node) {
-    if (node?.property?.type === 'Identifier' && !node.computed) {
+    if (node?.property?.type === AST_NODE_TYPES.Identifier && !node.computed) {
         return node.property.name;
     }
 
-    if (node?.property?.type === 'Literal' && typeof node.property.value === 'string') {
+    if (node?.property?.type === AST_NODE_TYPES.Literal && typeof node.property.value === 'string') {
         return node.property.value;
     }
 
@@ -1358,11 +1384,11 @@ function getNonModulePrivateImportTarget(importPath) {
  * @returns {string | null}
  */
 function getLiteralStringValue(node) {
-    if (node?.type === 'Literal' && typeof node.value === 'string') {
+    if (node?.type === AST_NODE_TYPES.Literal && typeof node.value === 'string') {
         return node.value;
     }
 
-    if (node?.type === 'TemplateLiteral' && node.expressions.length === 0 && node.quasis.length === 1) {
+    if (node?.type === AST_NODE_TYPES.TemplateLiteral && node.expressions.length === 0 && node.quasis.length === 1) {
         const [quasi] = node.quasis;
         const cooked = quasi.value?.cooked;
         if (typeof cooked === 'string') {
@@ -1390,7 +1416,9 @@ function isTypeOnlyImportDeclaration(node) {
     const specifiers = node.specifiers ?? [];
     return (
         specifiers.length > 0 &&
-        specifiers.every((specifier) => specifier.type === 'ImportSpecifier' && specifier.importKind === 'type')
+        specifiers.every(
+            (specifier) => specifier.type === AST_NODE_TYPES.ImportSpecifier && specifier.importKind === 'type'
+        )
     );
 }
 
@@ -1400,11 +1428,12 @@ function isTypeOnlyImportDeclaration(node) {
  */
 function getTypeQueryImportSource(node) {
     const argument = node.argument;
-    if (argument?.type === 'Literal' && typeof argument.value === 'string') {
-        return argument.value;
+    const directValue = getLiteralStringValue(argument);
+    if (directValue !== null) {
+        return directValue;
     }
 
-    if (argument?.type === 'TSLiteralType' && argument.literal?.type === 'Literal') {
+    if (argument?.type === AST_NODE_TYPES.TSLiteralType && argument.literal?.type === AST_NODE_TYPES.Literal) {
         const value = argument.literal.value;
         if (typeof value === 'string') {
             return value;
@@ -1415,8 +1444,8 @@ function getTypeQueryImportSource(node) {
 }
 
 /**
- * @param {(node: any, source: string) => void} reportSource
- * @returns {import('eslint').Rule.RuleListener}
+ * @param {(node: import('@typescript-eslint/utils').TSESTree.Node, source: string) => void} reportSource
+ * @returns {import('@typescript-eslint/utils').TSESLint.RuleListener}
  */
 function createReactImportSourceVisitors(reportSource) {
     return {
@@ -1486,7 +1515,7 @@ const sourdawPlugin = {
                         'Do not fetch data in useEffect/useLayoutEffect. Use a TanStack Query hook or repository-backed query hook instead.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 return {
                     /** @param {import('@typescript-eslint/utils').TSESTree.CallExpression} node */
@@ -1529,7 +1558,7 @@ const sourdawPlugin = {
                         'This effect looks like derived state. Derive during render, move to a selector/transformer, or justify the imperative sync explicitly.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 return {
                     /** @param {import('@typescript-eslint/utils').TSESTree.CallExpression} node */
@@ -1538,7 +1567,7 @@ const sourdawPlugin = {
                             return;
                         }
                         const body = getEffectBody(node);
-                        if (!body || body.type !== 'BlockStatement') {
+                        if (!body || body.type !== AST_NODE_TYPES.BlockStatement) {
                             return;
                         }
                         if (bodyContainsAsyncOrFetch(body)) {
@@ -1570,7 +1599,7 @@ const sourdawPlugin = {
                         'Manual memoization is not allowed here. Prefer architectural simplification and let React Compiler handle memoization.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 // Local binding names for `memo` imported from 'react' (handles
                 // `import { memo }` and `import { memo as m }`). A bare `memo()`
@@ -1587,8 +1616,8 @@ const sourdawPlugin = {
                         }
                         for (const spec of node.specifiers) {
                             if (
-                                spec.type === 'ImportSpecifier' &&
-                                spec.imported?.type === 'Identifier' &&
+                                spec.type === AST_NODE_TYPES.ImportSpecifier &&
+                                spec.imported?.type === AST_NODE_TYPES.Identifier &&
                                 spec.imported.name === 'memo'
                             ) {
                                 reactMemoBindings.add(spec.local.name);
@@ -1598,7 +1627,7 @@ const sourdawPlugin = {
                     /** @param {import('@typescript-eslint/utils').TSESTree.CallExpression} node */
                     CallExpression(node) {
                         if (
-                            node.callee.type === 'Identifier' &&
+                            node.callee.type === AST_NODE_TYPES.Identifier &&
                             (node.callee.name === 'useMemo' || node.callee.name === 'useCallback')
                         ) {
                             context.report({
@@ -1608,7 +1637,7 @@ const sourdawPlugin = {
                         }
 
                         // Bare `memo(...)` imported from react (e.g. `import { memo }`).
-                        if (node.callee.type === 'Identifier' && reactMemoBindings.has(node.callee.name)) {
+                        if (node.callee.type === AST_NODE_TYPES.Identifier && reactMemoBindings.has(node.callee.name)) {
                             context.report({
                                 node,
                                 messageId: 'noManualMemoization',
@@ -1616,10 +1645,10 @@ const sourdawPlugin = {
                         }
 
                         if (
-                            node.callee.type === 'MemberExpression' &&
-                            node.callee.object?.type === 'Identifier' &&
+                            node.callee.type === AST_NODE_TYPES.MemberExpression &&
+                            node.callee.object?.type === AST_NODE_TYPES.Identifier &&
                             node.callee.object.name === 'React' &&
-                            node.callee.property?.type === 'Identifier' &&
+                            node.callee.property?.type === AST_NODE_TYPES.Identifier &&
                             node.callee.property.name === 'memo'
                         ) {
                             context.report({
@@ -1644,7 +1673,7 @@ const sourdawPlugin = {
                         'Do not use @tauri-apps/api directly in presentation code. Go through a repository, adapter, or use case.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 if (!isPresentationFile(context.filename)) {
                     return {};
@@ -1682,7 +1711,7 @@ const sourdawPlugin = {
                         'Do not import or re-export React/ReactDOM APIs in domain logic layers. Move UI concerns outward or extract pure domain code.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 if (!isDomainLogicFile(context.filename)) {
                     return {};
@@ -1714,7 +1743,7 @@ const sourdawPlugin = {
                         'Do not import or re-export `{{source}}` outside approved UI/adaptor files. Keep React APIs in presentation, route, approved app entrypoint, store adapter, or UI utility code.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 if (!isProductionSourceFile(context.filename) || isFixtureFile(context.filename)) {
                     return {};
@@ -1727,7 +1756,7 @@ const sourdawPlugin = {
                 }
 
                 /**
-                 * @param {any} node
+                 * @param {import('@typescript-eslint/utils').TSESTree.Node} node
                  * @param {string} source
                  * @returns {void}
                  */
@@ -1759,14 +1788,14 @@ const sourdawPlugin = {
                         'Do not import types from another module private folder (`{{folder}}`). Use an events contract, public value contract derivation, or a local consumer-owned type.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 if (!isProductionSourceFile(context.filename)) {
                     return {};
                 }
 
                 /**
-                 * @param {any} node
+                 * @param {import('@typescript-eslint/utils').TSESTree.Node} node
                  * @param {string} source
                  * @returns {void}
                  */
@@ -1833,7 +1862,7 @@ const sourdawPlugin = {
                         'Do not import module private folders or deep contract files (`{{target}}`) from `src/{{sourceFolder}}/`. Import from the module contract-folder barrel instead.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 const sourceFolder = getNonModuleImporterFolder(context.filename);
                 if (!sourceFolder) {
@@ -1841,7 +1870,7 @@ const sourdawPlugin = {
                 }
 
                 /**
-                 * @param {any} node
+                 * @param {import('@typescript-eslint/utils').TSESTree.Node} node
                  * @param {string} source
                  * @param {boolean} includePrivateFolders
                  * @returns {void}
@@ -1857,9 +1886,12 @@ const sourdawPlugin = {
                         return;
                     }
 
-                    const target = includePrivateFolders
-                        ? getNonModulePrivateImportTarget(importedModule.importPath)
-                        : getDeepContractImportFolder(importedModule.importPath);
+                    let target;
+                    if (includePrivateFolders) {
+                        target = getNonModulePrivateImportTarget(importedModule.importPath);
+                    } else {
+                        target = getDeepContractImportFolder(importedModule.importPath);
+                    }
                     if (!target) {
                         return;
                     }
@@ -1933,14 +1965,14 @@ const sourdawPlugin = {
                         'Do not import use cases from repository files. Repositories are I/O internals called by use cases, not callers of them.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 if (!isProductionRepositoryFile(context.filename)) {
                     return {};
                 }
 
                 /**
-                 * @param {any} node
+                 * @param {import('@typescript-eslint/utils').TSESTree.Node} node
                  * @param {string} source
                  * @returns {void}
                  */
@@ -2021,14 +2053,14 @@ const sourdawPlugin = {
                         'Do not import `{{target}}` from model files. Models must stay below stores/use cases; move orchestration to use cases or local consumer-owned types.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 if (!isProductionModelFile(context.filename)) {
                     return {};
                 }
 
                 /**
-                 * @param {any} node
+                 * @param {import('@typescript-eslint/utils').TSESTree.Node} node
                  * @param {string} source
                  * @returns {void}
                  */
@@ -2113,7 +2145,7 @@ const sourdawPlugin = {
                         'Do not call `{{method}}` on `{{storeName}}` from `{{moduleName}}/stores`. Route writes through the owning module use-case or action boundary.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 if (!isProductionSourceFile(context.filename) || isFixtureFile(context.filename)) {
                     return {};
@@ -2121,12 +2153,12 @@ const sourdawPlugin = {
 
                 const sourceCode = context.sourceCode;
 
-                /** @type {Map<any, { storeName: string; moduleName: string }>} */
+                /** @type {Map<import('@typescript-eslint/utils').TSESLint.Scope.Variable, { storeName: string; moduleName: string }>} */
                 const foreignStoreBindings = new Map();
 
                 /**
-                 * @param {any} specifier
-                 * @returns {any | null}
+                 * @param {import('@typescript-eslint/utils').TSESTree.ImportSpecifier} specifier
+                 * @returns {import('@typescript-eslint/utils').TSESLint.Scope.Variable | null}
                  */
                 function getImportVariable(specifier) {
                     const variables = sourceCode.getDeclaredVariables(specifier);
@@ -2134,8 +2166,8 @@ const sourdawPlugin = {
                 }
 
                 /**
-                 * @param {any} identifier
-                 * @returns {any | null}
+                 * @param {import('@typescript-eslint/utils').TSESTree.Identifier} identifier
+                 * @returns {import('@typescript-eslint/utils').TSESLint.Scope.Variable | null}
                  */
                 function getResolvedVariable(identifier) {
                     let scope = sourceCode.getScope(identifier);
@@ -2175,13 +2207,13 @@ const sourdawPlugin = {
                         );
 
                         for (const specifier of node.specifiers ?? []) {
-                            if (specifier.type !== 'ImportSpecifier') {
+                            if (specifier.type !== AST_NODE_TYPES.ImportSpecifier) {
                                 continue;
                             }
                             if (specifier.importKind === 'type') {
                                 continue;
                             }
-                            if (specifier.local?.type !== 'Identifier') {
+                            if (specifier.local?.type !== AST_NODE_TYPES.Identifier) {
                                 continue;
                             }
 
@@ -2209,10 +2241,10 @@ const sourdawPlugin = {
                         if (node.parent?.kind !== 'const') {
                             return;
                         }
-                        if (node.id?.type !== 'Identifier') {
+                        if (node.id?.type !== AST_NODE_TYPES.Identifier) {
                             return;
                         }
-                        if (node.init?.type !== 'Identifier') {
+                        if (node.init?.type !== AST_NODE_TYPES.Identifier) {
                             return;
                         }
 
@@ -2237,7 +2269,7 @@ const sourdawPlugin = {
                     /** @param {import('@typescript-eslint/utils').TSESTree.CallExpression} node */
                     CallExpression(node) {
                         const callee = node.callee;
-                        if (callee?.type !== 'MemberExpression') {
+                        if (callee?.type !== AST_NODE_TYPES.MemberExpression) {
                             return;
                         }
 
@@ -2245,7 +2277,7 @@ const sourdawPlugin = {
                         if (method !== 'set' && method !== 'update') {
                             return;
                         }
-                        if (callee.object?.type !== 'Identifier') {
+                        if (callee.object?.type !== AST_NODE_TYPES.Identifier) {
                             return;
                         }
 
@@ -2286,14 +2318,14 @@ const sourdawPlugin = {
                         'Do not re-export repositories from use-case files. Write a use-case function that imports the repository privately.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 if (!isProductionUseCaseFile(context.filename)) {
                     return {};
                 }
 
                 /**
-                 * @param {any} node
+                 * @param {import('@typescript-eslint/utils').TSESTree.ExportAllDeclaration | import('@typescript-eslint/utils').TSESTree.ExportNamedDeclaration} node
                  * @returns {void}
                  */
                 function reportIfRepositoryReexport(node) {
@@ -2337,15 +2369,15 @@ const sourdawPlugin = {
                         'Use-case and repository files must export at most one function value. Found {{count}} exported functions: {{names}}.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 if (!isProductionUseCaseOrRepositoryFile(context.filename)) {
                     return {};
                 }
 
-                /** @type {Map<string, any>} */
+                /** @type {Map<string, import('@typescript-eslint/utils').TSESTree.Node>} */
                 const localFunctionValues = new Map();
-                /** @type {Map<string, any>} */
+                /** @type {Map<string, import('@typescript-eslint/utils').TSESTree.Node>} */
                 const sourceExportedFunctionValues = new Map();
                 /** @type {Set<string>} */
                 const directlyExportedNames = new Set();
@@ -2355,7 +2387,7 @@ const sourdawPlugin = {
                 const injectBindings = new Set();
 
                 /**
-                 * @param {any} node
+                 * @param {import('@typescript-eslint/utils').TSESTree.Node} node
                  * @param {string | null | undefined} name
                  * @returns {void}
                  */
@@ -2367,7 +2399,7 @@ const sourdawPlugin = {
                 }
 
                 /**
-                 * @param {any} node
+                 * @param {import('@typescript-eslint/utils').TSESTree.Node} node
                  * @param {string | null | undefined} name
                  * @returns {void}
                  */
@@ -2380,7 +2412,7 @@ const sourdawPlugin = {
                 }
 
                 /**
-                 * @param {any} node
+                 * @param {import('@typescript-eslint/utils').TSESTree.Node} node
                  * @param {string | null | undefined} name
                  * @returns {void}
                  */
@@ -2392,11 +2424,11 @@ const sourdawPlugin = {
                 }
 
                 /**
-                 * @param {any} declarator
+                 * @param {import('@typescript-eslint/utils').TSESTree.VariableDeclarator} declarator
                  * @returns {void}
                  */
                 function registerVariableFunctionValue(declarator) {
-                    if (declarator.id?.type !== 'Identifier') {
+                    if (declarator.id?.type !== AST_NODE_TYPES.Identifier) {
                         return;
                     }
                     if (!isFunctionValue(declarator.init, injectBindings)) {
@@ -2407,11 +2439,11 @@ const sourdawPlugin = {
                 }
 
                 /**
-                 * @param {any} declarator
+                 * @param {import('@typescript-eslint/utils').TSESTree.VariableDeclarator} declarator
                  * @returns {void}
                  */
                 function registerExportedVariableFunctionValue(declarator) {
-                    if (declarator.id?.type !== 'Identifier') {
+                    if (declarator.id?.type !== AST_NODE_TYPES.Identifier) {
                         return;
                     }
                     if (!isFunctionValue(declarator.init, injectBindings)) {
@@ -2422,10 +2454,10 @@ const sourdawPlugin = {
                 }
 
                 /**
-                 * @returns {Array<{ name: string; node: any }>}
+                 * @returns {Array<{ name: string; node: import('@typescript-eslint/utils').TSESTree.Node }>}
                  */
                 function getExportedFunctionValues() {
-                    /** @type {Array<{ name: string; node: any }>} */
+                    /** @type {Array<{ name: string; node: import('@typescript-eslint/utils').TSESTree.Node }>} */
                     const exportedFunctionValues = [];
                     const seenNames = new Set();
 
@@ -2469,7 +2501,10 @@ const sourdawPlugin = {
                     /** @param {import('@typescript-eslint/utils').TSESTree.FunctionDeclaration} node */
                     FunctionDeclaration(node) {
                         const parentType = node.parent?.type;
-                        if (parentType !== 'Program' && parentType !== 'ExportNamedDeclaration') {
+                        if (
+                            parentType !== AST_NODE_TYPES.Program &&
+                            parentType !== AST_NODE_TYPES.ExportNamedDeclaration
+                        ) {
                             return;
                         }
 
@@ -2480,8 +2515,9 @@ const sourdawPlugin = {
                         const declaration = node.parent;
                         const parentType = declaration?.parent?.type;
                         if (
-                            declaration?.type !== 'VariableDeclaration' ||
-                            (parentType !== 'Program' && parentType !== 'ExportNamedDeclaration')
+                            declaration?.type !== AST_NODE_TYPES.VariableDeclaration ||
+                            (parentType !== AST_NODE_TYPES.Program &&
+                                parentType !== AST_NODE_TYPES.ExportNamedDeclaration)
                         ) {
                             return;
                         }
@@ -2509,25 +2545,28 @@ const sourdawPlugin = {
                                 if (specifier.exportKind === 'type') {
                                     continue;
                                 }
-                                if (specifier.local?.type !== 'Identifier') {
+                                if (specifier.local?.type !== AST_NODE_TYPES.Identifier) {
                                     continue;
                                 }
                                 if (!sourceFunctionNames.has(specifier.local.name)) {
                                     continue;
                                 }
 
-                                const exportedName = specifier.exported?.name ?? specifier.local.name;
+                                const exportedName =
+                                    specifier.exported.type === AST_NODE_TYPES.Identifier
+                                        ? specifier.exported.name
+                                        : specifier.local.name;
                                 registerSourceExport(specifier, exportedName);
                             }
                             return;
                         }
 
-                        if (node.declaration?.type === 'FunctionDeclaration') {
+                        if (node.declaration?.type === AST_NODE_TYPES.FunctionDeclaration) {
                             registerDirectExport(node.declaration, node.declaration.id?.name);
                             return;
                         }
 
-                        if (node.declaration?.type === 'VariableDeclaration') {
+                        if (node.declaration?.type === AST_NODE_TYPES.VariableDeclaration) {
                             for (const declarator of node.declaration.declarations ?? []) {
                                 registerExportedVariableFunctionValue(declarator);
                             }
@@ -2538,7 +2577,7 @@ const sourdawPlugin = {
                             if (specifier.exportKind === 'type') {
                                 continue;
                             }
-                            if (specifier.local?.type !== 'Identifier') {
+                            if (specifier.local?.type !== AST_NODE_TYPES.Identifier) {
                                 continue;
                             }
 
@@ -2565,7 +2604,7 @@ const sourdawPlugin = {
                             registerSourceExport(node, name);
                         }
                     },
-                    /** @param {any} node */
+                    /** @param {import('@typescript-eslint/utils').TSESTree.Program} node */
                     'Program:exit': function (node) {
                         const exportedFunctionValues = getExportedFunctionValues();
                         if (exportedFunctionValues.length <= 1) {
@@ -2599,7 +2638,7 @@ const sourdawPlugin = {
                     noEnum: 'Do not use `enum`. Use an `as const` object instead. See AGENTS.md § React 19 & Coding Conventions → TypeScript Forms.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 return {
                     /** @param {import('@typescript-eslint/utils').TSESTree.TSEnumDeclaration} node */
@@ -2625,7 +2664,7 @@ const sourdawPlugin = {
                         'Do not use namespace imports (`import * as X from ...`). Import named exports individually. See AGENTS.md § React 19 & Coding Conventions.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 return {
                     /** @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node */
@@ -2636,7 +2675,7 @@ const sourdawPlugin = {
                         }
 
                         for (const specifier of node.specifiers ?? []) {
-                            if (specifier.type === 'ImportNamespaceSpecifier') {
+                            if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
                                 context.report({ node: specifier, messageId: 'noNamespaceImport' });
                             }
                         }
@@ -2662,20 +2701,20 @@ const sourdawPlugin = {
                         '`as unknown as X` double-assertion is forbidden — it silences the type checker. Narrow via `unknown` + type guards or validate with Zod at I/O boundaries.',
                 },
             },
-            /** @param {import('eslint').Rule.RuleContext} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
                 return {
                     /** @param {import('@typescript-eslint/utils').TSESTree.TSAsExpression} node */
                     TSAsExpression(node) {
                         // `x as any`
-                        if (node.typeAnnotation?.type === 'TSAnyKeyword') {
+                        if (node.typeAnnotation?.type === AST_NODE_TYPES.TSAnyKeyword) {
                             context.report({ node, messageId: 'noAsAny' });
                             return;
                         }
                         // `x as unknown as T`: outer TSAsExpression where inner is `as unknown`
                         if (
-                            node.expression?.type === 'TSAsExpression' &&
-                            node.expression.typeAnnotation?.type === 'TSUnknownKeyword'
+                            node.expression?.type === AST_NODE_TYPES.TSAsExpression &&
+                            node.expression.typeAnnotation?.type === AST_NODE_TYPES.TSUnknownKeyword
                         ) {
                             context.report({ node, messageId: 'noAsUnknownAs' });
                         }
@@ -2685,6 +2724,20 @@ const sourdawPlugin = {
         },
     },
 };
+
+const sizeBaselineConfig = [];
+if (sizeBaselineFiles.length > 0) {
+    sizeBaselineConfig.push({
+        files: sizeBaselineFiles,
+        rules: {
+            'max-lines': 'warn',
+            'max-lines-per-function': 'warn',
+            'max-depth': 'warn',
+            complexity: 'warn',
+        },
+    });
+}
+
 export default defineConfig(
     // ─── Base configs ────────────────────────────────────────────────────────
     // Only configs whose rules oxlint 1.74 cannot run are kept here. Everything
@@ -2761,9 +2814,7 @@ export default defineConfig(
         languageOptions: {
             ecmaVersion: 'latest',
             sourceType: 'module',
-            globals: {
-                ...globals.browser,
-            },
+            globals: globals.browser,
             parser: tseslint.parser,
             parserOptions: {
                 project: './tsconfig.eslint.json',
@@ -2800,9 +2851,7 @@ export default defineConfig(
     {
         files: ['server/**/*.ts'],
         languageOptions: {
-            globals: {
-                ...globals.node,
-            },
+            globals: globals.node,
             parserOptions: {
                 project: './server/tsconfig.json',
                 tsconfigRootDir: import.meta.dirname,
@@ -2985,19 +3034,7 @@ export default defineConfig(
     // only once it complies with all four rules — no file is ever added
     // (docs/07-conventions.md). ESLint's flat config rejects an empty `files`
     // array, so the override is omitted entirely once the baseline is empty.
-    ...(sizeBaselineFiles.length > 0
-        ? [
-              {
-                  files: sizeBaselineFiles,
-                  rules: {
-                      'max-lines': 'warn',
-                      'max-lines-per-function': 'warn',
-                      'max-depth': 'warn',
-                      complexity: 'warn',
-                  },
-              },
-          ]
-        : []),
+    ...sizeBaselineConfig,
 
     // ─── React components (JSX) ──────────────────────────────────────────────
     {
@@ -3187,9 +3224,7 @@ export default defineConfig(
         files: ['scripts/**/*.{js,mjs,cjs}'],
         extends: [tseslint.configs.disableTypeChecked, eslintPluginReact.configs['disable-type-checked']],
         languageOptions: {
-            globals: {
-                ...globals.node,
-            },
+            globals: globals.node,
             parserOptions: {
                 project: false,
             },
@@ -3233,9 +3268,7 @@ export default defineConfig(
         files: ['crates/daw-dsp/benches/wasm/**/*.{js,mjs,d.mts}'],
         extends: [tseslint.configs.disableTypeChecked, eslintPluginReact.configs['disable-type-checked']],
         languageOptions: {
-            globals: {
-                ...globals.node,
-            },
+            globals: globals.node,
             parserOptions: {
                 project: false,
             },

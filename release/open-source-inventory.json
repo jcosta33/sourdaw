@@ -74,6 +74,7 @@
                 "rust-toolchain.toml",
                 "tsconfig.app.json",
                 "tsconfig.e2e.json",
+                "tsconfig.eslint-config.json",
                 "tsconfig.eslint.json",
                 "tsconfig.json",
                 "tsconfig.scripts.json",
@@ -168,8 +169,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:3135c1befc711ec081d2680b4783b9ab7f9f0b3f73143429c1fe0fae4d1f2f4d:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:6f175db2c8a9c6b161726fcbd79b772a7f3537725489530e1eee69e18c5f37b5:release/dependency-license-proofs.json"
+                "sha256:b640b863db1fa8cb7a9d55a6cb3b798bf2395e11c34e63e71161e965fb318d84:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:bf9221db0a882de5cf782e9199bb419e7a980b118875404a60f4efb6d94545e8:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -281,7 +282,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:8699a2bc66926ecc08621ec524328b7b138475064a18cde0c4a272a68afcf331",
+                "sha256:bc6999447c2fda05dce2f9510e3412eba1c2d82f66234746c5dea40dfe7c389a",
                 "sha256:d5943b73cb367ddf580983190df0e0c073383c75ebce9611aefb3340c1a380b7"
             ],
             "licenses": [
@@ -1858,7 +1859,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "512ef1dcced4af1a094c156ff41e22b910aca3bdbba7e8fd5ed73aa2ff2d1cbf"
+            "sha256": "b7026015b0595a880b3c31b8c11d9ccef8ef18555b556ab5965d667c6cc6ba5f"
         },
         {
             "path": "server/package.json",
@@ -1870,7 +1871,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "8699a2bc66926ecc08621ec524328b7b138475064a18cde0c4a272a68afcf331"
+            "sha256": "bc6999447c2fda05dce2f9510e3412eba1c2d82f66234746c5dea40dfe7c389a"
         },
         {
             "path": "Cargo.toml",

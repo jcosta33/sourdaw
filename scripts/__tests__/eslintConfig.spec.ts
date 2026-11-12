@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 
 import { ESLint, Linter } from 'eslint';
 import { describe, expect, it } from 'vitest';
@@ -32,8 +32,12 @@ describe('ESLint configuration', () => {
                 { cwd: process.cwd(), encoding: 'utf8' }
             );
             expect(result.status, result.stderr).toBe(1);
-            expect(result.stdout).toContain(`${ordinary}:1:8: error import(no-default-export)`);
-            expect(result.stdout).toContain(`${nestedConfig}:1:8: error import(no-default-export)`);
+            expect(result.stdout).toContain(
+                `${relative(process.cwd(), ordinary)}:1:8: error import(no-default-export)`
+            );
+            expect(result.stdout).toContain(
+                `${relative(process.cwd(), nestedConfig)}:1:8: error import(no-default-export)`
+            );
         } finally {
             unlinkSync(ordinary);
             unlinkSync(nestedConfig);
@@ -46,6 +50,9 @@ describe('ESLint configuration', () => {
         const filePath = resolve('src/app/bootstrap.ts');
         const [invalid] = await eslint.lintText('enum Fruit { Apple }\n', { filePath });
         const [valid] = await eslint.lintText('const fruit = { Apple: 1 } as const;\n', { filePath });
+        if (!invalid || !valid) {
+            throw new Error('ESLint did not return both results');
+        }
 
         expect(invalid.messages.map((message) => message.ruleId)).toContain('sourdaw/no-enum');
         expect(valid.messages.map((message) => message.ruleId)).not.toContain('sourdaw/no-enum');
@@ -55,7 +62,9 @@ describe('ESLint configuration', () => {
     it('preserves custom rule diagnostics through the loaded plugin', async () => {
         const eslint = new ESLint();
         const config = await eslint.calculateConfigForFile(resolve('src/app/bootstrap.ts'));
-        expect(config).toBeDefined();
+        if (!config) {
+            throw new Error('ESLint did not load the app configuration');
+        }
         const plugin = config.plugins.sourdaw;
         const parser = config.languageOptions.parser;
         expect(plugin).toBeDefined();
@@ -113,6 +122,7 @@ describe('ESLint configuration', () => {
                 linter.verify(
                     code,
                     {
+                        files: ['**/*.ts'],
                         languageOptions: { parser },
                         plugins: { sourdaw: plugin },
                         rules: { [`sourdaw/${fixture.rule}`]: 'error' },
@@ -125,5 +135,19 @@ describe('ESLint configuration', () => {
             ).toEqual([fixture.messageId]);
             expect(lint(fixture.valid), fixture.rule).toEqual([]);
         }
+
+        const promisePlugin = config.plugins.promise;
+        if (!promisePlugin) {
+            throw new Error('ESLint did not load the promise plugin');
+        }
+        const lintPromise = (code: string) =>
+            linter.verify(code, {
+                plugins: { promise: promisePlugin },
+                rules: { 'promise/no-return-wrap': 'error' },
+            });
+        expect(lintPromise('task.then(value => Promise.resolve(value));').map((message) => message.messageId)).toEqual([
+            'resolve',
+        ]);
+        expect(lintPromise('task.then(value => value);')).toEqual([]);
     });
 });

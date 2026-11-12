@@ -296,7 +296,7 @@
     "overrides": [
         {
             // ESLint loads this configuration from the module's default export.
-            "files": ["eslint.config.mjs"],
+            "files": ["./eslint.config.mjs"],
             "rules": { "import/no-default-export": "off" }
         },
         {
