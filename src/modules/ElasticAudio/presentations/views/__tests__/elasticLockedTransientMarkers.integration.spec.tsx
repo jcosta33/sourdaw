@@ -74,8 +74,8 @@ import {
 } from '../../../models/TransientOnsetWorker';
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
 import { addManualMarker } from '../../../useCases/elasticAudio/addManualMarker';
-import { detectTransients } from '../../../useCases/elasticAudio/detectTransients';
 import { detectElasticEditorTransients } from '../../../useCases/elasticAudio/detectElasticEditorTransients';
+import { detectTransients } from '../../../useCases/elasticAudio/detectTransients';
 import { setElasticSensitivityRootIdentityCapture } from '../../../useCases/elasticAudio/elasticSensitivityDependencies';
 import { openElasticEditor } from '../../../useCases/elasticAudio/openElasticEditor';
 import { setElasticRootIdentityProvider } from '../../../useCases/elasticAudio/setElasticRootIdentityProvider';
