@@ -37,7 +37,7 @@ test.describe('Tuner (Scoring A4 reference knob keyboard bounds)', () => {
         // The reference knob exposes its bounds as ARIA slider attributes; the
         // descriptor pins a4_hz to [400, 490] with a 440 default, so neither
         // bound is the resting value and each keypress is a real move.
-        const referenceKnob = page.getByRole('slider', { name: 'Parameter control' });
+        const referenceKnob = page.getByRole('slider', { name: 'Concert A reference' });
         await expect(referenceKnob).toHaveAttribute('aria-valuenow', '440');
 
         const minBound = await referenceKnob.getAttribute('aria-valuemin');

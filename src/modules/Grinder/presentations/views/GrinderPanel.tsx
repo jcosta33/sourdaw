@@ -714,6 +714,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                         </span>
                         <Row align="stretch" gap={2}>
                             <RotaryKnob
+                                aria-label="Mic 1 horizontal position"
                                 value={patch.mic1.positionX}
                                 onChange={(value) => setGrinderMicParamWithAudio(deviceId, 1, 'positionX', value)}
                                 min={0}
@@ -723,6 +724,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                                 size="sm"
                             />
                             <RotaryKnob
+                                aria-label="Mic 1 vertical position"
                                 value={patch.mic1.positionY}
                                 onChange={(value) => setGrinderMicParamWithAudio(deviceId, 1, 'positionY', value)}
                                 min={0}
@@ -732,6 +734,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                                 size="sm"
                             />
                             <RotaryKnob
+                                aria-label="Mic 1 distance"
                                 value={patch.mic1.distance}
                                 onChange={(value) => setGrinderMicParamWithAudio(deviceId, 1, 'distance', value)}
                                 min={0}
@@ -749,6 +752,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                             </span>
                             <Row align="stretch" gap={2}>
                                 <RotaryKnob
+                                    aria-label="Mic 2 horizontal position"
                                     value={patch.mic2.positionX}
                                     onChange={(value) => setGrinderMicParamWithAudio(deviceId, 2, 'positionX', value)}
                                     min={0}
@@ -758,6 +762,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                                     size="sm"
                                 />
                                 <RotaryKnob
+                                    aria-label="Mic 2 vertical position"
                                     value={patch.mic2.positionY}
                                     onChange={(value) => setGrinderMicParamWithAudio(deviceId, 2, 'positionY', value)}
                                     min={0}
@@ -767,6 +772,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                                     size="sm"
                                 />
                                 <RotaryKnob
+                                    aria-label="Mic 2 distance"
                                     value={patch.mic2.distance}
                                     onChange={(value) => setGrinderMicParamWithAudio(deviceId, 2, 'distance', value)}
                                     min={0}
@@ -1262,6 +1268,7 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                             {control.params.map((param) => (
                                 <Stack align="center" gap={1} key={`${control.type}-${param.key}`}>
                                     <RotaryKnob
+                                        aria-label={`${control.label} ${param.label}`}
                                         value={pedal.params[param.key] ?? param.defaultValue}
                                         onChange={(next) =>
                                             setGrinderPedalParamWithAudio(

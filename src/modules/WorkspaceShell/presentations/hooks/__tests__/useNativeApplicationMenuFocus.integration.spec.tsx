@@ -179,7 +179,8 @@ describe('native Edit focus with the timeline clip navigator', () => {
 
         render(<NativeMenuHost />);
         const listbox = screen.getByRole('listbox', { name: 'Timeline clips' });
-        expect(document.activeElement).toBe(listbox);
+        expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search clips' }));
+        act(() => listbox.focus());
         expect(listbox).not.toHaveAttribute('data-canvas-editor');
         fireEvent.keyDown(listbox, { key: 'ArrowDown' });
         expect(listbox.getAttribute('aria-activedescendant')).toContain('clip-two');
@@ -220,7 +221,10 @@ describe('native Edit focus with the timeline clip navigator', () => {
         expect(cut?.accelerator).toBe('CommandOrControl+X');
 
         render(<NativeMenuHost />);
-        expect(document.activeElement).toBe(screen.getByRole('listbox', { name: 'Timeline clips' }));
+        expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search clips' }));
+        const listbox = screen.getByRole('listbox', { name: 'Timeline clips' });
+        act(() => listbox.focus());
+        expect(document.activeElement).toBe(listbox);
         cut?.click?.();
 
         expect(dispatch).not.toHaveBeenCalled();

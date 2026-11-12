@@ -20,6 +20,7 @@ vi.mock('#/components/daw/RotaryKnob', () => ({
     }) => (
         <input
             type="range"
+            aria-label={ariaLabel}
             data-testid={ariaLabel ?? 'knob'}
             value={value}
             onChange={(e) => onChange(Number(e.target.value))}
@@ -36,6 +37,13 @@ describe('PerNoteEditor', () => {
     it('should render', () => {
         render(<PerNoteEditor onParamChange={vi.fn()} onReset={vi.fn()} perNoteOverrides={new Map()} />);
         expect(screen.getByRole('button', { name: /reset/i })).toBeTruthy();
+    });
+
+    it('names every parameter control with its per-note context', () => {
+        render(<PerNoteEditor onParamChange={vi.fn()} onReset={vi.fn()} perNoteOverrides={new Map()} />);
+        for (const descriptor of PER_NOTE_PARAM_DESCRIPTORS) {
+            expect(screen.getByRole('slider', { name: `Per-note ${descriptor.label}` })).toBeInTheDocument();
+        }
     });
 
     it('disables Reset when no override exists for the selected key', () => {

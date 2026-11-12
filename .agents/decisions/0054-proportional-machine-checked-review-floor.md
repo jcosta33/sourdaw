@@ -2,7 +2,7 @@
 type: adr
 id: 0054
 title: Review publication enforces a proportional, machine-checked floor instead of self-attested paperwork
-status: accepted
+status: partially superseded by 0056 (the freeze threshold only) and 0057 (the strongest-draw requirement only)
 date: 2026-10-22
 owner: The Sourdaw team
 supersedes:
