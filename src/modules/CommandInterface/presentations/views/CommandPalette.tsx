@@ -82,6 +82,12 @@ type CommandGroup = {
     entries: Array<{ command: CommandEntry; inapplicabilityReason: string | null }>;
 };
 
+type CommandGroupSource = {
+    id: string;
+    label: string | null;
+    entries: CommandEntry[];
+};
+
 type CommandListboxProps = {
     id: string;
     groups: CommandGroup[];
@@ -138,7 +144,7 @@ const CommandListbox = ({ id, groups, activeIndex, onSelect, onHover }: CommandL
 
 function getCommandGroups(query: string, recentCommandIds: readonly string[], context: CommandContext): CommandGroup[] {
     const results = searchCommands(query);
-    let groups: CommandGroup[];
+    let groups: CommandGroupSource[];
     if (query.trim()) {
         groups = [{ id: 'search-results', label: null, entries: results }];
     } else {
