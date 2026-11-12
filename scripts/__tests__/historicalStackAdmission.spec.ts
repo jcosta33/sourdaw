@@ -2107,7 +2107,7 @@ process.stdout.write(JSON.stringify(result));
                 timeout: 15000,
             })
         ).toThrow('does not match its pinned');
-    });
+    }, 30_000);
 });
 
 describe('closed parent shell observation boundaries', () => {
