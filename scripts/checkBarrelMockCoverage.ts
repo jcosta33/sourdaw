@@ -856,6 +856,7 @@ export type AnalyzeInput = {
     specPaths: string[];
     readFacts: ReadFacts;
     fileExists: (path: string) => boolean;
+    resolveModule?: typeof resolveSpecifier;
     /** Barrel kinds to check. Defaults to the gated set. */
     barrelKinds?: ReadonlyArray<string>;
     /**
@@ -881,6 +882,7 @@ export function analyzeSpecs({
     specPaths,
     readFacts,
     fileExists,
+    resolveModule = resolveSpecifier,
     barrelKinds,
     exemptions: exemptionRows = exemptions,
 }: AnalyzeInput): AnalysisResult {
@@ -929,7 +931,7 @@ export function analyzeSpecs({
         const exemptedKeysFor = new Map<string, { row: ExemptionRow; keys: Set<string> }>();
 
         for (const mock of specFacts.mocks) {
-            const resolved = resolveSpecifier(mock.specifier, specDirectory, fileExists);
+            const resolved = resolveModule(mock.specifier, specDirectory, fileExists);
             if (!resolved) {
                 continue;
             }
@@ -987,7 +989,7 @@ export function analyzeSpecs({
                 continue;
             }
             for (const [specifier, names] of facts.imports) {
-                const resolved = resolveSpecifier(specifier, dirname(current), fileExists);
+                const resolved = resolveModule(specifier, dirname(current), fileExists);
                 if (!resolved) {
                     continue;
                 }

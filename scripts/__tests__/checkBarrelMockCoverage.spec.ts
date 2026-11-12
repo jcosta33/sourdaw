@@ -46,13 +46,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { loadConfigFromFile, resolveConfig, transformWithOxc } from 'vite';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
     allBarrelKinds,
     analyzeSpecs,
     gatedBarrelKinds,
     readFileFacts,
+    resolveSpecifier,
     scanRepository,
     type ExemptionRow,
     type FileFacts,
@@ -446,6 +447,24 @@ describe('checkBarrelMockCoverage — the analysis cannot pass by deriving nothi
         [barrel]: "export { Alpha } from './Alpha';\nexport { Beta } from './Beta';\n",
         'src/modules/Host/presentations/views/HostPanel.tsx': `import { Alpha, Beta } from '${barrelSpecifier}';\nexport const HostPanel = () => [Alpha, Beta];\n`,
         'src/modules/Host/presentations/views/__tests__/HostPanel.spec.tsx': `vi.mock('${barrelSpecifier}', () => ({ Alpha: () => null }));\nimport { HostPanel } from '../HostPanel';\n`,
+    });
+
+    it('uses the supplied resolver for mock declarations and graph imports', () => {
+        const resolveModule = vi.fn(resolveSpecifier);
+        const fileExists = vi.fn(workingFixture.fileExists);
+
+        expect(analyzeSpecs({ ...workingFixture, fileExists, resolveModule })).toEqual(analyzeSpecs(workingFixture));
+        expect(resolveModule.mock.calls).toContainEqual([
+            barrelSpecifier,
+            join(repoRoot, 'src/modules/Host/presentations/views/__tests__'),
+            fileExists,
+        ]);
+        expect(resolveModule.mock.calls).toContainEqual([
+            barrelSpecifier,
+            join(repoRoot, 'src/modules/Host/presentations/views'),
+            fileExists,
+        ]);
+        expect(fileExists).toHaveBeenCalledWith(join(repoRoot, barrel));
     });
 
     it('a resolver that resolves nothing reports zero violations and zero derivation', () => {
