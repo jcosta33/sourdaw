@@ -10,7 +10,7 @@ const fixture = vi.hoisted(() => ({
         kind: string;
         muted: boolean;
         sends: never[];
-        freezeState: { status: string };
+        freezeState: { status: string; frozenBufferId?: string };
         clips: { id: string; type: string; startBeat: number; endBeat: number; audioBufferId: string }[];
     }[],
     time: 10,
@@ -19,6 +19,7 @@ const fixture = vi.hoisted(() => ({
     advanceOnNextEmit: 0,
     advancePerEmit: 0,
     compensationSeconds: 0,
+    midiReady: true,
 }));
 const buffer = vi.hoisted(() => ({ duration: 16 }));
 const emitted = vi.hoisted(() => [] as SourceWithFade[]);
@@ -34,7 +35,13 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: (_id: string, clips: unknown[]) => clips,
 }));
-vi.mock('#/modules/MIDI/stores', () => ({ midiStore: { value: {} } }));
+vi.mock('#/modules/MIDI/stores', () => ({
+    midiStore: {
+        get value() {
+            return fixture.midiReady ? {} : null;
+        },
+    },
+}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCachedAudioBuffer: () => buffer,
     getCompensationDelay: () => fixture.compensationSeconds,
@@ -111,6 +118,7 @@ beforeEach(() => {
     fixture.advanceOnNextEmit = 0;
     fixture.advancePerEmit = 0;
     fixture.compensationSeconds = 0;
+    fixture.midiReady = true;
     emitted.length = 0;
     windows.length = 0;
     fixture.tracks = [
@@ -125,6 +133,28 @@ beforeEach(() => {
     ];
 });
 describe('loop buffer work and lifetime ownership', () => {
+    it('admits an active MIDI track carrying an audio clip to the loop programme', () => {
+        fixture.tracks[0]!.kind = 'midi';
+
+        const coverage = make().refill(input());
+
+        expect(coverage.windows).toBeGreaterThan(0);
+        expect(emitted.length).toBeGreaterThan(0);
+    });
+    it('admits status-only frozen MIDI audio without a bake, but waits for MIDI state before a frozen bake', () => {
+        fixture.tracks[0]!.kind = 'midi';
+        fixture.tracks[0]!.freezeState.status = 'frozen';
+        fixture.midiReady = false;
+
+        expect(make().refill(input()).windows).toBeGreaterThan(0);
+        expect(emitted.length).toBeGreaterThan(0);
+
+        emitted.length = 0;
+        windows.length = 0;
+        fixture.tracks[0]!.freezeState.frozenBufferId = 'buffer';
+        expect(make().refill(input()).windows).toBe(0);
+        expect(emitted).toHaveLength(0);
+    });
     it('publishes only completed coverage and keeps an admitted successor on late promotion', () => {
         const owner = make();
         expect(owner.refill(input()).through).toBe(10.35);
@@ -244,5 +274,41 @@ describe('loop buffer work and lifetime ownership', () => {
         expect(owner.refill(input(0.25, 10.2, 0.15)).shortfall).toBeNull();
         expect(windows[nextRepair]?.anchor).toBe(10.125);
         expect(windows.slice(nextRepair).some((window) => window.anchor === 10)).toBe(false);
+    });
+    it('keeps an unchanged compensated successor when only another MIDI track unfreezes', () => {
+        fixture.compensationSeconds = 0.5;
+        fixture.tracks.push({
+            id: 'midi',
+            kind: 'midi',
+            muted: false,
+            sends: [],
+            freezeState: { status: 'frozen', frozenBufferId: 'midi-bake' },
+            clips: [{ id: 'midi-clip', type: 'midi', startBeat: 0, endBeat: 4, audioBufferId: 'midi-bake' }],
+        });
+        let bounded = false;
+        let previousHorizon = Number.NEGATIVE_INFINITY;
+        const owner = make(() =>
+            bounded && (emitted.at(-1)?.scheduledStartTime ?? Infinity) <= previousHorizon ? 40 : 0
+        );
+        owner.refill(input());
+        const successor = owner.poolAt(10.125, true)!.sources[0]! as SourceWithFade;
+        expect(successor.scheduledStartTime).toBe(10.625);
+        const stopsBeforeChange = vi.mocked(successor.stop).mock.calls.map((call) => [...call]);
+
+        fixture.tracks[1]!.freezeState = { status: 'unfrozen' };
+        fixture.time = 10.624;
+        const emissionsBeforeChange = emitted.length;
+        previousHorizon = Math.max(...emitted.map((source) => source.scheduledStartTime ?? 0));
+        bounded = true;
+        const coverage = owner.refill(input(0.25, 10.624, 0.15));
+
+        expect(vi.mocked(successor.stop).mock.calls).toEqual(stopsBeforeChange);
+        const newEmissions = emitted.slice(emissionsBeforeChange);
+        expect(newEmissions.length).toBeGreaterThan(0);
+        for (const source of newEmissions) {
+            expect(source.scheduledStartTime).toBeGreaterThan(previousHorizon);
+        }
+        expect(coverage.shortfall).toBeNull();
+        expect(coverage.through).toBeGreaterThanOrEqual(coverage.target);
     });
 });

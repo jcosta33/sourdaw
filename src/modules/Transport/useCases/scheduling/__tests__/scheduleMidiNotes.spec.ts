@@ -908,6 +908,56 @@ describe('scheduleMidiNotes', () => {
         expect(toasterNoteOn.mock.calls[0]?.[3]).toBe(31_200);
     });
 
+    it('admits a relocated parent-swung note on its compensated audible onset', async () => {
+        const toasterNoteOn = vi.fn();
+        const parent = midiTrack({
+            id: 'toaster-parent',
+            kind: 'folder',
+            automationMode: 'read',
+            devices: [{ id: 'toaster', type: 'toaster', parameterValues: {} }],
+        });
+        const child = midiTrack({
+            parentId: 'toaster-parent',
+            clips: [midiClip()],
+            devices: [{ id: 'yeast', type: 'yeast' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [parent, child] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n1', pitch: 36, startBeat: 1.25, duration: 0.25, velocity: 100 }],
+            },
+        };
+        (automationStore as { value: unknown }).value = {
+            lanes: [
+                {
+                    id: 'swing-lane',
+                    trackId: 'toaster-parent',
+                    parameterId: 'toaster:swing',
+                    enabled: true,
+                },
+            ],
+        };
+        vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.4);
+        vi.mocked(getCompensationDelay).mockReturnValue(-0.02);
+        vi.mocked(getCurrentTime).mockReturnValue(1);
+        vi.mocked(ensureTrackStrip).mockImplementation(
+            (trackId) =>
+                ({
+                    gainNode: {},
+                    preFaderTap: { connect: vi.fn() },
+                    deviceNodes:
+                        trackId === 'toaster-parent'
+                            ? [{ deviceId: 'toaster', type: 'toaster', toasterControls: { noteOn: toasterNoteOn } }]
+                            : [],
+                }) as never
+        );
+
+        await scheduleMidiNotes(1.25, 1.5, 1.25, new Set<string>(), [], defaultTransportState, 120, undefined, true);
+
+        expect(toasterNoteOn).toHaveBeenCalledOnce();
+        expect(toasterNoteOn).toHaveBeenCalledWith(0, 100, 60, 48_240);
+    });
+
     // §1 — Per-note probability must be deterministic so replays are identical.
     it('makes per-note probability gating deterministic across runs (§55.3)', async () => {
         const track = midiTrack({ clips: [midiClip()] });

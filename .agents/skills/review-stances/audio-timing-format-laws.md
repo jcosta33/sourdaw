@@ -130,3 +130,20 @@ arrival frame behind an unrelated note-on`). Running expression immediately inst
     missing intervals, phase and duplicates, including existing fades. From the fixed commit, the reviewer checks
     only that no claim of continuity rests on source-call ledgers, positive meters, recovered wrap counts or an
     admission benchmark; those are probe 13's evidence, not rendered signal.
+15. **Audio admitted by a MIDI-track import must reach every browser playback route.** The existing track
+    menu can import an audio clip while retaining `kind: 'midi'`. The ordinary scheduler's audio-only track
+    filter dates to direct commit `e6cdfeec57`; the separate loop admission filter entered in #6370. The
+    mixed-media import entry point's introducing change is not established here. The missed review input was an
+    unfrozen MIDI track carrying an audio clip rather than a MIDI-only or frozen track. Import a nonzero WAV
+    through that menu, keep the MIDI track unfrozen and routed to Master, then run Play and a natural loop wrap.
+    The Master analyser must show signal inside the clip and on both sides of the wrap; Stop must settle to
+    silence without changing project material or history. `scheduleAudioClips.spec.ts` must fail if the direct
+    route is restricted to audio tracks, and `startPlayheadSchedulerLoopAudioStall.spec.ts` must fail if the
+    real loop source ledger omits the MIDI track's audio or duplicates a pass. Keep bus, muted, and frozen-bake
+    controls: a frozen MIDI track with a valid rendered buffer belongs to the MIDI frozen emitter and cannot
+    emit its original audio clip again. After live Freeze, Unfreeze and refreeze of the same bake ID, each
+    former owner must stop by the replacement's actual source onset and its dedup key must clear so the source
+    can rejoin at its current media phase. Hold an earlier MIDI rack's async work while advancing the audio
+    clock, and keep another track's future compensated source: `startPlayheadSchedulerLoopAudioStall.spec.ts`
+    must fail if retirement happens only after the MIDI await or cuts that other source. A mocked programme
+    call proves eligibility only.
