@@ -94,7 +94,7 @@ describe('orchestrator authentication', () => {
                         expect(options.env[key]).toBeUndefined();
                     }
                     // The inherited count is replaced by the helper's own repository-program overrides.
-                    expect(options.env.GIT_CONFIG_COUNT).toBe('2');
+                    expect(options.env.GIT_CONFIG_COUNT).toBe('6');
                     return 'stored-token';
                 }
                 expect(args).toEqual(['api', '--hostname', 'github.com', 'user']);
@@ -1189,7 +1189,7 @@ describe('isolated gh sessions', () => {
         expect(auth.session.env.GIT_CONFIG_SYSTEM).toBe('/dev/null');
         expect(auth.session.env.GIT_TERMINAL_PROMPT).toBe('0');
         // The inherited `insteadof` entry is replaced by the helper's own repository-program overrides.
-        expect(auth.session.env.GIT_CONFIG_COUNT).toBe('2');
+        expect(auth.session.env.GIT_CONFIG_COUNT).toBe('6');
         expect(auth.session.env.GIT_CONFIG_KEY_0).toBe('core.hooksPath');
         expect(auth.session.env.GIT_CONFIG_VALUE_0).toBe('/dev/null');
         expect(auth.session.env.GIT_CONFIG_PARAMETERS).toBeUndefined();
@@ -1500,11 +1500,19 @@ describe('sterile Git child environments', () => {
             }
             expect(env).toMatchObject({
                 GIT_NO_REPLACE_OBJECTS: '1',
-                GIT_CONFIG_COUNT: '2',
+                GIT_CONFIG_COUNT: '6',
                 GIT_CONFIG_KEY_0: 'core.hooksPath',
                 GIT_CONFIG_VALUE_0: '/dev/null',
                 GIT_CONFIG_KEY_1: 'core.fsmonitor',
                 GIT_CONFIG_VALUE_1: 'false',
+                GIT_CONFIG_KEY_2: 'protocol.ext.allow',
+                GIT_CONFIG_VALUE_2: 'never',
+                GIT_CONFIG_KEY_3: 'core.askPass',
+                GIT_CONFIG_VALUE_3: '',
+                GIT_CONFIG_KEY_4: 'push.gpgSign',
+                GIT_CONFIG_VALUE_4: 'false',
+                GIT_CONFIG_KEY_5: 'commit.gpgSign',
+                GIT_CONFIG_VALUE_5: 'false',
                 // `trustedChildExecutable` reads the launcher's frozen executable from the child env.
                 SOURDAW_TRUSTED_GIT_PATH: '/usr/bin/git',
             });
@@ -1580,6 +1588,27 @@ describe('sterile Git child environments', () => {
 
             spawnCapture('git', ['status', '--porcelain'], { cwd: root, env: { ...env, GIT_CONFIG_COUNT: '0' } });
             expect(readFileSync(ran, 'utf8')).toBe('ran');
+        });
+    });
+
+    it('runs no ext:: transport a repository rewrite points the GitHub remote at', () => {
+        withScratch('sourdaw-ext-transport-', (root) => {
+            const leaked = join(root, 'leaked');
+            const transport = join(root, 'transport');
+            writeExecutable(transport, `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > ${JSON.stringify(leaked)}\nexit 1\n`);
+            fixtureGit(root, ['init', '-q', '-b', 'main']);
+            fixtureGit(root, ['config', 'protocol.ext.allow', 'always']);
+            fixtureGit(root, ['config', `url.ext::${transport} %S.insteadOf`, GITHUB_HTTPS_REMOTE]);
+            const env = githubChildEnv('ghs_sentinel', join(root, 'gh-config'));
+            const fetch = (fetchEnv: NodeJS.ProcessEnv) => () =>
+                spawnCapture('git', ['fetch', GITHUB_HTTPS_REMOTE, 'main'], { cwd: root, env: fetchEnv });
+
+            expect(fetch(env)).toThrow();
+            expect(existsSync(leaked)).toBe(false);
+
+            // Without the environment overrides the rewritten remote runs the command with the token.
+            expect(fetch({ ...env, GIT_CONFIG_COUNT: '0' })).toThrow();
+            expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
         });
     });
 });

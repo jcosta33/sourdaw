@@ -381,8 +381,11 @@ export type HardenedRulesetBuilder = (ruleset: RulesetDocument) => RulesetDocume
 
 /**
  * The write replaces the whole ruleset with a candidate built from the plan read, so an edit landing
- * between that read and the write would be silently reverted. Only the writable projection counts:
- * server-maintained fields such as `updated_at` are not written back and may move freely.
+ * after that read would be silently reverted. Re-reading just before the write narrows that window to
+ * the gap between two API calls; it does not close it, because the rulesets API has no conditional
+ * write, so an edit inside the gap is still overwritten and the logged rollback is the recovery. Only
+ * the writable projection counts: server-maintained fields such as `updated_at` are not written back
+ * and may move freely.
  */
 function assertUnchangedSincePlan(planned: RulesetDocument, current: RulesetDocument): void {
     if (canonicalJson(writableRuleset(planned)) !== canonicalJson(writableRuleset(current))) {
@@ -395,9 +398,10 @@ function assertUnchangedSincePlan(planned: RulesetDocument, current: RulesetDocu
  * guard then runs against the candidate write, so a candidate touching anything outside the
  * approved set, adding a required context, or leaving a field short of its target is refused before
  * the port is asked to write. With `apply` false the plan is reported and nothing is written. On
- * apply, a re-read immediately before the write refuses a ruleset edited since the plan read, and
- * the write is followed by a fresh read and the same guards over the writable projection,
- * which is what proves the server stored the plan.
+ * apply, a re-read just before the write refuses a ruleset edited since the plan read; an edit in
+ * the remaining gap before the unconditional write is still overwritten, and the rollback logged
+ * before the write restores it. The write is followed by a fresh read and the same guards over the
+ * writable projection, which is what proves the server stored the plan.
  */
 export function hardenRuleset(
     apply: boolean,

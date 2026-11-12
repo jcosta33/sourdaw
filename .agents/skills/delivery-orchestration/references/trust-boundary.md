@@ -40,7 +40,11 @@ This isolates lane-controlled files, not operator-running code. The pre-launcher
 is trusted, and same-account processes can read credentials. Snapshot and token-bearing children
 discard redirecting overrides: Node loaders and preloads, and Git, GitHub CLI, GitHub Actions, and App
 configuration, matched without regard to case. They use the launcher-resolved `git` and `gh`.
-Token-bearing Git children ignore repository hooks and fsmonitor, so a program planted in the shared
-repository config never runs beside a token. Every Git-read environment ignores replace refs. The
+Token-bearing Git children override fixed-name repository config: hooks, fsmonitor, the `ext::`
+transport, askpass, and commit and push signing. Environment-supplied config outranks repository
+config for the same key, so those programs never run beside a token. Keys whose names the lane
+chooses still run for token-bearing Git commands working in a lane or the primary: `.gitattributes`
+filters, merge and diff drivers, and custom `name::` remote helpers. Every Git-read environment
+ignores replace refs. The
 orchestrator User role discards inherited GitHub, Git, and Node overrides the same way during
 credential lookup and isolated execution.

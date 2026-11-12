@@ -385,12 +385,19 @@ const INHERITED_AUTHORITY_PREFIXES = ['GIT_', 'GH_', 'GITHUB_', 'SOURDAW_GITHUB_
 /**
  * Repository config is shared by every lane of the primary checkout, so any lane can plant a program
  * there that a Git child would run with this process's environment: a hook (`fetch` runs
- * `reference-transaction`) or an fsmonitor (`status` and `diff` run it). Environment-supplied config
- * ranks with `git -c`, above repository config, so these entries disarm both for every child.
+ * `reference-transaction`), an fsmonitor (`status` and `diff` run it), an `ext::` transport behind a
+ * URL rewrite, an askpass program, or a signing program. Environment-supplied config ranks with
+ * `git -c`, above repository config for the same key, so these fixed-name entries disarm them for every
+ * child. A key whose name the lane chooses — a `.gitattributes` filter, a merge or diff driver, a
+ * custom `name::` remote helper — cannot be named here and still runs.
  */
 const REPOSITORY_PROGRAM_OVERRIDES = [
     ['core.hooksPath', '/dev/null'],
     ['core.fsmonitor', 'false'],
+    ['protocol.ext.allow', 'never'],
+    ['core.askPass', ''],
+    ['push.gpgSign', 'false'],
+    ['commit.gpgSign', 'false'],
 ] as const;
 
 /**
