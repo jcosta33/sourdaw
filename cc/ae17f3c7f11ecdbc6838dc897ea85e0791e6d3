@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/perceptualConstraints.spec.ts
+  s_9307cedd8951f1::t_0a8f34480ddb98 1401-1410,1427-1436,1475-1490,1909-1925
+src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts
+  s_9307cedd8951f1::t_6e48e85420437e 130-134,340-342,511-514,516,523,580
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ccae17f3c7f11ecdbc6838dc897ea85e0791e6d3",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
