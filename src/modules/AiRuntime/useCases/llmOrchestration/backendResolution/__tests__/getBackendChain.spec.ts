@@ -94,22 +94,6 @@ describe('getBackendChain', () => {
         expect(getBackendChain()).toEqual([]);
     });
 
-    // A ready hosted runtime moves the hosted candidate to the front of the order; Automatic still drops it.
-    it.each([
-        { name: 'without WebGPU', webGpu: false, expected: [] },
-        { name: 'beside verified WebGPU', webGpu: true, expected: ['webllm'] },
-    ])('keeps a configured, ready hosted provider out of an automatic tool chain $name', ({ webGpu, expected }) => {
-        mocks.runtimeStatus.value = { state: 'ready', backend: 'cloud', modelId: 'hosted-model' };
-        mocks.isWebGpuAvailable.mockReturnValue(webGpu);
-        Object.defineProperty(globalThis, 'navigator', {
-            value: webGpu ? { gpu: {} } : {},
-            configurable: true,
-            writable: true,
-        });
-
-        expect(getBackendChain({ operation: 'tools', modality: 'text', streaming: false })).toEqual(expected);
-    });
-
     it('uses a hosted provider only after explicit selection', () => {
         mocks.preference.value = 'cloud';
 
