@@ -1,0 +1,19 @@
+evidence/agent-campaign/manifest.json
+  s_0e1e665b35fffe::t_5864a6129da07f 623
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55de7557f2af7b2d165434afb693fddb24558d3b",
+  "prompts": {},
+  "sessions": {
+    "s_0e1e665b35fffe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "381a1b33-66ac-43c7-a5f6-c58cf462dac3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
