@@ -1,0 +1,26 @@
+src/modules/Transport/handlers/transport/handleRehearseSection.ts
+  s_9307cedd8951f1::t_906968451cb547 5,14,18,21,23
+src/modules/Transport/handlers/transport/__tests__/sectionRuntimeHandlers.spec.ts
+  s_9307cedd8951f1::t_61ecc38e265bd2 171-172,174-219
+  s_9307cedd8951f1::t_37697bdadd58dc 8,23,66,146,149,152,154,162-165,167,170,244-247,249,252
+  s_9307cedd8951f1::t_869b9177bfcc84 173
+src/modules/Transport/useCases/transportControls/__tests__/rehearseSectionCountIn.integration.spec.ts
+  s_9307cedd8951f1::t_ad413223d43fab 326-333,335-341,343-360
+  s_9307cedd8951f1::t_b04ebd3e0ed92e 14,325,334,342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af6071392b6188306cd5b5275139f2d227621336",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
