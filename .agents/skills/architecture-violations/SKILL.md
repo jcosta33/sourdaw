@@ -21,7 +21,7 @@ Establish the architecture so the code flows through the right boundary. Never: 
 
 **Why:** the architecture encodes non-negotiable DAW constraints. A green check that re-introduces the hazard — now invisible — is a regression.
 
-`no-circular` is **error** and the file-level cycles are cleared, but it resolves files, not modules. The `AiGeneration` ↔ `AiRuntime` cycle is live and travels through contract barrels — `AiGeneration/handlers/aiMidi/*` imports `AiRuntime/useCases`, and `AiRuntime/presentations/views/GenerativeAiPanel.tsx` imports back into `AiGeneration` — so no rule, baseline row, or ADR records it. A green `deps:validate` is not proof the module graph is acyclic.
+Cycles have two checks with different reach. File-level `no-circular` (**error**) sees files, not modules. The `moduleTiers` gate (`.dependency-cruiser.module-tiers.cjs`, run inside `pnpm deps:validate`) sees module-level cycles and upward tier edges in non-presentation production code, and accepts only the manifest's reasoned `allowedCycles` and `acceptedTierEdges` rows — it has no baseline to refresh, so a new allowance is a manifest entry argued in review, and a module's tier is never changed to fit its imports. A module cycle that closes through a view or other `presentations/` code is outside both checks, so a green `deps:validate` still does not prove the presentation-inclusive module graph acyclic.
 
 ### 2. A boundary is only real if responsibility changes across it
 
@@ -75,14 +75,15 @@ Never “fix” `business-no-presentations`, `repositories-no-business`, model/e
 
 **Why:** pure-layer and RT rules exist because the wrong dependency is a product hazard, not a style preference.
 
-### 9. One owner per authoritative write; shim markers stay until real
+### 9. One owner per authoritative write; a re-export is not a boundary
 
-Multiple features casually mutating shared state destroy undo semantics. Removing `TEMPORARY MIGRATION SHIM` from a pure re-export without creating a real typed boundary is malicious compliance — leave the marker while the refactor is incomplete.
+Multiple features casually mutating shared state destroy undo semantics. Each authoritative write has one owning module. A pure re-export that hands another module that write is laundering until a real typed boundary replaces it (rule 6); renaming or relocating the re-export changes nothing.
 
-**Why:** shared state without ownership becomes corruption; deleting the marker hides remaining laundering.
+**Why:** shared state without ownership becomes corruption, and a re-export that passes the validator hides the second writer instead of removing it.
 
 ## References
 
 - [docs/architecture/05-boundary-enforcement-limits.md](../../../docs/architecture/05-boundary-enforcement-limits.md) — laundering patterns and their closures.
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — contract-folder barrels and public surface.
 - `.dependency-cruiser.cjs` + `scripts/check-dependency-boundaries.mjs` — main rules and exact main/reachability/type/test debt ratchet.
+- `.dependency-cruiser.module-tiers.cjs` — module tier manifest for the baseline-free `moduleTiers` gate ([docs/architecture/03-typescript-module.md §7.5](../../../docs/architecture/03-typescript-module.md#75-module-tiers)).
