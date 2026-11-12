@@ -1,0 +1,23 @@
+src/modules/Automation/AGENTS.md
+  s_a7cc15f412c3bf::t_4766c08de3735f 23
+src/modules/Automation/handlers/automation/validateRangeWriteSessionEntries.ts
+  s_a7cc15f412c3bf::t_fd57d276362dd4 7,210-255,262-268,271,273,276-280,283-286,289-295
+src/modules/Command/useCases/__tests__/retiredRangeToolStoredCommands.spec.ts
+  s_a7cc15f412c3bf::t_bae1cfbf9f0437 541-628,791,800,803,805-807,810,814,816-838,844-849
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "61d31166c433b62aa061863a51ed8fa8e97b8273",
+  "prompts": {},
+  "sessions": {
+    "s_a7cc15f412c3bf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_a7cc15f412c3bf",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
