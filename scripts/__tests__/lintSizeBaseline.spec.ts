@@ -156,6 +156,13 @@ const ceilingCases: CeilingCase[] = [
         expected: [{ kind: 'stale-exemption', path: 'gone.ts' }],
     },
     {
+        name: 'a repeated exemption for a path outside the baseline',
+        lines: { 'a.ts': 650 },
+        ceilings: { 'a.ts': 650 },
+        exempt: ['gone.ts', 'gone.ts'],
+        expected: [{ kind: 'stale-exemption', path: 'gone.ts' }],
+    },
+    {
         name: 'an exemption beside an over-ceiling file',
         lines: { 'a.ts': 901, 'gen.ts': 50_000 },
         ceilings: { 'a.ts': 900 },

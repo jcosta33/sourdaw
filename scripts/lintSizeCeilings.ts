@@ -85,7 +85,7 @@ export function findSizeCeilingViolations(inputs: SizeCeilingInputs): SizeCeilin
     return [
         ...fileViolations,
         ...findStrayCeilings(inputs.ceilings, baseline, exempt),
-        ...findStaleExemptions(exempt, baseline),
+        ...findStaleExemptions(inputs.exemptFiles, baseline),
     ];
 }
 
@@ -102,9 +102,9 @@ function findStrayCeilings(
     });
 }
 
-function findStaleExemptions(exempt: ReadonlySet<string>, baseline: ReadonlySet<string>): SizeCeilingViolation[] {
-    return [...exempt]
-        .filter((path) => !baseline.has(path))
+function findStaleExemptions(exemptFiles: readonly string[], baseline: ReadonlySet<string>): SizeCeilingViolation[] {
+    return exemptFiles
+        .filter((path, index) => !baseline.has(path) && exemptFiles.indexOf(path) === index)
         .map((path): SizeCeilingViolation => ({ kind: 'stale-exemption', path }));
 }
 
@@ -125,6 +125,10 @@ export function describeSizeCeilingViolation(violation: SizeCeilingViolation): s
             return `${violation.path}: ceiling ${violation.ceiling} sits more than ${SIZE_CEILING_SLACK} above its ${violation.lines} lines; lower it to ${expectedSizeCeiling(violation.lines)} in ${SIZE_CEILINGS_PATH}.`;
         case 'below-floor':
             return `${violation.path}: ceiling ${violation.ceiling} is not a whole number of at least ${SIZE_CEILING_FLOOR}; record the file's line count, or ${SIZE_CEILING_FLOOR} if it is shorter.`;
+        default: {
+            const unreachable: never = violation;
+            throw new Error(`unhandled size ceiling violation: ${JSON.stringify(unreachable)}`);
+        }
     }
 }
 
