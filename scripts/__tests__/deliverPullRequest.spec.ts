@@ -467,7 +467,9 @@ function successfulAuthorshipNotesFetchFixture(shell: ShellRunner): ShellRunner 
             if (
                 command === 'git' &&
                 args[0] === 'for-each-ref' &&
-                (args[2] === 'refs/notes/ai' || args[2]?.startsWith('refs/agents/fetched-ai-notes/'))
+                (args[2] === 'refs/notes/ai' ||
+                    args[2]?.startsWith('refs/agents/fetched-ai-notes/') ||
+                    args[2]?.startsWith('refs/agents/preserved-ai-notes/'))
             ) {
                 const ref = args[2]!;
                 const oid = refs.get(ref);
@@ -481,11 +483,11 @@ function successfulAuthorshipNotesFetchFixture(shell: ShellRunner): ShellRunner 
         run: (command, args) => {
             if (command === 'git' && args.includes('fetch')) {
                 const refspec = args.at(-1) ?? '';
-                const destination = refspec.split(':')[1];
-                if (destination?.startsWith('refs/agents/fetched-ai-notes/')) {
+                const [source, destination] = refspec.split(':');
+                if (source === 'refs/notes/ai' && destination?.startsWith('refs/agents/fetched-ai-notes/')) {
                     refs.set(destination, fetchedNotes);
+                    return;
                 }
-                return;
             }
 
             if (command === 'git' && args[0] === 'update-ref' && args[1] === '--no-deref') {
@@ -10632,6 +10634,22 @@ describe('delivery shell boundary', () => {
     function recoveryShellPort(repository: string, shell: ShellRunner, options?: Parameters<typeof shellPort>[2]) {
         return shellPort(repository, successfulAuthorshipNotesFetchFixture(shell), options);
     }
+
+    it('propagates a rejected landed-base fetch through the authorship-notes fixture', () => {
+        const rejection = new Error('landed-base fetch rejected');
+        const calls: Array<{ command: string; args: string[] }> = [];
+        const shell = successfulAuthorshipNotesFetchFixture({
+            capture: () => '',
+            run: (command, args) => {
+                calls.push({ command, args });
+                throw rejection;
+            },
+        });
+        const args = ['fetch', '--no-tags', GITHUB_HTTPS_REMOTE, '+main'];
+
+        expect(() => shell.run('git', args)).toThrow(rejection);
+        expect(calls).toEqual([{ command: 'git', args }]);
+    });
 
     function rollupPort(pages: Array<RollupPageFixture | string>) {
         const captures: Array<{ command: string; args: string[] }> = [];
