@@ -76,30 +76,6 @@ type WarpStateView = {
     originalTempo: number | null;
 };
 
-// Temporary bounded diagnostic: capture writes and marks are included in measured costs.
-type ElasticFrameObservation = { kind: string; [key: string]: unknown };
-type ElasticFrameDiagnostic = {
-    begin(kind: string): ElasticFrameObservation | null;
-    finish(record: ElasticFrameObservation): void;
-    captureMarkers(
-        record: ElasticFrameObservation,
-        markers: readonly WarpMarkerView[],
-        previous?: readonly WarpMarkerView[]
-    ): void;
-};
-function elasticFrameDiagnostic(): ElasticFrameDiagnostic | undefined {
-    return (window as Window & { __elasticFrameDiagnostic?: ElasticFrameDiagnostic }).__elasticFrameDiagnostic;
-}
-function recordDiagnosticStatus(status: string, request: number): void {
-    const diagnostic = elasticFrameDiagnostic();
-    const record = diagnostic?.begin('status');
-    if (record) {
-        record.status = status;
-        record.request = request;
-        diagnostic?.finish(record);
-    }
-}
-
 type DragState = {
     markerId: string;
     pointerId: number;
@@ -199,7 +175,6 @@ export const ElasticEditorPanel = (): ReactElement => {
             clipAudioBufferId: clip?.audioBufferId ?? null,
             viewScrollLeft,
         };
-
         drawWaveform(args);
         const canvas = canvasRef.current;
         const invalidate = (): void => {
@@ -232,7 +207,6 @@ export const ElasticEditorPanel = (): ReactElement => {
 
     const handleDetect = (): void => {
         const request = ++detectRequest.current;
-        recordDiagnosticStatus('Detecting…', detectRequest.current);
         setDetectionStatus('Detecting…');
         void executeAppAction({
             type: 'detectTransients',
@@ -243,12 +217,10 @@ export const ElasticEditorPanel = (): ReactElement => {
                     return;
                 }
                 markElasticDetectionComplete();
-                recordDiagnosticStatus('Detection complete', detectRequest.current);
                 setDetectionStatus('Detection complete');
             },
             () => {
                 if (request === detectRequest.current) {
-                    recordDiagnosticStatus('Detection cancelled or failed. Try again.', detectRequest.current);
                     setDetectionStatus('Detection cancelled or failed. Try again.');
                 }
             }
@@ -265,7 +237,6 @@ export const ElasticEditorPanel = (): ReactElement => {
 
     const handleSensitivity = (value: number): void => {
         const request = ++detectRequest.current;
-        recordDiagnosticStatus('Detecting…', detectRequest.current);
         setDetectionStatus('Detecting…');
         void setElasticSensitivity(value).then(
             () => {
@@ -275,7 +246,6 @@ export const ElasticEditorPanel = (): ReactElement => {
             },
             () => {
                 if (request === detectRequest.current) {
-                    recordDiagnosticStatus('Detection cancelled or failed. Try again.', detectRequest.current);
                     setDetectionStatus('Detection cancelled or failed. Try again.');
                 }
             }
@@ -625,15 +595,8 @@ type WaveformDrawing = {
     strokeStyle: CanvasRenderingContext2D['strokeStyle'];
 };
 
-function sameMarkerVisuals(
-    previous: readonly WarpMarkerView[],
-    current: readonly WarpMarkerView[],
-    observation?: ElasticFrameObservation | null
-): boolean {
-    if (observation) {
-        observation.markerComparisonReached = true;
-    }
-    const same =
+function sameMarkerVisuals(previous: readonly WarpMarkerView[], current: readonly WarpMarkerView[]): boolean {
+    return (
         previous.length === current.length &&
         previous.every((marker, index) => {
             const other = current[index];
@@ -646,238 +609,152 @@ function sameMarkerVisuals(
                 marker.confidence === other.confidence &&
                 marker.locked === other.locked
             );
-        });
-    if (observation) {
-        observation.markerComparison = same;
-    }
-    return same;
+        })
+    );
 }
 
 function drawWaveform(args: DrawArgs): void {
-    const diagnostic = elasticFrameDiagnostic();
-    const observation = diagnostic?.begin('draw');
-    if (observation) {
-        observation.outcome = 'threw';
+    const { canvasRef, containerRef, previousDrawingRef, beatWidth, warpState, clipAudioBufferId, viewScrollLeft } =
+        args;
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) {
+        return;
     }
-    try {
-        const { canvasRef, containerRef, previousDrawingRef, beatWidth, warpState, clipAudioBufferId, viewScrollLeft } =
-            args;
-        const canvas = canvasRef.current;
-        const container = containerRef.current;
-        if (!canvas || !container) {
-            if (observation) {
-                observation.outcome = 'missing-canvas-or-container';
-            }
-            return;
-        }
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            if (observation) {
-                observation.outcome = 'missing-context';
-            }
-            return;
-        }
-        const dpr = window.devicePixelRatio || 1;
-        const contentBeats = Math.max(
-            64,
-            warpState.markers.reduce((max, m) => Math.max(max, m.warpedBeat, m.originalBeat), 0) + 8
-        );
-        const containerWidth = container.clientWidth;
-        const width = Math.max(containerWidth, contentBeats * beatWidth);
-        const height = Math.max(120, container.clientHeight);
-        const backingWidth = Math.floor(width * dpr);
-        const backingHeight = Math.floor(height * dpr);
-        const background = resolveToken('--color-bg-overlay', '#151515');
-        // Peak arrays are retained unchanged by audioBufferCache; publishing/replacing or
-        // removing a source invalidates its waveform cache. A new peak identity must redraw.
-        let peaks: Float32Array | null = null;
-        if (clipAudioBufferId) {
-            peaks = audioBufferCache.getWaveformPeaks(clipAudioBufferId, Math.floor(width));
-        }
-        const previous = previousDrawingRef.current;
-        if (observation) {
-            observation.canvasRef = canvas;
-            observation.contextRef = ctx;
-            observation.peaksRef = peaks;
-            observation.previousRef = previous;
-            observation.markersRef = warpState.markers;
-            observation.warpStateRef = warpState;
-            observation.sourceId = clipAudioBufferId;
-            observation.width = width;
-            observation.height = height;
-            observation.containerWidth = containerWidth;
-            observation.dpr = dpr;
-            observation.beatWidth = beatWidth;
-            observation.scroll = viewScrollLeft;
-            observation.background = background;
-            observation.contentBeats = contentBeats;
-            observation.backingWidth = canvas.width;
-            observation.backingHeight = canvas.height;
-            observation.expectedBackingWidth = backingWidth;
-            observation.expectedBackingHeight = backingHeight;
-            observation.cssWidth = canvas.style.width;
-            observation.cssHeight = canvas.style.height;
-            observation.strokeStyle = ctx.strokeStyle;
-            observation.previousCanvasRef = previous?.canvas;
-            observation.previousContextRef = previous?.context;
-            observation.previousPeaksRef = previous?.peaks;
-            observation.previousSourceId = previous?.sourceId;
-            observation.previousWidth = previous?.width;
-            observation.previousHeight = previous?.height;
-            observation.previousContainerWidth = previous?.containerWidth;
-            observation.previousDpr = previous?.dpr;
-            observation.previousBeatWidth = previous?.beatWidth;
-            observation.previousScroll = previous?.scrollLeft;
-            observation.previousBackground = previous?.background;
-            observation.previousCssWidth = previous?.cssWidth;
-            observation.previousCssHeight = previous?.cssHeight;
-            observation.previousStrokeStyle = previous?.strokeStyle;
-            observation.peakCount = peaks?.length ?? 0;
-        }
-        const retained =
-            previous &&
-            previous.canvas === canvas &&
-            previous.context === ctx &&
-            previous.peaks === peaks &&
-            previous.sourceId === clipAudioBufferId &&
-            previous.width === width &&
-            previous.height === height &&
-            previous.containerWidth === container.clientWidth &&
-            previous.dpr === dpr &&
-            previous.beatWidth === beatWidth &&
-            previous.scrollLeft === viewScrollLeft &&
-            previous.background === background &&
-            canvas.width === backingWidth &&
-            canvas.height === backingHeight &&
-            canvas.style.width === previous.cssWidth &&
-            canvas.style.height === previous.cssHeight &&
-            // Even a same-size backing assignment or context.reset() erases pixels and
-            // resets strokeStyle to black. Every completed draw leaves a nonblack grid/marker stroke.
-            previous.strokeStyle === ctx.strokeStyle &&
-            sameMarkerVisuals(previous.markers, warpState.markers, observation);
-        if (observation) {
-            observation.retained = Boolean(retained);
-            diagnostic?.captureMarkers(observation, warpState.markers, previous?.markers);
-        }
-        if (retained) {
-            if (observation) {
-                observation.outcome = 'retained-skip';
-            }
-            return;
-        }
-        previousDrawingRef.current = null;
-        if (canvas.width !== backingWidth) {
-            if (observation) {
-                observation.backingWidthAssigned = true;
-            }
-            canvas.width = backingWidth;
-        }
-        if (canvas.height !== backingHeight) {
-            if (observation) {
-                observation.backingHeightAssigned = true;
-            }
-            canvas.height = backingHeight;
-        }
-        canvas.style.width = `${width}px`;
-        canvas.style.height = `${height}px`;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        return;
+    }
+    const dpr = window.devicePixelRatio || 1;
+    const contentBeats = Math.max(
+        64,
+        warpState.markers.reduce((max, m) => Math.max(max, m.warpedBeat, m.originalBeat), 0) + 8
+    );
+    const width = Math.max(container.clientWidth, contentBeats * beatWidth);
+    const height = Math.max(120, container.clientHeight);
+    const backingWidth = Math.floor(width * dpr);
+    const backingHeight = Math.floor(height * dpr);
+    const background = resolveToken('--color-bg-overlay', '#151515');
+    // Peak arrays are retained unchanged by audioBufferCache; publishing/replacing or
+    // removing a source invalidates its waveform cache. A new peak identity must redraw.
+    const peaks = clipAudioBufferId ? audioBufferCache.getWaveformPeaks(clipAudioBufferId, Math.floor(width)) : null;
+    const previous = previousDrawingRef.current;
+    if (
+        previous &&
+        previous.canvas === canvas &&
+        previous.context === ctx &&
+        previous.peaks === peaks &&
+        previous.sourceId === clipAudioBufferId &&
+        previous.width === width &&
+        previous.height === height &&
+        previous.containerWidth === container.clientWidth &&
+        previous.dpr === dpr &&
+        previous.beatWidth === beatWidth &&
+        previous.scrollLeft === viewScrollLeft &&
+        previous.background === background &&
+        canvas.width === backingWidth &&
+        canvas.height === backingHeight &&
+        canvas.style.width === previous.cssWidth &&
+        canvas.style.height === previous.cssHeight &&
+        // Even a same-size backing assignment or context.reset() erases pixels and
+        // resets strokeStyle to black. Every completed draw leaves a nonblack grid/marker stroke.
+        previous.strokeStyle === ctx.strokeStyle &&
+        sameMarkerVisuals(previous.markers, warpState.markers)
+    ) {
+        return;
+    }
+    previousDrawingRef.current = null;
+    if (canvas.width !== backingWidth) {
+        canvas.width = backingWidth;
+    }
+    if (canvas.height !== backingHeight) {
+        canvas.height = backingHeight;
+    }
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        ctx.fillStyle = background;
-        ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, width, height);
 
-        const midY = height / 2;
-        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-        ctx.beginPath();
-        ctx.moveTo(0, midY);
-        ctx.lineTo(width, midY);
-        ctx.stroke();
+    const midY = height / 2;
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath();
+    ctx.moveTo(0, midY);
+    ctx.lineTo(width, midY);
+    ctx.stroke();
 
-        if (peaks) {
-            const hasWaveform = peaks.some((v) => v > 0);
-            if (observation) {
-                observation.hasWaveform = hasWaveform;
-            }
-            if (hasWaveform) {
-                ctx.fillStyle = 'rgba(90,150,115,0.5)';
-                ctx.beginPath();
-                ctx.moveTo(0, midY);
-                for (let i = 0; i < peaks.length; i++) {
-                    ctx.lineTo(i, midY - peaks[i]! * midY * 0.9);
-                }
-                ctx.lineTo(peaks.length - 1, midY);
-                for (let i = peaks.length - 1; i >= 0; i--) {
-                    ctx.lineTo(i, midY + peaks[i]! * midY * 0.9);
-                }
-                ctx.closePath();
-                ctx.fill();
-            }
-        }
-
-        for (let beat = 0; beat < width / beatWidth; beat++) {
-            const x = beat * beatWidth;
-            ctx.strokeStyle = beat % 4 === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)';
+    if (peaks) {
+        if (peaks.some((v) => v > 0)) {
+            ctx.fillStyle = 'rgba(90,150,115,0.5)';
             ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, height);
-            ctx.stroke();
-        }
-
-        const markers = visibleMarkers(warpState.markers, beatWidth, viewScrollLeft, container.clientWidth);
-        if (observation) {
-            observation.visibleMarkerCount = markers.length;
-        }
-        for (const marker of markers) {
-            const x = marker.warpedBeat * beatWidth;
-            if (x < -16 || x > width + 16) {
-                continue;
+            ctx.moveTo(0, midY);
+            for (let i = 0; i < peaks.length; i++) {
+                ctx.lineTo(i, midY - peaks[i]! * midY * 0.9);
             }
-            const color = markerColor(marker);
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, height);
-            ctx.stroke();
-            ctx.lineWidth = 1;
-
-            ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.moveTo(x - 5, 0);
-            ctx.lineTo(x + 5, 0);
-            ctx.lineTo(x, 8);
+            ctx.lineTo(peaks.length - 1, midY);
+            for (let i = peaks.length - 1; i >= 0; i--) {
+                ctx.lineTo(i, midY + peaks[i]! * midY * 0.9);
+            }
             ctx.closePath();
             ctx.fill();
-
-            if (marker.locked) {
-                ctx.fillStyle = 'rgba(255,255,255,0.8)';
-                ctx.fillRect(x - 2, 10, 4, 4);
-            }
-        }
-        previousDrawingRef.current = {
-            canvas,
-            context: ctx,
-            peaks,
-            sourceId: clipAudioBufferId,
-            width,
-            height,
-            containerWidth: container.clientWidth,
-            dpr,
-            beatWidth,
-            scrollLeft: viewScrollLeft,
-            background,
-            cssWidth: canvas.style.width,
-            cssHeight: canvas.style.height,
-            markers: structuredClone(warpState.markers),
-            strokeStyle: ctx.strokeStyle,
-        };
-        if (observation) {
-            observation.outcome = 'drawn';
-        }
-    } finally {
-        if (observation) {
-            diagnostic?.finish(observation);
         }
     }
+
+    for (let beat = 0; beat < width / beatWidth; beat++) {
+        const x = beat * beatWidth;
+        ctx.strokeStyle = beat % 4 === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)';
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+    }
+
+    const markers = visibleMarkers(warpState.markers, beatWidth, viewScrollLeft, container.clientWidth);
+    for (const marker of markers) {
+        const x = marker.warpedBeat * beatWidth;
+        if (x < -16 || x > width + 16) {
+            continue;
+        }
+        const color = markerColor(marker);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(x - 5, 0);
+        ctx.lineTo(x + 5, 0);
+        ctx.lineTo(x, 8);
+        ctx.closePath();
+        ctx.fill();
+
+        if (marker.locked) {
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.fillRect(x - 2, 10, 4, 4);
+        }
+    }
+    previousDrawingRef.current = {
+        canvas,
+        context: ctx,
+        peaks,
+        sourceId: clipAudioBufferId,
+        width,
+        height,
+        containerWidth: container.clientWidth,
+        dpr,
+        beatWidth,
+        scrollLeft: viewScrollLeft,
+        background,
+        cssWidth: canvas.style.width,
+        cssHeight: canvas.style.height,
+        markers: structuredClone(warpState.markers),
+        strokeStyle: ctx.strokeStyle,
+    };
 }
 
 function markerColor(marker: WarpMarkerView): string {
