@@ -20,6 +20,7 @@ import {
     cloneFermenterPatch,
     fermenterPatchesEqual,
     fromFermenterDeviceState,
+    readFermenterPatchFromProjectDevice,
     toFermenterDeviceState,
     type FermenterDeviceStateChunk,
 } from '../../models/FermenterPatchState';
@@ -503,6 +504,11 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
         if (!hydrated) {
             return;
         }
+        const currentDevice = (trackStore.value?.tracks ?? [])
+            .flatMap((track) => track.devices)
+            .find((device) => device.id === deviceId);
+        const authoritative =
+            currentDevice?.type === 'fermenter' ? readFermenterPatchFromProjectDevice(currentDevice) : hydrated;
         const firstHydration = hydratedDeviceRef.current !== deviceId;
         hydratedDeviceRef.current = deviceId;
         if (firstHydration) {
@@ -516,7 +522,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
         }
         if (localCommitRef.current) {
             const localCommit = fromFermenterDeviceState(localCommitRef.current);
-            if (localCommit && fermenterPatchesEqual(hydrated, localCommit)) {
+            if (localCommit && fermenterPatchesEqual(authoritative, localCommit)) {
                 observedLocalCommitRef.current = true;
                 return;
             }
@@ -526,7 +532,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             localCommitRef.current = null;
             observedLocalCommitRef.current = false;
         }
-        restoreProjectReference(hydrated);
+        restoreProjectReference(authoritative);
     }, [deviceId, projectDeviceState]);
 
     useEffect(() => {
@@ -625,7 +631,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             next = {
                 a: {
                     patch: currentPatch,
-                    referencePatch: cloneFermenterPatch(currentPatch),
+                    referencePatch: cloneFermenterPatch(referencePatchRef.current),
                     presetId: currentPresetId,
                 },
                 b: { patch: loadedPatch, referencePatch: cloneFermenterPatch(loadedPatch), presetId },

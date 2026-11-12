@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { createPatchWriteHarness } from '../../../__tests__/patchWriteHarness';
 import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
@@ -8,7 +10,10 @@ import { loadFermenterPatchWithAudio } from '../loadFermenterPatchWithAudio';
 const harness = createPatchWriteHarness();
 describe('loadFermenterPatchWithAudio', () => {
     beforeEach(() => harness.setup());
-    afterEach(() => harness.teardown());
+    afterEach(() => {
+        harness.teardown();
+        vi.restoreAllMocks();
+    });
 
     it('updates the panel immediately and commits complete project truth and DSP ids on the next frame', async () => {
         const patch = { ...DEFAULT_PATCH, filterCutoff: 777 };
@@ -32,13 +37,15 @@ describe('loadFermenterPatchWithAudio', () => {
     });
 
     it('coalesces rapid successive loads into one committed engine flush carrying the latest patch', async () => {
+        const publish = vi.spyOn(trackStore, 'set');
         for (const filterCutoff of [1000, 5000, 9000]) {
             loadFermenterPatchWithAudio('d1', { ...DEFAULT_PATCH, filterCutoff });
         }
         expect(harness.updateDevicePatch).not.toHaveBeenCalled();
         await harness.frame();
         expect(harness.updateDevicePatch).toHaveBeenCalledOnce();
-        expect(harness.persistParam).toHaveBeenCalledOnce();
+        expect(publish).toHaveBeenCalledOnce();
+        expect(harness.persistParam).not.toHaveBeenCalled();
         expect(harness.patch().filterCutoff).toBe(9000);
         expect(harness.updateDevicePatch.mock.lastCall?.[2]).toHaveProperty('cutoff', 9000);
     });

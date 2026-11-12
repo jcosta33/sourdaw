@@ -183,6 +183,58 @@ describe('planDevicePatchWrite', () => {
         expect(plan([owner(n)], [parameter(1700, 2000)], 0).status).toBe('conflict');
     });
 
+    it('plans materialized track creation without minting a new default device identity', () => {
+        const result = plan(
+            [],
+            [
+                {
+                    kind: 'command',
+                    action: {
+                        type: 'addTrack',
+                        payload: { id: 'owner', kind: 'midi', name: 'Created owner', initialDeviceId: 'synth' },
+                    },
+                },
+            ],
+            1
+        );
+        expect(result).toMatchObject({
+            status: 'ready',
+            source: { kind: 'absent-track' },
+            prefix: { kind: 'device', deviceId: 'synth', deviceType: 'builtin-synth', deviceIds: ['synth'] },
+        });
+        expect(
+            plan(
+                [],
+                [
+                    {
+                        kind: 'command',
+                        action: { type: 'addTrack', payload: { id: 'owner', kind: 'midi' } },
+                    },
+                ],
+                1
+            ).status
+        ).toBe('unsupported');
+    });
+
+    it('plans an empty bus owner while keeping absent-device distinct from absent-track', () => {
+        expect(
+            plan(
+                [],
+                [
+                    {
+                        kind: 'command',
+                        action: { type: 'createBus', payload: { busId: 'owner', name: 'Bus' } },
+                    },
+                ],
+                1
+            )
+        ).toMatchObject({
+            status: 'ready',
+            source: { kind: 'absent-track' },
+            prefix: { kind: 'absent-device', deviceIds: [] },
+        });
+    });
+
     it('reuses the device catalog, reorder and opaque state projection rules without mutating inputs', () => {
         const plugin = getPluginById('fermenter');
         if (!plugin) {

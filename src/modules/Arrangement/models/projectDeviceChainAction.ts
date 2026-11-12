@@ -3,6 +3,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type PluginDescriptor } from './DeviceParameterTypes';
 import { clampDeviceParameterValue } from './DeviceParameterLaw';
 import { projectDeviceSnapshots } from './projectDeviceSnapshots';
+import { projectCapturedDevicePatch } from './projectCapturedDevicePatch';
 import { type Device } from './Track';
 
 const DEVICE_ACTIONS = new Set<AppAction['type']>([
@@ -13,6 +14,7 @@ const DEVICE_ACTIONS = new Set<AppAction['type']>([
     'restoreDevice',
     'setDeviceParameter',
     'setDeviceState',
+    'setFermenterPatch',
 ]);
 
 /** Shared owner projection of the existing device-chain command rules; never writes a store. */
@@ -29,6 +31,16 @@ export function projectDeviceChainAction(
         return null;
     }
     const devices = structuredClone(source);
+    if (action.type === 'setFermenterPatch') {
+        const index = devices.findIndex((device) => device.id === action.payload.deviceId);
+        const current = devices[index];
+        const next =
+            current && projectCapturedDevicePatch(current, action.payload.expectedProject, action.payload.afterProject);
+        if (next) {
+            devices[index] = next;
+        }
+        return devices;
+    }
     if (action.type === 'addDevice') {
         if (!action.payload.deviceId) {
             return devices;

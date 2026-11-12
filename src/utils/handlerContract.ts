@@ -38,6 +38,11 @@ export type DeviceStateChunkSnapshot = {
     readonly data: { readonly [key: string]: DeviceStateValueSnapshot };
 };
 
+export type DevicePatchStateSnapshot = {
+    deviceState: DeviceStateChunkSnapshot | null;
+    parameterValues: Record<string, number | null>;
+};
+
 export type DeviceSnapshot = {
     readonly id: string;
     readonly name: string;
@@ -2005,6 +2010,9 @@ export type AppAction =
               before: DeviceStateChunkSnapshot;
               after: DeviceStateChunkSnapshot;
               expectedCurrent: DeviceStateChunkSnapshot;
+              beforeProject: DevicePatchStateSnapshot;
+              afterProject: DevicePatchStateSnapshot;
+              expectedProject: DevicePatchStateSnapshot;
               expectedTrackId: string;
               expectedDeviceIds: readonly string[];
               expectedTrackFrozen: boolean;

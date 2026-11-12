@@ -10,6 +10,8 @@ import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type FermenterPatch } from '../models/FermenterPatch';
+import { type PreparedFermenterPatchWrite } from '../models/PreparedFermenterPatchWrite';
+import { captureFermenterPatchProjectState, projectFermenterPatchState } from '../models/FermenterPatchProjectState';
 import {
     cloneFermenterPatch,
     fermenterPatchesEqual,
@@ -39,7 +41,7 @@ function currentProjectPatch(deviceId: string): FermenterPatch | null {
 }
 
 /** Capture an edit before a frame or Command transaction can yield to another owner. */
-export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInput) {
+export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInput): PreparedFermenterPatchWrite | null {
     let target: DeviceWriteTargetResolution;
     if (input.continuous) {
         target = getFermenterDependencies().resolveEligibleDeviceWriteTarget(input.deviceId);
@@ -67,11 +69,23 @@ export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInpu
         return null;
     }
 
+    const admittedOwner = owner;
     const projectBefore = readFermenterPatchFromProjectDevice(device);
     const before = cloneFermenterPatch(
         input.continuous ? projectBefore : (fermenterStore.value?.[input.deviceId]?.patch ?? projectBefore)
     );
     const patch = cloneFermenterPatch(input.patch);
+    const clamp = (key: string, value: number): number =>
+        getFermenterDependencies().clampDeviceParameterValue({ deviceType: 'fermenter', paramId: key, value });
+    for (const [key, value] of Object.entries(patch)) {
+        if (typeof value === 'number') {
+            Object.assign(patch, { [key]: clamp(key, value) });
+        }
+    }
+    const expectedProject = captureFermenterPatchProjectState(device);
+    const beforeProject = fermenterPatchesEqual(before, projectBefore)
+        ? expectedProject
+        : projectFermenterPatchState(expectedProject, projectBefore, before, clamp);
     const olderCommit = fermenterPatchWriteOperations.get(input.deviceId);
     if (olderCommit) {
         olderCommit.superseded = true;
@@ -106,7 +120,7 @@ export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInpu
     }
 
     function reconcileRefusal(): void {
-        const currentOwner = trackStore.value?.tracks.find((track) => track.id === owner.id);
+        const currentOwner = trackStore.value?.tracks.find((track) => track.id === admittedOwner.id);
         const currentDevice = currentOwner?.devices.find((candidate) => candidate.id === input.deviceId);
         if (!pendingCommit.superseded && ownsProject() && currentOwner?.frozen !== true && currentDevice === device) {
             reconcileFermenterPatchFromProject(input.deviceId);
@@ -121,9 +135,12 @@ export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInpu
                 before: toFermenterDeviceState(before),
                 after: toFermenterDeviceState(patch),
                 expectedCurrent: toFermenterDeviceState(projectBefore),
-                expectedTrackId: owner.id,
-                expectedDeviceIds: owner.devices.map((candidate) => candidate.id),
-                expectedTrackFrozen: owner.frozen ?? false,
+                beforeProject,
+                afterProject: projectFermenterPatchState(expectedProject, projectBefore, patch, clamp),
+                expectedProject,
+                expectedTrackId: admittedOwner.id,
+                expectedDeviceIds: admittedOwner.devices.map((candidate) => candidate.id),
+                expectedTrackFrozen: admittedOwner.frozen ?? false,
                 label: input.label,
             },
         };

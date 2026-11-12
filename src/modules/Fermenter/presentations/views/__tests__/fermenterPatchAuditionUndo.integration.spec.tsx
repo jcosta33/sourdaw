@@ -20,14 +20,27 @@ import {
     createTrack,
     getArrangementHandlers,
     persistDevicePatch,
+    setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { leaveSession } from '#/modules/Collaboration/useCases';
-import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import {
+    clearHandlerRegistry,
+    macroStore,
+    registerHandlerMap,
+    undoHistoryStore,
+    undoStore,
+} from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeUserAppAction,
+    executeAppActionBatch,
+    getMacroHandlers,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
+    startMacroRecording,
+    stopMacroRecording,
     undo,
 } from '#/modules/Command/useCases';
 import { actionHistoryStore, agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
@@ -36,6 +49,7 @@ import {
     createCrdtDoc,
     exportSdawFile,
     getCrdtDoc,
+    mutateCrdtDoc,
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
     prepareExternalProjectDocument,
@@ -59,8 +73,11 @@ import {
     cloneFermenterPatch,
     fromFermenterDeviceState,
     toFermenterDeviceState,
+    readFermenterPatchFromProjectDevice,
 } from '../../../models/FermenterPatchState';
 import { fermenterStore, getFermenterState, loadFermenterPatch } from '../../../stores/fermenterStore';
+import { commitFermenterPatchFrame } from '../../../useCases/commitFermenterPatchFrame';
+import { prepareFermenterPatchWrite } from '../../../useCases/prepareFermenterPatchWrite';
 import { commitFermenterPatch } from '../../../useCases/commitFermenterPatch';
 import { loadFermenterPatchWithAudio } from '../../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio';
 import { setFermenterParamWithAudio } from '../../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
@@ -70,6 +87,7 @@ import { applyMorphedPatch } from '../../../useCases/presetMorph/applyMorphedPat
 import { setFermenterDependencies } from '../../../useCases/fermenterDependencies';
 import { FERMENTER_PRESETS } from '../../../useCases/fermenterQueries/helpers';
 import { getFermenterHandlers } from '../../../useCases/getFermenterHandlers';
+import { selectFermenterFilterChoice } from '../../../useCases/selectFermenterFilterChoice';
 import { FermenterPanel } from '../FermenterPanel';
 
 const audio = vi.hoisted(() => ({
@@ -80,6 +98,10 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     updateDeviceParam: audio.updateDeviceParam,
     updateDevicePatch: audio.updateDevicePatch,
+    initializeTrackStripFromSnapshot: () => ({ acceptance: 'accepted', application: 'applied' }),
+    mirrorDeviceChainDelta: async () => undefined,
+    removeTrackStrip: () => undefined,
+    rearmCommittedTrackInputMonitoring: async () => undefined,
 }));
 
 const DEVICE_ID = 'fermenter-audition';
@@ -191,6 +213,7 @@ describe('Fermenter whole-patch auditioning through Command', () => {
             notices.push(notice);
         });
         setNotificationEventBus(bus);
+        setArrangementEventBus({ emit: async () => undefined });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
         await activateProject();
         configureAutomergeStoragePort(null);
@@ -201,6 +224,7 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getFermenterHandlers());
+        registerHandlerMap(getMacroHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort({
@@ -292,6 +316,35 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         return edited;
     }
 
+    it('retains the pre-session edited patch and its Modified reference when returning to A', async () => {
+        const preset = resolveFermenterPresetPatch('fermenter-init', []);
+        if (!preset) {
+            throw new Error('Expected factory preset');
+        }
+        expect(await commit(preset)).toBe(true);
+        fermenterStore.set({});
+        renderPanel();
+        await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(preset));
+        const callbacks: FrameRequestCallback[] = [];
+        const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+            callbacks.push(callback);
+            return callbacks.length;
+        });
+        fireEvent.keyDown(screen.getByRole('slider', { name: 'Brightness', exact: true }), { key: 'ArrowUp' });
+        const edited = cloneFermenterPatch(getFermenterState(DEVICE_ID).patch);
+        expect(edited.macros[0]).not.toBe(preset.macros[0]);
+        act(() => callbacks[0]!(0));
+        await waitFor(() => expect(committedPatch()).toEqual(edited));
+        raf.mockRestore();
+        expect(screen.getByText('Modified')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Superloaf', exact: true }));
+        await waitFor(() => expect(getFermenterState(DEVICE_ID).patch.name).toContain('Superloaf'));
+        fireEvent.click(screen.getByRole('button', { name: 'Show patch A' }));
+        await waitFor(() => expect(committedPatch()).toEqual(edited));
+        expect(getFermenterState(DEVICE_ID).patch).toEqual(edited);
+        expect(screen.getByText('Modified')).toBeInTheDocument();
+    });
+
     it('restores project truth, panel state, runtime, and every nested patch field on undo and redo', async () => {
         const after = patchNamed('Auditioned', 1800);
         const transportBefore = transportStore.value;
@@ -326,6 +379,50 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         expect(depth()).toBe(1);
         expect(transportStore.value).toEqual(transportBefore);
         expect(committedPatch(OTHER_DEVICE_ID)).toEqual(otherPatch);
+    });
+
+    it('restores absent whole-patch state and filterModel leaves after the first patch Undo', async () => {
+        const track = projectedTrack();
+        replaceTrack({
+            ...track,
+            devices: track.devices.map((device) => {
+                if (device.id !== DEVICE_ID) {
+                    return device;
+                }
+                const { deviceState, ...deviceWithoutState } = device;
+                void deviceState;
+                return { ...deviceWithoutState, parameterValues: { filterCutoff: 600 } };
+            }),
+        });
+        flushAutomergeStorageWrites();
+        fermenterStore.set({});
+        const before = hydrateFermenterFromProject(DEVICE_ID);
+        if (!before) {
+            throw new Error('Expected the initial project patch');
+        }
+        expect(Object.hasOwn(rawDevice(), 'deviceState')).toBe(false);
+        expect(Object.hasOwn(rawDevice().parameterValues, 'filterModel')).toBe(false);
+
+        renderPanel();
+
+        const after = patchNamed('Changed Model', 1800);
+        after.filterModel = 2;
+        expect(await commit(after)).toBe(true);
+        await act(() => undo());
+
+        const raw = rawDevice();
+        expect({
+            hasDeviceState: Object.hasOwn(raw, 'deviceState'),
+            hasFilterModel: Object.hasOwn(raw.parameterValues, 'filterModel'),
+            patch: getFermenterState(DEVICE_ID).patch,
+            runtimeCutoff: audio.updateDevicePatch.mock.calls.at(-1)?.[2]?.cutoff,
+        }).toEqual({
+            hasDeviceState: false,
+            hasFilterModel: false,
+            patch: before,
+            runtimeCutoff: 600,
+        });
+        expect(screen.queryByText('Modified')).toBeNull();
     });
 
     it('suppresses identical whole-patch loads without touching runtime or history', async () => {
@@ -677,15 +774,16 @@ describe('Fermenter whole-patch auditioning through Command', () => {
             hold.change(() =>
                 replaceTrack({
                     ...projectedTrack(),
-                    devices: projectedTrack().devices.map((device) =>
-                        device.id === DEVICE_ID
-                            ? {
-                                  ...device,
-                                  deviceState: toFermenterDeviceState(successor),
-                                  parameterValues: { filterCutoff: 3300 },
-                              }
-                            : device
-                    ),
+                    devices: projectedTrack().devices.map((device) => {
+                        if (device.id !== DEVICE_ID) {
+                            return device;
+                        }
+                        return {
+                            ...device,
+                            deviceState: toFermenterDeviceState(successor),
+                            parameterValues: { filterCutoff: 3300 },
+                        };
+                    }),
                 })
             );
             await act(async () => {
@@ -696,6 +794,425 @@ describe('Fermenter whole-patch auditioning through Command', () => {
             expect(audio.updateDevicePatch).not.toHaveBeenCalled();
             expect(depth()).toBe(0);
             expect(hydrateFermenterFromProject(DEVICE_ID)).toEqual(successor);
+        }
+    );
+
+    it.each(['patch-first', 'parameter-first'] as const)(
+        'replays a recorded %s macro on one device and keeps its mixed group undoable and redoable',
+        async (order) => {
+            renderPanel();
+            await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(initialPatch));
+            const next = patchNamed('Recorded patch', 1800);
+            startMacroRecording();
+            const select = async (): Promise<void> => {
+                await act(() => selectFermenterFilterChoice(DEVICE_ID, 'filterModel', 2));
+            };
+            if (order === 'parameter-first') {
+                await select();
+            }
+            expect(await commit(next)).toBe(true);
+            if (order === 'patch-first') {
+                await select();
+            }
+            stopMacroRecording('Patch and parameter');
+            const macro = macroStore.value?.macros.at(-1);
+            if (!macro) {
+                throw new Error('Expected the recorded macro');
+            }
+            expect(macro.actions.map((action) => action.type)).toEqual(
+                order === 'patch-first'
+                    ? ['setFermenterPatch', 'setDeviceParameter']
+                    : ['setDeviceParameter', 'setFermenterPatch']
+            );
+            const expected = readFermenterPatchFromProjectDevice(rawDevice());
+            await act(() => undo());
+            await act(() => undo());
+            expect(readFermenterPatchFromProjectDevice(rawDevice())).toEqual(initialPatch);
+            expect(depth()).toBe(0);
+
+            await act(() => executeUserAppAction({ type: 'playMacro', payload: { macroId: macro.id } }));
+            expect(readFermenterPatchFromProjectDevice(rawDevice())).toEqual(expected);
+            const entries = undoHistoryStore.value?.past ?? [];
+            expect(entries).toHaveLength(2);
+            expect(entries[0]?.groupId).toBeTruthy();
+            expect(entries[1]?.groupId).toBe(entries[0]?.groupId);
+            await act(() => undo());
+            expect(readFermenterPatchFromProjectDevice(rawDevice())).toEqual(initialPatch);
+            expect(depth()).toBe(0);
+            await act(() => redo());
+            expect(readFermenterPatchFromProjectDevice(rawDevice())).toEqual(expected);
+            expect(getFermenterState(DEVICE_ID).patch).toEqual(expected);
+            expect(committedPatch(OTHER_DEVICE_ID)).toEqual(otherPatch);
+        }
+    );
+
+    it.each(['device', 'track'] as const)(
+        'restores a patch before its recorded %s removal and replays the complete group',
+        async (removed) => {
+            vi.spyOn(audioEngine, 'setTrackMute').mockImplementation(() => undefined);
+            vi.spyOn(audioEngine, 'setTrackGain').mockImplementation(() => undefined);
+            vi.spyOn(audioEngine, 'setTrackPan').mockImplementation(() => undefined);
+            vi.spyOn(audioEngine, 'setTrackSoloGate').mockImplementation(() => undefined);
+            const present = (): boolean => {
+                const doc = getCrdtDoc<{ tracks: { tracks: Track[] } }>('root');
+                return (
+                    doc?.tracks.tracks.some((track) => track.devices.some((device) => device.id === DEVICE_ID)) ?? false
+                );
+            };
+            startMacroRecording();
+            expect(await commit(patchNamed('Before removal', 1800))).toBe(true);
+            await act(() =>
+                executeUserAppAction(
+                    removed === 'device'
+                        ? { type: 'removeDevice', payload: { deviceId: DEVICE_ID } }
+                        : { type: 'removeTrack', payload: { trackId: TRACK_ID } }
+                )
+            );
+            expect(present()).toBe(false);
+            stopMacroRecording('Patch and removal');
+            const macro = macroStore.value?.macros.at(-1);
+            if (!macro) {
+                throw new Error('Expected the recorded removal macro');
+            }
+            expect(macro.actions.map((action) => action.type)).toEqual([
+                'setFermenterPatch',
+                removed === 'device' ? 'removeDevice' : 'removeTrack',
+            ]);
+            await act(() => undo());
+            await act(() => undo());
+            expect(committedPatch()).toEqual(initialPatch);
+            expect(depth()).toBe(0);
+            await act(() => executeUserAppAction({ type: 'playMacro', payload: { macroId: macro.id } }));
+            expect(present()).toBe(false);
+            const entries = undoHistoryStore.value?.past ?? [];
+            expect(entries).toHaveLength(2);
+            expect(entries[0]?.groupId).toBeTruthy();
+            expect(entries[1]?.groupId).toBe(entries[0]?.groupId);
+            await act(() => undo());
+            expect(committedPatch()).toEqual(initialPatch);
+            expect(depth()).toBe(0);
+            await act(() => redo());
+            expect(present()).toBe(false);
+            expect(depth()).toBe(2);
+            expect(notices).toEqual([]);
+        }
+    );
+
+    it('replays repeated whole-patch steps as one recorded group', async () => {
+        const first = patchNamed('First recorded patch', 1200);
+        const second = patchNamed('Second recorded patch', 1800);
+        startMacroRecording();
+        expect(await commit(first)).toBe(true);
+        expect(await commit(second)).toBe(true);
+        stopMacroRecording('Repeated patch');
+        const macro = macroStore.value?.macros.at(-1);
+        if (!macro) {
+            throw new Error('Expected the repeated-patch macro');
+        }
+        expect(macro.actions.map((action) => action.type)).toEqual(['setFermenterPatch', 'setFermenterPatch']);
+        await act(() => undo());
+        await act(() => undo());
+        expect(committedPatch()).toEqual(initialPatch);
+        await act(() => executeUserAppAction({ type: 'playMacro', payload: { macroId: macro.id } }));
+        expect(committedPatch()).toEqual(second);
+        await act(() => undo());
+        expect(committedPatch()).toEqual(initialPatch);
+        expect(depth()).toBe(0);
+        await act(() => redo());
+        expect(committedPatch()).toEqual(second);
+        expect(depth()).toBe(2);
+        expect(notices).toEqual([]);
+    });
+
+    it('refuses a rebased patch missing its intent while preserving unrelated peer fields', async () => {
+        const next = patchNamed('Staged audition', 1800);
+        const prepared = prepareFermenterPatchWrite({ deviceId: DEVICE_ID, patch: next, label: 'Peer rebase' });
+        if (!prepared) {
+            throw new Error('Expected a current patch owner');
+        }
+        const handler = getFermenterHandlers().setFermenterPatch;
+        const execute = handler.execute;
+        let executions = 0;
+        const intervention = Promise.withResolvers<void>();
+        vi.spyOn(handler, 'execute').mockImplementation((action, context) => {
+            const result = execute(action, context);
+            executions += 1;
+            queueMicrotask(() => {
+                try {
+                    mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
+                        id: 'root',
+                        changeFn: (doc) => {
+                            const owner = doc.tracks.tracks[0];
+                            const device = owner?.devices[0];
+                            if (!owner || !device) {
+                                throw new Error('Expected the peer-owned unlisted fields');
+                            }
+                            owner.gain = 0.21;
+                            device.name = 'Peer alias';
+                            device.parameterValues.unlisted = 11;
+                        },
+                    });
+                    trackStore.hydrate();
+                    intervention.resolve();
+                } catch (error) {
+                    intervention.reject(error);
+                }
+            });
+            return result;
+        });
+        await act(async () => {
+            const result = await executeAppActionBatch([prepared.action()], {
+                skipUndo: true,
+                skipMacroRecording: true,
+            });
+            expect(result.status).toBe('conflicted');
+            if (result.status === 'conflicted') {
+                expect(result.reason).toContain('Device patch did not reach its owned written intent');
+            }
+        });
+        prepared.release();
+        await intervention.promise;
+        expect(executions).toBe(1);
+        expect(committedPatch()).toEqual(initialPatch);
+        expect(projectedTrack().devices[0]).toEqual(rawDevice());
+        expect(rawDevice().name).toBe('Peer alias');
+        expect(rawDevice().parameterValues.unlisted).toBe(11);
+        expect(projectedTrack().gain).toBe(0.21);
+        expect(committedPatch(OTHER_DEVICE_ID)).toEqual(otherPatch);
+        expect(depth()).toBe(0);
+    });
+
+    it('releases owned publication observation when the staged projection throws', async () => {
+        const subscribe = trackStore.subscribe;
+        const releases: Array<ReturnType<typeof vi.fn<() => void>>> = [];
+        vi.spyOn(trackStore, 'subscribe').mockImplementation((listener) => {
+            const release = vi.fn(subscribe(listener));
+            releases.push(release);
+            return release;
+        });
+        const set = trackStore.set;
+        let failed = false;
+        vi.spyOn(trackStore, 'set').mockImplementation((state) => {
+            if (!failed) {
+                failed = true;
+                throw new Error('Owned projection publication failed');
+            }
+            set(state);
+        });
+        expect(await commit(patchNamed('Refused staged write', 1800))).toBe(false);
+        expect(failed).toBe(true);
+        expect(releases).toHaveLength(1);
+        expect(releases[0]).toHaveBeenCalledOnce();
+        expect(committedPatch()).toEqual(initialPatch);
+        expect(depth()).toBe(0);
+        expect(audio.updateDevicePatch).toHaveBeenCalledOnce();
+        expect(audio.updateDevicePatch).toHaveBeenCalledWith(
+            TRACK_ID,
+            DEVICE_ID,
+            expect.objectContaining({ cutoff: 600 })
+        );
+    });
+
+    it.each(['commit', 'undo', 'redo'] as const)(
+        'refuses %s when raw presence changes after beforeCommit and beforeMutation',
+        async (route) => {
+            const next = patchNamed('Published audition', 1800);
+            if (route !== 'commit') {
+                expect(await commit(next)).toBe(true);
+            }
+            if (route === 'redo') {
+                await act(() => undo());
+            }
+            const beforeDepth = depth();
+            const beforeFuture = undoHistoryStore.value?.future.length;
+            audio.updateDevicePatch.mockClear();
+            const handler = getFermenterHandlers().setFermenterPatch;
+            const execute = handler.execute;
+            let injected = false;
+            vi.spyOn(handler, 'execute').mockImplementation((action, context) => {
+                const result = execute(action, context);
+                if (!result || !('commitValidation' in result) || !result.commitValidation) {
+                    return result;
+                }
+                const validation = result.commitValidation;
+                return {
+                    ...result,
+                    commitValidation: {
+                        ...validation,
+                        beforeCommit: () => {
+                            const failure = validation.beforeCommit();
+                            expect(failure).toBeNull();
+                            if (!injected) {
+                                injected = true;
+                                mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
+                                    id: 'root',
+                                    changeFn: (doc) => {
+                                        const target = doc.tracks.tracks[0]?.devices[0];
+                                        if (!target) {
+                                            throw new Error('Expected the raw source before mutation');
+                                        }
+                                        target.parameterValues.filterModel = 0;
+                                    },
+                                });
+                                trackStore.hydrate();
+                            }
+                            return failure;
+                        },
+                    },
+                };
+            });
+            if (route === 'commit') {
+                expect(await commit(next)).toBe(false);
+            } else if (route === 'undo') {
+                await act(() => undo());
+            } else {
+                await act(() => redo());
+            }
+            expect(injected).toBe(true);
+            expect(readFermenterPatchFromProjectDevice(rawDevice())).toEqual(route === 'undo' ? next : initialPatch);
+            expect(Object.hasOwn(rawDevice().parameterValues, 'filterModel')).toBe(true);
+            expect(projectedTrack().devices[0]).toEqual(rawDevice());
+            expect(depth()).toBe(beforeDepth);
+            expect(undoHistoryStore.value?.future).toHaveLength(beforeFuture ?? 0);
+            expect(audio.updateDevicePatch).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each([
+        { route: 'frame', peer: false },
+        { route: 'frame', peer: true },
+        { route: 'batch', peer: false },
+        { route: 'batch', peer: true },
+    ])('publishes an entire two-device $route or refuses it with peer intervention=$peer', async ({ route, peer }) => {
+        const first = patchNamed('Frame A', 1800);
+        const second = patchNamed('Frame B', 2800);
+        const foreign = patchNamed('Peer B', 3400);
+        const [firstWrite, secondWrite] = [
+            prepareFermenterPatchWrite({ deviceId: DEVICE_ID, patch: first, label: 'Frame A', continuous: true }),
+            prepareFermenterPatchWrite({
+                deviceId: OTHER_DEVICE_ID,
+                patch: second,
+                label: 'Frame B',
+                continuous: true,
+            }),
+        ];
+        if (!firstWrite || !secondWrite) {
+            throw new Error('Expected both current frame owners');
+        }
+        const handler = getFermenterHandlers().setFermenterPatch;
+        const execute = handler.execute;
+        let executions = 0;
+        const intervention = Promise.withResolvers<void>();
+        vi.spyOn(handler, 'execute').mockImplementation((action, context) => {
+            const result = execute(action, context);
+            executions += 1;
+            if (peer && executions === 2) {
+                queueMicrotask(() => {
+                    try {
+                        mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
+                            id: 'root',
+                            changeFn: (doc) => {
+                                const target = doc.tracks.tracks[0]?.devices[1];
+                                if (!target) {
+                                    throw new Error('Expected the second raw frame owner');
+                                }
+                                target.deviceState = toFermenterDeviceState(foreign);
+                                target.parameterValues.filterCutoff = foreign.filterCutoff;
+                            },
+                        });
+                        trackStore.hydrate();
+                        intervention.resolve();
+                    } catch (error) {
+                        intervention.reject(error);
+                    }
+                });
+            }
+            return result;
+        });
+        if (route === 'frame') {
+            await act(() => commitFermenterPatchFrame([firstWrite, secondWrite]));
+        } else {
+            await act(async () => {
+                const result = await executeAppActionBatch([firstWrite.action(), secondWrite.action()], {
+                    skipUndo: true,
+                    skipMacroRecording: true,
+                });
+                expect(result.status).toBe(peer ? 'conflicted' : 'committed');
+                if (result.status === 'conflicted') {
+                    expect(result.reason).toContain('Device patch source changed before publication');
+                }
+            });
+            firstWrite.release();
+            secondWrite.release();
+        }
+        if (peer) {
+            await intervention.promise;
+        }
+        expect(executions).toBe(2);
+        expect(committedPatch()).toEqual(peer ? initialPatch : first);
+        expect(committedPatch(OTHER_DEVICE_ID)).toEqual(peer ? foreign : second);
+        expect(projectedTrack().devices).toEqual([rawDevice(), rawDevice(OTHER_DEVICE_ID)]);
+        expect(depth()).toBe(0);
+        if (peer) {
+            expect(audio.updateDevicePatch).not.toHaveBeenCalled();
+            expect(notices).toEqual([]);
+        } else {
+            expect(audio.updateDevicePatch).toHaveBeenCalledTimes(2);
+            expect(notices).toEqual([]);
+        }
+    });
+
+    it.each(['patch', 'presence', 'incarnation'] as const)(
+        'refuses a post-staging peer %s without publishing or compensating over its raw truth',
+        async (change) => {
+            const handler = getFermenterHandlers().setFermenterPatch;
+            const execute = handler.execute;
+            const baseline = structuredClone(projectedTrack().devices[0]);
+            const peer = patchNamed('Peer patch', 3100);
+            const intervention = Promise.withResolvers<void>();
+            let injected = false;
+            vi.spyOn(handler, 'execute').mockImplementation((action, context) => {
+                const result = execute(action, context);
+                if (!injected) {
+                    injected = true;
+                    queueMicrotask(() => {
+                        try {
+                            mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
+                                id: 'root',
+                                changeFn: (doc) => {
+                                    const owner = doc.tracks.tracks.find((track) => track.id === TRACK_ID);
+                                    const index = owner?.devices.findIndex((device) => device.id === DEVICE_ID) ?? -1;
+                                    const target = owner?.devices[index];
+                                    if (!owner || !target || !baseline) {
+                                        throw new Error('Expected the peer-owned Fermenter source');
+                                    }
+                                    if (change === 'patch') {
+                                        target.deviceState = toFermenterDeviceState(peer);
+                                        target.parameterValues.filterCutoff = 3100;
+                                    } else if (change === 'presence') {
+                                        target.parameterValues.filterModel = 0;
+                                    } else {
+                                        owner.devices[index] = baseline;
+                                    }
+                                },
+                            });
+                            trackStore.hydrate();
+                            intervention.resolve();
+                        } catch (error) {
+                            intervention.reject(error);
+                        }
+                    });
+                }
+                return result;
+            });
+            const committed = await commit(patchNamed('Refused audition', 1800));
+            await intervention.promise;
+            expect(committed).toBe(false);
+            expect(committedPatch()).toEqual(change === 'patch' ? peer : initialPatch);
+            expect(projectedTrack().devices[0]).toEqual(rawDevice());
+            expect(Object.hasOwn(rawDevice().parameterValues, 'filterModel')).toBe(change === 'presence');
+            expect(depth()).toBe(0);
+            expect(audio.updateDevicePatch).not.toHaveBeenCalled();
         }
     );
 

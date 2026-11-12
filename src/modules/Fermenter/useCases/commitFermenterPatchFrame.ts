@@ -1,12 +1,10 @@
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { type prepareFermenterPatchWrite } from './prepareFermenterPatchWrite';
-
-type PreparedWrite = NonNullable<ReturnType<typeof prepareFermenterPatchWrite>>;
+import { type FermenterPatchFrameWrite } from '../models/PreparedFermenterPatchWrite';
 
 /** One atomic frame keeps independent devices from invalidating each other's revision fence. */
-export async function commitFermenterPatchFrame(writes: readonly PreparedWrite[]): Promise<void> {
+export async function commitFermenterPatchFrame(writes: readonly FermenterPatchFrameWrite[]): Promise<void> {
     const current = (): boolean => writes.every((write) => write.isCurrent());
     try {
         if (!current()) {

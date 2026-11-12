@@ -116,6 +116,13 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    the thing observed, not from what the code currently produces.
    (#4491, #4393, #5239, #5437, #5723, #5243, #5323, #5495, #5578)
 
+    #1857's batch prefix projector (`064fb88392`, historical review stance unknown) retained -100 where the real
+    cutoff writer clamped to 20 Hz. Compare a literal descriptor boundary and the real writer to the planned
+    prefix; deriving both expected and actual from the same projector hides the divergence. The owner case in
+    `projectTrackThroughPriorBatchActions.spec.ts` must fail if its shared scalar clamp is removed. Mixed recorded
+    macro tests read `undoHistoryStore`, the full public history contract: the label-only `undoStore` cannot
+    witness grouping, captured inverses or replay authority.
+
 5. **A pin cannot fail on its own.**
    Probe: mutate the input each added assertion reads, neighbours as shipped, and require it to fail
    alone; run it alone and after its preceding cases, since cached registration can mask a guard.

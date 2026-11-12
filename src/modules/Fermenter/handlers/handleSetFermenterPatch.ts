@@ -1,110 +1,158 @@
-import { trackStore } from '#/modules/Arrangement/stores';
-import { setDeviceState } from '#/modules/Arrangement/useCases';
-import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
-
 import {
-    fermenterPatchesEqual,
-    fromFermenterDeviceState,
-    readFermenterPatchFromProjectDevice,
-    toFermenterDeviceState,
-} from '../models/FermenterPatchState';
-import { getFermenterDependencies } from '../useCases/getFermenterDependencies';
+    applyDevicePatchState,
+    captureDevicePatchCommitValidation,
+    getPlannedDevicePatchState,
+} from '#/modules/Arrangement/useCases';
+import { createHandler } from '#/utils/createHandler';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+
+import { fermenterPatchesEqual, fromFermenterDeviceState } from '../models/FermenterPatchState';
+import {
+    fermenterPatchProjectStatesEqual,
+    fermenterProjectStateMatchesPatch,
+    readFermenterPatchProjectState,
+} from '../models/FermenterPatchProjectState';
 import { reconcileFermenterPatchFromProject } from '../useCases/reconcileFermenterPatchFromProject';
 
 type PatchAction = Extract<AppAction, { type: 'setFermenterPatch' }>;
+type Admission = NonNullable<ReturnType<typeof captureDevicePatchCommitValidation>>;
+const admissions = new WeakMap<PatchAction, Admission>();
 
-function currentTarget(action: PatchAction) {
-    const owners = (trackStore.value?.tracks ?? []).filter((track) =>
-        track.devices.some((device) => device.id === action.payload.deviceId)
-    );
-    const owner = owners.length === 1 ? owners[0] : undefined;
-    const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
-    return { owner, device };
+function target(action: PatchAction, context?: HandlerValidationContext) {
+    return getPlannedDevicePatchState({
+        deviceId: action.payload.deviceId,
+        trackId: action.payload.expectedTrackId,
+        parameterIds: Object.keys(action.payload.expectedProject.parameterValues),
+        context,
+    });
 }
 
-function guardsMatch(action: PatchAction): boolean {
-    const { owner, device } = currentTarget(action);
-    if (!owner || !device || device.type !== 'fermenter' || owner.frozen === true) {
-        return false;
-    }
-    const currentDeviceIds = owner.devices.map((candidate) => candidate.id);
-    if (
-        owner.id !== action.payload.expectedTrackId ||
-        owner.frozen !== action.payload.expectedTrackFrozen ||
-        action.payload.expectedDeviceIds.length !== currentDeviceIds.length ||
-        action.payload.expectedDeviceIds.some((deviceId, index) => currentDeviceIds[index] !== deviceId)
-    ) {
-        return false;
-    }
-    const expectedCurrent = fromFermenterDeviceState(action.payload.expectedCurrent);
+function validCaptures(action: PatchAction): boolean {
+    const before = fromFermenterDeviceState(action.payload.before);
+    const after = fromFermenterDeviceState(action.payload.after);
+    const expected = fromFermenterDeviceState(action.payload.expectedCurrent);
     return (
-        expectedCurrent !== null && fermenterPatchesEqual(readFermenterPatchFromProjectDevice(device), expectedCurrent)
+        before !== null &&
+        after !== null &&
+        expected !== null &&
+        fermenterProjectStateMatchesPatch(action.payload.beforeProject, before) &&
+        fermenterProjectStateMatchesPatch(action.payload.afterProject, after) &&
+        fermenterProjectStateMatchesPatch(action.payload.expectedProject, expected)
     );
+}
+
+function guardsMatch(action: PatchAction, context?: HandlerValidationContext): boolean {
+    const current = target(action, context);
+    const expected = fromFermenterDeviceState(action.payload.expectedCurrent);
+    return (
+        current !== null &&
+        current.deviceType === 'fermenter' &&
+        !current.frozen &&
+        expected !== null &&
+        current.trackId === action.payload.expectedTrackId &&
+        current.frozen === action.payload.expectedTrackFrozen &&
+        current.deviceIds.length === action.payload.expectedDeviceIds.length &&
+        current.deviceIds.every((id, index) => action.payload.expectedDeviceIds[index] === id) &&
+        fermenterPatchProjectStatesEqual(current.state, action.payload.expectedProject) &&
+        fermenterPatchesEqual(readFermenterPatchProjectState(current.state), expected)
+    );
+}
+
+function admit(action: PatchAction, context?: HandlerValidationContext): boolean {
+    admissions.delete(action);
+    if (context?.executionMode === 'isolated-preview') {
+        return true;
+    }
+    const source = captureDevicePatchCommitValidation({
+        trackId: action.payload.expectedTrackId,
+        deviceId: action.payload.deviceId,
+        parameterIds: Object.keys(action.payload.expectedProject.parameterValues),
+    });
+    if (!source) {
+        return false;
+    }
+    admissions.set(action, source);
+    return true;
 }
 
 export const handleSetFermenterPatch = createHandler<'setFermenterPatch'>({
-    validate: (action) =>
-        fromFermenterDeviceState(action.payload.before) !== null &&
-        fromFermenterDeviceState(action.payload.after) !== null &&
-        guardsMatch(action),
-    execute: (action) => {
-        const before = fromFermenterDeviceState(action.payload.before);
-        const after = fromFermenterDeviceState(action.payload.after);
-        if (!before || !after || !guardsMatch(action)) {
+    validate: (action, context) => validCaptures(action) && guardsMatch(action, context) && admit(action, context),
+    execute: (action, context) => {
+        const admission = admissions.get(action);
+        admissions.delete(action);
+        if (!validCaptures(action) || !guardsMatch(action)) {
             return { status: 'conflict' };
         }
-        const { device } = currentTarget(action);
-        if (!device) {
+        const preview = context?.executionMode === 'isolated-preview';
+        const proof = preview ? null : admission?.start();
+        if (!preview && !proof) {
             return { status: 'conflict' };
         }
-        const previousValues = new Map(Object.entries(readFermenterPatchFromProjectDevice(device)));
-        if (!setDeviceState({ deviceId: action.payload.deviceId, state: toFermenterDeviceState(after) })) {
-            return { status: 'no-write' };
+        let validationTransferred = false;
+        try {
+            if (
+                !applyDevicePatchState({
+                    deviceId: action.payload.deviceId,
+                    expected: action.payload.expectedProject,
+                    next: action.payload.afterProject,
+                })
+            ) {
+                return { status: 'conflict' };
+            }
+            if (proof && !proof.captureWrittenState(action.payload.afterProject)) {
+                return { status: 'conflict' };
+            }
+            const reconcile = (): void => reconcileFermenterPatchFromProject(action.payload.deviceId);
+            validationTransferred = true;
+            return {
+                status: 'written',
+                commitValidation: proof?.validation,
+                afterCommit: reconcile,
+                afterAmbiguousCommit: reconcile,
+            };
+        } finally {
+            // Command owns cleanup only after a successful handler return carries the proof.
+            if (!validationTransferred) {
+                proof?.validation.release();
+            }
         }
-        // Scalar edits retain unrelated absent leaves. Existing mirrors still
-        // follow the full snapshot, so hydration cannot overlay an older value.
-        for (const [key, value] of Object.entries(after)) {
-            if (typeof value !== 'number') {
-                continue;
-            }
-            let changed: boolean;
-            if (Object.hasOwn(device.parameterValues, key)) {
-                changed = device.parameterValues[key] !== value;
-            } else {
-                changed = previousValues.get(key) !== value;
-            }
-            if (changed) {
-                getFermenterDependencies().persistDeviceParam(action.payload.deviceId, key, value);
-            }
-        }
-        const reconcile = (): void => reconcileFermenterPatchFromProject(action.payload.deviceId);
-        return { status: 'written', afterCommit: reconcile, afterAmbiguousCommit: reconcile };
     },
-    describe: (action) => ({
-        label: action.payload.label,
-        inverseAction: {
-            type: 'setFermenterPatch',
-            payload: {
-                ...action.payload,
-                before: action.payload.after,
-                after: action.payload.before,
-                expectedCurrent: action.payload.after,
+    describe: (action, context) => {
+        admit(action, context);
+        return {
+            label: action.payload.label,
+            inverseAction: {
+                type: 'setFermenterPatch',
+                payload: {
+                    ...action.payload,
+                    before: action.payload.after,
+                    after: action.payload.before,
+                    expectedCurrent: action.payload.after,
+                    beforeProject: action.payload.afterProject,
+                    afterProject: action.payload.beforeProject,
+                    expectedProject: action.payload.afterProject,
+                },
             },
-        },
-        redoAction: {
-            ...action,
-            payload: { ...action.payload, expectedCurrent: action.payload.before },
-        },
-    }),
+            redoAction: {
+                ...action,
+                payload: {
+                    ...action.payload,
+                    expectedCurrent: action.payload.before,
+                    expectedProject: action.payload.beforeProject,
+                },
+            },
+        };
+    },
     isNoop: (action) => {
-        const after = fromFermenterDeviceState(action.payload.after);
-        const { device } = currentTarget(action);
+        const current = target(action);
         return (
-            after !== null &&
-            device?.type === 'fermenter' &&
-            fermenterPatchesEqual(readFermenterPatchFromProjectDevice(device), after)
+            current !== null &&
+            validCaptures(action) &&
+            fermenterPatchProjectStatesEqual(current.state, action.payload.afterProject)
         );
     },
+    previewExecution: 'isolated-project',
+    requiresAbortCompensation: false,
+    canReportConflict: true,
     undoable: true,
 });

@@ -11,7 +11,7 @@ import {
 import { projectCapturedDevicePatch } from './projectCapturedDevicePatch';
 import { projectDeviceChainAction } from './projectDeviceChainAction';
 import { projectDeviceSnapshots } from './projectDeviceSnapshots';
-import { type Device } from './Track';
+import { type Device, createTrack } from './Track';
 
 type Owner = { id: string; frozen?: boolean; devices: Device[] };
 type PlanInput = {
@@ -173,11 +173,39 @@ export function planDevicePatchWrite(input: PlanInput): PlannedDeviceWrite {
                 reason: 'The opaque track snapshot needs an owning planned-source adapter',
             };
         }
-        if (
-            (action.type === 'addTrack' && action.payload.id === input.trackId) ||
-            (action.type === 'createBus' && action.payload.busId === input.trackId)
-        ) {
-            return { status: 'unsupported', reason: 'New track creation needs its owning planned source' };
+        if (action.type === 'addTrack' || action.type === 'createBus') {
+            const id = action.type === 'addTrack' ? action.payload.id : action.payload.busId;
+            if (!id || owners.some((owner) => owner.id === id)) {
+                return { status: 'conflict', reason: 'Planned track identity is unavailable' };
+            }
+            if (
+                action.type === 'addTrack' &&
+                action.payload.kind === 'midi' &&
+                !action.payload.withoutDefaultDevice &&
+                !action.payload.initialDeviceId
+            ) {
+                return { status: 'unsupported', reason: 'Track creation lacks its materialized device identity' };
+            }
+            const track =
+                action.type === 'addTrack'
+                    ? createTrack({
+                          id,
+                          kind: action.payload.kind,
+                          name: action.payload.name ?? id,
+                          color: '#000000',
+                          initialAlternativeId: `planned-${id}`,
+                          initialDeviceId: action.payload.initialDeviceId,
+                          withoutDefaultDevice: action.payload.withoutDefaultDevice,
+                      })
+                    : createTrack({
+                          id,
+                          kind: 'bus',
+                          name: action.payload.name,
+                          color: '#000000',
+                          initialAlternativeId: `planned-${id}`,
+                      });
+            owners.push({ id, frozen: track.frozen, devices: track.devices });
+            continue;
         }
         if (action.type === 'setDeviceParameter' && !parameterSourceMatches(owners, action)) {
             return { status: 'conflict', reason: 'Planned parameter source changed' };

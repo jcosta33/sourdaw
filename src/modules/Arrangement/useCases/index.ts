@@ -343,6 +343,9 @@ export { getMixRecipeCatalog } from './getMixRecipeCatalog';
 
 export { getArrangementHandlers } from './getArrangementHandlers';
 export { setDeviceState } from './device/setDeviceState';
+export { applyDevicePatchState } from './device/applyDevicePatchState';
+export { getPlannedDevicePatchState } from './device/getPlannedDevicePatchState';
+export { captureDevicePatchCommitValidation } from './device/captureDevicePatchCommitValidation';
 export { getSongStructureHandlers } from './getSongStructureHandlers';
 export { initStalenessDetection } from './freezeBounce/initStalenessDetection';
 export { isImportedStemSetApplied } from './stemImport/isImportedStemSetApplied';

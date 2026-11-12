@@ -1,16 +1,15 @@
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import { type FermenterPatch } from '../../models/FermenterPatch';
+import { type QueuedFermenterPatchWrite } from '../../models/PreparedFermenterPatchWrite';
 import { commitFermenterPatchFrame } from '../commitFermenterPatchFrame';
-import { type prepareFermenterPatchWrite } from '../prepareFermenterPatchWrite';
 
-type PreparedWrite = NonNullable<ReturnType<typeof prepareFermenterPatchWrite>>;
-const pending = new Map<string, PreparedWrite>();
+const pending = new Map<string, QueuedFermenterPatchWrite>();
 const frames = createRafBatcher<null>();
 const FRAME_KEY = 'patch-writes';
 
 export const fermenterPatchBatcher = {
-    schedule(deviceId: string, write: PreparedWrite): void {
+    schedule(deviceId: string, write: QueuedFermenterPatchWrite): void {
         pending.set(deviceId, write);
         frames.schedule(FRAME_KEY, null, () => {
             const writes = [...pending.values()];

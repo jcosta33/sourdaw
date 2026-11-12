@@ -79,6 +79,11 @@ Split out (a stance matching one carries that file, not this one): replay agains
    edit. For coordinate captures hydrate both history directions (`moving-coordinate-inverses.md` probes 4 and 5)
    and inject a pre-commit storage failure: document, projections, both captures, history, tree and mirror
    unchanged. A retained handle refuses once clip geometry changed.
+   For grouped device writes, raw admission, the planned prefix and the executed midpoint are different states.
+   #1857 (`064fb88392`, historical review stance unknown) projected an unclamped value while its real writer
+   clamped it. Require shared scalar law and precise leaf absence through mixed patch/parameter group Undo/Redo,
+   including restoration before a patch and terminal owner removal. Authenticate raw incarnation/presence again
+   before mutation and the prospective owned intent; an early projected guard alone cannot protect publication.
 6. **Identity namespaces are declared, scoped by path, and fail closed across reload and replay (#5157, #4036,
    #1857, #5570).** Failure: the ID walk marks a valid project repair-required (blocking Save, Undo), copied
    subtrees collide, or a replayed entry remints IDs. Probe: load each shipped demo and template, save, reload:
