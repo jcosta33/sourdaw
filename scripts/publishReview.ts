@@ -14,7 +14,6 @@ import {
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
-import { unsafeCredentialReason } from './evidenceSafety.ts';
 import { composeReviewCommentBody, fail, PR_STATE } from './prContract.ts';
 import { reviewBundlePath, type ReviewBundleContext } from './prepareReview.ts';
 import {
@@ -44,6 +43,7 @@ import {
     publicationApprovalContext,
     readLiveApprovalContext,
     readLiveReviewComparison,
+    readPublicationPullRequest,
     type LiveReviewComparison,
 } from './reviewApprovalContext.ts';
 import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
@@ -74,6 +74,7 @@ import {
     type PublishedReviewComment,
     type RemotePublishedReview,
 } from './reviewPublicationRemoteInspection.ts';
+import { assertPublicReviewTextSafe } from './reviewStructuralAdmission.ts';
 
 export type { PublishedReviewComment } from './reviewPublicationRemoteInspection.ts';
 
@@ -276,20 +277,6 @@ function prepareReviewPublication(
     };
 }
 
-/** The public review body and every inline comment body leave the machine; none may carry a credential. */
-function assertPublicReviewTextSafe(document: ReviewDocument): void {
-    const bodyReason = unsafeCredentialReason(renderReviewDocumentBody(document));
-    if (bodyReason !== undefined) {
-        fail(`review body contains ${bodyReason}; refusing to publish it`);
-    }
-    for (const [index, comment] of document.comments.entries()) {
-        const commentReason = unsafeCredentialReason(composeReviewCommentBody(comment));
-        if (commentReason !== undefined) {
-            fail(`review comment[${index}] body contains ${commentReason}; refusing to publish it`);
-        }
-    }
-}
-
 function publishPreparedReviewForActor(
     actorNodeId: string,
     number: number,
@@ -445,54 +432,7 @@ export function shellPort(
     const gh = (args: string[], input?: string) => capture('gh', args, { cwd: primaryRoot, env: session.env, input });
     return {
         primaryRoot: () => primaryRoot,
-        pullRequest: (number) => {
-            const pullRequest = parseJson<{
-                state?: unknown;
-                headRefOid?: unknown;
-                labels?: unknown;
-                createdAt?: unknown;
-            }>(
-                gh([
-                    'pr',
-                    'view',
-                    String(number),
-                    '--repo',
-                    REQUIRED_REPOSITORY,
-                    '--json',
-                    'state,headRefOid,labels,createdAt',
-                ]),
-                'review publication pull request'
-            );
-            if (typeof pullRequest.state !== 'string' || typeof pullRequest.headRefOid !== 'string') {
-                fail('review publication pull request is unreadable');
-            }
-            // `gh pr view --json labels` answers [{name, description}]; the diversity check
-            // identifies the authorship label by its `Authored by ` description fence, so both
-            // fields travel together. Absent labels mean not-comparable, never fatal.
-            const labels = Array.isArray(pullRequest.labels)
-                ? pullRequest.labels.flatMap((label): AuthorshipLabel[] => {
-                      if (typeof label !== 'object' || label === null) {
-                          return [];
-                      }
-                      const name = (label as Record<string, unknown>).name;
-                      if (typeof name !== 'string') {
-                          return [];
-                      }
-                      const description = (label as Record<string, unknown>).description;
-                      const entry: AuthorshipLabel = { name };
-                      if (typeof description === 'string') {
-                          entry.description = description;
-                      }
-                      return [entry];
-                  })
-                : undefined;
-            return {
-                state: pullRequest.state,
-                head: pullRequest.headRefOid,
-                labels,
-                ...(typeof pullRequest.createdAt === 'string' ? { createdAt: pullRequest.createdAt } : {}),
-            };
-        },
+        pullRequest: (number) => readPublicationPullRequest(number, gh),
         reviewState: (number, head) => readPullRequestReviewState(number, head, REQUIRED_REPOSITORY, gh),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
         bundleFileExists: (path) => existsSync(path),

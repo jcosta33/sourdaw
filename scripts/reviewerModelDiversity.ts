@@ -59,13 +59,16 @@ export function assertReviewerModelDiversity(input: {
                 'e.g. "gpt-6-luna"); the reviewer-diversity rule cannot be checked without it'
         );
     }
+    assertLaneModelSpelling(reviewerModel, 'review.json reviewerModel');
     for (const [index, draw] of (input.document.draws ?? []).entries()) {
-        assertReviewModelEligible(draw.reviewerModel, `review.json draws[${index}].reviewerModel`, draw.tier);
+        const label = `review.json draws[${index}].reviewerModel`;
+        assertReviewModelEligible(draw.reviewerModel, label, draw.tier);
+        assertLaneModelSpelling(draw.reviewerModel, label);
     }
-    const authorModels = input.authorLabels
-        .map(authorModelFromLabel)
-        .filter((model): model is string => model !== undefined)
-        .map(modelToken);
+    const authorModels = input.authorLabels.flatMap((label) => {
+        const model = authorModelFromLabel(label);
+        return model === undefined ? [] : [modelToken(model)];
+    });
     // Every fenced label names a model some lane publish declared as the author. A republish
     // reconciles the fence: the publisher's metadata edit removes every superseded authorship
     // label (#4296), so the set the pull request wears names the model its latest publish
@@ -76,6 +79,25 @@ export function assertReviewerModelDiversity(input: {
         if (authorModels.includes(model)) {
             assertSameModelDisclosed(input.document, model, authorModels);
         }
+    }
+}
+
+/**
+ * The lane `--model` grammar, copied from `AUTHOR_MODEL_PATTERN` in `scripts/openLane.ts`: importing
+ * the lane opener would pull its git and filesystem graph into the review closure.
+ */
+const LANE_MODEL_PATTERN = /^[a-z0-9][a-z0-9.+-]{0,39}$/u;
+
+/**
+ * A reviewer model outside the lane grammar after normalisation cannot be compared with an authoring
+ * label: an invisible or separator character would make the author's own model read as another.
+ */
+function assertLaneModelSpelling(model: string, label: string): void {
+    if (!LANE_MODEL_PATTERN.test(modelToken(model))) {
+        fail(
+            `${label} is not a lane model name: after NFKC, trim and lowercase it must match ` +
+                `${LANE_MODEL_PATTERN.source} (no spaces, invisible or combining characters)`
+        );
     }
 }
 

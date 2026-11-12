@@ -46,7 +46,7 @@ const UNSAFE_VALUE_SHAPES: readonly { readonly reason: string; readonly pattern:
 ];
 
 const BASIC_SCHEME_TOKEN_PATTERN = /\bbasic\s+([A-Za-z0-9+/]{4,}={0,2})(?![A-Za-z0-9+/=])/giu;
-const INVISIBLE_CHARACTER_PATTERN = /[\p{Cc}\p{Cf}]/u;
+const INVISIBLE_CHARACTER_PATTERN = /[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
 
 /**
  * A bare `basic <token>` is prose unless the token is the base64 of a printable `user:password`
@@ -73,7 +73,8 @@ function assertSafeEvidenceValue(label: string, index: number, value: string): v
     if (/[\r\n\u2028\u2029]/u.test(value)) {
         fail(`${label} value at index ${index} contains a line separator`);
     }
-    // Zero-width, bidi and other non-printing characters make two different strings read as one.
+    // Zero-width, bidi, variation-selector and other ignorable characters make two different strings
+    // read as one.
     const invisible = INVISIBLE_CHARACTER_PATTERN.exec(value)?.[0];
     if (invisible !== undefined) {
         const codePoint = (invisible.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0');

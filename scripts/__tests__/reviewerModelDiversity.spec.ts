@@ -152,6 +152,51 @@ describe('assertReviewerModelDiversity', () => {
         }
     });
 
+    it.each([
+        ['a zero-width space inside', 'gpt-6\u200B-luna'],
+        ['a trailing variation selector', 'gpt-6-luna\uFE0F'],
+        ['a space inside', 'gpt-6 luna'],
+        ['a combining grapheme joiner', 'gpt-6-lu\u034Fna'],
+    ])('refuses a summary reviewer model spelled with %s', (_name, reviewerModel) => {
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                document: { reviewerModel, body: 'The change held.' },
+            })
+        ).toThrow(/review\.json reviewerModel is not a lane model name/u);
+    });
+
+    it('refuses a draw reviewer model spelled with an invisible character', () => {
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                document: {
+                    reviewerModel: 'glm-5.3',
+                    body: 'The change held.',
+                    draws: [
+                        { stance: 'lost identity', reviewerModel: 'glm-5.3', tier: 'standard' },
+                        { stance: 'forged input', reviewerModel: 'gpt-6-luna\u200D', tier: 'standard' },
+                    ],
+                },
+            })
+        ).toThrow(/review\.json draws\[1\]\.reviewerModel is not a lane model name/u);
+    });
+
+    it.each(['GLM-5.3', 'claude-sonnet-4.5', 'gpt-6-luna', ' glm-5.3-flash '])(
+        'admits the lane model spelling %s',
+        (reviewerModel) => {
+            expect(() =>
+                assertReviewerModelDiversity({
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    authorLabels: [{ name: 'other-1', description: 'Authored by other-1' }],
+                    document: { reviewerModel, body: 'The change held.' },
+                })
+            ).not.toThrow();
+        }
+    );
+
     it('admits the same-model fallback when the body names the reviewer model in another case', () => {
         expect(() =>
             assertReviewerModelDiversity({

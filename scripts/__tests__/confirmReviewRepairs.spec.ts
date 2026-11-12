@@ -739,6 +739,7 @@ describe('confirmReviewRepairs', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor,
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
@@ -787,6 +788,7 @@ describe('confirmReviewRepairs', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor,
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
@@ -835,6 +837,7 @@ describe('confirmReviewRepairs', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.refused).toEqual([
@@ -859,6 +862,7 @@ describe('confirmReviewRepairs', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.refused).toEqual([
@@ -1616,6 +1620,7 @@ describe('readReviewThreads', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
@@ -1686,6 +1691,7 @@ describe('readReviewThreads', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
@@ -1800,6 +1806,7 @@ describe('readReviewThreads', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);

@@ -256,13 +256,19 @@ type DossierPublicationContext = {
     port: PublishReviewPort;
 };
 
+/** Milliseconds since the epoch for a GitHub UTC timestamp, or `undefined` when it is absent or not one. */
+function readableInstant(timestamp: string | undefined): number | undefined {
+    if (timestamp === undefined || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(timestamp)) {
+        return undefined;
+    }
+    const instant = Date.parse(timestamp);
+    return Number.isNaN(instant) ? undefined : instant;
+}
+
 /** A fresh plan-less publication is admitted only for a pull request GitHub records as opened before the cutover. */
 function assertPlanlessBundlePredatesRiskPlans(number: number, planPath: string, createdAt: string | undefined): void {
-    const opened =
-        createdAt !== undefined && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(createdAt)
-            ? Date.parse(createdAt)
-            : Number.NaN;
-    if (Number.isNaN(opened)) {
+    const opened = readableInstant(createdAt);
+    if (opened === undefined) {
         fail(
             `missing review risk plan at ${planPath} and pull request #${number} has no readable createdAt; re-run pnpm review:prepare ${number}`
         );

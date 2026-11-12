@@ -8,6 +8,15 @@ import { AUTHOR_BOT_NODE_ID, GITHUB_HTTPS_REMOTE, spawnCapture } from '../github
 import { shellPort } from '../publishReview.ts';
 import { writeLaneStack, type LaneStack } from '../stackedLanes.ts';
 
+/**
+ * A host git wrapper can keep writing under .git after `git commit` returns (git-ai records
+ * attribution notes in refs/notes/ai from a background process), so a single removal pass races it
+ * and throws ENOTEMPTY; Node's removal retries let the writer finish.
+ */
+function removeFixture(root: string): void {
+    rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+}
+
 function fixture(parentMergedAt: string | null = '2026-09-13', env: NodeJS.ProcessEnv = {}) {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-approval-context-'));
     const git = (args: string[]) => spawnCapture('git', args, { cwd: root });
@@ -126,7 +135,7 @@ describe('real shell approval context', () => {
                 expect(JSON.stringify(f.calls)).not.toContain(token);
                 expect(existsSync(join(f.root, 'git-credential-github'))).toBe(false);
             } finally {
-                rmSync(f.root, { recursive: true, force: true });
+                removeFixture(f.root);
             }
         }
     );
@@ -138,7 +147,7 @@ describe('real shell approval context', () => {
             expect(f.read()).toEqual(f.context);
             expect(f.calls.some((args) => args.includes('fetch') && args.includes(f.advancedMain))).toBe(true);
         } finally {
-            rmSync(f.root, { recursive: true, force: true });
+            removeFixture(f.root);
         }
     });
 
@@ -162,7 +171,7 @@ describe('real shell approval context', () => {
             }
             expect(f.read).toThrow();
         } finally {
-            rmSync(f.root, { recursive: true, force: true });
+            removeFixture(f.root);
         }
     });
 
@@ -173,7 +182,7 @@ describe('real shell approval context', () => {
             expect(f.read()).toEqual(f.context);
             expect(f.calls.some((args) => args.includes('--paginate') && args.includes('--slurp'))).toBe(true);
         } finally {
-            rmSync(f.root, { recursive: true, force: true });
+            removeFixture(f.root);
         }
     });
 
@@ -199,7 +208,7 @@ describe('real shell approval context', () => {
                 }
                 expect(f.read).toThrow();
             } finally {
-                rmSync(f.root, { recursive: true, force: true });
+                removeFixture(f.root);
             }
         }
     );
@@ -239,7 +248,7 @@ describe('real shell live review comparison', () => {
             expect(live.patch).toContain('+++ b/child');
             expect(live.numstat.toString('utf8')).toBe('1\t0\tchild\0');
         } finally {
-            rmSync(f.root, { recursive: true, force: true });
+            removeFixture(f.root);
         }
     });
 
@@ -251,7 +260,7 @@ describe('real shell live review comparison', () => {
                 `fresh review publication requires pull request #42 to stand at head ${f.head}`
             );
         } finally {
-            rmSync(f.root, { recursive: true, force: true });
+            removeFixture(f.root);
         }
     });
 });

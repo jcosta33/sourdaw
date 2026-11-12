@@ -566,7 +566,7 @@ describe('review publish', () => {
         ],
     ])('refuses a %s carrying a GitHub token before any remote write', (field, fields) => {
         // Composed at runtime: the pull-request diff secret scan matches credential literals in source.
-        const token = ['gh', 'p'].join('') + '_' + 'A1b2C3d4E5'.repeat(4);
+        const token = `${['gh', 'p'].join('')}_${'A1b2C3d4E5'.repeat(4)}`;
         const fixture = fakePort({ json: { event: 'REQUEST_CHANGES', ...fields(token) } });
         const journal = vi.fn();
         expect(() =>
@@ -1422,6 +1422,23 @@ describe('review publish', () => {
         });
 
         expect(() => publishReview(42, port)).toThrow(/matches one of the PR's authoring models/u);
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('refuses a zero-width spelling of the authoring model as the summary reviewer model and never posts', () => {
+        const { port, calls } = fakePort({
+            json: {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'ok',
+                comments: [],
+                evidence: approvalEvidence(),
+                reviewerModel: 'claude-sonnet\u200B-4.5',
+            },
+            labels: [{ name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' }],
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/review\.json reviewerModel is not a lane model name/u);
         expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
     });
 

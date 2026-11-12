@@ -19,6 +19,7 @@ import {
 } from './stackedLanes.ts';
 
 import type { PublishReviewPort, ReviewDocument } from './publishReview.ts';
+import type { AuthorshipLabel } from './reviewerModelDiversity.ts';
 
 export function assertSameApprovalContext(
     expected: ReviewBundleContext | undefined,
@@ -188,4 +189,63 @@ export function readLiveApprovalContext(
         });
     }
     return context;
+}
+
+/** The live pull request a publication reads: state, head, authorship labels and creation time. */
+export function readPublicationPullRequest(
+    number: number,
+    gh: (args: string[]) => string
+): ReturnType<PublishReviewPort['pullRequest']> {
+    const pullRequest = parseJson<{
+        state?: unknown;
+        headRefOid?: unknown;
+        labels?: unknown;
+        createdAt?: unknown;
+    }>(
+        gh([
+            'pr',
+            'view',
+            String(number),
+            '--repo',
+            REQUIRED_REPOSITORY,
+            '--json',
+            'state,headRefOid,labels,createdAt',
+        ]),
+        'review publication pull request'
+    );
+    if (typeof pullRequest.state !== 'string' || typeof pullRequest.headRefOid !== 'string') {
+        fail('review publication pull request is unreadable');
+    }
+    return {
+        state: pullRequest.state,
+        head: pullRequest.headRefOid,
+        labels: readAuthorshipLabels(pullRequest.labels),
+        createdAt: typeof pullRequest.createdAt === 'string' ? pullRequest.createdAt : undefined,
+    };
+}
+
+/**
+ * `gh pr view --json labels` answers [{name, description}]; the diversity check identifies the
+ * authorship label by its `Authored by ` description fence, so both fields travel together. Absent
+ * labels mean not-comparable, never fatal.
+ */
+function readAuthorshipLabels(labels: unknown): AuthorshipLabel[] | undefined {
+    if (!Array.isArray(labels)) {
+        return undefined;
+    }
+    return labels.flatMap((label): AuthorshipLabel[] => {
+        if (typeof label !== 'object' || label === null) {
+            return [];
+        }
+        const name = (label as Record<string, unknown>).name;
+        if (typeof name !== 'string') {
+            return [];
+        }
+        const description = (label as Record<string, unknown>).description;
+        const entry: AuthorshipLabel = { name };
+        if (typeof description === 'string') {
+            entry.description = description;
+        }
+        return [entry];
+    });
 }

@@ -1,7 +1,8 @@
 /** Publication evidence safety and the proportional draw floor a fresh reviewer publication meets. */
 
-import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
-import { fail } from './prContract.ts';
+import { assertPublicationSafeEvidence, unsafeCredentialReason } from './evidenceSafety.ts';
+import { composeReviewCommentBody, fail } from './prContract.ts';
+import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
 import { assertReviewModelEligible } from './reviewerModelDiversity.ts';
 import { reviewStanceFloor } from './reviewRiskPolicy.ts';
 
@@ -18,13 +19,17 @@ export function assertReviewEvidenceClaimsSafe(document: ReviewDocument): void {
     }
 }
 
-/** Case, compatibility-width and separator spellings of one stance name one stance. */
+/**
+ * Case, compatibility-width, mark, ignorable, separator and punctuation spellings of one stance name
+ * one stance: only its letters and digits identify it. Compatibility decomposition (NFKD) rather than
+ * composition splits accents off their base letters, so a combining mark never survives as part of a
+ * precomposed letter.
+ */
 function stanceKey(stance: string): string {
     return stance
-        .normalize('NFKC')
+        .normalize('NFKD')
         .toLowerCase()
-        .replace(/[\s_-]+/gu, ' ')
-        .trim();
+        .replaceAll(/[^\p{L}\p{N}]/gu, '');
 }
 
 /**
@@ -45,5 +50,19 @@ export function assertReviewDrawFloor(plan: ReviewRiskPlan, draws: readonly Comp
     for (const [index, draw] of draws.entries()) {
         // Pre-ADR caller documents can reuse an unpublished dossier instead of declaring draws.
         assertReviewModelEligible(draw.reviewerModel, `review dossier draws[${index}].reviewerModel`, draw.modelTier);
+    }
+}
+
+/** The public review body and every inline comment body leave the machine; none may carry a credential. */
+export function assertPublicReviewTextSafe(document: ReviewDocument): void {
+    const bodyReason = unsafeCredentialReason(renderReviewDocumentBody(document));
+    if (bodyReason !== undefined) {
+        fail(`review body contains ${bodyReason}; refusing to publish it`);
+    }
+    for (const [index, comment] of document.comments.entries()) {
+        const commentReason = unsafeCredentialReason(composeReviewCommentBody(comment));
+        if (commentReason !== undefined) {
+            fail(`review comment[${index}] body contains ${commentReason}; refusing to publish it`);
+        }
     }
 }
