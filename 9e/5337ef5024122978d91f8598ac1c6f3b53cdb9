@@ -1,0 +1,31 @@
+src/modules/AiRuntime/errors/NoAiBackendError.ts
+  s_63e4cacf2b45cf::t_590b42629d556a 9-11
+src/modules/AiRuntime/useCases/describeNoAiBackendRemedy.ts
+  s_63e4cacf2b45cf::t_590b42629d556a 7
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_63e4cacf2b45cf::t_590b42629d556a 477-479
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_63e4cacf2b45cf::t_4c1f811fe39a4d 10
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_63e4cacf2b45cf::t_590b42629d556a 1590-1595,1607-1614,1621-1623,1646-1650,1711-1716,1768-1771,1777-1779
+src/modules/Preferences/stores/__tests__/validateStoredPreferences.spec.ts
+  s_63e4cacf2b45cf::t_590b42629d556a 464-467
+src/modules/AiRuntime/useCases/__tests__/briefFromRequest.spec.ts
+  s_63e4cacf2b45cf::t_590b42629d556a 878-882
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9e5337ef5024122978d91f8598ac1c6f3b53cdb9",
+  "prompts": {},
+  "sessions": {
+    "s_63e4cacf2b45cf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ddd079b6-7442-4b2d-b0a4-c81190261fe0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
