@@ -383,7 +383,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts",
-                    "digest": "27c45173092184254383021e6cf94e98441deb973e92df780358cae9c2a2c6fa"
+                    "digest": "135d294a0fcac2f6d35e485595163b17c95fb2765b0f0af391d49b71bb836b21"
                 }
             ]
         },
@@ -620,7 +620,7 @@
             "fixtures": [
                 {
                     "path": "crates/daw-engine/src",
-                    "digest": "92c1dec0a9ba73e7b02edbfeb58e08e6924a5085c43efb89e16d3890a7ec3fec"
+                    "digest": "2b6aba6fbbe2f1793e1e01cc24c7e251857fad941d6cf899ebd214f6bcb3fd8b"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",

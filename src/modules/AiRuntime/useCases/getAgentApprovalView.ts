@@ -16,6 +16,7 @@ import { evaluateMetricGoalAdmission } from './evaluateMetricGoalAdmission';
 import { getProviderRouteView } from './getProviderRouteView';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { OBJECTIVE_METRIC_LABELS, OBJECTIVE_METRIC_UNITS } from './objectiveMetricProjection';
+import { readVibeBatchSkipAvailability } from './readVibeBatchSkipAvailability';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type ApprovalSnapshot = PendingAppActionConfirmation['approvalSnapshot'];
@@ -146,6 +147,8 @@ export type AgentApprovalView = {
     baseRevision: string;
     freshness: ApprovalFreshness;
     rePreview: { available: boolean; reason: string | null };
+    /** Whether this card may be skipped while its run goes on: only a pending vibe-run batch after the brief. */
+    skip: { available: boolean; reason: string | null };
     consequences: NonNullable<ApprovalSnapshot['agentApproval']>['consequences'] | null;
     budgets: NonNullable<ApprovalSnapshot['commandBatch']>['authority']['budgets'] | null;
     cost: ProviderRouteView['cost'];
@@ -556,6 +559,7 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
         baseRevision: confirmation.projectRevision,
         freshness,
         rePreview: getRePreviewAvailability(confirmation, freshness),
+        skip: readVibeBatchSkipAvailability(confirmation),
         consequences: agentApproval?.consequences ?? null,
         budgets: commandBatch?.authority.budgets ?? null,
         cost: routeView?.cost ?? [],

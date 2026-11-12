@@ -4,6 +4,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { TOOL_CALLING_TEMPERATURE } from '../../models/LlmSamplingTemperatures';
+import { buildWebLlmDecodingSchema } from '../../transformers/buildWebLlmDecodingSchema';
 import { serializeWebLlmToolPlanningPrompt } from '../../transformers/serializeWebLlmToolPlanningPrompt';
 import { parseToolPlanningOutcome, type ToolPlanningOutcome } from '../../transformers/toolCallParser';
 
@@ -12,7 +13,8 @@ import { generateWebLlmCompletion } from './generateWebLlmCompletion';
 /**
  * Generate tool calls via Qwen3 text completion + JSON parsing.
  * Qwen3 does not support the ChatCompletionRequest.tools API — tool schemas
- * are embedded directly in the system prompt and the JSON response is parsed.
+ * are embedded directly in the system prompt, decoding is constrained to the offered tools'
+ * calls through the same `tools` list, and the JSON response is parsed and then validated.
  * Tool planning never thinks aloud: a thinking block spends the reply budget
  * the request was admitted with before the first tool call.
  */
@@ -39,6 +41,7 @@ export const generateWebLlmToolCalls = inject({ logger })(
                     requireComplete: true,
                     enableThinking: false,
                     estimatedPromptTokens,
+                    responseFormatSchema: buildWebLlmDecodingSchema(tools),
                 }
             );
             logger.info(`[WebLLM] Response (${String(response.length)} chars): ${response.slice(0, 200)}`);

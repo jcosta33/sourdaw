@@ -34,6 +34,11 @@ export type ChatMessage = {
     agentBatchId?: string;
     /** The identity of the project that run planned against, so another project's commit never reads as this one's. */
     projectId?: string;
+    /**
+     * Set only on a vibe run's summary when at least one batch after the brief was applied: the run
+     * whose applied batches the summary's "Revert run" undoes together, leaving the brief as written.
+     */
+    vibeRunRevert?: { runId: string };
     /** Pending prompt-action confirmation owned by AiRuntime. */
     pendingActionConfirmationId?: string;
     pendingActionConfirmationStatus?: ChatActionConfirmationStatus;

@@ -40,16 +40,20 @@
  *     `MissingMediaPanel` and `TransportBar.tsx` as the consumer.
  */
 
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { loadConfigFromFile, resolveConfig, transformWithOxc } from 'vite';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
     allBarrelKinds,
     analyzeSpecs,
     gatedBarrelKinds,
     readFileFacts,
+    resolveSpecifier,
     scanRepository,
     type ExemptionRow,
     type FileFacts,
@@ -445,6 +449,24 @@ describe('checkBarrelMockCoverage — the analysis cannot pass by deriving nothi
         'src/modules/Host/presentations/views/__tests__/HostPanel.spec.tsx': `vi.mock('${barrelSpecifier}', () => ({ Alpha: () => null }));\nimport { HostPanel } from '../HostPanel';\n`,
     });
 
+    it('uses the supplied resolver for mock declarations and graph imports', () => {
+        const resolveModule = vi.fn(resolveSpecifier);
+        const fileExists = vi.fn(workingFixture.fileExists);
+
+        expect(analyzeSpecs({ ...workingFixture, fileExists, resolveModule })).toEqual(analyzeSpecs(workingFixture));
+        expect(resolveModule.mock.calls).toContainEqual([
+            barrelSpecifier,
+            join(repoRoot, 'src/modules/Host/presentations/views/__tests__'),
+            fileExists,
+        ]);
+        expect(resolveModule.mock.calls).toContainEqual([
+            barrelSpecifier,
+            join(repoRoot, 'src/modules/Host/presentations/views'),
+            fileExists,
+        ]);
+        expect(fileExists).toHaveBeenCalledWith(join(repoRoot, barrel));
+    });
+
     it('a resolver that resolves nothing reports zero violations and zero derivation', () => {
         const blind = analyzeSpecs({ ...workingFixture, fileExists: () => false });
 
@@ -588,6 +610,220 @@ describe('checkBarrelMockCoverage — the exemption mechanism', () => {
     });
 });
 
+describe('checkBarrelMockCoverage — resolution work is local to one analysis', () => {
+    const stores = '#/modules/Widgets/stores';
+    const storesPath = 'src/modules/Widgets/stores/index.ts';
+    const consumer = 'src/modules/Host/consumer.ts';
+    const specDirectory = 'src/modules/Host/__tests__';
+    const viewsDirectory = 'src/modules/Widgets/presentations/views';
+
+    function computationKeys(resolveModule: ReturnType<typeof vi.fn<typeof resolveSpecifier>>): string[][] {
+        return resolveModule.mock.calls.map(([specifier, directory]) => [directory, specifier]).toSorted();
+    }
+
+    it('computes shared mock and graph resolutions once while preserving each spec verdict', () => {
+        const cut = `${specDirectory}/cut.spec.tsx`;
+        const load = `${specDirectory}/load.spec.tsx`;
+        const spread = `${specDirectory}/spread.spec.tsx`;
+        const fixture = buildFixture({
+            [storesPath]: 'export const StoreNamed = 1;',
+            [barrel]: `import { StoreNamed } from '${stores}';\nimport * as allStores from '${stores}';\nexport const Widget = [StoreNamed, allStores];`,
+            [consumer]: [
+                `import { Widget, MissingWidget } from '${barrelSpecifier}';`,
+                `import { StoreNamed } from '${stores}';`,
+                "import './absent';",
+                "import 'external-package';",
+            ].join('\n'),
+            [cut]: `vi.mock('${barrelSpecifier}', () => ({ Widget: 1 }));\nvi.mock('${stores}', () => ({}));\nimport '../consumer';`,
+            [load]: `vi.mock('${barrelSpecifier}', async (original) => { await original(); return { Widget: 1 }; });\nvi.mock('${stores}', () => ({}));\nimport '../consumer';`,
+            [spread]: `vi.mock('${barrelSpecifier}', async (original) => ({ ...await original() }));\nvi.mock('${stores}', () => ({}));\nimport '../consumer';`,
+        });
+        const resolveModule = vi.fn(resolveSpecifier);
+        const fileExists = vi.fn(fixture.fileExists);
+        const result = analyzeSpecs({
+            ...fixture,
+            fileExists,
+            resolveModule,
+            exemptions: [
+                { spec: cut, barrel: stores, missingKeys: ['StoreNamed', 'Unused'], reason: 'fixture' },
+                { spec: load, barrel: barrelSpecifier, missingKeys: ['MissingWidget'], reason: 'fixture' },
+            ],
+        });
+        const violation = (spec: string, barrel: string, line: number, usedBy: string, missing: string[]) => ({
+            spec: join(repoRoot, spec),
+            barrel,
+            line,
+            usedBy: join(repoRoot, usedBy),
+            missing,
+        });
+
+        expect(result).toEqual({
+            violations: [
+                violation(cut, barrelSpecifier, 1, consumer, ['MissingWidget']),
+                violation(load, stores, 2, consumer, ['StoreNamed']),
+                violation(load, stores, 2, barrel, ['* (namespace import)', 'StoreNamed']),
+                violation(spread, stores, 2, consumer, ['StoreNamed']),
+                violation(spread, stores, 2, barrel, ['* (namespace import)', 'StoreNamed']),
+            ],
+            extractionFailures: [],
+            parsedMockCount: 6,
+            resolvedMockCount: 6,
+            analyzedSpecCount: 3,
+            graphNodeCount: 8,
+            staleExemptions: [{ spec: cut, barrel: stores, unusedKeys: ['Unused'] }],
+            matchedBarrelKindCounts: { 'presentations/views': 2, stores: 3 },
+        });
+        expect(computationKeys(resolveModule)).toEqual(
+            [
+                [join(repoRoot, specDirectory), barrelSpecifier],
+                [join(repoRoot, specDirectory), stores],
+                [join(repoRoot, specDirectory), '../consumer'],
+                [join(repoRoot, 'src/modules/Host'), barrelSpecifier],
+                [join(repoRoot, 'src/modules/Host'), stores],
+                [join(repoRoot, 'src/modules/Host'), './absent'],
+                [join(repoRoot, 'src/modules/Host'), 'external-package'],
+                [join(repoRoot, viewsDirectory), stores],
+            ].toSorted()
+        );
+        expect(fileExists.mock.calls.filter(([path]) => path === join(repoRoot, 'src/modules/Host/absent.ts'))).toEqual(
+            [[join(repoRoot, 'src/modules/Host/absent.ts')]]
+        );
+        expect(resolveModule.mock.results.filter(({ value }) => value === null)).toHaveLength(2);
+        expect(resolveModule.mock.results.filter(({ value }) => value === join(repoRoot, barrel))).toHaveLength(2);
+
+        expect(analyzeSpecs({ ...fixture, barrelKinds: ['presentations/views'], exemptions: [] })).toEqual({
+            violations: [
+                violation(cut, barrelSpecifier, 1, consumer, ['MissingWidget']),
+                violation(load, barrelSpecifier, 1, consumer, ['MissingWidget']),
+            ],
+            extractionFailures: [],
+            parsedMockCount: 6,
+            resolvedMockCount: 6,
+            analyzedSpecCount: 2,
+            graphNodeCount: 5,
+            staleExemptions: [],
+            matchedBarrelKindCounts: { 'presentations/views': 2 },
+        });
+        expect(analyzeSpecs({ ...fixture, barrelKinds: ['stores'], exemptions: [] })).toEqual({
+            ...result,
+            violations: [
+                violation(cut, stores, 2, consumer, ['StoreNamed']),
+                violation(load, stores, 2, consumer, ['StoreNamed']),
+                violation(load, stores, 2, barrel, ['* (namespace import)', 'StoreNamed']),
+                violation(spread, stores, 2, consumer, ['StoreNamed']),
+                violation(spread, stores, 2, barrel, ['* (namespace import)', 'StoreNamed']),
+            ],
+            staleExemptions: [],
+            matchedBarrelKindCounts: { stores: 3 },
+        });
+    });
+
+    it('keeps identical relative specifiers in different importer directories independent', () => {
+        const files: Record<string, string> = { [storesPath]: 'export const Alpha = 1; export const Beta = 2;' };
+        for (const [directory, name] of [
+            ['One', 'Alpha'],
+            ['Two', 'Beta'],
+        ]) {
+            files[`src/modules/${directory}/__tests__/consumer.spec.tsx`] =
+                `vi.mock('${stores}', () => ({}));\nimport '../consumer';`;
+            files[`src/modules/${directory}/consumer.ts`] = `import { ${name} } from '${stores}';`;
+        }
+        const resolveModule = vi.fn(resolveSpecifier);
+        const result = analyzeSpecs({ ...buildFixture(files), resolveModule, exemptions: [] });
+
+        expect(result.violations.map(({ missing, usedBy }) => ({ missing, usedBy }))).toEqual([
+            { missing: ['Alpha'], usedBy: join(repoRoot, 'src/modules/One/consumer.ts') },
+            { missing: ['Beta'], usedBy: join(repoRoot, 'src/modules/Two/consumer.ts') },
+        ]);
+        expect(result.graphNodeCount).toBe(4);
+        expect(computationKeys(resolveModule)).toEqual(
+            ['One', 'Two']
+                .flatMap((directory) => [
+                    [join(repoRoot, `src/modules/${directory}/__tests__`), stores],
+                    [join(repoRoot, `src/modules/${directory}/__tests__`), '../consumer'],
+                    [join(repoRoot, `src/modules/${directory}`), stores],
+                ])
+                .toSorted()
+        );
+    });
+
+    it('recomputes prior hits and misses after files change between independent analyses', () => {
+        const spec = `${specDirectory}/fresh.spec.tsx`;
+        const common = {
+            [storesPath]: 'export const Existing = 1; export const Fresh = 2; export const Added = 3;',
+            [spec]: `vi.mock('${stores}', () => ({}));\nimport '../consumer';\nimport '../late';`,
+        };
+        let fixture = buildFixture({
+            ...common,
+            [consumer]: `import { Existing } from '${stores}';\nimport './late';`,
+        });
+        const resolveModule = vi.fn(resolveSpecifier);
+        const fileExists = vi.fn((path: string) => fixture.fileExists(path));
+        const input = {
+            specPaths: fixture.specPaths,
+            readFacts: (path: string) => fixture.readFacts(path),
+            fileExists,
+            resolveModule,
+            exemptions: [],
+        };
+        const first = analyzeSpecs(input);
+        expect(first.violations.map(({ missing, usedBy }) => ({ missing, usedBy }))).toEqual([
+            { missing: ['Existing'], usedBy: join(repoRoot, consumer) },
+        ]);
+        expect(first.graphNodeCount).toBe(2);
+        expect(computationKeys(resolveModule)).toEqual(
+            [
+                [join(repoRoot, specDirectory), stores],
+                [join(repoRoot, specDirectory), '../consumer'],
+                [join(repoRoot, specDirectory), '../late'],
+                [join(repoRoot, 'src/modules/Host'), stores],
+                [join(repoRoot, 'src/modules/Host'), './late'],
+            ].toSorted()
+        );
+        expect(resolveModule.mock.results.map(({ value }) => value)).toEqual([
+            join(repoRoot, storesPath),
+            join(repoRoot, consumer),
+            null,
+            join(repoRoot, storesPath),
+            null,
+        ]);
+
+        fixture = buildFixture({
+            ...common,
+            'src/modules/Host/consumer/index.ts': `import { Fresh } from '${stores}';\nimport '../late';`,
+            'src/modules/Host/late.ts': `import { Added } from '${stores}';`,
+        });
+        resolveModule.mockClear();
+        fileExists.mockClear();
+        const second = analyzeSpecs(input);
+        expect(second.violations.map(({ missing, usedBy }) => ({ missing, usedBy }))).toEqual([
+            { missing: ['Added'], usedBy: join(repoRoot, 'src/modules/Host/late.ts') },
+            { missing: ['Fresh'], usedBy: join(repoRoot, 'src/modules/Host/consumer/index.ts') },
+        ]);
+        expect(second.graphNodeCount).toBe(3);
+        expect(computationKeys(resolveModule)).toEqual(
+            [
+                [join(repoRoot, specDirectory), stores],
+                [join(repoRoot, specDirectory), '../consumer'],
+                [join(repoRoot, specDirectory), '../late'],
+                [join(repoRoot, 'src/modules/Host/consumer'), stores],
+                [join(repoRoot, 'src/modules/Host/consumer'), '../late'],
+                [join(repoRoot, 'src/modules/Host'), stores],
+            ].toSorted()
+        );
+        expect(resolveModule.mock.results.map(({ value }) => value)).toEqual([
+            join(repoRoot, storesPath),
+            join(repoRoot, 'src/modules/Host/consumer/index.ts'),
+            join(repoRoot, 'src/modules/Host/late.ts'),
+            join(repoRoot, storesPath),
+            join(repoRoot, storesPath),
+            join(repoRoot, 'src/modules/Host/late.ts'),
+        ]);
+        expect(fileExists).toHaveBeenCalledWith(join(repoRoot, 'src/modules/Host/consumer/index.ts'));
+        expect(fileExists).toHaveBeenCalledWith(join(repoRoot, 'src/modules/Host/late.ts'));
+    });
+});
+
 type RealTreeScan = ReturnType<typeof scanRepository>;
 
 /** `#/modules/Foo/presentations/views` → `presentations/views`. No kind
@@ -621,6 +857,74 @@ function expectDerivedEnough(result: RealTreeScan): void {
  * default while the analysis they were waiting on was clean. One scan per barrel-kind
  * set, hoisted, with a timeout sized to the work instead of to a single-kind scan.
  */
+it('owns and removes a standalone CLI journal after successful help', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-scan-cli-'));
+    try {
+        const env: NodeJS.ProcessEnv = { ...process.env, SOURDAW_VITEST_DIAGNOSTICS_DIR: directory };
+        delete env.SOURDAW_VITEST_PROGRESS;
+        const result = spawnSync(process.execPath, [join(repoRoot, 'scripts/checkBarrelMockCoverage.ts'), '--help'], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env,
+        });
+        expect(result.status).toBe(0);
+        expect(result.stderr).toContain('barrel scan progress:');
+        expect(readdirSync(directory)).toEqual([]);
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+it('calls an injected progress observer before synchronous analysis can block', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-scan-progress-'));
+    const path = join(directory, 'progress');
+    const stages: string[] = [];
+    try {
+        expect(() =>
+            scanRepository(undefined, undefined, (stage) => {
+                stages.push(stage);
+                writeFileSync(path, stages.join('\n'));
+                if (stage === 'gated-analysis-begin') {
+                    throw new Error('blocked analysis');
+                }
+            })
+        ).toThrow('blocked analysis');
+        expect(readFileSync(path, 'utf8')).toBe('gated-traversal-begin\ngated-traversal-end\ngated-analysis-begin');
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+it('writes the production scan journal through the default progress observer', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-scan-default-'));
+    const previous = process.env.SOURDAW_VITEST_PROGRESS;
+    process.env.SOURDAW_VITEST_PROGRESS = directory;
+    try {
+        const before = process.hrtime.bigint();
+        const result = scanRepository();
+        const after = process.hrtime.bigint();
+        const record = JSON.parse(readFileSync(join(directory, 'scan.json'), 'utf8')) as {
+            event: string;
+            detail: string;
+            pid: number;
+            monotonicNs: string;
+        };
+        expect(record).toMatchObject({ event: 'scan', detail: 'gated-analysis-end', pid: process.pid });
+        const recordedAt = BigInt(record.monotonicNs);
+        expect(recordedAt).toBeGreaterThanOrEqual(before);
+        expect(recordedAt).toBeLessThanOrEqual(after);
+        expect(result.specCount).toBeGreaterThan(0);
+        expectDerivedEnough(result);
+    } finally {
+        if (previous === undefined) {
+            delete process.env.SOURDAW_VITEST_PROGRESS;
+        } else {
+            process.env.SOURDAW_VITEST_PROGRESS = previous;
+        }
+        rmSync(directory, { recursive: true, force: true });
+    }
+}, 120_000);
+
 describe('checkBarrelMockCoverage — the real tree', () => {
     let gated: RealTreeScan;
     let everyKind: RealTreeScan;

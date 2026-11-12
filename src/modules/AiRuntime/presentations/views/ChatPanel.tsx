@@ -1,6 +1,19 @@
 import { type ReactElement, type CSSProperties, useState, useRef, useEffect, useId, type KeyboardEvent } from 'react';
 
-import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap, Check, RotateCw, Square } from 'lucide-react';
+import {
+    X,
+    Trash2,
+    Bot,
+    User,
+    ChevronRight,
+    ChevronDown,
+    Zap,
+    Check,
+    RotateCw,
+    SkipForward,
+    Square,
+    Undo2,
+} from 'lucide-react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Row, Stack } from '#/components/layout';
@@ -35,8 +48,10 @@ import { agentRunControls } from '../../useCases/getAgentRunControlProjection';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
 import { recoverAgentRunPendingEffects } from '../../useCases/recoverAgentRunPendingEffects';
 import { reproposePendingChatActions } from '../../useCases/reproposePendingChatActions';
+import { revertVibeRun } from '../../useCases/revertVibeRun';
 import { selectRetainedSectionRenderManualReviews } from '../../useCases/selectRetainedSectionRenderManualReviews';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
+import { skipPendingVibeBatch } from '../../useCases/skipPendingVibeBatch';
 import { AgentRunDecisionControls } from '../components/AgentRunDecisionControls';
 import { AnswerEvidenceDisclosure } from '../components/AnswerEvidenceDisclosure';
 import { ChatComposer } from '../components/ChatComposer';
@@ -149,6 +164,9 @@ const ChatMessageItem = ({
     const retryableFollowUpId =
         msg.pendingActionFollowUpStatus === 'retryable' ? msg.pendingActionConfirmationId : undefined;
     const { stoppableRunId } = msg;
+    // A vibe-run batch card offers Skip, and its Cancel stops the whole run, so it says so.
+    const skipAvailable = approval?.skip.available === true;
+    const revertRunId = msg.vibeRunRevert?.runId;
 
     return (
         <div className={cn('flex w-full flex-col', msg.role === 'user' ? 'items-end' : 'items-start')}>
@@ -230,15 +248,29 @@ const ChatMessageItem = ({
                             <Check className="size-3" />
                             Confirm
                         </Button>
+                        {skipAvailable ? (
+                            <Button
+                                size="xs"
+                                variant="ghost"
+                                onClick={() => {
+                                    void skipPendingVibeBatch({ confirmationId: pendingConfirmationId });
+                                }}
+                                aria-label="Skip batch"
+                                className="h-7 gap-1.5 text-[11px]"
+                            >
+                                <SkipForward className="size-3" />
+                                Skip batch
+                            </Button>
+                        ) : null}
                         <Button
                             size="xs"
                             variant="ghost"
                             onClick={() => onCancelPendingActions(pendingConfirmationId)}
-                            aria-label="Cancel pending actions"
+                            aria-label={skipAvailable ? 'Stop run' : 'Cancel pending actions'}
                             className="h-7 gap-1.5 text-[11px]"
                         >
                             <X className="size-3" />
-                            Cancel
+                            {skipAvailable ? 'Stop run' : 'Cancel'}
                         </Button>
                         <Button
                             size="xs"
@@ -253,6 +285,28 @@ const ChatMessageItem = ({
                         </Button>
                     </Row>
                 ) : null}
+                {revertRunId === undefined ? null : (
+                    <Stack gap={1} className="mt-3 border-t border-emerald-500/20 pt-2">
+                        <p className="text-[11px] text-muted-foreground">
+                            Revert run undoes every applied batch together; the production brief stays as written.
+                        </p>
+                        <Row gap={2}>
+                            <Button
+                                size="xs"
+                                variant="secondary"
+                                onClick={() => {
+                                    void revertVibeRun({ runId: revertRunId });
+                                }}
+                                aria-label="Revert run"
+                                disabled={isGenerating}
+                                className="h-7 gap-1.5 text-[11px]"
+                            >
+                                <Undo2 className="size-3" />
+                                Revert run
+                            </Button>
+                        </Row>
+                    </Stack>
+                )}
                 {retryableFollowUpId ? (
                     <Row gap={2} className="mt-3 border-t border-emerald-500/20 pt-2">
                         <Button

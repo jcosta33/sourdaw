@@ -2,31 +2,43 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
-import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { createTrack, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
-import {
-    audioEngine,
-    initEngineDeviceCollaborators,
-    removeTrackStrip,
-    type renderTrackSubgraphOffline,
-} from '#/modules/AudioEngine/useCases';
-import { registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
-import { executeAppAction, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
+import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import { undoHistoryStore } from '#/modules/Command/stores';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
-import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
-import { getProjectHandlers } from '#/modules/Project/useCases';
+import { projectStore } from '#/modules/Project/stores';
 import { digest } from '#/utils/canonicalDigest';
-import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
-import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
-import { type ToolCallResult } from '../../models/ToolCallResult';
-import { type ToolSchema } from '../../models/ToolDefinitions';
+import {
+    BASS_ID,
+    BRIEF_REVISION,
+    BRIEF_ROUTE,
+    DRUMS_ID,
+    PLANNED_BRIEF_REVISION,
+    PROMPT,
+    VOCAL_ID,
+    briefIntake,
+    cardContent,
+    confirmBrief,
+    editBrief,
+    lastMessage,
+    liveBriefRevision,
+    proposeBrief,
+    proposedCards,
+    renderTrack,
+    requireOnlyProposedCard,
+    resetVibeRunFixture,
+    scriptPlanningTurns,
+    sendChatMessage,
+    tearDownVibeRunFixture,
+    trackDeviceTypes,
+    type Confirmation,
+    type RenderInput,
+} from '../../__tests__/vibeRunWorkflowFixture';
 import { agentResourceLimitsStore, readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
-import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore, clearChatMessages } from '../../stores/chatStore';
-import { pendingActionConfirmationStore } from '../../stores/pendingActionConfirmationStore';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { groundVibeRunBatch } from '../agentRequestOrchestration/groundVibeRunBatch';
@@ -38,14 +50,12 @@ import * as briefCompiler from '../executeBriefCompile';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getBriefMixIntentCatalog } from '../getBriefMixIntentCatalog';
 import { getProjectContext } from '../getProjectContext';
-import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
-import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
+import { revertVibeRun } from '../revertVibeRun';
+import { skipPendingVibeBatch } from '../skipPendingVibeBatch';
 
-import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
 import { landProjectEdit } from './landProjectEdit';
-import { configureMetricGoalProject, metricGoalAudioBuffer, resetMetricGoalProject } from './metricGoalWorkflowFixture';
 import { decodeReceiptContext, readReceiptSummary } from './receiptContextFixture';
 
 registerDeviceEnginePorts();
@@ -56,14 +66,6 @@ registerSupportingServicePorts();
  * The brief is confirmed first; each batch is then grounded at the revision the batch before it left,
  * previewed and measured, and approved on its own, and the run stops cleanly on a reject or a refusal.
  */
-const PROMPT = 'make this mix warmer and more open';
-const BRIEF_REVISION = 4;
-const PLANNED_BRIEF_REVISION = BRIEF_REVISION + 1;
-
-const DRUMS_ID = 'track-drums';
-const VOCAL_ID = 'track-vocal';
-const BASS_ID = 'track-bass';
-
 const runtimeMocks = vi.hoisted(() => ({ backend: { value: 'cloud' } }));
 
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
@@ -152,226 +154,12 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...audio,
 }));
 
-type RenderInput = Parameters<typeof renderTrackSubgraphOffline>[0];
-type ProviderRequest = { userMessage: string; schemas: readonly ToolSchema[] };
-type ScriptedPlanningTurn = (request: ProviderRequest) => ToolCallResult[];
-type ProductionBrief = NonNullable<typeof projectStore.value>['productionBrief'];
-type Confirmation = NonNullable<typeof pendingActionConfirmationStore.value>['confirmations'][number];
-
-const briefIntake: ScriptedPlanningTurn = ({ userMessage, schemas }) => {
-    const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
-    const base = selectCreativeInterpretationCall({ catalog, modeId: 'brief' });
-    return [
-        {
-            ...base,
-            id: 'brief-intake',
-            arguments: {
-                ...base.arguments,
-                answer: null,
-                metricIntent: { kind: 'non-acoustic', uncertainty: 'none', objectives: [] },
-            },
-        },
-    ];
-};
-
-const compileBrief: ScriptedPlanningTurn = () => [
-    {
-        id: 'brief-compile',
-        name: 'brief.compile',
-        arguments: {
-            vision: 'A warmer, more open mix',
-            mixIntent: { catalogId: getBriefMixIntentCatalog().catalogId, requestedDescriptors: ['warm'] },
-        },
-    },
-];
-
-const proposeBrief: ScriptedPlanningTurn = () => [
-    {
-        id: 'brief-proposal',
-        name: 'command.batch.propose',
-        arguments: {
-            commands: [],
-            compiledCallIds: ['brief-compile'],
-            plan: {
-                semantic: { classification: 'simple', uncertainty: [] },
-                objective: 'Record the project intent the request describes.',
-                constraints: [],
-                scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
-                capabilityIds: [],
-                assetIds: [],
-                alternatives: [],
-                validationStrategy: ['Compare the brief revision before writing.'],
-                stoppingConditions: ['Stop if the brief changes before Confirm.'],
-            },
-        },
-    },
-];
-
-const BRIEF_ROUTE = [briefIntake, compileBrief, proposeBrief];
-
-function scriptPlanningTurns(turns: readonly ScriptedPlanningTurn[]): ProviderRequest[] {
-    const requests: ProviderRequest[] = [];
-    vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, userMessage, schemas) => {
-        const request = { userMessage, schemas };
-        requests.push(request);
-        const turn = turns[requests.length - 1];
-        if (turn === undefined) {
-            throw new Error(`Expected at most ${String(turns.length)} provider turns`);
-        }
-        return { status: 'complete', toolCalls: turn(request) };
-    });
-    return requests;
-}
-
-function clip(trackId: string) {
-    return {
-        id: `${trackId}-clip`,
-        trackId,
-        name: 'Take',
-        type: 'audio' as const,
-        audioBufferId: `${trackId}-buffer`,
-        startBeat: 0,
-        endBeat: 4,
-        fadeInBeats: 0,
-        fadeOutBeats: 0,
-        gain: 1,
-        color: '#ffffff',
-        locked: false,
-        muted: false,
-    };
-}
-
-function sourceTrack(id: string, name: string) {
-    return { ...createTrack({ id, name, kind: 'audio' }), clips: [clip(id)] };
-}
-
-function seededBrief(): ProductionBrief {
-    return {
-        ...structuredClone(defaultProjectStoreState.productionBrief),
-        revision: BRIEF_REVISION,
-        createdAt: 100,
-        updatedAt: 100,
-    };
-}
-
-/**
- * Every track sounds a 100 Hz body beside a 3 kHz top, each scaled by the low and high shelf gains
- * of the EQs it carries, so a warming recipe raises the bass band and lowers the centroid.
- */
-function renderTrack(input: RenderInput): AudioBuffer {
-    const track = input.renderTracks.find((candidate) => candidate.id === input.targetTrackId);
-    if (track === undefined) {
-        throw new Error('The render target is absent.');
-    }
-    const parameter = (id: string) =>
-        track.devices.reduce((total, device) => total + (device.parameterValues[id] ?? 0), 0);
-    const low = 10 ** (parameter('eq-low-gain') / 20);
-    const high = 10 ** (parameter('eq-high-gain') / 20);
-    const seconds = (input.endBeat - input.startBeat) / 2;
-    return metricGoalAudioBuffer(
-        (time) => 0.4 * low * Math.sin(2 * Math.PI * 100 * time) + 0.2 * high * Math.sin(2 * Math.PI * 3000 * time),
-        seconds
-    );
-}
-
-async function sendChatMessage(prompt: string, options?: Parameters<typeof sendChatMessageWithoutDocumentFlush>[1]) {
-    flushAutomergeStorageWrites();
-    await sendChatMessageWithoutDocumentFlush(prompt, options);
-}
-
-function proposedCards(): Confirmation[] {
-    return (pendingActionConfirmationStore.value?.confirmations ?? []).filter((card) => card.status === 'proposed');
-}
-
-function requireOnlyProposedCard(): Confirmation {
-    const cards = proposedCards();
-    if (cards.length !== 1 || cards[0] === undefined) {
-        const last = chatStore.value?.messages.at(-1);
-        throw new TypeError(
-            `Expected one proposed card, found ${String(cards.length)}: ${last?.error ?? last?.content ?? 'no reply'}`
-        );
-    }
-    return cards[0];
-}
-
-function cardContent(card: Confirmation): string {
-    return chatStore.value?.messages.find((message) => message.id === card.assistantMessageId)?.content ?? '';
-}
-
-function lastMessage(): string {
-    return chatStore.value?.messages.at(-1)?.content ?? '';
-}
-
-function trackDeviceTypes(trackId: string): string[] {
-    return trackStore.value?.tracks.find((track) => track.id === trackId)?.devices.map((device) => device.type) ?? [];
-}
-
-function liveBriefRevision(): number {
-    return projectStore.value?.productionBrief.revision ?? -1;
-}
-
-/** Writes the brief one revision on, as a user's own brief edit does, through its typed command. */
-async function editBrief(): Promise<void> {
-    const brief = projectStore.value?.productionBrief;
-    if (brief === undefined) {
-        throw new TypeError('Expected an open project with a brief');
-    }
-    await executeAppAction({
-        type: 'setProductionBrief',
-        payload: {
-            expectedRevision: brief.revision,
-            brief: { ...structuredClone(brief), revision: brief.revision + 1, vision: 'Dark and close instead' },
-        },
-    });
-}
-
-/** Sends the request and confirms its brief card, so the run proposes its first batch. */
-async function confirmBrief(): Promise<Confirmation> {
-    scriptPlanningTurns(BRIEF_ROUTE);
-    await sendChatMessage(PROMPT);
-    const brief = requireOnlyProposedCard();
-    await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toEqual({ status: 'executed' });
-    return brief;
-}
-
 beforeEach(() => {
-    configureMetricGoalProject({
-        label: 'multi-batch vibe run test',
-        tracks: [sourceTrack(DRUMS_ID, 'Drums'), sourceTrack(VOCAL_ID, 'Vocal'), sourceTrack(BASS_ID, 'Bass')],
-        sections: [],
-    });
-    registerHandlerMap(getProjectHandlers());
-    initEngineDeviceCollaborators();
-    setActionHistoryMetadataPort({
-        record: () => [],
-        markReverted: () => ({ status: 'unavailable' as const }),
-        clear: () => undefined,
-    });
-    clearAiHistory();
-    setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
-    landProjectEdit(() => {
-        projectStore.set({ ...structuredClone(defaultProjectStoreState), productionBrief: seededBrief() });
-    });
-    vi.mocked(generateToolPlanningOutcome).mockReset();
-    runtimeMocks.backend.value = 'cloud';
-    audio.renderTrackSubgraphOffline.mockReset().mockImplementation(async (input: RenderInput) => renderTrack(input));
-    audio.renderOffline.mockReset().mockImplementation(async () => {
-        throw new Error('A track-scoped batch must not render the master.');
-    });
-    audio.renderOfflineInput.mockReset().mockImplementation(async () => {
-        throw new Error('A batch must be measured on its rendered scope, never on source audio.');
-    });
+    resetVibeRunFixture(audio, runtimeMocks.backend);
 });
 
 afterEach(() => {
-    for (const trackId of [DRUMS_ID, VOCAL_ID, BASS_ID]) {
-        removeTrackStrip(trackId);
-    }
-    audioEngine.setUseCaseDeviceCollaborators(null);
-    agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
-    clearAiHistory();
-    resetMetricGoalProject();
-    vi.restoreAllMocks();
+    tearDownVibeRunFixture();
 });
 
 describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)', () => {
@@ -964,7 +752,7 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             status: 'executed',
         });
 
-        expect(lastMessage()).toBe(
+        expect(chatStore.value?.messages.at(-2)?.content).toBe(
             'Batch 3 of 4 was not proposed: its target “Vocal” is frozen. Batches 1–2 remain applied.'
         );
         expect(proposedCards()).toEqual([]);
@@ -1120,5 +908,176 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
         expect(
             sanitizeAgentRunState(tampered).runs.find((run) => run.runId === brief.runId)?.plan?.batchSchedule
         ).toBeUndefined();
+    });
+    describe('the one summary a run ends with, and reverting the whole run', () => {
+        function summaryMessages() {
+            return (chatStore.value?.messages ?? []).filter((message) => message.content.startsWith('The vibe run '));
+        }
+
+        async function confirmCard(): Promise<Confirmation> {
+            const card = requireOnlyProposedCard();
+            await expect(confirmPendingChatActions({ confirmationId: card.id })).resolves.toEqual({
+                status: 'executed',
+            });
+            return card;
+        }
+
+        async function skipCard(): Promise<Confirmation> {
+            const card = requireOnlyProposedCard();
+            await expect(skipPendingVibeBatch({ confirmationId: card.id })).resolves.toEqual({ status: 'skipped' });
+            return card;
+        }
+
+        it('posts one summary after the card text when the run is stopped at batch 3', async () => {
+            await confirmBrief();
+            await confirmCard();
+            const vocal = requireOnlyProposedCard();
+
+            await expect(cancelPendingChatActions({ confirmationId: vocal.id })).resolves.toEqual({
+                status: 'cancelled',
+            });
+
+            expect(cardContent(vocal)).toMatch(
+                /^Cancelled pending actions:\n\n- .+\n\nBatches 1–2 remain applied\.$/su
+            );
+            const summaries = summaryMessages();
+            expect(summaries).toHaveLength(1);
+            expect(lastMessage()).toBe(summaries[0]?.content);
+            expect(summaries[0]?.content).toMatch(
+                /^The vibe run stopped: the brief and 1 of 3 batches were applied\.\n- Batch 2 \(warm drums\): .+ on Drums .+\.\n- Batch 3 \(warm vocal\): not applied, the run stopped here\.\n- Batch 4 \(warm bass\): not proposed\.$/u
+            );
+        });
+
+        it('follows a refusal at grounding with one summary listing that batch refused', async () => {
+            scriptPlanningTurns(BRIEF_ROUTE);
+            await sendChatMessage(PROMPT);
+            const brief = requireOnlyProposedCard();
+            landProjectEdit(() => {
+                const state = trackStore.value;
+                if (state === null) {
+                    throw new TypeError('Expected an open project with tracks');
+                }
+                trackStore.set({
+                    ...state,
+                    tracks: state.tracks.map((track) => (track.id === VOCAL_ID ? { ...track, frozen: true } : track)),
+                });
+            });
+            await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toMatchObject({
+                status: 'reapproval_required',
+            });
+            await confirmCard();
+            await confirmCard();
+
+            const messages = chatStore.value?.messages ?? [];
+            expect(messages.at(-2)?.content).toBe(
+                'Batch 3 of 4 was not proposed: its target “Vocal” is frozen. Batches 1–2 remain applied.'
+            );
+            expect(summaryMessages()).toHaveLength(1);
+            expect(lastMessage()).toMatch(
+                /^The vibe run stopped: the brief and 1 of 3 batches were applied\.\n- Batch 2 \(warm drums\): .+\.\n- Batch 3 \(warm vocal\): refused: its target “Vocal” is frozen\.\n- Batch 4 \(warm bass\): not proposed\.$/u
+            );
+            expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('partially-completed');
+        });
+
+        it('lists a skipped batch between two applied ones', async () => {
+            const brief = await confirmBrief();
+            await confirmCard();
+            await skipCard();
+            await confirmCard();
+
+            expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('completed');
+            expect(summaryMessages()).toHaveLength(1);
+            expect(lastMessage()).toMatch(
+                /^The vibe run finished: the brief and 2 of 3 batches were applied\.\n- Batch 2 \(warm drums\): .+ on Drums .+\.\n- Batch 3 \(warm vocal\): skipped, not applied\.\n- Batch 4 \(warm bass\): .+ on Bass .+\.$/u
+            );
+            expect(trackDeviceTypes(VOCAL_ID)).toEqual([]);
+        });
+
+        it('reverts every applied batch together in one replay and keeps the brief', async () => {
+            const brief = await confirmBrief();
+            await confirmCard();
+            await skipCard();
+            await confirmCard();
+            const run = agentRunLifecycle.get(brief.runId);
+            const groupIds = (run?.receipts ?? []).flatMap((receipt) => receipt.revertGroupId ?? []);
+            const briefRevision = liveBriefRevision();
+
+            await expect(revertVibeRun({ runId: brief.runId })).resolves.toMatchObject({ status: 'reverted' });
+
+            expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
+            expect(trackDeviceTypes(BASS_ID)).toEqual([]);
+            expect(liveBriefRevision()).toBe(briefRevision);
+            expect(liveBriefRevision()).toBe(PLANNED_BRIEF_REVISION);
+            const batchGroups = groupIds.filter((groupId) =>
+                (undoHistoryStore.value?.future ?? []).some((entry) => entry.groupId === groupId)
+            );
+            expect(batchGroups).toHaveLength(2);
+            for (const groupId of batchGroups) {
+                expect((undoHistoryStore.value?.past ?? []).some((entry) => entry.groupId === groupId)).toBe(false);
+            }
+            expect(lastMessage()).toBe(
+                'Reverted the vibe run: batch 2 (warm drums), batch 4 (warm bass) undone together. The production brief stays as written.'
+            );
+        });
+
+        it('undoes nothing when one applied batch can no longer be reverted, and says why', async () => {
+            const brief = await confirmBrief();
+            await confirmCard();
+            await skipCard();
+            await confirmCard();
+            const drumsDevice = trackStore.value?.tracks.find((track) => track.id === DRUMS_ID)?.devices[0];
+            if (drumsDevice === undefined) {
+                throw new TypeError('Expected the Drums batch device');
+            }
+            // A later edit of the project removes what batch 2 added, so its inverse conflicts.
+            await executeAppAction({ type: 'removeDevice', payload: { deviceId: drumsDevice.id } });
+            const history = structuredClone(undoHistoryStore.value);
+            const tracks = structuredClone(trackStore.value);
+
+            await expect(revertVibeRun({ runId: brief.runId })).resolves.toMatchObject({ status: 'refused' });
+
+            expect(trackDeviceTypes(BASS_ID)).toEqual(['builtin-eq']);
+            expect(trackStore.value).toEqual(tracks);
+            expect(undoHistoryStore.value).toEqual(history);
+            expect(lastMessage()).toMatch(/^The vibe run was not reverted; nothing was undone: .+\.$/u);
+        });
+
+        it('undoes nothing, not even the older batch, when the newest applied batch can no longer be reverted', async () => {
+            const brief = await confirmBrief();
+            await confirmCard();
+            await skipCard();
+            await confirmCard();
+            const bassDevice = trackStore.value?.tracks.find((track) => track.id === BASS_ID)?.devices[0];
+            if (bassDevice === undefined) {
+                throw new TypeError('Expected the Bass batch device');
+            }
+            // A later edit of the project removes what batch 4 added, so its inverse conflicts.
+            await executeAppAction({ type: 'removeDevice', payload: { deviceId: bassDevice.id } });
+            const history = structuredClone(undoHistoryStore.value);
+            const tracks = structuredClone(trackStore.value);
+
+            await expect(revertVibeRun({ runId: brief.runId })).resolves.toMatchObject({ status: 'refused' });
+
+            expect(trackDeviceTypes(DRUMS_ID)).toEqual(['builtin-eq']);
+            expect(trackStore.value).toEqual(tracks);
+            expect(undoHistoryStore.value).toEqual(history);
+            expect(lastMessage()).toMatch(/^The vibe run was not reverted; nothing was undone: .+\.$/u);
+        });
+
+        it('still refuses the batch after a skipped one once the brief changed', async () => {
+            const brief = await confirmBrief();
+            await skipCard();
+            await editBrief();
+            const vocal = requireOnlyProposedCard();
+
+            await expect(skipPendingVibeBatch({ confirmationId: vocal.id })).resolves.toEqual({ status: 'skipped' });
+
+            expect(proposedCards()).toEqual([]);
+            expect(chatStore.value?.messages.at(-2)?.content).toBe(
+                `Batch 4 of 4 was not proposed: production brief changed since this run was planned (rev ${String(PLANNED_BRIEF_REVISION)} → ${String(PLANNED_BRIEF_REVISION + 1)}). Only batch 1 remains applied.`
+            );
+            expect(trackDeviceTypes(BASS_ID)).toEqual([]);
+            expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('partially-completed');
+        });
     });
 });

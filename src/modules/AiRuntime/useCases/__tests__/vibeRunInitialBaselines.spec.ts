@@ -1236,7 +1236,8 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         expect(trackStore.value?.tracks.find((track) => track.id === VOCAL_ID)).toEqual(protectedVocal);
         // Stop the next uncommitted batch before replaying the one committed group.
         await cancelPendingChatActions({ confirmationId: requireOnlyProposedCard().id });
-        expect(lastMessage()).toContain('Batches 1–2 remain applied.');
+        // The stopped card keeps its text; the run's summary follows it.
+        expect(chatStore.value?.messages.at(-2)?.content).toContain('Batches 1–2 remain applied.');
         await undo();
         expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
         expect(trackStore.value?.tracks.find((track) => track.id === VOCAL_ID)).toEqual(protectedVocal);
