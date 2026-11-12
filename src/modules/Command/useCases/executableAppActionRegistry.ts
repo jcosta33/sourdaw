@@ -2583,7 +2583,20 @@ export const executableAppActionDescriptors = [
         risk: 'bounded-reversible',
         description:
             "Hold one parameter of an existing track — its gain, its pan, the level of one of its sends, or an automatable parameter of a device on it — at a target across a section, a run of bars, or a span of beats, in either direction. The lane ramps in from the value it already draws at the range start and back out to the value it draws at the range end; outside the range it is unchanged, and the lane is created when the track has none. State the range once and the target exactly once: valueDb or deltaDb for gain and send levels, value in the lane's own units otherwise.",
-        intentPhrases: ['dip', 'duck', 'automate'],
+        // `lift` and `gain lift` read the section gain lift the retired `automateTrackGainRange` drew;
+        // the send phrases read the section send ride the retired `automateSendRange` drew.
+        intentPhrases: [
+            'dip',
+            'duck',
+            'automate',
+            'lift',
+            'gain lift',
+            'lower every vocal send',
+            'lower vocal sends',
+            'lower send',
+            'lower sends',
+            'automate send',
+        ],
         targetRules: existingTrackTargetRules,
         // A decibel target is the figure the request states, in the form it states it; a pan or
         // device target carries neither argument and is read as before.

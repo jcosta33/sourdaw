@@ -1353,6 +1353,71 @@ function getCoordinatedListTargetRule(
     return targetRule;
 }
 
+/**
+ * One clause riding the sends of a set of sources to one bus ("lower every vocal send to the Hall"),
+ * for an action whose one target is a single track and whose calls each move one `send:<busId>`
+ * lane: the set is read once, by the same source-set reading a set target takes with the bus as its
+ * dependency, and the clause then takes one call per member. Null when the calls name more than one
+ * bus, fewer than two calls share the clause, or the set does not resolve to exactly the calls'
+ * tracks; the clause is then read as any other.
+ */
+function getSendSetScope(input: {
+    actionName: string;
+    clause: PromptClause;
+    context: ProjectContext;
+    groundingRules: GroundingRules;
+    intentPhrase: string;
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
+}): PromptClauseScope | null {
+    const [targetRule, ...otherRules] = input.groundingRules.targetRules;
+    if (
+        targetRule === undefined ||
+        otherRules.length > 0 ||
+        targetRule.capability !== 'track' ||
+        targetRule.cardinality === 'many' ||
+        input.sameActionAssertedArguments.length < 2
+    ) {
+        return null;
+    }
+    const busIds = new Set(input.sameActionAssertedArguments.map((arguments_) => getSendLaneBusId(arguments_)));
+    const [busId] = busIds;
+    if (busIds.size !== 1 || busId === undefined) {
+        return null;
+    }
+    const risk = getAppActionExecutionPolicy(input.actionName).risk;
+    // The bus is grounded once, as the destination the clause names.
+    const bus = resolveAgentReference({
+        prompt: input.clause.text,
+        assertedId: busId,
+        capability: 'bus',
+        context: input.context,
+        excludedIds: [],
+        risk,
+    });
+    if (bus.status !== 'resolved') {
+        return null;
+    }
+    const set = resolveAgentReferenceArray({
+        assertedIds: input.sameActionAssertedArguments.map((arguments_) => arguments_[targetRule.argument]),
+        capability: 'routable-source',
+        context: input.context,
+        dependencyId: busId,
+        prompt: input.clause.text,
+        risk,
+    });
+    if (set.status !== 'resolved') {
+        return null;
+    }
+    return {
+        ...input.clause,
+        directional: false,
+        matchedIntentPhrase: input.intentPhrase,
+        referenceSlots: set.ids.length,
+        coordinatedTargets: { memberIds: set.ids, references: [] },
+        sendSet: true,
+    };
+}
+
 /** The head may contain only the action carrier before the first whole target. */
 function hasCompleteListHead(lead: string, intentPhrase: string): boolean {
     const commandLead = lead
@@ -1735,6 +1800,18 @@ function resolveActionPromptScope({
                     // The clause carries the level verb even though another fader owns its level,
                     // so the next clause may still continue that verb onto this action's fader.
                     takesContinuation = decibelLevelForms.length > 0;
+                    continue;
+                }
+                const sendSetScope = getSendSetScope({
+                    actionName,
+                    clause,
+                    context,
+                    groundingRules,
+                    intentPhrase: intent.phrase,
+                    sameActionAssertedArguments,
+                });
+                if (sendSetScope !== null) {
+                    matchingScopes.push(sendSetScope);
                     continue;
                 }
                 matchingScopes.push({
@@ -5265,8 +5342,20 @@ function groundToolCall({
             : [];
         // A coordinated list names every member in one scope, so each call resolves against its own
         // member with the others set aside.
+        // A send set was resolved whole as the clause's scope, and every call was matched to one member.
+        if (
+            actionScope.sendSet === true &&
+            targetRule === groundingRules.targetRules[0] &&
+            typeof assertedValue === 'string' &&
+            actionScope.coordinatedTargets?.memberIds.includes(assertedValue)
+        ) {
+            groundedArguments[targetRule.argument] = assertedValue;
+            continue;
+        }
         const coordinatedSiblingIds =
             actionScope.coordinatedTargets?.memberIds.filter((memberId) => memberId !== assertedValue) ?? [];
+        // A send lane's bus is named to say whose send moves, so it never competes for the source track.
+        const sendLaneBusId = getSendLaneBusId(call.arguments);
         const result = resolveAgentReference({
             prompt: targetPrompt,
             assertedId: assertedValue,
@@ -5277,6 +5366,7 @@ function groundToolCall({
                 ...(typeof distinctValue === 'string' ? [distinctValue] : []),
                 ...bulkSiblingTargetIds,
                 ...coordinatedSiblingIds,
+                ...(sendLaneBusId !== undefined && sendLaneBusId !== assertedValue ? [sendLaneBusId] : []),
             ],
             risk: getAppActionExecutionPolicy(call.name).risk,
         });
