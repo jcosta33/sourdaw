@@ -40,9 +40,10 @@ vi.mock('#/infra/logger/appLogger', () => ({
 // single model load instead of each building their own (the OOM/duplicate-
 // load hazard the in-flight-promise memoization guards against).
 const basicPitchCtor = vi.fn<(model: string | Promise<unknown>) => void>();
-vi.mock('@tensorflow/tfjs', () => ({ loadGraphModel: vi.fn().mockResolvedValue({}) }));
+const basicPitchState = vi.hoisted(() => ({ model: Promise.resolve({}) as Promise<object> }));
 vi.mock('@spotify/basic-pitch', () => ({
     BasicPitch: class {
+        model = basicPitchState.model;
         constructor(model: string | Promise<unknown>) {
             basicPitchCtor(model);
         }
@@ -63,7 +64,7 @@ vi.mock('@spotify/basic-pitch', () => ({
     noteFramesToTime: vi.fn(() => []),
 }));
 
-vi.mock('@spotify/basic-pitch/model/model.json?url', () => ({ default: 'mock-model-url' }));
+vi.mock('virtual:sourdaw-basic-pitch-model', () => ({ default: 'mock-model-url' }));
 
 describe('polyphonicAudioToMidi', () => {
     beforeEach(() => {
@@ -72,6 +73,7 @@ describe('polyphonicAudioToMidi', () => {
         getCachedAudioBufferMock.mockReset();
         loggerWarnMock.mockReset();
         basicPitchCtor.mockReset();
+        basicPitchState.model = Promise.resolve({});
         releaseGate.basicPitch = true;
         sourceAuthority.revision = 'source-revision';
         evaluate.mockReset().mockResolvedValue(undefined);
@@ -132,7 +134,16 @@ describe('polyphonicAudioToMidi', () => {
 
         // Two callers race before either finishes loading the model. The
         // memoized load promise must coalesce them onto a single BasicPitch.
-        await Promise.all([polyphonicAudioToMidi({ clipId: 'clip-1' }), polyphonicAudioToMidi({ clipId: 'clip-1' })]);
+        const model = Promise.withResolvers<object>();
+        basicPitchState.model = model.promise;
+        const conversions = Promise.all([
+            polyphonicAudioToMidi({ clipId: 'clip-1' }),
+            polyphonicAudioToMidi({ clipId: 'clip-1' }),
+        ]);
+        await vi.waitFor(() => expect(basicPitchCtor).toHaveBeenCalledTimes(1));
+        expect(evaluate).not.toHaveBeenCalled();
+        model.resolve({});
+        await conversions;
 
         expect(getCachedAudioBufferMock).toHaveBeenCalledWith({ bufferId: 'buf-1' });
         expect(basicPitchCtor).toHaveBeenCalledTimes(1);

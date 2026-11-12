@@ -14,9 +14,10 @@ import {
     createSourdawRootHeaderMiddleware,
     isSourdawE2eServeMode,
     SOURDAW_E2E_RUN_TOKEN_ENV,
-} from './scripts/e2eServerIdentity';
+} from './scripts/e2eServerIdentity.ts';
+import { basicPitchAssets } from './scripts/basicPitchAssets.ts';
 import { sourdawE2eStartupDiagnosticsPlugin } from './scripts/e2eStartupDiagnostics.ts';
-import { sourdawE2eUncachedResponsesPlugin } from './scripts/e2eUncachedResponses';
+import { sourdawE2eUncachedResponsesPlugin } from './scripts/e2eUncachedResponses.ts';
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
 
@@ -195,7 +196,8 @@ export default defineConfig({
         __APP_VERSION__: JSON.stringify(version),
     },
     plugins: [
-        tanstackRouter({ routesDirectory: './src/routes' }),
+        tanstackRouter({ routesDirectory: './src/routes', routeFileIgnorePattern: '^__tests__$' }),
+        basicPitchAssets(),
         babel({ presets: [reactCompilerPreset()] }),
         react(),
         tailwindcss(),

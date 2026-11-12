@@ -5,6 +5,8 @@ import { dirname, resolve } from 'node:path';
 import { build } from 'vite';
 import { describe, expect, it } from 'vitest';
 
+import { basicPitchAssets } from '../../../../../scripts/basicPitchAssets';
+
 describe('Basic Pitch production asset edges', () => {
     it('emits the actual model and shard referenced by the production repository', async () => {
         // Exercise Vite's production URL pipeline without the unrelated app
@@ -12,12 +14,14 @@ describe('Basic Pitch production asset edges', () => {
         const built = await build({
             configFile: false,
             logLevel: 'error',
+            base: './',
+            plugins: [basicPitchAssets()],
             build: {
                 write: false,
                 minify: false,
                 rollupOptions: {
                     input: resolve(import.meta.dirname, '../loadBasicPitchModel.ts'),
-                    external: (id) => id === '@spotify/basic-pitch' || id === '@tensorflow/tfjs',
+                    external: (id) => id === '@spotify/basic-pitch',
                     preserveEntrySignatures: 'strict',
                 },
             },
@@ -37,12 +41,22 @@ describe('Basic Pitch production asset edges', () => {
         }
         expect(Buffer.from(model.source)).toEqual(readFileSync(resolve(packageRoot, 'model/model.json')));
         expect(Buffer.from(weights.source)).toEqual(readFileSync(resolve(packageRoot, 'model/group1-shard1of1.bin')));
-        const code = output
-            .filter((entry) => entry.type === 'chunk')
-            .map((entry) => entry.code)
-            .join('\n');
-        expect(code).toContain(model.fileName);
-        expect(code).toContain(weights.fileName);
-        expect(code).toContain('weightUrlConverter');
+        const chunk = output.find((entry) => entry.type === 'chunk');
+        if (chunk?.type !== 'chunk') {
+            throw new Error('The loader did not emit a chunk');
+        }
+        const match = chunk.code.match(/new URL\("([^"]+)", import\.meta\.url\)/);
+        expect(match).not.toBeNull();
+        if (!match?.[1]) {
+            throw new Error('The model URL is not relative to its emitted chunk');
+        }
+        const chunkUrl = new URL(chunk.fileName, 'https://example.test/nested/');
+        const modelUrl = new URL(match[1], chunkUrl);
+        expect(modelUrl.href).toBe(new URL(model.fileName, 'https://example.test/nested/').href);
+        const paths: unknown = JSON.parse(Buffer.from(model.source).toString()).weightsManifest[0].paths;
+        expect(paths).toEqual(['group1-shard1of1.bin']);
+        expect(new URL('group1-shard1of1.bin', modelUrl).href).toBe(
+            new URL(weights.fileName, 'https://example.test/nested/').href
+        );
     });
 });
