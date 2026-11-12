@@ -1,0 +1,19 @@
+scripts/__tests__/retargetCapabilitySnapshot.spec.ts
+  s_fe9c0c7cc0a87f::t_ac28724cc26c14 304
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b6bef0715b0f34701804fac6a9b7a55baaa58e49",
+  "prompts": {},
+  "sessions": {
+    "s_fe9c0c7cc0a87f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_fe9c0c7cc0a87f",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
