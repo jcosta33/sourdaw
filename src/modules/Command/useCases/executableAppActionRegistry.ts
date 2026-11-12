@@ -2585,7 +2585,22 @@ export const executableAppActionDescriptors = [
             "Hold one parameter of an existing track — its gain, its pan, the level of one of its sends, or an automatable parameter of a device on it — at a target across a section, a run of bars, or a span of beats, in either direction. The lane ramps in from the value it already draws at the range start and back out to the value it draws at the range end; outside the range it is unchanged, and the lane is created when the track has none. State the range once and the target exactly once: valueDb or deltaDb for gain and send levels, value in the lane's own units otherwise.",
         intentPhrases: ['dip', 'duck', 'automate'],
         targetRules: existingTrackTargetRules,
-        valueRules: [],
+        // A decibel target is the figure the request states, in the form it states it; a pan or
+        // device target carries neither argument and is read as before.
+        valueRules: [
+            {
+                argument: 'valueDb',
+                kind: 'number-if-present',
+                mayOmitWhenUnmentioned: true,
+                levelForm: 'absolute-decibel',
+            },
+            {
+                argument: 'deltaDb',
+                kind: 'number-if-present',
+                mayOmitWhenUnmentioned: true,
+                levelForm: 'relative-decibel',
+            },
+        ],
         parameters: {
             properties: {
                 trackId: { type: 'string', description: 'Existing track ID' },

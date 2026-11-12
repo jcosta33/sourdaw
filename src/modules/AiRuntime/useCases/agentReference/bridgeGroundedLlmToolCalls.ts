@@ -3,6 +3,8 @@ import {
     getExecutableAppActionEffect,
     getExecutableAppActionGroundingCatalog,
     getExecutableAppActionGroundingRules,
+    getExecutableAppActionProviderSchema,
+    isExecutableAppActionType,
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 import { normalizeDeviceParameterValueUnit, type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
@@ -127,6 +129,7 @@ import { resolveCommandScopeOverride } from './groundingStrategies/commandScopeO
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
 import { REFERENCE_PLACEHOLDER } from './groundingStrategies/findReferencedIntentPhrase';
+import { findTrailingRangePhrase } from './groundingStrategies/findTrailingRangePhrase';
 import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
 import { getCancellationCues } from './groundingStrategies/getCancellationCues';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
@@ -1395,6 +1398,24 @@ function getCoordinatedListScope(
 /** The decibel unit after a list's one figure, then nothing but punctuation to the list's end. */
 const LIST_FIGURE_ENDING_PATTERN = /^\s*d\s?b[\p{P}\s]*$/iu;
 
+/** Whether the action writes across a stated musical range, read from its published parameters. */
+function declaresRange(actionName: string): boolean {
+    return (
+        isExecutableAppActionType(actionName) &&
+        Object.hasOwn(getExecutableAppActionProviderSchema(actionName).properties, 'range')
+    );
+}
+
+/**
+ * The list's masked text without the range phrase it closes on: "Lift Drum Bus and Bass Bus by
+ * 1.5 dB in Chorus Two" states its one figure before the range it holds it across, and the bars or
+ * beats such a phrase counts are not decibel figures. A list closing on anything else is unchanged.
+ */
+function withoutTrailingRangePhrase(clause: PromptClause, context: ProjectContext): string {
+    const rangeStart = findTrailingRangePhrase(clause.text, context);
+    return rangeStart === null ? clause.masked : clause.masked.slice(0, rangeStart);
+}
+
 /** Whether the list's own text states exactly one figure, in decibels, and ends on it. */
 function endsOnItsOneFigure(maskedList: string): boolean {
     const numbers = findPromptNumbers(maskedList);
@@ -1476,7 +1497,10 @@ function getCoordinatedLevelLists(input: {
         if (targetRule.cardinality === 'many') {
             return [{ ...range, scope: getCoordinatedSetScope(list, clause, intent.phrase) }];
         }
-        const scope = endsOnItsOneFigure(clause.masked)
+        const figureText = declaresRange(input.actionName)
+            ? withoutTrailingRangePhrase(clause, input.context)
+            : clause.masked;
+        const scope = endsOnItsOneFigure(figureText)
             ? getCoordinatedListScope(list, list.memberIds, clause, intent.phrase)
             : null;
         return [{ ...range, scope }];
@@ -2846,11 +2870,24 @@ function getWholeSectionReferenceName(
 }
 
 /**
+ * The bus a `send:<busId>` automation target names. The request names that bus to say whose send
+ * the level moves ("duck the Drums send to the Drum Bus to -12 dB"), so it is the send's
+ * destination, never a second track competing for the figure.
+ */
+function getSendLaneBusId(groundedArguments: Record<string, unknown>): string | undefined {
+    const parameterId = groundedArguments.parameterId;
+    return typeof parameterId === 'string' && parameterId.startsWith('send:')
+        ? parameterId.slice('send:'.length)
+        : undefined;
+}
+
+/**
  * The decibel figures a scope naming several tracks binds to this call's own track, or `undefined`
  * when the scope names fewer than two and every figure it states is this call's. The call's track
  * is its first grounded non-destination target; tracks the call's other targets name, such as the
  * bus a send feeds, are not candidates.
  */
+
 function getReferenceBoundDecibelFigures(
     actionScope: ActionPromptScope,
     targetRules: GroundingRules['targetRules'],
@@ -2865,11 +2902,12 @@ function getReferenceBoundDecibelFigures(
     if (typeof anchorId !== 'string' || !context.tracks.some((track) => track.id === anchorId)) {
         return undefined;
     }
-    const otherTargetIds = new Set(
-        targetRules
+    const otherTargetIds = new Set([
+        ...targetRules
             .filter((targetRule) => targetRule !== anchorRule)
-            .map((targetRule) => groundedArguments[targetRule.argument])
-    );
+            .map((targetRule) => groundedArguments[targetRule.argument]),
+        getSendLaneBusId(groundedArguments),
+    ]);
     const references =
         actionScope.coordinatedTargets?.references ??
         getNamedReferenceSpans(
