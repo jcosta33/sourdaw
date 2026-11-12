@@ -1,0 +1,19 @@
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_9307cedd8951f1::t_1b16db231a6a0a 2-5,12-28,32-33,38-43,50-51,82-83,341-472,474,1005-1011,1013-1021
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e46ffe7b81e317b22d0717396884d71c1654403b",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
