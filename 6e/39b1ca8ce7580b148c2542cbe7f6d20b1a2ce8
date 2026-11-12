@@ -1,0 +1,25 @@
+src/modules/Project/useCases/__tests__/locateMissingMediaAuthority.integration.spec.ts
+  s_9307cedd8951f1::t_d31dc0cbcd42e3 504-556
+src/modules/Project/useCases/locateMissingMedia.ts
+  s_9307cedd8951f1::t_7f83c1d08330b3 30,34-36,51-53,77-79,120,184
+src/modules/Project/presentations/views/__tests__/MissingMediaRecovery.integration.spec.tsx
+  s_9307cedd8951f1::t_c18370a38bf545 37,51,99,153
+src/modules/Project/useCases/__tests__/locateMissingMedia.spec.ts
+  s_9307cedd8951f1::t_07d884e3545112 297-302
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6e39b1ca8ce7580b148c2542cbe7f6d20b1a2ce8",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
