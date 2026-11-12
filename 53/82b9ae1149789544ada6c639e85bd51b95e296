@@ -1,0 +1,60 @@
+src/modules/Automation/handlers/automation/validateRangeWriteSessionEntries.ts
+  s_35b9801a6d6336::t_29a5854368f03b 1-46,53-178,180-235
+  s_35b9801a6d6336::t_db7ed5d54c5128 47-52
+  s_35b9801a6d6336::t_ca7dff79ca11ef 179
+  s_35b9801a6d6336::t_0fd04902a155bc 236
+src/modules/Automation/handlers/automation/handleAutomateParameterRange.ts
+  s_9307cedd8951f1::t_6f60630d3aa21c 11-12,253
+src/modules/Automation/handlers/automation/handleAutomateSendRange.ts
+  s_9307cedd8951f1::t_f4417447b58975 8-9,118
+src/modules/Automation/handlers/automation/handleAutomateSendRanges.ts
+  s_9307cedd8951f1::t_b1229eeb4be269 10-11,120
+src/modules/Automation/handlers/automation/handleAutomateTrackGainRange.ts
+  s_9307cedd8951f1::t_445669c9e6b2e5 9-10,109
+src/modules/Automation/handlers/automation/handleRemoveAutomationLane.ts
+  s_9307cedd8951f1::t_54c380f3a1543c 9,125
+src/modules/Automation/handlers/automation/handleRemoveSendAutomationRange.ts
+  s_9307cedd8951f1::t_79901e58636cf6 9-10,98
+src/modules/Automation/handlers/automation/handleRemoveSendAutomationRanges.ts
+  s_9307cedd8951f1::t_f4c184d185266e 11-12,122
+src/modules/Automation/handlers/automation/handleRemoveTrackGainAutomationRange.ts
+  s_9307cedd8951f1::t_1ee0bd80b535ca 11-12,134
+src/modules/Automation/handlers/automation/handleRestoreAutomationLanePoints.ts
+  s_126e3d478b4f75::t_34ce89bea321a8 9-12,61
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_9307cedd8951f1::t_b1a87f6861d4e8 24-28,114-118
+src/modules/Automation/AGENTS.md
+  s_35b9801a6d6336::t_9096fb6980c059 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5382b9ae1149789544ada6c639e85bd51b95e296",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
