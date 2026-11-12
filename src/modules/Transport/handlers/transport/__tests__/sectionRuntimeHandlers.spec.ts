@@ -5,6 +5,7 @@ import { getMarkerState } from '#/modules/Arrangement/useCases';
 
 import { captureGestureBeat } from '../../../stores/captureGestureBeat';
 import { transportStore } from '../../../stores/transportStore';
+import { executePlayheadSeek } from '../../../useCases/transportControls/executePlayheadSeek';
 import { seekPlayhead } from '../../../useCases/transportControls/seekPlayhead';
 import { setLoopEnabled } from '../../../useCases/transportControls/setLoopEnabled';
 import { setLoopRegion } from '../../../useCases/transportControls/setLoopRegion';
@@ -19,6 +20,7 @@ vi.mock('../../../stores/transportStore', () => ({
     transportStore: { value: { isPlaying: true, playheadPosition: 0 } },
 }));
 vi.mock('../../../useCases/transportControls/seekPlayhead', () => ({ seekPlayhead: vi.fn() }));
+vi.mock('../../../useCases/transportControls/executePlayheadSeek', () => ({ executePlayheadSeek: vi.fn() }));
 vi.mock('../../../useCases/transportControls/setLoopEnabled', () => ({ setLoopEnabled: vi.fn(() => true) }));
 vi.mock('../../../useCases/transportControls/setLoopRegion', () => ({ setLoopRegion: vi.fn(() => true) }));
 vi.mock('../../../useCases/transportControls/setPlayback', () => ({ setPlayback: vi.fn() }));
@@ -61,6 +63,7 @@ beforeEach(() => {
     vi.mocked(setLoopRegion).mockReturnValue(true);
     vi.mocked(setLoopEnabled).mockReturnValue(true);
     vi.mocked(seekPlayhead).mockResolvedValue(true);
+    vi.mocked(executePlayheadSeek).mockResolvedValue(true);
 });
 
 describe('handleNavigateSection', () => {
@@ -140,15 +143,15 @@ describe('handleRehearseSection', () => {
                 vi.mocked(setLoopEnabled).mock.invocationCallOrder[0]!
             );
             expect(vi.mocked(setLoopEnabled).mock.invocationCallOrder[0]!).toBeLessThan(
-                vi.mocked(seekPlayhead).mock.invocationCallOrder[0]!
+                vi.mocked(executePlayheadSeek).mock.invocationCallOrder[0]!
             );
         }
-        expect(seekPlayhead).toHaveBeenCalledExactlyOnceWith(4.5);
+        expect(executePlayheadSeek).toHaveBeenCalledExactlyOnceWith(4.5);
         expect(setPlayback).toHaveBeenCalledExactlyOnceWith(true);
         expect(vi.mocked(setLoopRegion).mock.invocationCallOrder[0]!).toBeLessThan(
-            vi.mocked(seekPlayhead).mock.invocationCallOrder[0]!
+            vi.mocked(executePlayheadSeek).mock.invocationCallOrder[0]!
         );
-        expect(vi.mocked(seekPlayhead).mock.invocationCallOrder[0]!).toBeLessThan(
+        expect(vi.mocked(executePlayheadSeek).mock.invocationCallOrder[0]!).toBeLessThan(
             vi.mocked(setPlayback).mock.invocationCallOrder[0]!
         );
     });
@@ -156,11 +159,64 @@ describe('handleRehearseSection', () => {
     it('does not seek or play when disabling the loop cannot be written', () => {
         vi.mocked(setLoopEnabled).mockReturnValue(false);
 
-        handleRehearseSection.execute({ type: 'rehearseSection', payload: { sectionId: 'chorus', loop: false } });
+        const execution = handleRehearseSection.execute({
+            type: 'rehearseSection',
+            payload: { sectionId: 'chorus', loop: false },
+        });
 
+        expect(execution).toEqual({ status: 'written' });
         expect(setLoopRegion).toHaveBeenCalledExactlyOnceWith(32, 48, false);
         expect(setLoopEnabled).toHaveBeenCalledExactlyOnceWith(false);
-        expect(seekPlayhead).not.toHaveBeenCalled();
+        expect(executePlayheadSeek).not.toHaveBeenCalled();
+        expect(setPlayback).not.toHaveBeenCalled();
+    });
+
+    it('waits for the seek and quietly declines playback when a newer transport intent owns it', async () => {
+        let finishSeek: ((committed: boolean) => void) | undefined;
+        vi.mocked(executePlayheadSeek).mockImplementationOnce(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    finishSeek = resolve;
+                })
+        );
+
+        const execution = handleRehearseSection.execute({
+            type: 'rehearseSection',
+            payload: { sectionId: 'chorus', loop: true },
+        });
+        if (!execution || execution instanceof Promise || !execution.afterRuntimeExecution || !finishSeek) {
+            throw new Error('Expected pending rehearsal seek');
+        }
+        expect(setPlayback).not.toHaveBeenCalled();
+        finishSeek(false);
+        await expect(execution.afterRuntimeExecution()).resolves.toBeUndefined();
+
+        expect(executePlayheadSeek).toHaveBeenCalledExactlyOnceWith(32);
+        expect(setPlayback).not.toHaveBeenCalled();
+    });
+
+    it('reports no write and does not seek or play when the section range is invalid', () => {
+        withSections([section('invalid', 'Invalid', 12, 4)]);
+
+        expect(
+            handleRehearseSection.execute({ type: 'rehearseSection', payload: { sectionId: 'invalid', loop: true } })
+        ).toEqual({ status: 'no-write' });
+
+        expect(setLoopRegion).not.toHaveBeenCalled();
+        expect(executePlayheadSeek).not.toHaveBeenCalled();
+        expect(setPlayback).not.toHaveBeenCalled();
+    });
+
+    it('reports no write and does not seek or play when the loop region cannot be written', () => {
+        vi.mocked(setLoopRegion).mockReturnValue(false);
+
+        expect(
+            handleRehearseSection.execute({ type: 'rehearseSection', payload: { sectionId: 'chorus', loop: false } })
+        ).toEqual({ status: 'no-write' });
+
+        expect(setLoopRegion).toHaveBeenCalledExactlyOnceWith(32, 48, false);
+        expect(setLoopEnabled).not.toHaveBeenCalled();
+        expect(executePlayheadSeek).not.toHaveBeenCalled();
         expect(setPlayback).not.toHaveBeenCalled();
     });
 
@@ -185,11 +241,15 @@ describe('handleRehearseSection', () => {
     it('does nothing when the selected section no longer exists', () => {
         withSections([]);
 
-        handleRehearseSection.execute({ type: 'rehearseSection', payload: { sectionId: 'deleted', loop: true } });
+        const execution = handleRehearseSection.execute({
+            type: 'rehearseSection',
+            payload: { sectionId: 'deleted', loop: true },
+        });
 
+        expect(execution).toEqual({ status: 'no-write' });
         expect(readMusicalRange).not.toHaveBeenCalled();
         expect(setLoopRegion).not.toHaveBeenCalled();
-        expect(seekPlayhead).not.toHaveBeenCalled();
+        expect(executePlayheadSeek).not.toHaveBeenCalled();
         expect(setPlayback).not.toHaveBeenCalled();
     });
 

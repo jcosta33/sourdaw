@@ -11,7 +11,7 @@ import { markerStore, trackStore, takeLaneStore, activeRecordingRef } from '#/mo
 import { addSection, createTrack, getMarkerState } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, registerHandlerMap, getHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
     registerCrdtStorageRuntime,
@@ -322,4 +322,40 @@ describe('section rehearsal after an armed count-in', () => {
         expect(io.startRecorder).not.toHaveBeenCalled();
         expect(workers).toHaveLength(0);
     });
+
+    it.each([false, true])(
+        'preserves the Command failure receipt when count-in teardown rejects (loop: %s)',
+        async (loop) => {
+            const recordingFailure = new Error('recording flush failed');
+            io.stopRecorder.mockRejectedValueOnce(recordingFailure);
+            toggleRecording();
+            expect(recordingLifecycle.hasPendingRecordingStart()).toBe(true);
+            expect(recordingLifecycle.countInTimerId).not.toBeNull();
+
+            await expect(
+                executeAppAction({ type: 'rehearseSection', payload: { sectionId: 'target', loop } })
+            ).rejects.toMatchObject({
+                name: 'AppActionCommittedError',
+                message: 'Action committed but post-commit processing failed: rehearseSection',
+                cause: recordingFailure,
+            });
+
+            expect(io.stopRecorder).toHaveBeenCalledOnce();
+            expect(snapshot()).toMatchObject({
+                position: 16,
+                refPosition: 16,
+                playing: false,
+                recording: false,
+                loop: { enabled: loop, start: 16, end: 24 },
+                pendingStart: false,
+                countInArmed: false,
+                closing: false,
+                workerStarted: false,
+            });
+            expect(io.startRecorder).not.toHaveBeenCalled();
+            expect(workers).toHaveLength(0);
+            expect(activeRecordingRef.current).toEqual([]);
+            expect(undoHistoryStore.value?.past).toEqual([]);
+        }
+    );
 });
