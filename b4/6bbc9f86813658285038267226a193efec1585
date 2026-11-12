@@ -1,0 +1,25 @@
+src/modules/CommandInterface/AGENTS.md
+  s_0207af29e0b307::t_e3020ba49b178d 11
+src/modules/CommandInterface/presentations/views/commandRegistry.ts
+  s_0207af29e0b307::t_9660ae44789ccb 21,31
+src/modules/CommandInterface/useCases/getCommandInapplicabilityReason.ts
+  s_0207af29e0b307::t_dd597a394199cd 1
+src/modules/CommandInterface/useCases/searchCommandRegistry.ts
+  s_0207af29e0b307::t_6143cabd35cbfc 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b46bbc9f86813658285038267226a193efec1585",
+  "prompts": {},
+  "sessions": {
+    "s_0207af29e0b307": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f246cd62-2d2d-4584-ad3e-050fad80f22b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
