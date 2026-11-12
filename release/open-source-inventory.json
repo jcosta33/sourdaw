@@ -1912,7 +1912,7 @@
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
-            "sha256": "1a12000d7702bea0375d0991a5381c457be00c621fffac7ebc2bb29ed91eec08"
+            "sha256": "cd92659b7956f600bd9eb90f51e59766e0d5b122869f5181e5115cf608dc3e21"
         },
         {
             "path": "public/wasm/manifest.json",
