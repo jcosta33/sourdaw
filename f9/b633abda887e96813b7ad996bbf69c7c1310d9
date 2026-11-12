@@ -1,0 +1,26 @@
+src/modules/Arrangement/presentations/views/TimelineClipNavigator.tsx
+  s_9307cedd8951f1::t_aaf130303f2cca 64,69,136
+src/modules/Arrangement/presentations/views/timelineClipNavigatorKeyboard.ts
+  s_9307cedd8951f1::t_aaf130303f2cca 40
+src/modules/Arrangement/useCases/revealTimelineClip.ts
+  s_9307cedd8951f1::t_aaf130303f2cca 24-29,38-43
+src/modules/Arrangement/presentations/views/__tests__/TimelineClipNavigator.spec.tsx
+  s_9307cedd8951f1::t_8f3d870df756dc 15,355-374,481,534-558
+  s_9307cedd8951f1::t_98d41de8942612 559
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f9b633abda887e96813b7ad996bbf69c7c1310d9",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
