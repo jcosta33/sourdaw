@@ -38,6 +38,7 @@ import { getTransportHandlers } from '../../getTransportHandlers';
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import * as seekModule from '../executePlayheadSeek';
+import { notePanicParticipants } from '../notePanicParticipants';
 import { recordingLifecycle } from '../recordingLifecycle';
 import * as playbackModule from '../startPlayback';
 import * as recordingStopModule from '../stopActiveRecording';
@@ -286,5 +287,39 @@ describe('section rehearsal after an armed count-in', () => {
                 )
             )
         ).toBe(false);
+    });
+
+    it('does not start a stale section after Stop during post-position note panic', async () => {
+        let finishPanic: (() => void) | undefined;
+        vi.spyOn(notePanicParticipants.read('rehearsal test'), 'settleGeneratedNotes').mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    finishPanic = resolve;
+                })
+        );
+        toggleRecording();
+        expect(recordingLifecycle.hasPendingRecordingStart()).toBe(true);
+        const action: AppAction = { type: 'rehearseSection', payload: { sectionId: 'target', loop: true } };
+        const execution = getHandlerMap()[action.type]!.execute(action);
+        if (!execution || execution instanceof Promise || !execution.afterRuntimeExecution) {
+            throw new Error('Expected rehearsal runtime completion');
+        }
+        await vi.waitFor(() => expect(playheadPositionRef.current).toBe(16));
+        expect(transportStore.value?.isPlaying).toBe(false);
+        expect(workers).toHaveLength(0);
+        const seekGeneration = schedulerSession.generation;
+
+        await stopPlayback();
+        expect(schedulerSession.generation).toBeGreaterThan(seekGeneration);
+        if (!finishPanic) {
+            throw new Error('Expected note panic to be pending');
+        }
+        finishPanic();
+        await execution.afterRuntimeExecution();
+
+        expect(transportStore.value?.isPlaying).toBe(false);
+        expect(recordingLifecycle.hasPendingRecordingStart()).toBe(false);
+        expect(io.startRecorder).not.toHaveBeenCalled();
+        expect(workers).toHaveLength(0);
     });
 });

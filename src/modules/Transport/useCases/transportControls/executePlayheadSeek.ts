@@ -6,6 +6,7 @@ import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { playheadSeekRequestRef } from '../../stores/playheadSeekRequestRef';
 import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { advanceSchedulerDiscontinuityEpoch } from '../playheadScheduler/advanceSchedulerDiscontinuityEpoch';
@@ -22,15 +23,10 @@ import { stopActiveRecording } from './stopActiveRecording';
 // advances that owner's generation, while only the newest request may publish
 // after a recording flush.
 let seekOwner: { generation: number } | null = null;
-let latestSeekRequest = 0;
-
-export function invalidatePendingPlayheadSeek(): void {
-    latestSeekRequest++;
-}
 
 export function executePlayheadSeek(beat: number): Promise<boolean> {
     audioEngine.beginAudioPreviewIntent().release();
-    const request = ++latestSeekRequest;
+    const request = ++playheadSeekRequestRef.current;
     const state = getTransportState();
     if (!state) {
         return Promise.resolve(false);
@@ -86,7 +82,7 @@ export function executePlayheadSeek(beat: number): Promise<boolean> {
         // Stop/Play and Stop/Record claim a new generation even while the
         // successor is held before its worker starts. A late flush owns none
         // of that session's teardown, position or restart.
-        if (schedulerSession.generation !== owner.generation || request !== latestSeekRequest) {
+        if (schedulerSession.generation !== owner.generation || request !== playheadSeekRequestRef.current) {
             return Promise.resolve(false);
         }
 
@@ -137,8 +133,11 @@ export function executePlayheadSeek(beat: number): Promise<boolean> {
             }
         }
 
-        owner.generation = schedulerSession.generation;
-        return yeastPanic.then(() => request === latestSeekRequest);
+        const completedGeneration = schedulerSession.generation;
+        owner.generation = completedGeneration;
+        return yeastPanic.then(
+            () => request === playheadSeekRequestRef.current && completedGeneration === schedulerSession.generation
+        );
     }
 
     // A start that is armed but not yet recording must fall through to the

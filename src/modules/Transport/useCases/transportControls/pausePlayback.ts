@@ -6,6 +6,7 @@ import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { playheadSeekRequestRef } from '../../stores/playheadSeekRequestRef';
 import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { schedulerSession } from '../playheadScheduler/schedulerSession';
@@ -13,13 +14,12 @@ import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadSchedule
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
 
 import { captureManualRecordingEnd } from './captureManualRecordingEnd';
-import { invalidatePendingPlayheadSeek } from './executePlayheadSeek';
 import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
 
 export function pausePlayback(): void {
     audioEngine.beginAudioPreviewIntent().release();
-    invalidatePendingPlayheadSeek();
+    playheadSeekRequestRef.current++;
     const state = getTransportState();
     if (!state) {
         return;

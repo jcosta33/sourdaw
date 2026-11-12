@@ -560,6 +560,21 @@ describe('deferred seek scheduler ownership', () => {
         expect(schedulerSession.worker).not.toBe(worker);
     });
 
+    it('declines completion when Stop takes ownership during the post-position panic', async () => {
+        const panic = deferredFlush();
+        mockPanicYeast.mockReturnValueOnce(panic.promise);
+        const seek = executePlayheadSeek(16);
+        await vi.waitFor(() => expect(playheadPositionRef.current).toBe(16));
+        const seekGeneration = schedulerSession.generation;
+
+        await stopPlayback();
+        expect(schedulerSession.generation).toBeGreaterThan(seekGeneration);
+        panic.resolve();
+
+        expect(await seek).toBe(false);
+        expect(transportStore.value?.isPlaying).toBe(false);
+    });
+
     it.each([false, true])('finishes a parked or paused seek (wasPlaying=%s)', async (wasPlaying) => {
         const flush = deferredFlush();
         mockStopActiveRecording.mockReturnValueOnce(flush.promise);
