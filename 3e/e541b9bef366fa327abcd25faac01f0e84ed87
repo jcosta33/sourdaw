@@ -1,0 +1,58 @@
+src/modules/Arrangement/handlers/projectClipThroughPriorBatchActions.ts
+  s_c2f4449c5891e9::t_e2ee60a4971baf 60-62
+  s_c2f4449c5891e9::t_79481d3365d3dd 58-59
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveAllTracks.undoRouting.spec.ts
+  s_c2f4449c5891e9::t_c78520cf0f450b 62-65
+src/modules/Arrangement/stores/__tests__/trackStoreDecodeTrackSnapshot.spec.ts
+  s_c2f4449c5891e9::t_339aa0ab420cbe 1-97,99-168
+  s_c2f4449c5891e9::t_7410512442f659 98
+scripts/__tests__/eslintConfig.spec.ts
+  s_c2f4449c5891e9::t_897184a981fbcb 142-144,160,170-179
+src/modules/Arrangement/handlers/trackAlternative/isRestorableAlternativeState.ts
+  s_c2f4449c5891e9::t_d2f40924946fdb 7-11,17,24-25,27-28,30,33-34
+eslint.config.mjs
+  s_c2f4449c5891e9::t_63bc9736aff96e 2692
+  s_c2f4449c5891e9::t_f3a477e3ee265c 2646-2647,2653,2655,2658,2660,2662,2665,2667-2689,2691
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleRestoreTrackAlternativeState.spec.ts
+  s_c2f4449c5891e9::t_215af7f6864f0a 435-475
+src/modules/Arrangement/handlers/trackAlternative/handleRestoreTrackAlternativeState.ts
+  s_c2f4449c5891e9::t_ffa0145cb88780 44-45
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreTrack.spec.ts
+  s_c2f4449c5891e9::t_f19d125dce6620 619-701,703-714,716-756
+  s_c2f4449c5891e9::t_c182b1ffc9da54 702
+  s_c2f4449c5891e9::t_92e59148574e99 512
+  s_c2f4449c5891e9::t_c2247104e4aff2 715
+  s_c2f4449c5891e9::t_e0ea8468f3bdb3 4-6,9,11,51,57,113,119-120,134,138-141,147,196,585,606,616-617
+  s_9307cedd8951f1::t_33f697b0ef12eb 618
+src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts
+  s_c2f4449c5891e9::t_69c2bb877e1d2a 285
+  s_c2f4449c5891e9::t_32a24ab1135a08 10-12,52-53,86,119,124-125,224-231,235-239,283-284,286-287
+  s_c2f4449c5891e9::t_2acab73ae7ae00 232-233
+  s_c2f4449c5891e9::t_ebf78a1ad011b3 234
+src/modules/Arrangement/stores/trackStore.ts
+  s_c2f4449c5891e9::t_78d3fc6e8dca60 767-774
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3ee541b9bef366fa327abcd25faac01f0e84ed87",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_c2f4449c5891e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7817afe8-15e0-436f-b304-529241ac1a61",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
