@@ -28,7 +28,14 @@ export function describePerceptualConstraintFailure(
     const unit = Object.entries(OBJECTIVE_METRIC_UNITS).find(([id]) => id === metricId)?.[1] ?? '';
     const subject = `${metric}${criterion.band === null ? '' : ` (${criterion.band} band)`} on ${criterion.targetIds.map(nameOf).join(', ')}`;
     if (failure === 'out-of-tolerance') {
-        return `The preview breaks “${clause}”: ${subject} moved from ${figure(criterion.baseline[0])} to ${figure(criterion.observed[0])} ${unit}, beyond its ${String(criterion.tolerance)} ${unit} tolerance.`;
+        let moved = 'moved';
+        if (criterion.relation === 'no-increase') {
+            moved = 'rose';
+        }
+        if (criterion.relation === 'no-decrease') {
+            moved = 'fell';
+        }
+        return `The preview breaks “${clause}”: ${subject} ${moved} from ${figure(criterion.baseline[0])} to ${figure(criterion.observed[0])} ${unit}, beyond its ${String(criterion.tolerance)} ${unit} tolerance.`;
     }
     return `“${clause}” is unverified: no compatible baseline and preview measurement of ${subject} exists for this batch. Re-preview to measure it.`;
 }

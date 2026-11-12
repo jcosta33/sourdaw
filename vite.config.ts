@@ -212,7 +212,10 @@ export default defineConfig({
         clearMocks: false,
         /** Tests use at most two workers; hosted shards apply the same limit. */
         maxWorkers: Number(env.VITEST_MAX_WORKERS ?? 2),
-        setupFiles: ['./src/setupTests.ts'],
+        setupFiles: env.SOURDAW_VITEST_PROGRESS
+            ? ['./scripts/vitestProgressSetup.ts', './src/setupTests.ts']
+            : ['./src/setupTests.ts'],
+        sequence: { setupFiles: 'list' },
         globals: true,
         /**
          * Agent worktrees and review probe trees mirror `src/` — exclude so `vitest run`

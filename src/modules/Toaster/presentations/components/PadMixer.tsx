@@ -27,7 +27,7 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => {
     return (
         <Row align="stretch" gap={0.5} className="overflow-x-auto pb-1">
             {pads.slice(0, TOASTER_PAD_COUNT).map((pad, index) => (
-                <Stack align="center" shrink={false} className="w-9" key={pad.id}>
+                <Stack align="center" shrink={false} className="w-[52px]" key={pad.id}>
                     {/* Volume fader track */}
                     <div
                         className="w-3 rounded-full relative cursor-ns-resize mb-0.5"
@@ -123,12 +123,15 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => {
                     </div>
 
                     {/* Mute / Solo */}
-                    <Row align="stretch" className="gap-px mb-0.5">
+                    <Row align="stretch" className="mb-0.5 gap-0.5">
                         <Button
                             variant="bare"
                             size="bare"
                             type="button"
-                            className={`w-3.5 h-3 rounded text-[5px] font-bold leading-none flex items-center justify-center ${pad.muted ? 'bg-red-500/80 text-white' : 'bg-surface-inset/50 text-muted-foreground/30'}`}
+                            aria-label={`Mute ${pad.name}`}
+                            aria-pressed={pad.muted}
+                            title={`Mute ${pad.name}`}
+                            className={`flex size-6 items-center justify-center rounded text-[length:var(--text-nano)] font-bold leading-none ${pad.muted ? 'bg-[var(--color-state-danger)]/80 text-surface-panel' : 'bg-surface-inset/50 text-muted-foreground hover:text-foreground'}`}
                             onClick={() => onPadParam(index, 'muted', pad.muted ? 0 : 1)}
                         >
                             M
@@ -142,8 +145,10 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => {
                             variant="bare"
                             size="bare"
                             type="button"
-                            title="Solo this pad"
-                            className={`w-3.5 h-3 rounded text-[5px] font-bold leading-none flex items-center justify-center ${pad.soloed ? 'bg-yellow-400/80 text-black' : 'bg-surface-inset/50 text-muted-foreground/30'}`}
+                            aria-label={`Solo ${pad.name}`}
+                            aria-pressed={pad.soloed}
+                            title={`Solo ${pad.name}`}
+                            className={`flex size-6 items-center justify-center rounded text-[length:var(--text-nano)] font-bold leading-none ${pad.soloed ? 'bg-[var(--color-state-warning)]/80 text-surface-panel' : 'bg-surface-inset/50 text-muted-foreground hover:text-foreground'}`}
                             onClick={() => onPadParam(index, 'soloed', pad.soloed ? 0 : 1)}
                         >
                             S
