@@ -2,7 +2,7 @@ import { readMusicalRange } from '#/modules/Arrangement/stores';
 import { getMarkerState } from '#/modules/Arrangement/useCases';
 import { createHandler } from '#/utils/createHandler';
 
-import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { captureGestureBeat } from '../../stores/captureGestureBeat';
 import { seekPlayhead } from '../../useCases/transportControls/seekPlayhead';
 
 type ArrangementSection = NonNullable<ReturnType<typeof getMarkerState>>['sections'][number];
@@ -13,7 +13,7 @@ function compareSections(first: ArrangementSection, second: ArrangementSection):
 
 export const handleNavigateSection = createHandler<'navigateSection'>({
     execute: (action) => {
-        const playhead = playheadPositionRef.current;
+        const playhead = captureGestureBeat();
         const sections = (getMarkerState()?.sections ?? [])
             .filter((section) => section.endBeat > section.startBeat)
             .sort(compareSections);

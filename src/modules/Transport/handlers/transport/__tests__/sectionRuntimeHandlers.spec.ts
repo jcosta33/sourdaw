@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readMusicalRange } from '#/modules/Arrangement/stores';
 import { getMarkerState } from '#/modules/Arrangement/useCases';
 
-import { playheadPositionRef } from '../../../stores/playheadPositionRef';
+import { captureGestureBeat } from '../../../stores/captureGestureBeat';
 import { transportStore } from '../../../stores/transportStore';
 import { seekPlayhead } from '../../../useCases/transportControls/seekPlayhead';
 import { setLoopEnabled } from '../../../useCases/transportControls/setLoopEnabled';
@@ -14,7 +14,7 @@ import { handleRehearseSection } from '../handleRehearseSection';
 
 vi.mock('#/modules/Arrangement/stores', () => ({ readMusicalRange: vi.fn() }));
 vi.mock('#/modules/Arrangement/useCases', () => ({ getMarkerState: vi.fn() }));
-vi.mock('../../../stores/playheadPositionRef', () => ({ playheadPositionRef: { current: 0 } }));
+vi.mock('../../../stores/captureGestureBeat', () => ({ captureGestureBeat: vi.fn() }));
 vi.mock('../../../stores/transportStore', () => ({
     transportStore: { value: { isPlaying: true, playheadPosition: 0 } },
 }));
@@ -41,7 +41,7 @@ const unsortedSections = [
 ];
 
 function atPlayhead(playheadPosition: number): void {
-    playheadPositionRef.current = playheadPosition;
+    vi.mocked(captureGestureBeat).mockReturnValue(playheadPosition);
 }
 
 function withSections(sections: ArrangementSection[]): void {
@@ -63,13 +63,14 @@ beforeEach(() => {
 });
 
 describe('handleNavigateSection', () => {
-    it('uses the live playhead when the playing transport store snapshot is stale', () => {
+    it('uses the captured gesture beat when the playing transport store snapshot is stale', () => {
         expect(transportStore.value).toMatchObject({ isPlaying: true, playheadPosition: 0 });
         atPlayhead(20);
 
         handleNavigateSection.execute({ type: 'navigateSection', payload: { direction: 'next' } });
 
         expect(seekPlayhead).toHaveBeenCalledExactlyOnceWith(32);
+        expect(captureGestureBeat).toHaveBeenCalledTimes(1);
     });
 
     it.each([
