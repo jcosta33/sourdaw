@@ -5,6 +5,7 @@ import { digest } from '#/utils/canonicalDigest';
 import { type AgentRun, type AgentRunVibeRunBatchSchedule } from '../../models/AgentRun';
 import { type IntentResult } from '../../models/IntentResult';
 import { type ScheduledVibeRunBatch, type VibeRunInitialEvidence } from '../../models/VibeRunPlan';
+import { recordedSilenceHolds } from '../../validators/isSilentVibeRunCell';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { readVibeRunInitialReceipt } from '../../validators/readVibeRunInitialReceipt';
 import { getProjectContext } from '../getProjectContext';
@@ -81,6 +82,29 @@ function readInitialWitnessRefusal(goal: MetricGoal, initial: VibeRunInitialEvid
     return null;
 }
 
+/** A silent cell carries no goal, so its silence must still read from the receipt it was bound to. */
+function readSilenceRefusal(batch: ScheduledVibeRunBatch, initial: VibeRunInitialEvidence): string | null {
+    const receipts = initial.receipts.flatMap((receipt) => {
+        const read = readVibeRunInitialReceipt(receipt);
+        return read === null ? [] : [read];
+    });
+    for (const record of batch.silentRanges ?? []) {
+        const target = batch.targets.find((candidate) => candidate.targetId === record.targetId);
+        if (
+            target === undefined ||
+            !recordedSilenceHolds({
+                record,
+                expectedDeltas: target.expectedDeltas,
+                receipts,
+                sourceRevision: initial.sourceRevision,
+            })
+        ) {
+            return 'its initial exact-range recipe witness no longer validates';
+        }
+    }
+    return null;
+}
+
 function readInitialEvidenceRefusal(
     runId: string,
     batch: ScheduledVibeRunBatch,
@@ -103,7 +127,7 @@ function readInitialEvidenceRefusal(
             return refusal;
         }
     }
-    return null;
+    return readSilenceRefusal(batch, initial);
 }
 
 /**

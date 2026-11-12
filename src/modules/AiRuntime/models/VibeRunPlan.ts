@@ -96,10 +96,12 @@ export type VibeRunBatch = {
     readonly unmeasuredTargetIds: readonly string[];
     /** A target and section two or more measurements answer for equally; none of their figures stands. */
     readonly baselineConflicts: readonly { readonly targetId: string; readonly sectionId: string }[];
+    /** Required ranges a target carries no signal over; it has no goal there. */
+    readonly silentRanges: readonly { readonly targetId: string; readonly range: VibeRunVerificationRange }[];
 };
 
 export type VibeRunExcludedTargetReason =
-    'protected' | 'folder' | 'frozen' | 'unclassified-role' | 'no-applicable-recipe';
+    'protected' | 'folder' | 'frozen' | 'unclassified-role' | 'no-applicable-recipe' | 'silent';
 
 /** A track no batch touches, and why: the project guards it, or `recipe.expand` would refuse it. */
 export type VibeRunExcludedTarget = {
@@ -140,6 +142,16 @@ export type ScheduledVibeRunBatch = Pick<VibeRunBatch, 'id' | 'ordinal' | 'targe
         Partial<Pick<VibeRunBatchObjective, 'sections' | 'sectionGoals'>>;
     readonly verificationRanges?: readonly VibeRunVerificationRange[];
     readonly witnessIds?: readonly string[];
+    /** Ranges a target is silent over, each bound to the initial receipt showing it; absent means none. */
+    readonly silentRanges?: readonly VibeRunSilentRange[];
+};
+
+/** A target carries no signal over one verification range, as the named initial receipt reads it. */
+export type VibeRunSilentRange = {
+    readonly targetId: string;
+    readonly range: VibeRunVerificationRange;
+    readonly receiptCallId: string;
+    readonly receiptDigest: string;
 };
 
 /** The plan a `vibe-run` schedule stores, serialized, against the brief revision it was read from. */
@@ -183,6 +195,8 @@ export type VibeRunInitialEvidence = {
     readonly arrangementRange: VibeRunVerificationRange;
     readonly receipts: readonly ApplicationToolReceipt[];
     readonly witnesses: readonly VibeRunInitialWitness[];
+    /** Measured targets left out of every batch because they are silent in every range; absent means none. */
+    readonly silentTargetIds?: readonly string[];
 };
 
 export type MeasuredScheduledVibeRunPlan = {

@@ -782,6 +782,11 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         'nonfinite',
         'duplicate',
         'missing low-mid band',
+        'too-short',
+        'below-gate',
+        'silent and measured',
+        'silent and too-short',
+        'duplicate silent',
     ] as const)('refuses incomplete exact-range decomposition: %s', async (defect) => {
         keepDrumsOnly();
         scriptPlanningTurns(BRIEF_ROUTE);
@@ -799,8 +804,24 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         if (chorus === undefined || target === undefined) {
             throw new Error('Missing chorus witness');
         }
+        const silent = { status: 'unavailable', reason: 'silent' } as const;
         if (defect === 'missing section') {
             measurements = measurements.filter((measurement) => measurement !== chorus);
+        } else if (defect === 'too-short' || defect === 'below-gate') {
+            Object.assign(target.measurements, {
+                spectralCentroid: { status: 'unavailable', reason: defect },
+                frequencyBandEnergy: { status: 'unavailable', reason: defect },
+            });
+        } else if (defect === 'silent and measured') {
+            Object.assign(target.measurements, { frequencyBandEnergy: silent });
+        } else if (defect === 'silent and too-short') {
+            Object.assign(target.measurements, {
+                spectralCentroid: silent,
+                frequencyBandEnergy: { status: 'unavailable', reason: 'too-short' },
+            });
+        } else if (defect === 'duplicate silent') {
+            Object.assign(target.measurements, { spectralCentroid: silent, frequencyBandEnergy: silent });
+            measurements.push(structuredClone(chorus));
         } else if (defect === 'duplicate') {
             measurements.push(structuredClone(chorus));
         } else if (defect === 'missing low-mid band') {
@@ -841,6 +862,8 @@ describe('initial role and exact-section baselines through the brief pipeline', 
                 }),
             ])
         );
+        expect(result.batches.flatMap((batch) => batch.silentRanges)).toEqual([]);
+        expect(result.excludedTargets).toEqual([]);
         if (defect === 'missing low-mid band') {
             expect(result.coverageRefusals).toContainEqual(
                 expect.objectContaining({ metric: 'frequencyBandEnergy', band: 'low-mid' })
@@ -848,7 +871,7 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         }
     });
 
-    it('does not schedule a silent required section or invent zero as an available figure', async () => {
+    it('schedules around a silent required section and never invents zero as its figure', async () => {
         keepDrumsOnly();
         audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) =>
             input.startBeat === 2 ? metricGoalAudioBuffer(() => 0, 1) : renderTrack(input)
@@ -856,10 +879,24 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         scriptPlanningTurns(BRIEF_ROUTE);
         await sendChatMessage(PROMPT);
         const card = requireOnlyProposedCard();
-        expect(agentRunLifecycle.get(card.runId)?.plan?.batchSchedule).toBeUndefined();
-        expect(cardContent(card)).toContain('chorus');
-        expect(cardContent(card)).toContain('unsupported initial metric');
+        const plan = measuredPlan(card);
+        expect(plan.batches[0]?.silentRanges?.map((cell) => cell.range)).toEqual([
+            { startBeat: 2, endBeat: 4, sectionId: 'chorus' },
+        ]);
+        expect(plan.initial.witnesses.some((witness) => witness.range.sectionId === 'chorus')).toBe(false);
+        const content = cardContent(card);
+        expect(content).toContain('No goal for Drums over Chorus [2, 4]: it is silent there.');
+        expect(content).not.toContain('Initial measurement on Drums, Chorus');
+        expect(content).not.toContain(formatVibeFigure(0, 'hertz'));
         expect(liveBriefRevision()).toBe(BRIEF_REVISION);
+        await expect(confirmPendingChatActions({ confirmationId: card.id })).resolves.toEqual({ status: 'executed' });
+        const batch = requireOnlyProposedCard();
+        const state = metricGoalStateCodec(batch.approvalSnapshot.metricGoalState);
+        expect(
+            new Set(state?.authorities.flatMap((authority) => authority.goals.map((goal) => goal.range?.sectionId)))
+        ).toEqual(new Set([null, 'verse']));
+        expect(state?.proofs.some((proof) => proof.preview.range.sectionId === 'chorus')).toBe(false);
+        expect(cardContent(batch)).not.toContain('chorus [2, 4]');
     });
 
     it.each(['Confirm', 'Re-preview'] as const)(
