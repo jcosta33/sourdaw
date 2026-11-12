@@ -1,6 +1,21 @@
+import { captureProcessGroupOfPid } from './processSnapshot.ts';
+import { recordVitestProgress, VITEST_PROGRESS_ENV } from './vitestProgressDiagnostics.ts';
+
 import type { Reporter, TestCase, TestModule } from 'vitest/node';
 
-import { recordVitestModuleFailure, recordVitestProgress } from './vitestProgressDiagnostics.ts';
+/** The first failed module is observed before Vitest tears the runner down. */
+function recordVitestModuleFailure(moduleId: string): void {
+    if (!process.env[VITEST_PROGRESS_ENV]) {
+        return;
+    }
+    try {
+        const monotonicNs = process.hrtime.bigint().toString();
+        const processGroup = captureProcessGroupOfPid(process.pid);
+        recordVitestProgress('module-failure', moduleId, { monotonicNs, processGroup });
+    } catch {
+        // An unavailable diagnostic must not alter the test result.
+    }
+}
 
 // Vitest loads custom reporters through their default export.
 // oxlint-disable-next-line import/no-default-export

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { captureProcessGroupOfPid, type ProcessGroupSnapshot } from './processSnapshot.ts';
+import type { ProcessGroupSnapshot } from './processSnapshot.ts';
 
 export const VITEST_PROGRESS_ENV = 'SOURDAW_VITEST_PROGRESS';
 
@@ -56,20 +56,6 @@ export function recordVitestProgress(
                 /* Best effort. */
             }
         }
-    }
-}
-
-/** The first failed module is observed before Vitest tears the runner down. */
-export function recordVitestModuleFailure(moduleId: string): void {
-    if (!process.env[VITEST_PROGRESS_ENV]) {
-        return;
-    }
-    try {
-        const monotonicNs = process.hrtime.bigint().toString();
-        const processGroup = captureProcessGroupOfPid(process.pid);
-        recordVitestProgress('module-failure', moduleId, { monotonicNs, processGroup });
-    } catch {
-        // An unavailable diagnostic must not alter the test result.
     }
 }
 

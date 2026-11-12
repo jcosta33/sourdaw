@@ -28,7 +28,6 @@ import {
 } from './e2eServerIdentity.ts';
 import { resolvePrimaryRoot, spawnCapture } from './githubAppIdentity.ts';
 import { sameCheckoutRoot } from './guardRecoveryProof.ts';
-import { captureProcessGroupSnapshot } from './processSnapshot.ts';
 import { assertCurrentCheckoutModulesBelongToCheckout } from './pnpmModulesPreflight.ts';
 import {
     GUARD_FAILURES_DIR,
@@ -40,6 +39,7 @@ import {
     readGuardFailureReceipt,
     type GuardFailureReceipt,
 } from './prContract.ts';
+import { captureProcessGroupSnapshot } from './processSnapshot.ts';
 import { areTransientProofReasons } from './resourceGuardProofReasons.ts';
 import {
     createGuardStorage,
