@@ -3553,7 +3553,8 @@ describe('package scripts and gitignore', () => {
             reviewPort: () => ({
                 primaryRoot: () => root,
                 assertApprovalContext: () => ({ pr: 2495, headSha: head, baseRefName: 'main', baseSha: 'base' }),
-                pullRequest: () => ({ state: 'OPEN', head }),
+                // Opened before risk plans began, so this plan-less bundle reaches the delivery fence.
+                pullRequest: () => ({ state: 'OPEN', head, createdAt: '2026-09-01T00:00:00Z' }),
                 readReviewJson: (path: string) => JSON.parse(readFileSync(path, 'utf8')),
                 bundleFileExists: (path: string) => existsSync(path),
                 readBundleDiff: (path: string) => readFileSync(path, 'utf8'),
