@@ -1029,7 +1029,7 @@ const shardEnvironment = {
     HOME: shardContext.home, PATH: '/tools:/tools:/usr/local/bin:/usr/bin:/bin',
     PNPM_CONFIG_STORE_DIR: shardContext.store,
     CI: 'true', GITHUB_ACTIONS: 'true', GITHUB_WORKSPACE: shardContext.workspace,
-    VITEST_MAX_WORKERS: '4', TMPDIR: shardContext.temp, TMP: shardContext.temp, TEMP: shardContext.temp,
+    VITEST_MAX_WORKERS: '2', TMPDIR: shardContext.temp, TMP: shardContext.temp, TEMP: shardContext.temp,
 };
 const shardStatus = [
     'Uid:\t20000\t20000\t20000\t20000', 'Gid:\t20000\t20000\t20000\t20000',
@@ -1065,7 +1065,7 @@ for (const shard of ['1/4', '2/4', '3/4', '4/4']) {
             cwd: shardContext.workspace, env: { ...shardEnvironment, VITEST_MAX_WORKERS: '1' }, inheritOutput: true,
         })),
         { cwd: shardContext.workspace, env: shardEnvironment, inheritOutput: true },
-    ]), `isolated unit shard ${shard} must preserve its private store and account with one worker for all three guard commands then four workers`);
+    ]), `isolated unit shard ${shard} must preserve its private store and account with one worker for all three guard commands then two workers`);
     expect(result === 7, `isolated unit shard ${shard} must propagate pnpm failure`);
     for (const [index, spec] of wholeGuardSpecs.entries()) {
         for (const guardStatus of [7, null]) {

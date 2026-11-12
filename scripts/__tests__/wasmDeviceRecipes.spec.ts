@@ -8,19 +8,16 @@ import { buildDevices, QUANTUM, SAMPLE_RATE } from '../../crates/daw-dsp/benches
 import * as dsp from '../../public/wasm/daw-dsp/daw_dsp.js';
 
 it('runs the real Proof benchmark with +6 dB drive and over 1 dB limiting in both windows', () => {
-    const wasm = dsp.initSync({
-        module: new WebAssembly.Module(readFileSync(resolve(process.cwd(), 'public/wasm/daw-dsp/daw_dsp_bg.wasm'))),
-    });
-    /** @type {import('../../public/wasm/daw-dsp/daw_dsp.js').ProofInstance | undefined} */
-    let instance;
+    const wasmBytes = Uint8Array.from(readFileSync(resolve(process.cwd(), 'public/wasm/daw-dsp/daw_dsp_bg.wasm')));
+    const wasm = dsp.initSync({ module: new WebAssembly.Module(wasmBytes) });
+    const observed: { instance?: dsp.ProofInstance } = {};
     // Capture the actual wrapper instance so the oracle can read stereo PCM
     // and public limiter telemetry; no DSP method is replaced.
     class ObservedProof extends dsp.ProofInstance {
-        /** @param {number} rate */
-        constructor(rate) {
+        constructor(rate: number) {
             super(rate);
             expect(rate).toBe(SAMPLE_RATE);
-            instance = this;
+            observed.instance = this;
         }
     }
     const [recipe] = buildDevices({
@@ -28,7 +25,8 @@ it('runs the real Proof benchmark with +6 dB drive and over 1 dB limiting in bot
         only: 'proof',
     });
     expect(recipe?.id).toBe('proof');
-    if (!recipe || !instance) {
+    const instance = observed.instance;
+    if (!recipe || !instance || !recipe.feed) {
         throw new Error('Proof recipe must construct its actual engine');
     }
     try {
