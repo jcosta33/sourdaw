@@ -950,6 +950,28 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             expect(lastMessage()).toMatch(/^The vibe run was not reverted; nothing was undone: .+\.$/u);
         });
 
+        it('undoes nothing, not even the older batch, when the newest applied batch can no longer be reverted', async () => {
+            const brief = await confirmBrief();
+            await confirmCard();
+            await skipCard();
+            await confirmCard();
+            const bassDevice = trackStore.value?.tracks.find((track) => track.id === BASS_ID)?.devices[0];
+            if (bassDevice === undefined) {
+                throw new TypeError('Expected the Bass batch device');
+            }
+            // A later edit of the project removes what batch 4 added, so its inverse conflicts.
+            await executeAppAction({ type: 'removeDevice', payload: { deviceId: bassDevice.id } });
+            const history = structuredClone(undoHistoryStore.value);
+            const tracks = structuredClone(trackStore.value);
+
+            await expect(revertVibeRun({ runId: brief.runId })).resolves.toMatchObject({ status: 'refused' });
+
+            expect(trackDeviceTypes(DRUMS_ID)).toEqual(['builtin-eq']);
+            expect(trackStore.value).toEqual(tracks);
+            expect(undoHistoryStore.value).toEqual(history);
+            expect(lastMessage()).toMatch(/^The vibe run was not reverted; nothing was undone: .+\.$/u);
+        });
+
         it('still refuses the batch after a skipped one once the brief changed', async () => {
             const brief = await confirmBrief();
             await skipCard();

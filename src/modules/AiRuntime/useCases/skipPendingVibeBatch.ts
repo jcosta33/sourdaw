@@ -1,3 +1,4 @@
+import { AGENT_RUN_TERMINAL_PHASES } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { updateChatMessage } from '../stores/chatStore';
 import {
@@ -47,9 +48,20 @@ export async function skipPendingVibeBatch(input: SkipPendingVibeBatchInput): Pr
     // Settled before the lease is released, so a Confirm arriving meanwhile finds nothing pending.
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'cancelled' });
     await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
+    const labels = confirmation.actionLabels.map((label) => `- ${label}`).join('\n');
+    // A cancellation or project switch while the lease was released ended the run and marked this
+    // batch cancelled; the card says so, and the run is left exactly as the cancellation left it.
+    const run = agentRunLifecycle.get(confirmation.runId);
+    if (run === null || AGENT_RUN_TERMINAL_PHASES.has(run.phase)) {
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'cancelled',
+            content: `Cancelled pending actions:\n\n${labels}\n\nThe run ended before this batch could be skipped.`,
+        });
+        return { status: 'refused', reason: 'The run ended before the batch could be skipped.' };
+    }
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'cancelled',
-        content: `Skipped batch ${String(position.index)} of ${String(position.total)}:\n\n${confirmation.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+        content: `Skipped batch ${String(position.index)} of ${String(position.total)}:\n\n${labels}`,
     });
     agentRunLifecycle.updateBatchStatus({ runId: confirmation.runId, batchId, status: 'skipped' });
     agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'executing' });

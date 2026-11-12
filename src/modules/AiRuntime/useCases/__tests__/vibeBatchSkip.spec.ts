@@ -24,6 +24,7 @@ import {
 } from '../../__tests__/vibeRunWorkflowFixture';
 import { chatStore } from '../../stores/chatStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { agentRunCancellation } from '../cancelAgentRun';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { skipPendingVibeBatch } from '../skipPendingVibeBatch';
@@ -131,6 +132,25 @@ afterEach(() => {
     tearDownVibeRunFixture();
 });
 
+/** Holds the skipped card's lease release open, so a test can end the run while a skip waits on it. */
+const leaseRelease = vi.hoisted(() => ({ held: null as { reached: () => void; release: Promise<void> } | null }));
+vi.mock('../../stores/pendingActionConfirmationStore', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../stores/pendingActionConfirmationStore')>();
+    return {
+        ...actual,
+        settlePendingActionResourceLease: async (
+            input: Parameters<typeof actual.settlePendingActionResourceLease>[0]
+        ): Promise<void> => {
+            const held = leaseRelease.held;
+            if (held !== null) {
+                held.reached();
+                await held.release;
+            }
+            await actual.settlePendingActionResourceLease(input);
+        },
+    };
+});
+
 type RunSnapshot = NonNullable<ReturnType<typeof agentRunLifecycle.get>>;
 
 function summaryMessages() {
@@ -147,6 +167,10 @@ async function confirmCard(): Promise<void> {
 }
 
 describe('skipping one batch of a vibe run', () => {
+    afterEach(() => {
+        leaseRelease.held = null;
+    });
+
     it('skips batch 2 of 4 without executing it and proposes batch 3 next', async () => {
         const brief = await confirmBrief();
         const drums = requireOnlyProposedCard();
@@ -275,5 +299,45 @@ describe('skipping one batch of a vibe run', () => {
         expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
         expect(undoHistoryStore.value).toEqual(history);
         expect(requireOnlyProposedCard().approvalSnapshot.batchPosition).toEqual({ index: 3, total: 4 });
+    });
+    it('refuses a skip whose run was cancelled while the skip released its lease', async () => {
+        const brief = await confirmBrief();
+        const drums = requireOnlyProposedCard();
+        let reached!: () => void;
+        const waiting = new Promise<void>((resolve) => {
+            reached = resolve;
+        });
+        let release!: () => void;
+        leaseRelease.held = {
+            reached,
+            release: new Promise<void>((resolve) => {
+                release = resolve;
+            }),
+        };
+
+        const skip = skipPendingVibeBatch({ confirmationId: drums.id });
+        await waiting;
+        await expect(
+            agentRunCancellation.cancel({ runId: brief.runId, reason: 'Cancelled by user' })
+        ).resolves.toMatchObject({ status: 'cancelled', phase: 'partially-completed' });
+        const cancelled = structuredClone(agentRunLifecycle.get(brief.runId)?.batches);
+        expect(cancelled?.at(-1)?.status).toBe('cancelled');
+        release();
+
+        await expect(skip).resolves.toEqual({
+            status: 'refused',
+            reason: 'The run ended before the batch could be skipped.',
+        });
+        const run = agentRunLifecycle.get(brief.runId);
+        expect(run?.phase).toBe('partially-completed');
+        expect(run?.batches).toEqual(cancelled);
+        expect(skippedBatchIds(run)).toEqual([]);
+        expect(proposedCards()).toEqual([]);
+        expect(summaryMessages()).toEqual([]);
+        expect(cardContent(drums)).not.toContain('Skipped');
+        expect(chatStore.value?.messages.find((message) => message.id === drums.assistantMessageId)).toMatchObject({
+            pendingActionConfirmationStatus: 'cancelled',
+        });
+        expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
     });
 });
