@@ -1,0 +1,82 @@
+.agents/skills/review-stances/README.md
+  h_beb54bf43b47b7 33-36,50-95,120-122,167-169
+.agents/skills/review-stances/ai-request-authority.md
+  h_beb54bf43b47b7 64-69,76-93
+.agents/skills/review-stances/asset-cache-publication.md
+  h_beb54bf43b47b7 4-8,12-18,43-81
+.agents/skills/review-stances/async-file-imports.md
+  h_beb54bf43b47b7 12-26,31-45,48-53
+.agents/skills/review-stances/audio-source-time.md
+  h_beb54bf43b47b7 6-9,13-14,16-73,75-88,90-136,138-141
+.agents/skills/review-stances/audio-timing-format-laws.md
+  h_beb54bf43b47b7 5-7,11-133,136-147
+.agents/skills/review-stances/bundled-model-assets.md
+  h_beb54bf43b47b7 9-16,18-23,28-35,38-44
+.agents/skills/review-stances/closure-authority-proof.md
+  h_beb54bf43b47b7 14,22,28-33,40-44,49-52,58,60-61,68-70,94-97,100-108,117-118,126-128,134-135
+.agents/skills/review-stances/code-craft.md
+  h_beb54bf43b47b7 3-8,12-52
+.agents/skills/review-stances/collaboration-teardown.md
+  h_beb54bf43b47b7 5,48-52
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  h_beb54bf43b47b7 4-5,51,60,66,72-94,96-121,123-124
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 37,44-46,49-51,142-146,162,164,178-185
+.agents/skills/review-stances/guard-reclamation-proof.md
+  h_beb54bf43b47b7 7-9,13-19,26-37,45-117,119-120
+.agents/skills/review-stances/input-monitoring-ownership.md
+  h_beb54bf43b47b7 25-26,59-60,71-74,82-83,88-89,104,108,114,157,165,167-172
+.agents/skills/review-stances/keyboard-action-accessibility.md
+  h_beb54bf43b47b7 3-7,11-42
+.agents/skills/review-stances/maintained-e2e-specs.md
+  h_beb54bf43b47b7 5,14-18,26-27,31,35-38,42-43,47-48,50-55,58-62,66-72,76-86,90-97,101-106
+.agents/skills/review-stances/meter-reading-ownership.md
+  h_beb54bf43b47b7 1,3-7,17,21-22,24-33
+.agents/skills/review-stances/moving-coordinate-inverses.md
+  h_beb54bf43b47b7 1,13-53,55,68-88
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 6-12,15-16,117-124,126-136,145-166,173-182
+.agents/skills/review-stances/provider-egress.md
+  h_beb54bf43b47b7 3-9,13-63
+.agents/skills/review-stances/public-repair-records.md
+  h_beb54bf43b47b7 4-5,14,20-23,28,58-60,66-68,71,78-80,86-97
+.agents/skills/review-stances/release-provenance-drift.md
+  h_beb54bf43b47b7 3-9,13-38
+.agents/skills/review-stances/rendered-ui-layout.md
+  h_beb54bf43b47b7 1,3-9,13-23,25-67,69-83
+.agents/skills/review-stances/replay-authority.md
+  h_beb54bf43b47b7 72,79,106-108,125-128,141-143,150,159-162
+.agents/skills/review-stances/review-authorization.md
+  h_beb54bf43b47b7 11,19,21-22,41-46,68-72,75-82
+.agents/skills/review-stances/runtime-instance-lifetimes.md
+  h_beb54bf43b47b7 6-8,13-15,17-35,49-51,54-126
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 5-6,10-21,23-48,50-81,83-147,155,169,174
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 3-7,9-12,16-38,40-59,61-127,129-134,136-151,157-159,167,169
+.agents/skills/review-stances/startup-entry-availability.md
+  h_beb54bf43b47b7 10-12,16-68,70,72-81,84-91,93-99,103-107
+.agents/skills/review-stances/test-observation-scope.md
+  h_beb54bf43b47b7 4,36,89-90,103-104,114-117
+.agents/skills/review-stances/test-timing-and-isolation.md
+  h_beb54bf43b47b7 22-26,29-30,38-40,45-46,53-54,68-69,97-114
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 23-25,52-54,84-96,147-150,185-196
+.agents/skills/review-stances/trusted-script-delivery.md
+  h_beb54bf43b47b7 22-28,31,35,52-56,61-63,65-67,70
+.agents/skills/review-stances/validation-scope-selection.md
+  h_beb54bf43b47b7 5-9,13-22,26-36,38-71
+scripts/__tests__/codeqlNightlyEvidence.spec.ts
+  h_beb54bf43b47b7 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "33a4e67a2547e5dde7c8e1cc928b3388adaac8a0",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
