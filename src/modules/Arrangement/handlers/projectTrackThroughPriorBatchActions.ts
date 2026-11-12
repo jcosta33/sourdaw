@@ -6,7 +6,7 @@ import { clampClipGain } from '../transformers/clampClipGain';
 import { getPlatformPlugins } from '../useCases/getPlatformPlugins';
 import { clampTrackGain } from '../useCases/setTrackGainPan/clampTrackGain';
 
-import { toPresetProjectDevices } from './preset/toPresetProjectDevices';
+import { projectDeviceChainAction } from '../models/projectDeviceChainAction';
 
 export function projectTrackThroughPriorBatchActions(track: Track, context: HandlerValidationContext): Track {
     const projected = structuredClone(track);
@@ -14,30 +14,14 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
         if (action.payload && 'trackId' in action.payload && action.payload.trackId !== projected.id) {
             continue;
         }
-        if (action.type === 'addDevice') {
-            if (!action.payload.deviceId) {
-                continue;
-            }
-            const plugin = getPlatformPlugins().find(
-                (candidate) =>
-                    candidate.id === action.payload.deviceType ||
-                    candidate.name.toLowerCase() === action.payload.deviceType.toLowerCase()
-            );
-            const parameterValues = { ...(plugin?.internalParameterValues ?? {}) };
-            for (const parameter of plugin?.parameters ?? []) {
-                parameterValues[parameter.id] = parameter.value;
-            }
-            const device = {
-                id: action.payload.deviceId,
-                name: plugin?.name ?? action.payload.deviceType,
-                type: plugin?.id ?? action.payload.deviceType,
-                bypassed: false,
-                parameterValues,
-            };
-            const anchorIndex = action.payload.afterDeviceId
-                ? projected.devices.findIndex((candidate) => candidate.id === action.payload.afterDeviceId)
-                : projected.devices.length - 1;
-            projected.devices.splice(anchorIndex + 1, 0, device);
+        const devices = projectDeviceChainAction(
+            projected.id,
+            projected.devices,
+            action,
+            action.type === 'addDevice' ? getPlatformPlugins() : []
+        );
+        if (devices !== null) {
+            projected.devices = devices;
             continue;
         }
         if (action.type === 'discardDuplicatedClip') {
@@ -139,33 +123,6 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
             }
         } else if (action.type === 'removeSend') {
             projected.sends = projected.sends.filter((send) => send.busId !== action.payload.busId);
-        } else if (action.type === 'removeDevice') {
-            projected.devices = projected.devices.filter((device) => device.id !== action.payload.deviceId);
-        } else if (action.type === 'reorderDevices') {
-            const sourceIndex = projected.devices.findIndex((device) => device.id === action.payload.deviceId);
-            if (
-                sourceIndex >= 0 &&
-                action.payload.targetIndex >= 0 &&
-                action.payload.targetIndex < projected.devices.length
-            ) {
-                const [device] = projected.devices.splice(sourceIndex, 1);
-                if (device) {
-                    projected.devices.splice(action.payload.targetIndex, 0, device);
-                }
-            }
-        } else if (action.type === 'restorePresetDeviceChain') {
-            projected.devices = toPresetProjectDevices(action.payload.replacementDevices);
-        } else if (action.type === 'restoreDevice') {
-            projected.devices.splice(action.payload.deviceIndex, 0, structuredClone(action.payload.deviceSnapshot));
-        } else if (action.type === 'setDeviceParameter') {
-            const device = projected.devices.find((candidate) => candidate.id === action.payload.deviceId);
-            if (device) {
-                if (action.payload.deleteParameter) {
-                    delete device.parameterValues[action.payload.paramId];
-                } else {
-                    device.parameterValues[action.payload.paramId] = action.payload.value;
-                }
-            }
         }
     }
     return projected;
