@@ -1,0 +1,32 @@
+scripts/__tests__/stackedLanes.spec.ts
+  s_76ccd61d453edf::t_f3e80ffadc3250 10-15
+  s_76ccd61d453edf::t_1ad6927741a6a5 9
+scripts/__tests__/publishLane.spec.ts
+  s_76ccd61d453edf::t_f3e80ffadc3250 89
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_76ccd61d453edf::t_f3e80ffadc3250 22,66
+  s_76ccd61d453edf::t_7e52267a07daec 67
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_76ccd61d453edf::t_57ffba81c62b44 82
+  s_76ccd61d453edf::t_f3e80ffadc3250 81
+scripts/__tests__/historicalStackAdmission.spec.ts
+  s_76ccd61d453edf::t_f3e80ffadc3250 37
+scripts/__tests__/laneAdoption.spec.ts
+  s_76ccd61d453edf::t_f3e80ffadc3250 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e4d112f59aace7ac7c7c9262545eebbae1ae4d51",
+  "prompts": {},
+  "sessions": {
+    "s_76ccd61d453edf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "108ea70a-a924-42ce-b7b8-fd9c1012e902",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
