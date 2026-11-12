@@ -1,7 +1,11 @@
+import { type HandlerValidationContext } from '#/utils/handlerContract';
+
 import { type RelinkTarget, RELINK_AUDIO_SOURCE_KEYS } from '../../models/RelinkAudioSourceTarget';
 import { type Clip, type Track } from '../../models/Track';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../../stores/trackStore';
+
+import { projectRelinkAudioSourceTracks } from './projectRelinkAudioSourceTracks';
 
 function matches(track: Track, clip: Clip, target: RelinkTarget): boolean {
     if (
@@ -21,7 +25,23 @@ function matches(track: Track, clip: Clip, target: RelinkTarget): boolean {
     );
 }
 
-export function relinkAudioSourceTargetsMatch(targets: readonly RelinkTarget[]): boolean {
+function readRelinkSourceState(context?: HandlerValidationContext): typeof trackStore.value {
+    let state = trackStore.value;
+    if (state && context && context.actionIndex > 0) {
+        const tracks = projectRelinkAudioSourceTracks(state.tracks, context.actions.slice(0, context.actionIndex));
+        if (!tracks) {
+            return null;
+        }
+        state = { ...state, tracks };
+    }
+    return state;
+}
+
+export function relinkAudioSourceTargetsMatch(
+    targets: readonly RelinkTarget[],
+    context?: HandlerValidationContext
+): boolean {
+    const state = readRelinkSourceState(context);
     if (targets.length === 0) {
         return false;
     }
@@ -39,12 +59,12 @@ export function relinkAudioSourceTargetsMatch(targets: readonly RelinkTarget[]):
             return false;
         }
         keys.add(key);
-        const owners = trackStore.value?.tracks.filter((track) => track.id === target.trackId) ?? [];
+        const owners = state?.tracks.filter((track) => track.id === target.trackId) ?? [];
         if (owners.length !== 1) {
             return false;
         }
         const track = owners[0]!;
-        const eligible = resolveEligibleClipWriteTarget({ trackId: target.trackId });
+        const eligible = resolveEligibleClipWriteTarget({ trackId: target.trackId }, state);
         if (eligible.status !== 'eligible' || eligible.trackId !== target.trackId) {
             return false;
         }
@@ -58,7 +78,7 @@ export function relinkAudioSourceTargetsMatch(targets: readonly RelinkTarget[]):
                 return false;
             }
             clips = alternatives[0]!.clips;
-        } else if (resolveEligibleClipWriteTarget({ clipId: target.clipId }).status !== 'eligible') {
+        } else if (resolveEligibleClipWriteTarget({ clipId: target.clipId }, state).status !== 'eligible') {
             return false;
         }
         const found = clips.filter((clip) => clip.id === target.clipId);

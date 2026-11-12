@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
+import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
-import { clearUndoHistory, undo, redo } from '#/modules/Command/useCases';
+import { clearHandlerRegistry, registerHandlerMap, undoStore, undoHistoryStore } from '#/modules/Command/stores';
+import { clearUndoHistory, undo, redo, executeAppAction } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
     getCrdtDoc,
@@ -21,11 +23,14 @@ import {
 } from '#/modules/Project/stores';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type Clip } from '../../models/Track';
 import { trackStore } from '../../stores/trackStore';
+import { setArrangementEventBus } from '../arrangementEventBus';
 import { captureRelinkAudioSourceCommitValidation } from '../clipEditing/captureRelinkAudioSourceCommitValidation';
+import { captureRelinkAudioSourceTargets } from '../clipEditing/captureRelinkAudioSourceTargets';
 import { relinkAudioSourceTargetsMatch } from '../clipEditing/relinkAudioSourceTargetsMatch';
 import { getArrangementHandlers } from '../getArrangementHandlers';
 import { relinkClipAudioSource } from '../relinkClipAudioSource';
@@ -45,6 +50,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
+    cacheAudioBuffer: vi.fn(),
+    stopTrackInputMonitoring: vi.fn(),
+    removeTrackStrip: vi.fn(),
 }));
 vi.mock('#/modules/Knead/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Knead/useCases')>()),
@@ -158,16 +166,21 @@ function storedSnapshot(id: string, tracks: StoredTrack[]): StoredSnapshot {
 function expectLiveClipBufferIds(bufferIds: readonly (string | undefined)[]): void {
     const live = trackStore.value?.tracks.flatMap((track) => track.clips.map((clip) => clip.audioBufferId)) ?? [];
     expect(live).toEqual(bufferIds);
+    const raw = getCrdtDoc<{ tracks: { tracks: Array<{ clips: Clip[] }> } }>('root');
+    expect(raw?.tracks.tracks.flatMap((track) => track.clips.map((clip) => clip.audioBufferId))).toEqual(bufferIds);
 }
 
 describe('relinkClipAudioSource', () => {
     afterEach(() => {
+        vi.unstubAllGlobals();
         flushAutomergeStorageWrites();
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
     beforeEach(async () => {
+        setNotificationEventBus(createEventBus());
+        setArrangementEventBus(createEventBus());
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
         const transition = runProjectLoadTransaction();
         expect(await transition.prepare()).toBe(true);
@@ -199,6 +212,207 @@ describe('relinkClipAudioSource', () => {
         });
         arrangementStore.set({ arrangements: [], activeArrangementId: defaultArrangementId });
         flushAutomergeStorageWrites();
+    });
+
+    it('replays a grouped relink and clip removal through real CRDT and history', async () => {
+        function expectSources(bufferIds: readonly string[]): void {
+            flushAutomergeStorageWrites();
+            expectLiveClipBufferIds(bufferIds);
+            const raw = getCrdtDoc<{ tracks: { tracks: Array<{ clips: Clip[] }> } }>('root');
+            expect(raw?.tracks.tracks.flatMap((track) => track.clips.map((clip) => clip.audioBufferId))).toEqual(
+                bufferIds
+            );
+        }
+        const groupId = 'relink-remove';
+        const targets = captureRelinkAudioSourceTargets('buf-missing', 'buf-new');
+        await executeAppAction({ type: 'relinkClipAudioSources', payload: { targets } }, { groupId });
+        expectSources(['buf-new', 'buf-new']);
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a', ripple: false } }, { groupId });
+        expectSources(['buf-new']);
+        expect(undoHistoryStore.value?.past.map((entry) => entry.groupId)).toEqual([groupId, groupId]);
+
+        await undo();
+
+        expectSources(['buf-missing', 'buf-missing']);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(2);
+        await redo();
+        expectSources(['buf-new']);
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+        expect(undoHistoryStore.value?.future).toHaveLength(0);
+    });
+
+    it('replays grouped relink and real track removal/restoration', async () => {
+        const state = trackStore.value!;
+        trackStore.set({ ...state, tracks: state.tracks.map((track) => ({ ...track, kind: 'folder' })) });
+        flushAutomergeStorageWrites();
+        const groupId = 'relink-remove-track';
+        const targets = captureRelinkAudioSourceTargets('buf-missing', 'buf-new');
+        await executeAppAction({ type: 'relinkClipAudioSources', payload: { targets } }, { groupId });
+        await executeAppAction({ type: 'removeTrack', payload: { trackId: 'track-1' } }, { groupId });
+        expectLiveClipBufferIds(['buf-new']);
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+
+        await undo();
+
+        expectLiveClipBufferIds(['buf-missing', 'buf-missing']);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(2);
+        await redo();
+        expectLiveClipBufferIds(['buf-new']);
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+        expect(undoHistoryStore.value?.future).toHaveLength(0);
+    });
+
+    it('replays repeated source endpoints without applying an earlier sibling twice', async () => {
+        const groupId = 'repeated-source-endpoints';
+        for (const [before, after] of [
+            ['buf-missing', 'buf-middle'],
+            ['buf-middle', 'buf-missing'],
+            ['buf-missing', 'buf-final'],
+        ] as const) {
+            const targets = captureRelinkAudioSourceTargets(before, after);
+            await executeAppAction({ type: 'relinkClipAudioSources', payload: { targets } }, { groupId });
+        }
+        expectLiveClipBufferIds(['buf-final', 'buf-final']);
+        expect(undoHistoryStore.value?.past).toHaveLength(3);
+        await undo();
+        expectLiveClipBufferIds(['buf-missing', 'buf-missing']);
+        expect(undoHistoryStore.value?.future).toHaveLength(3);
+        await redo();
+        expectLiveClipBufferIds(['buf-final', 'buf-final']);
+        expect(undoHistoryStore.value?.past).toHaveLength(3);
+        expect(undoHistoryStore.value?.future).toHaveLength(0);
+    });
+
+    it.each(['before', 'after'] as const)(
+        'preserves singleton reverse %s relink with exact separate history replay',
+        async (order) => {
+            const buffer = MockAudioBuffer.create(1, 32, 8);
+            vi.stubGlobal(
+                'OfflineAudioContext',
+                class {
+                    createBuffer = MockAudioBuffer.create;
+                }
+            );
+            mocks.getCachedAudioBuffer.mockImplementation(({ bufferId }) =>
+                bufferId === 'buf-missing' || bufferId === 'buf-new' ? buffer : null
+            );
+            const groupId = `reverse-${order}-relink`;
+            async function relink(): Promise<void> {
+                const source = order === 'before' ? 'buf-reversed' : 'buf-missing';
+                const targets = captureRelinkAudioSourceTargets(source, 'buf-new');
+                await executeAppAction({ type: 'relinkClipAudioSources', payload: { targets } }, { groupId });
+            }
+            async function reverse(): Promise<void> {
+                await executeAppAction(
+                    { type: 'reverseClip', payload: { clipId: 'clip-a', reversedBufferId: 'buf-reversed' } },
+                    { groupId }
+                );
+            }
+            if (order === 'before') {
+                await reverse();
+                await relink();
+            } else {
+                await relink();
+                await reverse();
+            }
+            const final = trackStore.value;
+            expect(undoHistoryStore.value?.past.map((entry) => entry.groupId)).toEqual(
+                order === 'before' ? [undefined, groupId] : [groupId, undefined]
+            );
+            // reverseClip is a registered singleton: requesting a group must not
+            // widen its execution contract or silently combine the two edits.
+            await undo();
+            expectLiveClipBufferIds(order === 'before' ? ['buf-reversed', 'buf-missing'] : ['buf-new', 'buf-new']);
+            await undo();
+            expectLiveClipBufferIds(['buf-missing', 'buf-missing']);
+            expect(trackStore.value?.tracks.flatMap((track) => track.clips)).toEqual([clipA, clipB]);
+            expect(undoHistoryStore.value?.future).toHaveLength(2);
+            await redo();
+            await redo();
+            expect(trackStore.value).toEqual(final);
+            expectLiveClipBufferIds(order === 'before' ? ['buf-new', 'buf-missing'] : ['buf-reversed', 'buf-new']);
+            expect(undoHistoryStore.value?.past).toHaveLength(2);
+            expect(undoHistoryStore.value?.future).toHaveLength(0);
+        }
+    );
+
+    it.each([
+        { direction: 'undo', edit: 'source' },
+        { direction: 'undo', edit: 'owner' },
+        { direction: 'redo', edit: 'source' },
+        { direction: 'redo', edit: 'owner' },
+    ] as const)('refuses grouped $direction atomically after an external $edit edit', async ({ direction, edit }) => {
+        const groupId = 'guarded-relink-remove';
+        await executeAppAction(
+            {
+                type: 'relinkClipAudioSources',
+                payload: { targets: captureRelinkAudioSourceTargets('buf-missing', 'buf-new') },
+            },
+            { groupId }
+        );
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a', ripple: false } }, { groupId });
+        if (direction === 'redo') {
+            await undo();
+            expectLiveClipBufferIds(['buf-missing', 'buf-missing']);
+        }
+        const current = trackStore.value!;
+        const survivor = current.tracks[1]!.clips[0]!;
+        const tracks = current.tracks.map((track) => {
+            if (edit === 'source') {
+                return {
+                    ...track,
+                    clips: track.clips.map((clip) =>
+                        clip.id === survivor.id ? { ...clip, audioBufferId: 'buf-peer' } : clip
+                    ),
+                };
+            }
+            if (track.id === 'track-1') {
+                return { ...track, clips: [...track.clips, { ...survivor, trackId: track.id }] };
+            }
+            return { ...track, clips: [] };
+        });
+        trackStore.set({ ...current, tracks });
+        flushAutomergeStorageWrites();
+        const before = trackStore.value;
+        const raw = JSON.stringify(getCrdtDoc('root'));
+        if (direction === 'undo') {
+            await undo();
+        } else {
+            await redo();
+        }
+        expect(trackStore.value).toEqual(before);
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(raw);
+        expect(undoHistoryStore.value?.past).toHaveLength(direction === 'undo' ? 2 : 0);
+        expect(undoHistoryStore.value?.future).toHaveLength(direction === 'undo' ? 0 : 2);
+    });
+
+    it('preserves a later unrelated gain through grouped undo and redo', async () => {
+        const groupId = 'relink-remove-gain';
+        await executeAppAction(
+            {
+                type: 'relinkClipAudioSources',
+                payload: { targets: captureRelinkAudioSourceTargets('buf-missing', 'buf-new') },
+            },
+            { groupId }
+        );
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a', ripple: false } }, { groupId });
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => ({ ...clip, gain: 0.375 })),
+            })),
+        });
+        flushAutomergeStorageWrites();
+        await undo();
+        expectLiveClipBufferIds(['buf-missing', 'buf-missing']);
+        expect(trackStore.value?.tracks[1]?.clips[0]?.gain).toBe(0.375);
+        await redo();
+        expectLiveClipBufferIds(['buf-new']);
+        expect(trackStore.value?.tracks[1]?.clips[0]?.gain).toBe(0.375);
     });
 
     it('relinks every clip sharing the missing source across tracks and keeps each clip intact', async () => {
@@ -261,7 +475,7 @@ describe('relinkClipAudioSource', () => {
         if (!document) {
             throw new Error('Expected the committed track document');
         }
-        const validation = captureRelinkAudioSourceCommitValidation(targets);
+        const { validation } = captureRelinkAudioSourceCommitValidation(targets);
         expect(relinkAudioSourceTargetsMatch(targets)).toBe(false);
         expect(validation.beforeCommit()).not.toBeNull();
         expect(validation.beforeMutation).toBeTypeOf('function');
@@ -345,6 +559,8 @@ describe('relinkClipAudioSource', () => {
             ],
             selectedTrackId: null,
         });
+
+        flushAutomergeStorageWrites();
 
         const result = await relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
 

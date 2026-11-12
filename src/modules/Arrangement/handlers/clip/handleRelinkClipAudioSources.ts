@@ -6,18 +6,27 @@ import { captureRelinkAudioSourceCommitValidation } from '../../useCases/clipEdi
 import { relinkAudioSourceTargetsMatch } from '../../useCases/clipEditing/relinkAudioSourceTargetsMatch';
 
 export const handleRelinkClipAudioSources = createHandler<'relinkClipAudioSources'>({
-    validate: (action) => relinkAudioSourceTargetsMatch(action.payload.targets),
+    validate: (action, context) => relinkAudioSourceTargetsMatch(action.payload.targets, context),
     canReportConflict: true,
-    execute: (action) => {
+    execute: (action, context) => {
         if (!relinkAudioSourceTargetsMatch(action.payload.targets)) {
             return { status: 'conflict' };
         }
-        const commitValidation = captureRelinkAudioSourceCommitValidation(action.payload.targets);
-        applyRelinkAudioSourceTargets(action.payload.targets);
-        for (const clipId of new Set(action.payload.targets.map((target) => target.clipId))) {
-            clearClipPitchAnalysis(clipId);
+        const guard = captureRelinkAudioSourceCommitValidation(action.payload.targets, context);
+        try {
+            applyRelinkAudioSourceTargets(action.payload.targets);
+            if (!guard.captureWrittenState()) {
+                guard.validation.release();
+                return { status: 'conflict' };
+            }
+            for (const clipId of new Set(action.payload.targets.map((target) => target.clipId))) {
+                clearClipPitchAnalysis(clipId);
+            }
+            return { status: 'written', commitValidation: guard.validation };
+        } catch (error) {
+            guard.validation.release();
+            throw error;
         }
-        return { status: 'written', commitValidation };
     },
     describe: (action) => ({
         label: 'Relink audio source',
