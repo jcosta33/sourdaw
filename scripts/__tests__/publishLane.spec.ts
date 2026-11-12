@@ -5112,7 +5112,7 @@ describe('push delta authorship gate', () => {
                 committerEmail: 'c@example.com',
             },
         ]);
-        expect(parseCommitIdentities(['abc1234', 'Name', '', 'Committer', ''].join('\0') + '\n')[0]).toMatchObject({
+        expect(parseCommitIdentities(`${['abc1234', 'Name', '', 'Committer', ''].join('\0')}\n`)[0]).toMatchObject({
             authorEmail: '',
             committerEmail: '',
         });

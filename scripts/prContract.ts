@@ -211,7 +211,7 @@ export function fail(message: string): never {
  * the one place a closing relationship is written.
  */
 export function assertTitleCarriesNoClosingReference(title: string, label: string): void {
-    const phrases = [...title.matchAll(CLOSING_REFERENCE_PATTERN)].map((match) => `"${match[0]}"`);
+    const phrases = Array.from(title.matchAll(CLOSING_REFERENCE_PATTERN), (match) => `"${match[0]}"`);
     if (phrases.length > 0) {
         fail(
             `${label} carries an issue-closing reference (${phrases.join(', ')}); the title becomes the ` +
