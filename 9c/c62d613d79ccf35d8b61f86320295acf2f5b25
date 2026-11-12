@@ -1,0 +1,27 @@
+src/modules/Arrangement/presentations/views/__tests__/TimelineMinimap.spec.tsx
+  s_9307cedd8951f1::t_de3a498aed16f2 178-182,187-191
+  s_9307cedd8951f1::t_d69c06471766dd 132-177,183-186,192-194
+src/modules/Arrangement/presentations/views/__tests__/TimelineMinimapSectionAccessibility.integration.spec.tsx
+  s_9307cedd8951f1::t_b56ecd68b22abb 19,22,24-25,44,78-81
+  s_9307cedd8951f1::t_8d0087e831e461 1-18,20-21,23,26-43,45-77,82-127,132-137,141-142,146-150,154-155,159-177,182-190
+  s_9307cedd8951f1::t_94e191ca97c50e 128-131,138-140,143-145,151-153,156-158,178-181
+src/modules/Arrangement/presentations/views/TimelineMinimap.tsx
+  s_9307cedd8951f1::t_b81e7cf24ae264 9,14,52-56,60-62,92,127-132,225,487,510
+  s_9307cedd8951f1::t_94e191ca97c50e 57-59,488-509
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9cc62d613d79ccf35d8b61f86320295acf2f5b25",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
