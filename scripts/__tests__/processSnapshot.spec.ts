@@ -17,7 +17,9 @@ it.skipIf(process.platform === 'win32')('captures a detached process group witho
     const closed = once(child, 'close');
     try {
         await once(child.stdout, 'data');
-        if (child.pid === undefined) throw new Error('Child did not start');
+        if (child.pid === undefined) {
+            throw new Error('Child did not start');
+        }
         const snapshot = captureProcessGroupSnapshot(child.pid);
         expect(snapshot).toMatchObject({
             status: 'available',
@@ -52,7 +54,9 @@ it('fails closed on malformed census and reports a bounded group explicitly', ()
     );
     const snapshot = parseProcessGroupSnapshot(rows, 123);
     expect(snapshot.status).toBe('available');
-    if (snapshot.status !== 'available') throw new Error('Expected snapshot');
+    if (snapshot.status !== 'available') {
+        throw new Error('Expected snapshot');
+    }
     expect(snapshot.rows).toHaveLength(32);
     expect(snapshot.truncated).toBe(true);
 });

@@ -1067,7 +1067,9 @@ describe('source restoration and completed observable', () => {
                 expect(settled).toBe(true);
                 const error = await completed;
                 expect(error).toBeInstanceOf(NativeCommandOwnershipError);
-                if (!(error instanceof NativeCommandOwnershipError)) throw new Error('Expected ownership error');
+                if (!(error instanceof NativeCommandOwnershipError)) {
+                    throw new Error('Expected ownership error');
+                }
                 expect(error).toMatchObject({ reason: 'child-descendants-survived' });
                 expect(error).toHaveProperty('processDiagnostic.firstUncertainty');
                 expect(error).toHaveProperty('processDiagnostic.finalUncertainty');

@@ -199,7 +199,9 @@ function observeNativeCommand(input: NativeCommandObservation): void {
     const readClock = () => {
         try {
             const value = clock();
-            if (Number.isFinite(value)) lastTime = Math.max(lastTime, value);
+            if (Number.isFinite(value)) {
+                lastTime = Math.max(lastTime, value);
+            }
         } catch {
             // Diagnostics must not affect ownership decisions.
         }
@@ -262,7 +264,9 @@ function observeNativeCommand(input: NativeCommandObservation): void {
         settled = true;
         cleanup();
         const result = group.result(closed, Buffer.concat(buffers).toString('utf8'), failure);
-        if (processDiagnostic.firstUncertainty !== undefined) result.processDiagnostic = processDiagnostic;
+        if (processDiagnostic.firstUncertainty !== undefined) {
+            result.processDiagnostic = processDiagnostic;
+        }
         resolve(result);
         return true;
     };

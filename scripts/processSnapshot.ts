@@ -27,7 +27,9 @@ export function captureProcessGroupSnapshot(groupId: number): ProcessGroupSnapsh
             maxBuffer: 1024 * 1024,
             env: { PATH: process.env.PATH, LC_ALL: 'C' },
         });
-        if (result.status !== 0 || result.error !== undefined) return { status: 'unavailable' };
+        if (result.status !== 0 || result.error !== undefined) {
+            return { status: 'unavailable' };
+        }
         return parseProcessGroupSnapshot(result.stdout, groupId);
     } catch {
         return { status: 'unavailable' };
@@ -35,7 +37,9 @@ export function captureProcessGroupSnapshot(groupId: number): ProcessGroupSnapsh
 }
 
 export function parseProcessGroupSnapshot(output: string, groupId: number): ProcessGroupSnapshot {
-    if (!Number.isSafeInteger(groupId) || groupId <= 1 || output.trim() === '') return { status: 'unavailable' };
+    if (!Number.isSafeInteger(groupId) || groupId <= 1 || output.trim() === '') {
+        return { status: 'unavailable' };
+    }
     const rows: Extract<ProcessGroupSnapshot, { status: 'available' }>['rows'] = [];
     let truncated = false;
     for (const line of output.trimEnd().split('\n')) {
@@ -43,8 +47,12 @@ export function parseProcessGroupSnapshot(output: string, groupId: number): Proc
             /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([A-Za-z+<>-]{1,16})\s+([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s*$/u.exec(
                 line
             );
-        if (match === null) return { status: 'unavailable' };
-        if (Number(match[3]) !== groupId) continue;
+        if (match === null) {
+            return { status: 'unavailable' };
+        }
+        if (Number(match[3]) !== groupId) {
+            continue;
+        }
         if (rows.length === 32) {
             truncated = true;
             continue;
