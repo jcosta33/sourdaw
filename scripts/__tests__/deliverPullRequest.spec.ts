@@ -13303,6 +13303,127 @@ describe('delivery shell boundary', () => {
         30_000
     );
 
+    it.each([
+        { authenticated: false, timing: 'fetch' },
+        { authenticated: true, timing: 'fetch' },
+        { authenticated: false, timing: 'install' },
+        { authenticated: true, timing: 'install' },
+        { authenticated: false, timing: 'absent' },
+        { authenticated: true, timing: 'absent' },
+        { authenticated: false, timing: 'missing-remote' },
+        { authenticated: true, timing: 'missing-remote' },
+        { authenticated: false, timing: 'capture-change' },
+        { authenticated: true, timing: 'capture-change' },
+        { authenticated: false, timing: 'cleanup-change' },
+        { authenticated: true, timing: 'cleanup-change' },
+    ])(
+        'preserves concurrent notes at $timing (authenticated: $authenticated)',
+        ({ authenticated, timing }) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-notes-writer-'));
+            const local = join(root, 'local');
+            const remote = join(root, 'remote.git');
+            const git = (args: string[]) =>
+                execFileSync('git', args, { cwd: local, encoding: 'utf8', stdio: 'pipe' }).trim();
+            try {
+                mkdirSync(local);
+                execFileSync('git', ['init', '--bare', '--quiet', remote], { stdio: 'pipe' });
+                git(['init', '--quiet']);
+                git(['config', 'user.name', 'Fixture']);
+                git(['config', 'user.email', 'fixture@example.test']);
+                git(['remote', 'add', 'origin', remote]);
+                writeFileSync(join(local, 'file'), 'fixture');
+                git(['add', 'file']);
+                git(['commit', '--quiet', '-m', 'fixture']);
+                const target = git(['rev-parse', 'HEAD']);
+                git(['notes', '--ref=ai', 'add', '-m', 'remote', target]);
+                const remoteNotes = git(['rev-parse', 'refs/notes/ai']);
+                if (timing !== 'missing-remote') {
+                    git(['push', '--quiet', 'origin', 'refs/notes/ai:refs/notes/ai']);
+                }
+                git(['notes', '--ref=ai', 'add', '-f', '-m', 'initial local', target]);
+                const initial = git(['rev-parse', 'refs/notes/ai']);
+                git(['notes', '--ref=ai', 'add', '-f', '-m', 'concurrent local', target]);
+                const concurrent = git(['rev-parse', 'refs/notes/ai']);
+                const concurrentBlob = git(['rev-parse', `refs/notes/ai:${target}`]);
+                git(['update-ref', 'refs/notes/ai', initial]);
+                if (timing === 'absent') {
+                    git(['update-ref', '-d', 'refs/notes/ai']);
+                }
+                let writerRan = false;
+                let captureReads = 0;
+                let captureRef = '';
+                const runs: string[][] = [];
+                const port = shellPort(
+                    'jcosta33/sourdaw',
+                    {
+                        capture: (_command, args) => {
+                            const result = git(args);
+                            if (args[0] === 'for-each-ref' && args[2]?.startsWith('refs/agents/fetched-ai-notes/')) {
+                                captureRef = args[2];
+                                if (result !== '') {
+                                    captureReads++;
+                                    if (timing === 'capture-change' && captureReads === 2) {
+                                        git(['update-ref', captureRef, concurrent]);
+                                        return git(args);
+                                    }
+                                }
+                            }
+                            return result;
+                        },
+                        run: (_command, args) => {
+                            runs.push(args);
+                            if (timing === 'cleanup-change' && args[0] === 'update-ref' && args[2] === '-d') {
+                                git(['update-ref', captureRef, concurrent]);
+                            }
+                            if (
+                                (timing === 'fetch' && args.includes('fetch')) ||
+                                (timing === 'install' && args[0] === 'update-ref' && args[2] === 'refs/notes/ai')
+                            ) {
+                                git(['update-ref', 'refs/notes/ai', concurrent]);
+                                writerRan = true;
+                            }
+                            git(args.map((arg) => (arg === GITHUB_HTTPS_REMOTE ? remote : arg)));
+                        },
+                    },
+                    authenticated ? { gitToken: 'ghs_minted', helperDir: root } : {}
+                );
+                if (timing === 'fetch') {
+                    port.fetch();
+                    expect(git(['rev-parse', 'refs/notes/ai'])).toBe(remoteNotes);
+                    const recovery = `refs/agents/preserved-ai-notes/${concurrent}`;
+                    expect(git(['rev-parse', recovery])).toBe(concurrent);
+                    expect(git(['rev-parse', `${recovery}:${target}`])).toBe(concurrentBlob);
+                } else if (timing === 'absent') {
+                    port.fetch();
+                    expect(git(['rev-parse', 'refs/notes/ai'])).toBe(remoteNotes);
+                } else if (timing === 'missing-remote') {
+                    expect(() => port.fetch()).toThrow(/couldn't find remote ref refs\/notes\/ai/);
+                    expect(git(['rev-parse', 'refs/notes/ai'])).toBe(initial);
+                } else if (timing === 'capture-change' || timing === 'cleanup-change') {
+                    expect(() => port.fetch()).toThrow(/cannot lock ref|changed after fetch/);
+                    expect(git(['rev-parse', 'refs/notes/ai'])).toBe(
+                        timing === 'capture-change' ? initial : remoteNotes
+                    );
+                    expect(git(['rev-parse', captureRef])).toBe(concurrent);
+                } else {
+                    expect(() => port.fetch()).toThrow(/cannot lock ref|reference already exists/);
+                    expect(git(['rev-parse', 'refs/notes/ai'])).toBe(concurrent);
+                }
+                expect(writerRan).toBe(timing === 'fetch' || timing === 'install');
+                if (timing !== 'absent') {
+                    expect(git(['rev-parse', `refs/agents/preserved-ai-notes/${initial}`])).toBe(initial);
+                }
+                expect(git(['for-each-ref', '--format=%(refname)', 'refs/agents/fetched-ai-notes/'])).toBe(
+                    timing === 'capture-change' || timing === 'cleanup-change' ? captureRef : ''
+                );
+                expect(runs.filter((args) => args.includes('fetch'))).toHaveLength(1);
+            } finally {
+                removeTemporaryGitRepository(root);
+            }
+        },
+        30_000
+    );
+
     it('refuses a conflicting recovery ref or inspection and pin failures before fetch', () => {
         const notes = 'a'.repeat(40);
         const recovery = `refs/agents/preserved-ai-notes/${notes}`;
@@ -13333,32 +13454,127 @@ describe('delivery shell boundary', () => {
         }
     });
 
-    it('replays an identical recovery ref without rewriting it', () => {
+    function notesFetchShell(initial?: string) {
+        const refs = new Map<string, string>();
+        const fetched = 'b'.repeat(40);
+        if (initial !== undefined) {
+            refs.set('refs/notes/ai', initial);
+            refs.set(`refs/agents/preserved-ai-notes/${initial}`, initial);
+        }
+        const runs: Array<{ command: string; args: string[] }> = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                if (args[0] === 'cat-file') {
+                    return 'commit';
+                }
+                const ref = args[2] ?? '';
+                const oid = refs.get(ref);
+                return oid === undefined ? '' : `${ref} ${oid} `;
+            },
+            run: (command, args) => {
+                runs.push({ command, args });
+                if (args.includes('fetch')) {
+                    const refspec = args.at(-1) ?? '';
+                    refs.set(refspec.split(':')[1] ?? '', fetched);
+                }
+            },
+        };
+        return { fetched, refs, runs, shell };
+    }
+
+    it.each(['symbolic', 'noncommit', 'capture-collision'])('refuses invalid notes before fetch (%s)', (failure) => {
         const notes = 'a'.repeat(40);
-        const runs: string[][] = [];
-        const port = shellPort('jcosta33/sourdaw', {
-            capture: (_command, args) => (args[0] === 'cat-file' ? 'commit' : `${args[2] ?? ''} ${notes} `),
-            run: (_command, args) => runs.push(args),
-        });
-        port.fetch();
-        expect(runs).toHaveLength(1);
-        expect(runs[0]?.[0]).toBe('fetch');
+        const { runs, shell } = notesFetchShell(notes);
+        const capture = shell.capture;
+        shell.capture = (command, args) => {
+            if (failure === 'noncommit' && args[0] === 'cat-file') {
+                return 'blob';
+            }
+            if (failure === 'symbolic' && args[2] === 'refs/notes/ai') {
+                return `refs/notes/ai ${notes} refs/notes/other`;
+            }
+            if (failure === 'capture-collision' && args[2]?.startsWith('refs/agents/fetched-ai-notes/')) {
+                return `${args[2]} ${notes} `;
+            }
+            return capture(command, args);
+        };
+        expect(() => shellPort('jcosta33/sourdaw', shell).fetch()).toThrow(
+            /cannot inspect direct Git ref|does not point to a commit|capture ref .* already exists/
+        );
+        expect(runs).toEqual([]);
+    });
+
+    it.each(['missing', 'symbolic', 'noncommit', 'fetch', 'latest-pin'])(
+        'refuses failed or invalid fetched notes without canonical installation (%s)',
+        (failure) => {
+            const notes = 'a'.repeat(40);
+            const { refs, runs, shell } = notesFetchShell(notes);
+            const capture = shell.capture;
+            const run = shell.run;
+            let fetched = false;
+            shell.capture = (command, args) => {
+                if (fetched && args[2]?.startsWith('refs/agents/fetched-ai-notes/')) {
+                    if (failure === 'missing') {
+                        return '';
+                    }
+                    if (failure === 'symbolic') {
+                        return `${args[2]} ${notes} refs/notes/other`;
+                    }
+                }
+                if (fetched && failure === 'noncommit' && args[0] === 'cat-file') {
+                    return 'blob';
+                }
+                return capture(command, args);
+            };
+            shell.run = (command, args) => {
+                if (args.includes('fetch')) {
+                    if (failure === 'fetch') {
+                        throw new Error('fetch failed');
+                    }
+                    fetched = true;
+                    if (failure === 'latest-pin') {
+                        refs.set('refs/notes/ai', 'c'.repeat(40));
+                    }
+                }
+                if (failure === 'latest-pin' && args[2]?.startsWith('refs/agents/preserved-ai-notes/')) {
+                    throw new Error('latest pin failed');
+                }
+                run(command, args);
+            };
+            expect(() => shellPort('jcosta33/sourdaw', shell).fetch()).toThrow(
+                /missing|cannot inspect direct Git ref|does not point to a commit|fetch failed|latest pin failed/
+            );
+            expect(runs.some(({ args }) => args[0] === 'update-ref' && args[2] === 'refs/notes/ai')).toBe(false);
+            expect(refs.get('refs/notes/ai')).toBe(failure === 'latest-pin' ? 'c'.repeat(40) : notes);
+        }
+    );
+
+    it('replays an identical notes recovery ref without rewriting it', () => {
+        const notes = 'a'.repeat(40);
+        const { fetched, runs, shell } = notesFetchShell(notes);
+        shellPort('jcosta33/sourdaw', shell).fetch();
+        expect(runs.filter(({ args }) => args.includes('fetch'))).toHaveLength(1);
+        expect(runs.filter(({ args }) => args[0] === 'update-ref')).toEqual([
+            { command: 'git', args: ['update-ref', '--no-deref', 'refs/notes/ai', fetched, notes] },
+            {
+                command: 'git',
+                args: [
+                    'update-ref',
+                    '--no-deref',
+                    '-d',
+                    expect.stringMatching(/^refs\/agents\/fetched-ai-notes\//),
+                    fetched,
+                ],
+            },
+        ]);
     });
 
     it('authenticates fetch by pruning all origin heads over HTTPS', () => {
         const helperDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-helper-'));
-        const runs: Array<{ command: string; args: string[] }> = [];
+        const { fetched, runs, shell } = notesFetchShell();
         try {
-            const port = shellPort(
-                'jcosta33/sourdaw',
-                {
-                    capture: () => '',
-                    run: (command, args) => runs.push({ command, args }),
-                },
-                { gitToken: 'ghs_minted', helperDir }
-            );
-            port.fetch();
-            expect(runs).toHaveLength(1);
+            shellPort('jcosta33/sourdaw', shell, { gitToken: 'ghs_minted', helperDir }).fetch();
+            expect(runs).toHaveLength(3);
             const args = runs[0]?.args ?? [];
             expect(args.slice(0, 3)).toEqual(['-c', 'credential.helper=', '-c']);
             expect(args[3]).toMatch(/^credential\.helper=!'\//);
@@ -13368,23 +13584,20 @@ describe('delivery shell boundary', () => {
                 '--prune',
                 GITHUB_HTTPS_REMOTE,
                 '+refs/heads/*:refs/remotes/origin/*',
-                '+refs/notes/ai:refs/notes/ai',
+                expect.stringMatching(/^refs\/notes\/ai:refs\/agents\/fetched-ai-notes\//),
             ]);
             expect(args.join('\0')).not.toContain('ghs_minted');
             expect(args).not.toContain('--force');
             expect(args).not.toContain('+refs/heads/main:refs/remotes/origin/main');
+            expect(runs[1]?.args).toEqual(['update-ref', '--no-deref', 'refs/notes/ai', fetched, '0'.repeat(40)]);
         } finally {
             rmSync(helperDir, { recursive: true, force: true });
         }
     }, 30_000);
 
     it('fetches origin heads and authorship notes when unauthenticated', () => {
-        const runs: Array<{ command: string; args: string[] }> = [];
-        const port = shellPort('jcosta33/sourdaw', {
-            capture: () => '',
-            run: (command, args) => runs.push({ command, args }),
-        });
-        port.fetch();
+        const { fetched, runs, shell } = notesFetchShell();
+        shellPort('jcosta33/sourdaw', shell).fetch();
         expect(runs).toEqual([
             {
                 command: 'git',
@@ -13393,7 +13606,18 @@ describe('delivery shell boundary', () => {
                     '--prune',
                     'origin',
                     '+refs/heads/*:refs/remotes/origin/*',
-                    '+refs/notes/ai:refs/notes/ai',
+                    expect.stringMatching(/^refs\/notes\/ai:refs\/agents\/fetched-ai-notes\//),
+                ],
+            },
+            { command: 'git', args: ['update-ref', '--no-deref', 'refs/notes/ai', fetched, '0'.repeat(40)] },
+            {
+                command: 'git',
+                args: [
+                    'update-ref',
+                    '--no-deref',
+                    '-d',
+                    expect.stringMatching(/^refs\/agents\/fetched-ai-notes\//),
+                    fetched,
                 ],
             },
         ]);
