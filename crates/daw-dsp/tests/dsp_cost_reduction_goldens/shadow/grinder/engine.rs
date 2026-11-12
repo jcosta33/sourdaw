@@ -7,14 +7,15 @@ use super::cabinet::{CabinetConvolver, SpeakerModel};
 use super::input::{InputConditioner, NoiseGate};
 use super::neural::{CapturePlacement, EngineMode, NeuralCapture};
 use super::params::{
-    db_to_linear, get_automatable_param_index, linear_to_db, SmoothedParam,
-    GRINDER_AUTOMATABLE_PARAM_CONTRACT, GRINDER_AUTOMATABLE_PARAM_COUNT,
+    get_automatable_param_index, linear_to_db, SmoothedParam, GRINDER_AUTOMATABLE_PARAM_CONTRACT,
+    GRINDER_AUTOMATABLE_PARAM_COUNT,
 };
 use super::pedals::{CompressorPedal, DistortionPedal, FuzzPedal, OverdrivePedal};
 use super::power_amp::PowerAmp;
 use super::tone_stack::ToneStack;
 use super::transformer::Transformer;
 use super::triode::Preamp;
+use daw_dsp::primitives::db_to_linear;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SupportedPedalSlot {

@@ -104,5 +104,5 @@ fn time_to_coeff(time_s: f32, sample_rate: f32) -> f32 {
     if samples < 1.0 {
         return 1.0;
     }
-    1.0 - (-1.0 / samples).exp()
+    1.0 - crate::primitives::pole_from_samples(samples)
 }

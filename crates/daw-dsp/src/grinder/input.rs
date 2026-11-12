@@ -2,7 +2,7 @@
 
 use crate::primitives::flush_denormal;
 
-use super::params::db_to_linear;
+use crate::primitives::{db_to_linear, pole_from_ms};
 
 #[derive(Clone, Copy)]
 enum InputMode {
@@ -60,7 +60,7 @@ impl NoiseGate {
     }
 
     fn time_to_coeff(ms: f32, sample_rate: f32) -> f32 {
-        (-1.0 / (ms.max(0.01) * 0.001 * sample_rate)).exp()
+        pole_from_ms(ms.max(0.01), sample_rate)
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {

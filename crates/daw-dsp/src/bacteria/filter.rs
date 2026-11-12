@@ -3,7 +3,7 @@
 //! Supports: low-pass, high-pass, band-pass, notch, formant, comb.
 //! Stable under audio-rate modulation.
 
-use crate::primitives::flush_denormal;
+use crate::primitives::{flush_denormal, pole_from_ms};
 use std::f32::consts::PI;
 
 /// Filter mode selector.
@@ -80,7 +80,7 @@ impl SvfFilter {
         if ms <= 0.0 {
             1.0
         } else {
-            (-1.0 / (ms * 0.001 * sample_rate)).exp()
+            pole_from_ms(ms, sample_rate)
         }
     }
 
