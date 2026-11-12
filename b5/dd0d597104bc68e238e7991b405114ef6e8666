@@ -1,0 +1,24 @@
+.oxlintrc.json
+  s_50cbc34e8b61c3::t_ff6323e21806ee 231
+  s_50cbc34e8b61c3::t_a4dedc911edaba 234-236
+scripts/__tests__/oxlintWarnLevels.spec.ts
+  s_50cbc34e8b61c3::t_b699470d5413cc 1-43,47-54,56-95
+  s_50cbc34e8b61c3::t_3832d84ef3f96d 55
+  s_50cbc34e8b61c3::t_27cdbeb13bfc26 44-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b5dd0d597104bc68e238e7991b405114ef6e8666",
+  "prompts": {},
+  "sessions": {
+    "s_50cbc34e8b61c3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3ccafa79-c9ba-491d-83f4-7ab63651b7ac",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
