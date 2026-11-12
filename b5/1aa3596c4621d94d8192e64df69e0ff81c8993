@@ -1,0 +1,41 @@
+src/modules/AudioAnalysis/repositories/loadBasicPitchModel.ts
+  s_126e3d478b4f75::t_1830617a007bc1 2
+src/modules/PluginHost/useCases/faustEngine/compilerEngine.ts
+  s_126e3d478b4f75::t_1830617a007bc1 14
+scripts/checkLgplRuntimeProvenance.ts
+  s_126e3d478b4f75::t_1830617a007bc1 15
+vite.config.ts
+  s_126e3d478b4f75::t_b7c73fce2a6976 213
+  s_126e3d478b4f75::t_1d53e5c583ae30 13,141
+scripts/checkElectronRuntimeProvenance.ts
+  s_126e3d478b4f75::t_1830617a007bc1 12
+scripts/faustCorrespondingSource.ts
+  s_126e3d478b4f75::t_5d0b6f23a08c30 146-187,189-212,214-222,244-245
+  s_126e3d478b4f75::t_643dd0ec8b1d27 188,213
+scripts/checkProjectLicense.ts
+  s_126e3d478b4f75::t_1830617a007bc1 8
+scripts/basicPitchAssets.ts
+  s_126e3d478b4f75::t_1830617a007bc1 67,71
+scripts/setupPnpm.ts
+  s_126e3d478b4f75::t_5d0b6f23a08c30 179,190,212-226
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_126e3d478b4f75::t_1830617a007bc1 31
+scripts/__tests__/wasmDeviceRecipes.spec.js
+  s_126e3d478b4f75::t_8d4844ea55a790 7-8,14-15,19-20,31-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b51aa3596c4621d94d8192e64df69e0ff81c8993",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
