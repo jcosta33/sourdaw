@@ -153,6 +153,8 @@ it('keeps builtin spawn interception available after production worker setup', (
         writeFileSync(
             spec,
             `import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterAll, expect, it, vi } from 'vitest';
 const { restore } = vi.hoisted(() => {
     const builtin = process.getBuiltinModule('node:child_process');
@@ -162,6 +164,11 @@ const { restore } = vi.hoisted(() => {
 });
 afterAll(restore);
 it('intercepts safe echo', () => {
+    const journal = process.env.SOURDAW_VITEST_PROGRESS;
+    expect(journal).toBeTypeOf('string');
+    if (!journal) throw new Error('worker progress journal unavailable');
+    const setup = JSON.parse(readFileSync(join(journal, 'worker-setup.json'), 'utf8'));
+    expect(setup).toMatchObject({ event: 'worker-setup', pid: process.pid });
     expect(() => spawnSync('echo', ['probe'])).toThrow('intercepted safe echo');
 });
 `

@@ -17,7 +17,7 @@ export function checkpointDiscovery(args: string[]) {
     );
     const includeIgnored = options.some((arg) => arg === '--force' || /^-[^-]*f/.test(arg));
     const trackedOnly = options.some((arg) => arg === '--update' || /^-[^-]*u/.test(arg));
-    const discover = args[0] === 'add' && separator >= 0 && !exotic;
+    const discover = args[0] === 'add' && separator >= 0 && paths.length > 0 && !exotic;
     const conservative = args[0] === 'commit' || !discover;
     const includeUntracked = args[0] === 'add' && !trackedOnly;
     return { paths, discover, includeIgnored, trackedOnly, conservative, includeUntracked };
@@ -71,11 +71,11 @@ export function discoverWorktreeCandidates(includeUntracked: boolean, includeIgn
     if (untrackedPaths !== null) {
         paths.push(...untrackedPaths);
     }
-    return {
-        paths,
-        tracked: trackedPaths === null ? unavailable : 'complete',
-        untracked: includeUntracked ? (untrackedPaths === null ? unavailable : 'complete') : 'not requested',
-    };
+    let untrackedStatus = 'not requested';
+    if (includeUntracked) {
+        untrackedStatus = untrackedPaths === null ? unavailable : 'complete';
+    }
+    return { paths, tracked: trackedPaths === null ? unavailable : 'complete', untracked: untrackedStatus };
 }
 
 export function selectCheckpointSources(
@@ -98,12 +98,18 @@ export function selectCheckpointSources(
     const stagedNames = stagedPaths ?? [];
     const discovered = [...new Set([...candidatePaths, ...requestedPaths, ...matched, ...stagedNames])];
     const selected = discovered.slice(0, 256);
+    let mode = 'frozen';
+    if (conservative) {
+        mode = 'conservative';
+    } else if (discover) {
+        mode = 'explicit';
+    }
     const sourceSelection = {
         selected: selected.length,
         omitted: discovered.length - selected.length,
         stagedDiscovery: stagedPaths === null ? unavailable : 'complete',
         pathspecDiscovery,
-        mode: conservative ? 'conservative' : discover ? 'explicit' : 'frozen',
+        mode,
         candidateDiscovery:
             candidates === null ? 'not requested' : { tracked: candidates.tracked, untracked: candidates.untracked },
     };

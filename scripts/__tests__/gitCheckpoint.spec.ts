@@ -227,6 +227,38 @@ describe('Git checkpoint diagnostic', () => {
             expect(git('ls-files', '--error-unmatch', 'untracked-outside.txt')).toBe('untracked-outside.txt');
         }
     });
+    it.each([
+        ['short all', ['add', '-A', '--'], true],
+        ['long all', ['add', '--all', '--'], true],
+        ['short update', ['add', '-u', '--'], false],
+        ['long update', ['add', '--update', '--'], false],
+    ])('captures root files for empty terminator %s from a subdirectory', async (_label, args, includesUntracked) => {
+        const { root, env, git } = fixture();
+        mkdirSync(join(root, 'subdir'));
+        writeFileSync(join(root, 'outside.txt'), 'old');
+        git('add', '--', 'outside.txt');
+        git('commit', '-qm', 'test: baseline');
+        writeFileSync(join(root, 'outside.txt'), 'updated outside');
+        writeFileSync(join(root, 'untracked.txt'), 'new outside');
+        const result = await run(join(root, 'subdir'), env, ...args);
+        expect(result.code, result.stderr).toBe(0);
+        expect(git('show', ':outside.txt')).toBe('updated outside');
+        if (includesUntracked) {
+            expect(git('show', ':untracked.txt')).toBe('new outside');
+        } else {
+            expect(git('ls-files', '--', 'untracked.txt')).toBe('');
+        }
+        const observed = receipt(result.stderr).value;
+        expect(observed.before.sourceSelection.mode).toBe('conservative');
+        expect(observed.before.sources['../outside.txt']?.sha256).toBe(
+            createHash('sha256').update('updated outside').digest('hex')
+        );
+        if (includesUntracked) {
+            expect(observed.before.sources['../untracked.txt']?.sha256).toBe(
+                createHash('sha256').update('new outside').digest('hex')
+            );
+        }
+    });
     it('normalizes staged and explicit root pathspecs from a subdirectory', async () => {
         const { root, env, git } = fixture();
         mkdirSync(join(root, 'subdir'));
