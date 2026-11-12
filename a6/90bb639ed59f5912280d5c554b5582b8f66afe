@@ -1,0 +1,87 @@
+src/modules/AudioRendering/useCases/__tests__/cutAgentMeasurementWindow.spec.ts
+  s_3c91dcbb840566::t_6858fa56f9f376 1-98
+  s_3c91dcbb840566::t_2c1316d0a436e1 99-101
+  s_3c91dcbb840566::t_a5f374681fa473 102-132
+src/modules/AudioEngine/useCases/offlineRender/readOfflineAdjustmentRenderClass.ts
+  s_3c91dcbb840566::t_797d0b82a65838 1-43
+src/modules/AudioEngine/useCases/offlineRender/__tests__/readOfflineAdjustmentRenderClass.spec.ts
+  s_3c91dcbb840566::t_8326f910c270aa 1-136
+  s_3c91dcbb840566::t_8d3ad2a64d0334 137-139
+  s_3c91dcbb840566::t_d93cd0afb1a57e 140-142
+src/modules/AiRuntime/AGENTS.md
+  s_ff124a0cf68412::t_be9591903f71f9 33,42
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_c2f4449c5891e9::t_47848112425407 36,263-264
+src/modules/AiRuntime/useCases/agentRequestOrchestration/settleStoppedBatchPreparation.ts
+  s_9307cedd8951f1::t_64e659cd761970 1-24
+src/modules/AiRuntime/useCases/planMetricMeasurementRequests.ts
+  s_c2f4449c5891e9::t_8aa4941e9c381f 1,115-124,126,128-129,133,136,138-143,148,150,199
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_c2f4449c5891e9::t_463d7d922321b4 11,17,22,25,442-493,517-518,523,526,530-531
+src/modules/AudioEngine/useCases/index.ts
+  s_c2f4449c5891e9::t_7bb89010a2d8ef 200
+src/modules/AudioEngine/useCases/offlineRender/buildOfflineWebAudioGraph.ts
+  s_c2f4449c5891e9::t_6d0991dec7c5df 16
+src/modules/AudioEngine/useCases/offlineRender/offlineAdjustmentLayers.ts
+  s_c2f4449c5891e9::t_7cb0bb6fba266b 120-170
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_3c91dcbb840566::t_41b470a4cf5449 59-63
+src/modules/AiRuntime/useCases/__tests__/multiBatchRun.spec.ts
+  s_3c91dcbb840566::t_1b70c4eedf4c65 649-757
+src/modules/AiRuntime/useCases/__tests__/vibeRunInitialBaselines.spec.ts
+  s_3c91dcbb840566::t_9d591a574e6725 155-157,161-168,399,1087
+src/modules/AiRuntime/useCases/__tests__/vibeRunRealProject.spec.ts
+  s_3c91dcbb840566::t_2b036e9e7b101e 18,278,281-283
+src/modules/AiRuntime/useCases/__tests__/vibeRunRenderBudget.spec.ts
+  s_3c91dcbb840566::t_07ebbee2ecc44d 5-6,16,18,25-29,49,88-99,179,267-460,574-600
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_3c91dcbb840566::t_24ea8a20c8ccf3 73,136-142,144-152
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  s_3c91dcbb840566::t_6135db6f6a87ca 24,371,376-377
+src/modules/AiRuntime/useCases/vibeRun/collectVibeRunInitialBaselines.ts
+  s_3c91dcbb840566::t_7329528afb8a5f 17,120,125-126
+src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts
+  s_3c91dcbb840566::t_f2d805eeac07c1 521
+src/modules/AiRuntime/useCases/vibeRun/readVibeRunFitRefusals.ts
+  s_3c91dcbb840566::t_c5d1028ce93fdc 13,67-72,81-82,90-91,94,100-101,104,109,183-185,195-196,239-243,252-253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a690bb639ed59f5912280d5c554b5582b8f66afe",
+  "prompts": {},
+  "sessions": {
+    "s_3c91dcbb840566": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1058f26-f2e9-46cf-af40-6e3b7eafe1df",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_c2f4449c5891e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7817afe8-15e0-436f-b304-529241ac1a61",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ff124a0cf68412": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5859629c-45b4-4907-85a7-756af720dd80",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
