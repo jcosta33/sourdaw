@@ -1,0 +1,29 @@
+docs/06-testing.md
+  s_9307cedd8951f1::t_8feef06cd46baa 910-913,920-923
+scripts/resourceGuard.ts
+  s_9307cedd8951f1::t_f509feb5cd42ef 3337-3344,3349-3351
+  s_9307cedd8951f1::t_77a3d93c6e2278 231-255
+scripts/__tests__/resourceGuard.spec.ts
+  s_9307cedd8951f1::t_43c4eaa228de88 2748-2912
+  s_9307cedd8951f1::t_763d440e29a66f 2716-2720,2722-2732,2734-2746
+  s_9307cedd8951f1::t_12c382ff09ce15 2258-2271,2721,2733
+  s_9307cedd8951f1::t_d4c536cce3be60 2747
+.agents/skills/review-stances/guard-reclamation-proof.md
+  s_9307cedd8951f1::t_882c517bfb1087 119-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "17a89bc5dbdb05199a220dd387951feb9974f77b",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
