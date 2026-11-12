@@ -1,0 +1,52 @@
+src/modules/TimelineEditor/presentations/views/ArrangeView.tsx
+  s_9307cedd8951f1::t_63515ee9536466 53,105,112,124,131,250-251,280-281,303-304
+src/modules/Arrangement/stores/timelineViewStore.ts
+  s_9307cedd8951f1::t_ae367ff88c8560 215
+  s_9307cedd8951f1::t_862a86ac960898 138-148,155-156
+  s_9307cedd8951f1::t_ebec9187e7498c 26-27,40
+src/modules/WorkspaceShell/models/ProjectWorkingView.ts
+  s_9307cedd8951f1::t_ae367ff88c8560 142-151,158-167
+  s_9307cedd8951f1::t_ebec9187e7498c 65-68,169,171-172
+  s_9307cedd8951f1::t_79f9ff7b9f9411 1-9
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_9307cedd8951f1::t_63515ee9536466 584,587,621,643-646,651-653
+  s_9307cedd8951f1::t_ae367ff88c8560 80-84,626-628,654-655,1121-1124,1132-1135
+src/modules/WorkspaceShell/models/__tests__/ProjectWorkingView.spec.ts
+  s_9307cedd8951f1::t_79f9ff7b9f9411 77,103-125
+  s_9307cedd8951f1::t_7a4eb1d2df20f8 4-8,60-76
+  s_9307cedd8951f1::t_dcb06a8b283bb5 3
+  s_9307cedd8951f1::t_de48393b533ebc 78
+src/utils/Layout/panelDimensionBounds.ts
+  s_9307cedd8951f1::t_ebec9187e7498c 1-2
+  s_9307cedd8951f1::t_79f9ff7b9f9411 3-7
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_9307cedd8951f1::t_8c7562946706a3 343,354-358,360-363,371-372
+  s_9307cedd8951f1::t_fe9ae882bdbd29 339,344-353,359,364-370
+  s_9307cedd8951f1::t_ae367ff88c8560 340-342
+  s_9307cedd8951f1::t_510d5ed26d7d1e 373-375
+src/modules/WorkspaceShell/useCases/__tests__/projectWorkingViewPersistence.spec.ts
+  s_9307cedd8951f1::t_ebec9187e7498c 178
+  s_9307cedd8951f1::t_79f9ff7b9f9411 133-151
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  s_9307cedd8951f1::t_ebec9187e7498c 1,52-60
+src/modules/Arrangement/useCases/__tests__/projectWorkingView.spec.ts
+  s_9307cedd8951f1::t_d091f6a08b810e 184-196
+  s_9307cedd8951f1::t_ebec9187e7498c 197-208
+  s_9307cedd8951f1::t_7a4eb1d2df20f8 161-162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bcfb9ed62bb8f6762b8e3ffa0194282b408e0b5b",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
