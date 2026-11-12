@@ -1,0 +1,57 @@
+scripts/__tests__/prValidationScope.spec.ts
+  s_87ae37da66d2f0::t_887f1ac81e3596 1145
+scripts/reviewRiskPolicy.ts
+  s_87ae37da66d2f0::t_887f1ac81e3596 131
+scripts/__tests__/installCleanupLanes.spec.ts
+  s_87ae37da66d2f0::t_c356563990d7d3 31,846-864
+  s_87ae37da66d2f0::t_b55daa278aa13f 865
+package.json
+  s_87ae37da66d2f0::t_887f1ac81e3596 52
+scripts/__tests__/fixtures/relativeImportClosure.ts
+  s_87ae37da66d2f0::t_919966006ff684 1-23
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_87ae37da66d2f0::t_43b57686deb230 2105-2139
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_87ae37da66d2f0::t_887f1ac81e3596 1038,1159
+scripts/__tests__/cleanupLanesCli.spec.ts
+  s_87ae37da66d2f0::t_8c5571623751bc 1-86
+scripts/cleanupLanesCli.ts
+  s_87ae37da66d2f0::t_3284f07062fb27 1-5,7-24,26-38
+  s_9307cedd8951f1::t_ad1874cd88e632 6,25
+scripts/__tests__/openLane.spec.ts
+  s_87ae37da66d2f0::t_4c52e5de5c11b4 13
+  s_87ae37da66d2f0::t_f32716e5c1ac94 30
+  s_9307cedd8951f1::t_c0b67daf843abe 29
+scripts/deliverPullRequest.ts
+  s_87ae37da66d2f0::t_0a64901a8da025 29,456
+scripts/prValidationScope.ts
+  s_87ae37da66d2f0::t_887f1ac81e3596 32,107
+release/open-source-inventory.json
+  s_87ae37da66d2f0::t_d8adc6668dd0b6 173,1862
+release/dependency-license-proofs.json
+  s_87ae37da66d2f0::t_d8adc6668dd0b6 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0aa14c827d42db1b6b9d1db04c712e9a500a9c20",
+  "prompts": {},
+  "sessions": {
+    "s_87ae37da66d2f0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e83ca346-1b25-4729-84f5-4e1a6a613aae",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
