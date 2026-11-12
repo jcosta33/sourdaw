@@ -200,6 +200,30 @@ describe('planReviewRisk', () => {
         }
     });
 
+    it('should call a one-line clip-scheduling or native render-callback change realtime-audio', () => {
+        for (const path of [
+            'src/modules/Transport/useCases/scheduling/audioClipSchedulingState.ts',
+            'crates/daw-engine/src/audio_thread.rs',
+        ]) {
+            const result = reviewPlan([handwritten(path, 1, 1)]);
+            expect(result.riskClasses, path).toContain('realtime-audio');
+            expect(result.requiredStances, path).toContain('realtime-audio');
+        }
+    });
+
+    it('should call a one-line saved-document schema or slot-store change undo', () => {
+        for (const path of [
+            'src/modules/Project/models/ProjectData.ts',
+            'src/modules/Arrangement/stores/trackStore.ts',
+            'src/modules/Transport/stores/tempoMapStore.ts',
+            'src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/restoreSnapshot.ts',
+        ]) {
+            const result = reviewPlan([handwritten(path, 1, 1)]);
+            expect(result.riskClasses, path).toEqual(['undo']);
+            expect(result.triggers, path).toContain(`undo:${path}`);
+        }
+    });
+
     it('should not fire the project-persistence trigger on a like-named path outside the Project module', () => {
         const result = reviewPlan([
             handwritten('src/modules/AgentStudio/presentations/projectPersistencePanel.tsx', 10, 10),

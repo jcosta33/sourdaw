@@ -77,6 +77,7 @@ const FullMicMixer = ({
                                 aria-label={`${mic.name} level`}
                             />
                             <RotaryKnob
+                                aria-label={`${mic.name} pan`}
                                 value={mic.pan}
                                 onChange={(v) => {
                                     onUpdateMicPosition(i, { pan: v });
@@ -158,6 +159,7 @@ export const MicBlendSlider = ({
             <DawPluginSectionHeader title="Space" size="xs" titleClassName="text-muted-foreground/50" />
             <Stack align="center">
                 <RotaryKnob
+                    aria-label="Close and room microphone blend"
                     value={blend}
                     onChange={(v) => {
                         // Symmetric crossfade so the knob round-trips: with

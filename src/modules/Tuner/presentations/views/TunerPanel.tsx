@@ -202,6 +202,7 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                 <SectionCard title="Reference" detail={`${a4Reference} Hz`}>
                     <Row justify="center">
                         <RotaryKnob
+                            aria-label="Concert A reference"
                             value={a4Reference}
                             onChange={(value, isTransient) => {
                                 // Whole hertz: the descriptor declares `a4_hz`

@@ -355,7 +355,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     paramId="chorusMix"
                                     value={props.chorusMix}
                                     onChange={(v) => onParam('chorusMix', v)}
-                                    label="Mix"
+                                    label="Chorus Mix"
                                     min={0}
                                     max={1}
                                     step={0.01}
@@ -366,7 +366,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     paramId="chorusRate"
                                     value={props.chorusRate}
                                     onChange={(v) => onParam('chorusRate', v)}
-                                    label="Rate"
+                                    label="Chorus Rate"
                                     min={0.1}
                                     max={5}
                                     step={0.1}
@@ -377,7 +377,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     paramId="chorusDepth"
                                     value={props.chorusDepth}
                                     onChange={(v) => onParam('chorusDepth', v)}
-                                    label="Depth"
+                                    label="Chorus Depth"
                                     min={0}
                                     max={1}
                                     step={0.01}
@@ -393,7 +393,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     paramId="phaserMix"
                                     value={props.phaserMix}
                                     onChange={(v) => onParam('phaserMix', v)}
-                                    label="Mix"
+                                    label="Phaser Mix"
                                     min={0}
                                     max={1}
                                     step={0.01}
@@ -404,7 +404,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     paramId="phaserRate"
                                     value={props.phaserRate}
                                     onChange={(v) => onParam('phaserRate', v)}
-                                    label="Rate"
+                                    label="Phaser Rate"
                                     min={0.1}
                                     max={5}
                                     step={0.1}
@@ -415,7 +415,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     paramId="phaserDepth"
                                     value={props.phaserDepth}
                                     onChange={(v) => onParam('phaserDepth', v)}
-                                    label="Depth"
+                                    label="Phaser Depth"
                                     min={0}
                                     max={1}
                                     step={0.01}

@@ -19,11 +19,11 @@ The presentation layer stays presentation-only. Business truth in the tree, dens
 
 ### 1. Presentation only
 
-Components, hooks, and view models bind controls to semantics, layout, and read surfaces. They are not the home of validation, persistence, undo orchestration, or engine control, and they must not import repositories, handlers, or engine (`architecture` rule 5). React stays in presentation. Business logic parked in a hook labelled “UI” is boundary evasion, not presentation.
+Components, hooks, and view models bind controls to semantics, layout, and read surfaces. They are not the home of validation, persistence, undo orchestration, or engine control. Presentation code must not import its module's repositories, handlers, services, validators or transformers, or anything under `engine/`, `runtime/`, `worklets/` or `workers/`; it reaches them through use cases. The boundary is closed from the other side too: `presentations/stores/` and `presentations/context/` are private to presentation, so non-presentation code never imports them, even in the same module, and leaf components do not import presentation stores — they take props or go through a hook (full list: `architecture` rule 5). React stays in presentation. Writes leave presentation as actions (rule 8). Business logic parked in a hook labelled “UI” is boundary evasion, not presentation.
 
 **Why:** business rules in the tree duplicate across surfaces and couple domain logic to the React lifecycle.
 
-**Enforced by:** dependency-cruiser `react-only-in-presentation`, `presentation-no-direct-repositories`, `presentation-no-direct-handlers`, `presentation-no-engine-runtime-imports`; logic hidden in a hook is review only.
+**Enforced by:** dependency-cruiser `react-only-in-presentation`, `presentation-no-direct-repositories`, `presentation-no-direct-handlers`, `presentation-no-direct-services-validators-transformers`, `presentation-no-engine-runtime-imports`, `presentation-stores-private-even-intra-module`, `presentation-context-private-even-intra-module`, `components-no-presentation-store-access`; logic hidden in a hook is review only.
 
 ### 2. React owns layout; renderer surfaces own pixels
 
@@ -51,7 +51,7 @@ Reach for real buttons, inputs, sliders, lists, dialogs, menus, and labels befor
 
 ### 5. Styling is systematic
 
-Use design tokens and project-standard primitives, tuned for dark-UI legibility at DAW density. No one-off styling system per feature. Extend CVA variants on `src/components/ui/` primitives; do not dump a long `className` pile onto `Button` / `Input` / other `ui/` primitives at the call site.
+Use design tokens and project-standard primitives from `src/components/ui/`, tuned for dark-UI legibility at DAW density. No one-off styling system per feature. Use a primitive's existing variants where it has them (`Button`'s CVA `variant` and `size`). A recurring look becomes a variant on the primitive — a `class-variance-authority` variant following `src/components/ui/button.tsx` — rather than a long `className` pile repeated at call sites. One-off layout classes passed through `className` are fine: the primitives merge it through `cn` (`#/utils/Styles/cn`, clsx plus tailwind-merge).
 
 **Why:** fragmented styling is unmaintainable at DAW density.
 
@@ -67,19 +67,21 @@ The audio thread, async projections, the network, and rendering backends genuine
 
 ### 7. Compiler-friendly components
 
-Prefer a ternary or early `return null` over render `&&`. Consume Context with `use()`, not `useContext`.
+React Compiler owns memoization: never add `useMemo`, `useCallback`, or `React.memo`. Never wrap a component in `forwardRef`; React 19 passes `ref` as an ordinary prop. Prefer a ternary or early `return null` over render `&&`. Consume Context with `use()`, not `useContext`. Lint runs only in PR CI, so this rule is where an author learns the bans in time.
 
-**Why:** leaky non-boolean `&&` (e.g. `0 && …`) silently renders `0`/`''`.
+**Why:** hand memoization duplicates what the compiler derives and goes stale when dependencies change; leaky non-boolean `&&` (e.g. `0 && …`) silently renders `0`/`''`.
 
-**Enforced by:** ESLint `@eslint-react/no-leaked-conditional-rendering` (error); `use()` over `useContext` is review only.
+**Enforced by:** ESLint `sourdaw/no-manual-memoization`, `@eslint-react/no-forward-ref` and `@eslint-react/no-leaked-conditional-rendering` (all error, PR CI); `use()` over `useContext` is review only.
 
 ### 8. View models shape display; writes go through actions
 
-View models shape data for display. Validation, persistence, cross-feature mutation, and undo semantics belong elsewhere. A renderer or view model may interpret interactions; authoritative writes go through use cases / `executeAppAction`.
+View models shape data for display. Validation, persistence, cross-feature mutation, and undo semantics belong elsewhere. A renderer or view model may interpret interactions; authoritative writes go through use cases or an action dispatch, never a business-store write from presentation (`state-and-write-paths` rule 3).
 
-**Why:** a view model that writes truth is a use case in the wrong clothes.
+A dispatch a person triggered — a click, a key, a drop, a menu choice — goes through `executeUserAppAction` from `#/modules/Command/useCases`, never a bare `void executeAppAction(...)`. The admission gates (a repair-required or brief-locked project) refuse by rejecting; `executeUserAppAction` turns that `AppActionConflictError` into a warning notification and resolves, and rethrows every other failure unchanged. Because it resolves after a refusal, resolution does not mean the action ran: never chain success behaviour (closing a dialog, showing "saved", advancing a flow) on its `.then` as if it did. A caller that must know whether the action ran awaits `executeAppAction` itself and handles the rejection. Programmatic, agent, and handler dispatch use `executeAppAction` directly.
 
-**Enforced by:** dependency-cruiser `presentation-no-direct-repositories` and `presentation-no-direct-handlers`; direct store writes are review only.
+**Why:** a view model that writes truth is a use case in the wrong clothes, and a dropped dispatch promise turns a refusal the user must see into an unhandled rejection.
+
+**Enforced by:** dependency-cruiser `presentation-no-direct-repositories` and `presentation-no-direct-handlers`; `src/modules/Command/useCases/__tests__/executeUserAppAction.spec.ts` for the notify-and-resolve and rethrow contract; choosing the entry point and direct store writes are review only.
 
 ## References
 

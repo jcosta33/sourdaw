@@ -11,13 +11,32 @@ set -uo pipefail
 msg_file="$1"
 subject="$(head -1 "$msg_file")"
 
-# Let git's own generated messages through untouched.
+# Let git's merge and transient autosquash messages through untouched. Merges never become the
+# lane's pull-request title, and fixup!/squash! commits are folded away before publishing. Revert
+# and Reapply subjects are not passed: lane:publish titles the pull request from the newest
+# non-merge subject, so a type it refuses must be refused here too. The types below are exactly
+# LANE_CHANGE_TYPES in scripts/prContract.ts; scripts/__tests__/commitMsgHook.spec.ts pins them.
 case "$subject" in
-  "Merge "*|"Revert "*|"fixup! "*|"squash! "*|"Reapply "*) exit 0 ;;
+  "Merge "*|"fixup! "*|"squash! "*) exit 0 ;;
   "#"*|"") exit 0 ;;
 esac
 
-pattern='^(feat|fix|chore|docs|test|refactor|perf|build|ci|style|revert)(\([a-z0-9,._/-]+\))?!?: .+'
+# The pull-request title refuses every control character, so the subject it may come from does too.
+if printf '%s' "$subject" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+  echo 'commit-msg: subject carries a control character (tab, carriage return or similar); remove it.' >&2
+  exit 1
+fi
+
+# The same closing references assertTitleCarriesNoClosingReference refuses in scripts/prContract.ts:
+# a commit subject on main closes the issue a closing keyword names, so a subject never names one.
+closing='(^|[^[:alnum:]_])(close[sd]?|fix(es|ed)?|resolve[sd]?):?[[:space:]]+(#[1-9][0-9]*|[[:alnum:]_.-]+/[[:alnum:]_.-]+#[1-9][0-9]*|https?://(www\.)?github\.com/[[:alnum:]_.-]+/[[:alnum:]_.-]+/(issues|pull)/[1-9][0-9]*)([^[:alnum:]_]|$)'
+if printf '%s' "$subject" | LC_ALL=C grep -Eiq "$closing"; then
+  printf 'commit-msg: subject carries an issue-closing reference.\n\n  %s\n\n' "$subject" >&2
+  echo 'Rephrase the subject; name the issue in the pull-request body instead.' >&2
+  exit 1
+fi
+
+pattern='^(feat|fix|chore|docs|test|refactor|perf|build|ci)(\([a-z0-9,._/-]+\))?!?: .+'
 
 if printf '%s' "$subject" | grep -Eq "$pattern"; then
   if [ "${#subject}" -gt 100 ]; then
@@ -34,7 +53,7 @@ commit-msg: subject does not match this repo's convention.
   $subject
 
 Expected  type(scope): subject
-Types     feat fix chore docs test refactor perf build ci style revert
+Types     feat fix chore docs test refactor perf build ci
 Scope     the module or crate — fermenter, proof-chamber, arrangement, infra …
 
   fix(fermenter): correct the plate tank delays that read a sample short

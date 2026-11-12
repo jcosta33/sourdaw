@@ -162,6 +162,7 @@ export const ExpressionPanel = ({
             <Row align="end" gap={3}>
                 <Stack align="center">
                     <RotaryKnob
+                        aria-label="Dynamic crossfade"
                         value={expression.dynamicCrossfadeTime}
                         onChange={(v) => onChangeExp({ dynamicCrossfadeTime: v })}
                         min={0.02}
@@ -180,6 +181,7 @@ export const ExpressionPanel = ({
                 <Row align="end" gap={2} className="border-l border-border/15 pl-3">
                     <Stack align="center">
                         <RotaryKnob
+                            aria-label="Vibrato depth"
                             value={expression.vibratoDepthMax}
                             onChange={(v) => onChangeExp({ vibratoDepthMax: v })}
                             min={0}
@@ -202,6 +204,7 @@ export const ExpressionPanel = ({
                         setLoopRegion for loopStart/loopEnd. */}
                     <Stack align="center">
                         <RotaryKnob
+                            aria-label="Vibrato rate minimum"
                             value={expression.vibratoRateMin}
                             onChange={(v) => onChangeExp({ vibratoRateMin: Math.min(v, expression.vibratoRateMax) })}
                             min={2}
@@ -218,6 +221,7 @@ export const ExpressionPanel = ({
                     </Stack>
                     <Stack align="center">
                         <RotaryKnob
+                            aria-label="Vibrato rate maximum"
                             value={expression.vibratoRateMax}
                             onChange={(v) => onChangeExp({ vibratoRateMax: Math.max(v, expression.vibratoRateMin) })}
                             min={2}
@@ -235,6 +239,7 @@ export const ExpressionPanel = ({
 
                     <Stack align="center">
                         <RotaryKnob
+                            aria-label="Vibrato onset delay"
                             value={expression.vibratoOnsetDelay}
                             onChange={(v) => onChangeExp({ vibratoOnsetDelay: v })}
                             min={0}

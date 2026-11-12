@@ -25,6 +25,7 @@ import { spawnSync } from 'node:child_process';
 import {
     AUTHOR_BOT_NODE_ID,
     CONFIRM_REVIEWER_MINT_PERMISSIONS,
+    ORCHESTRATOR_USER_NODE_ID,
     REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
     authenticateRole,
@@ -181,6 +182,7 @@ export function confirmReviewRepairs(
         base,
         authorNodeId: AUTHOR_BOT_NODE_ID,
         reviewerNodeId: REVIEWER_BOT_NODE_ID,
+        ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
         isAncestor: port.isAncestor,
     });
     logReasons('repair-ignored', number, selection.ignored, port.log);
@@ -307,6 +309,15 @@ function readReply(comment: unknown, label: string): ReviewRepairThreadState['re
     return { id, body: comment.body, authorNodeId: null };
 }
 
+/** The root's Bot or User node id: the owner's own findings are User comments and stay repairable. */
+function readRootAuthorNodeId(root: Record<string, unknown>): string | null {
+    const author = isRecord(root.author) ? root.author : {};
+    if ((author.__typename === 'Bot' || author.__typename === 'User') && typeof author.id === 'string') {
+        return author.id;
+    }
+    return null;
+}
+
 /** A listed thread plus the cursor of its unread comment pages, when the first page was truncated. */
 type ListedThread = { state: ReviewRepairThreadState; commentCursor: string | null };
 
@@ -353,6 +364,7 @@ function readThread(node: unknown, label: string): ListedThread {
             rootLine: readFindingLine(root.line, root.originalLine, `${label} root comment line`),
             rootSide: readSide(node.diffSide, `${label} diff side`),
             rootReviewedHead: readFindingReviewedHead(root.pullRequestReview, `${label} root comment`),
+            rootAuthorNodeId: readRootAuthorNodeId(root),
             replies: [root, ...rest].map((comment) => readReply(comment, label)),
         },
         commentCursor: readCommentCursor(comments, label),

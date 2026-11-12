@@ -59,6 +59,37 @@ describe('assertReviewDrawFloor', () => {
         expect(() => assertReviewDrawFloor(plan(['small']), repeated)).toThrow(/cover 1 distinct stances/u);
     });
 
+    it('counts case, width and separator variants of one stance once', () => {
+        const variants: CompletedReviewStance[] = ['Lost Review', 'lost-review', 'LOST__review', 'ｌｏｓｔ review'].map(
+            (stance, index) => ({ stance, reviewerModel: `model-${index}`, modelTier: 'standard', outcome: 'clean' })
+        );
+        expect(() => assertReviewDrawFloor(plan(['small']), variants)).toThrow(/cover 1 distinct stances/u);
+    });
+
+    it('counts mark, ignorable and punctuation variants of one stance once', () => {
+        const variants: CompletedReviewStance[] = [
+            'correctness',
+            'correctness\uFE0F',
+            'correctness\u034F',
+            'corre\u0301ctness',
+            'correctness.',
+            'correct-ness',
+        ].map((stance, index) => ({
+            stance,
+            reviewerModel: `model-${index}`,
+            modelTier: 'standard',
+            outcome: 'clean',
+        }));
+        expect(() => assertReviewDrawFloor(plan(['small']), variants)).toThrow(/cover 1 distinct stances/u);
+    });
+
+    it('keeps differently worded stances distinct', () => {
+        const distinct: CompletedReviewStance[] = ['forged-input-admitted', 'honest-operation-refused'].map(
+            (stance, index) => ({ stance, reviewerModel: `model-${index}`, modelTier: 'standard', outcome: 'clean' })
+        );
+        expect(() => assertReviewDrawFloor(plan(['small']), distinct)).not.toThrow();
+    });
+
     it.each(['native-security', 'realtime-audio', 'undo'] as const)(
         'admits a %s specialist plan with standard draws at its unchanged stance floor',
         (riskClass) => {
