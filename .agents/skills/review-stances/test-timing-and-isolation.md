@@ -74,7 +74,17 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    hold its queued delivery, revoke the operation, and require refusal with no stale writes. Revert
    that task boundary and require `detectTransientsForClip.spec.ts` to fail. In the real Detect trace,
    require publication outside `FireAnimationFrame` while preserving PCM, projections, undo/redo,
-   and the original no >=50 ms task and no >=100 ms frame-gap gates.
+   and the original no >=50 ms task and no >=100 ms frame-gap gates. Follow the complete settled
+   command through its success notification and caller DOM update too: #5843 introduced the synchronous
+   post-commit completion path. Its recorded cold 120-second E2E passed the task/frame, PCM and Undo gates;
+   recorded mutations targeted storage admission, tier selection and FFT. Those results did not demonstrate
+   compound UI task margin or cover the distinct late-caller ownership failure. A subsequent whole-host-task
+   counterexample requires both complete-endpoint attribution and held late-caller probes. A later awaited
+   presentation task must leave raw/projected markers, durable replay and session Undo available before delivery,
+   retain notification and caller completion inside the original measurement endpoint, and show both full host
+   tasks including subsequent renders. A held platform receiver must discriminate the real registered path;
+   synchronous delivery, failed scheduling/reconciliation, hidden/pagehide and stale delivery need explicit
+   controls. Separating tasks is a hypothesis until the unchanged whole-task/frame gates pass.
    (#5191, #6011, #5964, #3270, #3356, #5459, #6000, #4775, #5798, #3222, #2976, #5337, #4228, #5115, #5924, #4331, #6250)
 
 3. **Fixture state leaks across cases or depends on chance or the runner's environment.**
