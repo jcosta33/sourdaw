@@ -44,9 +44,6 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    coherent PCM geometry and the real analysis before setting a case-specific deadline for required work; retain
    programme and gating windows and every functional assertion (#6311, #6350). Do not use global timeouts or
    retries.
-   Match the test environment to its subject: Node CLI and Vite Node API checks need no DOM host unless an
-   assertion requires it. Run the complete spec in both hosts before changing its environment, preserving
-   every case, fixture, independent scan and deadline; a passing different host does not explain a prior timeout.
    Static scanners need a deterministic work bound as well as semantic verdicts. #1572 introduced
    per-spec barrel-mock graph walks without a unique-resolution bound; #5231's investigation after
    #6419's hook timeout found repeated resolution work, without proving the Linux timeout's cause.
