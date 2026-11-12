@@ -4,6 +4,8 @@ import { isRecord } from '#/utils/structuralEquality';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
 
+import { maskProjectReferences } from './maskProjectReferences';
+
 type StatedRange = Parameters<typeof resolveMusicalRange>[0]['range'];
 
 /** The beats a range covers once the project resolves it. */
@@ -49,6 +51,14 @@ const RANGE_TAIL_PATTERN = new RegExp(
     ].join(''),
     'iu'
 );
+
+/**
+ * A word before a range phrase that turns it into the range the change leaves alone: "everywhere
+ * except in Chorus Two", "but not in Chorus Two". Read with project names masked, so a track called
+ * "Outside Mic" states no exclusion.
+ */
+const EXCLUSION_PATTERN =
+    /(?<![\p{L}\p{N}])(?:except|excluding|not|outside|other\s+than|apart\s+from)(?![\p{L}\p{N}])/iu;
 
 type RangeResolution = ReturnType<typeof resolveMusicalRange>;
 
@@ -129,8 +139,8 @@ export function findTrailingRangePhrase(text: string, context: ProjectContext): 
 }
 
 /**
- * The beats the one range phrase `text` states, or null when it states none, several, or anything
- * after it but a figure, a ramp and closing punctuation.
+ * The beats the one range phrase `text` states, or null when it states none, several, anything
+ * after it but a figure, a ramp and closing punctuation, or an exclusion before it.
  */
 export function readStatedRangeBeats(text: string, context: ProjectContext): RangeBeats | null {
     const phrases = findRangePhrases(text, context);
@@ -138,6 +148,9 @@ export function readStatedRangeBeats(text: string, context: ProjectContext): Ran
         return null;
     }
     const [phrase] = phrases;
+    if (EXCLUSION_PATTERN.test(maskProjectReferences(text, context).slice(0, phrase!.start))) {
+        return null;
+    }
     return RANGE_TAIL_PATTERN.test(text.slice(phrase!.end)) ? phrase! : null;
 }
 

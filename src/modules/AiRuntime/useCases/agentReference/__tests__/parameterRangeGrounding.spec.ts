@@ -216,6 +216,30 @@ describe('a range automation writes across the range its request states', () => 
             sections: CHORUS_ONE_AND_TWO,
         },
         {
+            case: 'the range a request excludes from everywhere',
+            prompt: 'Dip Drum Bus by 1.5 dB everywhere except in Chorus Two',
+            range: { section: 'Chorus Two' },
+            sections: CHORUS_ONE_AND_TWO,
+        },
+        {
+            case: 'the range a later clause negates',
+            prompt: 'Dip Drum Bus by 1.5 dB, but not in Chorus Two',
+            range: { section: 'Chorus Two' },
+            sections: CHORUS_ONE_AND_TWO,
+        },
+        {
+            case: 'the range a request puts outside',
+            prompt: 'Dip Drum Bus by 1.5 dB outside Chorus Two',
+            range: { section: 'Chorus Two' },
+            sections: CHORUS_ONE_AND_TWO,
+        },
+        {
+            case: 'the range every other section leaves out',
+            prompt: 'Dip Drum Bus by 1.5 dB in every section other than Chorus Two',
+            range: { section: 'Chorus Two' },
+            sections: CHORUS_ONE_AND_TWO,
+        },
+        {
             case: 'a range the request never states',
             prompt: 'Dip Drum Bus by 1.5 dB',
             range: { section: 'Chorus Two' },

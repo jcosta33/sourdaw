@@ -7344,12 +7344,7 @@ function findWorkflowInterpretationConflict(
     grounded: BridgeGroundedLlmToolCallsResult
 ): string | null {
     const authority = input.creativeAuthority;
-    if (
-        authority === undefined ||
-        grounded.actions.length === 0 ||
-        (input.workflowCapabilityId === undefined &&
-            !input.calls.some((call) => call.name === 'automateTrackGainRange'))
-    ) {
+    if (authority === undefined || grounded.actions.length === 0 || input.workflowCapabilityId === undefined) {
         return null;
     }
     if (authority.mode === 'read-only' || authority.mode === 'brief') {
