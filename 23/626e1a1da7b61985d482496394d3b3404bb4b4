@@ -1,0 +1,19 @@
+.agents/skills/delivery-orchestration/references/review-records.md
+  s_8f62528cf75f92::t_4aade5f72e4d26 151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23626e1a1da7b61985d482496394d3b3404bb4b4",
+  "prompts": {},
+  "sessions": {
+    "s_8f62528cf75f92": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c29af72-5388-4e1c-97b2-12a14f011f7b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
