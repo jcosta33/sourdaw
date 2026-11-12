@@ -1,0 +1,24 @@
+scripts/__tests__/gitCheckpoint.spec.ts
+  s_eec9d24f84ae15::t_5f45c5d958577b 85-93,167
+  s_eec9d24f84ae15::t_8e463440b686c5 164-166
+scripts/gitCheckpoint.ts
+  s_eec9d24f84ae15::t_5f45c5d958577b 143,145-146,156,160-169,172
+  s_eec9d24f84ae15::t_3396bf0d5906fe 437-439
+  s_eec9d24f84ae15::t_c9457d4892ca7b 434-436
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0d2d2d36258c0af5a14e30256331799bddd08288",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
