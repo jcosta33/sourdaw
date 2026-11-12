@@ -1,0 +1,35 @@
+tests/e2e/elasticTransientWorkerPerformance.spec.ts
+  s_9307cedd8951f1::t_372eb973434ee9 27,35,39-202,206-223,225-242,249-254,259,596,603,606,617,619
+  s_9307cedd8951f1::t_96e74f344d05cd 203-205,243-248
+  s_9307cedd8951f1::t_9186ddb23100e8 24-26
+  s_9307cedd8951f1::t_52f323fabfa2df 28-30,32-34
+  s_9307cedd8951f1::t_9425575a50a695 36-38
+  s_9307cedd8951f1::t_67e1113e548767 224
+  s_9307cedd8951f1::t_8b6cf8be565406 255-258
+  s_9307cedd8951f1::t_5515179e9491f5 260-262
+  s_9307cedd8951f1::t_ef344214b7c8f3 593-595
+  s_9307cedd8951f1::t_8b8a3bc4e86fb8 597-602
+  s_9307cedd8951f1::t_0e2d2881f5bafc 604-605
+  s_9307cedd8951f1::t_b61975daa37921 607-609,614-616
+  s_9307cedd8951f1::t_ab3348853bf7ba 618
+  s_9307cedd8951f1::t_7bf3e3d24dfccd 620
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_9307cedd8951f1::t_372eb973434ee9 84-102,202,235,246,251,268,278,628-636,649-653,657-660,662-669,671-676,678,680-785,787-788,790-791,794-812,815-822,824-877
+  s_9307cedd8951f1::t_bfbc2eeb4012b9 81-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8b089107ead9121675235d65a4560b633ff03b9d",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
