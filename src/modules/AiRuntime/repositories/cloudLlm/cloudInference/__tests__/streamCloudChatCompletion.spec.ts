@@ -79,6 +79,12 @@ vi.mock('../../getCloudProviderInfo', () => ({
     getCloudProviderInfo: mocks.getCloudProviderInfo,
 }));
 
+// The hosted provider is the user's selected backend here; the selection rule itself is
+// held by streamHostedModelText.spec.ts.
+vi.mock('../../../../useCases/llmOrchestration/backendResolution/getBackendChain', () => ({
+    getBackendChain: () => ['cloud'],
+}));
+
 vi.mock('../../getCloudProviderRuntime', () => ({
     getCloudProviderRuntime: mocks.getCloudProviderRuntime,
 }));

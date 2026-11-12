@@ -2,8 +2,8 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { getAiOrganizationHandlers } from './getAiOrganizationHandlers';
+export { explainMixHealthReport } from './explainMixHealthReport';
 export { mixHealthAnalysis } from './mixHealthAnalysis';
-export { streamHostedModelText } from './streamHostedModelText';
 export { beginMixAnalysis } from './beginMixAnalysis';
 export { completeMixAnalysis } from './completeMixAnalysis';
 export { failMixAnalysis } from './failMixAnalysis';

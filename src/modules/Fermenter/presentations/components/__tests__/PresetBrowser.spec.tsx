@@ -85,12 +85,14 @@ describe('PresetBrowser', () => {
             expect(screen.getByText('2 presets')).toBeTruthy();
         });
 
-        it('marks the active category pill with white text', () => {
+        it('marks the active category pill with the rendered surface foreground', () => {
             render(<PresetBrowser {...defaultProps()} />);
             const bassPill = screen.getByText('Bass', { selector: 'button' });
-            expect(bassPill.className).not.toContain('text-white');
+            expect(bassPill).not.toHaveClass('text-surface-panel');
+            expect(bassPill.style.color).toBe('');
             fireEvent.click(bassPill);
-            expect(bassPill.className).toContain('text-white');
+            expect(bassPill).toHaveClass('text-surface-panel');
+            expect(bassPill.style.color).toBe('var(--color-surface-panel)');
         });
 
         it('sets the active pill inline background to the category color token', () => {
@@ -158,8 +160,10 @@ describe('PresetBrowser', () => {
             render(<PresetBrowser {...defaultProps()} />);
             const fmTag = screen.getByText('#fm');
             expect(fmTag.className).not.toContain('bg-muted');
+            expect(fmTag).toHaveAttribute('aria-pressed', 'false');
             fireEvent.click(fmTag);
             expect(fmTag.className).toContain('bg-muted');
+            expect(fmTag).toHaveAttribute('aria-pressed', 'true');
         });
     });
 
@@ -252,5 +256,18 @@ describe('PresetBrowser', () => {
             expect(screen.getByRole('button', { name: 'Previous preset' })).toBeDisabled();
             expect(screen.getByRole('button', { name: 'Next preset' })).toBeDisabled();
         });
+    });
+
+    it('gives filtering and preset controls minimum targets with legible semantic labels', () => {
+        render(<PresetBrowser {...defaultProps()} />);
+
+        expect(screen.getByPlaceholderText('Search presets…')).toHaveClass('h-6', 'text-[length:var(--text-nano)]');
+        for (const control of [
+            screen.getByRole('button', { name: 'Lead', pressed: false }),
+            screen.getByRole('button', { name: '#warm' }),
+            screen.getByRole('button', { name: 'Lead One' }),
+        ]) {
+            expect(control).toHaveClass('min-h-6', 'text-[length:var(--text-nano)]');
+        }
     });
 });

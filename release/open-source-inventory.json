@@ -170,7 +170,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:b640b863db1fa8cb7a9d55a6cb3b798bf2395e11c34e63e71161e965fb318d84:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:d8cffa30ad711d95996e1b540631c8ae0d6e551ea0b9567baca07b95912e37c4:release/dependency-license-proofs.json"
+                "sha256:cf70c90fde6f5e9a6c1243fdd7b8c790bcb17d26a02f50ce32589bb8d416a2e4:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1859,7 +1859,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "cc324f3a33c951740cc602a8fd5c0450fcf72f04e66384ad109061f02ec89b81"
+            "sha256": "3911c478b8388f4e76d0be86f8b0771b7e29864e72bd6af6d3b9b48c80453cb6"
         },
         {
             "path": "server/package.json",
@@ -2393,6 +2393,11 @@
             "surface": "project-source",
             "file": "scripts/retirementRecord.ts",
             "value": "https://github.com/jcosta33/sourdaw/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/trustedGithubWriteBootstrap.ts",
+            "value": "https://github.com/jcosta33/sourdaw.git"
         },
         {
             "surface": "project-source",
