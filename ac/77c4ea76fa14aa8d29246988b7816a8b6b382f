@@ -1,0 +1,100 @@
+src/modules/AiRuntime/useCases/handPromptRequestToChat.ts
+  s_63e4cacf2b45cf::t_8fc10c34aa5a9b 1-58
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_63e4cacf2b45cf::t_bd68bcd776ff47 28-30
+  s_9307cedd8951f1::t_8acc158ece1537 37-42,147,189-204,219,515-547
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_63e4cacf2b45cf::t_e5cfe31405c51d 605-608
+src/modules/AiRuntime/models/PlanningOutcome.ts
+  s_63e4cacf2b45cf::t_bb49c028dd2d3c 44-48
+  s_63e4cacf2b45cf::t_8d48ef722e039f 19-21
+  s_35b9801a6d6336::t_97734dbbe4ac72 43
+src/modules/AiRuntime/AGENTS.md
+  s_eec9d24f84ae15::t_c809c3e877bf4c 42-44,48
+src/modules/AiRuntime/errors/NoAiBackendError.ts
+  s_eec9d24f84ae15::t_f2ab01ec1fbaa7 1-16
+src/modules/AiRuntime/services/agentAcceptanceScorer.ts
+  s_9307cedd8951f1::t_68354ab7b25ba5 48-50
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_9307cedd8951f1::t_51197caa8e3771 2428,2430-2437,2442-2452
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_35b9801a6d6336::t_81881a54efd9be 13,18,20-21,41,60-61,132-141,1562-1759
+src/modules/AiRuntime/useCases/describeNoAiBackendRemedy.ts
+  s_eec9d24f84ae15::t_5246df9dfdad53 1-20
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_eec9d24f84ae15::t_48dcc173c2e931 8,556
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_eec9d24f84ae15::t_998cbc98281b37 9,27,103,161-166,663,839-846,1636-1639,1762-1765,2205-2213,2296-2309,2319-2328
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_eec9d24f84ae15::t_25e69868bf4e10 47-48,205,221,306,355
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_9307cedd8951f1::t_3d9fb697529c02 35,63-65,260,361-373,380-381
+src/modules/Preferences/AGENTS.md
+  s_eec9d24f84ae15::t_2582a926396d88 18
+src/modules/Preferences/models/Preferences.ts
+  s_87ae37da66d2f0::t_2e9efc6f6d3cae 93-134,163-167,201
+src/modules/Preferences/stores/preferencesStore.ts
+  s_35b9801a6d6336::t_c6faa6f611fbfe 12,75
+src/modules/Preferences/useCases/admitHostedBackendQuestion.ts
+  s_87ae37da66d2f0::t_abc3a540d14a7d 1-27
+src/modules/Preferences/useCases/forgetHostedBackendQuestion.ts
+  s_87ae37da66d2f0::t_c658232aadc22a 1-17
+src/modules/AiRuntime/useCases/__tests__/briefFromRequest.spec.ts
+  s_35b9801a6d6336::t_6ecbdb73ccc140 53,55,809-887,987
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_35b9801a6d6336::t_92ef31d882734d 12-13,1363-1414
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/getBackendChain.spec.ts
+  s_35b9801a6d6336::t_59a7760213233c 97-112
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_35b9801a6d6336::t_852988181aba83 1,4-5,87,430-569
+src/modules/Preferences/stores/__tests__/validateStoredPreferences.spec.ts
+  s_35b9801a6d6336::t_c204a3d44b06cb 5-10,451-471
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ac77c4ea76fa14aa8d29246988b7816a8b6b382f",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_63e4cacf2b45cf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ddd079b6-7442-4b2d-b0a4-c81190261fe0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_87ae37da66d2f0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e83ca346-1b25-4729-84f5-4e1a6a613aae",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
