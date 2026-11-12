@@ -1,0 +1,21 @@
+.agents/skills/test-design/SKILL.md
+  s_0373f1ed0846d2::t_5214d32555a05f 74,78
+docs/06-testing.md
+  s_0373f1ed0846d2::t_f8e21a52b35751 649-686
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd1f2e1bac2776fb5492fe295c238779e1994d75",
+  "prompts": {},
+  "sessions": {
+    "s_0373f1ed0846d2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b22f9920-36bd-40b9-9548-3d0dfe9e48ce",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
