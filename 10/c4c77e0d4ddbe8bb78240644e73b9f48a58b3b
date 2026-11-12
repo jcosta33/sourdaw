@@ -1,0 +1,52 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_126e3d478b4f75::t_0d4dead5418b85 8,415
+  s_126e3d478b4f75::t_1c2b9c04db58d7 18
+scripts/checkLgplRuntimeProvenance.ts
+  s_126e3d478b4f75::t_0d4dead5418b85 10,187-188,196
+  s_126e3d478b4f75::t_9e70e66f5a8e4c 189-195
+  s_126e3d478b4f75::t_22f6d06efdbd6b 9
+scripts/__tests__/checkProjectLicense.spec.ts
+  s_126e3d478b4f75::t_22f6d06efdbd6b 51,248
+  s_126e3d478b4f75::t_edcf3e63b63df6 32,253-254,257,264,270,273
+  s_126e3d478b4f75::t_0d4dead5418b85 364
+  s_126e3d478b4f75::t_9e70e66f5a8e4c 249-252,255-256,258-263,265-269,271-272
+  s_126e3d478b4f75::t_86620b1a8fe4ca 274-275
+scripts/__tests__/checkElectronRuntimeProvenance.spec.ts
+  s_126e3d478b4f75::t_9e70e66f5a8e4c 190-197
+  s_126e3d478b4f75::t_22f6d06efdbd6b 171-188
+  s_126e3d478b4f75::t_edcf3e63b63df6 189,198-199
+scripts/__tests__/checkLgplRuntimeProvenance.spec.ts
+  s_126e3d478b4f75::t_9e70e66f5a8e4c 261-268
+  s_126e3d478b4f75::t_22f6d06efdbd6b 242-259
+  s_126e3d478b4f75::t_edcf3e63b63df6 260,269-270
+scripts/pnpmLock.ts
+  s_126e3d478b4f75::t_1c2b9c04db58d7 42-44,54-56,67-69,83-85,109-111,119-121,124-126,139-141
+  s_126e3d478b4f75::t_0d4dead5418b85 14-17,19,108
+  s_126e3d478b4f75::t_a27b8a0878b7d3 1-13,18,20-25,39-41,52,61-63,78-81,92-98,100-107,118,122-123,127-138,142,144
+  s_126e3d478b4f75::t_9e70e66f5a8e4c 26-38,45-51,53,57-60,64-66,70-77,82,86-91,99,112-117,143
+scripts/dependencyLicenseReport.ts
+  s_126e3d478b4f75::t_0d4dead5418b85 912
+  s_126e3d478b4f75::t_22f6d06efdbd6b 11
+scripts/__tests__/pnpmLock.spec.ts
+  s_126e3d478b4f75::t_9e70e66f5a8e4c 1-38,40-131
+  s_126e3d478b4f75::t_cb6988c2c40af9 39
+scripts/checkElectronRuntimeProvenance.ts
+  s_126e3d478b4f75::t_0d4dead5418b85 10-11,36-37,45
+  s_126e3d478b4f75::t_9e70e66f5a8e4c 38-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "10c4c77e0d4ddbe8bb78240644e73b9f48a58b3b",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
