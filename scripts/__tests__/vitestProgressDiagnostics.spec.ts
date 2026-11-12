@@ -75,7 +75,7 @@ it('reports filtered skipped cases as ready without claiming their bodies ran', 
         const entered = join(fixture, 'body-entered');
         writeFileSync(
             spec,
-            `import { writeFileSync } from 'node:fs'; import { it, expect } from 'vitest'; it('filtered case', () => { writeFileSync(${JSON.stringify(entered)}, 'entered'); expect(true).toBe(true); });\n`
+            "import { writeFileSync } from 'node:fs'; import { it, expect } from 'vitest'; it('filtered case', () => { writeFileSync(process.env.SOURDAW_TEST_BODY_MARKER, 'entered'); expect(true).toBe(true); });\n"
         );
         writeFileSync(
             config,
@@ -84,7 +84,11 @@ it('reports filtered skipped cases as ready without claiming their bodies ran', 
         const result = spawnSync(
             process.execPath,
             [join(root, 'scripts/runVitestZeroTestGuard.ts'), '--config', config, '-t', 'does-not-match'],
-            { cwd: root, encoding: 'utf8', env: { ...process.env, SOURDAW_VITEST_DIAGNOSTICS_DIR: fixture } }
+            {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, SOURDAW_VITEST_DIAGNOSTICS_DIR: fixture, SOURDAW_TEST_BODY_MARKER: entered },
+            }
         );
         expect(result.status).toBe(1);
         expect(result.stderr).toContain('zero executed assertions');
