@@ -1,0 +1,189 @@
+src/modules/Levain/presentations/components/ExpressionPanel.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 165,184,207,224,242
+src/modules/Tuner/presentations/views/TunerPanel.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 205
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 364-365,390-391,443-444,451,464,482
+src/modules/Crust/presentations/components/CrustControlZone.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 102,151
+.agents/skills/test-design/SKILL.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 5-9,16,62,66
+src/modules/Fermenter/presentations/components/GranularSection.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 19-60,73-141
+.dependency-cruiser.cjs
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 100-101
+scripts/__tests__/installCleanupLanes.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 9,580,587-757
+  s_9307cedd8951f1::t_89bc2967227011 758
+scripts/prContract.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 30-38,40-45,207-224,229,359-362,364,389-406,419-425
+src/modules/Arrangement/presentations/views/timelineClipNavigatorKeyboard.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 1-97
+docs/architecture/03-typescript-module.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 431,440
+scripts/__tests__/commitMsgHook.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 1-111
+src/modules/Fermenter/presentations/components/__tests__/RotaryAccessibleNames.spec.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 1-145
+src/modules/Fermenter/presentations/components/AdditiveSection.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 33,48,63,78
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 206,208,248,287,305,324,334,354,386,502,541,557,600,603,612,712,737,758,766
+.githooks/commit-msg
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 14-18,20,24-39,56
+scripts/__tests__/publishLane.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 20,76-77,213-217,277-285,521-587,706-722,2164-2267,2353-2355,2359,4119-4126,4571-4572,4579-4582,4584-4596,4948-4949,5054,5065-5131,5220,5267,5335,5375-5376,5405-5406,5435,5471,5504,5605,5646,5678
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 717,727,737,755,765,775,1271
+.agents/skills/delivery-orchestration/references/repair-and-lock-recovery.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 135-140
+src/modules/Fermenter/presentations/components/WarpSection.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 31-91,99-101,103-134,136,138-146
+scripts/__tests__/stackedLanes.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 173-178,180,186-196
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenuFocus.integration.spec.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 182-183,224-227
+.agents/skills/architecture/SKILL.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 5-12,53,69-71,75,103
+src/modules/GrandBoule/presentations/components/__tests__/PerNoteEditor.spec.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 23,42-46
+  s_9307cedd8951f1::t_6b5b2a232cab87 47-48
+src/modules/Fermenter/presentations/components/ModulationSection.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 32,53,68
+tests/e2e/tunerReferenceHomeEnd.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 40
+src/modules/Crust/presentations/components/__tests__/CrustControlZone.accessibility.spec.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 1-26
+tests/e2e/timelineClipAccessibility.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 22-23,116-117
+scripts/publishLane.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 36,48,57,455-459,465-467,470-471,480-484,488,590-591,593-596,631-633,635,640,1059-1064,1084-1085,1108-1122,1124-1130,1136,1141,1150-1155,1177-1179,1425-1429,1962-1970,2012-2020,2065,2069,2075,2081-2082,2085-2119,2280-2283
+tests/e2e/tuner.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 49,77
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackMidiFxSection.spec.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 42-51,147-173
+  s_9307cedd8951f1::t_50f943bcd37f09 174
+.agents/decisions/0054-proportional-machine-checked-review-floor.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 5
+scripts/claimTrackerIssue.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 61-66,76-96,263-266,275-279
+release/open-source-inventory.json
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 1216
+scripts/__tests__/removeLane.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 26,45-49,87,109,134-137,171,174-181,195,302-323,329-345,347-387,1087-1099,1239-1281,1380-1397,1433,1504,1510,1517,1526,1622-1624,1629-1698,1742-1745,1758-1759,1762,1764-1773,1787,1803-1804,1818-1822,1830-1834,1836-1844,1925-1940,2016,2023-2031,2052,2054,2056-2060,2273
+scripts/cleanupLaneBookkeeping.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 18,160,179,196,206,212-214
+src/modules/AudioEngine/engine/__tests__/scoringReferenceAuthority.integration.spec.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 356
+.agents/skills/architecture-violations/SKILL.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 24,78,80,82,89
+scripts/cleanupLanes.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 43,463
+src/modules/Fermenter/presentations/components/EffectsSection.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 358,369,380,396,407,418
+src/modules/Fermenter/presentations/views/__tests__/FermenterControlKeyboard.integration.spec.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 238-239
+scripts/pruneLane.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 33-34,42,44-45,47,50,53,56,121-124,126-133,259,261-262,266-270,272-274,289,299-316,326-327,329-330
+scripts/__tests__/prContract.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 14,101-168,536-582,584-591
+src/modules/Levain/presentations/components/__tests__/RotaryAccessibleNames.spec.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 1-80
+src/modules/Levain/presentations/components/HumanizePanel.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 29,49,67,85,103
+scripts/__tests__/claimTrackerIssue.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 91-100,102,106,118-120,215,219-266,466,469,475,483,492
+src/modules/Tuner/presentations/views/__tests__/TunerPanel.spec.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 163,170,177,227
+src/modules/Fermenter/presentations/components/CrumbsSection.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 43,58
+tests/e2e/spatialPannerArrangementTestId.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 96-115,117-132
+scripts/removeLane.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 48,72,87-92,97-100,174-215,220-225,231-233,254-273,313,317,320,327,330,333,355,366,378,414-429,432,452-457,463-469,471,473,475,479,504,507,510,515,519,525,530,536,540,544,547,552,560,573,577,581,584,595,603,611,614,665,673-692,701,713,717,725,729-730,757-765,769-770,820,823,826,831,835,844,847,883-897,902-905,919,923-924,931,941-948,953,1040,1148-1154,1169,1172-1186,1214-1222,1238-1241,1246-1251
+scripts/installCleanupLanes.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 5-15,271-354,396,419,422-423,425,427,430,432
+.agents/skills/crdt-collaboration/SKILL.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 5-11,22,24,26-28,60,62,64,66,102,106
+.agents/skills/ast-grep/SKILL.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 43,45-48
+.agents/skills/delivery-orchestration/references/closure-and-retirement.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 10-39,45-78
+.agents/skills/ui-patterns/SKILL.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 22,26,54,70,72,74,78,80,82-84
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 91-93,280-286
+.agents/skills/state-and-write-paths/SKILL.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 4-11,29,31,49,51,53
+src/modules/TimelineEditor/presentations/views/Inspector/TrackMidiFxSection.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 70,103,133,144,158
+src/modules/Levain/presentations/components/MicBlendSlider.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 80,162
+.agents/decisions/0057-fresh-review-draws-stay-within-the-low-cost-tiers.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 1-45
+scripts/__tests__/adoptedLanePublication.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 81-89,256,259-267
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 1197
+.agents/skills/testing-file-layout/SKILL.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 4-11,46,52,54-57,59,61
+src/modules/Fermenter/presentations/components/KarplusSection.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 30,45
+src/modules/Fermenter/presentations/components/LayerStack.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 34-65,106-113,121,135
+.agents/decisions/README.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 17-73
+src/modules/Levain/presentations/components/LegatoTuning.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 142,158,174
+.agents/skills/plugin-hosting/SKILL.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 21,33-41,47,56,62,68,74,76,80-81
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 282
+src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 99
+.agents/skills/delivery-orchestration/references/lane-publication.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 75-80
+scripts/__tests__/cleanupLanes.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 97,393,425,612-682,800-816,880-884
+src/modules/Arrangement/presentations/views/__tests__/TimelineClipNavigator.spec.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 15,20,115-122,134,149-150,154-155,270,355-374,398,405-690
+src/modules/Arrangement/presentations/views/timelineClipNavigatorModel.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 1-27
+scripts/stackedLanes.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 403-411
+scripts/fileTrackerIssue.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 114,141,167-172
+  s_9307cedd8951f1::t_d8a8e73fee2947 173-174
+src/modules/Arrangement/presentations/views/TimelineClipNavigator.tsx
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 12-14,19,22-23,50-53,58,61-64,69,71-73,75,82,97,105-106,109-111,114-125,129,131-138,144-145,153,155-162,169,173-217,220,222-229,236,241-260,262-266,269,274,280-281
+scripts/__tests__/fileTrackerIssue.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 144-160,172-177
+.agents/skills/playwright-ui-bridge/SKILL.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 19,21,23,27,29,31,35,37,39,41,53,70-77,80-81,121-123
+AGENTS.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 180-184,198-200,271-274,309-310,368,453-455,498-500,576-577,586,642,668-669
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 1839-1841,1846,1849-1853,1858-1860,1876-1880,1883-1886
+src/modules/Arrangement/useCases/revealTimelineClip.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 1-65
+.agents/skills/delivery-orchestration/SKILL.md
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 42,49-50,76-77,150-151,260,350-353,468-471,493-496,508-512,572-573
+scripts/__tests__/pruneLane.spec.ts
+  s_9307cedd8951f1::t_7a2a5f2d6d5d02 1-11,19,31-35,315-317,319,355-359,361-362,365-366,371-372,375-377,380,383-385,390-537,613-643
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e3fa776a5a8b4a150f9fa883db05c61e41fbcbbf",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
