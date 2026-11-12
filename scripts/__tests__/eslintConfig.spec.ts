@@ -133,6 +133,45 @@ describe('ESLint configuration', () => {
         expect(readFileSync('.oxlintrc.json', 'utf8')).not.toMatch(/tauri/i);
     });
 
+    it('reports every assertion escape and no ordinary assertion', async () => {
+        const eslint = new ESLint();
+        const config = await eslint.calculateConfigForFile(resolve('src/app/bootstrap.ts'));
+        if (!config) {
+            throw new Error('ESLint did not load the app configuration');
+        }
+        const allowedFile = 'src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts';
+        const allowedConfig = await eslint.calculateConfigForFile(resolve(allowedFile));
+        const linter = new Linter();
+        const lint = (code: string, ruleEntry: Linter.RuleEntry) =>
+            linter
+                .verify(
+                    code,
+                    {
+                        files: ['**/*.ts'],
+                        languageOptions: { parser: config.languageOptions.parser },
+                        plugins: { sourdaw: config.plugins.sourdaw },
+                        rules: { 'sourdaw/no-type-assertion-escape': ruleEntry },
+                    },
+                    { filename: resolve('src/modules/Example/useCases/example.ts') }
+                )
+                .map((message) => message.messageId);
+        const production = config.rules['sourdaw/no-type-assertion-escape'];
+        const allowed = allowedConfig?.rules['sourdaw/no-type-assertion-escape'];
+
+        expect(production).toEqual([2]);
+        expect(lint('const value = input as never;', production)).toEqual(['noAsNever']);
+        expect(lint('const value = input as any;', production)).toEqual(['noAsAny']);
+        expect(lint('const value = input as unknown as Thing;', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = [1, 2] as const;', production)).toEqual([]);
+        expect(lint('const value = input as Thing;', production)).toEqual([]);
+        expect(lint('const value = input as unknown;', production)).toEqual([]);
+
+        expect(allowed).toEqual([2, { allowAsNever: true }]);
+        expect(lint('const value = input as never;', allowed)).toEqual([]);
+        expect(lint('const value = input as any;', allowed)).toEqual(['noAsAny']);
+        expect(lint('const value = input as unknown as never;', allowed)).toEqual(['noAsUnknownAs']);
+    });
+
     it('preserves custom rule diagnostics through the loaded plugin', async () => {
         const eslint = new ESLint();
         const config = await eslint.calculateConfigForFile(resolve('src/app/bootstrap.ts'));

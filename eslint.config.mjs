@@ -2643,24 +2643,33 @@ const sourdawPlugin = {
         },
 
         // AGENTS.md L148: `as`, `as any`, or `as unknown as …` to silence compiler errors is forbidden.
-        // Catches `x as any` and the `x as unknown as T` double-assertion escape hatch.
+        // Catches `x as any`, `x as never`, and the `x as unknown as T` double-assertion escape hatch.
         'no-type-assertion-escape': {
             meta: {
                 type: 'problem',
                 docs: {
                     description:
-                        'Disallow `as any` and `as unknown as X` — forbidden soundness escapes (AGENTS.md § TypeScript — soundness).',
+                        'Disallow `as any`, `as never` and `as unknown as X` — forbidden soundness escapes (AGENTS.md § TypeScript — soundness).',
                 },
-                schema: [],
+                schema: [
+                    {
+                        type: 'object',
+                        properties: { allowAsNever: { type: 'boolean' } },
+                        additionalProperties: false,
+                    },
+                ],
                 messages: {
                     noAsAny:
                         '`as any` is forbidden. Fix the value or the type. Use `unknown` + narrowing, `satisfies`, or Zod validation at I/O boundaries.',
                     noAsUnknownAs:
                         '`as unknown as X` double-assertion is forbidden — it silences the type checker. Narrow via `unknown` + type guards or validate with Zod at I/O boundaries.',
+                    noAsNever:
+                        '`as never` is forbidden — it is assignable to every type, so it silences the type checker. Give the value its real type or narrow it.',
                 },
             },
-            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, [{ allowAsNever?: boolean }?]>} context */
             create(context) {
+                const allowAsNever = context.options[0]?.allowAsNever === true;
                 return {
                     /** @param {import('@typescript-eslint/utils').TSESTree.TSAsExpression} node */
                     TSAsExpression(node) {
@@ -2675,6 +2684,11 @@ const sourdawPlugin = {
                             node.expression.typeAnnotation?.type === AST_NODE_TYPES.TSUnknownKeyword
                         ) {
                             context.report({ node, messageId: 'noAsUnknownAs' });
+                            return;
+                        }
+                        // `x as never`
+                        if (node.typeAnnotation?.type === AST_NODE_TYPES.TSNeverKeyword && !allowAsNever) {
+                            context.report({ node, messageId: 'noAsNever' });
                         }
                     },
                 };
@@ -3153,6 +3167,22 @@ export default tseslint.config(
             'max-lines-per-function': 'off',
             'max-depth': 'off',
             complexity: 'off',
+        },
+    },
+
+    // ─── Temporary `as never` allowance ────────────────────────────────────
+    // These four Arrangement restore handlers still cast with `as never`; their
+    // removal lands in a separate change. `as any` and `as unknown as` stay
+    // errors here. Delete this block once the casts are gone.
+    {
+        files: [
+            'src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts',
+            'src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts',
+            'src/modules/Arrangement/handlers/scratchPad/handleRestoreScratchPadState.ts',
+            'src/modules/Arrangement/handlers/trackAlternative/handleRestoreTrackAlternativeState.ts',
+        ],
+        rules: {
+            'sourdaw/no-type-assertion-escape': ['error', { allowAsNever: true }],
         },
     },
 
