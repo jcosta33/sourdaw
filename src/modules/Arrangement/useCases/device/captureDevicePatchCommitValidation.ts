@@ -2,7 +2,7 @@ import { getHeads, getObjectId } from '@automerge/automerge';
 
 import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
 import { captureProjectIdentity, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
-import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
+import { projectTransitionEpoch } from '#/modules/Project/stores';
 import { type HandlerCommitValidation } from '#/utils/handlerContract';
 import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
@@ -70,8 +70,8 @@ function read(document: Readonly<Record<string, unknown>>, input: Input): Snapsh
 function startWrittenIntentObservation(
     input: Input,
     before: Snapshot,
-    trackIdentity: ReturnType<typeof getObjectId>,
-    deviceIdentity: ReturnType<typeof getObjectId>,
+    trackIdentity: ReturnType<typeof getObjectId> | undefined,
+    deviceIdentity: ReturnType<typeof getObjectId> | undefined,
     headsAtAdmission: ReturnType<typeof getHeads>,
     matchesSource: (document: Readonly<Record<string, unknown>>) => boolean
 ) {
@@ -175,13 +175,13 @@ export function captureDevicePatchCommitValidation(input: Input) {
     const fingerprint = JSON.stringify(before.value);
     const trackIdentity = before.track ? getObjectId(before.track) : undefined;
     const deviceIdentity = before.owners[0] ? getObjectId(before.owners[0].device) : undefined;
-    const authority = captureProjectTransitionAuthority();
+    const transitionEpoch = projectTransitionEpoch.current;
     const identity = captureProjectIdentity();
     const headsAtAdmission = getHeads(root).toSorted();
     const matchesSource = (document: Readonly<Record<string, unknown>>): boolean => {
         const current = read(document, input);
         return (
-            authority.isCurrent() &&
+            projectTransitionEpoch.isCurrent(transitionEpoch) &&
             captureProjectIdentity() === identity &&
             current !== null &&
             matchesJsonFingerprint(current.value, fingerprint) &&

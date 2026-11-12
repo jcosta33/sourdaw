@@ -6,12 +6,12 @@ import {
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
-import { fermenterPatchesEqual, fromFermenterDeviceState } from '../models/FermenterPatchState';
 import {
     fermenterPatchProjectStatesEqual,
     fermenterProjectStateMatchesPatch,
     readFermenterPatchProjectState,
 } from '../models/FermenterPatchProjectState';
+import { fermenterPatchesEqual, fromFermenterDeviceState } from '../models/FermenterPatchState';
 import { reconcileFermenterPatchFromProject } from '../useCases/reconcileFermenterPatchFromProject';
 
 type PatchAction = Extract<AppAction, { type: 'setFermenterPatch' }>;

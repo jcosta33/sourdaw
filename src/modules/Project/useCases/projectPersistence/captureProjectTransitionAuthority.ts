@@ -1,12 +1,12 @@
-import { projectLoadEpoch } from './helpers/runProjectLoadTransaction';
+import { projectTransitionEpoch } from '../../stores/projectTransitionEpoch';
 
 type ProjectTransitionAuthority = {
     isCurrent: () => boolean;
 };
 
 export function captureProjectTransitionAuthority(): ProjectTransitionAuthority {
-    const epoch = projectLoadEpoch.current;
+    const epoch = projectTransitionEpoch.current;
     return {
-        isCurrent: () => projectLoadEpoch.isCurrent(epoch),
+        isCurrent: () => projectTransitionEpoch.isCurrent(epoch),
     };
 }

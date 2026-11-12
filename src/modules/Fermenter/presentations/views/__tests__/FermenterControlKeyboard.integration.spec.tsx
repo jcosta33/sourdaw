@@ -21,16 +21,15 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 
 import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
 import { fromFermenterDeviceState } from '../../../models/FermenterPatchState';
-import { getFermenterHandlers } from '../../../useCases/getFermenterHandlers';
 import { fermenterStore, getFermenterState } from '../../../stores/fermenterStore';
 import { fermenterDependenciesHolder, setFermenterDependencies } from '../../../useCases/fermenterDependencies';
 import { fermenterPatchBatcher } from '../../../useCases/fermenterParamBridge/fermenterParamBatcher';
+import { getFermenterHandlers } from '../../../useCases/getFermenterHandlers';
 import { FermenterPanel } from '../FermenterPanel';
 
 const DEVICE = 'fermenter-keyboard';

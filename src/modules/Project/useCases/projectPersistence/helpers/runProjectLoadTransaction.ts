@@ -1,12 +1,11 @@
 import { cancelPendingAudioBufferImport } from '#/modules/AudioEngine/useCases';
 import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 
+import { projectTransitionEpoch, projectTransitionState } from '../../../stores/projectTransitionEpoch';
 import { projectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
 import { whenProjectIdentityTransitionDependenciesConfigured } from '../whenProjectIdentityTransitionDependenciesConfigured';
 
 let nextProjectTransitionId = 0;
-let activeProjectTransitionId = 0;
-let latestPreparedProjectTransitionId = 0;
 
 // A subordinate boot restore may replace another boot restore, but never a
 // user-initiated project identity that has already activated.
@@ -38,10 +37,10 @@ export const projectLoadEpoch = {
         return next.resolve;
     },
     get current(): number {
-        return activeProjectTransitionId;
+        return projectTransitionEpoch.current;
     },
     isCurrent(epoch: number): boolean {
-        return epoch > 0 && epoch === activeProjectTransitionId && epoch === latestPreparedProjectTransitionId;
+        return projectTransitionEpoch.isCurrent(epoch);
     },
 };
 
@@ -116,7 +115,7 @@ export function runProjectLoadTransaction({
                     revoke();
                     return false;
                 }
-                if (transitionId < latestPreparedProjectTransitionId) {
+                if (transitionId < projectTransitionState.latestPrepared) {
                     revoke();
                     return false;
                 }
@@ -127,7 +126,7 @@ export function runProjectLoadTransaction({
                 // releases the count. The idempotent guard makes the release safe
                 // even though the success path deliberately keeps this transition
                 // counted until it activates.
-                latestPreparedProjectTransitionId = transitionId;
+                projectTransitionState.latestPrepared = transitionId;
                 claimRevocableAuthority();
                 countedAsPreparing = true;
                 preparingProjectTransitionCount += 1;
@@ -135,7 +134,7 @@ export function runProjectLoadTransaction({
                     await whenProjectIdentityTransitionDependenciesConfigured();
                     resetActionReplayAuthority();
                     await projectIdentityTransitionDependencies.leaveCollaborationSession();
-                    if (transitionId !== latestPreparedProjectTransitionId) {
+                    if (transitionId !== projectTransitionState.latestPrepared) {
                         releasePreparingCount();
                         revoke();
                         return false;
@@ -155,20 +154,20 @@ export function runProjectLoadTransaction({
             // it wins or is superseded: settle it out of the in-flight count.
             releasePreparingCount();
             if (activated) {
-                return transitionId === activeProjectTransitionId && transitionId === latestPreparedProjectTransitionId;
+                return projectTransitionEpoch.isCurrent(transitionId);
             }
             if (!prepared) {
                 return false;
             }
             if (
                 revocation.signal.aborted ||
-                transitionId < activeProjectTransitionId ||
-                transitionId !== latestPreparedProjectTransitionId
+                transitionId < projectTransitionState.active ||
+                transitionId !== projectTransitionState.latestPrepared
             ) {
                 revoke();
                 return false;
             }
-            activeProjectTransitionId = transitionId;
+            projectTransitionState.active = transitionId;
             activated = true;
 
             activeProjectTransitionHasExplicitAuthority = !yieldToInFlight;
@@ -177,13 +176,9 @@ export function runProjectLoadTransaction({
         },
         canActivate: () =>
             !revocation.signal.aborted &&
-            transitionId >= activeProjectTransitionId &&
-            transitionId >= latestPreparedProjectTransitionId,
-        isCurrent: () =>
-            !revocation.signal.aborted &&
-            activated &&
-            transitionId === activeProjectTransitionId &&
-            transitionId === latestPreparedProjectTransitionId,
+            transitionId >= projectTransitionState.active &&
+            transitionId >= projectTransitionState.latestPrepared,
+        isCurrent: () => !revocation.signal.aborted && activated && projectTransitionEpoch.isCurrent(transitionId),
         signal: revocation.signal,
     };
 }

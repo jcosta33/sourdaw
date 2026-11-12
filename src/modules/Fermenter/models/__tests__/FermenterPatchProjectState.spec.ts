@@ -2,16 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_PATCH } from '../FermenterPatch';
 import {
+    captureFermenterPatchProjectState,
+    fermenterPatchProjectStatesEqual,
+    projectFermenterPatchState,
+} from '../FermenterPatchProjectState';
+import {
     cloneFermenterPatch,
     fromFermenterDeviceState,
     readFermenterPatchFromProjectDevice,
     toFermenterDeviceState,
 } from '../FermenterPatchState';
-import {
-    captureFermenterPatchProjectState,
-    fermenterPatchProjectStatesEqual,
-    projectFermenterPatchState,
-} from '../FermenterPatchProjectState';
 
 describe('Fermenter patch project representation', () => {
     it('captures exact relevant absence and detaches the owned chunk without including unrelated scalar leaves', () => {

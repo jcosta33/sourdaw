@@ -1,11 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { getChanges } from '@automerge/automerge';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
+import { undoHistoryStore } from '#/modules/Command/stores';
+import { getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 import { createPatchWriteHarness } from '../../__tests__/patchWriteHarness';
 import { DEFAULT_PATCH, type FermenterPatch } from '../../models/FermenterPatch';
+import { cloneFermenterPatch, toFermenterDeviceState } from '../../models/FermenterPatchState';
 import { getFermenterState } from '../../stores/fermenterStore';
 import { setFermenterDependencies } from '../fermenterDependencies';
+import { getFermenterHandlers } from '../getFermenterHandlers';
 import { applyMorphedPatch } from '../presetMorph/applyMorphedPatch';
 import { bilinearPatch } from '../presetMorph/bilinearPatch';
 import { lerpPatch } from '../presetMorph/lerpPatch';
@@ -130,13 +135,63 @@ describe('morph frame writes through Command', () => {
     });
 
     it('coalesces a drag to one full project and engine write with the latest patch', async () => {
-        for (const filterCutoff of [1000, 2000, 3000]) {
-            applyMorphedPatch('d1', patch('Morph', { filterCutoff }));
+        const before = getCrdtDoc('root');
+        if (!before) {
+            throw new Error('Expected raw project fixture');
         }
-        await harness.frame();
-        expect(harness.updateDevicePatch).toHaveBeenCalledOnce();
-        expect(harness.persistParam).toHaveBeenCalledOnce();
-        expect(harness.patch().filterCutoff).toBe(3000);
+        const handler = getFermenterHandlers().setFermenterPatch;
+        const execute = vi.spyOn(handler, 'execute');
+        const describe = vi.spyOn(handler, 'describe');
+        const latest = cloneFermenterPatch(
+            patch('Morph', {
+                filterCutoff: 3000,
+                macros: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+            })
+        );
+        const mapping = latest.macroMappings?.[0];
+        if (!mapping) {
+            throw new Error('Expected all eight valid macro mappings');
+        }
+        mapping.targets = [{ target: 'filterCutoff', center: 900, depth: 600, min: 20, max: 6000, curve: 'linear' }];
+        try {
+            applyMorphedPatch('d1', patch('Earlier', { filterCutoff: 1000 }));
+            applyMorphedPatch('d1', patch('Middle', { filterCutoff: 2000 }));
+            applyMorphedPatch('d1', latest);
+            expect(harness.patch()).toEqual(DEFAULT_PATCH);
+            expect(execute).not.toHaveBeenCalled();
+            await harness.frame();
+            const after = getCrdtDoc('root');
+            if (!after) {
+                throw new Error('Expected raw publication');
+            }
+            expect(getChanges(before, after)).toHaveLength(1);
+            expect(harness.patch()).toEqual(latest);
+            expect(trackStore.value?.tracks[0]?.devices[0]?.deviceState).toEqual(toFermenterDeviceState(latest));
+            expect(execute).toHaveBeenCalledOnce();
+            expect(execute.mock.calls[0]?.[0]).toMatchObject({
+                type: 'setFermenterPatch',
+                payload: { after: toFermenterDeviceState(latest) },
+            });
+            const description = describe.mock.results.find((result) => result.type === 'return')?.value;
+            expect(description?.inverseAction).toMatchObject({
+                type: 'setFermenterPatch',
+                payload: {
+                    after: toFermenterDeviceState(DEFAULT_PATCH),
+                    expectedCurrent: toFermenterDeviceState(latest),
+                },
+            });
+            expect(undoHistoryStore.value).toEqual({ past: [], future: [] });
+            expect(harness.updateDevicePatch).toHaveBeenCalledOnce();
+            expect(harness.updateDevicePatch.mock.lastCall).toEqual([
+                't1',
+                'd1',
+                expect.objectContaining({ cutoff: 3000, macro0: 0.1, macro7: 0.8 }),
+            ]);
+            expect(harness.notices).toEqual([]);
+        } finally {
+            execute.mockRestore();
+            describe.mockRestore();
+        }
     });
 
     it.each(['missing', 'ineligible'] as const)('does not alter a %s target', async (kind) => {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { cloneFermenterPatch } from '../../models/FermenterPatchState';
-import { findFermenterPresetId } from '../findFermenterPresetId';
 import { resolveFermenterPresetPatch } from '../fermenterPatchOperations';
+import { findFermenterPresetId } from '../findFermenterPresetId';
 
 describe('findFermenterPresetId', () => {
     it('resolves the actual hydrated factory patch and rejects a same-name edited patch', () => {

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 
+import { projectTransitionEpoch } from '../../../../stores/projectTransitionEpoch';
 import { captureProjectTransitionAuthority } from '../../captureProjectTransitionAuthority';
 import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
 import { resetProjectIdentityTransitionDependencies } from '../../resetProjectIdentityTransitionDependencies';
@@ -53,6 +54,61 @@ describe('runProjectLoadTransaction', () => {
 
         expect(authority.isCurrent()).toBe(false);
         expect(first.signal.aborted).toBe(true);
+    });
+
+    it('revokes the lower read authority before a held successor can activate', async () => {
+        const active = runProjectLoadTransaction();
+        await expect(active.prepare()).resolves.toBe(true);
+        expect(active.activate()).toBe(true);
+        const epoch = projectTransitionEpoch.current;
+        const authority = captureProjectTransitionAuthority();
+        const entered = Promise.withResolvers<void>();
+        const shutdown = Promise.withResolvers<void>();
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: () => {
+                entered.resolve();
+                return shutdown.promise;
+            },
+        });
+        const successor = runProjectLoadTransaction();
+        const preparing = successor.prepare();
+        await entered.promise;
+        expect(projectTransitionEpoch.current).toBe(epoch);
+        expect(projectTransitionEpoch.isCurrent(epoch)).toBe(false);
+        expect(authority.isCurrent()).toBe(false);
+        expect(successor.activate()).toBe(false);
+        shutdown.resolve();
+        await expect(preparing).resolves.toBe(true);
+        expect(successor.activate()).toBe(true);
+        expect(projectTransitionEpoch.isCurrent(epoch)).toBe(false);
+    });
+
+    it('keeps a failed successor revocation sticky until another project activates', async () => {
+        const active = runProjectLoadTransaction();
+        await expect(active.prepare()).resolves.toBe(true);
+        expect(active.activate()).toBe(true);
+        const epoch = projectTransitionEpoch.current;
+        const authority = captureProjectTransitionAuthority();
+        const failure = new Error('successor preparation failed');
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: async () => {
+                throw failure;
+            },
+        });
+        const failed = runProjectLoadTransaction();
+        await expect(failed.prepare()).rejects.toBe(failure);
+        expect(failed.activate()).toBe(false);
+        expect(projectTransitionEpoch.current).toBe(epoch);
+        expect(projectTransitionEpoch.isCurrent(epoch)).toBe(false);
+        expect(authority.isCurrent()).toBe(false);
+        expect(projectTransitionEpoch.isCurrent(0)).toBe(false);
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
+        const returned = runProjectLoadTransaction();
+        await expect(returned.prepare()).resolves.toBe(true);
+        expect(returned.activate()).toBe(true);
+        expect(projectTransitionEpoch.isCurrent(projectTransitionEpoch.current)).toBe(true);
+        expect(projectTransitionEpoch.isCurrent(epoch)).toBe(false);
+        expect(authority.isCurrent()).toBe(false);
     });
 
     it('does not leave collaboration while identity-transition deps are withheld', async () => {

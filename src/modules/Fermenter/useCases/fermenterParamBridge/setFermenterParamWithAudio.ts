@@ -1,7 +1,7 @@
 import { type FermenterPatch } from '../../models/FermenterPatch';
 import { fermenterStore, getFermenterState } from '../../stores/fermenterStore';
-import { hydrateFermenterFromProject } from '../hydrateFermenterFromProject';
 import { getFermenterDependencies } from '../getFermenterDependencies';
+import { hydrateFermenterFromProject } from '../hydrateFermenterFromProject';
 
 import { loadFermenterPatchWithAudio } from './loadFermenterPatchWithAudio';
 

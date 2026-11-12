@@ -1,7 +1,6 @@
 import { vi } from 'vitest';
 
 import { createEventBus } from '#/infra/events/createEventBus';
-
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,

@@ -51,9 +51,9 @@ import {
 import { FILTER_MODEL_NAMES, FILTER_MODE_NAMES } from '../../../models/FermenterPatch';
 import { fermenterStore, getFermenterState, loadFermenterPatch } from '../../../stores/fermenterStore';
 import { applyFermenterRuntimeParam } from '../../../useCases/applyFermenterRuntimeParam';
-import { getFermenterHandlers } from '../../../useCases/getFermenterHandlers';
 import { setFermenterDependencies } from '../../../useCases/fermenterDependencies';
 import { setFermenterParamWithAudio } from '../../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
+import { getFermenterHandlers } from '../../../useCases/getFermenterHandlers';
 import { selectFermenterFilterChoice } from '../../../useCases/selectFermenterFilterChoice';
 import { FermenterPanel } from '../FermenterPanel';
 
