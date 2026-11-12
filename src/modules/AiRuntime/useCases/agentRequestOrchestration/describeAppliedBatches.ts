@@ -1,8 +1,9 @@
 function joinPositions(positions: readonly number[]): string {
     const last = positions.at(-1);
-    return positions.length < 2 || last === undefined
-        ? positions.join('')
-        : `${positions.slice(0, -1).join(', ')} and ${String(last)}`;
+    if (positions.length < 2 || last === undefined) {
+        return positions.join('');
+    }
+    return `${positions.slice(0, -1).join(', ')} and ${String(last)}`;
 }
 
 /**

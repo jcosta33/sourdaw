@@ -5,10 +5,14 @@ import {
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
 
+import { type ChatMessage } from '../models/Chat';
 import { markGroupReverted } from '../stores/aiActionHistoryStore';
 import { appendChatMessage } from '../stores/chatStore';
 
-import { type AppliedVibeRunBatch, readAppliedVibeRunBatches } from './agentRequestOrchestration/readVibeRunOutcomes';
+import {
+    type AppliedVibeRunBatch,
+    readAppliedVibeRunBatches,
+} from './agentRequestOrchestration/readAppliedVibeRunBatches';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { describeVibeRunObjective } from './vibeRun/describeVibeRunObjective';
 
@@ -42,7 +46,7 @@ function describeBatches(batches: readonly AppliedVibeRunBatch[]): string {
 }
 
 function postOutcome(runId: string, content: string, error?: string): void {
-    appendChatMessage({
+    const message: ChatMessage = {
         id: `msg-${crypto.randomUUID()}`,
         role: 'assistant',
         content,
@@ -50,8 +54,11 @@ function postOutcome(runId: string, content: string, error?: string): void {
         isCommandAction: true,
         agentRunId: runId,
         projectId: captureProjectIdentity(),
-        ...(error === undefined ? {} : { error }),
-    });
+    };
+    if (error !== undefined) {
+        message.error = error;
+    }
+    appendChatMessage(message);
 }
 
 function refuse(runId: string, reason: string): RevertVibeRunOutput {

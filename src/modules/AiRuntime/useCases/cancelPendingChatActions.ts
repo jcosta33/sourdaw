@@ -8,7 +8,7 @@ import {
 
 import { describeAppliedBatches } from './agentRequestOrchestration/describeAppliedBatches';
 import { postVibeRunSummary } from './agentRequestOrchestration/postVibeRunSummary';
-import { readSkippedVibeBatchPositions } from './agentRequestOrchestration/readVibeRunOutcomes';
+import { readSkippedVibeBatchPositions } from './agentRequestOrchestration/readSkippedVibeBatchPositions';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunCancellation } from './cancelAgentRun';
 import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';

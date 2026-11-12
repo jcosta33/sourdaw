@@ -22,10 +22,6 @@ import { agentResourceLimitsStore } from '../stores/agentResourceLimitsStore';
 import { clearAiHistory } from '../stores/aiActionHistoryStore';
 import { chatStore } from '../stores/chatStore';
 import { pendingActionConfirmationStore } from '../stores/pendingActionConfirmationStore';
-import { confirmPendingChatActions } from '../useCases/confirmPendingChatActions';
-import { getBriefMixIntentCatalog } from '../useCases/getBriefMixIntentCatalog';
-import { generateToolPlanningOutcome } from '../useCases/llmOrchestration/inference';
-import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../useCases/sendChatMessage';
 import {
     readCreativeInterpretationCatalog,
     selectCreativeInterpretationCall,
@@ -36,6 +32,10 @@ import {
     metricGoalAudioBuffer,
     resetMetricGoalProject,
 } from '../useCases/__tests__/metricGoalWorkflowFixture';
+import { confirmPendingChatActions } from '../useCases/confirmPendingChatActions';
+import { getBriefMixIntentCatalog } from '../useCases/getBriefMixIntentCatalog';
+import { generateToolPlanningOutcome } from '../useCases/llmOrchestration/inference';
+import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../useCases/sendChatMessage';
 
 /**
  * The whole-project vibe run of #4372 as its specs drive it: a three-track project, the scripted

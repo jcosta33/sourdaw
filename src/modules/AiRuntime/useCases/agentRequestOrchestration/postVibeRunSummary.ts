@@ -1,11 +1,12 @@
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
+import { type ChatMessage } from '../../models/Chat';
 import { appendChatMessage, chatStore } from '../../stores/chatStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getProjectContext } from '../getProjectContext';
 import { describeVibeRunSummary } from '../vibeRun/describeVibeRunSummary';
 
-import { readVibeRunBatchSummaries } from './readVibeRunOutcomes';
+import { readVibeRunBatchSummaries } from './readVibeRunBatchSummaries';
 
 /** One summary per run: its id is derived from the run, so a second trigger finds it and posts nothing. */
 function vibeRunSummaryMessageId(runId: string): string {
@@ -29,7 +30,7 @@ export function postVibeRunSummary(input: { runId: string; refused?: { position:
         return;
     }
     const applied = batches.some((summary) => summary.outcome.kind === 'applied');
-    appendChatMessage({
+    const message: ChatMessage = {
         id: messageId,
         role: 'assistant',
         content: describeVibeRunSummary({ batches, context: getProjectContext() }),
@@ -37,6 +38,9 @@ export function postVibeRunSummary(input: { runId: string; refused?: { position:
         isCommandAction: true,
         agentRunId: run.runId,
         projectId: captureProjectIdentity(),
-        ...(applied ? { vibeRunRevert: { runId: run.runId } } : {}),
-    });
+    };
+    if (applied) {
+        message.vibeRunRevert = { runId: run.runId };
+    }
+    appendChatMessage(message);
 }

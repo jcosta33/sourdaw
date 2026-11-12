@@ -213,7 +213,7 @@ describe('skipping one batch of a vibe run', () => {
         expect(bass.approvalSnapshot.batchPosition).toEqual({ index: 4, total: 4 });
         expect(bass.projectRevision).toBe(captureProjectRevision());
         expect(bass.actions.some((action) => JSON.stringify(action).includes(VOCAL_ID))).toBe(false);
-        const renders = audio.renderTrackSubgraphOffline.mock.calls.map(([input]: [RenderInput]) => input);
+        const renders: RenderInput[] = audio.renderTrackSubgraphOffline.mock.calls.map((call) => call[0]);
         expect(renders.length).toBeGreaterThan(0);
         for (const render of renders) {
             expect(render.targetTrackId).toBe(BASS_ID);

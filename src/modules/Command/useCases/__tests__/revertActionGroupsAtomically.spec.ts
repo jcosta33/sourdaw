@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type UndoEntry } from '../../models/UndoEntry';
-import { revertActionGroupsAtomically } from '../revertActionGroupAtomically';
+import { revertActionGroupsAtomically } from '../revertActionGroupsAtomically';
 
 const mocks = vi.hoisted(() => ({
     undoStoreValue: {

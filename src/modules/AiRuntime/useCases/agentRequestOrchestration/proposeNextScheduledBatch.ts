@@ -31,7 +31,7 @@ import { materializePromptCommandPlan } from './materializePromptCommandPlan';
 import { persistPromptActionConfirmation } from './persistPromptActionConfirmation';
 import { postVibeRunSummary } from './postVibeRunSummary';
 import { readBulkSetSliceEvidence } from './readBulkSetSliceEvidence';
-import { readSkippedVibeBatchPositions } from './readVibeRunOutcomes';
+import { readSkippedVibeBatchPositions } from './readSkippedVibeBatchPositions';
 import { rebaseBulkSetSliceEvidence } from './rebaseBulkSetSliceEvidence';
 
 type ScheduledBatchOutcome =
