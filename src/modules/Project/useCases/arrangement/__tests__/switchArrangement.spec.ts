@@ -7,10 +7,10 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type Clip, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { relinkClipAudioSource, getArrangementHandlers } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     captureProjectRootIdentity,
     createCrdtDoc,

@@ -12,6 +12,13 @@ export const handleRelinkClipAudioSources = createHandler<'relinkClipAudioSource
         if (!relinkAudioSourceTargetsMatch(action.payload.targets)) {
             return { status: 'conflict' };
         }
+        if (context?.executionMode === 'isolated-preview') {
+            applyRelinkAudioSourceTargets(action.payload.targets);
+            for (const clipId of new Set(action.payload.targets.map((target) => target.clipId))) {
+                clearClipPitchAnalysis(clipId);
+            }
+            return { status: 'written' };
+        }
         const guard = captureRelinkAudioSourceCommitValidation(action.payload.targets, context);
         try {
             applyRelinkAudioSourceTargets(action.payload.targets);

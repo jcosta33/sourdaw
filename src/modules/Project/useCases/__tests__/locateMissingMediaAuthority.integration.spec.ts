@@ -15,7 +15,6 @@ import {
 import { clearHandlerRegistry, registerHandlerMap, undoStore, undoHistoryStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, resetActionReplayAuthority, undo } from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import {
     captureProjectRootIdentity,
     createCrdtDoc,
@@ -26,6 +25,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { pickFiles } from '../../repositories/nativeFileDialog/pickFiles';
 import { type ArrangementSnapshot, arrangementStore } from '../../stores/arrangementStore';
@@ -327,7 +327,7 @@ describe('missing-media recovery through real CRDT and Command', () => {
                         owner.frozen = true;
                     }
                     if (change === 'owner kind') {
-                        owner.kind = 'vca';
+                        owner.kind = 'midi';
                     }
                     if (change === 'source clock') {
                         owner.clips[0]!.audioOffsetBeats = 2;

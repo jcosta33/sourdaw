@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
-import { handleReorderDevices } from '../../handlers/device/handleReorderDevices';
 import { handleRelinkClipAudioSources } from '../../handlers/clip/handleRelinkClipAudioSources';
+import { handleReorderDevices } from '../../handlers/device/handleReorderDevices';
 import { handleCreatePatternInstance } from '../../handlers/patternInstance/handleCreatePatternInstance';
 import { handleDetachPatternInstance } from '../../handlers/patternInstance/handleDetachPatternInstance';
 import { handleRestorePatternInstanceLink } from '../../handlers/patternInstance/handleRestorePatternInstanceLink';

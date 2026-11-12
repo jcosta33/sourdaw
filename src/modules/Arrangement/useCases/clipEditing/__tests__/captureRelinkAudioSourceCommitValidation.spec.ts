@@ -120,9 +120,11 @@ describe('relink source commit observation provenance', () => {
                         replaceCrdtDocInLineage({ id: 'root', doc: peer });
                     }
                     if (publicationScope === 'inside-before-notification') {
-                        trackStore.hydrate({ tracks: [] });
+                        trackStore.set({ tracks: [], selectedTrackId: null });
+                        expect(trackStore.value?.tracks).toEqual([]);
                     }
-                    trackStore.hydrate(peer.tracks);
+                    trackStore.hydrate();
+                    expect(trackStore.value?.tracks[0]?.clips[0]?.audioBufferId).toBe('peer');
                 });
                 expect(proof.validation.beforeCommit()).not.toBeNull();
                 expect(proof.validation.beforeMutation?.(peer)).not.toBeNull();

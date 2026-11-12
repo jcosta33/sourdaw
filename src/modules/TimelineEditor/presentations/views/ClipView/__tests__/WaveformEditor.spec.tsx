@@ -26,8 +26,13 @@ import {
     getCachedAudioBufferWaveformPeaks,
 } from '#/modules/AudioEngine/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
-import { captureProjectTransitionAuthority, verifyAudioBufferReferences } from '#/modules/Project/useCases';
 import { arrangementStore } from '#/modules/Project/stores';
+import {
+    captureArrangementMediaAuthority,
+    runProjectLoadTransaction,
+    setProjectIdentityTransitionDependencies,
+    verifyAudioBufferReferences,
+} from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { WaveformEditor } from '../WaveformEditor';
@@ -215,14 +220,21 @@ const projectEpoch = vi.hoisted(() => {
         },
     };
 });
-vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
-    captureProjectTransitionAuthority: projectEpoch.capture,
-    verifyAudioBufferReferences: vi.fn(),
-}));
-vi.mock('#/modules/Project/useCases/projectPersistence/captureProjectTransitionAuthority', () => ({
-    captureProjectTransitionAuthority: projectEpoch.capture,
-}));
+vi.mock('#/modules/Project/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Project/useCases')>();
+    return {
+        ...actual,
+        captureArrangementMediaAuthority: vi.fn(() => {
+            const authority = actual.captureArrangementMediaAuthority();
+            const project = projectEpoch.capture();
+            return {
+                isCurrent: () => project.isCurrent() && authority.isCurrent(),
+                dispose: authority.dispose,
+            };
+        }),
+        verifyAudioBufferReferences: vi.fn(),
+    };
+});
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
@@ -293,9 +305,14 @@ describe('WaveformEditor', () => {
         duration: 4 / 48_000,
     });
 
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
         projectEpoch.reset();
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
+        const transition = runProjectLoadTransaction();
+        expect(await transition.prepare()).toBe(true);
+        expect(transition.activate()).toBe(true);
+        arrangementStore.set({ arrangements: [], activeArrangementId: 'arr-a' });
         vi.mocked(relinkClipAudioSource).mockResolvedValue({ status: 'relinked', relinkedClipIds: ['clip-1'] });
     });
 
@@ -948,7 +965,7 @@ describe('WaveformEditor', () => {
             expect(replaceClipAudioBuffer).toHaveBeenCalledWith('clip-1', 'audio-successor');
         });
         expect(projectEpoch.latest()?.isCurrent()).toBe(true);
-        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(2);
+        expect(captureArrangementMediaAuthority).toHaveBeenCalledTimes(2);
     });
 
     it('should notify the user when decoding a dropped file fails', async () => {

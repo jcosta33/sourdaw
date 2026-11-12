@@ -6,8 +6,8 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { missingMediaStore } from '../stores/missingMediaStore';
 
-import { pickFiles } from './fileDialog';
 import { captureArrangementMediaAuthority } from './captureArrangementMediaAuthority';
+import { pickFiles } from './fileDialog';
 import { verifyAudioBufferReferences } from './projectPersistence/helpers/verifyAudioBufferReferences';
 
 const AUDIO_FILTER = { name: 'Audio files', extensions: [...AUDIO_EXTENSION_ROSTER] };

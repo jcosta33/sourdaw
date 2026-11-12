@@ -4,6 +4,7 @@ import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
+    createAutomergeStoragePreview,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoStore, undoHistoryStore } from '#/modules/Command/stores';
@@ -23,7 +24,12 @@ import {
 } from '#/modules/Project/stores';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { type AppAction } from '#/utils/handlerContract';
-import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type Clip } from '../../models/Track';
@@ -66,6 +72,11 @@ type ArrangementStoreValue = NonNullable<Parameters<typeof arrangementStore.set>
 type StoredSnapshot = ArrangementStoreValue['arrangements'][number];
 type StoredTrack = StoredSnapshot['tracks']['tracks'][number];
 type StoredClip = StoredTrack['clips'][number];
+type NotificationEventMap = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
 
 const decodedBuffer = {} as AudioBuffer;
 
@@ -179,7 +190,7 @@ describe('relinkClipAudioSource', () => {
         removeCrdtDoc('root');
     });
     beforeEach(async () => {
-        setNotificationEventBus(createEventBus());
+        setNotificationEventBus(createEventBus<NotificationEventMap>());
         setArrangementEventBus(createEventBus());
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
         const transition = runProjectLoadTransaction();
@@ -413,6 +424,143 @@ describe('relinkClipAudioSource', () => {
         await redo();
         expectLiveClipBufferIds(['buf-new']);
         expect(trackStore.value?.tracks[1]?.clips[0]?.gain).toBe(0.375);
+    });
+
+    it('previews a valid relink through the real isolated workspace and registered handler', () => {
+        const root = getCrdtDoc<{ tracks: NonNullable<typeof trackStore.value> }>('root');
+        if (!root) {
+            throw new Error('Expected the real project root');
+        }
+        const before = structuredClone(root);
+        const live = structuredClone(trackStore.value);
+        const history = structuredClone(undoHistoryStore.value);
+        const action: Extract<AppAction, { type: 'relinkClipAudioSources' }> = {
+            type: 'relinkClipAudioSources',
+            payload: { targets: captureRelinkAudioSourceTargets('buf-missing', 'buf-new') },
+        };
+        const context = { actions: [action], actionIndex: 0, executionMode: 'isolated-preview' as const };
+        const handler = getArrangementHandlers().relinkClipAudioSources;
+        if (handler.previewExecution !== 'isolated-project') {
+            throw new Error('Expected the registered isolated-project relink handler');
+        }
+        const preview = createAutomergeStoragePreview(new Map([['root', root]]));
+        try {
+            expect(handler.previewExecution).toBe('isolated-project');
+            expect(preview.getDocument('root')?.tracks).toEqual(before.tracks);
+            expect(preview.scope(() => handler.validate!(action, context))).toBe(true);
+            const result = preview.scope(() => handler.execute(action, context));
+            expect(result?.status).toBe('written');
+            expect(result?.commitValidation).toBeUndefined();
+            const projected = preview.scope(() => trackStore.value);
+            expect(projected?.tracks.flatMap((track) => track.clips.map((clip) => clip.audioBufferId))).toEqual([
+                'buf-new',
+                'buf-new',
+            ]);
+            expect(preview.getDocument('root')?.tracks).toEqual({ tracks: projected?.tracks });
+            expect(getCrdtDoc('root')).toEqual(before);
+            expect(trackStore.value).toEqual(live);
+            expect(undoHistoryStore.value).toEqual(history);
+        } finally {
+            preview.release();
+        }
+    });
+
+    it('previews grouped relinks in execution order without changing live sources or history', () => {
+        const root = getCrdtDoc<{ tracks: NonNullable<typeof trackStore.value> }>('root');
+        if (!root) {
+            throw new Error('Expected the real project root');
+        }
+        const before = structuredClone(root);
+        const live = structuredClone(trackStore.value);
+        const history = structuredClone(undoHistoryStore.value);
+        const first: Extract<AppAction, { type: 'relinkClipAudioSources' }> = {
+            type: 'relinkClipAudioSources',
+            payload: { targets: captureRelinkAudioSourceTargets('buf-missing', 'buf-middle') },
+        };
+        const second: typeof first = {
+            type: 'relinkClipAudioSources',
+            payload: {
+                targets: first.payload.targets.map((target) => ({
+                    ...target,
+                    before: target.after,
+                    after: { ...target.after, audioBufferId: 'buf-final' },
+                })),
+            },
+        };
+        const actions = [first, second];
+        const handler = getArrangementHandlers().relinkClipAudioSources;
+        if (handler.previewExecution !== 'isolated-project') {
+            throw new Error('Expected the registered isolated-project relink handler');
+        }
+        const preview = createAutomergeStoragePreview(new Map([['root', root]]));
+        try {
+            for (const [actionIndex, action] of actions.entries()) {
+                expect(
+                    preview.scope(() =>
+                        handler.validate!(action, { actions, actionIndex, executionMode: 'isolated-preview' })
+                    )
+                ).toBe(true);
+            }
+            for (const [actionIndex, action] of actions.entries()) {
+                expect(
+                    preview.scope(() =>
+                        handler.execute(action, { actions, actionIndex, executionMode: 'isolated-preview' })
+                    )
+                ).toEqual({ status: 'written' });
+            }
+            const projected = preview.scope(() => trackStore.value);
+            expect(projected?.tracks.flatMap((track) => track.clips.map((clip) => clip.audioBufferId))).toEqual([
+                'buf-final',
+                'buf-final',
+            ]);
+            expect(preview.getDocument('root')?.tracks).toEqual({ tracks: projected?.tracks });
+            expect(getCrdtDoc('root')).toEqual(before);
+            expect(trackStore.value).toEqual(live);
+            expect(undoHistoryStore.value).toEqual(history);
+        } finally {
+            preview.release();
+        }
+    });
+
+    it('refuses a changed preview alias before writing any of its captured targets', () => {
+        const root = getCrdtDoc<{ tracks: NonNullable<typeof trackStore.value> }>('root');
+        if (!root) {
+            throw new Error('Expected the real project root');
+        }
+        const live = structuredClone(trackStore.value);
+        const before = structuredClone(root);
+        const action: Extract<AppAction, { type: 'relinkClipAudioSources' }> = {
+            type: 'relinkClipAudioSources',
+            payload: { targets: captureRelinkAudioSourceTargets('buf-missing', 'buf-new') },
+        };
+        const handler = getArrangementHandlers().relinkClipAudioSources;
+        if (handler.previewExecution !== 'isolated-project') {
+            throw new Error('Expected the registered isolated-project relink handler');
+        }
+        const preview = createAutomergeStoragePreview(new Map([['root', root]]));
+        try {
+            preview.scope(() => {
+                const state = trackStore.value!;
+                trackStore.set({
+                    ...state,
+                    tracks: state.tracks.map((track) => ({
+                        ...track,
+                        clips: track.clips.map((clip) =>
+                            clip.id === 'clip-b' ? { ...clip, audioBufferId: 'buf-peer' } : clip
+                        ),
+                    })),
+                });
+            });
+            const stale = preview.getDocument('root');
+            const context = { actions: [action], actionIndex: 0, executionMode: 'isolated-preview' as const };
+            expect(preview.scope(() => handler.validate!(action, context))).toBe(false);
+            expect(preview.scope(() => handler.execute(action, context))).toEqual({ status: 'conflict' });
+            expect(preview.getDocument('root')).toEqual(stale);
+            expect(trackStore.value).toEqual(live);
+            expect(getCrdtDoc('root')).toEqual(before);
+        } finally {
+            preview.release();
+        }
     });
 
     it('relinks every clip sharing the missing source across tracks and keeps each clip intact', async () => {
