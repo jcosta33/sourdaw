@@ -12,7 +12,7 @@ vi.mock('@spotify/basic-pitch', () => ({
         }
     },
 }));
-vi.mock('virtual:sourdaw-basic-pitch-model', () => ({ default: '/model/model.json' }));
+vi.mock('virtual:sourdaw-basic-pitch-model', () => ({ modelUrl: '/model/model.json' }));
 
 describe('loadBasicPitchModel', () => {
     it('waits for the public model promise and rejects when its load fails', async () => {

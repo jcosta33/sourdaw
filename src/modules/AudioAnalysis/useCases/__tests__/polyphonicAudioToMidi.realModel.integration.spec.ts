@@ -17,7 +17,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     settlePendingProjectWritesAndCaptureRevision: () => 'source-revision',
     projectRevisionMatchesLiveIgnoringSaveWrites: (revision: string) => revision === 'source-revision',
 }));
-vi.mock('virtual:sourdaw-basic-pitch-model', () => ({ default: '/assets/basic-pitch/model.json' }));
+vi.mock('virtual:sourdaw-basic-pitch-model', () => ({ modelUrl: '/assets/basic-pitch/model.json' }));
 
 const packageRoot = dirname(createRequire(import.meta.url).resolve('@spotify/basic-pitch/package.json'));
 

@@ -16,6 +16,7 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
 import { cruise } from 'dependency-cruiser';
+import { parseJsonConfigFileContent, readConfigFile, resolveModuleName, sys } from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -231,6 +232,25 @@ function isUnsupportedSymlinkError(error: unknown): boolean {
 }
 
 describe('check-dependency-boundaries', () => {
+    it.each(['tsconfig.json', 'tsconfig.app.json', 'tsconfig.test.json', 'tsconfig.e2e.json'])(
+        'resolves the real Basic Pitch loader import with %s compiler options',
+        (configName) => {
+            const root = resolve(import.meta.dirname, '../..');
+            const config = readConfigFile(join(root, configName), sys.readFile);
+            expect(config.error).toBeUndefined();
+            const parsed = parseJsonConfigFileContent(config.config, sys, root);
+            expect(parsed.errors).toEqual([]);
+            const loader = join(root, 'src/modules/AudioAnalysis/repositories/loadBasicPitchModel.ts');
+            const result = resolveModuleName('virtual:sourdaw-basic-pitch-model', loader, parsed.options, sys);
+            expect(result.resolvedModule?.resolvedFileName).toBe(
+                join(root, 'src/modules/AudioAnalysis/repositories/basicPitchModel.d.ts')
+            );
+            expect(
+                resolveModuleName('virtual:sourdaw-basic-pitch-modell', loader, parsed.options, sys).resolvedModule
+            ).toBeUndefined();
+        }
+    );
+
     it.each([
         ['main', mainConfig, 'src/modules/AudioAnalysis/repositories/loadBasicPitchModel.ts', false],
         ['tests', testConfig, 'src/modules/AudioAnalysis/repositories/__tests__/loadBasicPitchModel.spec.ts', true],

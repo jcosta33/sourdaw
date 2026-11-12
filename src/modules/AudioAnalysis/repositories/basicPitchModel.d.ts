@@ -1,2 +1,1 @@
-declare const modelUrl: string;
-export default modelUrl;
+export declare const modelUrl: string;

@@ -70,11 +70,11 @@ export function basicPitchAssets(): Plugin {
                 return;
             }
             if (serving) {
-                return `export default ${JSON.stringify(`${base}${directory}/model.json`)}`;
+                return `export const modelUrl = ${JSON.stringify(`${base}${directory}/model.json`)}`;
             }
             const referenceId = this.emitFile({ type: 'asset', fileName: `${directory}/model.json`, source: model });
             this.emitFile({ type: 'asset', fileName: `${directory}/${shardName}`, source: shard });
-            return `export default import.meta.ROLLDOWN_FILE_URL_${referenceId}`;
+            return `export const modelUrl = import.meta.ROLLDOWN_FILE_URL_${referenceId}`;
         },
     };
 }

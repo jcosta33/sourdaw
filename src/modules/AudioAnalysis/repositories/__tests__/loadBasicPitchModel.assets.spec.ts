@@ -2,12 +2,33 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 
-import { build } from 'vite';
+import { build, createServer } from 'vite';
 import { describe, expect, it } from 'vitest';
 
 import { basicPitchAssets } from '../../../../../scripts/basicPitchAssets';
 
 describe('Basic Pitch production asset edges', () => {
+    it('exports the named model URL through the Vite development plugin', async () => {
+        const server = await createServer({
+            configFile: false,
+            logLevel: 'error',
+            base: '/nested/',
+            appType: 'custom',
+            plugins: [basicPitchAssets()],
+            server: { middlewareMode: true, hmr: false, watch: null },
+        });
+        try {
+            const namespace: unknown = await server.ssrLoadModule('virtual:sourdaw-basic-pitch-model');
+            if (typeof namespace !== 'object' || namespace === null || !('modelUrl' in namespace)) {
+                throw new TypeError('The development plugin must export the model URL');
+            }
+            expect(namespace.modelUrl).toMatch(/^\/nested\/assets\/basic-pitch-[a-f0-9]{64}\/model\.json$/u);
+            expect(Object.hasOwn(namespace, 'default')).toBe(false);
+        } finally {
+            await server.close();
+        }
+    });
+
     it('emits the actual model and shard referenced by the production repository', async () => {
         // Exercise Vite's production URL pipeline without the unrelated app
         // graph, output writes, network, or configuration plugins.

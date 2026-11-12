@@ -64,7 +64,7 @@ vi.mock('@spotify/basic-pitch', () => ({
     noteFramesToTime: vi.fn(() => []),
 }));
 
-vi.mock('virtual:sourdaw-basic-pitch-model', () => ({ default: 'mock-model-url' }));
+vi.mock('virtual:sourdaw-basic-pitch-model', () => ({ modelUrl: 'mock-model-url' }));
 
 describe('polyphonicAudioToMidi', () => {
     beforeEach(() => {
