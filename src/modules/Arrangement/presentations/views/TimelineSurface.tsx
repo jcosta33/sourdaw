@@ -1,4 +1,4 @@
-import { type ReactElement, useRef, useEffect, lazy, Suspense } from 'react';
+import { type ReactElement, useRef, useEffect, useLayoutEffect, lazy, Suspense } from 'react';
 
 import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
@@ -16,8 +16,7 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import {
     setAutoScroll,
     setScrollX,
-    setTimelineViewportHeight,
-    setTimelineViewportWidth,
+    setTimelineViewportSize,
     setTimelineZoom,
     timelineViewStore,
 } from '../../stores/timelineViewStore';
@@ -50,6 +49,15 @@ export const TimelineSurface = (): ReactElement => {
         autoScrollEnabled: true,
     });
     const currentTrackStore = useStore(trackStore, { tracks: [], selectedTrackId: null });
+    const viewportMeasurementRevision = currentViewStore.viewportMeasurementRevision ?? 0;
+    useLayoutEffect(() => {
+        const container = containerRef.current;
+        if (!container || viewportMeasurementRevision === 0) {
+            return;
+        }
+        const { width, height } = container.getBoundingClientRect();
+        setTimelineViewportSize({ viewportWidth: width, viewportHeight: height });
+    }, [viewportMeasurementRevision]);
     const timelineMinimumHeight = getTimelineSurfaceMinimumHeight(
         currentTrackStore.tracks,
         currentTrackStore.selectedTrackId
@@ -328,9 +336,9 @@ export const TimelineSurface = (): ReactElement => {
             for (const entry of entries) {
                 const { width, height } = entry.contentRect;
                 rendererRef.current?.resize(width, height);
-                // Navigation and scroll clamping use the real CSS-pixel viewport.
-                setTimelineViewportHeight(height);
-                setTimelineViewportWidth(width);
+                // Both restored offsets are clamped against the real canvas,
+                // which must be recorded before the first wheel event.
+                setTimelineViewportSize({ viewportWidth: width, viewportHeight: height });
             }
             // Immediately re-render after resize to prevent a 1-frame flash.
             // Setting canvas.width/height clears all pixel data, but the dirty
