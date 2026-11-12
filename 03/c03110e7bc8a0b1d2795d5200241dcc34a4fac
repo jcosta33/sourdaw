@@ -1,0 +1,46 @@
+src/modules/Transport/useCases/transportControls/pausePlayback.ts
+  s_9307cedd8951f1::t_41cb06f22c6f5c 16,22
+src/modules/Transport/handlers/transport/handleSeekPlayhead.ts
+  s_9307cedd8951f1::t_41cb06f22c6f5c 11
+src/modules/Transport/useCases/transportControls/seekPlayhead.ts
+  s_9307cedd8951f1::t_41cb06f22c6f5c 5-6,8
+src/modules/Transport/useCases/transportControls/executePlayheadSeek.ts
+  s_9307cedd8951f1::t_41cb06f22c6f5c 25,27-31,33,36,85,90,141
+  s_9307cedd8951f1::t_8cfee28037f827 89
+  s_9307cedd8951f1::t_e6cae1baf6422d 22-23
+src/modules/Transport/handlers/transport/handleRehearseSection.ts
+  s_9307cedd8951f1::t_41cb06f22c6f5c 23-28
+src/modules/Transport/handlers/transport/__tests__/sectionRuntimeHandlers.spec.ts
+  s_9307cedd8951f1::t_c86edac18f41b8 124-127,172-175
+  s_9307cedd8951f1::t_b915d9dd14ba8b 63,121,128-131,167,176-179
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_9307cedd8951f1::t_d6c4f4d8ae1cde 475
+  s_9307cedd8951f1::t_b915d9dd14ba8b 508,587,594-595,598
+src/modules/Transport/useCases/transportControls/__tests__/seekPlayhead.spec.ts
+  s_9307cedd8951f1::t_e6cae1baf6422d 81,91,192,194
+src/modules/Transport/handlers/transport/__tests__/handleSeekPlayhead.spec.ts
+  s_9307cedd8951f1::t_0fee4c6018340c 6,46-47
+src/modules/Transport/handlers/transport/__tests__/transportHandlers.spec.ts
+  s_9307cedd8951f1::t_0fee4c6018340c 25,97
+src/modules/Transport/useCases/transportControls/__tests__/rehearseSectionCountIn.integration.spec.ts
+  s_9307cedd8951f1::t_f62720be96d614 46,133,218-221,229-231,233,247-250,257-280
+  s_9307cedd8951f1::t_7ee0bf99314dd8 1-5,10-14,21-22,29-45,47-61,70-76,81,88-97,107-121,128-132,134-148,152,160-167,175,180-200,202-217,222-224,226-228,232,234-246,289-290
+  s_9307cedd8951f1::t_c86edac18f41b8 6-9,15-20,23-28,62-69,77-80,82-87,98-106,122-127,149-151,153-159,168-174,176-179,251-256,281-288
+  s_9307cedd8951f1::t_0fee4c6018340c 201,225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03c03110e7bc8a0b1d2795d5200241dcc34a4fac",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
