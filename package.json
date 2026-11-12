@@ -80,7 +80,7 @@
         "test:coverage": "vitest run --coverage",
         "typecheck": "tsc --noEmit -p tsconfig.app.json",
         "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
-        "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json",
+        "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json && tsc --noEmit -p tsconfig.eslint-config.json",
         "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
         "typecheck:electron": "tsc --noEmit -p electron/tsconfig.json",
         "format": "prettier --write --",
