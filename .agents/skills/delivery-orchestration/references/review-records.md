@@ -148,7 +148,7 @@ dossier digest, in the same persisted write as the publication bindings.
 `review.json` carrying `authorization` is refused. `review:accept` refuses a
 plan-carrying head whose dossier already carries that reviewer-recorded
 authorization — refusing the duplicate — and keeps accepting plan-less bundles
-whatever the pull request's age; only `deliver` holds them to the cutover. New
+whatever the pull request's age; only `review:publish` and `deliver` hold them to the cutover. New
 deliveries never call it.
 
 A pre-policy plan-carrying head is not deliverable and cannot be re-authorized
