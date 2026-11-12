@@ -101,8 +101,8 @@ describe('Git checkpoint diagnostic', () => {
         const observed = receipt(result.stderr).value;
         const linkDigest = createHash('sha256').update('target.txt').digest('hex');
         const targetDigest = createHash('sha256').update('target bytes differ from link text').digest('hex');
-        expect(observed.before.sources['link.txt'].kind).toBe('symlink');
         expect(observed.before.sources['link.txt'].sha256).toBe(linkDigest);
+        expect(observed.before.sources['link.txt'].kind).toBe('symlink');
         expect(observed.before.sources['link.txt'].sha256).not.toBe(targetDigest);
         expect(observed.after.index.sha256).toBe(
             createHash('sha256')
