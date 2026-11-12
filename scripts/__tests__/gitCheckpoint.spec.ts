@@ -444,7 +444,7 @@ exit 23
                         return;
                     }
                     reported = true;
-                    const message = `checkpoint exited before drain: ${detail}; stderr omitted bytes=${stderrOmitted}; stderr=${stderrText()}`;
+                    const message = `checkpoint exited before drain: ${detail}; platform=${process.platform}; pathCount=${pathCount}; connections=${connections.length}; stderr omitted bytes=${stderrOmitted}; stderr=${stderrText()}`;
                     console.error(message);
                     reject(new Error(message));
                 };
