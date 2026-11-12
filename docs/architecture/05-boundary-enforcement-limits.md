@@ -56,8 +56,8 @@ invisible to any static reader and stays a review matter.
    `<contract>/index.ts` see only the barrel's own hop, so a carrier file beside the barrel —
    re-exporting a private symbol and re-exported by the barrel in turn — used to pass clean.
    → **Closed by** `contract-barrel-scope` (a `<contract>/index.ts` may re-export only from its own
-   folder), `no-models-repos-transformers-in-index`, `no-usecase-type-exports-on-index` (types
-   cruise), ESLint `sourdaw/no-usecase-repository-reexport`, and the **contract-folder re-export
+   folder), `no-models-repos-transformers-in-index`, `no-usecase-type-exports-on-index` (both
+   cruises), ESLint `sourdaw/no-usecase-repository-reexport`, and the **contract-folder re-export
    register** in `scripts/check-dependency-boundaries.mjs`, which reads the `export … from` syntax
    of every file in a contract folder (`useCases|events|stores|presentations/views`, barrel or not)
    and fails `pnpm deps:validate` on any re-export reaching `models/`, `repositories/`, or
@@ -87,7 +87,6 @@ invisible to any static reader and stays a review matter.
    → **Closed by** a dedicated origin rule per non-module root, all carried into the types cruise:
    `external-module-contracts-only` (`^src/(app|components|routes)/`, barrels only) and the
    total-ban `infra-no-module-imports`, `utils-no-module-imports`, `helpers-no-module-imports`.
-   `app-to-modules-public-surface-only` covers the live `^src/app/` composition root.
 
 6. **Violation classes with no rule at all.** The contract-barrel rule only checks that the import
    _path_ is a barrel — it says nothing about layering _direction_ or write-surface breadth. A

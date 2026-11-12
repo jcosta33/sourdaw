@@ -1,4 +1,5 @@
 import { LOCAL_PLANNING_REPLY_RESERVE_TOKENS } from '../models/LocalPlanningBudget';
+import { WEBLLM_MODELS, WEBLLM_PLANNING_MODEL_IDS } from '../models/ModelInfo';
 
 const TOKEN_FORMAT = new Intl.NumberFormat('en-US');
 
@@ -8,6 +9,15 @@ const ENGINE_CONTEXT_WINDOW_ERROR = /Prompt tokens exceed context window size/;
 const ENGINE_CONTEXT_WINDOW_FIGURES = /number of prompt tokens: (\d+); context window size: (\d+)/;
 
 export type LocalContextWindowShortfall = { neededTokens: number; windowTokens: number };
+
+/** The user-visible refusal of a planning request made on a local model that does not plan. */
+export function describeLocalPlannerRequired(activeModelId: string): string {
+    const active = WEBLLM_MODELS.find((model) => model.id === activeModelId)?.displayName ?? 'This';
+    const planners = WEBLLM_MODELS.filter((model) => WEBLLM_PLANNING_MODEL_IDS.has(model.id)).map(
+        (model) => `the ${model.displayName} local model`
+    );
+    return `The ${active} local model cannot plan project edits. Switch to ${planners.join(' or ')}, or use a hosted model.`;
+}
 
 /**
  * The user-visible refusal of a local planning request the local model's window cannot hold.

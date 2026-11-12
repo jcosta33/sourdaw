@@ -69,16 +69,14 @@ boundaries.
    permission, replace the root with a same-ID successor through production repository and projection (or restore, or
    clear Undo), then release: no write, history entry, discard, strip or capture request reaches the successor,
    refusal is visible, its Redo/past/tree are unchanged and all-refused adds zero to Transport's public gesture count.
-   Same-root controls complete; removing the post-wait guard fails. Covers gesture queues, Stop and audio terminals,
-   fork vs switch, deferred replay effects (finalize once at the publication boundary with the original entry objects;
+   Same-root controls complete; removing the post-wait guard fails. Covers gesture queues, fork vs switch, deferred replay effects (finalize once at the publication boundary with the original entry objects;
    a no-publication no-op also rechecks mutation authority and the Undo snapshot), restoration effects after deletion
    Undo (rearm only the committed, still-present owner; pending permission never blocks Undo history;
    published-but-throwing commits and a denied device never turn restored truth or Undo into a failure), and Crumbs
    sample publications (own metadata commit and knob edits keep authority, replaced root/device or fresh sample leaf
    revokes). Runtime ownership follows committed intent: hold a removal projecting absence, commit a replacement
    input, observe raw root, projection and runtime together; abort keeps committed On
-   (`input-monitoring-ownership.md`). Stop: land one sibling before replacing the root and refuse another afterward
-   (landed entry plus exactly one settled gesture kept); removing dispatch-option forwarding fails the case.
+   (`input-monitoring-ownership.md` probe 6). Recording Stop and audio terminals: `session-lifecycle.md` probe 7.
 5. **Authority tokens ignore the guarded action's own writes yet revoke on foreign ones (#5573, #2747, #5677,
    #5681).** Failure: a captured epoch, revision or heads token aborts its own action, or stays valid after a foreign
    write. Probe: run the real path after one real `runProjectLoadTransaction()` prepare/activate (never epoch 0),
@@ -105,13 +103,9 @@ boundaries.
    same-identity Redo through another Undo. A forward-state equality after Redo alone passes when Undo did nothing.
    After Redo, merge a peer note into the created clip and require discard refusal; an unrelated keeper edit must
    survive a valid discard. Detach replay owns only link fields: absent and present-empty overrides differ,
-   false-valued keys survive, non-link peer edits remain, and a peer relink refuses the stale inverse. No introducing
-   PR or historical review stance was established for this escape.
-   Recorded automation introduced callback snapshots in `2e2a16dbb9`; `0ca79dea60` narrowed them to touched lanes
-   but still replaced each lane's points blindly. The missed probe was a peer change to the same recorded lane:
-   another-lane preservation and an isolated round trip stayed green while callbacks erased peer points and curves,
-   reported success and consumed history. No introducing PR or historical review stance was established.
-   Merge a peer point and a Bezier/stairs shape edit before the FIRST Undo, and again after Undo before Redo.
+   false-valued keys survive, non-link peer edits remain, and a peer relink refuses the stale inverse.
+   Recorded automation replay that replaces each touched lane's points blindly erases a peer change to the same
+   recorded lane while another-lane preservation and an isolated round trip stay green. Merge a peer point and a Bezier/stairs shape edit before the FIRST Undo, and again after Undo before Redo.
    Require exact raw/projected peer data, a conflict warning and the complete recording unit still pending. Record
    two lanes and put the stale lane at both replay positions: a late conflict must roll back its earlier sibling.
    A metadata-only peer edit must survive successful replay, and one normal user Undo/Redo must restore every
@@ -128,11 +122,10 @@ boundaries.
    `executeAppActionBatch` describes members before executing, so later inverses capture pre-batch state. Probe: real
    grouped Undo/Redo against raw CRDT and projection; swap the earlier-sibling projection for live pre-batch state and
    the group fails. When a member snapshots state an earlier one produced (comp-then-remove), inspect the real history
-   entry: a correct final state does not prove the inverse composed the prefix. #6221 (`7115fe4389`) refreshed a
-   created clip's guard after the whole Redo group, so a later grouped `addNotes` entered the creator's capture:
-   the second Undo removed the notes first and then falsely refused the clip. Its public approval describes single
-   duplicate cycles and earlier-member restores; those probes omit the later-note member. The missing probe is an actual
-   `addClip` + `addNotes` group through Undo, Redo, Undo, including a serialized and hydrated future stack. Every
+   entry: a correct final state does not prove the inverse composed the prefix. Refreshing a created clip's guard
+   after the whole Redo group (#6221) lets a later grouped `addNotes` enter the creator's capture, so the second Undo
+   removes the notes and then falsely refuses the clip: drive an actual `addClip` + `addNotes` group through Undo,
+   Redo, Undo, including a serialized and hydrated future stack. Every
    current creation/duplication producer publishes its own fresh execution-prefix capture only after successful
    commit, authenticated against its pending inverse; a failed later member leaves that inverse unchanged. Keep
    duplicate MIDI/satellite and retired-take round trips, plus peer additions after Redo that still refuse Undo.
@@ -145,17 +138,16 @@ boundaries.
    every paired capture. Canonicalization may clone a requested action: only a private dispatcher binding from
    the exact authenticated pending request authorizes that canonical object. Borrowed/forged contexts, other
    pending entries, stale inverses, replaced history and authority resets must refuse the binding. Payload or id
-   equality never grants replay authority. Required CI on #6302 exposed both the missing net-zero composition and
-   the distinction between requested and canonical identities.
-   #4564 introduced private commitRecording/discardRecording/restoreRecording without the already required session
-   contracts: live Undo passed while the production mirror serialized zero recording entries. Require two real mixed
+   equality never grants replay authority (#6302).
+   Private recording families (commitRecording, discardRecording, restoreRecording, #4564) need the session
+   contracts: live Undo can pass while the production mirror serializes zero recording entries. Require two real mixed
    entries/same group in serialized bytes BEFORE reload; production registration plus genuine project/witness must
    hydrate both past and future through two Undo/Redo cycles, preserving raw rows/takes/PCM and older reachable history.
    Keep this family private, pair exact forward/inverse/redo ownership and current versions, and decode full note/CC/bend
    snapshots through their required owner (neutral carriers contain only IDs). Missing forward/owner contract or an invalid
    sibling must fail/refuse the whole group, including malformed shape/source, wrong track/family and missing redo.
    A binary document reload retaining live Undo objects is no session-hydration oracle; fresh-tab data is no cross-tab
-   history proof. Historical private reviewer prompts and tiers for this escape are unestablished.
+   history proof.
 
 ## Retired lessons
 
@@ -164,4 +156,7 @@ boundaries.
   the general rule stays in probe 5.
 - Checkpoint descendants lost the sibling frontier (#5681) → enforced by
   `src/modules/CrdtDocument/useCases/__tests__/projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts` ("accepts
-  checkpoint-only descendants of both captured root heads").
+  checkpoint-only descendants of both captured root heads", "rejects a branch project edit hidden by a captured
+  sibling conflict winner") and `src/modules/AiRuntime/useCases/__tests__/concurrentCheckpointApproval.spec.ts`
+  ("executes the original approval exactly once and retains its receipt and undo after checkpoint-only sync",
+  "refuses conflicting whole-map checkpoints without applying or rebinding the original approval").

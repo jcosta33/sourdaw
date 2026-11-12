@@ -210,7 +210,7 @@ export const RotaryKnob = ({
             clearDragState();
         }
 
-        if (draggingRef.current && !Object.is(gestureOwnerAtStartRef.current, gestureOwner)) {
+        if (draggingRef.current && !gestureAuthority && !Object.is(gestureOwnerAtStartRef.current, gestureOwner)) {
             clearDragState();
         }
 

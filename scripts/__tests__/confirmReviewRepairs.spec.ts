@@ -28,7 +28,12 @@ import {
     type ConfirmReviewRepairsCoordinatorDependencies,
     type ConfirmReviewRepairsPort,
 } from '../confirmReviewRepairs.ts';
-import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
+import {
+    AUTHOR_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
+    REVIEWER_BOT_NODE_ID,
+    type GhSession,
+} from '../githubAppIdentity.ts';
 import { withPullRequestMutationLock, type PullRequestMutationSerialization } from '../pullRequestMutationLock.ts';
 import { runRecoverDeliveryLockCli } from '../recoverDeliveryLock.ts';
 import {
@@ -103,6 +108,7 @@ function subjectThread(overrides: Partial<ReviewRepairThreadState> = {}): Review
         rootLine: FINDING_LINE,
         rootSide: 'RIGHT',
         rootReviewedHead: REVIEWED_HEAD,
+        rootAuthorNodeId: REVIEWER_BOT_NODE_ID,
         replies: [
             { id: ROOT_COMMENT_ID, body: 'Defect. Consequence. Fix.', authorNodeId: REVIEWER_BOT_NODE_ID },
             { id: 9_001, body: authorRecordReply(), authorNodeId: AUTHOR_BOT_NODE_ID },
@@ -383,6 +389,38 @@ describe('confirmReviewRepairs', () => {
         ]);
         confirmReviewRepairs(PR, HEAD, port);
         expect(mutations).toHaveLength(2);
+    });
+
+    it.each([
+        ['an unknown user', 'MDQ6VXNlcjEyMzQ1Njc=', 'MDQ6VXNlcjEyMzQ1Njc='],
+        ['another bot', 'BOT_kgDOotherbot', 'BOT_kgDOotherbot'],
+        ['a deleted account', null, 'unknown (deleted or unidentified)'],
+    ])(
+        'should refuse to confirm a thread whose root %s wrote without any mutation',
+        (_label, rootAuthorNodeId, named) => {
+            const record = recordFor({ commit: HEAD });
+            const thread = subjectThread({
+                rootAuthorNodeId,
+                replies: [{ id: 9001, body: authorRecordReply(record), authorNodeId: AUTHOR_BOT_NODE_ID }],
+            });
+            const { port, mutations, logs } = fakePort(HEAD, [thread]);
+            expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
+            expect(mutations).toEqual([]);
+            expect(logs).toContain(
+                `repair-refused:${PR}:${THREAD}:thread root comment author ${named} is neither the reviewer App nor the owner`
+            );
+        }
+    );
+
+    it('should confirm and resolve a repair on a thread the owner opened', () => {
+        const record = recordFor({ commit: HEAD });
+        const thread = subjectThread({
+            rootAuthorNodeId: ORCHESTRATOR_USER_NODE_ID,
+            replies: [{ id: 9001, body: authorRecordReply(record), authorNodeId: AUTHOR_BOT_NODE_ID }],
+        });
+        const { port, mutations } = fakePort(HEAD, [thread]);
+        confirmReviewRepairs(PR, HEAD, port);
+        expect(mutations.map((mutation) => mutation.kind)).toEqual(['post', 'resolve']);
     });
 
     it.each([REVIEWED_HEAD, PREDECESSOR, OTHER_COMMIT])(
@@ -701,6 +739,7 @@ describe('confirmReviewRepairs', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor,
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
@@ -749,6 +788,7 @@ describe('confirmReviewRepairs', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor,
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
@@ -797,6 +837,7 @@ describe('confirmReviewRepairs', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.refused).toEqual([
@@ -821,6 +862,7 @@ describe('confirmReviewRepairs', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.refused).toEqual([
@@ -1140,6 +1182,7 @@ describe('readReviewThreads', () => {
                 rootLine: FINDING_LINE,
                 rootSide: 'RIGHT',
                 rootReviewedHead: REVIEWED_HEAD,
+                rootAuthorNodeId: REVIEWER_BOT_NODE_ID,
                 replies: [
                     { id: ROOT_COMMENT_ID, body: 'Defect.', authorNodeId: REVIEWER_BOT_NODE_ID },
                     { id: 9_001, body: 'record', authorNodeId: AUTHOR_BOT_NODE_ID },
@@ -1152,6 +1195,37 @@ describe('readReviewThreads', () => {
         // The reader's own call site, not only the builder: `-f` here is the reported invalid value.
         expect(calls[0]?.args.slice(-2)).toEqual(['-F', `number=${PR}`]);
     });
+
+    it.each([
+        [
+            'the owner',
+            { __typename: 'User', login: 'jcosta33', id: ORCHESTRATOR_USER_NODE_ID },
+            ORCHESTRATOR_USER_NODE_ID,
+        ],
+        ['another user', { __typename: 'User', login: 'someone', id: 'MDQ6VXNlcjEyMzQ1Njc=' }, 'MDQ6VXNlcjEyMzQ1Njc='],
+        ['a deleted account', null, null],
+    ])(
+        'should read the root author node id of a thread %s opened, keeping its reply unattributed',
+        (_label, author, id) => {
+            const root = threadNode().comments.nodes[0];
+            const { gh } = recordingGh(() =>
+                page(
+                    [
+                        threadNode({
+                            comments: {
+                                nodes: [{ ...root, author }],
+                                pageInfo: { hasNextPage: false, endCursor: null },
+                            },
+                        }),
+                    ],
+                    { hasNextPage: false, endCursor: null }
+                )
+            );
+            const [thread] = readReviewThreads(PR, gh, []);
+            expect(thread?.rootAuthorNodeId).toBe(id);
+            expect(thread?.replies).toEqual([{ id: ROOT_COMMENT_ID, body: 'Defect.', authorNodeId: null }]);
+        }
+    );
 
     it('should follow thread pagination with the cursor', () => {
         const { gh, calls } = recordingGh((call) => {
@@ -1546,6 +1620,7 @@ describe('readReviewThreads', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
@@ -1616,6 +1691,7 @@ describe('readReviewThreads', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
@@ -1730,6 +1806,7 @@ describe('readReviewThreads', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
             isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);

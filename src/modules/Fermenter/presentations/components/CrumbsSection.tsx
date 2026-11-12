@@ -40,6 +40,7 @@ export const CrumbsSection = ({ mode, start, end, onParam }: CrumbsSectionProps)
         <Row align="end" gap={3} className="px-1">
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="Sampler start"
                     value={start}
                     onChange={(v) => onParam('samplerStart', v)}
                     min={0}
@@ -54,6 +55,7 @@ export const CrumbsSection = ({ mode, start, end, onParam }: CrumbsSectionProps)
             </Stack>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="Sampler end"
                     value={end}
                     onChange={(v) => onParam('samplerEnd', v)}
                     min={0}

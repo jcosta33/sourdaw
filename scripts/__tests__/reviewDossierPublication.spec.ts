@@ -268,9 +268,12 @@ describe('buildReviewDossier', () => {
         expect(discardedDispositions(result.dossier)).toHaveLength(1);
     });
 
-    it('refuses fresh source-absent findings over an unpublished historical record without draws', () => {
-        expect(() => build({ persisted: historicalRecord(false), draws: undefined, comments: [LOCATION] })).toThrow(
-            /comment 0 requires sources/u
+    it.each([
+        ['source-absent findings', [LOCATION]],
+        ['sourced findings', [COMMENT]],
+    ])('refuses a fresh document without draws over an unpublished canonical record with %s', (_label, comments) => {
+        expect(() => build({ persisted: historicalRecord(false), draws: undefined, comments })).toThrow(
+            `review.json must carry draws for head ${PLAN.headSha}: one { stance, reviewerModel, tier, outcome } entry per completed blind draw`
         );
     });
 

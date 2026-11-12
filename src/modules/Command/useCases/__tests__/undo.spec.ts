@@ -75,12 +75,34 @@ describe('undo', () => {
             mocks.undoStoreValue.value = state;
         });
         mocks.executeAppAction.mockReset();
+        mocks.executeAppAction.mockImplementation(async (_action, options) => {
+            options?.onCommitted?.();
+        });
         mocks.executeAppActionBatch.mockReset();
         mocks.executeAppActionBatch.mockResolvedValue({ status: 'executed', actions: [] });
         mocks.undoTreeMoveTo.mockReset();
         mocks.undoStoreValue.value = { past: [], future: [] };
         clearHandlerRegistry();
     });
+
+    it('notifies once after a successful callback undo settles the history', async () => {
+        const entry = callbackEntry();
+        mocks.undoStoreValue.value = { past: [entry], future: [] };
+        const onCommitted = vi.fn(() => expect(mocks.undoStoreValue.value).toEqual({ past: [], future: [entry] }));
+        await expect(undo({ onCommitted })).resolves.toEqual({ headConsumed: true });
+        expect(onCommitted).toHaveBeenCalledOnce();
+    });
+
+    it.each([{ past: [] }, { past: [actionEntry({ inverseAction: null })] }])(
+        'does not notify when only empty or inert history is consumed',
+        async ({ past }) => {
+            mocks.undoStoreValue.value = { past, future: [] };
+            const onCommitted = vi.fn();
+            await undo({ onCommitted });
+            expect(onCommitted).not.toHaveBeenCalled();
+            expect(mocks.undoStoreValue.value.past).toEqual([]);
+        }
+    );
 
     it('should execute inverseAction with skipUndo and move the entry to future', async () => {
         const entry = actionEntry();
@@ -90,7 +112,7 @@ describe('undo', () => {
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'toggleRecording' },
-            { skipUndo: true, skipMacroRecording: true, undoEntryId: entry.id }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: entry.id, onCommitted: expect.any(Function) }
         );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [],
@@ -152,7 +174,13 @@ describe('undo', () => {
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.executeAppActionBatch).toHaveBeenCalledWith(
             [{ type: 'stopPlayback' }, { type: 'toggleRecording' }],
-            { skipUndo: true, skipMacroRecording: true, source: 'manual', undoEntryIds: [second.id, first.id] }
+            {
+                skipUndo: true,
+                skipMacroRecording: true,
+                source: 'manual',
+                undoEntryIds: [second.id, first.id],
+                onCommitted: expect.any(Function),
+            }
         );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [previous],
@@ -160,6 +188,23 @@ describe('undo', () => {
         });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
     });
+
+    it.each([false, true])(
+        'notifies once for a group only when its batch reports applied actions: %s',
+        async (written) => {
+            const first = actionEntry({ id: 'group-1', groupId: 'group' });
+            const second = actionEntry({ id: 'group-2', groupId: 'group' });
+            mocks.undoStoreValue.value = { past: [first, second], future: [] };
+            mocks.executeAppActionBatch.mockImplementation(async (actions, options) => {
+                options?.onCommitted?.(written ? actions : []);
+                return { status: written ? 'committed' : 'no-op', actions: [] };
+            });
+            const onCommitted = vi.fn();
+            await undo({ onCommitted });
+            expect(onCommitted).toHaveBeenCalledTimes(written ? 1 : 0);
+            expect(mocks.undoStoreValue.value).toEqual({ past: [], future: [first, second] });
+        }
+    );
 
     it('keeps an atomic group whose replay conflicts on past, retryable, with nothing moved to future', async () => {
         const first = actionEntry({ id: 'group-1', groupId: 'group' });
@@ -189,12 +234,14 @@ describe('undo', () => {
             actions: [],
         });
 
-        const undone = undo();
+        const onCommitted = vi.fn();
+        const undone = undo({ onCommitted });
 
         await expect(undone).rejects.toBeInstanceOf(AppActionCommittedError);
         await expect(undone).rejects.toMatchObject({ cause: new Error('Effects are still settling') });
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [previous], future: [first, second] });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
+        expect(onCommitted).toHaveBeenCalledOnce();
     });
 
     it('de-groups legacy mixed singleton history before undoing only the newest entry', async () => {
@@ -227,6 +274,7 @@ describe('undo', () => {
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.executeAppAction).toHaveBeenCalledWith(companion.inverseAction, {
             undoEntryId: companion.id,
+            onCommitted: expect.any(Function),
             skipUndo: true,
             skipMacroRecording: true,
         });
@@ -256,7 +304,7 @@ describe('undo', () => {
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'toggleRecording' },
-            { skipUndo: true, skipMacroRecording: true, undoEntryId: undoable.id }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: undoable.id, onCommitted: expect.any(Function) }
         );
         // The inert entry is dropped without reaching future: nothing was undone for
         // it, so redo must never re-apply its action.
@@ -275,7 +323,7 @@ describe('undo', () => {
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'toggleRecording' },
-            { skipUndo: true, skipMacroRecording: true, undoEntryId: undoable.id }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: undoable.id, onCommitted: expect.any(Function) }
         );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [undoable] });
     });
@@ -296,7 +344,7 @@ describe('undo', () => {
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'stopPlayback' },
-            { skipUndo: true, skipMacroRecording: true, undoEntryId: real.id }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: real.id, onCommitted: expect.any(Function) }
         );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [previous], future: [real] });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
@@ -353,6 +401,7 @@ describe('undo', () => {
                 skipMacroRecording: true,
                 undoEntryId: entry.id,
                 authorizeFirstHandler: expect.any(Function),
+                onCommitted: expect.any(Function),
             }
         );
     });
@@ -385,7 +434,7 @@ describe('undo', () => {
                     replacement: { present: true, enabled: true, loopOriginBeat: null },
                 },
             },
-            { skipUndo: true, skipMacroRecording: true, undoEntryId: entry.id }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: entry.id, onCommitted: expect.any(Function) }
         );
     });
 
@@ -411,6 +460,7 @@ describe('undo', () => {
                 skipMacroRecording: true,
                 undoEntryId: valued.id,
                 authorizeFirstHandler: expect.any(Function),
+                onCommitted: expect.any(Function),
             }
         );
     });
@@ -446,6 +496,7 @@ describe('undo', () => {
                 source: 'manual',
                 undoEntryIds: [second.id, first.id],
                 preExecutionValidation: expect.any(Function),
+                onCommitted: expect.any(Function),
             }
         );
     });

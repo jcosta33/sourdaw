@@ -1,12 +1,14 @@
 ---
 name: testing-file-layout
 description: >-
-    Place every Vitest spec in a `__tests__/` directory inside the folder that owns
-    the code under test, and reproduce a defect with a failing test before touching
-    behaviour. ALWAYS apply when creating a `*.spec.ts` / `*.spec.tsx` file, moving
-    or renaming a spec, or reviewing a diff that adds or relocates tests — even if
-    it looks like a one-line rename. Skip writing production code, configuring the
-    test runner, or authoring docs.
+    Place every Vitest spec and test helper in its canonical folder under its
+    canonical name, pick the right mock seam (DI injection or `vi.mock`), and
+    reproduce a defect with a failing test before touching behaviour. ALWAYS apply
+    when creating, moving, or renaming a `*.spec.ts` / `*.spec.tsx` file or a shared
+    test helper, choosing how a spec mocks a dependency, or reviewing a diff that
+    adds or relocates tests — even if it looks like a one-line rename. Skip what a
+    case asserts, its fixtures and its waits (test-design), writing production code,
+    configuring the test runner, and authoring docs.
 ---
 
 ## Purpose
@@ -41,19 +43,22 @@ From `useCases/__tests__/addTrack.spec.ts`, import `../addTrack`. For a multi-su
 
 ### 4. Put shared helpers in their canonical folder
 
-Module-scoped dummies and fixtures that are not a single-spec detail live where the module already keeps test support (e.g. module `__tests__/` helpers). DI/event test helpers live under the infra `testing/` folders (`src/infra/*/testing/`), never scattered as one-off copies. No `index.ts` barrel inside `__tests__/`.
+Module-wide dummies, fixtures, and module-local mocks that are not a single-spec detail live in `src/modules/<Module>/__tests__/` at the module root and are imported relatively from deeper specs. Test utilities shared across modules (a mock `AudioContext`, shared helpers) live in `src/helpers/__tests__/`. DI and event runtime test helpers live in `src/infra/di/testing/` and `src/infra/events/testing/`. Never scatter one-off copies. No `index.ts` barrel inside `__tests__/`.
 
 **Why:** barrels and misplaced helpers become a second private API nobody owns.
 
 **Enforced by:** review only.
 
-### 5. Prefer the DI seam over `vi.mock` for injectables
+### 5. Pick the mock seam by how the dependency is wired
 
-When the subject is built with the project’s inject/container pattern, swap dependencies through the test inject seam. Reserve `vi.mock` for true module-level externals.
+- An injectable (a function wrapped in `inject()`): double its dependencies with `spy<T>()` and `injectDependencies()` from `src/infra/di/testing/`.
+- A module outside the inject map (for example `#/utils/desktopBridge`), or a thin static same-module repository an injectable uses that is not in the inject map: `vi.mock` that module.
+- Never mix `vi.mock` and `injectDependencies()` for the same dependency; pick one.
+- Mocking another module's contract barrel (`useCases`, `stores`, `events`, `presentations/views`) is sanctioned in two shapes only: a factory naming every export the spec's module graph imports from that barrel, or a factory that spreads `await importOriginal()` first and overrides only the stubs. The spread is faithful by default but loads the real module graph, so measure it on a heavy barrel. A hand-listed factory that misses a name goes stale the moment the barrel grows: the missing export resolves to `undefined` and can redden every test in the file.
 
-**Why:** hoisted mocks make specs order-dependent and hide the real seam.
+**Why:** the DI seam is the one the code actually exposes, so a hoisted `vi.mock` over an injectable hides it and makes the spec order-dependent; a stale barrel factory breaks specs in modules the author never touched.
 
-**Enforced by:** review only.
+**Enforced by:** `pnpm test:barrel-mocks` (PR CI) for contract-barrel factory coverage; `injectDependencies()` throws when a declared dependency is missing from its mocks; seam choice is review only. Detail: `docs/06-testing.md` "When to use which" and "Mocking a contract barrel".
 
 ### 6. Hard gate: run the targeted spec and see it pass
 

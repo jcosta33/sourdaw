@@ -30,6 +30,7 @@ import {
 } from '../pullRequestMutationLock.ts';
 import { readPullRequestReviewState } from '../pullRequestReviewState.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
+import { numstatFromPatch } from '../reviewDiffSummary.ts';
 import {
     appendReviewDossierEvents,
     assembleReviewDossier,
@@ -256,7 +257,7 @@ function fakeGitHub(input: {
     const comments = () => input.comments ?? (state.posted ? incidentComments(landing) : prePublicationComments());
     const gh = (args: string[]): string => {
         if (args[0] === 'pr') {
-            return JSON.stringify({ state: 'OPEN', headRefOid: liveHead, labels: [] });
+            return JSON.stringify({ state: 'OPEN', headRefOid: liveHead, baseRefOid: base, labels: [] });
         }
         if (args[0] === 'api' && args[1] === 'graphql') {
             return reviewStatePage(liveHead, reviews());
@@ -293,9 +294,24 @@ function fakeGitHub(input: {
 const session: GhSession = { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined };
 
 function publicationPort(root: string, gh: (args: string[]) => string): PublishReviewPort {
+    // The live comparison the production port reads from git objects: the fetched base and head,
+    // their merge base, and the same patch the bundle's diff.patch was written from.
+    const livePatch = () => readFileSync(join(bundlePath(root), 'diff.patch'), 'utf8');
     const port = shellPort(session, root, (command, args) => {
         if (command === 'git' && args[0] === 'rev-parse') {
             return join(root, '.git');
+        }
+        if (command === 'git' && args.includes('fetch')) {
+            return '';
+        }
+        if (command === 'git' && args[0] === 'merge-base') {
+            return base;
+        }
+        if (command === 'git' && args[0] === 'diff' && args[1] === '--numstat') {
+            return numstatFromPatch(livePatch()).toString('utf8');
+        }
+        if (command === 'git' && args[0] === 'diff') {
+            return livePatch();
         }
         if (command === 'gh') {
             return gh(args);
@@ -713,7 +729,9 @@ describe('review-publication recovery of a landed review among thread-reply revi
             const remote = fakeGitHub({ posted: false });
 
             expect(() => publishReview(number, publicationPort(fixture.root, remote.gh))).toThrow(
-                /comment 0 requires sources/u
+                withDraws
+                    ? /comment 0 requires sources/u
+                    : `review.json must carry draws for head ${head}: one { stance, reviewerModel, tier, outcome } entry per completed blind draw`
             );
             expect(dossierText(fixture.root)).toBe(before);
             expect(remote.state.posts).toBe(0);

@@ -27,6 +27,7 @@ export const KarplusSection = ({
         <Row align="end" gap={3}>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="String damping"
                     value={damping}
                     onChange={onDampingChange}
                     min={0}
@@ -41,6 +42,7 @@ export const KarplusSection = ({
             </Stack>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="String brightness"
                     value={brightness}
                     onChange={onBrightnessChange}
                     min={0.1}

@@ -23,6 +23,7 @@ import type { ReviewRepairRecord, ReviewRepairSelection, ReviewRepairThreadState
 const REPAIR_MARKER = 'sourdaw-repair-v1';
 const AUTHOR_NODE_ID = 'BOT_author';
 const FOREIGN_NODE_ID = 'BOT_reviewer';
+const OWNER_NODE_ID = 'USER_owner';
 const PR = 3_000;
 const HEAD = 'a'.repeat(40);
 const BASE = 'f'.repeat(40);
@@ -92,6 +93,7 @@ function threadState(overrides: Partial<ReviewRepairThreadState> = {}): ReviewRe
         rootLine: FINDING_LINE,
         rootSide: 'RIGHT',
         rootReviewedHead: REVIEWED_HEAD,
+        rootAuthorNodeId: FOREIGN_NODE_ID,
         replies: [repairReply(11, repairRecord())],
         ...overrides,
     };
@@ -131,6 +133,7 @@ function selectRepairs(
         base,
         authorNodeId: AUTHOR_NODE_ID,
         reviewerNodeId: FOREIGN_NODE_ID,
+        ownerNodeId: OWNER_NODE_ID,
         isAncestor,
     });
 }
@@ -461,6 +464,36 @@ describe('selectEligibleRepairs', () => {
             refused: [],
             ignored: [],
         });
+    });
+
+    it.each([
+        ['the reviewer App', FOREIGN_NODE_ID],
+        ['the owner', OWNER_NODE_ID],
+    ])('should keep a repair eligible on a thread whose root %s wrote', (_label, rootAuthorNodeId) => {
+        const record = repairRecord();
+        const selection = selectRepairs([threadState({ rootAuthorNodeId, replies: [repairReply(11, record)] })]);
+
+        expect(selection.eligible).toEqual([{ thread: THREAD, record, replyId: 11 }]);
+        expect(selection.refused).toEqual([]);
+    });
+
+    it.each([
+        ['an unknown user', 'MDQ6VXNlcjEyMzQ1Njc=', 'MDQ6VXNlcjEyMzQ1Njc='],
+        ['another bot', 'BOT_kgDOotherbot', 'BOT_kgDOotherbot'],
+        ['the author App', AUTHOR_NODE_ID, AUTHOR_NODE_ID],
+        ['a deleted account', null, 'unknown (deleted or unidentified)'],
+    ])('should refuse a repair on a thread whose root %s wrote', (_label, rootAuthorNodeId, named) => {
+        const selection = selectRepairs([
+            threadState({ rootAuthorNodeId, replies: [repairReply(11, repairRecord())] }),
+        ]);
+
+        expect(selection.eligible).toEqual([]);
+        expect(selection.refused).toEqual([
+            {
+                thread: THREAD,
+                reason: `thread root comment author ${named} is neither the reviewer App nor the owner`,
+            },
+        ]);
     });
 
     it.each([
@@ -1017,25 +1050,25 @@ describe('confirmClientMutationId', () => {
 describe('review thread queries', () => {
     it('should ask for the repair thread and its comment page with pageInfo beside nodes', () => {
         expect(threadQuery(false)).toBe(
-            'query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{id isResolved diffSide pullRequest{number headRefOid baseRefOid} comments(first:100){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{id isResolved diffSide pullRequest{number headRefOid baseRefOid} comments(first:100){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id} ... on User{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}}}}'
         );
         expect(threadQuery(true)).toBe(
-            'query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{id isResolved diffSide pullRequest{number headRefOid baseRefOid} comments(first:100,after:$cursor){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{id isResolved diffSide pullRequest{number headRefOid baseRefOid} comments(first:100,after:$cursor){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id} ... on User{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}}}}'
         );
     });
 
     it('should ask for the review threads with pageInfo beside nodes in both page forms', () => {
         expect(threadPage(undefined)).toBe(
-            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved diffSide comments(first:100){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved diffSide comments(first:100){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id} ... on User{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
         );
         expect(threadPage('CURSOR')).toBe(
-            'query($owner:String!,$name:String!,$number:Int!,$cursor:String!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved diffSide comments(first:100){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($owner:String!,$name:String!,$number:Int!,$cursor:String!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved diffSide comments(first:100){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id} ... on User{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
         );
     });
 
     it('should drain a long thread through the same comment fragment it started with', () => {
         expect(threadCommentsPage()).toBe(
-            'query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{comments(first:100,after:$cursor){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{comments(first:100,after:$cursor){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id} ... on User{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}}}}'
         );
     });
 });
@@ -1061,6 +1094,7 @@ const QUERY_SCHEMA: Readonly<Record<string, readonly string[]>> = {
     PageInfo: ['endCursor', 'hasNextPage', 'hasPreviousPage', 'startCursor'],
     Actor: ['avatarUrl', 'login', 'resourcePath', 'url'],
     Bot: ['avatarUrl', 'createdAt', 'databaseId', 'id', 'login', 'resourcePath', 'updatedAt', 'url'],
+    User: ['id', 'login'],
     PullRequestReviewThread: [
         'comments',
         'diffSide',

@@ -2,10 +2,10 @@
  * One surface registry for saved-project state and undo used by the review risk policy.
  * The registry holds each surface once, tagged with the view(s) it belongs to:
  *
- * - `undo` — the risk policy's `undo` risk class. Its scope is unchanged from the policy's original
- *   predicate, except that the `undo` marker now matches a path word rather than a bare substring
- *   (a false-positive correction: `crumbsAllSoundOff.ts` no longer matches).
- * - `persisted-state` — the three project-state rules. It is the `undo` view plus the saved-document
+ * - `undo` — the undo-owning surfaces. The `undo` marker matches a path word rather than a bare
+ *   substring (a false-positive correction: `crumbsAllSoundOff.ts` no longer matches).
+ * - `persisted-state` — the risk policy's `undo` risk class, because project persistence earns that
+ *   specialist class however small the diff (#3377). It is the `undo` view plus the saved-document
  *   slot-owning stores (every non-test `createAutomergeStorage(` call site, one exact matcher each),
  *   the Project module's persisted-shape, migration, repair, and saved-project owners, the
  *   version-history owners, and the composition-root files that wire them.
@@ -509,12 +509,7 @@ function matchersFor(scope: SavedProjectStateScope): readonly SavedProjectStateM
     );
 }
 
-/** Whether a path owns undo — the risk policy's `undo` risk class. */
-export function isUndoPath(path: string): boolean {
-    return matchersFor('undo').some((matcher) => matchesMatcher(path, matcher));
-}
-
-/** Whether a path owns persisted project state — the three project-state rules' scope. */
+/** Whether a path owns persisted project state — the scope of the risk policy's `undo` class. */
 export function isPersistedProjectStatePath(path: string): boolean {
     return matchersFor('persisted-state').some((matcher) => matchesMatcher(path, matcher));
 }

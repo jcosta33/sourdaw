@@ -47,7 +47,8 @@ function readProgramme(state: LoopAudioScheduleState, transport: TransportState)
     const eligible = tracks.filter(
         (track) =>
             (track.kind === 'audio' ||
-                (track.kind === 'midi' && midiStore.value && track.freezeState.status === 'frozen')) &&
+                (track.kind === 'midi' &&
+                    (track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId || midiStore.value))) &&
             (!track.muted || track.sends.some((send) => send.preFader && buses.has(send.busId)))
     );
     const cached = new Map<string, AudioBuffer | null>();
@@ -82,6 +83,7 @@ function readProgramme(state: LoopAudioScheduleState, transport: TransportState)
             id: track.id,
             kind: track.kind,
             frozen,
+            media,
             compensation,
             origin: frozen ? track.clips.map((clip) => clip.startBeat) : [],
             parts: parts.map((part) => CLIP_FIELDS.map((field) => part[field])),
@@ -141,22 +143,48 @@ function reconcileCurrent(
         }
     }
 }
+function findChangedTrackIds(state: LoopAudioScheduleState, read: ReturnType<typeof readProgramme>): Set<string> {
+    const previousById = new Map((state.programme ?? []).map((track) => [track.id, track]));
+    const currentById = new Map(read.view.map((track) => [track.id, track]));
+    const changed = new Set<string>();
+    for (const track of read.view) {
+        if (!valuesEqual(previousById.get(track.id), track)) {
+            changed.add(track.id);
+        }
+    }
+    for (const trackId of previousById.keys()) {
+        if (!currentById.has(trackId)) {
+            changed.add(trackId);
+        }
+    }
+    const replacedBufferIds = new Set<string>();
+    for (const [id, buffer] of read.cached) {
+        if (buffer !== null && state.buffers.has(id) && buffer !== state.buffers.get(id)) {
+            replacedBufferIds.add(id);
+        }
+    }
+    for (const track of read.view) {
+        if (track.media.some((bufferId) => replacedBufferIds.has(bufferId))) {
+            changed.add(track.id);
+        }
+    }
+    return changed;
+}
 function reconcileInputs(state: LoopAudioScheduleState, runtime: Runtime, passRuntime: PassRuntime, input: Refill) {
     const { transport, audioTime } = input;
     const read = readProgramme(state, transport);
     const programmeChanged = !valuesEqual(state.programme, read.view);
-    const changed =
-        programmeChanged ||
-        [...read.cached].some(
-            ([id, buffer]) => buffer !== null && state.buffers.has(id) && buffer !== state.buffers.get(id)
-        );
-    if (changed) {
+    const changedTrackIds = findChangedTrackIds(state, read);
+    if (programmeChanged || changedTrackIds.size > 0) {
         const retained: { pass: Pass; deadline: number }[] = [];
         state.dirtyPasses.clear();
         for (const pass of state.passes.values()) {
             let deadline = Infinity;
             for (let sourceIndex = pass.sources.length - 1; sourceIndex >= 0; sourceIndex--) {
                 const source: SourceWithFade = pass.sources[sourceIndex]!;
+                if (source.scheduledTrackId === undefined || !changedTrackIds.has(source.scheduledTrackId)) {
+                    continue;
+                }
                 deadline = Math.min(deadline, Math.max(runtime.context.currentTime, source.scheduledStartTime ?? 0));
                 if (
                     source.scheduledStartTime === undefined ||

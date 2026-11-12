@@ -69,7 +69,7 @@ describe('LlmStatusBadge', () => {
         // offer to load AI over a panel that still knows no backend is the
         // stale half of a two-answer availability read.
         fireEvent.click(screen.getByRole('button', { name: 'Load AI' }));
-        expect(screen.getByRole('button', { name: /^Standard/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Pro/ })).toBeInTheDocument();
     });
 
     it('names the selected model on the download button and states what downloading does', () => {
@@ -79,10 +79,10 @@ describe('LlmStatusBadge', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Load AI' }));
 
         const downloadButton = screen.getByRole('button', { name: /^Download & Load/ });
-        expect(downloadButton).toHaveTextContent('Download & Load Standard');
-
-        fireEvent.click(screen.getByRole('button', { name: /^Pro/ }));
         expect(downloadButton).toHaveTextContent('Download & Load Pro');
+
+        fireEvent.click(screen.getByRole('button', { name: /^Standard/ }));
+        expect(downloadButton).toHaveTextContent('Download & Load Standard');
 
         fireEvent.click(screen.getByRole('button', { name: /^Light/ }));
         expect(downloadButton).toHaveTextContent('Download & Load Light');

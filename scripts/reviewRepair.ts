@@ -66,7 +66,7 @@ const DIFFERENT_RECORD_CONFIRMATION_REFUSAL = 'thread already carries a confirma
  * move with the diff, and a later reply belongs to a different review.
  */
 export const REVIEW_THREAD_COMMENT_FIELDS =
-    'nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}';
+    'nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id} ... on User{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}';
 
 export type ReviewRepairFinding = { commentId: number; path: string; line: number; side: 'LEFT' | 'RIGHT' };
 
@@ -104,6 +104,8 @@ export type ReviewRepairThreadState = {
     rootLine: number;
     rootSide: 'LEFT' | 'RIGHT';
     rootReviewedHead: string;
+    /** The root comment's Bot or User node id; null for a deleted or otherwise unidentified author. */
+    rootAuthorNodeId: string | null;
     replies: { id: number; body: string; authorNodeId: string | null }[];
 };
 
@@ -118,7 +120,10 @@ type RepairCandidate = { record: ReviewRepairRecord; replyId: number };
 type AuthorRepairRecords =
     { kind: 'none' } | { kind: 'one'; candidate: RepairCandidate } | { kind: 'many'; count: number };
 
-type RepairConfirmation = {
+/** The identities whose thread roots are review findings: the reviewer App and the owner. */
+export type ReviewRepairAccountableRoots = { reviewerNodeId: string; ownerNodeId: string };
+
+type RepairConfirmation = ReviewRepairAccountableRoots & {
     pr: number;
     head: string;
     base: string;
@@ -535,11 +540,33 @@ export function authorRepairRecords(
 }
 
 /**
+ * Only a finding the reviewer App or the owner raised is a review finding the repair route may answer
+ * and resolve; a thread opened by anyone else, a deleted account, or another bot is not one.
+ */
+export function reviewRepairRootAuthorRefusal(
+    rootAuthorNodeId: string | null,
+    accountable: ReviewRepairAccountableRoots
+): string | undefined {
+    if (rootAuthorNodeId === accountable.reviewerNodeId || rootAuthorNodeId === accountable.ownerNodeId) {
+        return undefined;
+    }
+    return `thread root comment author ${rootAuthorNodeId ?? 'unknown (deleted or unidentified)'} is neither the reviewer App nor the owner`;
+}
+
+/**
  * The comment id and side identify the thread root. The finding's path and line describe the position
  * recorded at repair time; GitHub rewrites the root's live path on a rename and moves or nulls its live
  * line on later pushes, so an immutable record cannot keep matching them.
  */
-function findingRefusal(thread: ReviewRepairThreadState, finding: ReviewRepairFinding): string | undefined {
+function findingRefusal(
+    thread: ReviewRepairThreadState,
+    finding: ReviewRepairFinding,
+    accountable: ReviewRepairAccountableRoots
+): string | undefined {
+    const rootAuthor = reviewRepairRootAuthorRefusal(thread.rootAuthorNodeId, accountable);
+    if (rootAuthor !== undefined) {
+        return rootAuthor;
+    }
     if (finding.commentId !== thread.rootCommentId) {
         return `finding commentId ${finding.commentId} does not match the thread root ${thread.rootCommentId}`;
     }
@@ -568,7 +595,7 @@ function confirmationRefusal(
     if (record.head !== confirmation.head && !confirmation.isAncestor(record.head, confirmation.head)) {
         return `head ${record.head} does not match the confirmed head ${confirmation.head}`;
     }
-    const finding = findingRefusal(thread, record.finding);
+    const finding = findingRefusal(thread, record.finding, confirmation);
     if (finding !== undefined) {
         return finding;
     }
@@ -651,6 +678,7 @@ export function selectEligibleRepairs(input: {
     base: string;
     authorNodeId: string;
     reviewerNodeId: string;
+    ownerNodeId: string;
     isAncestor: (commit: string, head: string) => boolean;
 }): ReviewRepairSelection {
     const eligible: ReviewRepairSelection['eligible'] = [];
@@ -686,4 +714,49 @@ export function selectEligibleRepairs(input: {
     }
 
     return { eligible, refused, ignored };
+}
+
+/** The `--evidence` file `review:repair` attaches to a record: a JSON array of evidence entries. */
+export function parseRepairEvidence(json: string): ReviewRepairEvidence[] {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(json);
+    } catch (error) {
+        throw new Error('review repair evidence file is not valid JSON', { cause: error });
+    }
+    if (!Array.isArray(parsed)) {
+        throw new TypeError('review repair evidence file must hold an array of evidence entries');
+    }
+    const entries: ReviewRepairEvidence[] = [];
+    for (let index = 0; index < parsed.length; index += 1) {
+        entries.push(readRepairEvidenceEntry(parsed[index], index));
+    }
+    return entries;
+}
+
+/**
+ * Validated here rather than left to `assertReviewRepairRecord`, so a malformed file is named as a
+ * malformed file instead of as a malformed record bound to a thread.
+ */
+function readRepairEvidenceEntry(value: unknown, index: number): ReviewRepairEvidence {
+    if (!isRecord(value)) {
+        throw new TypeError(
+            `review repair evidence entry ${index} must be a JSON object, found ${describeValue(value)}`
+        );
+    }
+    return {
+        observable: readEvidenceField(value, 'observable', index),
+        verification: readEvidenceField(value, 'verification', index),
+        observed: readEvidenceField(value, 'observed', index),
+    };
+}
+
+function readEvidenceField(entry: Record<string, unknown>, field: string, index: number): string {
+    const value = entry[field];
+    if (typeof value !== 'string') {
+        throw new TypeError(
+            `review repair evidence entry ${index} field ${field} must be a string, found ${describeValue(value)}`
+        );
+    }
+    return value;
 }

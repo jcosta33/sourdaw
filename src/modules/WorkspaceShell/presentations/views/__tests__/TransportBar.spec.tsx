@@ -361,7 +361,8 @@ describe('TransportBar', () => {
                 expect(listbox).toBeVisible();
                 expect(within(listbox).getByRole('option', { name: /Verse, Voice/ })).toBeInTheDocument();
                 expect(within(listbox).getByRole('option', { name: /Fill, Drums/ })).toBeInTheDocument();
-                await waitFor(() => expect(listbox).toHaveFocus());
+                await waitFor(() => expect(screen.getByRole('searchbox', { name: 'Search clips' })).toHaveFocus());
+                act(() => listbox.focus());
                 fireEvent.keyDown(listbox, { key: ' ' });
                 expect(clipSelectionStore.value?.selectedClipIds).toEqual(['verse']);
                 expect(within(listbox).getByRole('option', { name: /Verse, Voice/ })).toHaveAttribute(
@@ -386,7 +387,8 @@ describe('TransportBar', () => {
             const browse = screen.getByRole('button', { name: 'Browse timeline clips' });
             fireEvent.click(browse);
             const listbox = screen.getByRole('listbox', { name: 'Timeline clips' });
-            await waitFor(() => expect(listbox).toHaveFocus());
+            await waitFor(() => expect(screen.getByRole('searchbox', { name: 'Search clips' })).toHaveFocus());
+            act(() => listbox.focus());
             fireEvent.keyDown(listbox, { key: 'End' });
             fireEvent.keyDown(listbox, { key: ' ' });
             const activeId = listbox.getAttribute('aria-activedescendant');
@@ -438,14 +440,15 @@ describe('TransportBar', () => {
             expect(screen.getByRole('dialog', { name: 'More transport controls' })).toBeInTheDocument();
             fireEvent.click(browse);
             const listbox = screen.getByRole('listbox', { name: 'Timeline clips' });
-            await waitFor(() => expect(listbox).toHaveFocus());
+            await waitFor(() => expect(screen.getByRole('searchbox', { name: 'Search clips' })).toHaveFocus());
+            act(() => listbox.focus());
             expect(more).toHaveAttribute('aria-expanded', 'false');
             expect(screen.queryByRole('dialog', { name: 'More transport controls' })).not.toBeInTheDocument();
             fireEvent.keyDown(listbox, { key: 'Escape' });
             await waitFor(() => expect(browse).toHaveFocus());
 
             fireEvent.click(browse);
-            await waitFor(() => expect(screen.getByRole('listbox', { name: 'Timeline clips' })).toHaveFocus());
+            await waitFor(() => expect(screen.getByRole('searchbox', { name: 'Search clips' })).toHaveFocus());
             fireEvent.click(more);
             expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument();
             const moreDialog = screen.getByRole('dialog', { name: 'More transport controls' });
@@ -458,7 +461,7 @@ describe('TransportBar', () => {
         it('preserves outside focus when the Browse disclosure dismisses', async () => {
             renderTransportBar();
             fireEvent.click(screen.getByRole('button', { name: 'Browse timeline clips' }));
-            await waitFor(() => expect(screen.getByRole('listbox', { name: 'Timeline clips' })).toHaveFocus());
+            await waitFor(() => expect(screen.getByRole('searchbox', { name: 'Search clips' })).toHaveFocus());
             const outside = document.createElement('button');
             outside.textContent = 'Outside action';
             document.body.appendChild(outside);
@@ -476,7 +479,7 @@ describe('TransportBar', () => {
         it('disposes Browse when the actual timeline becomes unavailable rather than reopening stale state', async () => {
             const rendered = renderTransportBar();
             fireEvent.click(screen.getByRole('button', { name: 'Browse timeline clips' }));
-            await waitFor(() => expect(screen.getByRole('listbox', { name: 'Timeline clips' })).toHaveFocus());
+            await waitFor(() => expect(screen.getByRole('searchbox', { name: 'Search clips' })).toHaveFocus());
             workspaceStore.set({ ...defaultWorkspaceState, mode: 'automation' });
             rendered.rerender(
                 <TooltipProvider>

@@ -40,12 +40,12 @@ Every search is `pnpm exec ast-grep run --lang <ts|tsx|rust> -p '<pattern>' <pat
 
 ### 4. Tested recipes
 
-Counts verified guard-wrapped on 2026-09-15 at head `a081b5d3e`; they are sanity anchors, so re-run a recipe before relying on its count.
+Each recipe needs a second run with `--lang tsx` wherever the shape can occur in `.tsx` files.
 
-- Action dispatch sites: `pnpm exec ast-grep run --lang ts -p 'executeAppAction($$$ARGS)' src` — 278 matches (presentation dispatch needs `--lang tsx`: 15).
-- Mock declarations: `pnpm exec ast-grep run --lang ts -p 'vi.mock($$$ARGS)' src scripts` — 4942 matches (`.tsx` specs need `--lang tsx`: 1640).
-- External-store binding: `pnpm exec ast-grep run --lang ts -p 'useSyncExternalStore($$$ARGS)' src` — 5 matches, all in `.ts` hook modules; `--lang tsx` finds 0.
-- Real-time assertion macro: `pnpm exec ast-grep run --lang rust -p 'debug_assert!($$$ARGS)' crates` — 19 matches.
+- Action dispatch sites: `pnpm exec ast-grep run --lang ts -p 'executeAppAction($$$ARGS)' src` (presentation dispatch lives in `.tsx`, so repeat with `--lang tsx`).
+- Mock declarations: `pnpm exec ast-grep run --lang ts -p 'vi.mock($$$ARGS)' src scripts` (component specs are `.spec.tsx`, so repeat with `--lang tsx`).
+- External-store binding: `pnpm exec ast-grep run --lang ts -p 'useSyncExternalStore($$$ARGS)' src`.
+- Real-time assertion macro: `pnpm exec ast-grep run --lang rust -p 'debug_assert!($$$ARGS)' crates`.
 
 To count matches, append `--json=compact` and pipe through `python3 -c "import json,sys; print(len(json.load(sys.stdin)))"`.
 
