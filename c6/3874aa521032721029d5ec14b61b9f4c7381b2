@@ -1,0 +1,24 @@
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_d863a167ed2770::t_921694d0c2e857 576-580
+src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts
+  s_d863a167ed2770::t_e58b1d3b7153a7 75-76,341,374
+  s_d863a167ed2770::t_eb1ce6195200ce 139-142
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_d863a167ed2770::t_06bf63081d7a47 395-419,435,474
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c63874aa521032721029d5ec14b61b9f4c7381b2",
+  "prompts": {},
+  "sessions": {
+    "s_d863a167ed2770": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aaa09596-85dd-47b0-8d40-250a377043d1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
