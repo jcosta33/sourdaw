@@ -467,11 +467,12 @@ function successfulAuthorshipNotesFetchFixture(shell: ShellRunner): ShellRunner 
             if (
                 command === 'git' &&
                 args[0] === 'for-each-ref' &&
+                args[2] !== undefined &&
                 (args[2] === 'refs/notes/ai' ||
-                    args[2]?.startsWith('refs/agents/fetched-ai-notes/') ||
-                    args[2]?.startsWith('refs/agents/preserved-ai-notes/'))
+                    args[2].startsWith('refs/agents/fetched-ai-notes/') ||
+                    args[2].startsWith('refs/agents/preserved-ai-notes/'))
             ) {
-                const ref = args[2]!;
+                const ref = args[2];
                 const oid = refs.get(ref);
                 return oid === undefined ? '' : `${ref} ${oid} `;
             }
@@ -11366,9 +11367,12 @@ describe('delivery shell boundary', () => {
             expectedError: /merger cannot be verified/,
         },
         {
-            merger: 'non-Bot',
-            shellSnapshot: pullRequest({ state: 'MERGED' }),
-            graphQlMergedBy: { __typename: 'User' as const },
+            merger: 'foreign User',
+            shellSnapshot: pullRequest({
+                state: 'MERGED',
+                mergedByActorNodeId: 'MDQ6VXNlcjk5OTk5OTk=',
+            }),
+            graphQlMergedBy: { __typename: 'User' as const, id: 'MDQ6VXNlcjk5OTk5OTk=' },
             expectedError: /merger cannot be verified/,
         },
     ])(
