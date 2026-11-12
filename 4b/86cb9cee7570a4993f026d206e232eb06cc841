@@ -1,0 +1,39 @@
+src/modules/Command/useCases/__tests__/retiredRangeToolStoredCommands.spec.ts
+  s_35b9801a6d6336::t_9057fa72ef041f 659
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_35b9801a6d6336::t_39ae2939e440a5 1364
+  s_35b9801a6d6336::t_867fe912c426ab 132,157-158
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/readStatedRangeBeats.ts
+  s_35b9801a6d6336::t_867fe912c426ab 18-20,37
+  s_35b9801a6d6336::t_dbbfafeef852e1 1-17,21-36,38-110
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/resolveProjectRange.ts
+  s_35b9801a6d6336::t_dbbfafeef852e1 1-20
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_35b9801a6d6336::t_350bec839effdf 437
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/resolveCallRange.ts
+  s_35b9801a6d6336::t_dbbfafeef852e1 1-26
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/findTrailingRangePhrase.ts
+  s_35b9801a6d6336::t_dbbfafeef852e1 3,5
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/findRangePhrases.ts
+  s_35b9801a6d6336::t_dbbfafeef852e1 1-87
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/localPlanningWindow.integration.spec.ts
+  s_35b9801a6d6336::t_350bec839effdf 39,430
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_35b9801a6d6336::t_350bec839effdf 93-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b86cb9cee7570a4993f026d206e232eb06cc841",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
