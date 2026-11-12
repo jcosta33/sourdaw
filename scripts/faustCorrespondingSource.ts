@@ -143,6 +143,83 @@ export function assertFaustSourceContents(files: Map<string, Buffer>): void {
     }
 }
 
+function assertInstalledWorklets(content: string): void {
+    const records = [...content.matchAll(/^export const (\w+) = (.*);$/gmu)];
+    if (records.length !== 3) {
+        throw new Error('installed generated worklets malformed');
+    }
+    for (const record of records) {
+        const expected = EXECUTABLES.worklets[record[1] as keyof typeof EXECUTABLES.worklets];
+        const text: unknown = JSON.parse(record[2]!);
+        if (
+            !expected ||
+            typeof text !== 'string' ||
+            hash(Buffer.from(text)) !== expected.sha256 ||
+            Buffer.byteLength(text) !== expected.bytes
+        ) {
+            throw new Error('installed worklet does not match reconstructed executable');
+        }
+    }
+}
+
+function assertInstalledWrapper(files: Map<string, Buffer>, packageRoot: string): void {
+    const main = readFileSync(resolve(packageRoot, 'dist/esm/index.js'));
+    if (hash(main) !== EXECUTABLES.main.sha256 || main.length !== EXECUTABLES.main.bytes) {
+        throw new Error('installed wrapper does not match reconstructed executable');
+    }
+    const map = JSON.parse(readFileSync(resolve(packageRoot, 'dist/esm/index.js.map'), 'utf8')) as {
+        sources: string[];
+        sourcesContent: string[];
+    };
+    if (map.sources.length !== 27 || map.sourcesContent.length !== 27) {
+        throw new Error('installed wrapper source map census drifted');
+    }
+    for (let index = 0; index < map.sources.length; index++) {
+        const source = map.sources[index]!;
+        const content = map.sourcesContent[index];
+        if (typeof content !== 'string' || !source.startsWith('../../')) {
+            throw new Error('installed wrapper source map malformed');
+        }
+        const name = source.slice(6);
+        if (name === 'src/generated/workletSources.ts') {
+            assertInstalledWorklets(content);
+            continue;
+        }
+        const capsulePath = name.startsWith('node_modules/') ? `preferred-dependency-sources/${name.slice(13)}` : name;
+        if (!files.get(capsulePath)?.equals(Buffer.from(content))) {
+            throw new Error(`installed preferred source differs: ${name}`);
+        }
+    }
+}
+
+function assertInstalledLibraries(files: Map<string, Buffer>, packageRoot: string): void {
+    const library = json<{
+        libraryRevision: string;
+        libraries: { path: string; sourcePath: string; start: number; end: number; sha256: string }[];
+    }>(files, 'provenance/library-source-match.json');
+    if (library.libraryRevision !== LIBRARY_REVISION || library.libraries.length !== 55) {
+        throw new Error('compiler library source census drifted');
+    }
+    const data = readFileSync(resolve(packageRoot, 'libfaust-wasm/libfaust-wasm.data'));
+    const js = readFileSync(resolve(packageRoot, 'libfaust-wasm/libfaust-wasm.js'), 'utf8');
+    const bundled = [...js.matchAll(/filename:"([^"]+\.lib)",start:(\d+),end:(\d+)/gu)];
+    if (bundled.length !== 55) {
+        throw new Error('installed compiler library census drifted');
+    }
+    for (const [path, start, end] of bundled.map(
+        (record) => [record[1]!.replace('/usr/share/faust/', ''), Number(record[2]), Number(record[3])] as const
+    )) {
+        const record = library.libraries.find((candidate) => candidate.path === path);
+        if (!record || record.start !== start || record.end !== end || start < 0 || end > data.length || end <= start) {
+            throw new Error('installed compiler library offsets drifted');
+        }
+        const source = files.get(`faustlibraries/${record.sourcePath}`);
+        if (!source || hash(source) !== record.sha256 || !source.equals(data.subarray(start, end))) {
+            throw new Error(`compiler library source differs: ${path}`);
+        }
+    }
+}
+
 /** The reviewed immutable capsule and installed package hashes, not caller JSON, authorize these source bytes. */
 export function validateFaustCorrespondingSource(root: string): string[] {
     const path = resolve(root, FAUST_SOURCE_ARCHIVE);
@@ -164,82 +241,8 @@ export function validateFaustCorrespondingSource(root: string): string[] {
         const files = readFaustSourceArchive(bytes);
         assertFaustSourceContents(files);
         const packageRoot = resolve(root, 'node_modules/@grame/faustwasm');
-        const main = readFileSync(resolve(packageRoot, 'dist/esm/index.js'));
-        if (hash(main) !== EXECUTABLES.main.sha256 || main.length !== EXECUTABLES.main.bytes) {
-            throw new Error('installed wrapper does not match reconstructed executable');
-        }
-        const map = JSON.parse(readFileSync(resolve(packageRoot, 'dist/esm/index.js.map'), 'utf8')) as {
-            sources: string[];
-            sourcesContent: string[];
-        };
-        if (map.sources.length !== 27 || map.sourcesContent.length !== 27) {
-            throw new Error('installed wrapper source map census drifted');
-        }
-        for (let index = 0; index < map.sources.length; index++) {
-            const source = map.sources[index]!;
-            const content = map.sourcesContent[index];
-            if (typeof content !== 'string' || !source.startsWith('../../')) {
-                throw new Error('installed wrapper source map malformed');
-            }
-            const name = source.slice(6);
-            if (name === 'src/generated/workletSources.ts') {
-                const records = [...content.matchAll(/^export const (\w+) = (.*);$/gmu)];
-                if (records.length !== 3) {
-                    throw new Error('installed generated worklets malformed');
-                }
-                for (const record of records) {
-                    const expected = EXECUTABLES.worklets[record[1] as keyof typeof EXECUTABLES.worklets];
-                    const text: unknown = JSON.parse(record[2]!);
-                    if (
-                        !expected ||
-                        typeof text !== 'string' ||
-                        hash(Buffer.from(text)) !== expected.sha256 ||
-                        Buffer.byteLength(text) !== expected.bytes
-                    ) {
-                        throw new Error('installed worklet does not match reconstructed executable');
-                    }
-                }
-                continue;
-            }
-            const capsulePath = name.startsWith('node_modules/')
-                ? `preferred-dependency-sources/${name.slice(13)}`
-                : name;
-            if (!files.get(capsulePath)?.equals(Buffer.from(content))) {
-                throw new Error(`installed preferred source differs: ${name}`);
-            }
-        }
-        const library = json<{
-            libraryRevision: string;
-            libraries: { path: string; sourcePath: string; start: number; end: number; sha256: string }[];
-        }>(files, 'provenance/library-source-match.json');
-        if (library.libraryRevision !== LIBRARY_REVISION || library.libraries.length !== 55) {
-            throw new Error('compiler library source census drifted');
-        }
-        const data = readFileSync(resolve(packageRoot, 'libfaust-wasm/libfaust-wasm.data'));
-        const js = readFileSync(resolve(packageRoot, 'libfaust-wasm/libfaust-wasm.js'), 'utf8');
-        const bundled = [...js.matchAll(/filename:"([^"]+\.lib)",start:(\d+),end:(\d+)/gu)];
-        if (bundled.length !== 55) {
-            throw new Error('installed compiler library census drifted');
-        }
-        for (const [path, start, end] of bundled.map(
-            (record) => [record[1]!.replace('/usr/share/faust/', ''), Number(record[2]), Number(record[3])] as const
-        )) {
-            const record = library.libraries.find((candidate) => candidate.path === path);
-            if (
-                !record ||
-                record.start !== start ||
-                record.end !== end ||
-                start < 0 ||
-                end > data.length ||
-                end <= start
-            ) {
-                throw new Error('installed compiler library offsets drifted');
-            }
-            const source = files.get(`faustlibraries/${record.sourcePath}`);
-            if (!source || hash(source) !== record.sha256 || !source.equals(data.subarray(start, end))) {
-                throw new Error(`compiler library source differs: ${path}`);
-            }
-        }
+        assertInstalledWrapper(files, packageRoot);
+        assertInstalledLibraries(files, packageRoot);
         return [];
     } catch (error) {
         return [`faustwasm: ${error instanceof Error ? error.message : String(error)}`];

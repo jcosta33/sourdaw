@@ -5,13 +5,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { cargoMetadata } from './cargoMetadata.ts';
 import {
     buildDependencyLicenseArtifacts,
     DEPENDENCY_LICENSE_REPORT_PATH,
     SERVER_THIRD_PARTY_NOTICES_PATH,
     type DependencyLicenseArtifacts,
 } from './dependencyLicenseReport.ts';
-import { cargoMetadata } from './cargoMetadata.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 
 export const PROJECT_LICENSE_ID = 'Apache-2.0';

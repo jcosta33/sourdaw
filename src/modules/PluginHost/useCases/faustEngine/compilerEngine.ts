@@ -10,8 +10,8 @@
 
 import { instantiateFaustModuleFromFile, FaustCompiler, LibFaust, type IFaustCompiler } from '@grame/faustwasm';
 
-import { logger } from '#/infra/logger/appLogger';
 import { installFaustCurrentSound } from '#/helpers/installFaustCurrentSound';
+import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createFaustError } from '../../errors/FaustError';

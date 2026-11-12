@@ -15,7 +15,6 @@ import {
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
 import { COLD_FIRST_PAINT_TIMEOUT_MS } from '../../tests/e2e/coldFirstPaintBudget';
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
-import { parsePnpmLock } from '../pnpmLock';
 import {
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
@@ -29,6 +28,7 @@ import {
 } from '../healthGateWorkflowContract';
 import { assertHostedQuantumMeasurementWorkflow } from '../hostedQuantumMeasurementWorkflowContract';
 import { assertHostedWasmWorkflow } from '../hostedWasmWorkflowContract';
+import { parsePnpmLock } from '../pnpmLock';
 import { assertPullRequestGateWorkflows } from '../pullRequestGateWorkflowContract';
 import { assertJobLevelPermissions, assertWorkflowSecuritySurface } from '../workflowSecuritySurfaceContract';
 

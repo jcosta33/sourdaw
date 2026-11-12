@@ -176,17 +176,7 @@ function isolatedEnvironment(env: NodeJS.ProcessEnv, root: string, config: strin
     };
 }
 
-function installedEntrypoint(bin: string, platform: NodeJS.Platform): string {
-    const requested = join(bin, platform === 'win32' ? 'pnpm.exe' : 'pnpm');
-    const stat = lstatSync(requested);
-    if (
-        !stat.isFile() ||
-        realpathSync(requested) !== requested ||
-        (process.getuid !== undefined && stat.uid !== process.getuid()) ||
-        (process.platform !== 'win32' && ((stat.mode & 0o022) !== 0 || (stat.mode & 0o555) !== 0o555))
-    ) {
-        throw new Error('pnpm target executable must belong to its independent installation');
-    }
+function isNativeEntrypoint(requested: string, platform: NodeJS.Platform, size: number): boolean {
     // Inspect the actual executable, never an npm shim, shell script, or the
     // Node wrapper. Its signed platform tarball was checked by get-pnpm.
     const header = Buffer.alloc(256);
@@ -197,7 +187,7 @@ function installedEntrypoint(bin: string, platform: NodeJS.Platform): string {
         length = readSync(descriptor, header, 0, header.length, 0);
         if (platform === 'win32' && length >= 64 && header.toString('ascii', 0, 2) === 'MZ') {
             const offset = header.readUInt32LE(60);
-            if (offset >= 64 && offset + 6 <= stat.size) {
+            if (offset >= 64 && offset + 6 <= size) {
                 const coff = Buffer.alloc(6);
                 native =
                     readSync(descriptor, coff, 0, coff.length, offset) === coff.length &&
@@ -219,7 +209,21 @@ function installedEntrypoint(bin: string, platform: NodeJS.Platform): string {
             header[5] === 1 &&
             header.readUInt16LE(18) === (process.arch === 'arm64' ? 183 : 62);
     }
-    if (!native) {
+    return native;
+}
+
+function installedEntrypoint(bin: string, platform: NodeJS.Platform): string {
+    const requested = join(bin, platform === 'win32' ? 'pnpm.exe' : 'pnpm');
+    const stat = lstatSync(requested);
+    if (
+        !stat.isFile() ||
+        realpathSync(requested) !== requested ||
+        (process.getuid !== undefined && stat.uid !== process.getuid()) ||
+        (process.platform !== 'win32' && ((stat.mode & 0o022) !== 0 || (stat.mode & 0o555) !== 0o555))
+    ) {
+        throw new Error('pnpm target executable must belong to its independent installation');
+    }
+    if (!isNativeEntrypoint(requested, platform, stat.size)) {
         throw new Error('pnpm target is not the expected platform executable');
     }
     return requested;

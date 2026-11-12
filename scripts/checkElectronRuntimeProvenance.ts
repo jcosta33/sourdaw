@@ -7,10 +7,9 @@ import { fileURLToPath } from 'node:url';
 
 import { parseDocument } from 'yaml';
 
-import { parsePnpmLock } from './pnpmLock.ts';
-
 import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from './electronRuntimeContract.ts';
 import { afterExtract } from './flipElectronFuses.ts';
+import { parsePnpmLock } from './pnpmLock.ts';
 
 type ElectronManifest = ElectronRuntimeContract;
 

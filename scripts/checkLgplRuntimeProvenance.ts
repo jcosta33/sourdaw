@@ -7,12 +7,12 @@ import { fileURLToPath } from 'node:url';
 
 import ts from 'typescript';
 
-import { parsePnpmLock } from './pnpmLock.ts';
 import {
     FAUST_SOURCE_ARCHIVE,
     FAUST_SOURCE_SHA256,
     validateFaustCorrespondingSource,
 } from './faustCorrespondingSource.ts';
+import { parsePnpmLock } from './pnpmLock.ts';
 
 type Source = {
     id: string;

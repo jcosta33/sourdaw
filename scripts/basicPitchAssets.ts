@@ -64,10 +64,11 @@ export function basicPitchAssets(): Plugin {
             if (id === moduleId) {
                 return resolvedModuleId;
             }
+            return null;
         },
         load(id) {
             if (id !== resolvedModuleId) {
-                return;
+                return null;
             }
             if (serving) {
                 return `export const modelUrl = ${JSON.stringify(`${base}${directory}/model.json`)}`;
