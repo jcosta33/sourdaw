@@ -5,6 +5,7 @@ import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { checkpointSocketRows } from '../gitCheckpointSocket';
+import { checkpointMountOptions } from '../gitCheckpointMount';
 
 const runner = resolve('scripts/gitCheckpoint.ts');
 const roots: string[] = [];
@@ -22,7 +23,9 @@ function fixture() {
     };
     const git = (...args: string[]) => {
         const result = spawnSync('git', args, { cwd: root, env, encoding: 'utf8' });
-        if (result.status !== 0) throw new Error(result.stderr);
+        if (result.status !== 0) {
+            throw new Error(result.stderr);
+        }
         return result.stdout.trim();
     };
     git('init', '-q');
@@ -31,14 +34,14 @@ function fixture() {
     return { root, env, git, receiptRoot };
 }
 function run(root: string, env: NodeJS.ProcessEnv, ...args: string[]) {
-    return new Promise<{ code: number | null; stderr: string }>((resolveResult, reject) => {
+    return new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
         const child = spawn(process.execPath, [runner, ...args], { cwd: root, env });
         let stderr = '';
         child.stderr.on('data', (data) => {
             stderr += data.toString();
         });
         child.on('error', reject);
-        child.on('close', (code) => resolveResult({ code, stderr }));
+        child.on('close', (code) => resolve({ code, stderr }));
     });
 }
 function receipt(stderr: string) {
@@ -47,7 +50,9 @@ function receipt(stderr: string) {
     return { path: path!, value: JSON.parse(readFileSync(path!, 'utf8')) };
 }
 afterEach(() => {
-    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+    for (const root of roots.splice(0)) {
+        rmSync(root, { recursive: true, force: true });
+    }
 });
 describe('Git checkpoint diagnostic', () => {
     it('preserves normal hook execution and captures source, index and HEAD around real Git writes', async () => {
@@ -76,6 +81,15 @@ describe('Git checkpoint diagnostic', () => {
         );
         expect(commitReceipt.syscallPath).toContain('unavailable');
         expect(JSON.stringify(commitReceipt)).not.toContain('test: checkpoint');
+    });
+    it('records source filenames that are object prototype keys', async () => {
+        const { root, env } = fixture();
+        writeFileSync(join(root, '__proto__'), 'source');
+        const result = await run(root, env, 'add', '--', '__proto__');
+        expect(result.code).toBe(0);
+        const observed = receipt(result.stderr).value;
+        expect(Object.hasOwn(observed.before.sources, '__proto__')).toBe(true);
+        expect(observed.before.sources['__proto__'].sha256).toMatch(/^[a-f0-9]{64}$/);
     });
     it('retains the first failed command stderr and status without retrying', async () => {
         const { root, env, git } = fixture();
@@ -142,6 +156,14 @@ exit 23
             { encoding: 'utf8' }
         );
         expect(JSON.parse(absent.stdout).sample).toBeNull();
+    });
+    it('selects mount options only for the filesystem reported by df', () => {
+        const df = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/disk3s1 1000 100 900 10% /work';
+        const target = '/dev/disk3s1 on /work (apfs, local, read-only)';
+        const mounts = `/dev/disk3s10 on /other (apfs, local)\n${target}`;
+        expect(checkpointMountOptions(df, mounts)).toBe(target);
+        expect(checkpointMountOptions(df, '/dev/disk3s10 on /other (apfs, local)')).toBeNull();
+        expect(checkpointMountOptions(null, mounts)).toBeNull();
     });
     it('selects only the named socket and the exact connected writer pair', () => {
         const header = 'Address Type Recv-Q Send-Q Inode Conn Refs Nextref rxbytes txbytes rhiwat shiwat process:pid';
@@ -211,7 +233,9 @@ exit 23
         } finally {
             for (const connection of connections) connection.destroy();
             server.close();
-            if (child.exitCode === null) child.kill();
+            if (child.exitCode === null) {
+                child.kill();
+            }
         }
     }, 30000);
 });

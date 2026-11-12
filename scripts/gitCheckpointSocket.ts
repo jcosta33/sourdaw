@@ -6,7 +6,9 @@ export function checkpointSocketRows(output: string, socket: string, pid: number
         const fields = line.trim().split(/\s+/);
         return fields[12] === `git:${pid}`;
     });
-    if (!header || !writer) return null;
+    if (!header || !writer) {
+        return null;
+    }
     const writerFields = writer.trim().split(/\s+/);
     const peer = lines.find((line) => {
         const fields = line.trim().split(/\s+/);
