@@ -1,0 +1,25 @@
+.agents/decisions/0054-proportional-machine-checked-review-floor.md
+  s_1e5aa73c944d6f::t_9107ea524d2f30 5
+.agents/decisions/0057-fresh-review-draws-stay-within-the-low-cost-tiers.md
+  s_1e5aa73c944d6f::t_0a4a95fe0f8018 8-9
+.agents/skills/delivery-orchestration/SKILL.md
+  s_1e5aa73c944d6f::t_96d87f2734126c 495-496
+.agents/skills/delivery-orchestration/references/closure-and-retirement.md
+  s_1e5aa73c944d6f::t_6c39302c8fef19 30,36-38,45-51,74,76-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "51bfa5591c6335f7be1da704663728c4057ffc54",
+  "prompts": {},
+  "sessions": {
+    "s_1e5aa73c944d6f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ecb39bb6-10c2-4e53-aaea-b7cd666f8172",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
