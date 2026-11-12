@@ -48,10 +48,10 @@ function commitRedoTransition(
  * a committed error already wrote and must never be re-applied.
  */
 type RedoOutcome =
-    | { readonly status: 'applied' }
+    | { readonly status: 'applied'; readonly committed: boolean }
     | { readonly status: 'not-applied' }
     | { readonly status: 'conflict' }
-    | { readonly status: 'committed'; readonly error: AppActionCommittedError };
+    | { readonly status: 'committed'; readonly committed: boolean; readonly error: AppActionCommittedError };
 
 /**
  * Hands one replayed entry's inverse to its own handler, which reconciles the
@@ -122,11 +122,13 @@ async function replayActionGroupRedo(entries: readonly UndoEntry[]): Promise<Red
         skipMacroRecording: true,
         source: entries[0]?.source,
     };
-    if (entries[0]?.source !== 'ai') {
-        options.onCommitted = (committedActions) => {
+    let committed = false;
+    options.onCommitted = (committedActions) => {
+        committed = committedActions.length > 0;
+        if (entries[0]?.source !== 'ai') {
             recordCommittedGroupActions(entries, committedActions);
-        };
-    }
+        }
+    };
     const result = await executeAppActionBatch(actions, options);
     if (result.status === 'conflicted' || result.status === 'cancelled') {
         return { status: 'conflict' };
@@ -141,19 +143,21 @@ async function replayActionGroupRedo(entries: readonly UndoEntry[]): Promise<Red
     if (result.status === 'ambiguous') {
         return {
             status: 'committed',
+            committed: true,
             error: reconciliationError ?? new AppActionCommittedError('appActionBatch', new Error(result.reason)),
         };
     }
     if (result.status === 'committed-with-warning') {
         return {
             status: 'committed',
+            committed: true,
             error: reconciliationError ?? new AppActionCommittedError('appActionBatch', new Error(result.warning)),
         };
     }
     if (reconciliationError) {
-        return { status: 'committed', error: reconciliationError };
+        return { status: 'committed', committed, error: reconciliationError };
     }
-    return { status: 'applied' };
+    return { status: 'applied', committed };
 }
 
 function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
@@ -165,7 +169,7 @@ async function replayRedo(entry: UndoEntry): Promise<RedoOutcome> {
         if (entry.redo() === REDO_NOT_APPLIED) {
             return { status: 'not-applied' };
         }
-        return { status: 'applied' };
+        return { status: 'applied', committed: true };
     }
 
     const options: NonNullable<Parameters<typeof executeAppAction>[1]> = {
@@ -174,11 +178,13 @@ async function replayRedo(entry: UndoEntry): Promise<RedoOutcome> {
         skipMacroRecording: true,
         source: entry.source,
     };
-    if (entry.source !== 'ai') {
-        options.onCommitted = () => {
+    let committed = false;
+    options.onCommitted = () => {
+        committed = true;
+        if (entry.source !== 'ai') {
             recordAction(entry.action);
-        };
-    }
+        }
+    };
 
     try {
         await executeAppAction(entry.redoAction ?? entry.action, options);
@@ -193,16 +199,16 @@ async function replayRedo(entry: UndoEntry): Promise<RedoOutcome> {
             // which runs it ahead of both committed outcomes. Skipping it here leaves a
             // replayed creation with the clip restored and its take lane not, and the
             // next undo then recaptures that empty lane over the entry's capture.
-            return { status: 'committed', error: reconcileAfterRedo(entry) ?? error };
+            return { status: 'committed', committed: true, error: reconcileAfterRedo(entry) ?? error };
         }
         throw error;
     }
 
     const reconciliationError = reconcileAfterRedo(entry);
     if (reconciliationError) {
-        return { status: 'committed', error: reconciliationError };
+        return { status: 'committed', committed, error: reconciliationError };
     }
-    return { status: 'applied' };
+    return { status: 'applied', committed };
 }
 
 /** One member of a redo step target: an action entry whose replay resolves to
@@ -249,12 +255,32 @@ function settleWithoutRedo({
     }
 }
 
+export type RedoResult = {
+    /** Whether this call re-applied a history unit rather than refusing or only purging inert entries. */
+    readonly headConsumed: boolean;
+};
+
+function completeRedo(outcome: RedoOutcome, onCommitted?: () => void): RedoResult {
+    try {
+        if ((outcome.status === 'committed' || outcome.status === 'applied') && outcome.committed) {
+            onCommitted?.();
+        }
+    } catch (error) {
+        throw outcome.status === 'committed' ? outcome.error : error;
+    }
+    if (outcome.status === 'committed') {
+        throw outcome.error;
+    }
+    return { headConsumed: true };
+}
+
 type StepOverRedoInput = {
     readonly initialFuture: readonly UndoEntry[];
     /** The running `future`, positioned at the conflicted unit's first entry. */
     readonly futureAtConflict: readonly UndoEntry[];
     /** The conflicted unit's entries, which stay at the head of `future`, retryable. */
     readonly conflictedEntries: readonly UndoEntry[];
+    readonly onCommitted?: (() => void) | undefined;
 };
 
 /**
@@ -293,11 +319,12 @@ async function stepOverConflictedRedoOrSettle({
     initialFuture,
     futureAtConflict,
     conflictedEntries,
-}: StepOverRedoInput): Promise<void> {
+    onCommitted,
+}: StepOverRedoInput): Promise<RedoResult> {
     const next = takeRedoCandidate(futureAtConflict.slice(conflictedEntries.length));
     if (!next || !next.entries.every(isRedoStepOverCapableMember)) {
         settleWithoutRedo({ initialFuture, futureAtConflict });
-        return;
+        return { headConsumed: false };
     }
 
     const outcome = next.head.groupId ? await executeActionGroupRedo(next.entries) : await executeRedo(next.head);
@@ -308,27 +335,25 @@ async function stepOverConflictedRedoOrSettle({
         // notification already reported the blocked redo. No third unit is
         // touched.
         settleWithoutRedo({ initialFuture, futureAtConflict });
-        return;
+        return { headConsumed: false };
     }
     if (outcome.status === 'not-applied') {
         // Unreachable — the gate admits only action entries whose replay runs
         // a flagged handler — but settling keeps everything in place rather
         // than guess at a purge.
         settleWithoutRedo({ initialFuture, futureAtConflict });
-        return;
+        return { headConsumed: false };
     }
 
     notifySkippedRedoConflict(undoEntryLabel(conflictedEntries[0]!), undoEntryLabel(next.head));
     commitRedoTransition(initialFuture, [...conflictedEntries, ...next.behind], next.entries);
-    if (outcome.status === 'committed') {
-        throw outcome.error;
-    }
+    return completeRedo(outcome, onCommitted);
 }
 
-async function redoImpl(stepOverConflicts: boolean): Promise<void> {
+async function redoImpl(stepOverConflicts: boolean, onCommitted?: () => void): Promise<RedoResult> {
     const stored = undoStore.value;
     if (!stored || stored.future.length === 0) {
-        return;
+        return { headConsumed: false };
     }
     const state = normalizeSingletonUndoGroups(stored);
     if (state !== stored) {
@@ -361,22 +386,19 @@ async function redoImpl(stepOverConflicts: boolean): Promise<void> {
                     notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
                     if (!stepOverConflicts) {
                         settleWithoutRedo({ initialFuture: state.future, futureAtConflict: future });
-                        return;
+                        return { headConsumed: false };
                     }
-                    await stepOverConflictedRedoOrSettle({
+                    return stepOverConflictedRedoOrSettle({
                         initialFuture: state.future,
                         futureAtConflict: future,
                         conflictedEntries: groupEntries,
+                        onCommitted,
                     });
-                    return;
                 }
 
                 future = future.slice(groupEntries.length);
                 commitRedoTransition(state.future, future, groupEntries);
-                if (outcome.status === 'committed') {
-                    throw outcome.error;
-                }
-                return;
+                return completeRedo(outcome, onCommitted);
             }
         }
 
@@ -390,23 +412,20 @@ async function redoImpl(stepOverConflicts: boolean): Promise<void> {
             // the gate admits that replay.
             if (!stepOverConflicts) {
                 settleWithoutRedo({ initialFuture: state.future, futureAtConflict: future });
-                return;
+                return { headConsumed: false };
             }
-            await stepOverConflictedRedoOrSettle({
+            return stepOverConflictedRedoOrSettle({
                 initialFuture: state.future,
                 futureAtConflict: future,
                 conflictedEntries: [entry],
+                onCommitted,
             });
-            return;
         }
 
         future = remainingFuture;
         if (outcome.status === 'applied' || outcome.status === 'committed') {
             commitRedoTransition(state.future, future, [entry]);
-            if (outcome.status === 'committed') {
-                throw outcome.error;
-            }
-            return;
+            return completeRedo(outcome, onCommitted);
         }
         // Not-applied entry: dropped; keep scanning.
     }
@@ -415,6 +434,7 @@ async function redoImpl(stepOverConflicts: boolean): Promise<void> {
     if (future.length !== state.future.length) {
         commitRedoTransition(state.future, future, []);
     }
+    return { headConsumed: false };
 }
 
 export type RedoOptions = {
@@ -428,8 +448,10 @@ export type RedoOptions = {
      * move tells that nothing was applied.
      */
     readonly stepOverConflicts?: boolean;
+    /** Called once after a replay applies, including a committed error, but never for a no-write replay. */
+    readonly onCommitted?: () => void;
 };
 
-export function redo(options: RedoOptions = {}): Promise<void> {
-    return runUndoRedoExclusive(() => redoImpl(options.stepOverConflicts ?? true));
+export async function redo(options: RedoOptions = {}): Promise<void> {
+    await runUndoRedoExclusive(() => redoImpl(options.stepOverConflicts ?? true, options.onCommitted));
 }

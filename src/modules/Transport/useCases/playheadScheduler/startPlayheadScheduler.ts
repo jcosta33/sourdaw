@@ -66,6 +66,7 @@ import {
     SCHEDULE_AHEAD_SECONDS,
 } from './projectLoopSeamWindow';
 import { readNativeEngineCursorBeats } from './readNativeEngineCursorBeats';
+import { retireSupersededMidiMedia } from './retireSupersededMidiMedia';
 import { schedulerLookAheadBeats } from './schedulerLookAheadBeats';
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 import { schedulerTimingDiagnostics } from './schedulerTimingDiagnostics';
@@ -417,6 +418,7 @@ export function startPlayheadScheduler(
     resetMetronomeBeat(state.playheadPosition);
 
     let previousTempo = state.tempo;
+    let previousFrozenMidiOwners = new Map<string, string>();
     const grainMs = state.scheduleGrainMs;
     schedulerTimingDiagnostics.reset(grainMs);
 
@@ -904,6 +906,25 @@ export function startPlayheadScheduler(
         }
 
         const tracks = trackStore.value?.tracks ?? [];
+        const currentFrozenMidiOwners = new Map<string, string>();
+        for (const track of tracks) {
+            if (track.kind === 'midi' && track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
+                currentFrozenMidiOwners.set(track.id, `${track.id}:${track.freezeState.frozenBufferId}`);
+            }
+        }
+        const changedMidiMediaTrackIds = new Set<string>();
+        for (const trackId of new Set([...previousFrozenMidiOwners.keys(), ...currentFrozenMidiOwners.keys()])) {
+            if (previousFrozenMidiOwners.get(trackId) !== currentFrozenMidiOwners.get(trackId)) {
+                changedMidiMediaTrackIds.add(trackId);
+            }
+        }
+        const unfrozeMidiMedia = tracks.some(
+            (track) =>
+                track.kind === 'midi' &&
+                !currentFrozenMidiOwners.has(track.id) &&
+                previousFrozenMidiOwners.has(track.id)
+        );
+        previousFrozenMidiOwners = currentFrozenMidiOwners;
         // On a scheduled-seam tick the audible transport is still finishing the
         // dying pass, so the follow-action scan covers its remaining advance —
         // the same window a non-seam tick would scan — rather than the incoming
@@ -1632,6 +1653,60 @@ export function startPlayheadScheduler(
             windowBufferPool = loopAudioSchedule.poolAt(schedulerSession.pendingSeam.seamAudioTime, true);
         }
         const bufferInput = { transport: current, changes, position: publishedBeat, audioTime: now };
+        function retireMidiMedia(pool: typeof dyingBufferPool): boolean {
+            if (loopAudioSchedule.active || !cancellation.isCurrent()) {
+                return false;
+            }
+            return retireSupersededMidiMedia(
+                trackStore.value?.tracks.filter((track) => track.kind === 'midi') ?? [],
+                ctx,
+                pool?.audio ?? schedulerSession.scheduledAudioClips,
+                pool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                pool?.sources ?? schedulerSession.activeAudioSources
+            );
+        }
+        function reconcileCompletedMidiTrack(
+            pool: typeof dyingBufferPool,
+            fromBeat: number,
+            toBeat: number,
+            position: number,
+            trackId: string
+        ): void {
+            if (
+                !current ||
+                loopAudioSchedule.active ||
+                !cancellation.isCurrent() ||
+                !changedMidiMediaTrackIds.has(trackId)
+            ) {
+                return;
+            }
+            const track = trackStore.value?.tracks.find(
+                (candidate) => candidate.id === trackId && candidate.kind === 'midi'
+            );
+            if (!track) {
+                return;
+            }
+            const audio = pool?.audio ?? schedulerSession.scheduledAudioClips;
+            const frozen = pool?.frozen ?? schedulerSession.scheduledFrozenTracks;
+            const sources = pool?.sources ?? schedulerSession.activeAudioSources;
+            // Finish this track's media handoff before a later MIDI rack can
+            // await. The final whole-window pass remains responsible for every
+            // other track; these dedup sets keep this emission single-shot.
+            scheduleAudioClips(
+                fromBeat,
+                toBeat,
+                position,
+                audio,
+                frozen,
+                sources,
+                current,
+                initial ? initialSchedulingAnchor : undefined,
+                unfrozeMidiMedia,
+                trackId
+            );
+            retireSupersededMidiMedia([track], ctx, audio, frozen, sources);
+        }
+        let mediaOwnerTransition: boolean;
         const initialMidiEmissions: Promise<void>[] = [];
         const initialEmissionErrors: unknown[] = [];
         function observeInitialMidi(emission: Promise<void>): void {
@@ -1725,7 +1800,15 @@ export function startPlayheadScheduler(
                     reemitAfterEdit || skipsStalledSpan || seam.afterLateWrap,
                     initial ? preparedMidi?.midiWindow(seam.passHighWater, seam.passUpTo) : undefined,
                     initial ? initialSchedulingAnchor : undefined,
-                    eventSchedulingAnchor
+                    eventSchedulingAnchor,
+                    (trackId) =>
+                        reconcileCompletedMidiTrack(
+                            dyingBufferPool,
+                            seam.passHighWater,
+                            seam.passUpTo - BEAT_EPSILON,
+                            seam.passPosition,
+                            trackId
+                        )
                 )
             );
             if (initial) {
@@ -1736,6 +1819,7 @@ export function startPlayheadScheduler(
             if (!cancellation.isCurrent()) {
                 return;
             }
+            mediaOwnerTransition = retireMidiMedia(dyingBufferPool) || unfrozeMidiMedia;
             // Audio clips read their window end inclusively, so shave one beat
             // epsilon: a clip sitting exactly on loopEnd is post-loopEnd
             // material and must not be started by the dying pass — the seam
@@ -1750,7 +1834,8 @@ export function startPlayheadScheduler(
                     dyingBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
                     dyingBufferPool?.sources ?? schedulerSession.activeAudioSources,
                     current,
-                    initial ? initialSchedulingAnchor : undefined
+                    initial ? initialSchedulingAnchor : undefined,
+                    mediaOwnerTransition
                 );
             } else {
                 loopAudioSchedule.recoverMappedWindow(dyingBufferPool, seam.passHighWater, seam.passUpTo, bufferInput);
@@ -1810,7 +1895,15 @@ export function startPlayheadScheduler(
                     true,
                     initial ? preparedMidi?.midiWindow(current.loopStart, seam.wrappedUpTo) : undefined,
                     initial ? initialSchedulingAnchor : undefined,
-                    eventSchedulingAnchor
+                    eventSchedulingAnchor,
+                    (trackId) =>
+                        reconcileCompletedMidiTrack(
+                            incomingBufferPool,
+                            current.loopStart,
+                            seam.wrappedUpTo,
+                            newPosition,
+                            trackId
+                        )
                 )
             );
             if (initial) {
@@ -1821,6 +1914,7 @@ export function startPlayheadScheduler(
             if (!cancellation.isCurrent()) {
                 return;
             }
+            mediaOwnerTransition = retireMidiMedia(incomingBufferPool) || unfrozeMidiMedia;
             if (!loopAudioSchedule.active) {
                 scheduleAudioClips(
                     current.loopStart,
@@ -1830,7 +1924,8 @@ export function startPlayheadScheduler(
                     incomingBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
                     incomingBufferPool?.sources ?? schedulerSession.activeAudioSources,
                     current,
-                    initial ? initialSchedulingAnchor : undefined
+                    initial ? initialSchedulingAnchor : undefined,
+                    mediaOwnerTransition
                 );
             } else {
                 loopAudioSchedule.recoverMappedWindow(
@@ -1874,7 +1969,15 @@ export function startPlayheadScheduler(
                     lateWrap || jumpToPosition !== null || reemitAfterEdit || skipsStalledSpan,
                     initial ? preparedMidi?.midiWindow(schedulerSession.lastScheduledBeat, scheduleUpTo) : undefined,
                     initial ? initialSchedulingAnchor : undefined,
-                    eventSchedulingAnchor
+                    eventSchedulingAnchor,
+                    (trackId) =>
+                        reconcileCompletedMidiTrack(
+                            windowBufferPool,
+                            schedulerSession.lastScheduledBeat,
+                            scheduleUpTo,
+                            schedulerSession.accumulatedPosition,
+                            trackId
+                        )
                 )
             );
             if (initial) {
@@ -1885,6 +1988,7 @@ export function startPlayheadScheduler(
             if (!cancellation.isCurrent()) {
                 return;
             }
+            mediaOwnerTransition = retireMidiMedia(windowBufferPool) || unfrozeMidiMedia;
             if (!loopAudioSchedule.active) {
                 scheduleAudioClips(
                     schedulerSession.lastScheduledBeat,
@@ -1894,7 +1998,8 @@ export function startPlayheadScheduler(
                     windowBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
                     windowBufferPool?.sources ?? schedulerSession.activeAudioSources,
                     current,
-                    initial ? initialSchedulingAnchor : undefined
+                    initial ? initialSchedulingAnchor : undefined,
+                    mediaOwnerTransition
                 );
             } else {
                 loopAudioSchedule.recoverMappedWindow(

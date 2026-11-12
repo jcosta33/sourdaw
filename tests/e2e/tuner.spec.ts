@@ -46,7 +46,7 @@ test.describe('Tuner (Scoring device panel)', () => {
         await expect(page.getByRole('img', { name: 'Needle tuner display' })).toBeVisible();
 
         // Default A4 reference is 440 Hz, reflected on the reference knob.
-        const referenceKnob = page.getByRole('slider', { name: 'Parameter control' });
+        const referenceKnob = page.getByRole('slider', { name: 'Concert A reference' });
         await expect(referenceKnob).toHaveAttribute('aria-valuenow', '440');
     });
 
@@ -74,7 +74,7 @@ test.describe('Tuner (Scoring device panel)', () => {
     test('Can adjust the A4 reference pitch via keyboard and the displayed value updates', async ({ page }) => {
         await open_scoring_panel(page);
 
-        const referenceKnob = page.getByRole('slider', { name: 'Parameter control' });
+        const referenceKnob = page.getByRole('slider', { name: 'Concert A reference' });
         await expect(referenceKnob).toHaveAttribute('aria-valuenow', '440');
 
         await referenceKnob.focus();

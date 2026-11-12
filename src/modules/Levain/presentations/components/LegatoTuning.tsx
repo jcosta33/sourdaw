@@ -139,6 +139,7 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
             <Row align="end" gap={3}>
                 <Stack align="center">
                     <RotaryKnob
+                        aria-label="Legato slow threshold"
                         value={config.slowThresholdMs}
                         onChange={(v) => update({ slowThresholdMs: v })}
                         min={150}
@@ -154,6 +155,7 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
 
                 <Stack align="center">
                     <RotaryKnob
+                        aria-label="Legato fast threshold"
                         value={config.fastThresholdMs}
                         onChange={(v) => update({ fastThresholdMs: v })}
                         min={30}
@@ -169,6 +171,7 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
 
                 <Stack align="center" className="border-l border-border/15 pl-3">
                     <RotaryKnob
+                        aria-label="Portamento velocity threshold"
                         value={config.portamentoVelocityThreshold}
                         onChange={(v) => update({ portamentoVelocityThreshold: Math.round(v) })}
                         min={0}

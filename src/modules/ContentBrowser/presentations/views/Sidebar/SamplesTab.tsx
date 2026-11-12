@@ -61,14 +61,6 @@ export const SamplesTab = ({ samples, favorites, onToggleFavorite, preview }: Sa
                                     event.dataTransfer.setData(SAMPLE_DRAG_MIME_TYPE, JSON.stringify(data));
                                     event.dataTransfer.effectAllowed = 'copy';
                                 }}
-                                onClick={() =>
-                                    void addBrowserSample({
-                                        id: sample.id,
-                                        name: sample.name,
-                                        audioBufferId: sample.audioBufferId,
-                                        durationSeconds: sample.durationSeconds,
-                                    })
-                                }
                                 title="Drag to timeline or click to add"
                             >
                                 <DawPickerRow
@@ -93,7 +85,25 @@ export const SamplesTab = ({ samples, favorites, onToggleFavorite, preview }: Sa
                                             <File className="size-3 text-muted-foreground" />
                                         </Row>
                                     }
-                                    heading={sample.name}
+                                    heading={
+                                        <Button
+                                            variant="bare"
+                                            size="sm"
+                                            type="button"
+                                            className="w-full justify-start text-left focus-visible:ring-inset"
+                                            aria-label={`Add ${sample.name} to timeline`}
+                                            onClick={() =>
+                                                void addBrowserSample({
+                                                    id: sample.id,
+                                                    name: sample.name,
+                                                    audioBufferId: sample.audioBufferId,
+                                                    durationSeconds: sample.durationSeconds,
+                                                })
+                                            }
+                                        >
+                                            {sample.name}
+                                        </Button>
+                                    }
                                     description={sample.duration}
                                     endSlot={
                                         <Button
@@ -101,7 +111,7 @@ export const SamplesTab = ({ samples, favorites, onToggleFavorite, preview }: Sa
                                             size="bare"
                                             type="button"
                                             className={cn(
-                                                'size-3 opacity-0 transition-opacity group-hover:opacity-100',
+                                                'size-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
                                                 favorites.has(sample.id) && 'opacity-100'
                                             )}
                                             onClick={(event) => {

@@ -12,7 +12,6 @@ import {
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 import {
-    reconstructReviewRounds,
     readPublicReviewComments,
     readPublicReviews,
     type PublicReview,
@@ -23,7 +22,7 @@ import { changedReviewPaths, formatReviewDiffSummary, summarizeReviewDiff } from
 import { planReviewRisk } from './reviewRiskPolicy.ts';
 import {
     REVIEW_ROUND_FREEZE_THRESHOLD,
-    countReviewerRequestChangesRounds,
+    countReviewerRequestChangesRoundsInHistory,
     reviewRoundFreezeFlag,
 } from './reviewRoundEscalation.ts';
 
@@ -147,13 +146,12 @@ function readRequestChangesRounds(
         return 'unreadable';
     }
     try {
-        const reconstruction = reconstructReviewRounds(
+        return countReviewerRequestChangesRoundsInHistory(
             number,
             { state: pullRequest.state, head: pullRequest.headRefOid },
             port.reviews(number),
             port.reviewComments(number)
         );
-        return countReviewerRequestChangesRounds(reconstruction);
     } catch {
         return 'unreadable';
     }

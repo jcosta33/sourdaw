@@ -42,6 +42,9 @@ import {
     assertSameApprovalContext,
     publicationApprovalContext,
     readLiveApprovalContext,
+    readLiveReviewComparison,
+    readPublicationPullRequest,
+    type LiveReviewComparison,
 } from './reviewApprovalContext.ts';
 import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
 import { assertReviewCommentLinesInBundleDiff } from './reviewCommentDiffPreflight.ts';
@@ -71,6 +74,7 @@ import {
     type PublishedReviewComment,
     type RemotePublishedReview,
 } from './reviewPublicationRemoteInspection.ts';
+import { assertPublicReviewTextSafe } from './reviewStructuralAdmission.ts';
 
 export type { PublishedReviewComment } from './reviewPublicationRemoteInspection.ts';
 
@@ -99,12 +103,23 @@ export const EXPECTED_REVIEW_STATE: Record<ReviewEvent, string> = {
 
 export type PublishReviewPort = {
     primaryRoot: () => string;
-    pullRequest: (number: number) => { state: string; head: string; labels?: AuthorshipLabel[] };
+    pullRequest: (number: number) => {
+        state: string;
+        head: string;
+        labels?: AuthorshipLabel[];
+        /** GitHub's `createdAt`; a plan-less bundle publishes only for a pull request opened before plans existed. */
+        createdAt?: string;
+    };
     readReviewJson: (path: string) => unknown;
     bundleFileExists: (path: string) => boolean;
     readBundleDiff: (path: string) => string;
     writeBundleText?: (path: string, contents: string) => void;
     assertApprovalContext?: (number: number, head: string, bundle: string) => ReviewBundleContext;
+    /**
+     * The live merge base, patch and numstat for the head, read from git objects. A fresh
+     * plan-carrying publication binds its plan and `diff.patch` to them before any remote write.
+     */
+    liveReviewComparison?: (number: number, head: string) => LiveReviewComparison;
     reviewState?: (number: number, expectedHead: string) => ReviewState;
     postReview: (input: {
         number: number;
@@ -229,6 +244,9 @@ function prepareReviewPublication(
         assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document });
         assertReviewRoundPublicationAdmitted({ number, head, bundle, port });
     }
+    if (actorNodeId === ORCHESTRATOR_USER_NODE_ID || !replaysRecordedPublication) {
+        assertPublicReviewTextSafe(document);
+    }
     // The approval context and the comment preflight run before the dossier publication, and the
     // order matters: a refusal here must not have written the canonical dossier.
     const approvalContext = publicationApprovalContext(number, head, document, port);
@@ -242,7 +260,7 @@ function prepareReviewPublication(
         assertApprovalWithoutOpenThreads(number, head, port);
     }
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
-        prepareReviewDossierPublication({ number, head, bundle, document, port });
+        prepareReviewDossierPublication({ number, head, createdAt: pullRequest.createdAt, bundle, document, port });
     }
     return {
         head,
@@ -414,36 +432,7 @@ export function shellPort(
     const gh = (args: string[], input?: string) => capture('gh', args, { cwd: primaryRoot, env: session.env, input });
     return {
         primaryRoot: () => primaryRoot,
-        pullRequest: (number) => {
-            const pullRequest = parseJson<{ state?: unknown; headRefOid?: unknown; labels?: unknown }>(
-                gh(['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'state,headRefOid,labels']),
-                'review publication pull request'
-            );
-            if (typeof pullRequest.state !== 'string' || typeof pullRequest.headRefOid !== 'string') {
-                fail('review publication pull request is unreadable');
-            }
-            // `gh pr view --json labels` answers [{name, description}]; the diversity check
-            // identifies the authorship label by its `Authored by ` description fence, so both
-            // fields travel together. Absent labels mean not-comparable, never fatal.
-            const labels = Array.isArray(pullRequest.labels)
-                ? pullRequest.labels.flatMap((label): AuthorshipLabel[] => {
-                      if (typeof label !== 'object' || label === null) {
-                          return [];
-                      }
-                      const name = (label as Record<string, unknown>).name;
-                      if (typeof name !== 'string') {
-                          return [];
-                      }
-                      const description = (label as Record<string, unknown>).description;
-                      const entry: AuthorshipLabel = { name };
-                      if (typeof description === 'string') {
-                          entry.description = description;
-                      }
-                      return [entry];
-                  })
-                : undefined;
-            return { state: pullRequest.state, head: pullRequest.headRefOid, labels };
-        },
+        pullRequest: (number) => readPublicationPullRequest(number, gh),
         reviewState: (number, head) => readPullRequestReviewState(number, head, REQUIRED_REPOSITORY, gh),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
         bundleFileExists: (path) => existsSync(path),
@@ -451,6 +440,7 @@ export function shellPort(
         writeBundleText: (path, contents) => writeFileSync(path, contents),
         assertApprovalContext: (number, head, bundle) =>
             readLiveApprovalContext(primaryRoot, number, head, bundle, session, capture),
+        liveReviewComparison: (number, head) => readLiveReviewComparison(primaryRoot, number, head, session, capture),
         postReview: ({ number, commitId, event, body, comments }) => {
             const input = reviewPublicationPayload({ commitId, event, body, comments });
             markRemoteMutationAttempt();

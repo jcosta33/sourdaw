@@ -428,7 +428,7 @@ When a repository returns something that is not a pure model, the use case still
 
 Cross-module **named types** for events belong in **`events/`** and may be re-exported from the `events/index.ts` barrel like any other event payload contract.
 
-See the `architecture-violations` skill (§6) for detailed rules and examples.
+See rule 6 of the `architecture-violations` skill, "A use case is a typed function, not a re-export", for detailed rules and examples.
 
 ### What a use case file may and may not export
 
@@ -437,7 +437,7 @@ A use case file is a behavioural contract. It exports a single function (rule: *
 What a use case file **must never** export, under any circumstance:
 
 - **Model types or model values** — anything that lives in `models/`. Models are private to the owning module and never cross any other folder. A use case re-exporting a model type (`export type { Track } from '../models/Track'`) launders the private boundary through a fake public path. If a use case needs to expose data shaped like a model, it defines its **own local DTO** with only the fields the contract requires.
-- **Repository types or repository values** — anything from `repositories/`. Repositories are I/O internals. Pure re-exports like `export { saveX } from '../repositories/...'` are forbidden (§6.2 of the `architecture-violations` skill); the same rule applies to `export type`.
+- **Repository types or repository values** — anything from `repositories/`. Repositories are I/O internals. Pure re-exports like `export { saveX } from '../repositories/...'` are forbidden (rule 6 of the `architecture-violations` skill, "A use case is a typed function, not a re-export"); the same rule applies to `export type`.
 - **Types from `services/`, `validators/`, `transformers/`, `engine/`, `errors/`** — these folders are private. Their types do not cross the module boundary in any form, including via a use case file.
 
 Acceptable type exports from a module's public surface:
@@ -923,7 +923,7 @@ Test-support code that production code does not load: deterministic fakes and fi
 
 ## 4.15 Late binding: `*Port`, `configure*`, `init*`, `*ProjectAccess`
 
-A module sometimes needs a collaborator it cannot import: the import would close a cycle (`no-circular`), drag a heavy module graph into every consumer, or reach a foreign module that is not its to read. The composition root can import both sides (`app-to-modules-public-surface-only`), so it supplies the dependency at startup and the module holds only an empty slot.
+A module sometimes needs a collaborator it cannot import: the import would close a cycle (`no-circular`), drag a heavy module graph into every consumer, or reach a foreign module that is not its to read. The composition root can import both sides (`external-module-contracts-only`), so it supplies the dependency at startup and the module holds only an empty slot.
 
 | Piece                 | Where                                   | Role                                                                                                                                                       |
 | --------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |

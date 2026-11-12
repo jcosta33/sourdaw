@@ -111,7 +111,7 @@ export function composeIssueTitle(prefix: string, title: string, scopeToken?: st
 
 function applyScopeToken(text: string, scopeToken: string | undefined): string {
     if (scopeToken !== undefined && text.includes('(scope)')) {
-        return text.replace('(scope)', `(${scopeToken})`);
+        return text.replace('(scope)', () => `(${scopeToken})`);
     }
     return text;
 }
@@ -138,6 +138,7 @@ export function renderIssueSubmission(
     if (titleSubject(input.title) === '') {
         fail('title is empty');
     }
+    assertKnownFields(form, input.fields);
     const sections: string[] = [];
     const labels = [...form.labels];
     for (const field of form.fields) {
@@ -161,6 +162,14 @@ export function renderIssueSubmission(
         labels,
         body: `${sections.join('\n\n')}\n`,
     };
+}
+
+function assertKnownFields(form: IssueForm, fields: Record<string, string>): void {
+    const known = new Set(form.fields.map((field) => field.id));
+    const unknown = Object.keys(fields).filter((key) => !known.has(key));
+    if (unknown.length > 0) {
+        fail(`unknown field for this form: ${unknown.join(', ')}`);
+    }
 }
 
 function routeIssueSubmission(submission: IssueSubmission, project: string | undefined): IssueSubmission {

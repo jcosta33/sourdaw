@@ -2,17 +2,18 @@
 name: test-design
 description: >-
     Design tests that observe their claimed subject and fail when it breaks.
-    ALWAYS apply when writing or changing an assertion, a spec's setup, fixture or
-    waiting logic, a Vitest or Playwright case, or a Rust test, and when reviewing
-    whether a test observes what its name claims — even if the change looks like a
-    one-line tweak to an existing spec. Skip questions of where a spec file lives
+    ALWAYS apply when deciding what a case asserts, choosing its fixtures, writing
+    its waits, deciding where a test double's boundary sits, writing or changing a
+    Vitest or Playwright case or a Rust test, and when reviewing whether a test
+    observes what its name claims — even if the change looks like a one-line tweak
+    to an existing spec. Skip file placement, naming, and mock-seam mechanics
     (testing-file-layout), driving the live UI ad hoc (playwright-ui-bridge), and
     production code with no test change.
 ---
 
 ## Purpose
 
-A green test is evidence only when it would have gone red had the subject broken. This skill covers what a test asserts, what it waits on, what it doubles, and how its run is read. File placement, import paths and the red-first workflow belong to `testing-file-layout`; seams and harness choice are detailed in `docs/06-testing.md`.
+A green test is evidence only when it would have gone red had the subject broken. This skill covers what a test asserts, what it waits on, what it doubles, and how its run is read. File placement, import paths, mock-seam mechanics and the red-first workflow belong to `testing-file-layout`; harness choice is detailed in `docs/06-testing.md`.
 
 ## Core rules
 
@@ -58,11 +59,11 @@ Choose inputs that a plausible wrong implementation fails. Use unsorted distinct
 
 ### 6. Double at the subject's boundary, never inside it
 
-Replace hardware, OS I/O, hosted services, the desktop bridge and an injectable's injected dependencies (`spy` and `injectDependencies`, §5). Keep the real collaborators the asserted behaviour depends on: action routing, Automerge authority, history, store projection, real event and `AppError` values. A mocked `AudioContext` proves requested parameters, not rendered sound or latency.
+Replace hardware, OS I/O, hosted services, the desktop bridge and an injectable's injected dependencies. Which seam replaces them — `spy` and `injectDependencies` for an injectable, `vi.mock` for a module outside the inject map, the two sanctioned contract-barrel mock shapes — is `testing-file-layout` rule 5. Keep the real collaborators the asserted behaviour depends on: action routing, Automerge authority, history, store projection, real event and `AppError` values. A mocked `AudioContext` proves requested parameters, not rendered sound or latency.
 
 **Why:** a double of the thing under test asserts the double.
 
-**Enforced by:** review only; seams in `docs/06-testing.md` §1, §2 and §5 (`injectDependencies` and `spy` from `src/infra/di/testing/`).
+**Enforced by:** review only; boundary guidance in `docs/06-testing.md` §1, §2 and §5.
 
 ### 7. Reproduce a defect with a red test before the fix
 

@@ -96,6 +96,7 @@ export const PerNoteEditor = ({
                     return (
                         <Stack align="center" gap={1} key={descriptor.key}>
                             <RotaryKnob
+                                aria-label={`Per-note ${descriptor.label}`}
                                 value={value}
                                 onChange={(next) => onParamChange(selectedKey, descriptor.key, next)}
                                 min={descriptor.min}

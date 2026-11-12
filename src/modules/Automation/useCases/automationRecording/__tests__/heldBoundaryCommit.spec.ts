@@ -9,7 +9,7 @@ import { automationStore } from '../../../stores/automationStore';
 import { getAutomationValueAtBeat } from '../../automation/getAutomationValueAtBeat';
 import { recordAutomationValue } from '../recordAutomationValue';
 import { setAutomationRecordingDependencies } from '../recordingDependencies';
-import { activeRecording, laneBaselines, pendingPoints, touchActive } from '../recordingSessionState';
+import { activeRecording, laneBaselines, pendingOwners, pendingPoints, touchActive } from '../recordingSessionState';
 import { releaseTouchAutomation } from '../releaseTouchAutomation';
 import { startAutomationRecording } from '../startAutomationRecording';
 import { stopAutomationRecording } from '../stopAutomationRecording';
@@ -127,6 +127,7 @@ describe('automation recording committed through the transport stop boundary', (
     beforeEach(() => {
         activeRecording.clear();
         pendingPoints.clear();
+        pendingOwners.clear();
         touchActive.clear();
         laneBaselines.clear();
         undoEntries.length = 0;

@@ -21,6 +21,9 @@ function resolveOutputLabel(outputId: string, tracks: readonly Track[]): string 
     if (outputId === 'master') {
         return 'Master';
     }
+    if (outputId === 'hw_out') {
+        return 'Hardware output';
+    }
     return tracks.find((candidate) => candidate.id === outputId)?.name ?? outputId;
 }
 
