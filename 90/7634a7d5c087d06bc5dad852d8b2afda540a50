@@ -1,0 +1,32 @@
+src/modules/Arrangement/stores/trackStore.ts
+  s_c2f4449c5891e9::t_e410e79b5232be 767-809,813-815,822
+  s_c2f4449c5891e9::t_b8298f68220994 819-821
+  s_c2f4449c5891e9::t_9b0e8c0e2f0239 818
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreTrack.spec.ts
+  s_c2f4449c5891e9::t_59a7e2b183ae8a 108
+  s_c2f4449c5891e9::t_f38e2ff8112812 644-659,663-667,720-729,736-737,741-759,781-792,799-802,816,819
+eslint.config.mjs
+  s_c2f4449c5891e9::t_832a27a26e50ec 2669-2678,2680-2682
+scripts/__tests__/eslintConfig.spec.ts
+  s_c2f4449c5891e9::t_2aadd65b101608 178-187
+src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts
+  s_c2f4449c5891e9::t_e0cbfb2bcfd69e 10,234-239,245-253
+src/modules/Arrangement/stores/__tests__/trackStoreDecodeTrackSnapshot.spec.ts
+  s_c2f4449c5891e9::t_7a7735ac5d0c01 165-191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "907634a7d5c087d06bc5dad852d8b2afda540a50",
+  "prompts": {},
+  "sessions": {
+    "s_c2f4449c5891e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7817afe8-15e0-436f-b304-529241ac1a61",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
