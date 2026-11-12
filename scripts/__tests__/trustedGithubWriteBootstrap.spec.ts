@@ -3288,6 +3288,63 @@ describe('verifiedObjectReader', () => {
         }
     });
 
+    function plantLoose(root: string, id: string, type: string, body: Buffer) {
+        const loose = join(root, '.git', 'objects', id.slice(0, 2), id.slice(2));
+        chmodSync(loose, 0o644);
+        writeFileSync(loose, deflateSync(Buffer.concat([Buffer.from(`${type} ${String(body.length)}\0`), body])));
+    }
+
+    function forgedClosureTree(git: (...args: string[]) => string, root: string) {
+        const forgedSource = join(root, 'forged.ts');
+        writeFileSync(forgedSource, 'export const trusted = false;\n');
+        const blob = git('hash-object', '-w', forgedSource);
+        return { blob, entry: Buffer.concat([Buffer.from('100644 closure.ts\0'), Buffer.from(blob, 'hex')]) };
+    }
+
+    it('refuses forged bytes a lane planted under a real loose tree id', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-forged-tree-')));
+        try {
+            const { git, gitPath, commit } = objectRepository(root);
+            const tree = git('rev-parse', `${commit}:scripts`);
+            plantLoose(root, tree, 'tree', forgedClosureTree(git, root).entry);
+            // The store now serves the forged tree under the real id, so the path resolves to other bytes.
+            expect(git('show', `${commit}:scripts/closure.ts`)).toBe('export const trusted = false;');
+
+            expect(() => verifiedObjectReader(root, gitPath)(commit, 'scripts/closure.ts')).toThrow(
+                `tree object ${tree} hashes to`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses forged bytes a lane planted under a real loose commit id', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-forged-commit-')));
+        try {
+            const { git, gitPath, commit } = objectRepository(root);
+            const writeTree = (entry: Buffer) => {
+                const file = join(root, 'tree.bin');
+                writeFileSync(file, entry);
+                return git('hash-object', '-w', '-t', 'tree', file);
+            };
+            const forgedScripts = writeTree(forgedClosureTree(git, root).entry);
+            const forgedRoot = writeTree(
+                Buffer.concat([Buffer.from('40000 scripts\0'), Buffer.from(forgedScripts, 'hex')])
+            );
+            const original = git('cat-file', 'commit', commit);
+            const forged = `${original.replace(/^tree [0-9a-f]+$/m, `tree ${forgedRoot}`)}\n`;
+            plantLoose(root, commit, 'commit', Buffer.from(forged));
+            // The store now serves a commit under the real id that names a different, real root tree.
+            expect(git('show', `${commit}:scripts/closure.ts`)).toBe('export const trusted = false;');
+
+            expect(() => verifiedObjectReader(root, gitPath)(commit, 'scripts/closure.ts')).toThrow(
+                `commit object ${commit} hashes to`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('refuses a repository whose objects are not sha1', () => {
         const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-sha256-read-')));
         try {
