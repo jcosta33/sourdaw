@@ -62,6 +62,129 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+type TraceInterval = { pid: number; tid: number; startUs: number; endUs: number };
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function readElasticTraceInterval(events: readonly Record<string, unknown>[]): TraceInterval | null {
+    const input = events.find((event) => event.name === 'elastic-detect-input-start');
+    if (!input || !isFiniteNumber(input.pid) || !isFiniteNumber(input.tid) || !isFiniteNumber(input.ts)) {
+        return null;
+    }
+    const completion = events.find(
+        (event) => event.name === 'elastic-detect-dom-complete' && event.pid === input.pid && event.tid === input.tid
+    );
+    if (!completion || !isFiniteNumber(completion.ts) || completion.ts <= input.ts) {
+        return null;
+    }
+    return { pid: input.pid, tid: input.tid, startUs: input.ts, endUs: completion.ts };
+}
+
+function countElasticIntervalTasks(events: readonly Record<string, unknown>[], interval: TraceInterval): number {
+    return events.filter(
+        (event) =>
+            event.name === 'RunTask' &&
+            event.pid === interval.pid &&
+            event.tid === interval.tid &&
+            isFiniteNumber(event.ts) &&
+            isFiniteNumber(event.dur) &&
+            event.dur > 0 &&
+            event.ts < interval.endUs &&
+            event.ts + event.dur > interval.startUs
+    ).length;
+}
+
+function sampledStackHasScript(sample: number, nodes: ReadonlyMap<number, Record<string, unknown>>): boolean {
+    const visited = new Set<number>();
+    let nodeId: number | undefined = sample;
+    while (nodeId !== undefined && !visited.has(nodeId)) {
+        visited.add(nodeId);
+        const node = nodes.get(nodeId);
+        if (!node) {
+            return false;
+        }
+        if (isRecord(node.callFrame) && typeof node.callFrame.url === 'string' && node.callFrame.url.length > 0) {
+            return true;
+        }
+        nodeId = isFiniteNumber(node.parent) ? node.parent : undefined;
+    }
+    return false;
+}
+
+function countElasticIntervalCpuSamples(events: readonly Record<string, unknown>[], interval: TraceInterval): number {
+    const profiles = events.filter(
+        (event) =>
+            event.name === 'Profile' &&
+            event.pid === interval.pid &&
+            event.tid === interval.tid &&
+            (typeof event.id === 'string' || isFiniteNumber(event.id))
+    );
+    let count = 0;
+    for (const profile of profiles) {
+        if (!isRecord(profile.args) || !isRecord(profile.args.data) || !isFiniteNumber(profile.args.data.startTime)) {
+            continue;
+        }
+        const chunks: { time: number; data: Record<string, unknown> }[] = [];
+        const nodes = new Map<number, Record<string, unknown>>();
+        for (const event of events) {
+            if (
+                event.name !== 'ProfileChunk' ||
+                event.pid !== profile.pid ||
+                event.id !== profile.id ||
+                !isFiniteNumber(event.ts) ||
+                !isRecord(event.args) ||
+                !isRecord(event.args.data)
+            ) {
+                continue;
+            }
+            const data = event.args.data;
+            chunks.push({ time: event.ts, data });
+            if (isRecord(data.cpuProfile) && Array.isArray(data.cpuProfile.nodes)) {
+                for (const node of data.cpuProfile.nodes) {
+                    if (isRecord(node) && isFiniteNumber(node.id)) {
+                        nodes.set(node.id, node);
+                    }
+                }
+            }
+        }
+        // Chunk timestamps order delivery; sample clocks come from the profile's
+        // startTime and cumulative timeDeltas, including negative injected deltas.
+        chunks.sort((left, right) => left.time - right.time);
+        let sampleTime = profile.args.data.startTime;
+        for (const { data } of chunks) {
+            if (!isRecord(data.cpuProfile)) {
+                continue;
+            }
+            const samples: unknown = data.cpuProfile.samples;
+            const deltas: unknown = data.timeDeltas;
+            if (samples === undefined && deltas === undefined) {
+                continue;
+            }
+            if (!Array.isArray(samples) || !Array.isArray(deltas) || samples.length !== deltas.length) {
+                throw new Error('Elastic CPU profile omitted sample time deltas');
+            }
+            for (let index = 0; index < samples.length; index++) {
+                const sample: unknown = samples[index];
+                const delta: unknown = deltas[index];
+                if (!isFiniteNumber(sample) || !isFiniteNumber(delta)) {
+                    throw new Error('Elastic CPU profile contained an invalid sample timestamp');
+                }
+                sampleTime += delta;
+                if (
+                    sampleTime >= interval.startUs &&
+                    sampleTime < interval.endUs &&
+                    sampledStackHasScript(sample, nodes)
+                ) {
+                    count++;
+                }
+            }
+        }
+    }
+    return count;
+}
+
 async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string): Promise<ElasticTaskTrace> {
     const session = await page.context().newCDPSession(page);
     const failures: string[] = [];
@@ -69,8 +192,9 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
     let byteLength = 0;
     let complete = false;
     let dataLossOccurred = false;
-    let hasCpuStacks = false;
-    let hasTaskEvents = false;
+    let interval: TraceInterval | null = null;
+    let taskCount = 0;
+    let cpuSampleCount = 0;
     let started = false;
     let stopping: Promise<void> | undefined;
     const completion = new Promise<{ stream?: string; dataLossOccurred?: boolean }>((resolve) => {
@@ -80,7 +204,9 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
         stop(): Promise<void> {
             stopping ??= (async () => {
                 try {
-                    if (!started) return;
+                    if (!started) {
+                        return;
+                    }
                     await session.send('Tracing.end');
                     let timeout: ReturnType<typeof setTimeout> | undefined;
                     const ended = await Promise.race([
@@ -90,7 +216,9 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
                         }),
                     ]).finally(() => clearTimeout(timeout));
                     dataLossOccurred = ended.dataLossOccurred === true;
-                    if (!ended.stream) throw new Error('Elastic trace completion did not provide a stream');
+                    if (!ended.stream) {
+                        throw new Error('Elastic trace completion did not provide a stream');
+                    }
                     const handle = ended.stream;
                     try {
                         while (!complete) {
@@ -99,7 +227,9 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
                             const remaining = TRACE_BYTE_CAP - byteLength;
                             chunks.push(bytes.subarray(0, remaining));
                             byteLength += Math.min(bytes.length, remaining);
-                            if (bytes.length > remaining) throw new Error('Elastic trace exceeded its 32 MiB byte cap');
+                            if (bytes.length > remaining) {
+                                throw new Error('Elastic trace exceeded its 32 MiB byte cap');
+                            }
                             complete = part.eof === true;
                         }
                     } finally {
@@ -109,48 +239,16 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
                     if (!isRecord(trace) || !Array.isArray(trace.traceEvents)) {
                         throw new Error('Elastic trace did not contain a traceEvents array');
                     }
-                    const inputMark = trace.traceEvents.find(
-                        (event: unknown) => isRecord(event) && event.name === 'elastic-detect-input-start'
-                    );
-                    if (!isRecord(inputMark)) throw new Error('Elastic trace omitted its input clock mark');
-                    const pageProfile = trace.traceEvents.find(
-                        (event: unknown) =>
-                            isRecord(event) &&
-                            event.name === 'Profile' &&
-                            event.pid === inputMark.pid &&
-                            event.tid === inputMark.tid
-                    );
-                    hasTaskEvents = trace.traceEvents.some(
-                        (event: unknown) =>
-                            isRecord(event) &&
-                            event.name === 'RunTask' &&
-                            event.pid === inputMark.pid &&
-                            event.tid === inputMark.tid
-                    );
-                    hasCpuStacks =
-                        isRecord(pageProfile) &&
-                        trace.traceEvents.some((event: unknown) => {
-                            if (
-                                !isRecord(event) ||
-                                event.name !== 'ProfileChunk' ||
-                                event.pid !== pageProfile.pid ||
-                                event.id !== pageProfile.id ||
-                                !isRecord(event.args)
-                            )
-                                return false;
-                            const data = event.args.data;
-                            if (!isRecord(data) || !isRecord(data.cpuProfile) || !Array.isArray(data.cpuProfile.nodes))
-                                return false;
-                            return data.cpuProfile.nodes.some(
-                                (node: unknown) =>
-                                    isRecord(node) &&
-                                    isRecord(node.callFrame) &&
-                                    typeof node.callFrame.url === 'string' &&
-                                    node.callFrame.url.length > 0
-                            );
-                        });
-                    if (dataLossOccurred || !hasCpuStacks || !hasTaskEvents) {
-                        throw new Error('Elastic trace lost events or omitted task/CPU attribution');
+                    const events: readonly unknown[] = trace.traceEvents;
+                    const records = events.filter(isRecord);
+                    interval = readElasticTraceInterval(records);
+                    if (!interval) {
+                        throw new Error('Elastic trace omitted a complete same-page measured interval');
+                    }
+                    taskCount = countElasticIntervalTasks(records, interval);
+                    cpuSampleCount = countElasticIntervalCpuSamples(records, interval);
+                    if (dataLossOccurred || taskCount === 0 || cpuSampleCount === 0) {
+                        throw new Error('Elastic trace lost events or omitted measured-interval task/CPU attribution');
                     }
                 } catch (error) {
                     failures.push(String(error));
@@ -168,7 +266,9 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
             try {
                 await capture.stop();
             } finally {
-                const path = info.outputPath(`elastic-${phase}-task-trace${complete ? '' : '.partial'}.json`);
+                const path = info.outputPath(
+                    `elastic-${phase}-task-trace${complete && interval ? '' : '.partial'}.json`
+                );
                 try {
                     await writeFile(path, Buffer.concat(chunks));
                     await info.attach(`elastic-${phase}-task-trace`, { path, contentType: 'application/json' });
@@ -181,8 +281,12 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
                         complete,
                         byteLength,
                         dataLossOccurred,
-                        hasCpuStacks,
-                        hasTaskEvents,
+                        phaseComplete: interval !== null,
+                        interval,
+                        taskCount,
+                        cpuSampleCount,
+                        hasCpuStacks: cpuSampleCount > 0,
+                        hasTaskEvents: taskCount > 0,
                         failures,
                     }),
                     contentType: 'application/json',
