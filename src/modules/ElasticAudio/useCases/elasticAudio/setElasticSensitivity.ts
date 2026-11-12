@@ -106,8 +106,15 @@ export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal)
             if (owner.isInvalidated() || owner.signal.aborted || request !== generation || !owner.matches()) {
                 return;
             }
+            // A successor retires an unchanged receipt as well as an already committed one.
+            if (transientDetectionRevision(owner.clipId) > owner.revision + 1) {
+                return;
+            }
             if (!hasDetectionAcknowledgment(committed, owner.clipId, owner.revision)) {
                 throw new Error('Transient detection completed without a committed mutation');
+            }
+            if (transientDetectionRevision(owner.clipId) !== owner.revision + 1) {
+                return;
             }
             elasticAudioStore.update((state) => (state ? { ...state, detected: true } : state));
         } catch (error) {

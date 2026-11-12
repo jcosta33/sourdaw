@@ -540,19 +540,20 @@ describe('locked transient markers through the real Elastic editor', () => {
             act(() => {
                 if (replacement === 'source replacement' || replacement === 'source ABA') {
                     const original = trackStore.value;
-                    trackStore.update((state) =>
-                        state
-                            ? {
-                                  ...state,
-                                  tracks: state.tracks.map((track) => ({
-                                      ...track,
-                                      clips: track.clips.map((clip) =>
-                                          clip.id === CLIP_ID ? { ...clip, audioBufferId: 'replacement' } : clip
-                                      ),
-                                  })),
-                              }
-                            : state
-                    );
+                    trackStore.update((state) => {
+                        if (!state) {
+                            return state;
+                        }
+                        return {
+                            ...state,
+                            tracks: state.tracks.map((track) => ({
+                                ...track,
+                                clips: track.clips.map((clip) =>
+                                    clip.id === CLIP_ID ? { ...clip, audioBufferId: 'replacement' } : clip
+                                ),
+                            })),
+                        };
+                    });
                     flushAutomergeStorageWrites();
                     if (replacement === 'source ABA') {
                         trackStore.set(original);
@@ -587,38 +588,74 @@ describe('locked transient markers through the real Elastic editor', () => {
         }
     );
 
-    it.each(['Detect', 'sensitivity'] as const)(
-        'keeps a pending %s successor presentation when an older committed Detect completes',
-        async (successor) => {
-            supplyBuffer(burstSamples());
-            let hold = true;
-            const tasks = holdCompletionTasks(() => hold && (undoHistoryStore.value?.past.length ?? 0) > 0);
-            render(<ElasticEditorPanel />);
-            fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
-            await waitFor(() => expect(tasks).toHaveLength(1));
-            hold = false;
-            const result = Promise.withResolvers<TransientOnsetWorkerResult>();
-            const started = Promise.withResolvers<void>();
-            worker.mockImplementationOnce(() => {
-                started.resolve();
-                return result.promise;
-            });
-            if (successor === 'Detect') {
+    it.each([
+        ['Detect', 'Detect'],
+        ['Detect', 'sensitivity'],
+        ['sensitivity', 'Detect'],
+        ['sensitivity', 'sensitivity'],
+        ['Detect', 'none'],
+        ['sensitivity', 'none'],
+    ] as const)('keeps completion ownership from %s with a %s successor', async (caller, successor) => {
+        supplyBuffer(burstSamples());
+        let hold = true;
+        const tasks = holdCompletionTasks(() => hold && (undoHistoryStore.value?.past.length ?? 0) > 0);
+        const eventBus = createEventBus<{
+            'ui.notify': NotifyPayload;
+            'ui.confirm': ConfirmPayload;
+            'ui.prompt': PromptPayload;
+        }>();
+        const notices: NotifyPayload[] = [];
+        eventBus.on('ui.notify', (notice) => {
+            notices.push(notice);
+        });
+        injectDependencies(notifyUser, { eventBus });
+        const start = (kind: 'Detect' | 'sensitivity'): void => {
+            if (kind === 'Detect') {
                 fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
             } else {
                 fireEvent.keyDown(screen.getByRole('slider', { name: 'Transient detection sensitivity' }), {
                     key: 'ArrowRight',
                 });
             }
+        };
+        render(<ElasticEditorPanel />);
+        start(caller);
+        await waitFor(() => expect(tasks).toHaveLength(1));
+        expect(elasticAudioStore.value?.detected).toBe(false);
+        expect(notices).toEqual([]);
+        hold = false;
+        const result = Promise.withResolvers<TransientOnsetWorkerResult>();
+        if (successor !== 'none') {
+            const started = Promise.withResolvers<void>();
+            worker.mockImplementationOnce(() => {
+                started.resolve();
+                return result.promise;
+            });
+            start(successor);
             await started.promise;
+        }
+        const committed = JSON.stringify(getCrdtDoc('root'));
+        const history = JSON.stringify(undoHistoryStore.value);
+        try {
             await act(async () => {
                 tasks[0]!.deliver();
             });
-            expect(screen.getByRole('status')).toHaveTextContent('Detecting');
-            expect(elasticAudioStore.value?.detected).toBe(false);
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(committed);
+            expect(JSON.stringify(undoHistoryStore.value)).toBe(history);
+            expect(notices).toEqual([{ message: 'Detected 1 transients (1 preserved)', level: 'success' }]);
+            if (successor === 'none') {
+                expect(elasticAudioStore.value?.detected).toBe(true);
+                expect(screen.getByRole('status')).not.toHaveTextContent('Detecting');
+            } else {
+                expect(screen.getByRole('status')).toHaveTextContent('Detecting');
+                expect(elasticAudioStore.value?.detected).toBe(false);
+            }
+        } finally {
             await act(async () => {
                 result.resolve({ status: 'complete', hits: [{ sampleOffset: 512, confidence: 1 }] });
             });
+        }
+        if (successor !== 'none') {
             await waitFor(() => expect(screen.getByRole('status')).not.toHaveTextContent('Detecting'));
             expect(elasticAudioStore.value?.detected).toBe(true);
             expect(rawWarpState()).toEqual(getWarpState(CLIP_ID));
@@ -626,8 +663,70 @@ describe('locked transient markers through the real Elastic editor', () => {
                 expect.objectContaining({ originalBeat: (512 / SAMPLE_RATE) * 2 })
             );
             expect(undoHistoryStore.value?.past).toHaveLength(2);
+            expect(notices).toHaveLength(2);
         }
-    );
+        tasks[0]!.deliver();
+        expect(notices).toHaveLength(successor === 'none' ? 1 : 2);
+    });
+
+    it('retires an unchanged sensitivity receipt when its success notification starts a direct Detect', async () => {
+        supplyBuffer(new Float32Array(SAMPLE_RATE));
+        warpStateStore.set({ states: { 'other-clip': otherWarpState } });
+        flushAutomergeStorageWrites();
+        const detect = worker.getMockImplementation();
+        if (!detect) {
+            throw new Error('Expected the configured real detector fixture');
+        }
+        const result = Promise.withResolvers<TransientOnsetWorkerResult>();
+        const started = Promise.withResolvers<void>();
+        let reads = 0;
+        worker.mockImplementation((request) => {
+            reads++;
+            if (reads === 1) {
+                return detect(request);
+            }
+            started.resolve();
+            return result.promise;
+        });
+        const eventBus = createEventBus<{
+            'ui.notify': NotifyPayload;
+            'ui.confirm': ConfirmPayload;
+            'ui.prompt': PromptPayload;
+        }>();
+        const notices: NotifyPayload[] = [];
+        eventBus.on('ui.notify', (notice) => {
+            notices.push(notice);
+            if (notice.message === 'Detected 0 transients (0 preserved)') {
+                fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
+            }
+        });
+        injectDependencies(notifyUser, { eventBus });
+        render(<ElasticEditorPanel />);
+        await act(async () => {
+            fireEvent.keyDown(screen.getByRole('slider', { name: 'Transient detection sensitivity' }), {
+                key: 'ArrowRight',
+            });
+            await started.promise;
+        });
+        try {
+            expect(screen.getByRole('status')).toHaveTextContent('Detecting');
+            expect(elasticAudioStore.value?.detected).toBe(false);
+            expectCanonicalWarpAbsence();
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            expect(notices).toEqual([{ message: 'Detected 0 transients (0 preserved)', level: 'success' }]);
+        } finally {
+            await act(async () => {
+                result.resolve({ status: 'complete', hits: [{ sampleOffset: 512, confidence: 1 }] });
+            });
+        }
+        await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Detection complete'));
+        expect(elasticAudioStore.value?.detected).toBe(true);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expect(notices).toEqual([
+            { message: 'Detected 0 transients (0 preserved)', level: 'success' },
+            { message: 'Detected 1 transients (0 preserved)', level: 'success' },
+        ]);
+    });
 
     it('refuses a retired target before it can cancel the current editor detection', async () => {
         supplyBuffer(burstSamples());
@@ -737,19 +836,20 @@ describe('locked transient markers through the real Elastic editor', () => {
             });
         }
         if (late === 'source') {
-            trackStore.update((state) =>
-                state
-                    ? {
-                          ...state,
-                          tracks: state.tracks.map((track) => ({
-                              ...track,
-                              clips: track.clips.map((clip) =>
-                                  clip.id === CLIP_ID ? { ...clip, audioBufferId: 'replacement' } : clip
-                              ),
-                          })),
-                      }
-                    : state
-            );
+            trackStore.update((state) => {
+                if (!state) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    tracks: state.tracks.map((track) => ({
+                        ...track,
+                        clips: track.clips.map((clip) =>
+                            clip.id === CLIP_ID ? { ...clip, audioBufferId: 'replacement' } : clip
+                        ),
+                    })),
+                };
+            });
             flushAutomergeStorageWrites();
         }
         if (late === 'root ABA') {

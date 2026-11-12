@@ -69,8 +69,10 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    require publication outside `FireAnimationFrame` while preserving PCM, projections, undo/redo,
    and the original no >=50 ms task and no >=100 ms frame-gap gates. Follow the complete settled
    command through its success notification and caller DOM update too: #5843 introduced the synchronous
-   post-commit completion path; its review had no independent probe of the combined authority/history, toast
-   and caller render task. That path can join the authority/history React flush. A later awaited
+   post-commit completion path. Its recorded cold 120-second E2E passed the task/frame, PCM and Undo gates;
+   recorded mutations targeted storage admission, tier selection and FFT. Those results did not demonstrate
+   compound UI task margin or cover the distinct late-caller ownership failure. A subsequent whole-host-task
+   counterexample requires both complete-endpoint attribution and held late-caller probes. A later awaited
    presentation task must leave raw/projected markers, durable replay and session Undo available before delivery,
    retain notification and caller completion inside the original measurement endpoint, and show both full host
    tasks including subsequent renders. A held platform receiver must discriminate the real registered path;

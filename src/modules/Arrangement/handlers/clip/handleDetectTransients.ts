@@ -173,11 +173,11 @@ function waitForTransientCompletionTask(): Promise<void> {
             performance.clearMarks('elastic-transient-completion-task-enqueued');
             channel.port2.postMessage(undefined);
         } catch (error) {
-            finish(
-                error instanceof Error
-                    ? error
-                    : new Error('Transient completion task could not be scheduled', { cause: error })
-            );
+            if (error instanceof Error) {
+                finish(error);
+                return;
+            }
+            finish(new Error('Transient completion task could not be scheduled', { cause: error }));
         }
     });
 }
