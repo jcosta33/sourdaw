@@ -6,30 +6,87 @@ import {
     mkdirSync,
     mkdtempSync,
     readFileSync,
+    realpathSync,
     rmSync,
     symlinkSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { deflateSync } from 'node:zlib';
 
 import { describe, expect, it } from 'vitest';
 
 import { canonicalJson } from '../canonicalRecord.ts';
 import { renderConfirmationReply } from '../confirmReviewRepairs.ts';
+import {
+    TRUSTED_COMMON_DIR_ENV,
+    TRUSTED_GATE_WORKFLOW_ENV,
+    TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_AI_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_POWERSHELL_PATH_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV,
+    TRUSTED_PS_PATH_ENV,
+} from '../prContract.ts';
 import { renderReviewRepairReply, type ReviewRepairRecord } from '../reviewRepair.ts';
 import {
+    BOOTSTRAP_PATH,
+    assertTrustedSourceGraph,
     bareModuleSpecifiers,
+    commandEntries,
     executeTrustedSnapshot,
+    fetchOriginMain,
+    GITHUB_ORIGIN_URL,
+    type OriginFetchSpawn,
     forwardTrustedSnapshotSignal,
+    defaultPort,
     resolveTrustedExecutable,
+    verifiedObjectReader,
     resolveTrustedLauncherBinding,
+    resolveTrustedPowerShellExecutable,
     snapshotComputedDynamicSpecifiers,
     snapshotImportSpecifiers,
     trustedDependencyGraphs,
+    trustedLocalImportClosure,
     trustedSnapshotRunsDetached,
+    TRUSTED_COMMON_DIR_ENV as BOOTSTRAP_TRUSTED_COMMON_DIR_ENV,
+    TRUSTED_GATE_WORKFLOW_ENV as BOOTSTRAP_TRUSTED_GATE_WORKFLOW_ENV,
+    TRUSTED_GH_PATH_ENV as BOOTSTRAP_TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_AI_PATH_ENV as BOOTSTRAP_TRUSTED_GIT_AI_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV as BOOTSTRAP_TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV as BOOTSTRAP_TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_POWERSHELL_PATH_ENV as BOOTSTRAP_TRUSTED_POWERSHELL_PATH_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV as BOOTSTRAP_TRUSTED_PRIMARY_ROOT_ENV,
+    TRUSTED_PS_PATH_ENV as BOOTSTRAP_TRUSTED_PS_PATH_ENV,
 } from '../trustedGithubWriteBootstrap.ts';
+
+import { launcherFixtureOrigin, publishLauncherOrigin, writeLocalLauncher } from './fixtures/trustedLauncherOrigin.ts';
+
+const trustedEnvNames = {
+    TRUSTED_COMMON_DIR_ENV,
+    TRUSTED_GATE_WORKFLOW_ENV,
+    TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_AI_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_POWERSHELL_PATH_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV,
+    TRUSTED_PS_PATH_ENV,
+};
+const bootstrapTrustedEnv: Record<keyof typeof trustedEnvNames, string> = {
+    TRUSTED_COMMON_DIR_ENV: BOOTSTRAP_TRUSTED_COMMON_DIR_ENV,
+    TRUSTED_GATE_WORKFLOW_ENV: BOOTSTRAP_TRUSTED_GATE_WORKFLOW_ENV,
+    TRUSTED_GH_PATH_ENV: BOOTSTRAP_TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_AI_PATH_ENV: BOOTSTRAP_TRUSTED_GIT_AI_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV: BOOTSTRAP_TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV: BOOTSTRAP_TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_POWERSHELL_PATH_ENV: BOOTSTRAP_TRUSTED_POWERSHELL_PATH_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV: BOOTSTRAP_TRUSTED_PRIMARY_ROOT_ENV,
+    TRUSTED_PS_PATH_ENV: BOOTSTRAP_TRUSTED_PS_PATH_ENV,
+};
 
 const supersessionPaths = [
     'scripts/trustedGithubWriteBootstrap.ts',
@@ -89,6 +146,7 @@ function withNativeReviewMutation(
         for (const path of trustedDependencyGraphs[command]) {
             writeFileSync(join(root, path), readFileSync(join(repositoryRoot, path)));
         }
+        writeLocalLauncher(join(root, BOOTSTRAP_PATH), launcherFixtureOrigin(root));
         const manifest = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
         writeFileSync(
             join(root, 'package.json'),
@@ -144,6 +202,7 @@ function withNativeReviewMutation(
         );
         git('remote', 'add', 'origin', root);
         git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        publishLauncherOrigin((args) => git(...args), launcherFixtureOrigin(root));
         run(root, bin, env);
     } finally {
         rmSync(root, { recursive: true, force: true });
@@ -294,6 +353,7 @@ function withNativeSupersession(
         for (const path of retirementMode === undefined ? supersessionPaths : retirementPaths) {
             writeFileSync(join(root, path), readFileSync(join(repositoryRoot, path)));
         }
+        writeLocalLauncher(join(root, BOOTSTRAP_PATH), launcherFixtureOrigin(root));
         const manifest = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
         writeFileSync(
             join(root, 'package.json'),
@@ -414,6 +474,7 @@ function withNativeSupersession(
         );
         git('remote', 'add', 'origin', root);
         git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        publishLauncherOrigin((args) => git(...args), launcherFixtureOrigin(root));
         run(root, bin, env);
     } finally {
         rmSync(root, { recursive: true, force: true });
@@ -2778,4 +2839,523 @@ describe('trusted GitHub write snapshot launcher', () => {
             ).rejects.toThrow(`trusted snapshot terminated by ${signal}`);
         }
     );
+});
+
+/**
+ * The launcher compares only its own file with the pinned blob, so any working-tree module it loads
+ * before that comparison runs unchecked beside the operator's credentials. Every module it names
+ * must therefore be a Node builtin, except the one `yaml` parser it loads lazily for `deliver` after
+ * the pin check.
+ */
+describe('launcher self-containment before the pin check', () => {
+    const bootstrapSource = readFileSync(join(repositoryRoot, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8');
+
+    it('names no module other than a node builtin and its lazy yaml parser', () => {
+        expect(snapshotImportSpecifiers(bootstrapSource).filter((specifier) => !specifier.startsWith('node:'))).toEqual(
+            ['yaml']
+        );
+    });
+
+    it.each(Object.keys(trustedEnvNames) as (keyof typeof trustedEnvNames)[])(
+        'spells %s exactly as the runners read it',
+        (name) => {
+            expect(bootstrapTrustedEnv[name]).toBe(trustedEnvNames[name]);
+        }
+    );
+});
+
+describe('trusted executable resolution', () => {
+    function executable(path: string): void {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, '#!/bin/sh\nexit 0\n');
+        chmodSync(path, 0o700);
+    }
+
+    function withPlantedWorkingDirectory(run: (root: string, absoluteBin: string) => void): void {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-trusted-path-')));
+        const originalCwd = process.cwd();
+        try {
+            const cwd = join(root, 'cwd');
+            const absoluteBin = join(root, 'operator-bin');
+            for (const name of ['git', 'gh', 'powershell']) {
+                executable(join(cwd, name));
+                executable(join(cwd, 'rel', name));
+                executable(join(absoluteBin, name));
+            }
+            process.chdir(cwd);
+            run(root, absoluteBin);
+        } finally {
+            process.chdir(originalCwd);
+            rmSync(root, { recursive: true, force: true });
+        }
+    }
+
+    it.each(['git', 'gh'] as const)('resolves %s past empty and relative PATH entries', (name) => {
+        withPlantedWorkingDirectory((_root, absoluteBin) => {
+            const env = { PATH: ['', 'rel', absoluteBin].join(delimiter) };
+            expect(resolveTrustedExecutable(name, env, 'darwin')).toBe(join(absoluteBin, name));
+        });
+    });
+
+    it.each(['git', 'gh'] as const)('refuses %s when PATH holds only empty and relative entries', (name) => {
+        withPlantedWorkingDirectory(() => {
+            const env = { PATH: ['', 'rel', '.'].join(delimiter) };
+            expect(() => resolveTrustedExecutable(name, env, 'darwin')).toThrow(
+                `cannot resolve trusted ${name} executable`
+            );
+        });
+    });
+
+    it('resolves powershell past empty and relative PATH entries, and refuses when none is absolute', () => {
+        withPlantedWorkingDirectory((_root, absoluteBin) => {
+            const env = { PATH: ['', 'rel', absoluteBin].join(delimiter) };
+            expect(resolveTrustedPowerShellExecutable(env, 'linux')).toBe(join(absoluteBin, 'powershell'));
+            expect(() => resolveTrustedPowerShellExecutable({ PATH: ['', 'rel'].join(delimiter) }, 'linux')).toThrow(
+                'cannot resolve trusted powershell executable'
+            );
+        });
+    });
+});
+
+/**
+ * Both commands mint the author App's token. Run from the package script directly, each compared only
+ * its entry file with origin/main while its imports loaded from whatever checkout launched it, so they
+ * route through the launcher, which executes the whole pinned closure.
+ */
+describe.each([
+    { command: 'branch:prune' as const, entry: 'scripts/pruneRemoteBranches.ts', runner: 'runPruneRemoteBranchesCli' },
+    { command: 'release:cut' as const, entry: 'scripts/cutRelease.ts', runner: 'runCutReleaseCli' },
+])('author-token command $command', ({ command, entry, runner }) => {
+    const readSource = (path: string): string | undefined => {
+        try {
+            return readFileSync(join(repositoryRoot, path), 'utf8');
+        } catch {
+            return undefined;
+        }
+    };
+
+    it('routes its package script through the launcher', () => {
+        const manifest = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
+        expect(manifest.scripts[command]).toBe(`node scripts/trustedGithubWriteBootstrap.ts ${command}`);
+        expect(commandEntries[command]).toEqual({ path: entry, runner });
+    });
+
+    it('declares exactly the closure its entry imports', () => {
+        const declared = trustedDependencyGraphs[command];
+        expect(declared.slice(0, 2)).toEqual([BOOTSTRAP_PATH, entry]);
+        expect(new Set(declared)).toEqual(
+            new Set([
+                ...trustedLocalImportClosure(BOOTSTRAP_PATH, readSource),
+                ...trustedLocalImportClosure(entry, readSource),
+            ])
+        );
+    });
+
+    it('runs from the pinned snapshot alone', { timeout: 30_000 }, async () => {
+        const sources = new Map(
+            trustedDependencyGraphs[command].map((path) => [path, readSource(path) ?? `missing ${path}`])
+        );
+        expect(() => assertTrustedSourceGraph(command, sources)).not.toThrow();
+        await expect(executeTrustedSnapshot(command, ['--help'], { commit: 'pinned-sha', sources })).resolves.toBe(0);
+    });
+});
+
+/**
+ * The pin is the commit GitHub reports for main, never a local ref or the shared repository's config:
+ * `refs/remotes/origin/main`, the remote URL and every transport key live where a lane can write, so
+ * the launcher asks GitHub by explicit URL from a fresh repository of its own and fails closed.
+ */
+describe('fetchOriginMain', () => {
+    const pinned = 'e'.repeat(40);
+    const seed = 'f'.repeat(40);
+    type Call = { args: string[]; cwd: string; env: NodeJS.ProcessEnv };
+    type Reply = { status: number | null; stdout?: string; stderr?: string };
+
+    function scripted(replies: (args: string[]) => Reply): { spawn: OriginFetchSpawn; calls: Call[] } {
+        const calls: Call[] = [];
+        return {
+            calls,
+            spawn: (_command, args, options) => {
+                calls.push({ args, cwd: options.cwd, env: options.env });
+                const reply = replies(args);
+                return { status: reply.status, stdout: reply.stdout ?? '', stderr: reply.stderr ?? '' };
+            },
+        };
+    }
+
+    function healthy(args: string[]): Reply {
+        if (args.includes('ls-remote')) {
+            return { status: 0, stdout: `${pinned}\trefs/heads/main\n` };
+        }
+        if (args[0] === 'rev-parse') {
+            return { status: 1 };
+        }
+        return { status: 0 };
+    }
+
+    const input = { gitPath: '/usr/bin/git', primaryRoot: '/repo', commonDir: '/repo/.git' };
+
+    it('pins the commit GitHub reports from a fresh repository sharing only the object store', () => {
+        const { spawn, calls } = scripted(healthy);
+
+        expect(fetchOriginMain(input, spawn)).toEqual({ commit: pinned });
+
+        expect(calls.map(({ args }) => args)).toEqual([
+            ['init', '--quiet', '--bare', '--template='],
+            ['config', 'gc.auto', '0'],
+            ['config', 'maintenance.auto', 'false'],
+            ['config', 'fetch.writeCommitGraph', 'false'],
+            ['config', 'core.askPass', ''],
+            ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main^{commit}'],
+            ['ls-remote', GITHUB_ORIGIN_URL, 'refs/heads/main'],
+            [
+                'fetch',
+                '--no-tags',
+                '--no-auto-gc',
+                '--no-write-fetch-head',
+                GITHUB_ORIGIN_URL,
+                '+refs/heads/main:refs/pinned/main',
+            ],
+            ['cat-file', '-e', `${pinned}^{commit}`],
+            ['-c', 'core.hooksPath=/dev/null', 'update-ref', '--no-deref', 'refs/remotes/origin/main', pinned],
+        ]);
+        const pinCalls = calls.filter(({ cwd }) => cwd !== '/repo');
+        const pinRepository = pinCalls[0]?.env.GIT_DIR;
+        expect(pinRepository).toBeDefined();
+        for (const { cwd, env } of pinCalls) {
+            expect(cwd).toBe(pinRepository);
+            expect(env).toMatchObject({
+                GIT_DIR: pinRepository,
+                GIT_OBJECT_DIRECTORY: '/repo/.git/objects',
+                GIT_CONFIG_NOSYSTEM: '1',
+                GIT_CONFIG_GLOBAL: '/dev/null',
+                GIT_CONFIG_SYSTEM: '/dev/null',
+                GIT_TERMINAL_PROMPT: '0',
+                GIT_NO_REPLACE_OBJECTS: '1',
+            });
+        }
+        expect(pinCalls.map(({ args }) => args[0])).toEqual([
+            'init',
+            'config',
+            'config',
+            'config',
+            'config',
+            'ls-remote',
+            'fetch',
+            'cat-file',
+        ]);
+        expect(existsSync(pinRepository ?? '')).toBe(false);
+    });
+
+    it.each([
+        ['a local commit', { status: 0 }, true],
+        ['a commit absent from the store', { status: 1 }, false],
+    ])('offers the tracking ref as a negotiation hint only when it names %s', (_label, present, offered) => {
+        const { spawn, calls } = scripted((args) => {
+            if (args[0] === 'rev-parse') {
+                return { status: 0, stdout: `${seed}\n` };
+            }
+            if (args[0] === 'cat-file' && args[2] === `${seed}^{commit}`) {
+                return present;
+            }
+            return healthy(args);
+        });
+
+        expect(fetchOriginMain(input, spawn)).toEqual({ commit: pinned });
+        expect(calls.some(({ args }) => args.join(' ') === `update-ref refs/pinned/seed ${seed}`)).toBe(offered);
+    });
+
+    it.each([
+        ['a failed ls-remote', { status: 128, stderr: 'fatal: unable to access' }],
+        ['no main line', { status: 0, stdout: '' }],
+        ['two lines', { status: 0, stdout: `${pinned}\trefs/heads/main\n${pinned}\trefs/heads/main\n` }],
+        ['another ref', { status: 0, stdout: `${pinned}\trefs/heads/mainline\n` }],
+        ['a short object name', { status: 0, stdout: `${'e'.repeat(39)}\trefs/heads/main\n` }],
+    ])('refuses %s and never falls back to the local ref', (_label, reply) => {
+        const { spawn, calls } = scripted((args) => (args.includes('ls-remote') ? reply : healthy(args)));
+        expect(() => fetchOriginMain(input, spawn)).toThrow(/cannot pin origin\/main from GitHub/);
+        expect(calls.some(({ args }) => args.includes('fetch') || args.includes('update-ref'))).toBe(false);
+    });
+
+    it.each([
+        ['an uncreatable pin repository', (args: string[]) => args[0] === 'init'],
+        ['a failed fetch', (args: string[]) => args.includes('fetch')],
+        ['a commit the fetch did not bring', (args: string[]) => args[0] === 'cat-file'],
+        ['an unwritable tracking ref', (args: string[]) => args.includes('update-ref')],
+    ])('refuses %s', (_label, failing) => {
+        const { spawn } = scripted((args) => (failing(args) ? { status: 1, stderr: 'boom' } : healthy(args)));
+        expect(() => fetchOriginMain(input, spawn)).toThrow(/cannot pin origin\/main from GitHub/);
+    });
+
+    it('replaces a tracking ref planted as a symref instead of moving the branch it names', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-origin-symref-')));
+        const gitPath = resolveTrustedExecutable('git');
+        const gitAt = (cwd: string, ...args: string[]) => {
+            const result = spawnSync(gitPath, args, {
+                cwd,
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    GIT_CONFIG_GLOBAL: '/dev/null',
+                    GIT_CONFIG_NOSYSTEM: '1',
+                    GIT_AUTHOR_NAME: 'Fixture',
+                    GIT_AUTHOR_EMAIL: 'fixture@example.test',
+                    GIT_COMMITTER_NAME: 'Fixture',
+                    GIT_COMMITTER_EMAIL: 'fixture@example.test',
+                },
+            });
+            return { status: result.status, stdout: result.stdout.trim(), stderr: result.stderr };
+        };
+        const git = (cwd: string, ...args: string[]) => {
+            const result = gitAt(cwd, ...args);
+            expect(result.status, result.stderr).toBe(0);
+            return result.stdout;
+        };
+        try {
+            const primary = join(root, 'primary');
+            const origin = join(root, 'origin.git');
+            git(root, 'init', '--quiet', '-b', 'main', primary);
+            git(primary, 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'victim');
+            const victim = git(primary, 'rev-parse', 'HEAD');
+            git(primary, 'branch', 'victim', victim);
+            git(primary, 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'origin main');
+            const truth = git(primary, 'rev-parse', 'HEAD');
+            git(root, 'init', '--quiet', '--bare', origin);
+            git(primary, 'push', '--quiet', origin, `${truth}:refs/heads/main`);
+            git(primary, 'symbolic-ref', 'refs/remotes/origin/main', 'refs/heads/victim');
+            const originUrl = pathToFileURL(origin).href;
+            const spawn: OriginFetchSpawn = (command, args, options) => {
+                const result = spawnSync(
+                    command,
+                    args.map((arg) => (arg === GITHUB_ORIGIN_URL ? originUrl : arg)),
+                    { ...options, encoding: 'utf8' }
+                );
+                return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+            };
+
+            expect(fetchOriginMain({ gitPath, primaryRoot: primary, commonDir: join(primary, '.git') }, spawn)).toEqual(
+                { commit: truth }
+            );
+            expect(git(primary, 'rev-parse', 'refs/heads/victim')).toBe(victim);
+            expect(gitAt(primary, 'symbolic-ref', '--quiet', 'refs/remotes/origin/main').status).toBe(1);
+            expect(git(primary, 'rev-parse', 'refs/remotes/origin/main')).toBe(truth);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('pins the true origin commit whatever transport config the shared repository plants', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-origin-pin-')));
+        const gitPath = resolveTrustedExecutable('git');
+        const gitAt = (cwd: string, ...args: string[]) => {
+            const result = spawnSync(gitPath, args, {
+                cwd,
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    GIT_CONFIG_GLOBAL: '/dev/null',
+                    GIT_CONFIG_NOSYSTEM: '1',
+                    GIT_AUTHOR_NAME: 'Fixture',
+                    GIT_AUTHOR_EMAIL: 'fixture@example.test',
+                    GIT_COMMITTER_NAME: 'Fixture',
+                    GIT_COMMITTER_EMAIL: 'fixture@example.test',
+                },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            return result.stdout.trim();
+        };
+        try {
+            const primary = join(root, 'primary');
+            const trueOrigin = join(root, 'true.git');
+            const forgedOrigin = join(root, 'forged.git');
+            const hookRan = join(root, 'hook-ran');
+            gitAt(root, 'init', '--quiet', '-b', 'main', primary);
+            gitAt(primary, 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'base');
+            const base = gitAt(primary, 'rev-parse', 'HEAD');
+            gitAt(root, 'init', '--quiet', '--bare', trueOrigin);
+            gitAt(root, 'init', '--quiet', '--bare', forgedOrigin);
+            gitAt(primary, 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'true main');
+            const truth = gitAt(primary, 'rev-parse', 'HEAD');
+            gitAt(primary, 'push', '--quiet', trueOrigin, `${truth}:refs/heads/main`);
+            gitAt(primary, 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'forged main');
+            const forged = gitAt(primary, 'rev-parse', 'HEAD');
+            gitAt(primary, 'push', '--quiet', forgedOrigin, `${forged}:refs/heads/main`);
+            gitAt(primary, 'update-ref', 'refs/heads/main', base);
+            gitAt(primary, 'update-ref', 'refs/remotes/origin/main', base);
+            gitAt(primary, 'reflog', 'expire', '--expire=now', '--all');
+            gitAt(primary, 'gc', '--quiet', '--prune=now');
+            expect(spawnSync(gitPath, ['cat-file', '-e', truth], { cwd: primary }).status).not.toBe(0);
+            // Everything a lane can plant in the shared config: a rewrite of the URL the launcher
+            // asks, a forced resolve and CA for the GitHub host, and a hook the fetch would run.
+            const trueUrl = pathToFileURL(trueOrigin).href;
+            gitAt(primary, 'config', `url.${pathToFileURL(forgedOrigin).href}.insteadOf`, trueUrl);
+            gitAt(primary, 'config', 'http.curloptResolve', 'github.com:443:127.0.0.1');
+            gitAt(primary, 'config', 'http.sslCAInfo', join(root, 'lane-ca.pem'));
+            mkdirSync(join(root, 'hooks'));
+            writeFileSync(
+                join(root, 'hooks', 'reference-transaction'),
+                `#!/bin/sh\ntouch ${JSON.stringify(hookRan)}\n`
+            );
+            chmodSync(join(root, 'hooks', 'reference-transaction'), 0o700);
+            gitAt(primary, 'config', 'core.hooksPath', join(root, 'hooks'));
+            // GitHub is the local true origin; every git call is real.
+            const spawn: OriginFetchSpawn = (command, args, options) => {
+                const result = spawnSync(
+                    command,
+                    args.map((arg) => (arg === GITHUB_ORIGIN_URL ? trueUrl : arg)),
+                    { ...options, encoding: 'utf8' }
+                );
+                return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+            };
+
+            expect(fetchOriginMain({ gitPath, primaryRoot: primary, commonDir: join(primary, '.git') }, spawn)).toEqual(
+                { commit: truth }
+            );
+            expect(gitAt(primary, 'rev-parse', 'refs/remotes/origin/main')).toBe(truth);
+            expect(gitAt(primary, 'cat-file', '-t', truth)).toBe('commit');
+            expect(gitAt(primary, 'for-each-ref', '--format=%(refname)', 'refs/pinned')).toBe('');
+            expect(existsSync(hookRan)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+});
+
+/**
+ * Git does not re-hash a loose object on read, so a lane can plant forged bytes under a real id in the
+ * shared object store. Each pinned read must hash every object it walks and refuse a mismatch.
+ */
+describe('verifiedObjectReader', () => {
+    function objectRepository(root: string, objectFormat = 'sha1') {
+        const gitPath = resolveTrustedExecutable('git');
+        const git = (...args: string[]) => {
+            const result = spawnSync(gitPath, args, {
+                cwd: root,
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    GIT_CONFIG_GLOBAL: '/dev/null',
+                    GIT_CONFIG_NOSYSTEM: '1',
+                    GIT_AUTHOR_NAME: 'Fixture',
+                    GIT_AUTHOR_EMAIL: 'fixture@example.test',
+                    GIT_COMMITTER_NAME: 'Fixture',
+                    GIT_COMMITTER_EMAIL: 'fixture@example.test',
+                },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            return result.stdout.trim();
+        };
+        git('init', '--quiet', '-b', 'main', `--object-format=${objectFormat}`);
+        mkdirSync(join(root, 'scripts'));
+        writeFileSync(join(root, 'scripts', 'closure.ts'), 'export const trusted = true;\n');
+        git('add', 'scripts');
+        git('commit', '--quiet', '--no-gpg-sign', '-m', 'closure');
+        return { git, gitPath, commit: git('rev-parse', 'HEAD') };
+    }
+
+    it('returns the pinned bytes of a regular file and refuses a path that is not one', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-verified-read-')));
+        try {
+            const { gitPath, commit } = objectRepository(root);
+            const read = verifiedObjectReader(root, gitPath);
+
+            expect(read(commit, 'scripts/closure.ts')).toBe('export const trusted = true;\n');
+            expect(() => read(commit, 'scripts')).toThrow(`scripts is not a regular file at ${commit}`);
+            expect(() => read(commit, 'scripts/missing.ts')).toThrow('scripts/missing.ts is not a regular file');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses forged bytes a lane planted under a real loose blob id', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-forged-blob-')));
+        try {
+            const { git, gitPath, commit } = objectRepository(root);
+            const blob = git('rev-parse', `${commit}:scripts/closure.ts`);
+            const forged = Buffer.from('export const trusted = false;\n');
+            const loose = join(root, '.git', 'objects', blob.slice(0, 2), blob.slice(2));
+            chmodSync(loose, 0o644);
+            writeFileSync(loose, deflateSync(Buffer.concat([Buffer.from(`blob ${String(forged.length)}\0`), forged])));
+            // The store now serves the forged bytes under the real id, which is what a lane can do.
+            expect(git('show', `${commit}:scripts/closure.ts`)).toBe('export const trusted = false;');
+
+            expect(() => verifiedObjectReader(root, gitPath)(commit, 'scripts/closure.ts')).toThrow(
+                `blob object ${blob} hashes to`
+            );
+            const port = defaultPort({ primaryRoot: root, commonDir: join(root, '.git'), gitPath, ghPath: gitPath });
+            expect(() => port.readOriginSource(commit, 'scripts/closure.ts')).toThrow(`blob object ${blob} hashes to`);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    function plantLoose(root: string, id: string, type: string, body: Buffer) {
+        const loose = join(root, '.git', 'objects', id.slice(0, 2), id.slice(2));
+        chmodSync(loose, 0o644);
+        writeFileSync(loose, deflateSync(Buffer.concat([Buffer.from(`${type} ${String(body.length)}\0`), body])));
+    }
+
+    function forgedClosureTree(git: (...args: string[]) => string, root: string) {
+        const forgedSource = join(root, 'forged.ts');
+        writeFileSync(forgedSource, 'export const trusted = false;\n');
+        const blob = git('hash-object', '-w', forgedSource);
+        return { blob, entry: Buffer.concat([Buffer.from('100644 closure.ts\0'), Buffer.from(blob, 'hex')]) };
+    }
+
+    it('refuses forged bytes a lane planted under a real loose tree id', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-forged-tree-')));
+        try {
+            const { git, gitPath, commit } = objectRepository(root);
+            const tree = git('rev-parse', `${commit}:scripts`);
+            plantLoose(root, tree, 'tree', forgedClosureTree(git, root).entry);
+            // The store now serves the forged tree under the real id, so the path resolves to other bytes.
+            expect(git('show', `${commit}:scripts/closure.ts`)).toBe('export const trusted = false;');
+
+            expect(() => verifiedObjectReader(root, gitPath)(commit, 'scripts/closure.ts')).toThrow(
+                `tree object ${tree} hashes to`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses forged bytes a lane planted under a real loose commit id', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-forged-commit-')));
+        try {
+            const { git, gitPath, commit } = objectRepository(root);
+            const writeTree = (entry: Buffer) => {
+                const file = join(root, 'tree.bin');
+                writeFileSync(file, entry);
+                return git('hash-object', '-w', '-t', 'tree', file);
+            };
+            const forgedScripts = writeTree(forgedClosureTree(git, root).entry);
+            const forgedRoot = writeTree(
+                Buffer.concat([Buffer.from('40000 scripts\0'), Buffer.from(forgedScripts, 'hex')])
+            );
+            const original = git('cat-file', 'commit', commit);
+            const forged = `${original.replace(/^tree [0-9a-f]+$/m, `tree ${forgedRoot}`)}\n`;
+            plantLoose(root, commit, 'commit', Buffer.from(forged));
+            // The store now serves a commit under the real id that names a different, real root tree.
+            expect(git('show', `${commit}:scripts/closure.ts`)).toBe('export const trusted = false;');
+
+            expect(() => verifiedObjectReader(root, gitPath)(commit, 'scripts/closure.ts')).toThrow(
+                `commit object ${commit} hashes to`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a repository whose objects are not sha1', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-sha256-read-')));
+        try {
+            const { gitPath, commit } = objectRepository(root, 'sha256');
+
+            expect(() => verifiedObjectReader(root, gitPath)(commit, 'scripts/closure.ts')).toThrow(
+                'repository object format is sha256; the launcher verifies only sha1 objects'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
 });

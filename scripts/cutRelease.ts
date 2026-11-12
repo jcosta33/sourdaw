@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -11,11 +11,16 @@ import {
     isAuthorBotNodeId,
     originMainBlob,
     parseJson,
-    resolvePrimaryRoot,
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
-import { fail } from './prContract.ts';
+import {
+    fail,
+    TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV,
+} from './prContract.ts';
 import {
     assertRevisionPresent,
     commitIsOnMainBranch,
@@ -290,8 +295,33 @@ export function shellPort(session: GhSession, primaryRoot: string): CutReleasePo
     };
 }
 
-async function main(): Promise<number> {
-    const parsed = parseCutReleaseArgs(process.argv.slice(2));
+/**
+ * The launcher hands its runner the primary root, the commit it pinned, and the git and gh it froze.
+ * A run without them was not launched through the protected primary checkout, whose snapshot is the
+ * only source of this closure trusted beside the author key, so it stops before authenticating.
+ */
+export function trustedCutReleaseRuntime(env: NodeJS.ProcessEnv): { primaryRoot: string; originCommit: string } {
+    const primaryRoot = env[TRUSTED_PRIMARY_ROOT_ENV];
+    const originCommit = env[TRUSTED_ORIGIN_COMMIT_ENV];
+    const gitPath = env[TRUSTED_GIT_PATH_ENV];
+    const ghPath = env[TRUSTED_GH_PATH_ENV];
+    if (
+        primaryRoot === undefined ||
+        originCommit === undefined ||
+        gitPath === undefined ||
+        ghPath === undefined ||
+        !isAbsolute(primaryRoot) ||
+        !isAbsolute(gitPath) ||
+        !isAbsolute(ghPath) ||
+        !/^[0-9a-f]{40,64}$/.test(originCommit)
+    ) {
+        fail('release:cut must run through the protected primary checkout launcher');
+    }
+    return { primaryRoot, originCommit };
+}
+
+export async function runCutReleaseCli(args: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+    const parsed = parseCutReleaseArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${usage.slice('usage: '.length)}`);
         return 0;
@@ -299,14 +329,13 @@ async function main(): Promise<number> {
     if (parsed.version === undefined || parsed.commit === undefined) {
         fail(usage);
     }
-    const cwd = process.cwd();
+    const { primaryRoot, originCommit } = trustedCutReleaseRuntime(env);
     assertTrustedExecutingBlob(
         'scripts/cutRelease.ts',
         fileURLToPath(import.meta.url),
-        originMainBlob('scripts/cutRelease.ts', cwd)
+        originMainBlob('scripts/cutRelease.ts', primaryRoot, undefined, 'git', originCommit)
     );
-    const primaryRoot = resolvePrimaryRoot();
-    assertRevisionPresent(parsed.commit, (args) => spawnCapture('git', args, { cwd: primaryRoot }));
+    assertRevisionPresent(parsed.commit, (gitArgs) => spawnCapture('git', gitArgs, { cwd: primaryRoot }));
     const auth = await authenticateRole({ primaryRoot, role: 'author' });
     try {
         if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
@@ -323,14 +352,4 @@ async function main(): Promise<number> {
     } finally {
         auth.session.dispose();
     }
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
-        (code) => process.exit(code),
-        (error: unknown) => {
-            console.error(error instanceof Error ? error.message : error);
-            process.exit(1);
-        }
-    );
 }
