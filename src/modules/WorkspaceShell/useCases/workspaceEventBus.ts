@@ -5,7 +5,6 @@ import type { ToggleVoiceCommandPayload } from '#/modules/Command/events';
 import type { MidiOutPayload } from '#/modules/MIDI/events';
 import type {
     ConfirmPayload,
-    ImportMidiPayload,
     NotifyPayload,
     OpenPreferencesPayload,
     PromptPayload,
@@ -17,11 +16,6 @@ type WorkspaceEvents = {
     'panel.showDevice': ShowDevicePanelGenericPayload;
     'dialog.openExport': VoidPayload;
     'dialog.openPreferences': OpenPreferencesPayload;
-    'project.save': VoidPayload;
-    'project.new': VoidPayload;
-    'command.undo': VoidPayload;
-    'command.redo': VoidPayload;
-    'midi.import': ImportMidiPayload;
     'midi.out': MidiOutPayload;
     'zoom.toFit': VoidPayload;
     'zoom.toSelection': ZoomToSelectionPayload;
