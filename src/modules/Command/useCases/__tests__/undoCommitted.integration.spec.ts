@@ -49,16 +49,21 @@ describe('undo and redo committed notifications through real dispatch', () => {
                 canReportConflict: true,
                 describe: () => ({ label: 'Apply runtime state' }),
                 afterRedoReplay: () => {
-                    if (reconciliationError) throw reconciliationError;
+                    if (reconciliationError) {
+                        throw reconciliationError;
+                    }
                 },
                 execute: () => {
-                    if (noWrite) return { status: 'no-write' };
+                    if (noWrite) {
+                        return { status: 'no-write' };
+                    }
                     applied += 1;
-                    if (postCommitError) {
+                    const error = postCommitError;
+                    if (error !== null) {
                         return {
                             status: 'written',
                             afterRuntimeExecution: () => {
-                                throw postCommitError;
+                                throw error;
                             },
                         };
                     }
@@ -99,10 +104,12 @@ describe('undo and redo committed notifications through real dispatch', () => {
     it.each(['undo', 'redo'] as const)(
         'notifies once for an older %s while retaining the conflicted original head',
         async (direction) => {
-            const before =
-                direction === 'undo'
-                    ? { past: [entry, conflict], future: [] }
-                    : { past: [], future: [conflict, entry] };
+            let before: { past: ActionUndoEntry[]; future: ActionUndoEntry[] };
+            if (direction === 'undo') {
+                before = { past: [entry, conflict], future: [] };
+            } else {
+                before = { past: [], future: [conflict, entry] };
+            }
             const after =
                 direction === 'undo' ? { past: [conflict], future: [entry] } : { past: [entry], future: [conflict] };
             undoStore.set(before);

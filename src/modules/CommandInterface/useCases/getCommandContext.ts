@@ -16,11 +16,14 @@ export function getCommandContext(
         automation: automationStore.value,
     }
 ): CommandContext {
-    const selectedClipIds = snapshots.selection?.selectedClipIds.length
-        ? [...snapshots.selection.selectedClipIds]
-        : snapshots.selection?.selectedClipId
-          ? [snapshots.selection.selectedClipId]
-          : [];
+    let selectedClipIds: string[];
+    if (snapshots.selection?.selectedClipIds.length) {
+        selectedClipIds = [...snapshots.selection.selectedClipIds];
+    } else if (snapshots.selection?.selectedClipId) {
+        selectedClipIds = [snapshots.selection.selectedClipId];
+    } else {
+        selectedClipIds = [];
+    }
     const selectedClipId = selectedClipIds[0] ?? null;
     const selectedClip = snapshots.tracks?.tracks
         .flatMap((track) => track.clips)

@@ -138,9 +138,12 @@ const CommandListbox = ({ id, groups, activeIndex, onSelect, onHover }: CommandL
 
 function getCommandGroups(query: string, recentCommandIds: readonly string[], context: CommandContext): CommandGroup[] {
     const results = searchCommands(query);
-    const groups = query.trim()
-        ? [{ id: 'search-results', label: null, entries: results }]
-        : discoverCommands(results, recentCommandIds, context);
+    let groups: CommandGroup[];
+    if (query.trim()) {
+        groups = [{ id: 'search-results', label: null, entries: results }];
+    } else {
+        groups = discoverCommands(results, recentCommandIds, context);
+    }
     return groups.map((group) => ({
         ...group,
         entries: group.entries.map((command) => ({

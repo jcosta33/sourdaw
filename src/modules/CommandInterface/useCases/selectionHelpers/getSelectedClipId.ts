@@ -1,6 +1,7 @@
 import { clipSelectionStore } from '#/modules/Arrangement/stores';
 
 import { type CommandContext } from '../../models/CommandContext';
+
 export function getSelectedClipId(context?: CommandContext): string | null {
     if (context) {
         return context.selectedClipId;
