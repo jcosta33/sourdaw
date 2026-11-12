@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { buildWebLlmDecodingSchema } from '../../../transformers/buildWebLlmDecodingSchema';
 import { serializeWebLlmToolPlanningPrompt } from '../../../transformers/serializeWebLlmToolPlanningPrompt';
 import { generateWebLlmCompletion } from '../generateWebLlmCompletion';
 import { generateWebLlmToolCalls } from '../toolCalling';
@@ -77,6 +78,7 @@ describe('generateWebLlmToolCalls', () => {
             signal: controller.signal,
             requireComplete: true,
             enableThinking: false,
+            responseFormatSchema: buildWebLlmDecodingSchema(tools),
         });
     });
 
@@ -92,6 +94,7 @@ describe('generateWebLlmToolCalls', () => {
             signal: undefined,
             requireComplete: true,
             enableThinking: false,
+            responseFormatSchema: buildWebLlmDecodingSchema(tools),
         });
     });
 
@@ -108,6 +111,7 @@ describe('generateWebLlmToolCalls', () => {
             signal: controller.signal,
             requireComplete: true,
             enableThinking: false,
+            responseFormatSchema: buildWebLlmDecodingSchema(tools),
         });
     });
 

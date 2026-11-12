@@ -1,3 +1,7 @@
+import { logger } from '#/infra/logger/appLogger';
+
+import { LocalModelRefusalError } from '../../errors/LocalModelRefusalError';
+
 import { createWebLlmAppConfig } from './createWebLlmAppConfig';
 import { getWebLlmArtifactUrl } from './getWebLlmArtifactUrl';
 import { serializeWebLlmArtifactSet } from './serializeWebLlmArtifactSet';
@@ -32,6 +36,8 @@ type WebLlmArtifactCache = {
 
 export type WebLlmArtifactAdmissionDependencies = {
     deleteCache: (cacheName: string) => Promise<boolean>;
+    /** The origin's storage `quota` and `usage` in bytes, as `navigator.storage.estimate()` reports them. */
+    estimateStorage: () => Promise<{ quota?: number; usage?: number }>;
     fetchArtifact: (url: string, signal: AbortSignal | undefined) => Promise<Response>;
     getManifestModel: (modelId: string) => WebLlmArtifactManifestModel;
     openCache: (cacheName: string) => Promise<WebLlmArtifactCache>;
@@ -88,6 +94,7 @@ async function runWithBrowserLock<Result>(
 
 const productionDependencies: WebLlmArtifactAdmissionDependencies = {
     deleteCache: (cacheName) => requireCacheStorage().delete(cacheName),
+    estimateStorage: () => navigator.storage.estimate(),
     fetchArtifact: (url, signal) =>
         fetch(url, {
             cache: 'no-store',
@@ -442,6 +449,36 @@ async function promoteProvenance(
     );
 }
 
+/**
+ * Refuses a download the origin has no room for, before any byte is fetched or any cache touched.
+ * A missing or failing estimate is not evidence of a shortage, so the download proceeds.
+ */
+async function refuseDownloadBeyondStorage(
+    model: WebLlmArtifactManifestModel,
+    dependencies: WebLlmArtifactAdmissionDependencies
+): Promise<void> {
+    let estimate: { quota?: number; usage?: number };
+    try {
+        estimate = await dependencies.estimateStorage();
+    } catch (error) {
+        logger.warn(`[WebLLM] storage estimate unavailable; downloading ${model.modelId} anyway`, error);
+        return;
+    }
+    if (typeof estimate.quota !== 'number' || typeof estimate.usage !== 'number') {
+        return;
+    }
+    const requiredBytes = model.artifacts.reduce((total, artifact) => total + artifact.sizeBytes, 0);
+    const availableBytes = Math.max(0, estimate.quota - estimate.usage);
+    if (availableBytes < requiredBytes) {
+        throw new LocalModelRefusalError({
+            reason: 'insufficient-storage',
+            modelId: model.modelId,
+            requiredBytes,
+            availableBytes,
+        });
+    }
+}
+
 async function admitWebLlmModelArtifactsExclusive(
     modelId: string,
     options: WebLlmArtifactAdmissionOptions = {},
@@ -483,6 +520,8 @@ async function admitWebLlmModelArtifactsExclusive(
     if (options.downloadConsent !== true) {
         throw new Error('Explicit model-download consent is required before WebLLM can fetch this artifact set.');
     }
+
+    await refuseDownloadBeyondStorage(model, dependencies);
 
     try {
         await fetchAndStageArtifacts(model, options.signal, dependencies, options.onProgress);

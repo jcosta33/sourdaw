@@ -2,10 +2,13 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 
+import { isLocalModelRefusalError, LocalModelRefusalError } from '../../errors/LocalModelRefusalError';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 
 import { engineState, type WebLlmEngine } from './engineLifecycleState';
 import { getWebLlmContextWindowSize } from './getWebLlmContextWindowSize';
+import { getWebLlmRequiredFeatures } from './getWebLlmRequiredFeatures';
+import { readWebGpuAdapterFeatures } from './readWebGpuAdapterFeatures';
 import { retireWebLlmEngine } from './retireWebLlmEngine';
 import { unloadWebLlmEngine } from './unloadWebLlmEngine';
 import { admitWebLlmModelArtifacts } from './webLlmArtifactAdmission';
@@ -16,8 +19,8 @@ type InitWebLlmEngineOptions = {
     signal?: AbortSignal;
 };
 
-export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts })(
-    ({ logger, admitWebLlmModelArtifacts }) =>
+export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, readWebGpuAdapterFeatures })(
+    ({ logger, admitWebLlmModelArtifacts, readWebGpuAdapterFeatures }) =>
         function initWebLlmEngine(modelId?: string, options: InitWebLlmEngineOptions = {}): Promise<WebLlmEngine> {
             if (!MODEL_RELEASE_ADMISSION.webLlm) {
                 return Promise.reject(new Error('Browser WebLLM model artifacts are not admitted in this release'));
@@ -102,6 +105,12 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts })(
                     llmStatusStore.set({ state: 'loading', progress: 0, text: 'Loading AI engine...' });
                 }
 
+                // Before admission, so a machine that cannot run the model neither fetches nor
+                // writes a cache entry for it. No adapter is not a refusal here: the engine's
+                // own load reports a missing WebGPU device.
+                await refuseMissingAdapterFeatures(targetModel, readWebGpuAdapterFeatures);
+                attemptSignal.throwIfAborted();
+
                 let initializedEngine: WebLlmEngine | null = null;
                 const admission = await admitWebLlmModelArtifacts(targetModel, {
                     consume: async (verifiedAdmission) => {
@@ -148,6 +157,8 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts })(
                                         { context_window_size: getWebLlmContextWindowSize(targetModel) }
                                     ),
                             });
+                        } catch (error) {
+                            throw classifyWebLlmLoadFailure(error, targetModel);
                         } finally {
                             attemptSignal.removeEventListener('abort', handleAbort);
                         }
@@ -204,7 +215,11 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts })(
                     engineState.worker = null;
                 }
                 if (!attemptSignal.aborted) {
-                    llmStatusStore.set({ state: 'error', message: String(error) });
+                    llmStatusStore.set(
+                        isLocalModelRefusalError(error)
+                            ? { state: 'error', message: error.message, refusal: error.refusal }
+                            : { state: 'error', message: String(error) }
+                    );
                 }
                 engineState.initPromise = null;
                 engineState.initAttemptId = null;
@@ -223,6 +238,50 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts })(
             });
         }
 );
+
+async function refuseMissingAdapterFeatures(
+    modelId: string,
+    readAdapterFeatures: () => Promise<ReadonlySet<string> | null>
+): Promise<void> {
+    const required = getWebLlmRequiredFeatures(modelId);
+    if (required.length === 0) {
+        return;
+    }
+    const available = await readAdapterFeatures();
+    if (available !== null && required.some((feature) => !available.has(feature))) {
+        throw new LocalModelRefusalError({ reason: 'shader-f16-unavailable', modelId });
+    }
+}
+
+function readLoadFailureText(error: unknown): string {
+    if (error instanceof Error) {
+        return `${error.name}: ${error.message}`;
+    }
+    return typeof error === 'string' ? error : '';
+}
+
+const OUT_OF_MEMORY = /out\s*of\s*memory/i;
+
+/**
+ * The worker engine's load failures cross the worker boundary as strings (`err.toString()`), so a
+ * device loss or an out-of-memory arrives as text, not as an Error. Those become a refusal naming
+ * the model's memory figure; web-llm's own missing-feature error becomes the shader-f16 refusal;
+ * anything else, an abort included, is returned unchanged.
+ */
+function classifyWebLlmLoadFailure(error: unknown, modelId: string): unknown {
+    const text = readLoadFailureText(error);
+    if (text.startsWith('ShaderF16SupportError')) {
+        return new LocalModelRefusalError({ reason: 'shader-f16-unavailable', modelId });
+    }
+    if (text.startsWith('DeviceLostError') || OUT_OF_MEMORY.test(text)) {
+        return new LocalModelRefusalError({
+            reason: 'gpu-memory',
+            modelId,
+            requiredGpuMemoryMb: getWebLlmArtifactManifestModel(modelId).engine.vramRequiredMb,
+        });
+    }
+    return error;
+}
 
 type WaitForWebLlmAttemptInput = {
     attemptId: string | null;
