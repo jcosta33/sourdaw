@@ -458,6 +458,58 @@ function writeLegacyReviewBundleManifest(primaryRoot: string, number: number, he
     );
 }
 
+function successfulAuthorshipNotesFetchFixture(shell: ShellRunner): ShellRunner {
+    const refs = new Map<string, string>();
+    const fetchedNotes = 'c'.repeat(40);
+
+    return {
+        capture: (command, args) => {
+            if (
+                command === 'git' &&
+                args[0] === 'for-each-ref' &&
+                (args[2] === 'refs/notes/ai' || args[2]?.startsWith('refs/agents/fetched-ai-notes/'))
+            ) {
+                const ref = args[2]!;
+                const oid = refs.get(ref);
+                return oid === undefined ? '' : `${ref} ${oid} `;
+            }
+            if (command === 'git' && args[0] === 'cat-file' && args[1] === '-t' && args[2] === fetchedNotes) {
+                return 'commit';
+            }
+            return shell.capture(command, args);
+        },
+        run: (command, args) => {
+            if (command === 'git' && args.includes('fetch')) {
+                const refspec = args.at(-1) ?? '';
+                const destination = refspec.split(':')[1];
+                if (destination?.startsWith('refs/agents/fetched-ai-notes/')) {
+                    refs.set(destination, fetchedNotes);
+                }
+                return;
+            }
+
+            if (command === 'git' && args[0] === 'update-ref' && args[1] === '--no-deref') {
+                if (args[2] === 'refs/notes/ai' && args[3]) {
+                    refs.set('refs/notes/ai', args[3]);
+                    return;
+                }
+
+                if (args[2] === '-d' && args[3]?.startsWith('refs/agents/fetched-ai-notes/')) {
+                    refs.delete(args[3]);
+                    return;
+                }
+
+                if (args[2]?.startsWith('refs/agents/preserved-ai-notes/') && args[3]) {
+                    refs.set(args[2], args[3]);
+                    return;
+                }
+            }
+
+            shell.run(command, args);
+        },
+    };
+}
+
 function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) {
     const captures: Array<{ command: string; args: string[] }> = [];
     const mergeCaptures: Array<{ command: string; args: string[] }> = [];
@@ -634,7 +686,7 @@ function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) 
             }
         },
     };
-    const port = shellPort('jcosta33/sourdaw', shell, {
+    const port = shellPort('jcosta33/sourdaw', successfulAuthorshipNotesFetchFixture(shell), {
         primaryRoot,
         mergeCapture: (command, args) => {
             mergeCaptures.push({ command, args });
@@ -10577,6 +10629,10 @@ describe('delivery shell boundary', () => {
         vi.unstubAllEnvs();
     });
 
+    function recoveryShellPort(repository: string, shell: ShellRunner, options?: Parameters<typeof shellPort>[2]) {
+        return shellPort(repository, successfulAuthorshipNotesFetchFixture(shell), options);
+    }
+
     function rollupPort(pages: Array<RollupPageFixture | string>) {
         const captures: Array<{ command: string; args: string[] }> = [];
         const remaining = [...pages];
@@ -11148,7 +11204,7 @@ describe('delivery shell boundary', () => {
         const effects: string[] = [];
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
         execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
-        const port = shellPort(
+        const port = recoveryShellPort(
             'jcosta33/sourdaw',
             {
                 capture: (_command, args) => {
@@ -11217,7 +11273,7 @@ describe('delivery shell boundary', () => {
         execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', authorityOid], {
             cwd: primaryRoot,
         });
-        const port = shellPort(
+        const port = recoveryShellPort(
             'jcosta33/sourdaw',
             {
                 capture: (_command, args) => {
@@ -11301,7 +11357,7 @@ describe('delivery shell boundary', () => {
         'shellPort refuses $merger merged-by authority before any recovery effect',
         ({ shellSnapshot, graphQlMergedBy, expectedError }) => {
             const effects: string[] = [];
-            const port = shellPort('jcosta33/sourdaw', {
+            const port = recoveryShellPort('jcosta33/sourdaw', {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
                     if (args[0] === 'for-each-ref') {
@@ -11360,7 +11416,7 @@ describe('delivery shell boundary', () => {
             created_at: createdAt,
             updated_at: createdAt,
         });
-        const port = shellPort(
+        const port = recoveryShellPort(
             'jcosta33/sourdaw',
             {
                 capture: (_command, args) => {
@@ -11420,7 +11476,7 @@ describe('delivery shell boundary', () => {
             input: JSON.stringify({ version: 1, receiptId: 'IC_legacy_v1' }),
         }).trim();
         execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', authorityOid], { cwd: primaryRoot });
-        const port = shellPort(
+        const port = recoveryShellPort(
             'jcosta33/sourdaw',
             {
                 capture: (_command, args) => {
@@ -11880,7 +11936,7 @@ describe('delivery shell boundary', () => {
         const receipts: DeliveryReceiptComment[] = [];
 
         try {
-            const port = shellPort(
+            const port = recoveryShellPort(
                 'jcosta33/sourdaw',
                 {
                     capture: (_command, args) => {
@@ -12444,7 +12500,7 @@ describe('delivery shell boundary', () => {
         const effects: string[] = [];
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
         execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
-        const port = shellPort(
+        const port = recoveryShellPort(
             'jcosta33/sourdaw',
             {
                 capture: (_command, args) => {
@@ -12502,7 +12558,7 @@ describe('delivery shell boundary', () => {
         const effects: string[] = [];
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
         execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
-        const port = shellPort(
+        const port = recoveryShellPort(
             'jcosta33/sourdaw',
             {
                 capture: (_command, args) => {
