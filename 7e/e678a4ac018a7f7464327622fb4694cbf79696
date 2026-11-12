@@ -1,0 +1,30 @@
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_76ccd61d453edf::t_fdae7ace199cc0 3019
+  s_db65665fc1d0c1::t_4c1a0b701220a3 3089-3145
+scripts/trustedGithubWriteBootstrap.ts
+  s_76ccd61d453edf::t_f1f67951e0dfe3 6340
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7ee678a4ac018a7f7464327622fb4694cbf79696",
+  "prompts": {},
+  "sessions": {
+    "s_76ccd61d453edf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "108ea70a-a924-42ce-b7b8-fd9c1012e902",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_db65665fc1d0c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f79ceb19-eb31-4445-8d19-e07aa8e75dd6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
