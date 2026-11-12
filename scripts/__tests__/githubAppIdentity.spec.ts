@@ -1,6 +1,17 @@
 import { spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    existsSync,
+    mkdtempSync,
+    mkdirSync,
+    readFileSync,
+    readdirSync,
+    realpathSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -26,6 +37,7 @@ import {
     CONFIRM_REVIEWER_MINT_PERMISSIONS,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
+    assertTrustedImportClosure,
     authenticatePublishingAuthor,
     authenticateRole,
     authenticateTrackerAuthor,
@@ -39,6 +51,7 @@ import {
     isReviewerBotNodeId,
     loadRoleCredentials,
     mintInstallationToken,
+    originMainBlob,
     parseDotenv,
     parseGraphqlResponse,
     resolvePrimaryRoot,
@@ -48,6 +61,7 @@ import {
     type GitHubJsonClient,
     spawnRun,
 } from '../githubAppIdentity.ts';
+import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const pem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
@@ -74,9 +88,13 @@ describe('orchestrator authentication', () => {
                 expect(command).toBe('gh');
                 if (args[0] === 'auth') {
                     expect(args).toEqual(['auth', 'token', '--hostname', 'github.com', '--user', 'jcosta33']);
-                    for (const key of Object.keys(parent).filter((key) => key !== 'PATH')) {
+                    for (const key of Object.keys(parent).filter(
+                        (key) => key !== 'PATH' && key !== 'GIT_CONFIG_COUNT'
+                    )) {
                         expect(options.env[key]).toBeUndefined();
                     }
+                    // The inherited count is replaced by the helper's own repository-program overrides.
+                    expect(options.env.GIT_CONFIG_COUNT).toBe('12');
                     return 'stored-token';
                 }
                 expect(args).toEqual(['api', '--hostname', 'github.com', 'user']);
@@ -469,7 +487,6 @@ describe('installation mint', () => {
         });
         expect(env.GIT_DIR).toBeUndefined();
         expect(env.GIT_WORK_TREE).toBeUndefined();
-        expect(env.GIT_CONFIG_COUNT).toBeUndefined();
         expect(env.GIT_EXTERNAL_DIFF).toBeUndefined();
         expect(env.GH_TOKEN).toBeUndefined();
         expect(env.GITHUB_TOKEN).toBeUndefined();
@@ -1171,9 +1188,10 @@ describe('isolated gh sessions', () => {
         expect(auth.session.env.GIT_CONFIG_GLOBAL).toBe('/dev/null');
         expect(auth.session.env.GIT_CONFIG_SYSTEM).toBe('/dev/null');
         expect(auth.session.env.GIT_TERMINAL_PROMPT).toBe('0');
-        expect(auth.session.env.GIT_CONFIG_COUNT).toBeUndefined();
-        expect(auth.session.env.GIT_CONFIG_KEY_0).toBeUndefined();
-        expect(auth.session.env.GIT_CONFIG_VALUE_0).toBeUndefined();
+        // The inherited `insteadof` entry is replaced by the helper's own repository-program overrides.
+        expect(auth.session.env.GIT_CONFIG_COUNT).toBe('12');
+        expect(auth.session.env.GIT_CONFIG_KEY_0).toBe('core.hooksPath');
+        expect(auth.session.env.GIT_CONFIG_VALUE_0).toBe('/dev/null');
         expect(auth.session.env.GIT_CONFIG_PARAMETERS).toBeUndefined();
         expect(auth.session.env.GIT_TRACE).toBeUndefined();
         expect(auth.session.env.GIT_TRACE2).toBeUndefined();
@@ -1302,8 +1320,10 @@ describe('repository and trusted blob', () => {
         expect(() => assertRequiredRepository('other/repo')).toThrow(/jcosta33\/sourdaw/);
     });
 
-    it('allows a new script missing from origin/main and refuses a mutated existing blob', () => {
-        assertTrustedExecutingBlob('scripts/openLane.ts', '/tmp/openLane.ts', undefined, 'new');
+    it('refuses a script with no origin/main blob and a mutated existing blob, and admits an exact copy', () => {
+        expect(() => assertTrustedExecutingBlob('scripts/openLane.ts', '/tmp/openLane.ts', undefined, 'new')).toThrow(
+            'scripts/openLane.ts has no blob on origin/main; refusing to run an unverifiable copy'
+        );
         expect(() =>
             assertTrustedExecutingBlob('scripts/deliverPullRequest.ts', '/tmp/deliver.ts', 'origin', 'mutated')
         ).toThrow(/does not match origin\/main/);
@@ -1331,6 +1351,392 @@ describe('repository and trusted blob', () => {
         expect(isAuthorBotNodeId(REVIEWER_BOT_NODE_ID)).toBe(false);
         expect(isAuthorBotNodeId('BOT_renamed-login-does-not-matter')).toBe(false);
         expect(isAuthorBotNodeId(undefined)).toBe(false);
+    });
+});
+
+function fixtureGit(cwd: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}): string {
+    const result = spawnSync('git', args, {
+        cwd,
+        encoding: 'utf8',
+        env: {
+            PATH: process.env.PATH,
+            HOME: cwd,
+            GIT_CONFIG_GLOBAL: '/dev/null',
+            GIT_CONFIG_NOSYSTEM: '1',
+            GIT_AUTHOR_NAME: 'Fixture',
+            GIT_AUTHOR_EMAIL: 'fixture@example.test',
+            GIT_COMMITTER_NAME: 'Fixture',
+            GIT_COMMITTER_EMAIL: 'fixture@example.test',
+            ...extraEnv,
+        },
+    });
+    if (result.status !== 0) {
+        throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
+    }
+    return result.stdout.trim();
+}
+
+function withScratch(prefix: string, body: (root: string) => void): void {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+    try {
+        body(root);
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+}
+
+function writeExecutable(path: string, source: string): void {
+    writeFileSync(path, source);
+    chmodSync(path, 0o700);
+}
+
+/** A repository whose `origin/main` holds an entry importing `./a.ts`, which imports `./b.ts`. */
+function importClosureRepository(root: string): string {
+    mkdirSync(join(root, 'scripts'));
+    writeFileSync(join(root, 'scripts', 'entry.ts'), "import { a } from './a.ts';\nexport const entry = a;\n");
+    writeFileSync(join(root, 'scripts', 'a.ts'), "import { b } from './b.ts';\nexport const a = b;\n");
+    writeFileSync(join(root, 'scripts', 'b.ts'), 'export const b = 1;\n');
+    fixtureGit(root, ['init', '-q', '-b', 'main']);
+    fixtureGit(root, ['add', 'scripts']);
+    fixtureGit(root, ['commit', '-q', '-m', 'chore: closure']);
+    fixtureGit(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+    return join(root, 'scripts', 'entry.ts');
+}
+
+describe('origin/main blob reads', () => {
+    it('throws when the revision cannot be resolved instead of reporting a missing file', () => {
+        withScratch('sourdaw-origin-blob-unresolved-', (root) => {
+            fixtureGit(root, ['init', '-q', '-b', 'main']);
+            writeFileSync(join(root, 'file.ts'), 'export {};\n');
+            fixtureGit(root, ['add', 'file.ts']);
+            fixtureGit(root, ['commit', '-q', '-m', 'chore: base']);
+
+            expect(() => originMainBlob('file.ts', root, githubAuthorizationGitEnv())).toThrow();
+        });
+    });
+
+    it('returns undefined only for a path absent at a readable revision', () => {
+        withScratch('sourdaw-origin-blob-absent-', (root) => {
+            importClosureRepository(root);
+
+            expect(originMainBlob('scripts/missing.ts', root, githubAuthorizationGitEnv())).toBeUndefined();
+            expect(originMainBlob('scripts/b.ts', root, githubAuthorizationGitEnv())).toBe('export const b = 1;\n');
+        });
+    });
+});
+
+describe('trusted import closure', () => {
+    it('admits a closure whose every file matches origin/main', () => {
+        withScratch('sourdaw-closure-match-', (root) => {
+            const entry = importClosureRepository(root);
+
+            expect(() => assertTrustedImportClosure(entry, root, snapshotImportSpecifiers)).not.toThrow();
+        });
+    });
+
+    it('refuses a mutated transitive import', () => {
+        withScratch('sourdaw-closure-mutated-', (root) => {
+            const entry = importClosureRepository(root);
+            writeFileSync(join(root, 'scripts', 'b.ts'), 'export const b = 2;\n');
+
+            expect(() => assertTrustedImportClosure(entry, root, snapshotImportSpecifiers)).toThrow(
+                'scripts/b.ts does not match origin/main; refusing to run a mutated copy'
+            );
+        });
+    });
+
+    it('refuses a transitive import that has no blob on origin/main', () => {
+        withScratch('sourdaw-closure-absent-', (root) => {
+            const entry = importClosureRepository(root);
+            writeFileSync(join(root, 'scripts', 'b.ts'), "import { c } from './c.ts';\nexport const b = c;\n");
+            writeFileSync(join(root, 'scripts', 'c.ts'), 'export const c = 1;\n');
+            fixtureGit(root, ['add', 'scripts']);
+            fixtureGit(root, ['commit', '-q', '-m', 'chore: add c']);
+            fixtureGit(root, ['rm', '-q', '--cached', 'scripts/c.ts']);
+            fixtureGit(root, ['commit', '-q', '-m', 'chore: drop c']);
+            fixtureGit(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+
+            expect(() => assertTrustedImportClosure(entry, root, snapshotImportSpecifiers)).toThrow(
+                'scripts/c.ts has no blob on origin/main; refusing to run an unverifiable copy'
+            );
+        });
+    });
+});
+
+const STERILE_ENVS = [
+    ['authorization', (parent: NodeJS.ProcessEnv) => githubAuthorizationGitEnv(parent)],
+    ['token-bearing', (parent: NodeJS.ProcessEnv) => githubChildEnv('ghs_sentinel', '/gh-config', parent)],
+] as const;
+
+describe('sterile Git child environments', () => {
+    it.each(STERILE_ENVS)(
+        'the %s env strips mixed-case authority and overrides replace objects and repository programs',
+        (_label, sterile) => {
+            const env = sterile({
+                PATH: '/usr/bin',
+                Git_Dir: '/hostile/.git',
+                git_work_tree: '/hostile',
+                gh_token: 'personal',
+                Github_Token: 'actions',
+                Sourdaw_GitHub_App_Private_Key: 'secret',
+                node_options: '--import=/hostile/preload.mjs',
+                ssh_auth_sock: '/tmp/agent.sock',
+                GIT_CONFIG_COUNT: '1',
+                GIT_CONFIG_KEY_0: 'core.hooksPath',
+                GIT_CONFIG_VALUE_0: '/hostile/hooks',
+                SOURDAW_TRUSTED_GIT_PATH: '/usr/bin/git',
+            });
+
+            for (const key of [
+                'Git_Dir',
+                'git_work_tree',
+                'gh_token',
+                'Github_Token',
+                'Sourdaw_GitHub_App_Private_Key',
+                'node_options',
+                'ssh_auth_sock',
+            ]) {
+                expect(env[key]).toBeUndefined();
+            }
+            expect(env).toMatchObject({
+                GIT_NO_REPLACE_OBJECTS: '1',
+                GIT_CONFIG_COUNT: '12',
+                GIT_CONFIG_KEY_0: 'core.hooksPath',
+                GIT_CONFIG_VALUE_0: '/dev/null',
+                GIT_CONFIG_KEY_1: 'core.fsmonitor',
+                GIT_CONFIG_VALUE_1: 'false',
+                GIT_CONFIG_KEY_2: 'protocol.ext.allow',
+                GIT_CONFIG_VALUE_2: 'never',
+                GIT_CONFIG_KEY_3: 'core.askPass',
+                GIT_CONFIG_VALUE_3: '',
+                GIT_CONFIG_KEY_4: 'push.gpgSign',
+                GIT_CONFIG_VALUE_4: 'false',
+                GIT_CONFIG_KEY_5: 'commit.gpgSign',
+                GIT_CONFIG_VALUE_5: 'false',
+                GIT_CONFIG_KEY_6: 'core.alternateRefsCommand',
+                GIT_CONFIG_VALUE_6: '',
+                // `trustedChildExecutable` reads the launcher's frozen executable from the child env.
+                SOURDAW_TRUSTED_GIT_PATH: '/usr/bin/git',
+            });
+        }
+    );
+
+    it('reads the original object, not a lane-planted replace ref', () => {
+        withScratch('sourdaw-replace-ref-', (root) => {
+            fixtureGit(root, ['init', '-q', '-b', 'main']);
+            writeFileSync(join(root, 'file.txt'), 'original\n');
+            fixtureGit(root, ['add', 'file.txt']);
+            fixtureGit(root, ['commit', '-q', '-m', 'chore: base']);
+            const original = fixtureGit(root, ['rev-parse', 'HEAD:file.txt']);
+            writeFileSync(join(root, 'forged.txt'), 'forged\n');
+            const forged = fixtureGit(root, ['hash-object', '-w', 'forged.txt']);
+            fixtureGit(root, ['replace', original, forged]);
+            expect(fixtureGit(root, ['show', 'HEAD:file.txt'])).toBe('forged');
+
+            for (const [, sterile] of STERILE_ENVS) {
+                const env = sterile(process.env);
+                expect(spawnCapture('git', ['show', 'HEAD:file.txt'], { cwd: root, env })).toBe('original');
+                expect(spawnCapture('git', ['cat-file', '-p', original], { cwd: root, env })).toBe('original');
+            }
+        });
+    });
+
+    it('runs no repository-configured hook during a token-bearing fetch', () => {
+        withScratch('sourdaw-hook-token-', (root) => {
+            const source = join(root, 'source');
+            const repository = join(root, 'repository');
+            const leaked = join(root, 'leaked');
+            mkdirSync(source);
+            mkdirSync(repository);
+            mkdirSync(join(root, 'hooks'));
+            mkdirSync(join(root, 'helper'));
+            fixtureGit(source, ['init', '-q', '-b', 'main']);
+            fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: base']);
+            fixtureGit(repository, ['init', '-q', '-b', 'main']);
+            fixtureGit(repository, ['config', 'core.hooksPath', join(root, 'hooks')]);
+            writeExecutable(
+                join(root, 'hooks', 'reference-transaction'),
+                `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > ${JSON.stringify(leaked)}\n`
+            );
+            const fetch = (env: NodeJS.ProcessEnv) =>
+                spawnCapture(
+                    'git',
+                    gitAuthenticatedArgs('ghs_sentinel', join(root, 'helper'), ['fetch', source, 'main']),
+                    { cwd: repository, env }
+                );
+            const env = githubChildEnv('ghs_sentinel', join(root, 'gh-config'));
+
+            fetch(env);
+            expect(fixtureGit(repository, ['rev-parse', 'FETCH_HEAD'])).toBe(fixtureGit(source, ['rev-parse', 'HEAD']));
+            expect(existsSync(leaked)).toBe(false);
+
+            // A fetch that moves a ref without the environment overrides runs the hook with the token.
+            fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: next']);
+            fetch({ ...env, GIT_CONFIG_COUNT: '0' });
+            expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
+        });
+    });
+
+    it.each(STERILE_ENVS)('the %s env runs no repository-configured fsmonitor', (_label, sterile) => {
+        withScratch('sourdaw-fsmonitor-', (root) => {
+            const ran = join(root, 'monitor-ran');
+            fixtureGit(root, ['init', '-q', '-b', 'main']);
+            writeExecutable(join(root, 'monitor'), `#!/bin/sh\nprintf '%s' "ran" > ${JSON.stringify(ran)}\nexit 1\n`);
+            fixtureGit(root, ['config', 'core.fsmonitor', join(root, 'monitor')]);
+            const env = sterile(process.env);
+
+            spawnCapture('git', ['status', '--porcelain'], { cwd: root, env });
+            expect(existsSync(ran)).toBe(false);
+
+            spawnCapture('git', ['status', '--porcelain'], { cwd: root, env: { ...env, GIT_CONFIG_COUNT: '0' } });
+            expect(readFileSync(ran, 'utf8')).toBe('ran');
+        });
+    });
+
+    it('runs no alternate-refs command the repository config sets', () => {
+        withScratch('sourdaw-alternate-refs-', (root) => {
+            const leaked = join(root, 'leaked');
+            const command = join(root, 'alternate-refs');
+            const alternate = join(root, 'alternate');
+            const source = join(root, 'source');
+            const repository = join(root, 'repository');
+            for (const path of [alternate, source, repository]) {
+                mkdirSync(path);
+                fixtureGit(path, ['init', '-q', '-b', 'main']);
+            }
+            fixtureGit(alternate, ['commit', '-q', '--allow-empty', '-m', 'chore: alternate']);
+            fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: source']);
+            writeFileSync(
+                join(repository, '.git', 'objects', 'info', 'alternates'),
+                `${join(alternate, '.git', 'objects')}\n`
+            );
+            writeExecutable(command, `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > ${JSON.stringify(leaked)}\n`);
+            fixtureGit(repository, ['config', 'core.alternateRefsCommand', command]);
+            const env = githubChildEnv('ghs_sentinel', join(root, 'gh-config'));
+            const fetch = (fetchEnv: NodeJS.ProcessEnv) =>
+                spawnCapture('git', ['fetch', source, 'main'], { cwd: repository, env: fetchEnv });
+
+            fetch(env);
+            expect(existsSync(leaked)).toBe(false);
+
+            // A fetch that has something new to negotiate, without the overrides, runs the command.
+            fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: next']);
+            fetch({ ...env, GIT_CONFIG_COUNT: '0' });
+            expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
+        });
+    });
+
+    it('refuses a token-bearing git child while the repository config defines a hook', () => {
+        withScratch('sourdaw-config-hook-', (root) => {
+            const leaked = join(root, 'leaked');
+            const program = join(root, 'hook');
+            const source = join(root, 'source');
+            const repository = join(root, 'repository');
+            for (const path of [source, repository]) {
+                mkdirSync(path);
+                fixtureGit(path, ['init', '-q', '-b', 'main']);
+            }
+            fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: source']);
+            writeExecutable(program, `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > ${JSON.stringify(leaked)}\n`);
+            fixtureGit(repository, ['config', 'hook.lane.event', 'reference-transaction']);
+            fixtureGit(repository, ['config', 'hook.lane.command', program]);
+            const env = githubChildEnv('ghs_sentinel', join(root, 'gh-config'));
+            const fetchArgs = ['fetch', source, 'main'];
+
+            expect(() => spawnCapture('git', fetchArgs, { cwd: repository, env })).toThrow(
+                `refusing a token-bearing git child: repository config defines hook.lane.event`
+            );
+            expect(() => spawnRun('git', ['-C', repository, ...fetchArgs], { env })).toThrow(
+                'repository config defines hook.lane.event'
+            );
+            const credentialArgs = ['-c', 'credential.helper=', '-c', 'credential.helper=!true', ...fetchArgs];
+            expect(() =>
+                spawnCapture('git', credentialArgs, { cwd: repository, env: githubAuthorizationGitEnv() })
+            ).toThrow('repository config defines hook.lane.event');
+            expect(existsSync(leaked)).toBe(false);
+
+            // The fixed-name overrides alone do not stop a config-defined hook: it runs beside the token.
+            spawnSync('git', fetchArgs, { cwd: repository, env });
+            expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
+        });
+    });
+
+    it('runs a git child without a token whatever hooks the repository config defines', () => {
+        withScratch('sourdaw-config-hook-untokened-', (root) => {
+            fixtureGit(root, ['init', '-q', '-b', 'main']);
+            fixtureGit(root, ['config', 'hook.lane.event', 'pre-commit']);
+            fixtureGit(root, ['config', 'hook.lane.command', '/usr/bin/true']);
+
+            expect(
+                spawnCapture('git', ['config', 'hook.lane.event'], { cwd: root, env: githubAuthorizationGitEnv() })
+            ).toBe('pre-commit');
+        });
+    });
+
+    it('runs no git proxy a repository rewrite to git:// points the GitHub remote at', () => {
+        withScratch('sourdaw-git-proxy-', (root) => {
+            const leaked = join(root, 'leaked');
+            const proxy = join(root, 'proxy');
+            writeExecutable(proxy, `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > ${JSON.stringify(leaked)}\nexit 1\n`);
+            fixtureGit(root, ['init', '-q', '-b', 'main']);
+            fixtureGit(root, ['config', 'core.gitProxy', proxy]);
+            fixtureGit(root, ['config', 'url.git://example.invalid/.insteadOf', 'https://github.com/']);
+            const env = githubChildEnv('ghs_sentinel', join(root, 'gh-config'));
+            const fetch = (fetchEnv: NodeJS.ProcessEnv) => () =>
+                spawnCapture('git', ['fetch', GITHUB_HTTPS_REMOTE, 'main'], { cwd: root, env: fetchEnv });
+
+            expect(fetch(env)).toThrow();
+            expect(existsSync(leaked)).toBe(false);
+
+            // Without the environment overrides the rewritten remote runs the proxy with the token.
+            expect(fetch({ ...env, GIT_CONFIG_COUNT: '0' })).toThrow();
+            expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
+        });
+    });
+
+    it('overrides exactly the listed repository config keys, in order', () => {
+        const env = githubAuthorizationGitEnv({});
+        const count = Number(env.GIT_CONFIG_COUNT);
+        const overrides = Array.from({ length: count }, (_, index) => [
+            env[`GIT_CONFIG_KEY_${String(index)}`],
+            env[`GIT_CONFIG_VALUE_${String(index)}`],
+        ]);
+        expect(overrides).toEqual([
+            ['core.hooksPath', '/dev/null'],
+            ['core.fsmonitor', 'false'],
+            ['protocol.ext.allow', 'never'],
+            ['core.askPass', ''],
+            ['push.gpgSign', 'false'],
+            ['commit.gpgSign', 'false'],
+            ['core.alternateRefsCommand', ''],
+            ['protocol.allow', 'never'],
+            ['protocol.https.allow', 'always'],
+            ['protocol.file.allow', 'always'],
+            ['protocol.git.allow', 'never'],
+            ['protocol.ssh.allow', 'never'],
+        ]);
+        expect(env[`GIT_CONFIG_KEY_${String(count)}`]).toBeUndefined();
+    });
+
+    it('runs no ext:: transport a repository rewrite points the GitHub remote at', () => {
+        withScratch('sourdaw-ext-transport-', (root) => {
+            const leaked = join(root, 'leaked');
+            const transport = join(root, 'transport');
+            writeExecutable(transport, `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > ${JSON.stringify(leaked)}\nexit 1\n`);
+            fixtureGit(root, ['init', '-q', '-b', 'main']);
+            fixtureGit(root, ['config', 'protocol.ext.allow', 'always']);
+            fixtureGit(root, ['config', `url.ext::${transport} %S.insteadOf`, GITHUB_HTTPS_REMOTE]);
+            const env = githubChildEnv('ghs_sentinel', join(root, 'gh-config'));
+            const fetch = (fetchEnv: NodeJS.ProcessEnv) => () =>
+                spawnCapture('git', ['fetch', GITHUB_HTTPS_REMOTE, 'main'], { cwd: root, env: fetchEnv });
+
+            expect(fetch(env)).toThrow();
+            expect(existsSync(leaked)).toBe(false);
+
+            // Without the environment overrides the rewritten remote runs the command with the token.
+            expect(fetch({ ...env, GIT_CONFIG_COUNT: '0' })).toThrow();
+            expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
+        });
     });
 });
 

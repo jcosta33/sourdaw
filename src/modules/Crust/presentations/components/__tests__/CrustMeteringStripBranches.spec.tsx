@@ -77,6 +77,14 @@ describe('CrustMeteringStrip — true peak LED', () => {
         fireEvent.click(screen.getByRole('button', { name: /reset true peak/i }));
         expect(onResetTp).toHaveBeenCalledTimes(1);
     });
+
+    it('provides a 24 pixel reset target while retaining the compact status light', () => {
+        render(<CrustMeteringStrip {...defaultProps()} />);
+
+        const reset = screen.getByRole('button', { name: 'Reset true peak indicator' });
+        expect(reset).toHaveClass('size-6');
+        expect(reset.querySelector('[data-testid="true-peak-status-light"]')).toHaveClass('size-2');
+    });
 });
 
 describe('CrustMeteringStrip — LRA display', () => {

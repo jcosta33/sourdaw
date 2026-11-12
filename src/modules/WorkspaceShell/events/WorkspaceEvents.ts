@@ -14,6 +14,3 @@ export type ZoomToSelectionPayload = { startBeat: number; endBeat: number };
 
 /** Payload for opening Preferences; `undefined` keeps the section the user last viewed. */
 export type OpenPreferencesPayload = { section: PreferencesSection } | undefined;
-
-/** Payload for MIDI import event. */
-export type ImportMidiPayload = { file: File };

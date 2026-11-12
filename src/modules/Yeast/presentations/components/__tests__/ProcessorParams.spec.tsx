@@ -292,4 +292,21 @@ describe('ProcessorParams', () => {
         expect(onSetParam).toHaveBeenCalledWith('p1', 'semitones', expect.any(Number), false);
         expect(onSetParam.mock.calls[0]?.[1]).toBe('semitones');
     });
+
+    it('gives processor selects accessible names and 24 pixel semantic-text targets', () => {
+        renderFor('arpeggiator');
+
+        const select = screen.getByRole('combobox', { name: 'Mode' });
+        expect(select).toHaveClass('h-6', 'text-[length:var(--text-nano)]');
+        expect(select).not.toHaveClass('h-4', 'text-[6px]');
+    });
+
+    it('gives the groove template the same operable select treatment', () => {
+        renderFor('groove', { grooveTemplates: [{ id: 'straight', name: 'Straight' }] });
+
+        expect(screen.getByRole('combobox', { name: 'Groove template' })).toHaveClass(
+            'h-6',
+            'text-[length:var(--text-nano)]'
+        );
+    });
 });
