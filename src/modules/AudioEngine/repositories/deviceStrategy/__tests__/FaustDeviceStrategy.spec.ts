@@ -78,6 +78,25 @@ describe('FaustDeviceStrategy', () => {
         expect(keyOn).toHaveBeenCalledWith(0, 64, 100, 0.5);
         expect(keyOff).toHaveBeenCalledWith(0, 64, 0, 1);
     });
+
+    it('releases the saved nonzero channel at its requested sample frame', () => {
+        const keyOn = vi.fn();
+        const keyOff = vi.fn();
+        const faustNode = Object.assign(make_audio_node(), { setParamValue: vi.fn() });
+        const offlineNode = {
+            inputNode: faustNode,
+            outputNode: faustNode,
+            nodes: [faustNode],
+            wamControls: { setParam: vi.fn(), scheduleParam: vi.fn(), keyOn, keyOff },
+        };
+        const strategy = new FaustDeviceStrategy(offlineNode, faustNode, true, 48_000);
+        strategy.noteOn({ noteOrPad: 69, velocity: 100, channel: 5, sampleFrame: 137 });
+        strategy.noteOff({ noteOrPad: 69, channel: 5, sampleFrame: 24_007 });
+        expect(keyOn).toHaveBeenCalledWith(5, 69, 100, 137 / 48_000);
+        expect(keyOff).toHaveBeenCalledWith(5, 69, 0, 24_007 / 48_000);
+        strategy.noteOff({ noteOrPad: 69 });
+        expect(keyOff).toHaveBeenLastCalledWith(0, 69, 0, undefined);
+    });
 });
 
 describe('createFaustStrategy', () => {

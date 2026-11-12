@@ -41,7 +41,7 @@ diff --git a/dist/client/client.mjs b/dist/client/client.mjs
 diff --git a/dist/node/chunks/node.js b/dist/node/chunks/node.js
 --- a/dist/node/chunks/node.js
 +++ b/dist/node/chunks/node.js
-@@ -17241,12 +17241,13 @@
+@@ -17245,12 +17245,13 @@
  	const hmrDirectTargetReplacement = escapeReplacement(directTarget);
  	const hmrBaseReplacement = escapeReplacement(hmrBase);
  	const hmrTimeoutReplacement = escapeReplacement(timeout);

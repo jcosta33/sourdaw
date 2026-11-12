@@ -1,0 +1,76 @@
+{
+    "revision": "36661b5efd702e0e21b3ad49864e10201aecc602",
+    "adaptations": [
+        "Scoped environments and public aliases",
+        "analyzer and filterbank bind their unchanged old low/highpass closure locally",
+        "Documentation removed; per-function declarations and license grants retained"
+    ],
+    "sources": {
+        "filters": {
+            "upstreamSource": "https://github.com/grame-cncm/faustlibraries/blob/36661b5efd702e0e21b3ad49864e10201aecc602/filters.lib",
+            "upstreamFileSha256": "4b4fcba46cd950738338b4361fa6cb2fbd43f7bfc45ea41581b856e66e8a65f6",
+            "functions": [
+                "allpass_comb",
+                "filterbank",
+                "fir",
+                "high_shelf",
+                "highpass",
+                "highpass_plus_lowpass",
+                "highpass_plus_lowpass_even",
+                "highpass_plus_lowpass_odd",
+                "highshelf",
+                "iir",
+                "low_shelf",
+                "lowpass",
+                "lowpass0_highpass1",
+                "lowshelf",
+                "peak_eq",
+                "peak_eq_cq",
+                "pole",
+                "resonbp",
+                "resonlp",
+                "tf1",
+                "tf1s",
+                "tf2",
+                "tf2s"
+            ]
+        },
+        "oscillators": {
+            "upstreamSource": "https://github.com/grame-cncm/faustlibraries/blob/36661b5efd702e0e21b3ad49864e10201aecc602/oscillators.lib",
+            "upstreamFileSha256": "e7dfd0758bc7e43f399f47bcf6e55faf5394e874ab369c3ba5ded0e76aff523b",
+            "functions": [
+                "MAX_SAW_ORDER",
+                "SAFE",
+                "_phasor_imp",
+                "_phasor_table",
+                "coswaveform",
+                "lf_sawpos",
+                "osc",
+                "osccos",
+                "oscp",
+                "oscsin",
+                "phasor",
+                "pulsetrainN",
+                "saw2",
+                "saw2ptr",
+                "sawN",
+                "sawtooth",
+                "sinwaveform",
+                "square",
+                "squareN",
+                "triangle",
+                "triangleN"
+            ]
+        },
+        "reverbs": {
+            "upstreamSource": "https://github.com/grame-cncm/faustlibraries/blob/36661b5efd702e0e21b3ad49864e10201aecc602/reverbs.lib",
+            "upstreamFileSha256": "b34d813bf579beaa1b7577d521c9da6ba0d4444f3e0d5505e1e8293aa164e91c",
+            "functions": ["mono_freeverb", "zita_distrib2", "zita_in_delay", "zita_rev1_stereo", "zita_rev_fdn"]
+        },
+        "analyzer": {
+            "upstreamSource": "https://github.com/grame-cncm/faustlibraries/blob/36661b5efd702e0e21b3ad49864e10201aecc602/analyzers.lib",
+            "upstreamFileSha256": "f4f9a760b67803475d0ea1649443ec74d6dacb96fff8f7ae3124a84b18e853a1",
+            "functions": ["analyzer"]
+        }
+    }
+}

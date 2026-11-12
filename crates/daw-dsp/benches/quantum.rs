@@ -941,17 +941,30 @@ fn row_gluten() -> Row {
 }
 
 fn row_proof() -> Row {
-    effect_row!(
-        "proof",
-        "Proof (limiter engaged)",
-        "effect; no voice pool",
-        {
-            let mut i = daw_dsp::proof::ProofInstance::new(SAMPLE_RATE);
-            i.set_param("limiter_ceiling", -1.0);
-            i.set_param("limiter_threshold", -12.0);
-            i
-        }
-    )
+    let mut instance = daw_dsp::proof::ProofInstance::new(SAMPLE_RATE);
+    instance.set_param("input_gain", 6.0);
+    instance.set_param("lim_ceiling", -1.0);
+    let samples = sample_quanta(
+        &mut instance,
+        &mut |device, block| unsafe {
+            fill_input(
+                device.get_input_left_ptr(),
+                device.get_input_right_ptr(),
+                block,
+            )
+        },
+        &mut |device| device.process(QUANTUM as u32),
+    );
+    let level = unsafe { rms_at(instance.process(QUANTUM as u32), instance.get_right_ptr()) };
+    let reduction = instance.get_limiter_gr_db();
+    Row {
+        id: "proof",
+        label: "Proof (limiter engaged)",
+        load: "effect; input gain +6 dB, ceiling -1 dB",
+        distribution: summarise(samples),
+        occupancy: format!("output RMS {level:.3e}, limiter gain reduction {reduction:.2} dB"),
+        occupancy_ok: level > 1.0e-5 && reduction.is_finite() && reduction < -1.0,
+    }
 }
 
 /// Crust, the true-peak mastering limiter.
@@ -972,8 +985,8 @@ fn row_proof() -> Row {
 /// `gain` is raised to 6 dB because the row has to be *limiting* to measure
 /// anything. The shared excitation peaks near -2.1 dBFS and the shipped ceiling
 /// is -0.3 dB, so at the default 0 dB input gain the limiter would never engage
-/// and this row would time a gain stage. Same reason `row_proof` sets a -12 dB
-/// threshold rather than trusting a default.
+/// and this row would time a gain stage. Same reason `row_proof` drives +6 dB input gain
+/// into a -1 dB ceiling and verifies active gain reduction.
 fn row_crust() -> Row {
     effect_row!(
         "crust",
@@ -1599,12 +1612,30 @@ fn bench_remaining_devices(criterion: &mut Criterion) {
         i.set_param("makeup", 3.0);
         i
     });
-    bench_effect!("proof", {
-        let mut i = daw_dsp::proof::ProofInstance::new(SAMPLE_RATE);
-        i.set_param("limiter_ceiling", -1.0);
-        i.set_param("limiter_threshold", -12.0);
-        i
+    let mut proof = daw_dsp::proof::ProofInstance::new(SAMPLE_RATE);
+    proof.set_param("input_gain", 6.0);
+    proof.set_param("lim_ceiling", -1.0);
+    let (left_in, right_in) = (proof.get_input_left_ptr(), proof.get_input_right_ptr());
+    for warm in 0..WARMUP_BLOCKS {
+        unsafe { fill_input(left_in, right_in, warm) };
+        proof.process(QUANTUM as u32);
+    }
+    assert!(
+        proof.get_limiter_gr_db() < -1.0,
+        "Proof limiter must be active after warmup"
+    );
+    let mut block = 0_usize;
+    group.bench_function(BenchmarkId::from_parameter("proof"), |bencher| {
+        bencher.iter(|| {
+            unsafe { fill_input(left_in, right_in, block) };
+            block += 1;
+            black_box(proof.process(black_box(QUANTUM as u32)))
+        });
     });
+    assert!(
+        proof.get_limiter_gr_db() < -1.0,
+        "Proof limiter must remain active after measurement"
+    );
     bench_effect!("knead", {
         let mut i = daw_dsp::knead::KneadInstance::new(SAMPLE_RATE);
         i.set_shift_semitones(4.0);

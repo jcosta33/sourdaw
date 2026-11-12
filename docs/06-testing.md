@@ -828,6 +828,12 @@ in a fresh physical `0700` execution root under `/var/tmp`; shared objects and a
 Setup changes ownership only of opened physical directories inside this fresh root, preserving
 source files and external store inodes. The unit pnpm action installs its complete tool closure into
 an independent job directory under `/var/tmp`, without granting access to runner HOME or caches.
+The bootstrap uses `npm ci --ignore-scripts` against its reviewed official-registry lock. Its bundled
+`get-pnpm` downloader verifies the exact selected wrapper and native platform package signatures
+with pinned npm keys and verifies both tarball checksums before extraction. Setup checks the physical
+native executable's platform and architecture, then executes that file directly for its version before
+exporting PATH. Windows uses `pnpm.exe` directly. No lifecycle scripts, shell launchers, user config,
+or global package-manager installation participate in this trust path.
 Install and unit verification run through `setpriv` with cleared groups and capabilities,
 `no_new_privs`, an explicit environment, and private `0700` HOME, store and temporary directories.
 Before importing checkout source, stdlib admission validates all four UID/GID fields, source search/read

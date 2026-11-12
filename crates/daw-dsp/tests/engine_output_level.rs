@@ -480,8 +480,7 @@ fn crust_level() -> Level {
 fn proof_level() -> Level {
     use daw_dsp::proof::ProofInstance;
     let mut i = ProofInstance::new(SAMPLE_RATE);
-    i.set_param("limiter_ceiling", -1.0);
-    i.set_param("limiter_threshold", -12.0);
+    i.set_param("lim_ceiling", -1.0);
     let (lp, rp) = (i.get_input_left_ptr(), i.get_input_right_ptr());
     effect_level(
         &mut |o| unsafe { fill_input(lp, rp, BLOCK, o) },
