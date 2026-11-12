@@ -2,18 +2,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
+import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { liveMidiProcessor } from '../../scheduling/liveMidiProcessor';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
+import { scheduleAudioClips } from '../../scheduling/scheduleAudioClips';
 import { scheduleMidiNotes } from '../../scheduling/scheduleMidiNotes';
 import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek';
 import { notePanicParticipants } from '../../transportControls/notePanicParticipants';
 import { pausePlayback } from '../../transportControls/pausePlayback';
 import { createLoopAudioSchedule } from '../createLoopAudioSchedule';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
+import { fenceSource } from '../fenceSource';
 import { schedulerSession } from '../schedulerSession';
 import { startPlayheadScheduler } from '../startPlayheadScheduler';
 import { stopPlayheadScheduler } from '../stopPlayheadScheduler';
@@ -44,27 +47,82 @@ const sourceStartClockAdvance = { armed: false, seconds: 0, invocations: 0 };
 const gainFailure = { enabled: false };
 const compensation = { seconds: 0 };
 
+type GainEvent = { kind: 'set' | 'cancel' | 'cancel-hold' | 'linear'; gain?: number; time: number };
+// Every gain param the fixture mints records its automation here, so a source's
+// fade programme is observable through the ledger (see snapshotGainProgrammes).
+const gainEventRegistry = new Map<object, GainEvent[]>();
+
+/**
+ * The value a recorded programme holds at an instant: events before the
+ * instant apply in order (a linear event mid-ramp interpolates from the
+ * previous anchor), a partial cancel voids the events at or after it.
+ */
+function evaluateGainValue(events: readonly GainEvent[], intrinsic: number, now: number): number {
+    let value = intrinsic;
+    let anchorTime = Number.NEGATIVE_INFINITY;
+    for (const event of resolveProgramme(events)) {
+        if (event.kind !== 'set' && event.kind !== 'linear') {
+            continue;
+        }
+        if (event.time > now) {
+            if (event.kind === 'linear' && anchorTime !== Number.NEGATIVE_INFINITY && event.time > anchorTime) {
+                value += ((event.gain ?? value) - value) * ((now - anchorTime) / (event.time - anchorTime));
+            }
+            break;
+        }
+        value = event.gain ?? value;
+        anchorTime = event.time;
+    }
+    return value;
+}
+
 const audioContextStub = {
     sampleRate: 48000,
     get currentTime() {
         return ctxTime.now;
     },
-    createGain: () => ({
-        connect: () => {},
-        disconnect: () => {},
-        gain: {
-            value: 1,
-            cancelScheduledValues: () => {},
-            cancelAndHoldAtTime: () => {},
-            setValueAtTime: () => {},
+    createGain: () => {
+        const events: GainEvent[] = [];
+        let intrinsic = 1;
+        const gain = {
+            get value() {
+                return evaluateGainValue(events, intrinsic, ctxTime.now);
+            },
+            set value(next: number) {
+                // A direct assignment is a set at the current instant that voids
+                // the scheduled programme, as on a real AudioParam.
+                intrinsic = next;
+                events.length = 0;
+            },
+            cancelScheduledValues: (time: number) => {
+                // The pool's full reset (time 0) starts a fresh programme; a
+                // partial cancel only voids events at or after its instant.
+                if (time <= 0) {
+                    events.length = 0;
+                } else {
+                    events.push({ kind: 'cancel', time });
+                }
+            },
+            cancelAndHoldAtTime: (time: number) => {
+                // A hold freezes the value actually being rendered at the
+                // instant — the pending interpolation contributes, where a
+                // plain cancel would drop back to the previous anchor.
+                events.push({ kind: 'cancel-hold', time, gain: evaluateGainValue(events, intrinsic, time) });
+            },
+            setValueAtTime: (value: number, time: number) => {
+                events.push({ kind: 'set', gain: value, time });
+            },
             exponentialRampToValueAtTime: () => {},
-            linearRampToValueAtTime: () => {
+            linearRampToValueAtTime: (value: number, time: number) => {
                 if (gainFailure.enabled) {
                     throw new Error('Fixture gain submission failed');
                 }
+                events.push({ kind: 'linear', gain: value, time });
             },
-        },
-    }),
+        };
+        gainEventRegistry.set(gain, events);
+        return { connect: () => {}, disconnect: () => {}, gain };
+    },
 };
 
 const trackStripStub = {
@@ -205,19 +263,22 @@ type SourceLedger = {
     start: Start | null;
     stops: Stop[];
     bufferDuration: number;
+    /** The source double itself, so its assigned fade gain can be resolved. */
+    node: { fadeGainNode?: { gain: object } | null } | null;
 };
-type SourceSnapshot = Omit<SourceLedger, 'stops' | 'start'> & { start: Start; stops: Stop[] };
+type SourceSnapshot = Omit<SourceLedger, 'stops' | 'start' | 'node'> & { start: Start; stops: Stop[] };
 const sourceLedger = vi.hoisted(() => [] as SourceLedger[]);
 const buffers = vi.hoisted(() => new Map<string, AudioBuffer>());
 const scheduleClickSpy = vi.hoisted(() => vi.fn());
 const scheduleNoteSpy = vi.hoisted(() => vi.fn());
 
 function createSource() {
-    const ledger: SourceLedger = { bufferId: '', buffer: null, start: null, stops: [], bufferDuration: 0 };
+    const ledger: SourceLedger = { bufferId: '', buffer: null, start: null, stops: [], bufferDuration: 0, node: null };
     sourceLedger.push(ledger);
     const source = {
         buffer: null as AudioBuffer | null,
         playbackRate: { value: 1 },
+        fadeGainNode: null,
         connect: vi.fn(),
         disconnect: vi.fn(),
         start(when: number, offset = 0, duration?: number) {
@@ -245,6 +306,7 @@ function createSource() {
         },
         onended: null,
     };
+    ledger.node = source;
     return source;
 }
 
@@ -352,6 +414,68 @@ function snapshotSources(): SourceSnapshot[] {
 
 function frame(seconds: number): number {
     return Math.round(seconds * SAMPLE_RATE);
+}
+
+const MICRO_FADE_FRAMES = frame(MICRO_FADE_SECONDS);
+
+type GainProgramme = { bufferId: string; startWhen: number; events: GainEvent[] };
+
+/**
+ * The fade-gain automation recorded for every started source, in ledger order —
+ * index-aligned with `snapshotSources()`. Production code writes its ramps
+ * through this double, so whether a handoff overlaps the replacement onset is
+ * observable here, not just its stop ledger.
+ */
+function snapshotGainProgrammes(): GainProgramme[] {
+    return sourceLedger.flatMap((ledger) => {
+        if (!ledger.start) {
+            return [];
+        }
+        const gain = ledger.node?.fadeGainNode?.gain;
+        const snapshot: GainProgramme = {
+            bufferId: ledger.bufferId,
+            startWhen: ledger.start.when,
+            events: [],
+        };
+        if (gain) {
+            snapshot.events = gainEventRegistry.get(gain)?.slice() ?? [];
+        }
+        return [snapshot];
+    });
+}
+
+function gainProgrammeFor(
+    snapshots: readonly SourceSnapshot[],
+    programmes: readonly GainProgramme[],
+    source: SourceSnapshot
+): GainEvent[] {
+    return programmes[snapshots.indexOf(source)]?.events ?? [];
+}
+
+/**
+ * The programme an event list leaves on the param: a partial cancel voids every
+ * earlier event at or after its instant; the pool's full reset (cancel at time
+ * 0) already cleared the record, so it never appears here.
+ */
+function resolveProgramme(events: readonly GainEvent[]): GainEvent[] {
+    const resolved: GainEvent[] = [];
+    for (const event of events) {
+        if (event.kind === 'cancel' || event.kind === 'cancel-hold') {
+            for (let index = resolved.length - 1; index >= 0; index--) {
+                if (resolved[index]!.time >= event.time) {
+                    resolved.splice(index, 1);
+                }
+            }
+            // A hold re-anchors the param at the value it froze, computed at
+            // submission; a plain cancel leaves the previous anchor standing.
+            if (event.kind === 'cancel-hold') {
+                resolved.push({ kind: 'set', gain: event.gain, time: event.time });
+            }
+        } else {
+            resolved.push(event);
+        }
+    }
+    return resolved;
 }
 
 function effectiveEnd(source: SourceSnapshot): number {
@@ -462,18 +586,41 @@ function assertPassAlreadySubmitted(
     }
 }
 
+type SeamStallOptions = { noteStartBeat?: number; compensationSeconds?: number };
+
+type SeamStallResult = {
+    emissionCountBeforeRecovery: number;
+    pitch60EmissionsBeforeRecovery: number;
+    pitch60EmissionsAfterRecovery: number;
+    preRecoveryPitch60Frames: number[];
+    recoveryPitch60Frames: number[];
+};
+
 async function reproduceSeamStall(
     passFrames: number,
     lastRefillFrame: number,
     frozen: boolean,
-    frozenMidi = false
-): Promise<void> {
+    frozenMidi = false,
+    options: SeamStallOptions = {}
+): Promise<SeamStallResult> {
     const loopEnd = passFrames / 24_000; // Fixed fixture:120BPM means24000frames per quarter-note beat.
+    const left = seedTrack('left', loopEnd, frozen, 0.375, frozenMidi);
+    const right = seedTrack('right', loopEnd, frozen, 1.125, frozenMidi);
+    if (frozenMidi && !frozen) {
+        left.clips.push({ ...left.clips[0]!, id: 'left-midi', type: 'midi', audioBufferId: undefined });
+        midiStoreState.value!.notesByClipId['left-midi'] = [
+            {
+                id: 'mixed-note',
+                pitch: 60,
+                startBeat: options.noteStartBeat ?? 0,
+                duration: 0.05,
+                velocity: 100,
+                probability: 100,
+            },
+        ];
+    }
     trackStoreState.value = {
-        tracks: [
-            seedTrack('left', loopEnd, frozen, 0.375, frozenMidi),
-            seedTrack('right', loopEnd, frozen, 1.125, frozenMidi),
-        ],
+        tracks: [left, right],
     };
     transportStoreState.value = {
         ...defaultTransportState,
@@ -511,26 +658,45 @@ async function reproduceSeamStall(
             .toEqual([ANCHOR_FRAME + (pass + 1) * passFrames, ANCHOR_FRAME + (pass + 1) * passFrames]);
     }
 
+    const emissionCountBeforeRecovery = scheduleNoteSpy.mock.calls.length;
+    const pitch60CallsBeforeRecovery = scheduleNoteSpy.mock.calls.filter((call) => call[2] === 60);
+    const pitch60EmissionsBeforeRecovery = pitch60CallsBeforeRecovery.length;
+    const preRecoveryPitch60Frames = pitch60CallsBeforeRecovery.map((call) => frame(call[3]));
+    compensation.seconds = options.compensationSeconds ?? 0;
     await tickAt(recoveryFrame);
+    const pitch60EmissionsAfterRecovery = scheduleNoteSpy.mock.calls.filter((call) => call[2] === 60).length;
+    const recoveryPitch60Frames = scheduleNoteSpy.mock.calls
+        .slice(emissionCountBeforeRecovery)
+        .filter((call) => call[2] === 60)
+        .map((call) => frame(call[3]));
     expect(playheadWrapCountRef.current).toBe(crossedSeams);
     expect(playheadClockRef.beat).toBeCloseTo((recoveryFrame % passFrames) / 24_000, 12);
     const afterRecovery = snapshotSources();
-    for (let pass = 1; pass <= crossedSeams; pass++) {
-        const seamFrame = ANCHOR_FRAME + pass * passFrames;
-        const scheduled = afterRecovery.filter((source) => frame(source.start.when) === seamFrame);
-        // One source per track, with no recovery-time duplicate at the seam or late in the pass.
-        expect.soft(scheduled.map((source) => source.bufferId)).toEqual(['left-buffer', 'right-buffer']);
-        const nextSeam = seamFrame + passFrames;
-        expect
-            .soft(
-                afterRecovery.filter((source) => {
-                    const onset = frame(source.start.when);
-                    return onset > seamFrame && onset < Math.min(nextSeam, ANCHOR_FRAME + recoveryFrame + 1);
-                })
-            )
-            .toEqual([]);
-        expect.soft(scheduled.map((source) => frame(effectiveEnd(source)))).toEqual([nextSeam, nextSeam]);
+    if (compensation.seconds === 0) {
+        for (let pass = 1; pass <= crossedSeams; pass++) {
+            const seamFrame = ANCHOR_FRAME + pass * passFrames;
+            const scheduled = afterRecovery.filter((source) => frame(source.start.when) === seamFrame);
+            // One source per track, with no recovery-time duplicate at the seam or late in the pass.
+            expect.soft(scheduled.map((source) => source.bufferId)).toEqual(['left-buffer', 'right-buffer']);
+            const nextSeam = seamFrame + passFrames;
+            expect
+                .soft(
+                    afterRecovery.filter((source) => {
+                        const onset = frame(source.start.when);
+                        return onset > seamFrame && onset < Math.min(nextSeam, ANCHOR_FRAME + recoveryFrame + 1);
+                    })
+                )
+                .toEqual([]);
+            expect.soft(scheduled.map((source) => frame(effectiveEnd(source)))).toEqual([nextSeam, nextSeam]);
+        }
     }
+    return {
+        emissionCountBeforeRecovery,
+        pitch60EmissionsBeforeRecovery,
+        pitch60EmissionsAfterRecovery,
+        preRecoveryPitch60Frames,
+        recoveryPitch60Frames,
+    };
 }
 
 beforeEach(() => {
@@ -543,6 +709,7 @@ beforeEach(() => {
     compensation.seconds = 0;
     disposePlayheadScheduler();
     sourceLedger.length = 0;
+    gainEventRegistry.clear();
     buffers.clear();
     ctxTime.now = ANCHOR_FRAME / SAMPLE_RATE;
     tickSequence = 0;
@@ -593,6 +760,612 @@ describe('browser buffer admission before a loop-seam main-thread stall (#6277)'
     it('shares frozen MIDI pass ownership with the real MIDI dispatcher', async () => {
         await reproduceSeamStall(6_000, 5_952, true, true);
         expect(scheduleNoteSpy).not.toHaveBeenCalled();
+    });
+    it('emits exactly one fresh MIDI note at the recovery pass onset', async () => {
+        const {
+            pitch60EmissionsBeforeRecovery,
+            pitch60EmissionsAfterRecovery,
+            preRecoveryPitch60Frames,
+            recoveryPitch60Frames,
+        } = await reproduceSeamStall(6_000, 5_952, false, true);
+        expect(pitch60EmissionsAfterRecovery).toBeGreaterThan(pitch60EmissionsBeforeRecovery);
+        expect(recoveryPitch60Frames).toEqual([ANCHOR_FRAME + 18_000]);
+        expect(new Set(preRecoveryPitch60Frames).size).toBe(preRecoveryPitch60Frames.length);
+        expect(preRecoveryPitch60Frames).not.toContain(ANCHOR_FRAME + 18_000);
+    });
+    it.each([
+        {
+            label: 'future under positive compensation',
+            compensationSeconds: 0.1,
+            currentOnset: 499_200,
+            nextOnset: 505_200,
+        },
+        {
+            label: 'exactly due under positive compensation',
+            compensationSeconds: 0.024,
+            currentOnset: 495_552,
+            nextOnset: 501_552,
+        },
+        {
+            label: 'genuinely past without compensation',
+            compensationSeconds: 0,
+            currentOnset: null,
+            nextOnset: 500_400,
+        },
+        {
+            label: 'genuinely past under negative compensation',
+            compensationSeconds: -0.05,
+            currentOnset: null,
+            nextOnset: 498_000,
+        },
+    ])('admits a recovered note only when its audible onset is $label', async (scenario) => {
+        const { emissionCountBeforeRecovery, recoveryPitch60Frames } = await reproduceSeamStall(
+            6_000,
+            5_952,
+            false,
+            true,
+            { noteStartBeat: 0.1, compensationSeconds: scenario.compensationSeconds }
+        );
+        expect(recoveryPitch60Frames).toEqual(scenario.currentOnset === null ? [] : [scenario.currentOnset]);
+
+        // Open the next window so the following pass's occurrence is due too.
+        await tickAt(16_752);
+        const emittedDuringRecovery = scheduleNoteSpy.mock.calls
+            .slice(emissionCountBeforeRecovery)
+            .filter((call) => call[2] === 60)
+            .map((call) => frame(call[3]));
+        expect(emittedDuringRecovery).toEqual(
+            scenario.currentOnset === null ? [scenario.nextOnset] : [scenario.currentOnset, scenario.nextOnset]
+        );
+    });
+});
+
+describe('mixed MIDI media ownership during non-loop playback', () => {
+    it('rejoins the residual original after an uncached frozen bake is removed', async () => {
+        const mixed = seedTrack('left', 0.15, false, 0, true);
+        const unrelated = seedTrack('right', 4, false, 0.25);
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'missing-bake', compensationSeconds: 0 };
+        trackStoreState.value = { tracks: [mixed, unrelated] };
+        transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+
+        startPlayheadScheduler();
+        await tickAt(0);
+        expect(snapshotSources().map((source) => source.bufferId)).toEqual(['right-buffer']);
+
+        mixed.freezeState = { status: 'unfrozen' };
+        await tickAt(1_200);
+        const original = snapshotSources().filter((source) => source.bufferId === 'left-buffer');
+        expect(original).toHaveLength(1);
+        expect(frame(original[0]!.start.when)).toBe(ANCHOR_FRAME + 1_200);
+        expect(frame(original[0]!.start.offset)).toBe(1_200);
+        const unrelatedAfter = snapshotSources().filter((source) => source.bufferId === 'right-buffer');
+        expect(unrelatedAfter).toHaveLength(1);
+        expect(unrelatedAfter[0]!.stops).toHaveLength(0);
+    });
+
+    it('rejoins a short audio tail between the playhead and the existing look-ahead after unfreeze', async () => {
+        const mixed = seedTrack('left', 0.15, false, 0, true);
+        buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+        trackStoreState.value = { tracks: [mixed] };
+        transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+
+        startPlayheadScheduler();
+        await tickAt(0);
+        expect(snapshotSources().map((source) => source.bufferId)).toEqual(['left-buffer']);
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
+        await tickAt(1_200);
+        expect(snapshotSources().filter((source) => source.bufferId === 'bake')).toHaveLength(1);
+
+        mixed.freezeState = { status: 'unfrozen' };
+        await tickAt(2_400);
+        const sources = snapshotSources();
+        const original = sources.filter((source) => source.bufferId === 'left-buffer');
+        const bake = sources.find((source) => source.bufferId === 'bake');
+        expect(original).toHaveLength(2);
+        expect(frame(original[1]!.start.when)).toBe(ANCHOR_FRAME + 2_400);
+        expect(frame(original[1]!.start.offset)).toBe(2_400);
+        // The handoff cut overlaps the replacement onset by one micro fade.
+        expect(frame(effectiveEnd(bake!))).toBe(frame(original[1]!.start.when) + MICRO_FADE_FRAMES);
+    });
+
+    it.each(['waiting-first', 'mixed-first'] as const)(
+        'hands off an unfrozen original around a held MIDI rack await (%s)',
+        async (order) => {
+            const mixed = seedTrack('left', 0.4, false, 0, true);
+            const waiting = createTrack({ id: 'waiting', name: 'waiting', kind: 'midi', withoutDefaultDevice: true });
+            waiting.devices = [
+                { id: 'waiting-rack', name: 'waiting', type: 'yeast', bypassed: false, parameterValues: {} },
+            ];
+            waiting.clips = [{ ...mixed.clips[0]!, id: 'waiting-clip', trackId: 'waiting', type: 'midi' }];
+            midiStoreState.value!.notesByClipId['waiting-clip'] = [
+                { id: 'waiting-note', pitch: 72, startBeat: 0, duration: 0.5, velocity: 100, probability: 100 },
+            ];
+            buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+            trackStoreState.value = { tracks: order === 'waiting-first' ? [waiting, mixed] : [mixed, waiting] };
+            transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+            startPlayheadScheduler();
+            await tickAt(0);
+            mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
+            await tickAt(1_200);
+            expect(snapshotSources().filter((source) => source.bufferId === 'bake')).toHaveLength(1);
+            vi.mocked(processYeastMidi).mockClear();
+
+            let release!: () => void;
+            const held = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            vi.mocked(processYeastMidi).mockImplementationOnce(async (block) => {
+                await held;
+                return [...block.events];
+            });
+            mixed.freezeState = { status: 'unfrozen' };
+            ctxTime.now = (ANCHOR_FRAME + 2_400) / SAMPLE_RATE;
+            const receivedAtMs = performance.timeOrigin + performance.now();
+            if (!workerHarness?.onmessage) {
+                throw new Error('The real scheduler must have installed its worker callback');
+            }
+            workerHarness.onmessage({
+                data: {
+                    type: 'tick',
+                    generation: schedulerSession.generation,
+                    sequence: ++tickSequence,
+                    scheduledAtMs: receivedAtMs - 2,
+                    sentAtMs: receivedAtMs - 1,
+                },
+            });
+            try {
+                await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalledOnce(), { interval: 1 });
+                expect(schedulerSession.tickInFlight).toBe(true);
+                const during = snapshotSources();
+                const original = during.filter((source) => source.bufferId === 'left-buffer');
+                const bake = during.find((source) => source.bufferId === 'bake');
+                if (order === 'mixed-first') {
+                    expect(original).toHaveLength(2);
+                    expect(bake?.stops).toHaveLength(1);
+                    // The handoff cut overlaps the replacement onset by one micro fade.
+                    expect(frame(effectiveEnd(bake!))).toBe(frame(original[1]!.start.when) + MICRO_FADE_FRAMES);
+                } else {
+                    expect(original).toHaveLength(1);
+                    expect(bake?.stops).toHaveLength(0);
+                }
+                ctxTime.now += 0.005;
+            } finally {
+                release();
+            }
+            await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false), { interval: 1 });
+            const sources = snapshotSources();
+            const original = sources.filter((source) => source.bufferId === 'left-buffer');
+            const bake = sources.find((source) => source.bufferId === 'bake');
+            expect(original).toHaveLength(2);
+            expect(bake?.stops).toHaveLength(1);
+            // The handoff cut overlaps the replacement onset by one micro fade.
+            expect(frame(effectiveEnd(bake!))).toBe(frame(original[1]!.start.when) + MICRO_FADE_FRAMES);
+        }
+    );
+
+    it('rejoins an uncached bake’s original before a later MIDI rack await', async () => {
+        const mixed = seedTrack('left', 0.4, false, 0, true);
+        const waiting = createTrack({ id: 'waiting', name: 'waiting', kind: 'midi', withoutDefaultDevice: true });
+        waiting.devices = [
+            { id: 'waiting-rack', name: 'waiting', type: 'yeast', bypassed: false, parameterValues: {} },
+        ];
+        waiting.clips = [{ ...mixed.clips[0]!, id: 'waiting-clip', trackId: 'waiting', type: 'midi' }];
+        midiStoreState.value!.notesByClipId['waiting-clip'] = [
+            { id: 'waiting-note', pitch: 72, startBeat: 0, duration: 0.5, velocity: 100, probability: 100 },
+        ];
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'missing-bake', compensationSeconds: 0 };
+        trackStoreState.value = { tracks: [mixed, waiting] };
+        transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+        startPlayheadScheduler();
+        await tickAt(0);
+        expect(snapshotSources()).toEqual([]);
+        vi.mocked(processYeastMidi).mockClear();
+
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        vi.mocked(processYeastMidi).mockImplementationOnce(async (block) => {
+            await held;
+            return [...block.events];
+        });
+        mixed.freezeState = { status: 'unfrozen' };
+        ctxTime.now = (ANCHOR_FRAME + 1_200) / SAMPLE_RATE;
+        const receivedAtMs = performance.timeOrigin + performance.now();
+        if (!workerHarness?.onmessage) {
+            throw new Error('The real scheduler must have installed its worker callback');
+        }
+        workerHarness.onmessage({
+            data: {
+                type: 'tick',
+                generation: schedulerSession.generation,
+                sequence: ++tickSequence,
+                scheduledAtMs: receivedAtMs - 2,
+                sentAtMs: receivedAtMs - 1,
+            },
+        });
+        try {
+            await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalledOnce(), { interval: 1 });
+            const original = snapshotSources().filter((source) => source.bufferId === 'left-buffer');
+            expect(original).toHaveLength(1);
+            expect(frame(original[0]!.start.when)).toBe(ANCHOR_FRAME + 1_200);
+            expect(frame(original[0]!.start.offset)).toBe(1_200);
+        } finally {
+            release();
+        }
+        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false), { interval: 1 });
+        expect(snapshotSources().filter((source) => source.bufferId === 'left-buffer')).toHaveLength(1);
+    });
+
+    it('cuts each previous owner at the replacement onset and restores the same bake after an unfreeze', async () => {
+        const mixed = seedTrack('left', 4, false, 0, true);
+        const unrelated = seedTrack('right', 4, false, 0.25);
+        buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+        trackStoreState.value = { tracks: [mixed, unrelated] };
+        transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+
+        startPlayheadScheduler();
+        await tickAt(0);
+        expect(snapshotSources().map((source) => source.bufferId)).toEqual(['left-buffer', 'right-buffer']);
+
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
+        await tickAt(1_200);
+        const afterFreeze = snapshotSources();
+        const original = afterFreeze.find((source) => source.bufferId === 'left-buffer');
+        const firstBake = afterFreeze.find((source) => source.bufferId === 'bake');
+        expect(original).toBeDefined();
+        expect(firstBake).toBeDefined();
+        expect(original!.stops).toHaveLength(1);
+        // The handoff cut overlaps the replacement onset by one micro fade.
+        expect(frame(effectiveEnd(original!))).toBe(frame(firstBake!.start.when) + MICRO_FADE_FRAMES);
+        // Click-free at the clock instant: the retiring source holds full level
+        // through the onset and ramps out over the micro fade — a zero-duration
+        // step to zero here would click against the bake's full-level start.
+        const freezeProgrammes = snapshotGainProgrammes();
+        const retiringOut = resolveProgramme(gainProgrammeFor(afterFreeze, freezeProgrammes, original!));
+        expect(retiringOut.at(-2)!.kind).toBe('set');
+        expect(retiringOut.at(-2)!.gain).toBe(1);
+        expect(retiringOut.at(-2)!.time).toBeCloseTo(firstBake!.start.when, 12);
+        expect(retiringOut.at(-1)!.kind).toBe('linear');
+        expect(retiringOut.at(-1)!.gain).toBe(0);
+        expect(retiringOut.at(-1)!.time).toBeCloseTo(firstBake!.start.when + MICRO_FADE_SECONDS, 12);
+        // The frozen bake has no fade-in: it is at full level from its onset.
+        expect(gainProgrammeFor(afterFreeze, freezeProgrammes, firstBake!)).toEqual([]);
+
+        mixed.freezeState = { status: 'unfrozen' };
+        await tickAt(2_400);
+        const afterUnfreeze = snapshotSources();
+        const resumed = afterUnfreeze.filter((source) => source.bufferId === 'left-buffer');
+        const retiredBake = afterUnfreeze.find((source) => source.bufferId === 'bake');
+        expect(resumed).toHaveLength(2);
+        expect(frame(resumed[1]!.start.offset)).toBeGreaterThan(0);
+        expect(retiredBake?.stops).toHaveLength(1);
+        // The handoff cut overlaps the replacement onset by one micro fade.
+        expect(frame(effectiveEnd(retiredBake!))).toBe(frame(resumed[1]!.start.when) + MICRO_FADE_FRAMES);
+        // Click-free across the onset: the retiring bake holds full level until
+        // the replacement starts and ramps out over exactly the replacement's
+        // micro fade-in, so at every instant at least one side is at full level
+        // and the summed gain never dips. A zero-duration cut would reach zero
+        // at the onset, where the replacement is still at zero.
+        const unfreezeOnset = resumed[1]!.start.when;
+        const unfreezeProgrammes = snapshotGainProgrammes();
+        const retiringBakeOut = resolveProgramme(gainProgrammeFor(afterUnfreeze, unfreezeProgrammes, retiredBake!));
+        expect(retiringBakeOut.at(-2)!.kind).toBe('set');
+        expect(retiringBakeOut.at(-2)!.gain).toBe(1);
+        expect(retiringBakeOut.at(-2)!.time).toBeCloseTo(unfreezeOnset, 12);
+        expect(retiringBakeOut.at(-1)!.kind).toBe('linear');
+        expect(retiringBakeOut.at(-1)!.gain).toBe(0);
+        expect(retiringBakeOut.at(-1)!.time).toBeCloseTo(unfreezeOnset + MICRO_FADE_SECONDS, 12);
+        const fadingIn = resolveProgramme(gainProgrammeFor(afterUnfreeze, unfreezeProgrammes, resumed[1]!));
+        expect(fadingIn[0]!.kind).toBe('set');
+        expect(fadingIn[0]!.gain).toBe(0);
+        expect(fadingIn[0]!.time).toBeCloseTo(unfreezeOnset, 12);
+        expect(fadingIn[1]!.kind).toBe('linear');
+        expect(fadingIn[1]!.gain).toBe(1);
+        expect(fadingIn[1]!.time).toBeCloseTo(unfreezeOnset + MICRO_FADE_SECONDS, 12);
+
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
+        await tickAt(3_600);
+        const afterRefreeze = snapshotSources();
+        const bakes = afterRefreeze.filter((source) => source.bufferId === 'bake');
+        expect(bakes).toHaveLength(2);
+        const resumedAfterRefreeze = afterRefreeze.filter((source) => source.bufferId === 'left-buffer')[1]!;
+        expect(resumedAfterRefreeze.stops).toHaveLength(1);
+        // The handoff cut overlaps the replacement onset by one micro fade.
+        expect(frame(effectiveEnd(resumedAfterRefreeze))).toBe(frame(bakes[1]!.start.when) + MICRO_FADE_FRAMES);
+        // Click-free at the clock instant, same overlap as the freeze handoff.
+        const refreezeProgrammes = snapshotGainProgrammes();
+        const retiringOriginalOut = resolveProgramme(
+            gainProgrammeFor(afterRefreeze, refreezeProgrammes, resumedAfterRefreeze)
+        );
+        expect(retiringOriginalOut.at(-2)!.kind).toBe('set');
+        expect(retiringOriginalOut.at(-2)!.gain).toBe(1);
+        expect(retiringOriginalOut.at(-2)!.time).toBeCloseTo(bakes[1]!.start.when, 12);
+        expect(retiringOriginalOut.at(-1)!.kind).toBe('linear');
+        expect(retiringOriginalOut.at(-1)!.gain).toBe(0);
+        expect(retiringOriginalOut.at(-1)!.time).toBeCloseTo(bakes[1]!.start.when + MICRO_FADE_SECONDS, 12);
+        expect(gainProgrammeFor(afterRefreeze, refreezeProgrammes, bakes[1]!)).toEqual([]);
+        await tickAt(4_800);
+        expect(snapshotSources().filter((source) => source.bufferId === 'bake')).toHaveLength(2);
+
+        const unrelatedAfter = snapshotSources().filter((source) => source.bufferId === 'right-buffer');
+        expect(unrelatedAfter).toHaveLength(1);
+        expect(unrelatedAfter[0]!.stops).toHaveLength(0);
+    });
+
+    it('holds the rendered mid-fade-out gain across a handoff onset inside the drawn fade', async () => {
+        const track = seedTrack('left', 4, false, 0.375);
+        track.clips[0]!.fadeOutBeats = 1;
+        buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+        trackStoreState.value = { tracks: [track] };
+        transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+
+        startPlayheadScheduler();
+        await tickAt(0);
+        expect(snapshotSources().filter((source) => source.bufferId === 'left-buffer')).toHaveLength(1);
+
+        // Freeze halfway through the drawn fade-out: at 120 BPM the clip's
+        // fade-out window spans beats 3–4, i.e. 11.5 s–12 s on the anchor
+        // clock, and the handoff falls at 11.75 s.
+        track.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
+        await tickAt(84_000);
+        const after = snapshotSources();
+        const retiring = after.find((source) => source.bufferId === 'left-buffer')!;
+        const bake = after.find((source) => source.bufferId === 'bake')!;
+        const onset = bake.start.when;
+        expect(frame(onset)).toBe(ANCHOR_FRAME + 84_000);
+        // The overlap booking stands: the retiring source stops one micro
+        // fade past the replacement onset.
+        expect(retiring.stops.length).toBeGreaterThan(0);
+        expect(frame(effectiveEnd(retiring))).toBe(frame(onset) + MICRO_FADE_FRAMES);
+
+        // The retiring source is inside its own fade-out at the onset: a
+        // plain cancel drops the pending ramp back to the full-level anchor
+        // and the stale-seed step then re-tracks the mid-ramp read — two
+        // full-scale steps within the micro fade. The hold must instead
+        // anchor at the value the drawn ramp was rendering at the onset:
+        // halfway down the 0.5 s fade-out → 0.5.
+        const resolved = resolveProgramme(gainProgrammeFor(after, snapshotGainProgrammes(), retiring));
+        const hold = resolved.at(-2)!;
+        expect(hold.kind).toBe('set');
+        expect(hold.time).toBeCloseTo(onset, 12);
+        expect(hold.gain).toBeCloseTo(0.5, 12);
+        const release = resolved.at(-1)!;
+        expect(release.kind).toBe('linear');
+        expect(release.gain).toBe(0);
+        expect(release.time).toBeCloseTo(onset + MICRO_FADE_SECONDS, 12);
+        // Continuity: no event steps back up to a previous anchor — the
+        // implied gain is monotonically non-increasing from the fade-out
+        // plateau on.
+        const fadeOutPlateau = resolved.findIndex((event) => event.kind === 'set' && event.time >= 11.5);
+        expect(fadeOutPlateau).toBeGreaterThanOrEqual(0);
+        let level = resolved[fadeOutPlateau]!.gain!;
+        for (const event of resolved.slice(fadeOutPlateau + 1)) {
+            if (event.kind === 'set') {
+                expect(event.gain!).toBeLessThanOrEqual(level);
+                level = event.gain!;
+            }
+        }
+    });
+
+    it('retires a sounding owner exactly at the compensated frozen replacement onset', async () => {
+        const mixed = seedTrack('left', 4, false, 0, true);
+        buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+        trackStoreState.value = { tracks: [mixed] };
+        transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+        startPlayheadScheduler();
+        await tickAt(0);
+        expect(snapshotSources().filter((source) => source.bufferId === 'left-buffer')).toHaveLength(1);
+
+        compensation.seconds = 0.5;
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0.5 };
+        await tickAt(1_200);
+        const after = snapshotSources();
+        const old = after.find((source) => source.bufferId === 'left-buffer');
+        const bake = after.find((source) => source.bufferId === 'bake');
+        expect(old?.stops).toHaveLength(1);
+        expect(bake).toBeDefined();
+        expect(frame(bake!.start.when)).toBe(ANCHOR_FRAME + 24_000);
+        expect(frame(old!.stops[0]!.when)).toBe(frame(bake!.start.when));
+        expect(frame(effectiveEnd(old!))).toBe(frame(bake!.start.when));
+        // Click-free at the boundary: this onset is ahead of the clock, so the
+        // ordinary 5 ms ramp stands, and it must end exactly where the
+        // replacement begins — the bake (a frozen buffer) has no fade-in and is
+        // at full level from its first sample, so the replacement reaches full
+        // level no earlier than the retiring source reaches zero and the handoff
+        // never leaves both sides below full level at once past the onset.
+        const compensatedOnset = bake!.start.when;
+        const programmes = snapshotGainProgrammes();
+        const retiringOut = resolveProgramme(gainProgrammeFor(after, programmes, old!));
+        expect(retiringOut.at(-2)!.kind).toBe('set');
+        expect(retiringOut.at(-2)!.gain).toBe(1);
+        expect(retiringOut.at(-2)!.time).toBeCloseTo(compensatedOnset - 0.005, 12);
+        expect(retiringOut.at(-1)!.kind).toBe('linear');
+        expect(retiringOut.at(-1)!.gain).toBe(0);
+        expect(retiringOut.at(-1)!.time).toBeCloseTo(compensatedOnset, 12);
+        expect(gainProgrammeFor(after, programmes, bake!)).toEqual([]);
+    });
+
+    it('moves a pending compensated stop to an earlier uncompensated resume and preserves later handoffs', async () => {
+        const mixed = seedTrack('left', 4, false, 0, true);
+        buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+        trackStoreState.value = { tracks: [mixed] };
+        transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+        startPlayheadScheduler();
+        await tickAt(0);
+
+        compensation.seconds = 0.5;
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0.5 };
+        await tickAt(1_200);
+        const afterFreeze = snapshotSources();
+        const oldOriginal = afterFreeze.find((source) => source.bufferId === 'left-buffer')!;
+        const firstBake = afterFreeze.find((source) => source.bufferId === 'bake')!;
+        expect(oldOriginal.stops.map((stop) => frame(stop.when))).toEqual([504_000]);
+        expect(frame(firstBake.start.when)).toBe(504_000);
+        expect(firstBake.stops).toEqual([]);
+        expect(frame(effectiveEnd(firstBake))).toBe(1_272_000);
+
+        compensation.seconds = 0;
+        mixed.freezeState = { status: 'unfrozen' };
+        await tickAt(12_000);
+        const afterUnfreeze = snapshotSources();
+        const originals = afterUnfreeze.filter((source) => source.bufferId === 'left-buffer');
+        const resumed = originals[1]!;
+        expect(originals).toHaveLength(2);
+        expect(frame(resumed.start.when)).toBe(492_000);
+        // The second cut moves the stop to the resume onset and overlaps it by
+        // one micro fade.
+        expect(originals[0]!.stops.map((stop) => frame(stop.when))).toEqual([504_000, 492_000 + MICRO_FADE_FRAMES]);
+        const retiredBake = afterUnfreeze.find((source) => source.bufferId === 'bake')!;
+        expect(retiredBake.stops.map((stop) => frame(stop.when))).toEqual([492_000]);
+        // The resumed handoff cut overlaps its onset by one micro fade; the
+        // never-started bake is cancelled exactly at the resume instant.
+        expect(frame(effectiveEnd(originals[0]!))).toBe(frame(resumed.start.when) + MICRO_FADE_FRAMES);
+        expect(frame(effectiveEnd(retiredBake))).toBeLessThanOrEqual(frame(resumed.start.when));
+
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
+        await tickAt(12_000);
+        const afterRefreeze = snapshotSources();
+        const bakes = afterRefreeze.filter((source) => source.bufferId === 'bake');
+        expect(bakes).toHaveLength(2);
+        expect(frame(bakes[1]!.start.when)).toBe(492_000);
+        const resumedAfterRefreeze = afterRefreeze.filter((source) => source.bufferId === 'left-buffer')[1]!;
+        expect(resumedAfterRefreeze.stops.map((stop) => frame(stop.when))).toEqual([492_000]);
+        expect(frame(effectiveEnd(resumedAfterRefreeze))).toBeLessThanOrEqual(frame(bakes[1]!.start.when));
+
+        await tickAt(13_200);
+        expect(snapshotSources().filter((source) => source.bufferId === 'bake')).toHaveLength(2);
+    });
+
+    it('keeps an ordinary same-track loop fence when an overlapping clip joins the pass', () => {
+        const track = seedTrack('left', 6, false, 0);
+        track.clips[0]!.startBeat = 2;
+        trackStoreState.value = { tracks: [track] };
+        const scheduledAudio = new Set<string>();
+        const scheduledFrozen = new Set<string>();
+        const active: AudioBufferSourceNode[] = [];
+        const transport = { ...defaultTransportState, tempo: 120, isLooping: true, loopStart: 0, loopEnd: 4 };
+        ctxTime.now = 10;
+
+        scheduleAudioClips(0, 4, 0, scheduledAudio, scheduledFrozen, active, transport, 10);
+        expect(active).toHaveLength(1);
+        expect(snapshotSources()[0]!.start.when).toBe(11);
+        const firstKey = [...scheduledAudio][0]!;
+        fenceSource(active[0]!, audioContextStub as unknown as BaseAudioContext, 12);
+        expect(snapshotSources()[0]!.stops.map((stop) => stop.when)).toEqual([12]);
+
+        track.clips.push({ ...track.clips[0]!, id: 'left-overlap', startBeat: 3, endBeat: 5 });
+        scheduleAudioClips(0, 4, 0, scheduledAudio, scheduledFrozen, active, transport, 10);
+
+        const after = snapshotSources();
+        const first = after.find((source) => source.start.when === 11)!;
+        const overlap = after.find((source) => source.start.when === 11.5)!;
+        expect(after).toHaveLength(2);
+        expect(first.stops.map((stop) => stop.when)).toEqual([12]);
+        expect(overlap.stops).toEqual([]);
+        expect(active).toHaveLength(2);
+        expect(scheduledAudio).toHaveLength(2);
+        expect(scheduledAudio.has(firstKey)).toBe(true);
+    });
+
+    it.each(['waiting-first', 'mixed-first'] as const)(
+        'hands off a frozen replacement around a held MIDI rack await (%s)',
+        async (order) => {
+            const mixed = seedTrack('left', 4, false, 0, true);
+            const waiting = createTrack({ id: 'waiting', name: 'waiting', kind: 'midi', withoutDefaultDevice: true });
+            waiting.devices = [
+                { id: 'waiting-rack', name: 'waiting', type: 'yeast', bypassed: false, parameterValues: {} },
+            ];
+            waiting.clips = [{ ...mixed.clips[0]!, id: 'waiting-clip', trackId: 'waiting', type: 'midi' }];
+            midiStoreState.value!.notesByClipId['waiting-clip'] = [
+                { id: 'waiting-note', pitch: 72, startBeat: 0, duration: 0.5, velocity: 100, probability: 100 },
+            ];
+            buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+            trackStoreState.value = { tracks: order === 'waiting-first' ? [waiting, mixed] : [mixed, waiting] };
+            transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+            startPlayheadScheduler();
+            await tickAt(0);
+            expect(snapshotSources().filter((source) => source.bufferId === 'left-buffer')).toHaveLength(1);
+            vi.mocked(processYeastMidi).mockClear();
+
+            let release!: () => void;
+            const held = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            vi.mocked(processYeastMidi).mockImplementationOnce(async (block) => {
+                await held;
+                return [...block.events];
+            });
+            mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
+            ctxTime.now = (ANCHOR_FRAME + 1_200) / SAMPLE_RATE;
+            const receivedAtMs = performance.timeOrigin + performance.now();
+            if (!workerHarness?.onmessage) {
+                throw new Error('The real scheduler must have installed its worker callback');
+            }
+            workerHarness.onmessage({
+                data: {
+                    type: 'tick',
+                    generation: schedulerSession.generation,
+                    sequence: ++tickSequence,
+                    scheduledAtMs: receivedAtMs - 2,
+                    sentAtMs: receivedAtMs - 1,
+                },
+            });
+            try {
+                await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalledOnce(), { interval: 1 });
+                expect(schedulerSession.tickInFlight).toBe(true);
+                const during = snapshotSources();
+                const old = during.find((source) => source.bufferId === 'left-buffer');
+                const bake = during.find((source) => source.bufferId === 'bake');
+                if (order === 'mixed-first') {
+                    expect(old?.stops).toHaveLength(1);
+                    expect(bake).toBeDefined();
+                    expect(frame(bake!.start.when)).toBe(ANCHOR_FRAME + 1_200);
+                    expect(frame(old!.start.when + old!.start.duration!)).toBe(576_000);
+                    // The handoff cut overlaps the replacement onset by one micro fade.
+                    expect(frame(effectiveEnd(old!))).toBe(frame(bake!.start.when) + MICRO_FADE_FRAMES);
+                } else {
+                    expect(old?.stops).toHaveLength(0);
+                    expect(bake).toBeUndefined();
+                }
+                ctxTime.now += 0.04;
+            } finally {
+                release();
+            }
+            await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false), { interval: 1 });
+            const after = snapshotSources();
+            const old = after.find((source) => source.bufferId === 'left-buffer');
+            const bake = after.find((source) => source.bufferId === 'bake');
+            expect(old).toBeDefined();
+            expect(bake).toBeDefined();
+            // The handoff cut overlaps the replacement onset by one micro fade.
+            expect(frame(effectiveEnd(old!))).toBe(frame(bake!.start.when) + MICRO_FADE_FRAMES);
+        }
+    );
+    it('cancels a future compensated source without touching another track’s future source', async () => {
+        compensation.seconds = 0.5;
+        const mixed = seedTrack('left', 4, false, 0, true);
+        const unrelated = seedTrack('right', 4, false, 0);
+        buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+        trackStoreState.value = { tracks: [mixed, unrelated] };
+        transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+        startPlayheadScheduler();
+        await tickAt(0);
+        const before = snapshotSources();
+        expect(before.map((source) => source.bufferId)).toEqual(['left-buffer', 'right-buffer']);
+        expect(frame(before[0]!.start.when)).toBe(ANCHOR_FRAME + 24_000);
+
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0.5 };
+        await tickAt(1_200);
+        const after = snapshotSources();
+        const old = after.find((source) => source.bufferId === 'left-buffer');
+        const bake = after.find((source) => source.bufferId === 'bake');
+        const other = after.find((source) => source.bufferId === 'right-buffer');
+        expect(old?.stops).toHaveLength(1);
+        expect(frame(old!.stops[0]!.when)).toBe(ANCHOR_FRAME + 1_200);
+        expect(frame(old!.stops[0]!.when)).toBeLessThan(frame(old!.start.when));
+        expect(bake?.start.when).toBeGreaterThanOrEqual(old!.stops[0]!.when);
+        expect(other?.stops).toHaveLength(0);
     });
 });
 

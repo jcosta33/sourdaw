@@ -1,15 +1,19 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AUTHOR_BOT_NODE_ID as AUTHOR_BOT_LOGIN } from '../githubAppIdentity.ts';
 import {
     githubTrackerIssuePort,
     inspectTrackerIssue,
     parseReconcileTrackerIssueArgs,
+    processIsProvenDead,
+    recoverRepositoryTrackerMutationLease,
+    runReconcileTrackerIssueCli,
     withRepositoryTrackerMutationLease,
 } from '../reconcileTrackerIssue.ts';
 import {
@@ -317,6 +321,234 @@ describe('tracker issue reconciliation', () => {
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
+    });
+
+    describe('tracker mutation lease recovery', () => {
+        const token = '123e4567-e89b-12d3-a456-426614174000';
+        // A pid this process never probes for real: every case injects the dead-owner proof.
+        const ownerPid = 987_654;
+        const dead = () => true;
+        const live = () => false;
+
+        function withLeaseRoot(contents: string | undefined, check: (root: string, leasePath: string) => void): void {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-tracker-lease-recovery-'));
+            const leasePath = join(root, '.git', 'sourdaw-tracker-mutation.lease');
+            mkdirSync(join(root, '.git'));
+            if (contents !== undefined) {
+                writeFileSync(leasePath, contents);
+            }
+            try {
+                check(root, leasePath);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+
+        const v2Lease = JSON.stringify({ version: 2, pid: ownerPid, token });
+
+        it('does not prove the running process dead', () => {
+            expect(processIsProvenDead(process.pid)).toBe(false);
+        });
+
+        // spawnSync returns only after the child exited and was reaped, so its pid is unused. A reuse
+        // in between would read as live and fail this case; it can never pass falsely.
+        it('proves an exited and reaped child process dead', () => {
+            const child = spawnSync(process.execPath, ['-e', '']);
+            expect(child.status).toBe(0);
+            expect(processIsProvenDead(child.pid)).toBe(true);
+        });
+
+        // Spying on `process.kill` makes the EPERM answer independent of the caller's uid; a real probe
+        // of pid 1 only answers EPERM to a non-root caller and would prove nothing when run as root.
+        it.each(['EPERM', 'EINVAL'])('does not prove an owner dead when the probe answers %s', (code) => {
+            const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
+                throw Object.assign(new Error(`kill ${code}`), { code });
+            });
+            try {
+                expect(processIsProvenDead(ownerPid)).toBe(false);
+                expect(kill).toHaveBeenCalledWith(ownerPid, 0);
+            } finally {
+                kill.mockRestore();
+            }
+        });
+
+        it('records a versioned owner while the lease is held', () => {
+            withLeaseRoot(undefined, (root, leasePath) => {
+                withRepositoryTrackerMutationLease(root, () => {
+                    const owner = JSON.parse(readFileSync(leasePath, 'utf8')) as Record<string, unknown>;
+                    expect(Object.keys(owner).sort()).toEqual(['pid', 'token', 'version']);
+                    expect(owner).toMatchObject({ version: 2, pid: process.pid });
+                });
+                expect(existsSync(leasePath)).toBe(false);
+            });
+        });
+
+        it('refuses acquisition over a dead owner without taking it over and names the recovery command', () => {
+            withLeaseRoot(v2Lease, (root, leasePath) => {
+                let ran = false;
+                expect(() =>
+                    withRepositoryTrackerMutationLease(
+                        root,
+                        () => {
+                            ran = true;
+                        },
+                        { processIsProvenDead: dead }
+                    )
+                ).toThrow(
+                    `tracker mutation lease is busy: owner pid ${ownerPid}, token ${token}; the owner is proven dead; ` +
+                        `recover it with: pnpm issue:reconcile --recover-lease ${token}`
+                );
+                expect(ran).toBe(false);
+                expect(readFileSync(leasePath, 'utf8')).toBe(v2Lease);
+            });
+        });
+
+        it('refuses acquisition over a live owner without offering recovery', () => {
+            withLeaseRoot(v2Lease, (root) => {
+                let message = '';
+                try {
+                    withRepositoryTrackerMutationLease(root, () => undefined, { processIsProvenDead: live });
+                } catch (error) {
+                    message = error instanceof Error ? error.message : String(error);
+                }
+                expect(message).toContain(`owner pid ${ownerPid}, token ${token}; the owner is live or unprovable`);
+                expect(message).not.toContain('--recover-lease');
+            });
+        });
+
+        it('refuses acquisition over an unprovable lease record and asks for manual removal', () => {
+            withLeaseRoot('{not json', (root) => {
+                expect(() =>
+                    withRepositoryTrackerMutationLease(root, () => undefined, { processIsProvenDead: dead })
+                ).toThrow(
+                    /lease is busy.*unprovable; remove it manually after confirming no reconcile or deliver is running/
+                );
+            });
+        });
+
+        it.each([
+            ['a current lease', v2Lease],
+            ['an unversioned lease from before the format version', JSON.stringify({ pid: ownerPid, token })],
+        ])('removes %s whose owner is proven dead and lets a new acquisition succeed', (_label, contents) => {
+            withLeaseRoot(contents, (root, leasePath) => {
+                const probed: number[] = [];
+                recoverRepositoryTrackerMutationLease(root, token, {
+                    processIsProvenDead: (pid) => {
+                        probed.push(pid);
+                        return true;
+                    },
+                });
+
+                expect(probed).toEqual([ownerPid]);
+                expect(existsSync(leasePath)).toBe(false);
+                expect(withRepositoryTrackerMutationLease(root, () => 'acquired')).toBe('acquired');
+            });
+        });
+
+        it.each([
+            ['a live owner', v2Lease, token, live, /live or unprovable; nothing removed/],
+            ['a mismatched token', v2Lease, 'other-token', dead, /does not match.*nothing removed/],
+            ['malformed JSON', '{not json', token, dead, /unprovable; remove it manually after confirming/],
+            [
+                'an unknown version',
+                JSON.stringify({ version: 3, pid: ownerPid, token }),
+                token,
+                dead,
+                /unprovable; remove it manually/,
+            ],
+            [
+                'an extra key',
+                JSON.stringify({ version: 2, pid: ownerPid, token, ownerFence: {} }),
+                token,
+                dead,
+                /unprovable; remove it manually/,
+            ],
+            ['a missing token', JSON.stringify({ version: 2, pid: ownerPid }), token, dead, /unprovable/],
+            ['a non-positive pid', JSON.stringify({ version: 2, pid: 0, token }), token, dead, /unprovable/],
+            ['an empty token', JSON.stringify({ version: 2, pid: ownerPid, token: '' }), '', dead, /unprovable/],
+        ])(
+            'refuses recovery of %s and leaves the lease in place',
+            (_label, contents, suppliedToken, probe, message) => {
+                withLeaseRoot(contents, (root, leasePath) => {
+                    expect(() =>
+                        recoverRepositoryTrackerMutationLease(root, suppliedToken, { processIsProvenDead: probe })
+                    ).toThrow(message);
+                    expect(readFileSync(leasePath, 'utf8')).toBe(contents);
+                });
+            }
+        );
+
+        it('refuses recovery when no lease exists', () => {
+            withLeaseRoot(undefined, (root) => {
+                expect(() => recoverRepositoryTrackerMutationLease(root, token, { processIsProvenDead: dead })).toThrow(
+                    /no tracker mutation lease/
+                );
+            });
+        });
+
+        it('refuses recovery when the lease changes between the proof and the removal', () => {
+            withLeaseRoot(v2Lease, (root, leasePath) => {
+                const replacement = JSON.stringify({ version: 2, pid: ownerPid + 1, token: 'new-owner' });
+                expect(() =>
+                    recoverRepositoryTrackerMutationLease(root, token, {
+                        processIsProvenDead: () => {
+                            writeFileSync(leasePath, replacement);
+                            return true;
+                        },
+                    })
+                ).toThrow(/changed while it was proven; nothing removed/);
+                expect(readFileSync(leasePath, 'utf8')).toBe(replacement);
+            });
+        });
+
+        it('parses the recovery form alone and rejects it beside other arguments', () => {
+            expect(parseReconcileTrackerIssueArgs(['--recover-lease', token])).toEqual({
+                help: false,
+                recoverLeaseToken: token,
+            });
+            expect(() => parseReconcileTrackerIssueArgs(['--recover-lease'])).toThrow(/--recover-lease <token>/);
+            expect(() => parseReconcileTrackerIssueArgs(['--recover-lease', token, '2372'])).toThrow(
+                /--recover-lease <token>/
+            );
+        });
+
+        it('refuses CLI recovery of a live owner through the real liveness probe', async () => {
+            const liveLease = JSON.stringify({ version: 2, pid: process.pid, token });
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-tracker-lease-cli-live-'));
+            mkdirSync(join(root, '.git'));
+            const leasePath = join(root, '.git', 'sourdaw-tracker-mutation.lease');
+            writeFileSync(leasePath, liveLease);
+            try {
+                await expect(
+                    runReconcileTrackerIssueCli(['--recover-lease', token], {
+                        resolvePrimaryRoot: () => root,
+                        authenticateTrackerAuthor: () => expect.fail('lease recovery must not authenticate'),
+                    })
+                ).rejects.toThrow(/live or unprovable; nothing removed/);
+                expect(readFileSync(leasePath, 'utf8')).toBe(liveLease);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        });
+
+        it('recovers from the CLI without authenticating to GitHub', async () => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-tracker-lease-cli-'));
+            mkdirSync(join(root, '.git'));
+            const leasePath = join(root, '.git', 'sourdaw-tracker-mutation.lease');
+            writeFileSync(leasePath, v2Lease);
+            try {
+                await expect(
+                    runReconcileTrackerIssueCli(['--recover-lease', token], {
+                        resolvePrimaryRoot: () => root,
+                        authenticateTrackerAuthor: () => expect.fail('lease recovery must not authenticate'),
+                        processIsProvenDead: dead,
+                    })
+                ).resolves.toBe(0);
+                expect(existsSync(leasePath)).toBe(false);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        });
     });
 
     it('documents that the lease only serializes sanctioned local writers', () => {

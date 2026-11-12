@@ -6,7 +6,7 @@ import { automationStore } from '../../stores/automationStore';
 
 import { pendingAutoMatch } from './autoMatchState';
 import { commitRecordedPass } from './commitRecordedPass';
-import { activeRecording, laneBaselines, pendingPoints, touchActive } from './recordingSessionState';
+import { activeRecording, laneBaselines, pendingOwners, pendingPoints, touchActive } from './recordingSessionState';
 
 /** Snapshot the points of one lane, or null if the lane is absent. */
 function snapshotLanePoints(laneId: string): AutomationPoint[] | null {
@@ -118,6 +118,7 @@ export function stopAutomationRecording(finalBoundaryBeat?: number): void {
 
     activeRecording.clear();
     pendingPoints.clear();
+    pendingOwners.clear();
     touchActive.clear();
     laneBaselines.clear();
     // A stop or locate ends the session outright, so any AutoMatch glide

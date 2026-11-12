@@ -1,7 +1,12 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import { CRUST_PARAM_IDS } from '../../models/CrustParamIds';
-import { asCrustOversampleFactor, crustDisclosureLevelFromState, type CrustPatch } from '../../models/CrustPatch';
+import {
+    asCrustOversampleFactor,
+    crustDisclosureLevelFromState,
+    DEFAULT_CRUST_PATCH,
+    type CrustPatch,
+} from '../../models/CrustPatch';
 import { getCrustState, loadCrustPatch } from '../../stores/crustStore';
 
 import {
@@ -73,7 +78,7 @@ function withGlobalFields(patch: CrustPatch, parameterValues: Record<string, num
     let next = patch;
 
     for (const field of NUMERIC_FIELDS) {
-        const stored = parameterValues[field];
+        const stored = Object.hasOwn(parameterValues, field) ? parameterValues[field] : DEFAULT_CRUST_PATCH[field];
         if (isFiniteNumber(stored) && !Object.is(next[field], stored)) {
             next = { ...next, [field]: stored };
         }
@@ -145,7 +150,10 @@ function withStoredBitDepth(patch: CrustPatch, storedBitDepth: number | undefine
  * through this read-only projection. Same inbound pattern as Gluten's
  * `hydrateGlutenPatchFromProject`.
  */
-export function hydrateCrustPatchFromProject(deviceId: string): void {
+export function hydrateCrustPatchFromProject(
+    deviceId: string,
+    ownedPreviews: ReadonlyMap<keyof CrustPatch, number> = new Map()
+): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
         return;
@@ -160,8 +168,23 @@ export function hydrateCrustPatchFromProject(deviceId: string): void {
     const currentPatch = getCrustState(deviceId).patch;
     let patch = withGlobalFields(currentPatch, parameterValues);
     patch = withEnumFields(patch, parameterValues);
-    patch = withStoredOversampling(patch, parameterValues[CRUST_PARAM_IDS.oversampling]);
-    patch = withStoredBitDepth(patch, parameterValues[CRUST_PARAM_IDS.outputBitDepth]);
+    patch = withStoredOversampling(
+        patch,
+        Object.hasOwn(parameterValues, CRUST_PARAM_IDS.oversampling)
+            ? parameterValues[CRUST_PARAM_IDS.oversampling]
+            : DEFAULT_CRUST_PATCH.oversampling
+    );
+    patch = withStoredBitDepth(
+        patch,
+        Object.hasOwn(parameterValues, CRUST_PARAM_IDS.outputBitDepth)
+            ? parameterValues[CRUST_PARAM_IDS.outputBitDepth]
+            : DEFAULT_CRUST_PATCH.outputBitDepth
+    );
+    for (const [key, value] of ownedPreviews) {
+        if (typeof DEFAULT_CRUST_PATCH[key] === 'number') {
+            patch = { ...patch, [key]: value };
+        }
+    }
     const uiLevel = crustDisclosureLevelFromState(device.deviceState);
     if (patch.uiLevel !== uiLevel) {
         patch = { ...patch, uiLevel };

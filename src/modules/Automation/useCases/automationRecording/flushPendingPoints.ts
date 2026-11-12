@@ -3,7 +3,7 @@ import { simplifyGesturePoints } from '../automation/simplifyGesturePoints';
 
 import { captureLaneBaseline } from './captureLaneBaseline';
 import { findLaneId } from './findLaneId';
-import { activeRecording, pendingPoints } from './recordingSessionState';
+import { activeRecording, pendingOwners, pendingPoints } from './recordingSessionState';
 
 export function flushPendingPoints(key: string): void {
     const points = pendingPoints.get(key);
@@ -29,4 +29,5 @@ export function flushPendingPoints(key: string): void {
     const thinned = simplifyGesturePoints(points);
     batchAddAutomationPoints(laneId, thinned);
     pendingPoints.set(key, []);
+    pendingOwners.set(key, []);
 }

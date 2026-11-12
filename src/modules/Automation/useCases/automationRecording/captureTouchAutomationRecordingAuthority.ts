@@ -1,5 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
+import { discardTouchAutomation } from './discardTouchAutomation';
 import { releaseTouchAutomation } from './releaseTouchAutomation';
 
 export function captureTouchAutomationRecordingAuthority(trackId: string, parameterId: string) {
@@ -13,6 +14,9 @@ export function captureTouchAutomationRecordingAuthority(trackId: string, parame
                 return;
             }
             releaseTouchAutomation(trackId, parameterId, owner);
+        },
+        discard: () => {
+            discardTouchAutomation(trackId, parameterId, owner);
         },
     };
 }
