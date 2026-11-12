@@ -44,7 +44,7 @@ Enforced by `cross-module-index-only`, `contract-barrel-scope`, `no-models-repos
 
 ### 2. Same module uses relative imports — never own barrels
 
-Inside `src/modules/Arrangement/`, import relatively (`../stores/trackStore`, `./addTrack`). Never import your own module's barrels (`no-self-barrel-import`, `no-internal-barrel-import`).
+Inside `src/modules/Arrangement/`, import relatively (`../stores/trackStore`, `./addTrack`). Never import your own module's barrels (`no-internal-barrel-import`).
 
 **Why:** barrels serve external consumers; intra-module barrel use creates cycles.
 
@@ -78,7 +78,7 @@ Views and hooks may import foreign contract barrels. Leaf `presentations/compone
 
 ### 6. Use-case types stay private; one function per file
 
-Never `export type` from `useCases/index.ts` (`no-usecase-type-exports-on-index` on the types cruise), and never combine value and type specifiers in one export declaration — the architecture checker rejects that syntax so the type edge cannot hide. Consumers use `ReturnType`/`Parameters` or payloads via `events/`. Each use-case and repository file exports exactly one function. Handlers stay private under `handlers/`; cross-module access is `get<Module>Handlers` from `useCases/`.
+Never `export type` from `useCases/index.ts` (`no-usecase-type-exports-on-index`, on the main and types cruises), and never combine value and type specifiers in one export declaration — the architecture checker rejects that syntax so the type edge cannot hide. Consumers use `ReturnType`/`Parameters` or payloads via `events/`. Each use-case and repository file exports exactly one function. Handlers stay private under `handlers/`; cross-module access is `get<Module>Handlers` from `useCases/`.
 
 **Why:** type re-exports freeze private shapes; multi-export wrappers become laundering barrels.
 

@@ -141,7 +141,6 @@ module.exports = {
                     '^$1$2/', // same module may import its own internals freely
                     // Only contract-folder barrels are accepted; module-root barrels are not.
                     '^src/modules/[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
-                    '^src/helpers/',
                 ],
             },
         },
@@ -233,28 +232,14 @@ module.exports = {
             name: 'no-internal-barrel-import',
             severity: 'error',
             comment:
-                'Internal module files must not import from their own module barrels (index.ts). ' +
-                'Import implementation files directly using relative paths. Root barrels are retired; ' +
-                'this also blocks same-module imports of contract-folder index.ts files.',
+                'Files inside a module must not import any index.ts of their own module: the retired module-root ' +
+                'barrel, a contract-folder barrel, or a nested barrel. Import implementation files directly using ' +
+                'relative paths.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1),
             },
             to: {
-                path: '^$1$2/.*/index\\.ts$',
-            },
-        },
-
-        {
-            name: 'no-self-barrel-import',
-            severity: 'error',
-            comment:
-                'Files inside a module must not import from their own module root index.ts or contract-folder barrels. ' +
-                'Use relative paths to the implementation files.',
-            from: {
-                path: '^' + MODULE_ROOT.slice(1),
-            },
-            to: {
-                path: '^$1$2/(index\\.ts|(useCases|events|stores|presentations/views)/index\\.ts)$',
+                path: '^$1$2/(?:.*/)?index\\.ts$',
             },
         },
 
@@ -262,9 +247,9 @@ module.exports = {
             name: 'no-usecase-type-exports-on-index',
             severity: 'error',
             comment:
-                'Contract barrels must not re-export types from useCases/. Enforced on the type-edge cruise ' +
-                '(.dependency-cruiser.types.cjs with tsPreCompilationDeps: specify). Kept here so the rule ' +
-                'name is documented with the main contract set; the types cruise is the hard gate.',
+                'Contract barrels must not re-export types from useCases/. Both cruises enforce it: this main ' +
+                'cruise emits type-only edges (tsPreCompilationDeps: specify), and .dependency-cruiser.types.cjs ' +
+                'sources this definition from here by name, so it must stay in this file.',
             from: {
                 path: '^(src/modules/[^/]+)/(index|(useCases|events|stores|presentations/views)/index)\\.ts$',
             },
@@ -742,25 +727,6 @@ module.exports = {
         // Desktop IPC confinement
         // --------------------------------------------------------------------
         DESKTOP_IPC_ONLY_IN_REPOSITORIES,
-
-        {
-            name: 'app-to-modules-public-surface-only',
-            severity: 'error',
-            comment:
-                'src/app/ may only depend on module contract-folder barrels and src/helpers/. ' +
-                'Migration complete: module-root index.ts is no longer accepted.',
-            from: {
-                path: '^src/app/',
-            },
-            to: {
-                path: '^src/modules/',
-                pathNot: [
-                    '^src/helpers/',
-                    // Only contract-folder barrels are accepted; module-root barrels are not.
-                    '^src/modules/[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
-                ],
-            },
-        },
 
         // --------------------------------------------------------------------
         // Helpers purity

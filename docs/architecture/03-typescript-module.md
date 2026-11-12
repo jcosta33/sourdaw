@@ -923,7 +923,7 @@ Test-support code that production code does not load: deterministic fakes and fi
 
 ## 4.15 Late binding: `*Port`, `configure*`, `init*`, `*ProjectAccess`
 
-A module sometimes needs a collaborator it cannot import: the import would close a cycle (`no-circular`), drag a heavy module graph into every consumer, or reach a foreign module that is not its to read. The composition root can import both sides (`app-to-modules-public-surface-only`), so it supplies the dependency at startup and the module holds only an empty slot.
+A module sometimes needs a collaborator it cannot import: the import would close a cycle (`no-circular`), drag a heavy module graph into every consumer, or reach a foreign module that is not its to read. The composition root can import both sides (`external-module-contracts-only`), so it supplies the dependency at startup and the module holds only an empty slot.
 
 | Piece                 | Where                                   | Role                                                                                                                                                       |
 | --------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
