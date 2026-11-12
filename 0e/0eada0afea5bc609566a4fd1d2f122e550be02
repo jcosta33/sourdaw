@@ -1,0 +1,19 @@
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_76ccd61d453edf::t_15c6491aadb452 2052-2054
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0e0eada0afea5bc609566a4fd1d2f122e550be02",
+  "prompts": {},
+  "sessions": {
+    "s_76ccd61d453edf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "108ea70a-a924-42ce-b7b8-fd9c1012e902",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
