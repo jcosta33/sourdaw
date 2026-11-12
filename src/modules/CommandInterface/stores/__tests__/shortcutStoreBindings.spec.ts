@@ -41,6 +41,22 @@ describe('shortcut store bindings', () => {
     it('no longer carries a dead workspace.clearClipSelection definition', () => {
         expect(defs().some((def) => def.id === 'workspace.clearClipSelection')).toBe(false);
     });
+
+    it('offers previous and next section as rebindable, initially unassigned transport actions', () => {
+        const previous = defs().find((def) => def.id === 'transport.previousSection');
+        const next = defs().find((def) => def.id === 'transport.nextSection');
+
+        expect(previous).toMatchObject({
+            label: 'Previous Section',
+            defaultKeys: [],
+            action: { type: 'appAction', action: { type: 'navigateSection', payload: { direction: 'previous' } } },
+        });
+        expect(next).toMatchObject({
+            label: 'Next Section',
+            defaultKeys: [],
+            action: { type: 'appAction', action: { type: 'navigateSection', payload: { direction: 'next' } } },
+        });
+    });
 });
 
 // Shortcut-conflict guard over the hand-authored default shortcut definitions.

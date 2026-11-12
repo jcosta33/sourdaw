@@ -2088,6 +2088,8 @@ export type AppAction =
     | { type: 'resizeSection'; payload: { sectionId: string; startBeat: number; endBeat: number } }
     | { type: 'setSectionColor'; payload: { sectionId: string; color: string } }
     | { type: 'reorderSection'; payload: { sectionId: string; direction: 'left' | 'right' } }
+    | { type: 'navigateSection'; payload: { direction: 'previous' | 'next' } }
+    | { type: 'rehearseSection'; payload: { sectionId: string; loop: boolean } }
     | {
           /** Internal guarded inverse for `reorderSection`: restores BOTH swapped
            *  sections' exact pre-reorder beat spans and list positions, the gap
