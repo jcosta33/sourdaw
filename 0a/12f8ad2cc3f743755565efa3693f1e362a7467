@@ -1,0 +1,23 @@
+docs/07-conventions.md
+  s_9307cedd8951f1::t_e02430a06b686e 798
+scripts/__tests__/lintSizeBaseline.spec.ts
+  s_9307cedd8951f1::t_ab369a16a61d3a 16-20,34,36,190-230,232-236
+scripts/lintSizeCeilings.ts
+  s_9307cedd8951f1::t_3460af43498aac 5-7,130-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a12f8ad2cc3f743755565efa3693f1e362a7467",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
