@@ -360,7 +360,9 @@ describe('claim launcher binding', () => {
 
     it('admits the primary root with the pinned source', () => {
         expect(() => assertTrustedClaimLauncherBinding(binding)).not.toThrow();
-        expect(() => assertTrustedClaimLauncherBinding({ ...binding, originSource: undefined })).not.toThrow();
+        expect(() => assertTrustedClaimLauncherBinding({ ...binding, originSource: undefined })).toThrow(
+            'scripts/claimTrackerIssue.ts has no blob on origin/main; refusing to run an unverifiable copy'
+        );
     });
 
     it('refuses a lane worktree even with fully forged launcher env', () => {
