@@ -16,7 +16,7 @@ export const projectCommands: CallableCommandEntry[] = [
         label: 'New Project',
         description: 'Create a new empty project',
         category: 'Project',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const isStillChosen = pendingProjectReplacements.capture();
             void (async () => {
                 // Same guard as the menu's New Project: a failed save, or one
@@ -28,7 +28,11 @@ export const projectCommands: CallableCommandEntry[] = [
                 if (outgoingProject === 'stay' || !isStillChosen()) {
                     return;
                 }
-                void newProject(undefined, { outgoingProject, shouldProceed: isStillChosen });
+                void newProject(undefined, { outgoingProject, shouldProceed: isStillChosen }).then((created) => {
+                    if (created) {
+                        onCommitted?.();
+                    }
+                });
             })();
         },
     },
@@ -38,8 +42,12 @@ export const projectCommands: CallableCommandEntry[] = [
         description: 'Save project to local storage',
         category: 'Project',
         shortcut: '⌘S',
-        action: () => {
-            void saveProject({ requestFolderSelection: true });
+        action: (onCommitted?: () => void) => {
+            void saveProject({ requestFolderSelection: true }).then((saved) => {
+                if (saved) {
+                    onCommitted?.();
+                }
+            });
         },
     },
     {
@@ -48,8 +56,9 @@ export const projectCommands: CallableCommandEntry[] = [
         description: 'Export mixdown or stems',
         category: 'Project',
         shortcut: '⌘⇧E',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             openExportDialog();
+            onCommitted?.();
         },
     },
     {
@@ -78,8 +87,12 @@ export const projectCommands: CallableCommandEntry[] = [
         label: 'Import Project',
         description: 'Import a .sourdaw project file',
         category: 'Project',
-        action: () => {
-            void pickAndImportProjectFile();
+        action: (onCommitted?: () => void) => {
+            void pickAndImportProjectFile().then((imported) => {
+                if (imported) {
+                    onCommitted?.();
+                }
+            });
         },
     },
     {
@@ -101,8 +114,9 @@ export const projectCommands: CallableCommandEntry[] = [
         label: 'Open Branch Manager',
         description: 'Manage project branches — switch, fork, merge, or delete',
         category: 'Project',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             toggleBranchManager();
+            onCommitted?.();
         },
     },
     {

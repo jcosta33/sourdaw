@@ -177,8 +177,11 @@ from `review.json`, `risk-plan.json`, and live facts. A fresh plan-carrying publ
 before any remote write unless its draws cover the plan's floor of distinct stances — one for
 `docs-only` and `test-only`, two for `small` (product code under `src/` only), otherwise three, or
 every stance the plan's classes earn when they earn fewer. Every fresh publication also checks
-the summary reviewer model and each draw against the cost ceiling, including effective draws
-reused from an unpublished historical dossier; `strongest` metadata refuses a fresh publication.
+each draw's declared `tier`, including effective draws reused from an unpublished historical
+dossier: only `economy` and `standard` pass, and `strongest` metadata refuses a fresh publication.
+The script does not check model names against the cost ceiling; choosing a permitted model for
+each draw is the orchestrator's duty, and the script enforces only the declared tier and author
+diversity (`scripts/reviewerModelDiversity.ts`).
 The floor is the minimum the record can prove; whether the stances attack
 independent risks and whether each probe ran stays the orchestrator's judgement. The retired caller
 files `stances.json`, `discarded.json`, `reassessment.json`, and a caller-written `dossier.json` are
@@ -192,8 +195,9 @@ refuses every fresh reviewer publication on it, approve or request changes, and 
 lifts the freeze. Respin the change as one consolidated pull request and close the frozen one with
 `pr:supersede` once the replacement merges. `review:repair` and `review:confirm` stay open so
 unresolved threads remain resolvable. `review:prepare` logs
-`review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` on every run, and `review:repair` logs it
-only at or above the threshold.
+`review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` on every run, adds
+`review-round-freeze:<pr>:frozen` when the count reaches the threshold, and `review:repair` logs
+the count line only at or above the threshold.
 
 An obsolete pull request with no truthful merged replacement may use `pr:retire` only when every
 live review root is resolved by an author-App repair and reviewer-App confirmation on the named
@@ -264,7 +268,10 @@ locally at other lanes' expense.
   known heavy scripts, and an RSS kill prints the budget it applied — record a budget above the
   observed peak in the guard's `measuredScriptBudgets`, never in a note. The guard waits until free
   RAM covers active reservations, this command, and the system reserve. Never bypass it. A timeout,
-  RSS kill, or memory-monitor failure is a stop.
+  RSS kill, or memory-monitor failure is a stop. The guard keeps only the tail of a command's
+  output; `--show-output` keeps all of it. A stop leaves a guard-failure receipt that refuses further
+  guarded runs in the lane until a relevant commit lands or `pnpm guard:recover`, run inside the
+  lane, re-executes the recorded command and clears the receipt on success.
 - Run only checks that can fail because of the changed files. Do not run repository-wide tests, lint, coverage, E2E, builds, Cargo, WASM, boundaries, barrel
   mocks, release inventory, or measurements locally; use PR CI for those checks unless an explicit
   targeted debugging need requires a local diagnostic.
@@ -299,7 +306,8 @@ isolation, leaked state, or environment); fix it, open a lane, or file it. Green
 failure like weakened tests. DAW concurrency and scheduling make flakes likely real timing defects.
 For a pull request blocked by a filed failure, use the
 [failed-Gate recovery procedure](./.agents/skills/delivery-orchestration/SKILL.md#recovering-a-blocked-gate);
-a retry never authorizes delivery.
+a retry never authorizes delivery. Keep that rule yourself: GitHub's ruleset counts the newest run
+of `Gate`, so a green retry satisfies the ruleset.
 
 ## Map
 
@@ -357,7 +365,7 @@ the shared primary checkout holding credentials and other lanes. Its gitignored 
 are exceptions: `review:prepare` writes `.agents/review-bundles/` there, the caller adds review documents,
 and `.env.sourdaw-*` credentials live there.
 
-`pnpm lane:open [issue] [slug] --type <type>` fetches and branches from `origin/main`, locks the lane
+`pnpm lane:open [issue] [slug] --type <type> --model <model>` fetches and branches from `origin/main`, locks the lane
 `active:sourdaw-author`, then stays offline without minting or spawning `gh`. To create a dependent
 lane, pass `--stack-on <absolute-parent-lane>`; the clean, committed, owned parent must belong to the
 same primary repository, and the command records the exact parent lineage under
@@ -442,8 +450,9 @@ Removal requires a clean lane holding exactly one PR's head whose work reached `
 merged directly or through `pr:supersede`'s receipt naming a merged replacement. Other closed PRs
 are abandonments: use `lane:strand` to preserve their unlanded work. It refuses open PRs or
 uncommitted work and records the abandoned tip in the primary checkout for recovery; it refuses
-to overwrite a same-lane receipt with a different head. Delete any leftover local branch after
-`lane:remove`.
+to overwrite a same-lane receipt with a different head. After writing the receipt it removes the
+worktree and deletes the lane's local branch with `git branch -D`; the receipt is the recovery
+route. `lane:remove` leaves the local branch: delete it after removal.
 
 ## Artifacts
 
@@ -486,8 +495,9 @@ correcting an issue's own state, labels, milestone, project membership, or sub-i
 backfilling a pull request's own labels, milestone, or project membership predating
 `lane:publish`'s metadata assertion — these use the operator account. Scripts use their
 designated App identities, including merge. The verified `jcosta33` user credential serves only the
-trusted ruleset change, `issue:claim`'s tracker claim, and `lane:publish`'s project-membership read
-and `--add-project` edit; no other manual `gh pr` write qualifies. Lane tooling owns
+trusted ruleset change, `issue:claim`'s tracker claim, `lane:publish`'s project-membership read
+and `--add-project` edit, and the legacy `review:accept` publication with its
+`review:publish:recover` path; no other manual `gh pr` write qualifies. Lane tooling owns
 every `git push`: other pushes break review anchors and can strand lanes. Read-only `gh` is
 unrestricted; use it for live tracker state.
 
@@ -563,7 +573,8 @@ movement requires no merge; take `main` only for real conflicts or mergeability,
 then requires fresh `Gate` and review.
 
 Dismissing stale reviews on push, requiring approval of the last push, and the one-approval count
-are ruleset configuration, and only the trusted ruleset command may change them: it plans against
+are ruleset configuration, and only the trusted ruleset command, `pnpm ruleset:harden`, may change
+them. It is a dry run that prints the planned change unless `--apply` is passed. It plans against
 the live ruleset, refuses a change outside the approved field set — stale-review dismissal,
 last-push approval, and `required_approving_review_count` = 1 — or one that adds a required
 context, captures the live ruleset's canonical bytes as the rollback before writing, applies as the
@@ -572,7 +583,7 @@ throwaway-ruleset mode; the canary evidence #3002 requires for such a change is 
 — a red `Gate` blocking a merge, fresh approvals required after each push, unresolved threads
 blocking, and reviewer App confirmations resolving threads. Read the live ruleset rather than
 assume any control is on. The reviewer's shadow status
-is deliberately non-required: it attests only immutable commit facts about the exact head, never a
+(`pnpm review:shadow-status <pr> --head <full-sha>`) is deliberately non-required: it attests only immutable commit facts about the exact head, never a
 verdict that another commit or a later push can inherit. No wave may make a CI context or a shadow
 status context required, because a required context converts an observation into merge authority —
 for the shadow status, that would erase the reason it exists.
@@ -628,7 +639,7 @@ current head addresses the finding, then obtain a fresh review. No script writes
 findings have no discussion route. Clarify code, not threads. File out-of-scope feedback; do not
 grow the PR.
 
-Push-lane failures yield required red `Gate`, never softened warnings. Attribute
+Pull-request validation failures yield required red `Gate`, never softened warnings. Attribute
 every unexplained failure to the change or a named, filed pre-existing defect. Let the pipeline
 run checks; locally format changed files and stage rewrites.
 
@@ -654,6 +665,8 @@ only when it depends on that lane's change. A head waiting on CI or review does 
 a new lane; merge each as soon as its Gate and approval allow. If reviewers cannot attack a diff
 whole, reassess its scope under Delegation before review.
 A finished change waits only on its GitHub review. Enable hooks: `git config core.hooksPath .githooks`.
+The `commit-msg` hook refuses a subject that is not `type(scope)!: subject` or is longer than 100
+characters.
 
 ## Safety
 

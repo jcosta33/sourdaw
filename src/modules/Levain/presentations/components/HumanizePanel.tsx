@@ -26,6 +26,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
             {/* Hero: large humanize knob centered */}
             <Stack align="center" gap={1} className="py-2">
                 <RotaryKnob
+                    aria-label="Humanize amount"
                     value={config.amount}
                     onChange={(v) => onChange({ amount: v })}
                     min={0}
@@ -45,6 +46,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
             <Row align="end" justify="center" gap={2}>
                 <Stack align="center">
                     <RotaryKnob
+                        aria-label="Humanize timing"
                         value={config.timingMaxMs}
                         onChange={(v) => onChange({ timingMaxMs: v })}
                         min={0}
@@ -62,6 +64,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
 
                 <Stack align="center">
                     <RotaryKnob
+                        aria-label="Humanize tuning"
                         value={config.tuningMaxCents}
                         onChange={(v) => onChange({ tuningMaxCents: v })}
                         min={0}
@@ -79,6 +82,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
 
                 <Stack align="center">
                     <RotaryKnob
+                        aria-label="Humanize dynamic"
                         value={config.dynamicMax * 100}
                         onChange={(v) => onChange({ dynamicMax: v / 100 })}
                         min={0}
@@ -96,6 +100,7 @@ export const HumanizePanel = ({ config, onChange }: HumanizePanelProps): ReactEl
 
                 <Stack align="center">
                     <RotaryKnob
+                        aria-label="Humanize vibrato variation"
                         value={config.vibratoVarMax * 100}
                         onChange={(v) => onChange({ vibratoVarMax: v / 100 })}
                         min={0}

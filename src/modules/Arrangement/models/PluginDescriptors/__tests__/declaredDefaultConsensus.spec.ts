@@ -1194,7 +1194,7 @@ const PANEL_FILES: readonly { readonly file: string; readonly declared?: number;
     { file: 'src/modules/Fermenter/presentations/components/EnvelopeSection.tsx', readable: 0 },
     { file: 'src/modules/Fermenter/presentations/components/FilterSection.tsx', declared: 5, readable: 5 },
     { file: 'src/modules/Fermenter/presentations/components/FmSection.tsx', declared: 4, readable: 2 },
-    { file: 'src/modules/Fermenter/presentations/components/GranularSection.tsx', declared: 6, readable: 6 },
+    { file: 'src/modules/Fermenter/presentations/components/GranularSection.tsx', declared: 7, readable: 6 },
     { file: 'src/modules/Fermenter/presentations/components/KarplusSection.tsx', readable: 0 },
     { file: 'src/modules/Fermenter/presentations/components/LayerStack.tsx', readable: 0 },
     { file: 'src/modules/Fermenter/presentations/components/LfoSection.tsx', declared: 3, readable: 3 },

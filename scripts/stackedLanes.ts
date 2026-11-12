@@ -400,7 +400,15 @@ export function stackPublicationBase(
         }
         return { branch: parent.branch, head: parent.headSha, parent };
     }
-    assertLandedStackParent({ ...descriptor, parentPullRequest: parent.number }, childHead, mainHead, port);
+    // `lane:sync-parent` pins the parent pull request before it merges the landed parent, so a
+    // merged-parent child without the pin never reconciled; ancestry alone does not admit it.
+    if (descriptor.parentPullRequest === undefined) {
+        fail(
+            `stack child ${descriptor.childBranch} has no pinned parent pull request although its parent merged: ` +
+                'run pnpm lane:sync-parent --lane <child> before publishing'
+        );
+    }
+    assertLandedStackParent(descriptor, childHead, mainHead, port);
     return { branch: 'main', head: mainHead, parent };
 }
 
