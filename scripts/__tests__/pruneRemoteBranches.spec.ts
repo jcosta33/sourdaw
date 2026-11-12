@@ -67,6 +67,11 @@ describe('classifyRemoteBranch', () => {
         expect(classifyRemoteBranch(value, [mergedPr(4, 'tip-child', 'fix/parent')], true)).toBe('unmerged');
     });
 
+    it('should keep a branch as unmerged when main merged an older tip and only a closed pull request holds the current one', () => {
+        const value = branch('gamma', 'tip-now');
+        expect(classifyRemoteBranch(value, [mergedPr(6, 'tip-old'), closedPr(7, 'tip-now')], true)).toBe('unmerged');
+    });
+
     it('should call a branch spent once any pull request merged its exact tip into main', () => {
         const value = branch('child', 'tip-child');
         expect(
