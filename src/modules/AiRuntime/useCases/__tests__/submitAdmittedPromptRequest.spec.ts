@@ -15,8 +15,8 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
-import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { chatStore, clearChatMessages, setChatGenerating } from '../../stores/chatStore';
 import { hostedLlmProviderStatusStore } from '../../stores/hostedLlmProviderStatusStore';
 import {

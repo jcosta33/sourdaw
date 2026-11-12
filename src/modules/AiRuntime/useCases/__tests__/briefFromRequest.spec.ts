@@ -874,17 +874,21 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         });
 
         it.each([
-            { name: 'a hand-off planned on a local model', backend: 'webllm', chatHandOff: true as const },
+            {
+                name: 'a hand-off planned on a local model',
+                backend: 'webllm',
+                input: { prompt: VIBE_PROMPT, chatHandOff: true as const },
+            },
             {
                 name: 'a hosted request that asks for no hand-off and has no thread',
                 backend: 'cloud',
-                chatHandOff: undefined,
+                input: { prompt: VIBE_PROMPT },
             },
-        ])('never offers the brief to $name', async ({ backend, chatHandOff }) => {
+        ])('never offers the brief to $name', async ({ backend, input }) => {
             runtimeMocks.backend.value = backend;
             const requests = scriptPlanningTurns([decline]);
 
-            await planPromptActions({ prompt: VIBE_PROMPT, ...(chatHandOff === undefined ? {} : { chatHandOff }) });
+            await planPromptActions(input);
 
             expect(requests[0]?.schemas.map((schema) => schema.function.name)).not.toContain('brief.compile');
         });
