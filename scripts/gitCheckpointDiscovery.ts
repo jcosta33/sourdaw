@@ -1,3 +1,5 @@
+import { relative, resolve } from 'node:path';
+
 import { command, diagnosticEnv } from './gitCheckpointProcess.ts';
 
 const unavailable = 'unavailable';
@@ -38,30 +40,41 @@ export function discoverPathspecs(paths: string[], discover: boolean, includeIgn
     }
     return { matched: listing.split('\0').filter(Boolean), pathspecDiscovery: 'complete' };
 }
+function worktreePaths(paths: string[]): string[] | null {
+    const rootOutput = command('git', ['rev-parse', '--show-toplevel'], diagnosticEnv, 750, true);
+    if (rootOutput === null || !rootOutput.endsWith('\n')) {
+        return null;
+    }
+    const root = rootOutput.slice(0, -1);
+    return paths.map((path) => relative(process.cwd(), resolve(root, path)));
+}
 export function discoverWorktreeCandidates(includeUntracked: boolean, includeIgnored: boolean) {
     const changed = command(
         'git',
-        ['diff', '--no-ext-diff', '--no-textconv', '--name-only', '-z', '--diff-filter=ACDMRT'],
+        ['diff', '--no-ext-diff', '--no-textconv', '--no-relative', '--name-only', '-z', '--diff-filter=ACDMRT'],
         diagnosticEnv,
         750,
         true
     );
     let untracked: string | null = null;
     if (includeUntracked) {
-        const args = ['ls-files', '-z', '--others'];
+        const args = ['ls-files', '-z', '--others', '--full-name'];
         if (!includeIgnored) {
             args.push('--exclude-standard');
         }
+        args.push('--', ':/');
         untracked = command('git', args, diagnosticEnv, 750, true);
     }
-    const paths = changed?.split('\0').filter(Boolean) ?? [];
-    if (untracked !== null) {
-        paths.push(...untracked.split('\0').filter(Boolean));
+    const trackedPaths = changed === null ? null : worktreePaths(changed.split('\0').filter(Boolean));
+    const untrackedPaths = untracked === null ? null : worktreePaths(untracked.split('\0').filter(Boolean));
+    const paths = trackedPaths ?? [];
+    if (untrackedPaths !== null) {
+        paths.push(...untrackedPaths);
     }
     return {
         paths,
-        tracked: changed === null ? unavailable : 'complete',
-        untracked: includeUntracked ? (untracked === null ? unavailable : 'complete') : 'not requested',
+        tracked: trackedPaths === null ? unavailable : 'complete',
+        untracked: includeUntracked ? (untrackedPaths === null ? unavailable : 'complete') : 'not requested',
     };
 }
 
@@ -74,7 +87,7 @@ export function selectCheckpointSources(
     conservative: boolean,
     includeUntracked: boolean
 ) {
-    const stagedPaths = staged?.split('\0').filter(Boolean) ?? [];
+    const stagedPaths = staged === null ? null : worktreePaths(staged.split('\0').filter(Boolean));
     const { matched, pathspecDiscovery } = discoverPathspecs(paths, discover, includeIgnored, trackedOnly);
     let candidates: ReturnType<typeof discoverWorktreeCandidates> | null = null;
     if (conservative) {
@@ -82,12 +95,13 @@ export function selectCheckpointSources(
     }
     const requestedPaths = discover ? [] : paths;
     const candidatePaths = candidates?.paths ?? [];
-    const discovered = [...new Set([...candidatePaths, ...requestedPaths, ...matched, ...stagedPaths])];
+    const stagedNames = stagedPaths ?? [];
+    const discovered = [...new Set([...candidatePaths, ...requestedPaths, ...matched, ...stagedNames])];
     const selected = discovered.slice(0, 256);
     const sourceSelection = {
         selected: selected.length,
         omitted: discovered.length - selected.length,
-        stagedDiscovery: staged === null ? unavailable : 'complete',
+        stagedDiscovery: stagedPaths === null ? unavailable : 'complete',
         pathspecDiscovery,
         mode: conservative ? 'conservative' : discover ? 'explicit' : 'frozen',
         candidateDiscovery:

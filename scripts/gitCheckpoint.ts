@@ -172,7 +172,16 @@ function observe(
     checkpoint('index', index ? hash(index) : { error: unavailable });
     const staged = command(
         'git',
-        ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--name-only', '-z', '--diff-filter=ACMR'],
+        [
+            'diff',
+            '--cached',
+            '--no-ext-diff',
+            '--no-textconv',
+            '--no-relative',
+            '--name-only',
+            '-z',
+            '--diff-filter=ACMR',
+        ],
         diagnosticEnv,
         750,
         true

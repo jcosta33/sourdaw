@@ -199,6 +199,61 @@ describe('Git checkpoint diagnostic', () => {
         }
         expect(git('show', ':tracked.txt')).toBe('new source');
     });
+    it.each([
+        ['add all', ['add', '-A'], true],
+        ['add update', ['add', '-u'], false],
+        ['commit all', ['commit', '-am', 'test: update'], false],
+    ])('records worktree-wide sources from a subdirectory before %s', async (_label, args, includesUntracked) => {
+        const { root, env, git } = fixture();
+        mkdirSync(join(root, 'subdir'));
+        writeFileSync(join(root, 'outside.txt'), 'old outside');
+        writeFileSync(join(root, 'subdir', 'outside.txt'), 'different inside');
+        git('add', '--', 'outside.txt', 'subdir/outside.txt');
+        git('commit', '-qm', 'test: baseline');
+        git('config', 'diff.relative', 'true');
+        writeFileSync(join(root, 'outside.txt'), 'new outside');
+        writeFileSync(join(root, 'untracked-outside.txt'), 'new untracked outside');
+        const result = await run(join(root, 'subdir'), env, ...args);
+        expect(result.code, result.stderr).toBe(0);
+        const observed = receipt(result.stderr).value;
+        expect(observed.before.sources['../outside.txt']?.sha256).toBe(
+            createHash('sha256').update('new outside').digest('hex')
+        );
+        expect(git('show', ':outside.txt')).toBe('new outside');
+        if (includesUntracked) {
+            expect(observed.before.sources['../untracked-outside.txt']?.sha256).toBe(
+                createHash('sha256').update('new untracked outside').digest('hex')
+            );
+            expect(git('ls-files', '--error-unmatch', 'untracked-outside.txt')).toBe('untracked-outside.txt');
+        }
+    });
+    it('normalizes staged and explicit root pathspecs from a subdirectory', async () => {
+        const { root, env, git } = fixture();
+        mkdirSync(join(root, 'subdir'));
+        writeFileSync(join(root, 'outside.txt'), 'old outside');
+        writeFileSync(join(root, 'subdir', 'outside.txt'), 'different inside');
+        git('add', '--', 'outside.txt', 'subdir/outside.txt');
+        git('commit', '-qm', 'test: baseline');
+        git('config', 'diff.relative', 'true');
+        writeFileSync(join(root, 'outside.txt'), 'staged outside');
+        git('add', '--', 'outside.txt');
+        writeFileSync(join(root, 'outside.txt'), 'latest outside');
+        const result = await run(join(root, 'subdir'), env, 'add', '--', ':/outside.txt');
+        expect(result.code, result.stderr).toBe(0);
+        const observed = receipt(result.stderr).value;
+        expect(observed.before.sources['../outside.txt']?.sha256).toBe(
+            createHash('sha256').update('latest outside').digest('hex')
+        );
+        expect(observed.before.sourceSelection.pathspecDiscovery).toBe('complete');
+        expect(git('show', ':outside.txt')).toBe('latest outside');
+        writeFileSync(join(root, 'new-root.txt'), 'new root source');
+        const added = await run(join(root, 'subdir'), env, 'add', '--', ':/new-root.txt');
+        expect(added.code, added.stderr).toBe(0);
+        expect(receipt(added.stderr).value.before.sources['../new-root.txt']?.sha256).toBe(
+            createHash('sha256').update('new root source').digest('hex')
+        );
+        expect(git('show', ':new-root.txt')).toBe('new root source');
+    });
     it('preserves leading whitespace in selected source filenames', async () => {
         const { root, env } = fixture();
         const name = ' leading take.txt';
