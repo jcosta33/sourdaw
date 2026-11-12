@@ -3016,7 +3016,7 @@ describe('fetchOriginMain', () => {
                 '+refs/heads/main:refs/pinned/main',
             ],
             ['cat-file', '-e', `${pinned}^{commit}`],
-            ['-c', 'core.hooksPath=/dev/null', 'update-ref', 'refs/remotes/origin/main', pinned],
+            ['-c', 'core.hooksPath=/dev/null', 'update-ref', '--no-deref', 'refs/remotes/origin/main', pinned],
         ]);
         const pinCalls = calls.filter(({ cwd }) => cwd !== '/repo');
         const pinRepository = pinCalls[0]?.env.GIT_DIR;
@@ -3084,6 +3084,63 @@ describe('fetchOriginMain', () => {
     ])('refuses %s', (_label, failing) => {
         const { spawn } = scripted((args) => (failing(args) ? { status: 1, stderr: 'boom' } : healthy(args)));
         expect(() => fetchOriginMain(input, spawn)).toThrow(/cannot pin origin\/main from GitHub/);
+    });
+
+    it('replaces a tracking ref planted as a symref instead of moving the branch it names', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-origin-symref-')));
+        const gitPath = resolveTrustedExecutable('git');
+        const gitAt = (cwd: string, ...args: string[]) => {
+            const result = spawnSync(gitPath, args, {
+                cwd,
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    GIT_CONFIG_GLOBAL: '/dev/null',
+                    GIT_CONFIG_NOSYSTEM: '1',
+                    GIT_AUTHOR_NAME: 'Fixture',
+                    GIT_AUTHOR_EMAIL: 'fixture@example.test',
+                    GIT_COMMITTER_NAME: 'Fixture',
+                    GIT_COMMITTER_EMAIL: 'fixture@example.test',
+                },
+            });
+            return { status: result.status, stdout: result.stdout.trim(), stderr: result.stderr };
+        };
+        const git = (cwd: string, ...args: string[]) => {
+            const result = gitAt(cwd, ...args);
+            expect(result.status, result.stderr).toBe(0);
+            return result.stdout;
+        };
+        try {
+            const primary = join(root, 'primary');
+            const origin = join(root, 'origin.git');
+            git(root, 'init', '--quiet', '-b', 'main', primary);
+            git(primary, 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'victim');
+            const victim = git(primary, 'rev-parse', 'HEAD');
+            git(primary, 'branch', 'victim', victim);
+            git(primary, 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'origin main');
+            const truth = git(primary, 'rev-parse', 'HEAD');
+            git(root, 'init', '--quiet', '--bare', origin);
+            git(primary, 'push', '--quiet', origin, `${truth}:refs/heads/main`);
+            git(primary, 'symbolic-ref', 'refs/remotes/origin/main', 'refs/heads/victim');
+            const originUrl = pathToFileURL(origin).href;
+            const spawn: OriginFetchSpawn = (command, args, options) => {
+                const result = spawnSync(
+                    command,
+                    args.map((arg) => (arg === GITHUB_ORIGIN_URL ? originUrl : arg)),
+                    { ...options, encoding: 'utf8' }
+                );
+                return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+            };
+
+            expect(fetchOriginMain({ gitPath, primaryRoot: primary, commonDir: join(primary, '.git') }, spawn)).toEqual(
+                { commit: truth }
+            );
+            expect(git(primary, 'rev-parse', 'refs/heads/victim')).toBe(victim);
+            expect(gitAt(primary, 'symbolic-ref', '--quiet', 'refs/remotes/origin/main').status).toBe(1);
+            expect(git(primary, 'rev-parse', 'refs/remotes/origin/main')).toBe(truth);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it('pins the true origin commit whatever transport config the shared repository plants', () => {

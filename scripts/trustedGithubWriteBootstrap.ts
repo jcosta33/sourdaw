@@ -6337,6 +6337,7 @@ export function fetchOriginMain(
             '-c',
             'core.hooksPath=/dev/null',
             'update-ref',
+            '--no-deref',
             'refs/remotes/origin/main',
             commit,
         ]);
