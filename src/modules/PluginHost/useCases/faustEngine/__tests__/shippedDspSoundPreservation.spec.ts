@@ -269,5 +269,10 @@ describe('shipped Faust PCM against immutable pre-upgrade sound', () => {
         expect(() => compareSoundStreams(perturbed, actual)).toThrow('PCM drift');
         expect(compareSoundStreams(expected, actual).maxAbsolute).toBeLessThanOrEqual(1e-5);
         expect(() => compareSoundStreams(expected.subarray(0, 8), actual)).toThrow('PCM byte count differs');
+        for (const value of [Number.NaN, Number.POSITIVE_INFINITY]) {
+            const nonfinite = Buffer.from(expected);
+            nonfinite.writeFloatLE(value, 4);
+            expect(() => compareSoundStreams(nonfinite, actual)).toThrow('Non-finite PCM at planar sample 1');
+        }
     });
 });
