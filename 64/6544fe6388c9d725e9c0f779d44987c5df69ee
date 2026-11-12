@@ -1,0 +1,19 @@
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_9307cedd8951f1::t_db15e3cbfffe45 598-599,612-613,617-622,624-693,695-697,699-700,702,704-706,708-709,711,713-717,719-726,728-734,736-738,741-757
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "646544fe6388c9d725e9c0f779d44987c5df69ee",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
