@@ -952,43 +952,44 @@ describe('checkBarrelMockCoverage — the real tree', () => {
             function record(stage: string, result?: RealTreeScan): void {
                 const now = process.hrtime.bigint();
                 const cpu = process.cpuUsage();
-                console.log(
-                    JSON.stringify({
-                        event: 'barrel-scan-hook',
-                        invocation,
-                        stage,
-                        sequence: ++sequence,
-                        pid: process.pid,
-                        monotonicNs: now.toString(),
-                        phaseWallMs: Number(now - phaseStart) / 1e6,
-                        totalWallMs: Number(now - hookStart) / 1e6,
-                        phaseCpuUs: { user: cpu.user - phaseCpu.user, system: cpu.system - phaseCpu.system },
-                        totalCpuUs: { user: cpu.user - hookCpu.user, system: cpu.system - hookCpu.system },
-                        maxRssKiB: process.resourceUsage().maxRSS,
-                        node: process.version,
-                        platform: process.platform,
-                        arch: process.arch,
-                        workerLimit,
-                        ...(result && {
-                            specCount: result.specCount,
-                            analyzedSpecCount: result.analyzedSpecCount,
-                            parsedMockCount: result.parsedMockCount,
-                            resolvedMockCount: result.resolvedMockCount,
-                            graphNodeCount: result.graphNodeCount,
-                            matchedBarrelKindCounts: result.matchedBarrelKindCounts,
-                            violationCount: result.violations.length,
-                            extractionFailureCount: result.extractionFailures.length,
-                            staleExemptionCount: result.staleExemptions.length,
-                        }),
-                    })
-                );
-                phaseStart = now;
-                phaseCpu = cpu;
+                if (result === undefined) {
+                    recordVitestProgress('scan', stage);
+                }
+                const row = {
+                    event: 'barrel-scan-hook',
+                    invocation,
+                    stage,
+                    sequence: ++sequence,
+                    pid: process.pid,
+                    monotonicNs: now.toString(),
+                    phaseWallMs: Number(now - phaseStart) / 1e6,
+                    totalWallMs: Number(now - hookStart) / 1e6,
+                    phaseCpuUs: { user: cpu.user - phaseCpu.user, system: cpu.system - phaseCpu.system },
+                    totalCpuUs: { user: cpu.user - hookCpu.user, system: cpu.system - hookCpu.system },
+                    maxRssKiB: process.resourceUsage().maxRSS,
+                    node: process.version,
+                    platform: process.platform,
+                    arch: process.arch,
+                    workerLimit,
+                };
+                if (result !== undefined) {
+                    Object.assign(row, {
+                        specCount: result.specCount,
+                        analyzedSpecCount: result.analyzedSpecCount,
+                        parsedMockCount: result.parsedMockCount,
+                        resolvedMockCount: result.resolvedMockCount,
+                        graphNodeCount: result.graphNodeCount,
+                        matchedBarrelKindCounts: result.matchedBarrelKindCounts,
+                        violationCount: result.violations.length,
+                        extractionFailureCount: result.extractionFailures.length,
+                        staleExemptionCount: result.staleExemptions.length,
+                    });
+                }
+                console.log(JSON.stringify(row));
+                phaseStart = process.hrtime.bigint();
+                phaseCpu = process.cpuUsage();
             }
-            const result = scanRepository(kinds, undefined, (stage) => {
-                recordVitestProgress('scan', stage);
-                record(stage);
-            });
+            const result = scanRepository(kinds, undefined, (stage) => record(stage));
             record('returned', result);
             return result;
         }
