@@ -28,6 +28,11 @@ import {
 } from '../pruneLane';
 import { parseWorktrees, type Worktree } from '../removeLane';
 
+// A global `trace2.eventtarget` can feed a background daemon (git-ai) that writes `.git/ai` into a
+// repository after each git command returns, racing the fixtures' deletion with ENOTEMPTY. Every git
+// child here inherits this environment, so disable the trace2 event stream for this worker.
+process.env.GIT_TRACE2_EVENT = '0';
+
 const root = '/repo';
 const target = '/repo/.agents/worktrees/feature';
 
