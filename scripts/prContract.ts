@@ -204,10 +204,29 @@ export function fail(message: string): never {
     throw new Error(message);
 }
 
+/**
+ * A pull-request title becomes the squash commit's subject on `main`, and GitHub closes every issue
+ * a closing keyword names in a commit message that lands on the default branch. A title therefore
+ * never names a closing target, not even the lane's own issue: the body's Related issues line is
+ * the one place a closing relationship is written.
+ */
+export function assertTitleCarriesNoClosingReference(title: string, label: string): void {
+    const phrases = [...title.matchAll(CLOSING_REFERENCE_PATTERN)].map((match) => `"${match[0]}"`);
+    if (phrases.length > 0) {
+        fail(
+            `${label} carries an issue-closing reference (${phrases.join(', ')}); the title becomes the ` +
+                'squash commit subject, and GitHub closes issues named by closing keywords in commits on ' +
+                'main. Rephrase the title and keep the relationship in the body.'
+        );
+    }
+}
+
+/** A conventional subject that names no closing target, the whole contract a title is held to. */
 export function assertConventionalSubject(subject: string, label: string): void {
     if (!TITLE_PATTERN.test(subject)) {
         fail(`${label} is not conventional`);
     }
+    assertTitleCarriesNoClosingReference(subject, label);
 }
 
 export type RequiredBodyHeading = (typeof REQUIRED_BODY_HEADINGS)[number];

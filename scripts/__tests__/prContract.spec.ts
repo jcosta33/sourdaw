@@ -11,6 +11,7 @@ import {
     REVIEW_COMMENT_MAX_BYTES,
     TITLE_PATTERN,
     assertConventionalSubject,
+    assertTitleCarriesNoClosingReference,
     assertLaneChangeType,
     assertLaneSlug,
     assertPullRequestBody,
@@ -115,6 +116,40 @@ describe('pull-request contract', () => {
             expect(TITLE_PATTERN.test(title)).toBe(false);
             expect(() => assertConventionalSubject(title, 'title')).toThrow(/title is not conventional/);
             expect(conventionalType(title)).toBeUndefined();
+        }
+    });
+
+    it.each([
+        ['fix: closes #999', '"closes #999"'],
+        ['fix: Fixes owner/repo#999', '"Fixes owner/repo#999"'],
+        ['fix: resolves https://github.com/o/r/issues/999', '"resolves https://github.com/o/r/issues/999"'],
+        ['fix: Closes: #10', '"Closes: #10"'],
+        ['fix: CLOSES #10', '"CLOSES #10"'],
+    ])('refuses the title %j, which would close an issue from the squash commit', (title, phrase) => {
+        expect(TITLE_PATTERN.test(title)).toBe(true);
+        for (const check of [
+            () => assertTitleCarriesNoClosingReference(title, 'pull-request title'),
+            () => assertConventionalSubject(title, 'pull-request title'),
+        ]) {
+            const message = refusal(check);
+            expect(message).toContain('pull-request title carries an issue-closing reference');
+            expect(message).toContain(phrase);
+        }
+    });
+
+    it.each([
+        'fix: close the dialog on escape',
+        'fix: resolve tempo drift',
+        'feat: fixes for audio #2 menu',
+        'fix(closes): x',
+    ])('accepts the title %j, which names no closing target', (title) => {
+        expect(() => assertTitleCarriesNoClosingReference(title, 'pull-request title')).not.toThrow();
+        expect(() => assertConventionalSubject(title, 'pull-request title')).not.toThrow();
+    });
+
+    it('finds every closing reference in a title however often it is checked', () => {
+        for (let run = 0; run < 3; run += 1) {
+            expect(() => assertTitleCarriesNoClosingReference('fix: closes #1', 'title')).toThrow(/closes #1/);
         }
     });
 

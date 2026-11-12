@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { LANE_CHANGE_TYPES, TITLE_PATTERN } from '../prContract.ts';
+import { LANE_CHANGE_TYPES, TITLE_PATTERN, assertConventionalSubject } from '../prContract.ts';
 
 const HOOK = resolve(import.meta.dirname, '../../.githooks/commit-msg');
 
@@ -53,6 +53,47 @@ describe('commit-msg hook', () => {
             expect(runHook(`${subject}\n`).status).toBe(0);
         }
     );
+
+    it.each([
+        ['a tab', 'fix: x\ty'],
+        ['a carriage return', 'fix: x\ry'],
+        ['a start-of-heading control', 'fix: x\u0001y'],
+        ['a trailing carriage return', 'fix: x\r'],
+    ])('refuses a subject carrying %s, which a pull-request title refuses', (_label, subject) => {
+        const result = runHook(`${subject}\n`);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('subject carries a control character');
+        expect(TITLE_PATTERN.test(subject)).toBe(false);
+    });
+
+    it('accepts an ordinary unicode subject', () => {
+        expect(runHook('docs: explain the Ångström délai — überall\n')).toEqual({ status: 0, stderr: '' });
+    });
+
+    it.each([
+        'fix: closes #9',
+        'fix: Fixes owner/repo#9',
+        'fix: resolves https://github.com/o/r/issues/9',
+        'fix: Closes: #10',
+        'fix: CLOSES #10',
+        'fix: closed http://www.github.com/o/r/pull/3',
+    ])('refuses the subject %j, which names a closing target', (subject) => {
+        const result = runHook(`${subject}\n`);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('subject carries an issue-closing reference');
+        expect(() => assertConventionalSubject(subject, 'title')).toThrow(/issue-closing reference/);
+    });
+
+    it.each([
+        'fix: close the dialog',
+        'fix: resolve tempo drift',
+        'feat: fixes for audio #2 menu',
+        'fix(closes): x',
+        'fix: prefixes #2 rows',
+    ])('accepts the subject %j, which names no closing target', (subject) => {
+        expect(runHook(`${subject}\n`)).toEqual({ status: 0, stderr: '' });
+        expect(() => assertConventionalSubject(subject, 'title')).not.toThrow();
+    });
 
     it('refuses a conventional subject longer than 100 characters', () => {
         const result = runHook(`feat: ${'x'.repeat(95)}\n`);

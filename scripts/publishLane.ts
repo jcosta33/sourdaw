@@ -33,6 +33,7 @@ import {
 import {
     assertConventionalSubject,
     assertIssueNumber,
+    assertTitleCarriesNoClosingReference,
     canonicalPath,
     composePublishBody,
     containsPath,
@@ -1961,11 +1962,8 @@ function pullRequestWrite(
     // A title edited by hand on GitHub becomes the effective title unless --title replaces it, and
     // it feeds the body check, the derived labels and the squash subject, so it is held to the same
     // contract as a lane subject before anything is written.
-    if (title === undefined && typeof existingTitle === 'string' && !TITLE_PATTERN.test(existingTitle)) {
-        fail(
-            `existing pull-request title ${JSON.stringify(existingTitle)} is not conventional; ` +
-                'pass --title "<conventional-subject>" to replace it'
-        );
+    if (title === undefined && typeof existingTitle === 'string') {
+        assertKeptTitle(existingTitle);
     }
     // An explicit --relates needs nothing recovered from the existing body, so a body with no line
     // naming the lane issue (an umbrella-carried extra, say) does not block it. Without the flag
@@ -2009,6 +2007,15 @@ function pullRequestWrite(
         ),
         existing,
     };
+}
+
+/** An existing title kept on a rerun meets the whole title contract, or `--title` must replace it. */
+function assertKeptTitle(existingTitle: string): void {
+    const label = `existing pull-request title ${JSON.stringify(existingTitle)}`;
+    if (!TITLE_PATTERN.test(existingTitle)) {
+        fail(`${label} is not conventional; pass --title "<conventional-subject>" to replace it`);
+    }
+    assertTitleCarriesNoClosingReference(existingTitle, label);
 }
 
 /**

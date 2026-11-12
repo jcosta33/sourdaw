@@ -21,6 +21,21 @@ case "$subject" in
   "#"*|"") exit 0 ;;
 esac
 
+# The pull-request title refuses every control character, so the subject it may come from does too.
+if printf '%s' "$subject" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+  echo 'commit-msg: subject carries a control character (tab, carriage return or similar); remove it.' >&2
+  exit 1
+fi
+
+# The same closing references assertTitleCarriesNoClosingReference refuses in scripts/prContract.ts:
+# a commit subject on main closes the issue a closing keyword names, so a subject never names one.
+closing='(^|[^[:alnum:]_])(close[sd]?|fix(es|ed)?|resolve[sd]?):?[[:space:]]+(#[1-9][0-9]*|[[:alnum:]_.-]+/[[:alnum:]_.-]+#[1-9][0-9]*|https?://(www\.)?github\.com/[[:alnum:]_.-]+/[[:alnum:]_.-]+/(issues|pull)/[1-9][0-9]*)([^[:alnum:]_]|$)'
+if printf '%s' "$subject" | LC_ALL=C grep -Eiq "$closing"; then
+  printf 'commit-msg: subject carries an issue-closing reference.\n\n  %s\n\n' "$subject" >&2
+  echo 'Rephrase the subject; name the issue in the pull-request body instead.' >&2
+  exit 1
+fi
+
 pattern='^(feat|fix|chore|docs|test|refactor|perf|build|ci)(\([a-z0-9,._/-]+\))?!?: .+'
 
 if printf '%s' "$subject" | grep -Eq "$pattern"; then

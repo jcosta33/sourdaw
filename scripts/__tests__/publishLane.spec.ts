@@ -2219,6 +2219,52 @@ describe('lane publish', () => {
         expect(calls.some((call) => /^(push:|edit:|create:|meta)/.test(call))).toBe(false);
     });
 
+    describe('titles that name a closing target', () => {
+        const NOTHING_WRITTEN = /^(push:|edit:|create:|meta|saveModel)/;
+
+        it('refuses an explicit --title closing the lane issue at parse and at publish', () => {
+            expect(() => parsePublishLaneArgs(['12', '--title', 'fix: CLOSES #12'])).toThrow(
+                /pull-request title carries an issue-closing reference \("CLOSES #12"\)/
+            );
+            const { port, calls } = fakePort({ existing: 41 });
+
+            expect(() =>
+                publishLane(12, port, undefined, undefined, undefined, undefined, undefined, 'fix: CLOSES #12')
+            ).toThrow(/carries an issue-closing reference \("CLOSES #12"\)/);
+            expect(calls.some((call) => NOTHING_WRITTEN.test(call))).toBe(false);
+        });
+
+        it('refuses a rerun that would keep an existing title naming a closing URL', () => {
+            const { port, calls } = fakePort({
+                existing: 41,
+                existingTitle: 'fix: resolves https://github.com/o/r/issues/999',
+            });
+
+            expect(() => publishLane(12, port)).toThrow(
+                /existing pull-request title "fix: resolves https:\/\/github\.com\/o\/r\/issues\/999" carries an issue-closing reference/
+            );
+            expect(calls.some((call) => NOTHING_WRITTEN.test(call))).toBe(false);
+        });
+
+        it('replaces an existing closing title with an explicit --title and publishes', () => {
+            const { port, calls } = fakePort({ existing: 41, existingTitle: 'fix: closes #999' });
+
+            expect(
+                publishLane(12, port, undefined, undefined, undefined, undefined, undefined, 'fix: repair the knob')
+            ).toBe(41);
+            expect(calls).toContain('push:agent/12/work');
+        });
+
+        it('refuses a first publish whose newest lane subject names a closing target', () => {
+            const { port, calls } = fakePort({ subject: 'fix: Fixes owner/repo#999' });
+
+            expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(
+                /pull-request title carries an issue-closing reference \("Fixes owner\/repo#999"\)/
+            );
+            expect(calls.some((call) => NOTHING_WRITTEN.test(call))).toBe(false);
+        });
+    });
+
     it('checks a later --summary against the existing GitHub title, not the newest commit subject', () => {
         const { port, calls, bodies } = fakePort({
             existing: 41,
