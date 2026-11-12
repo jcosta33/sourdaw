@@ -1,0 +1,33 @@
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_9307cedd8951f1::t_b67da197a4a019 97,1192,1503,1508-1515,1593-1613
+scripts/githubAppIdentity.ts
+  s_9307cedd8951f1::t_31dc53015b74c0 388-392,397-400
+.agents/skills/delivery-orchestration/references/trust-boundary.md
+  s_9f9e851a57633e::t_3db7ce230e24bc 43-48
+scripts/rulesetHardening.ts
+  s_9f9e851a57633e::t_470e45d6dc007c 384-388,401-404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "75e7937ebe6bceade25169aded164d17e067ceb3",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9f9e851a57633e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_9f9e851a57633e",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
