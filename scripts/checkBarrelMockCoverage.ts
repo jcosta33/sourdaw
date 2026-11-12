@@ -59,6 +59,14 @@ import { fileURLToPath } from 'node:url';
 
 import ts from 'typescript';
 
+import {
+    createVitestProgress,
+    recordVitestProgress,
+    removeVitestProgress,
+    summarizeVitestProgress,
+    VITEST_PROGRESS_ENV,
+} from './vitestProgressDiagnostics.ts';
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sourceRoot = join(repoRoot, 'src');
 
@@ -1069,10 +1077,14 @@ function walkForSpecs(directory: string, found: string[]): void {
 /** Scans the real tree. Exported so the guard's spec runs the same scan the CLI does. */
 export function scanRepository(
     barrelKinds?: ReadonlyArray<string>,
-    exemptionRows?: ReadonlyArray<ExemptionRow>
+    exemptionRows?: ReadonlyArray<ExemptionRow>,
+    progress: (stage: string) => void = (stage) => recordVitestProgress('scan', stage)
 ): AnalysisResult & { specCount: number } {
     const specPaths: string[] = [];
+    const scope = barrelKinds === allBarrelKinds ? 'all' : 'gated';
+    progress(`${scope}-traversal-begin`);
     walkForSpecs(sourceRoot, specPaths);
+    progress(`${scope}-traversal-end`);
 
     const factsCache = new Map<string, FileFacts | null>();
     const existsCache = new Map<string, boolean>();
@@ -1105,10 +1117,10 @@ export function scanRepository(
         return facts;
     };
 
-    return {
-        specCount: specPaths.length,
-        ...analyzeSpecs({ specPaths, readFacts, fileExists, barrelKinds, exemptions: exemptionRows }),
-    };
+    progress(`${scope}-analysis-begin`);
+    const result = analyzeSpecs({ specPaths, readFacts, fileExists, barrelKinds, exemptions: exemptionRows });
+    progress(`${scope}-analysis-end`);
+    return { specCount: specPaths.length, ...result };
 }
 
 /**
@@ -1269,5 +1281,22 @@ function main(): number {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    process.exit(main());
+    const progress = process.env[VITEST_PROGRESS_ENV] ? undefined : createVitestProgress(process.env);
+    if (progress !== undefined) {
+        process.env[VITEST_PROGRESS_ENV] = progress;
+        console.error(`barrel scan progress: ${progress}`);
+    }
+    let status = 1;
+    try {
+        status = main();
+    } finally {
+        if (progress !== undefined) {
+            if (status === 0) {
+                removeVitestProgress(progress);
+            } else {
+                console.error(`barrel scan progress retained at ${progress}:\n${summarizeVitestProgress(progress)}`);
+            }
+        }
+    }
+    process.exit(status);
 }

@@ -48,7 +48,16 @@ const MUTATIONS: readonly TransportMutation[] = [
     },
 ];
 
-type CaseRecord = { phase: string; spec: string; code: number | null; signal: string | null; log: string };
+type CaseRecord = {
+    phase: string;
+    spec: string;
+    code: number | null;
+    signal: string | null;
+    log: string;
+    failure?: string;
+    ownershipDiagnostic?: NativeTestResult['ownershipDiagnostic'];
+    processDiagnostic?: NativeTestResult['processDiagnostic'];
+};
 type BuildRecord = {
     phase: string;
     sourceDigest: string;
@@ -59,6 +68,7 @@ type BuildRecord = {
     signal: string | null;
     failure?: string;
     ownershipDiagnostic?: NativeTestResult['ownershipDiagnostic'];
+    processDiagnostic?: NativeTestResult['processDiagnostic'];
     log: string;
 };
 
@@ -118,6 +128,7 @@ export function assertNativeTestResult(result: NativeTestResult, spec: string, p
             signal: result.signal,
             failure: result.failure,
             ownershipDiagnostic: result.ownershipDiagnostic,
+            processDiagnostic: result.processDiagnostic,
         };
         throw new Error(`Incomplete owning test execution: ${spec}; ${JSON.stringify(details)}`);
     }
@@ -176,6 +187,7 @@ async function prepareNativeBuild(input: {
         record.status = error instanceof NativeCommandOwnershipError ? 'ownership-unconfirmed' : 'failed';
         if (error instanceof NativeCommandOwnershipError) {
             record.ownershipDiagnostic = error.ownershipDiagnostic;
+            record.processDiagnostic = error.processDiagnostic;
             writeFileSync(join(input.evidencePath, record.log), error.output);
         }
         save();
@@ -186,6 +198,7 @@ async function prepareNativeBuild(input: {
     record.signal = result.signal;
     record.failure = result.failure;
     record.ownershipDiagnostic = result.ownershipDiagnostic;
+    record.processDiagnostic = result.processDiagnostic;
     const passed = result.code === 0 && result.signal === null && result.failure === undefined;
     record.status = passed ? 'passed' : 'failed';
     writeFileSync(join(input.evidencePath, record.log), result.output);
@@ -247,7 +260,16 @@ export async function verifyTransportMutations(options: {
         const result = await runOwned(() => options.runCase(spec));
         const log = `${phase}-${spec}.log`;
         writeFileSync(join(options.evidencePath, log), result.output);
-        cases.push({ phase, spec: `${PREFIX}${spec}`, code: result.code, signal: result.signal, log });
+        cases.push({
+            phase,
+            spec: `${PREFIX}${spec}`,
+            code: result.code,
+            signal: result.signal,
+            log,
+            failure: result.failure,
+            ownershipDiagnostic: result.ownershipDiagnostic,
+            processDiagnostic: result.processDiagnostic,
+        });
         writeFileSync(join(options.evidencePath, 'cases.json'), `${JSON.stringify(cases, null, 2)}\n`);
         assertNativeTestResult(result, spec, panic);
     };
@@ -438,6 +460,7 @@ async function hostedProbe(): Promise<void> {
                 signal: result.signal,
                 failure: result.failure,
                 ownershipDiagnostic: result.ownershipDiagnostic,
+                processDiagnostic: result.processDiagnostic,
             };
             throw new Error(`Git source admission failed: ${JSON.stringify(diagnostic)}`);
         }

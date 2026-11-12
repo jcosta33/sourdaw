@@ -39,6 +39,7 @@ import {
     readGuardFailureReceipt,
     type GuardFailureReceipt,
 } from './prContract.ts';
+import { captureProcessGroupSnapshot } from './processSnapshot.ts';
 import { areTransientProofReasons } from './resourceGuardProofReasons.ts';
 import {
     createGuardStorage,
@@ -130,6 +131,7 @@ type GuardedCommandInput = {
     env?: NodeJS.ProcessEnv;
     maxRssBytes?: number;
     timeoutMs?: number;
+    processSnapshot?: typeof captureProcessGroupSnapshot;
     outputLimitBytes?: number;
     showOutput?: boolean;
     availableMemoryBytes?: number;
@@ -2264,6 +2266,28 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             return;
         }
         reason = nextReason;
+        const stopMonotonicNs = process.hrtime.bigint().toString();
+        let processGroup: ReturnType<typeof captureProcessGroupSnapshot>;
+        try {
+            processGroup = (input.processSnapshot ?? captureProcessGroupSnapshot)(childPid);
+        } catch {
+            processGroup = { status: 'unavailable' };
+        }
+        const diagnostic = `guard stop diagnostic: ${JSON.stringify({
+            reason: nextReason,
+            monotonicNs: stopMonotonicNs,
+            command: basename(input.command).slice(0, 256),
+            argumentCount: input.args.length,
+            parentPid: process.pid,
+            childPid,
+            processGroup,
+        })}\n`;
+        output.append(Buffer.from(diagnostic));
+        try {
+            process.stderr.write(diagnostic);
+        } catch {
+            /* The stop must still proceed. */
+        }
         terminateProcessTree(childPid, 'SIGTERM', tracked, processToken);
         forceKillTimer = setTimeout(() => terminateProcessTree(childPid, 'SIGKILL', tracked, processToken), 5_000);
     };

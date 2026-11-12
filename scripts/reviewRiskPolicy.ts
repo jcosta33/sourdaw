@@ -165,6 +165,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/pnpmModulesPreflight.ts',
     'scripts/prContract.ts',
     'scripts/prepareReview.ts',
+    'scripts/processSnapshot.ts',
     'scripts/pruneRemoteBranches.ts',
     'scripts/pruneRemoteBranchesGithub.ts',
     'scripts/publishLane.ts',

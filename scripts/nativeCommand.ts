@@ -1,31 +1,45 @@
 import { spawn } from 'node:child_process';
 
-type OwnershipDiagnostic = {
-    operation: 'inspect' | 'terminate';
-    signal: NodeJS.Signals | 0;
-    code?: string;
-    errno?: number;
-};
+import {
+    createNativeCommandDiagnostics,
+    type OwnershipDiagnostic,
+    type ProcessDiagnostic,
+} from './nativeCommandDiagnostics.ts';
+
+import type { ProcessGroupSnapshot } from './processSnapshot.ts';
+
 export type NativeTestResult = {
     code: number | null;
     signal: string | null;
     output: string;
     failure?: string;
     ownershipDiagnostic?: OwnershipDiagnostic;
+    processDiagnostic?: ProcessDiagnostic;
 };
 
 export class NativeCommandOwnershipError extends Error {
     readonly reason: string;
     readonly ownershipDiagnostic?: OwnershipDiagnostic;
     readonly output: string;
+    readonly processDiagnostic?: ProcessDiagnostic;
 
-    constructor(reason: string, cause?: unknown, ownershipDiagnostic?: OwnershipDiagnostic, output = '') {
+    constructor(
+        reason: string,
+        cause?: unknown,
+        ownershipDiagnostic?: OwnershipDiagnostic,
+        output = '',
+        processDiagnostic?: ProcessDiagnostic
+    ) {
         const details = ownershipDiagnostic === undefined ? '' : `; ${JSON.stringify(ownershipDiagnostic)}`;
-        super(`Native command ownership unconfirmed after SIGKILL: ${reason}${details}`, { cause });
+        super(
+            `Native command ownership unconfirmed after SIGKILL: ${reason}${details}${processDiagnostic === undefined ? '' : `; ${JSON.stringify(processDiagnostic)}`}`,
+            { cause }
+        );
         this.name = 'NativeCommandOwnershipError';
         this.reason = reason;
         this.ownershipDiagnostic = ownershipDiagnostic;
         this.output = output;
+        this.processDiagnostic = processDiagnostic;
     }
 }
 
@@ -42,6 +56,8 @@ type NativeCommandPorts = {
     setTimeout: typeof setTimeout;
     clearTimeout: typeof clearTimeout;
     process: Pick<NodeJS.Process, 'kill' | 'once' | 'removeListener'>;
+    snapshot?: (pid: number) => ProcessGroupSnapshot;
+    now?: () => number;
 };
 
 function isAbsentProcessGroup(error: unknown): boolean {
@@ -71,7 +87,11 @@ function ownershipDiagnostic(
     return diagnostic;
 }
 
-function ownedProcessGroup(pid: number | undefined, processPort: Pick<NodeJS.Process, 'kill'>) {
+function ownedProcessGroup(
+    pid: number | undefined,
+    processPort: Pick<NodeJS.Process, 'kill'>,
+    observe: (event: string, diagnostic?: OwnershipDiagnostic) => void
+) {
     const ownsGroup = pid !== undefined && Number.isSafeInteger(pid) && pid > 1;
     let groupAbsent = false;
     let failure: string | undefined;
@@ -88,13 +108,16 @@ function ownedProcessGroup(pid: number | undefined, processPort: Pick<NodeJS.Pro
         }
         try {
             processPort.kill(-pid, 0);
+            observe('inspect-present');
             return true;
         } catch (error) {
             if (isAbsentProcessGroup(error)) {
                 groupAbsent = true;
                 provisional = undefined;
+                observe('inspect-absent');
                 return false;
             }
+            observe('inspect-error', ownershipDiagnostic(error, 'inspect', 0));
             // Darwin can retain an all-zombie group until reap; only ESRCH retires its identity.
             if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'EPERM') {
                 provisional ??= { cause: error, diagnostic: ownershipDiagnostic(error, 'inspect', 0) };
@@ -111,12 +134,14 @@ function ownedProcessGroup(pid: number | undefined, processPort: Pick<NodeJS.Pro
             return;
         }
         try {
+            observe(`signal-${signal}`);
             processPort.kill(-pid, signal);
         } catch (error) {
             if (isAbsentProcessGroup(error)) {
                 groupAbsent = true;
                 provisional = undefined;
             } else {
+                observe('signal-error', ownershipDiagnostic(error, 'terminate', signal));
                 failure = 'child-termination-failed';
                 cause = error;
                 diagnostic ??= ownershipDiagnostic(error, 'terminate', signal);
@@ -141,12 +166,13 @@ function ownedProcessGroup(pid: number | undefined, processPort: Pick<NodeJS.Pro
         alive,
         terminate,
         result,
-        ownershipError: (reason: string, output: string) =>
+        ownershipError: (reason: string, output: string, processDiagnostic: ProcessDiagnostic) =>
             new NativeCommandOwnershipError(
                 reason,
                 diagnostic === undefined ? provisional?.cause : cause,
                 diagnostic ?? provisional?.diagnostic,
-                output
+                output,
+                processDiagnostic
             ),
     };
 }
@@ -159,11 +185,32 @@ type NativeCommandObservation = {
     timeoutMs: number;
 };
 
-function observeNativeCommand(input: NativeCommandObservation): void {
-    const { child, ports, resolve, reject, timeoutMs } = input;
-    const group = ownedProcessGroup(child.pid, ports.process);
+function createOutputCollector(isSettled: () => boolean, stop: (reason: string) => void) {
     const buffers: Buffer[] = [];
     let size = 0;
+    const collect = (buffer: Buffer) => {
+        if (isSettled()) {
+            return;
+        }
+        size += buffer.length;
+        if (size > 16 * 1024 * 1024) {
+            stop('output-limit');
+        } else {
+            buffers.push(buffer);
+        }
+    };
+    return { buffers, collect };
+}
+
+function observeNativeCommand(input: NativeCommandObservation): void {
+    const { child, ports, resolve, reject, timeoutMs } = input;
+    const { processDiagnostic, observe, finalUncertainty } = createNativeCommandDiagnostics(child.pid, ports);
+    observe('spawn');
+    const group = ownedProcessGroup(child.pid, ports.process, observe);
+    const { buffers, collect } = createOutputCollector(
+        () => settled,
+        (reason) => stop(reason)
+    );
     let failure: string | undefined;
     let closed: { code: number | null; signal: NodeJS.Signals | null } | undefined;
     let terminating = false;
@@ -188,7 +235,11 @@ function observeNativeCommand(input: NativeCommandObservation): void {
         }
         settled = true;
         cleanup();
-        resolve(group.result(closed, Buffer.concat(buffers).toString('utf8'), failure));
+        const result = group.result(closed, Buffer.concat(buffers).toString('utf8'), failure);
+        if (processDiagnostic.firstUncertainty !== undefined) {
+            result.processDiagnostic = processDiagnostic;
+        }
+        resolve(result);
         return true;
     };
     const waitForGroup = () => {
@@ -209,8 +260,10 @@ function observeNativeCommand(input: NativeCommandObservation): void {
             return;
         }
         terminating = true;
+        observe(`stop-${reason}`);
         group.terminate('SIGTERM');
         killTimer = ports.setTimeout(() => {
+            observe('escalate');
             group.terminate('SIGKILL');
             if (finish()) {
                 return;
@@ -221,7 +274,11 @@ function observeNativeCommand(input: NativeCommandObservation): void {
                 }
                 settled = true;
                 cleanup();
-                reject(group.ownershipError(failure ?? reason, Buffer.concat(buffers).toString('utf8')));
+                observe('confirmation-failed');
+                finalUncertainty();
+                reject(
+                    group.ownershipError(failure ?? reason, Buffer.concat(buffers).toString('utf8'), processDiagnostic)
+                );
             }, 5_000);
         }, 5_000);
         waitForGroup();
@@ -230,23 +287,13 @@ function observeNativeCommand(input: NativeCommandObservation): void {
     ports.process.once('SIGINT', interrupt);
     ports.process.once('SIGTERM', interrupt);
     const timeout = ports.setTimeout(() => stop('timeout'), timeoutMs);
-    const collect = (buffer: Buffer) => {
-        if (settled) {
-            return;
-        }
-        size += buffer.length;
-        if (size > 16 * 1024 * 1024) {
-            stop('output-limit');
-        } else {
-            buffers.push(buffer);
-        }
-    };
     child.stdout.on('data', collect);
     child.stderr.on('data', collect);
     child.on('error', () => {
         stop('child-start-failed');
     });
     child.on('close', (code, signal) => {
+        observe('close');
         closed = { code, signal };
         if (finish()) {
             return;

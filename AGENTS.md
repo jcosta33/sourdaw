@@ -383,6 +383,21 @@ issue-bound and issueless procedures are in [delivery-orchestration]. Lane workt
 author App's git commit identity (stamped at `lane:open`, restamped by `pnpm lane:identity`), and
 `lane:publish` refuses lane-owned commits authored otherwise — commits the resolved bases (origin/main and any stack parent head) already reach are not the lane's to author.
 
+For owned staging and checkpoint commits, run `node scripts/gitCheckpoint.ts add -- <paths>` or
+`node scripts/gitCheckpoint.ts commit <git arguments>` from the lane. The command runs Git once
+with its ordinary environment and hooks, streams stderr, and prints a private receipt location and
+writer PID. The initial private receipt must be created before Git starts; failure to create it
+refuses the checkpoint. Once Git starts, a diagnostic storage failure does not change its result.
+Receipts contain selected source and index hashes, Git metadata, bounded stderr and a
+stall observation; retain them when a checkpoint fails. They may contain private paths and Git
+output. Set `SOURDAW_CHECKPOINT_DIR` to a private directory outside the worktree to choose their
+location. The watchdog does not stop a stalled writer or prevent Trace2 backpressure. Writer sampling uses a
+best-effort PID and start identity check; the check is not atomic and the process can exit or its
+PID can be reused before sampling. Shared receivers are never sampled. A failed
+syscall pathname requires separately authorized observation arranged before the write; a receipt or
+later trace cannot recover it. Do not retry an unchanged failure or change a shared daemon to collect
+evidence.
+
 A lane records its authoring model when opened: `--model <model>`, the lowercase public name of
 the model itself, keeping every qualifier that distinguishes capability or edition within the
 family (flash, mini, pro, air, codex, thinking) and dropping only deployment-routing prefixes and
