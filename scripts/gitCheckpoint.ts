@@ -1,5 +1,5 @@
 /** Runs one owned Git checkpoint and retains bounded, private diagnostic evidence. */
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
     appendFileSync,
@@ -262,6 +262,69 @@ function sample(pid: number, identity: string | null): string | null {
     }
     return command('/usr/bin/sample', [String(pid), '1'], diagnosticEnv, 2500);
 }
+function watchForStall(
+    child: ChildProcess,
+    evidence: Record<string, unknown>,
+    before: Record<string, unknown>,
+    identity: string | null,
+    started: bigint,
+    save: () => void
+): NodeJS.Timeout {
+    return setTimeout(() => {
+        if (child.exitCode !== null || child.signalCode !== null) {
+            return;
+        }
+        evidence.stall = {
+            elapsedNs: (process.hrtime.bigint() - started).toString(),
+            sample: 'observation pending',
+            receiver: unavailable,
+            queue: unavailable,
+        };
+        save();
+        const observer = spawn(
+            process.execPath,
+            [
+                script,
+                '--sample',
+                String(child.pid),
+                identity ?? '',
+                JSON.stringify(typeof before.trace2 === 'string' ? before.trace2 : ''),
+            ],
+            { stdio: ['ignore', 'pipe', 'ignore'], detached: true }
+        );
+        let output = '';
+        const stopObserver = () => {
+            if (observer.pid && observer.exitCode === null && observer.signalCode === null) {
+                try {
+                    process.kill(-observer.pid, 'SIGKILL');
+                } catch {
+                    /* already exited */
+                }
+            }
+            observer.stdout.destroy();
+            observer.unref();
+        };
+        observer.stdout.on('data', (chunk: Buffer) => {
+            output += chunk.toString();
+            if (output.length > 256 * 1024) {
+                stopObserver();
+            }
+        });
+        const timeout = setTimeout(stopObserver, 6000);
+        observer.on('error', () => clearTimeout(timeout));
+        observer.on('close', () => {
+            clearTimeout(timeout);
+            const stall = isRecord(evidence.stall) ? evidence.stall : {};
+            const observation = parseRecord(output);
+            if (observation) {
+                evidence.stall = { ...stall, ...observation };
+            } else {
+                evidence.stall = { ...stall, sample: unavailable };
+            }
+            save();
+        });
+    }, 5000);
+}
 async function main(args: string[]) {
     if (args[0] !== 'add' && args[0] !== 'commit') {
         console.error('Usage: node scripts/gitCheckpoint.ts add|commit [git arguments]');
@@ -332,60 +395,7 @@ async function main(args: string[]) {
         evidence.stderr = { path: stderrPath, omittedBytes: omitted };
         save();
     });
-    const timer = setTimeout(() => {
-        if (child.exitCode !== null || child.signalCode !== null) {
-            return;
-        }
-        evidence.stall = {
-            elapsedNs: (process.hrtime.bigint() - started).toString(),
-            sample: 'observation pending',
-            receiver: unavailable,
-            queue: unavailable,
-        };
-        save();
-        const observer = spawn(
-            process.execPath,
-            [
-                script,
-                '--sample',
-                String(child.pid),
-                identity ?? '',
-                JSON.stringify(typeof before.trace2 === 'string' ? before.trace2 : ''),
-            ],
-            { stdio: ['ignore', 'pipe', 'ignore'], detached: true }
-        );
-        let output = '';
-        const stopObserver = () => {
-            if (observer.pid && observer.exitCode === null && observer.signalCode === null) {
-                try {
-                    process.kill(-observer.pid, 'SIGKILL');
-                } catch {
-                    /* already exited */
-                }
-            }
-            observer.stdout.destroy();
-            observer.unref();
-        };
-        observer.stdout.on('data', (chunk: Buffer) => {
-            output += chunk.toString();
-            if (output.length > 256 * 1024) {
-                stopObserver();
-            }
-        });
-        const timeout = setTimeout(stopObserver, 6000);
-        observer.on('error', () => clearTimeout(timeout));
-        observer.on('close', () => {
-            clearTimeout(timeout);
-            const stall = isRecord(evidence.stall) ? evidence.stall : {};
-            const observation = parseRecord(output);
-            if (observation) {
-                evidence.stall = { ...stall, ...observation };
-            } else {
-                evidence.stall = { ...stall, sample: unavailable };
-            }
-            save();
-        });
-    }, 5000);
+    const timer = watchForStall(child, evidence, before, identity, started, save);
     const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null; error?: string }>(
         (resolve) => {
             child.on('error', (error) => resolve({ code: null, signal: null, error: error.message }));

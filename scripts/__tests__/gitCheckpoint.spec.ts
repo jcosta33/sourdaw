@@ -157,13 +157,24 @@ exit 23
         );
         expect(JSON.parse(absent.stdout).sample).toBeNull();
     });
-    it('selects mount options only for the filesystem reported by df', () => {
+    it('selects mount options only for the exact filesystem and mountpoint reported by df', () => {
         const df = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/disk3s1 1000 100 900 10% /work';
         const target = '/dev/disk3s1 on /work (apfs, local, read-only)';
         const mounts = `/dev/disk3s10 on /other (apfs, local)\n${target}`;
         expect(checkpointMountOptions(df, mounts)).toBe(target);
         expect(checkpointMountOptions(df, '/dev/disk3s10 on /other (apfs, local)')).toBeNull();
         expect(checkpointMountOptions(null, mounts)).toBeNull();
+        const spacedDf =
+            'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/disk3s1 1000 100 900 10% /Volumes/Audio Work';
+        const otherMount = '/dev/disk3s1 on /work (apfs, local, read-only)';
+        const spacedMount = '/dev/disk3s1 on /Volumes/Audio Work (apfs, local, read-write)';
+        expect(checkpointMountOptions(spacedDf, `${otherMount}\n${spacedMount}`)).toBe(spacedMount);
+        expect(checkpointMountOptions(spacedDf, otherMount)).toBeNull();
+        expect(checkpointMountOptions('unparseable', mounts)).toBeNull();
+        const macDf =
+            'Filesystem 512-blocks Used Available Capacity Mounted on\n/dev/disk8s1 1953514584 819215496 1133894448 42% /Volumes/Development';
+        const macMount = '/dev/disk8s1 on /Volumes/Development (apfs, local, nodev, nosuid, journaled, noowners)';
+        expect(checkpointMountOptions(macDf, macMount)).toBe(macMount);
     });
     it('selects only the named socket and the exact connected writer pair', () => {
         const header = 'Address Type Recv-Q Send-Q Inode Conn Refs Nextref rxbytes txbytes rhiwat shiwat process:pid';
