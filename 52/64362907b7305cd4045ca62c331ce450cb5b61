@@ -1,0 +1,19 @@
+eslint.config.mjs
+  s_db65665fc1d0c1::t_b4bbe41a73ba50 3174,3178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5264362907b7305cd4045ca62c331ce450cb5b61",
+  "prompts": {},
+  "sessions": {
+    "s_db65665fc1d0c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f79ceb19-eb31-4445-8d19-e07aa8e75dd6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
