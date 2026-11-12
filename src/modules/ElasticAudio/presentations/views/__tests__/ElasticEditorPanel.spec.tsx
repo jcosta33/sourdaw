@@ -308,7 +308,7 @@ describe('ElasticEditorPanel', () => {
             if (!state) {
                 throw new Error('Missing fixture warp state');
             }
-            mocks.warpStates.set('c1', { ...state, markers: state.markers.map((marker) => ({ ...marker })) });
+            mocks.warpStates.set('c1', structuredClone(state));
         }
 
         function observeDrawing() {
@@ -319,10 +319,16 @@ describe('ElasticEditorPanel', () => {
             const strokeColors: string[] = [];
             const fillColors: string[] = [];
             vi.spyOn(context, 'stroke').mockImplementation(() => {
-                strokeColors.push(String(context.strokeStyle));
+                if (typeof context.strokeStyle !== 'string') {
+                    throw new TypeError('Expected a string stroke color');
+                }
+                strokeColors.push(context.strokeStyle);
             });
             const fill = vi.spyOn(context, 'fillRect').mockImplementation(() => {
-                fillColors.push(String(context.fillStyle));
+                if (typeof context.fillStyle !== 'string') {
+                    throw new TypeError('Expected a string fill color');
+                }
+                fillColors.push(context.fillStyle);
             });
             return { context, fill, line: vi.spyOn(context, 'lineTo'), strokeColors, fillColors };
         }
@@ -369,7 +375,12 @@ describe('ElasticEditorPanel', () => {
                 } else {
                     marker[field] = field === 'confidence' ? 0.2 : 80;
                 }
-                mocks.warpStates.set('c1', { ...state });
+                mocks.warpStates.set('c1', {
+                    enabled: state.enabled,
+                    markers: state.markers,
+                    stretchMode: state.stretchMode,
+                    originalTempo: state.originalTempo,
+                });
                 view.rerender(<ElasticEditorPanel />);
                 expect(drawing.fill).toHaveBeenCalledWith(
                     0,
@@ -449,7 +460,10 @@ describe('ElasticEditorPanel', () => {
             const view = render(<ElasticEditorPanel />);
             const originalCanvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
             const replacementContext = { ...drawing.context, fillRect: vi.fn() };
-            vi.spyOn(originalCanvas, 'getContext').mockReturnValue(replacementContext);
+            Object.defineProperty(originalCanvas, 'getContext', {
+                configurable: true,
+                value: (kind: string) => (kind === '2d' ? replacementContext : null),
+            });
             publishEquivalentSnapshot();
             view.rerender(<ElasticEditorPanel />);
             expect(replacementContext.fillRect).toHaveBeenCalledWith(0, 0, 2560, 120);
@@ -513,7 +527,8 @@ describe('ElasticEditorPanel', () => {
                 const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
                 drawing.fill.mockClear();
                 if (reset === 'width' || reset === 'height') {
-                    canvas[reset] = canvas[reset];
+                    const size = canvas[reset];
+                    canvas[reset] = size;
                 }
                 if (reset !== 'context restored') {
                     // jsdom does not implement the default drawing-state reset of native Canvas2D.

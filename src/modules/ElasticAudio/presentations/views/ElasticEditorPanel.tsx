@@ -752,7 +752,7 @@ function drawWaveform(args: DrawArgs): void {
         background,
         cssWidth: canvas.style.width,
         cssHeight: canvas.style.height,
-        markers: warpState.markers.map((marker) => ({ ...marker })),
+        markers: structuredClone(warpState.markers),
         strokeStyle: ctx.strokeStyle,
     };
 }
