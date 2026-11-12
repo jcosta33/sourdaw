@@ -82,6 +82,16 @@ function captureTransientClipStates(trackId: string, clipId: string): TrackClipS
     });
 }
 
+/** The toast renders its own UI, so raise it in a later host task instead of lengthening the commit task. */
+function notifyAfterCommitTask(message: string): void {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+        channel.port1.close();
+        notifyUser(message, 'success');
+    };
+    channel.port2.postMessage(undefined);
+}
+
 function measurePreparationTask<Result>(name: string, callback: () => Result): Result {
     const start = performance.now();
     try {
@@ -156,7 +166,7 @@ function createTransientWriteResult(
             end: performance.now(),
         });
         performance.clearMeasures('elastic-transient-commit');
-        notifyUser(`Detected ${added.length} transients (${preserved.length} preserved)`, 'success');
+        notifyAfterCommitTask(`Detected ${added.length} transients (${preserved.length} preserved)`);
     };
     return {
         status: 'written',

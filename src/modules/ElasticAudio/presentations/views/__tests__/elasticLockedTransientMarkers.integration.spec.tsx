@@ -221,20 +221,64 @@ function expectCanonicalWarpAbsence(): void {
     expect(warpStateStore.value?.states[CLIP_ID]).toBeUndefined();
 }
 
+/** Resolves in a host task queued after every task already posted, so earlier toasts have run. */
+function nextHostTask(): Promise<void> {
+    return new Promise((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => {
+            channel.port1.close();
+            resolve();
+        };
+        channel.port2.postMessage(undefined);
+    });
+}
+
+/** The editor's waveform paint frames are requested from `ElasticEditorPanel.tsx`; no other frame is. */
+function requestedByEditorPaint(): boolean {
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = Infinity;
+    try {
+        return new Error().stack?.includes('/ElasticEditorPanel.tsx') === true;
+    } finally {
+        Error.stackTraceLimit = limit;
+    }
+}
+
+/**
+ * Holds Detect's frames (and the storage flush frames that share them) for the case to release.
+ * The editor's waveform paint frames keep the environment's real frame clock, so they neither
+ * consume a held frame nor count as a cancellation of one.
+ */
 function holdAnimationFrames() {
     const callbacks: FrameRequestCallback[] = [];
     const waiters: ((callback: FrameRequestCallback) => void)[] = [];
-    let handle = 0;
+    const heldHandles = new Set<number>();
+    // Far above the environment's own handles, so the two ranges never meet.
+    let handle = 1_000_000;
+    const paint = globalThis.requestAnimationFrame.bind(globalThis);
+    const cancelPaint = globalThis.cancelAnimationFrame.bind(globalThis);
+    const cancelled = vi.fn<(handle: number) => void>();
     vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+        if (requestedByEditorPaint()) {
+            return paint(callback);
+        }
         const waiter = waiters.shift();
         if (waiter) {
             waiter(callback);
         } else {
             callbacks.push(callback);
         }
-        return ++handle;
+        handle += 1;
+        heldHandles.add(handle);
+        return handle;
     });
-    const cancelled = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => undefined);
+    vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation((frame) => {
+        if (heldHandles.has(frame)) {
+            cancelled(frame);
+            return;
+        }
+        cancelPaint(frame);
+    });
     return {
         cancelled,
         complete: async (execution: Promise<void>): Promise<void> => {
@@ -349,6 +393,8 @@ describe('locked transient markers through the real Elastic editor', () => {
     });
 
     afterEach(async () => {
+        // A committed Detect raises its toast in a later host task; settle it inside its own case.
+        await nextHostTask();
         for (const instance of MaterializationWorker.instances) {
             if (!instance.terminated) {
                 instance.onerror?.(new Event('error'));
@@ -908,6 +954,10 @@ describe('locked transient markers through the real Elastic editor', () => {
         try {
             await act(async () => {
                 await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID, sensitivity: 0.5 } });
+                // The commit task has returned; its toast belongs to a later host task.
+                expect(notices).toEqual([]);
+                await vi.waitFor(() => expect(notices).toHaveLength(1));
+                await nextHostTask();
                 await eventBus.waitForIdle();
             });
         } finally {
@@ -1516,6 +1566,17 @@ describe('locked transient markers through the real Elastic editor', () => {
 
     it('rejects a cancelled Worker result with no raw document write and permits retry', async () => {
         supplyBuffer(burstSamples());
+        const notices: NotifyPayload[] = [];
+        const eventBus = createEventBus<{
+            'ui.notify': NotifyPayload;
+            'ui.confirm': ConfirmPayload;
+            'ui.prompt': PromptPayload;
+        }>();
+        setNotificationEventBus(eventBus);
+        injectDependencies(notifyUser, { eventBus });
+        const unsubscribe = eventBus.on('ui.notify', (notice) => {
+            notices.push(notice);
+        });
         let finish: ((result: TransientOnsetWorkerResult) => void) | undefined;
         const started = new Promise<void>((resolve) =>
             worker.mockImplementationOnce(() => {
@@ -1536,9 +1597,15 @@ describe('locked transient markers through the real Elastic editor', () => {
         controller.abort();
         finish?.({ status: 'complete', hits: [{ sampleOffset: 512, confidence: 1 }] });
         await rejected;
+        await nextHostTask();
+        expect(notices).toEqual([]);
         expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
         await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
         expect(getWarpState(CLIP_ID).markers.length).toBeGreaterThan(1);
+        await vi.waitFor(() => expect(notices).toHaveLength(1));
+        await nextHostTask();
+        expect(notices).toEqual([{ message: expect.stringMatching(/^Detected \d+ transients/), level: 'success' }]);
+        unsubscribe();
     });
     it('aborts a scoped post-await write while preserving a separately committed command', async () => {
         supplyBuffer(burstSamples());

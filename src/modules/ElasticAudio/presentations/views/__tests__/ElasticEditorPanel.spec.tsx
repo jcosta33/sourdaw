@@ -303,6 +303,30 @@ describe('ElasticEditorPanel', () => {
     });
 
     describe('waveform drawing', () => {
+        // The panel paints in an animation frame; each case runs the pending frame explicitly.
+        const frames = new Map<number, FrameRequestCallback>();
+        let lastFrame = 0;
+
+        function flushFrame(): void {
+            const pending = [...frames.values()];
+            frames.clear();
+            for (const callback of pending) {
+                callback(performance.now());
+            }
+        }
+
+        beforeEach(() => {
+            frames.clear();
+            vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+                lastFrame += 1;
+                frames.set(lastFrame, callback);
+                return lastFrame;
+            });
+            vi.stubGlobal('cancelAnimationFrame', (handle: number) => {
+                frames.delete(handle);
+            });
+        });
+
         function publishEquivalentSnapshot(): void {
             const state = mocks.warpStates.get('c1');
             if (!state) {
@@ -338,9 +362,40 @@ describe('ElasticEditorPanel', () => {
             vi.unstubAllGlobals();
         });
 
+        it('paints in the next frame, coalesces changes to the latest arguments and cancels on unmount', () => {
+            const drawing = observeDrawing();
+            const view = render(<ElasticEditorPanel />);
+            expect(drawing.fill).not.toHaveBeenCalled();
+            flushFrame();
+            expect(drawing.fill).toHaveBeenCalledWith(0, 0, 2560, 120);
+            const state = mocks.warpStates.get('c1');
+            const marker = state?.markers[0];
+            if (!state || !marker) {
+                throw new Error('Missing fixture marker');
+            }
+            drawing.fill.mockClear();
+            mocks.warpStates.set('c1', { ...state, markers: [{ ...marker, originalBeat: 80 }] });
+            view.rerender(<ElasticEditorPanel />);
+            mocks.warpStates.set('c1', { ...state, markers: [{ ...marker, originalBeat: 100 }] });
+            view.rerender(<ElasticEditorPanel />);
+            expect(frames.size).toBe(1);
+            expect(drawing.fill).not.toHaveBeenCalled();
+            flushFrame();
+            // contentBeats = 100 + 8 at 40 px per beat; the superseded 80-beat width never paints.
+            expect(drawing.fill).toHaveBeenCalledWith(0, 0, 4320, 120);
+            expect(drawing.fill).not.toHaveBeenCalledWith(0, 0, 3520, 120);
+            drawing.fill.mockClear();
+            mocks.warpStates.set('c1', { ...state, markers: [{ ...marker, originalBeat: 120 }] });
+            view.rerender(<ElasticEditorPanel />);
+            view.unmount();
+            flushFrame();
+            expect(drawing.fill).not.toHaveBeenCalled();
+        });
+
         it('does not clear or resubmit pixels for a distinct authoritative snapshot with equal visual inputs', () => {
             const drawing = observeDrawing();
             const view = render(<ElasticEditorPanel />);
+            flushFrame();
             const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
             expect(drawing.fill).toHaveBeenCalledWith(0, 0, 2560, 120);
             expect(drawing.line).toHaveBeenCalledWith(40, 120);
@@ -350,6 +405,7 @@ describe('ElasticEditorPanel', () => {
             const backingHeight = vi.spyOn(canvas, 'height', 'set');
             publishEquivalentSnapshot();
             view.rerender(<ElasticEditorPanel />);
+            flushFrame();
             expect(drawing.fill).toHaveBeenCalledTimes(fills);
             expect(drawing.line).toHaveBeenCalledTimes(lines);
             expect(backingWidth).not.toHaveBeenCalled();
@@ -361,6 +417,7 @@ describe('ElasticEditorPanel', () => {
             (field) => {
                 const drawing = observeDrawing();
                 const view = render(<ElasticEditorPanel />);
+                flushFrame();
                 drawing.fill.mockClear();
                 drawing.line.mockClear();
                 const state = mocks.warpStates.get('c1');
@@ -382,6 +439,7 @@ describe('ElasticEditorPanel', () => {
                     originalTempo: state.originalTempo,
                 });
                 view.rerender(<ElasticEditorPanel />);
+                flushFrame();
                 expect(drawing.fill).toHaveBeenCalledWith(
                     0,
                     0,
@@ -405,6 +463,7 @@ describe('ElasticEditorPanel', () => {
             (input) => {
                 const drawing = observeDrawing();
                 const view = render(<ElasticEditorPanel />);
+                flushFrame();
                 const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
                 const container = canvas.parentElement;
                 if (!container) {
@@ -432,6 +491,7 @@ describe('ElasticEditorPanel', () => {
                 }
                 publishEquivalentSnapshot();
                 view.rerender(<ElasticEditorPanel />);
+                flushFrame();
                 expect(drawing.fill).toHaveBeenCalled();
                 if (input === 'source') {
                     expect(mocks.getWaveformPeaks).toHaveBeenLastCalledWith('buf-2', 2560);
@@ -458,6 +518,7 @@ describe('ElasticEditorPanel', () => {
         it('redraws after the canvas or its context is replaced', () => {
             const drawing = observeDrawing();
             const view = render(<ElasticEditorPanel />);
+            flushFrame();
             const originalCanvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
             const replacementContext = { ...drawing.context, fillRect: vi.fn() };
             Object.defineProperty(originalCanvas, 'getContext', {
@@ -466,17 +527,21 @@ describe('ElasticEditorPanel', () => {
             });
             publishEquivalentSnapshot();
             view.rerender(<ElasticEditorPanel />);
+            flushFrame();
             expect(replacementContext.fillRect).toHaveBeenCalledWith(0, 0, 2560, 120);
 
             mocks.elasticStoreValue = { ...mocks.elasticStoreValue, openClipId: 'missing' };
             view.rerender(<ElasticEditorPanel />);
+            flushFrame();
             drawing.fill.mockClear();
             mocks.elasticStoreValue = { ...mocks.elasticStoreValue, openClipId: 'c1' };
             view.rerender(<ElasticEditorPanel />);
+            flushFrame();
             expect(screen.getByTestId('elastic-waveform-canvas')).not.toBe(originalCanvas);
             expect(drawing.fill).toHaveBeenCalledWith(0, 0, 2560, 120);
             drawing.fill.mockClear();
             fireEvent(originalCanvas, new Event('contextrestored'));
+            flushFrame();
             expect(drawing.fill).not.toHaveBeenCalled();
         });
 
@@ -492,6 +557,7 @@ describe('ElasticEditorPanel', () => {
             }));
             const drawing = observeDrawing();
             const view = render(<ElasticEditorPanel />);
+            flushFrame();
             const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
             const container = canvas.parentElement;
             if (!container) {
@@ -501,12 +567,14 @@ describe('ElasticEditorPanel', () => {
             publishEquivalentSnapshot();
             drawing.line.mockClear();
             view.rerender(<ElasticEditorPanel />);
+            flushFrame();
             expect(drawing.line).toHaveBeenCalledWith(5, 0);
             expect(drawing.line).not.toHaveBeenCalledWith(8005, 0);
 
             drawing.line.mockClear();
             container.scrollLeft = 8000;
             fireEvent.scroll(container);
+            flushFrame();
             expect(drawing.line).toHaveBeenCalledWith(8005, 0);
             expect(drawing.line).not.toHaveBeenCalledWith(5, 0);
             expect(drawing.line).not.toHaveBeenCalledWith(8245, 0);
@@ -515,6 +583,7 @@ describe('ElasticEditorPanel', () => {
             publishEquivalentSnapshot();
             drawing.line.mockClear();
             view.rerender(<ElasticEditorPanel />);
+            flushFrame();
             expect(canvas.width).toBe(16320);
             expect(drawing.line).toHaveBeenCalledWith(8245, 0);
         });
@@ -524,6 +593,7 @@ describe('ElasticEditorPanel', () => {
             (reset) => {
                 const drawing = observeDrawing();
                 const view = render(<ElasticEditorPanel />);
+                flushFrame();
                 const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
                 drawing.fill.mockClear();
                 if (reset === 'width' || reset === 'height') {
@@ -541,6 +611,7 @@ describe('ElasticEditorPanel', () => {
                 }
                 publishEquivalentSnapshot();
                 view.rerender(<ElasticEditorPanel />);
+                flushFrame();
                 expect(drawing.fill).toHaveBeenCalledWith(0, 0, 2560, 120);
                 expect(drawing.context.strokeStyle).not.toBe('#000000');
             }
@@ -550,6 +621,7 @@ describe('ElasticEditorPanel', () => {
             const drawing = observeDrawing();
             mocks.warpStates.get('c1')!.markers[0]!.originalBeat = 80.123;
             const view = render(<ElasticEditorPanel />);
+            flushFrame();
             const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
             expect(canvas.width).toBe(3524);
             const backingWidth = vi.spyOn(canvas, 'width', 'set');
@@ -558,6 +630,7 @@ describe('ElasticEditorPanel', () => {
             publishEquivalentSnapshot();
             drawing.fill.mockClear();
             view.rerender(<ElasticEditorPanel />);
+            flushFrame();
             expect(drawing.fill).toHaveBeenCalledWith(38, 10, 4, 4);
             expect(backingWidth).not.toHaveBeenCalled();
             expect(backingHeight).not.toHaveBeenCalled();
