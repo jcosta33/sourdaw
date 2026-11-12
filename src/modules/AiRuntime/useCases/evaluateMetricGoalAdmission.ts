@@ -293,6 +293,12 @@ function satisfies(goal: MetricGoal, before: number, after: number, reference: n
     if (goal.relation === 'hold') {
         return Math.abs(after - before) <= goal.tolerance;
     }
+    if (goal.relation === 'no-increase') {
+        return after - before <= goal.tolerance;
+    }
+    if (goal.relation === 'no-decrease') {
+        return before - after <= goal.tolerance;
+    }
     if (goal.relation === 'target') {
         return goal.targetValue !== null && Math.abs(after - goal.targetValue) <= goal.tolerance;
     }

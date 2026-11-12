@@ -13,8 +13,8 @@ export function hasContradictoryMetricGoals(goals: readonly MetricGoal[]): boole
             goals.some(
                 (right) =>
                     sameAxis(right) &&
-                    ((left.relation === 'increase' && ['decrease', 'hold'].includes(right.relation)) ||
-                        (left.relation === 'decrease' && right.relation === 'hold') ||
+                    ((left.relation === 'increase' && ['decrease', 'hold', 'no-increase'].includes(right.relation)) ||
+                        (left.relation === 'decrease' && ['hold', 'no-decrease'].includes(right.relation)) ||
                         (left.relation === 'greater-than-current' && right.relation === 'less-than-current'))
             )
         ) {

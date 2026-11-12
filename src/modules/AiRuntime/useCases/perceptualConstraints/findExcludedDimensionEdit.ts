@@ -2,7 +2,11 @@ import { getExecutableAppActionEffect, getExecutableAppActionGroundingRules } fr
 import { type AppAction } from '#/utils/handlerContract';
 import { isRecord } from '#/utils/structuralEquality';
 
-import { type PerceptualConstraint, type PerceptualExcludedDimension } from '../../models/PerceptualConstraint';
+import {
+    type ExcludingPerceptualConstraint,
+    type PerceptualConstraint,
+    type PerceptualExcludedDimension,
+} from '../../models/PerceptualConstraint';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { proposalCommandShape } from '../agentReference/proposalCommandShape';
 
@@ -424,7 +428,12 @@ function nameOf(trackId: string | null, context: ProjectContext): string {
     return `“${context.tracks.find((track) => track.id === trackId)?.name ?? trackId}”`;
 }
 
-function describeEdit(constraint: PerceptualConstraint, edit: Edit, command: string, context: ProjectContext): string {
+function describeEdit(
+    constraint: ExcludingPerceptualConstraint,
+    edit: Edit,
+    command: string,
+    context: ProjectContext
+): string {
     const label = DIMENSION_LABELS[constraint.protection.dimension];
     const owner = nameOf(edit.trackId, context);
     if (edit.dimension === 'unclassified') {
@@ -435,7 +444,7 @@ function describeEdit(constraint: PerceptualConstraint, edit: Edit, command: str
 
 /** A mix-scoped constraint holds every track, so it reads no routing. */
 function readConstraintReach(
-    constraint: PerceptualConstraint,
+    constraint: ExcludingPerceptualConstraint,
     actions: readonly AppAction[],
     context: ProjectContext
 ): Set<string> | null {
@@ -455,18 +464,20 @@ export function findExcludedDimensionEdit(input: {
     actions: readonly AppAction[];
     context: ProjectContext;
 }): { reason: string } | null {
-    if (input.constraints.length === 0) {
+    // A measured hold takes no dimension away: whatever reaches its scope, the preview shows whether
+    // the held metric kept within its tolerance, so only an exclusion refuses an edit here.
+    const exclusions = input.constraints.filter(
+        (constraint): constraint is ExcludingPerceptualConstraint => constraint.protection.kind === 'exclude-dimension'
+    );
+    if (exclusions.length === 0) {
         return null;
     }
     const reach = new Map(
-        input.constraints.map((constraint) => [
-            constraint,
-            readConstraintReach(constraint, input.actions, input.context),
-        ])
+        exclusions.map((constraint) => [constraint, readConstraintReach(constraint, input.actions, input.context)])
     );
     for (const [index, action] of input.actions.entries()) {
         for (const edit of readActionEdits(action, input.actions, input.context)) {
-            const constraint = input.constraints.find(
+            const constraint = exclusions.find(
                 (candidate) =>
                     (edit.dimension === 'unclassified' || candidate.protection.dimension === edit.dimension) &&
                     inScope(reach.get(candidate) ?? null, edit.trackId)

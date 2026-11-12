@@ -87,7 +87,7 @@ const K = ({
             tone="rose"
             aria-label={label}
         />
-        <span className="text-[6px] text-muted-foreground leading-none">{label}</span>
+        <span className="text-nano leading-none text-muted-foreground">{label}</span>
         {unit ? (
             <span className="text-[5px] text-muted-foreground/40 font-mono">
                 {value.toFixed(step < 1 ? 2 : 0)}
@@ -114,7 +114,10 @@ const Sel = ({
 }): ReactElement => (
     <Stack align="center" gap={0.5}>
         <DawCompactSelect
-            className="h-4 text-[6px] bg-surface-inset border border-border/30 rounded px-0.5 text-foreground cursor-pointer"
+            aria-label={label}
+            size="sm"
+            tone="inset"
+            className="text-[length:var(--text-nano)]"
             value={value}
             onChange={(event) => onSetParam(id, name, parseInt(event.target.value))}
         >
@@ -124,7 +127,7 @@ const Sel = ({
                 </option>
             ))}
         </DawCompactSelect>
-        <span className="text-[6px] text-muted-foreground">{label}</span>
+        <span className="text-nano text-muted-foreground">{label}</span>
     </Stack>
 );
 
@@ -704,10 +707,12 @@ export const ProcessorParams = ({
         case 'groove':
             return (
                 <Row align="stretch" wrap gap={2} className="px-1 py-1">
-                    <Stack as="label" align="center" gap={0.5} className="text-[6px] text-muted-foreground">
+                    <Stack as="label" align="center" gap={0.5} className="text-nano text-muted-foreground">
                         <DawCompactSelect
                             aria-label="Groove template"
-                            className="h-4 rounded border border-border/30 bg-surface-inset px-0.5 text-[6px] text-foreground"
+                            size="sm"
+                            tone="inset"
+                            className="text-[length:var(--text-nano)]"
                             value={selectedGrooveTemplateId}
                             onChange={(event) => {
                                 const result = onSetGrooveTemplate?.(pid, event.target.value);

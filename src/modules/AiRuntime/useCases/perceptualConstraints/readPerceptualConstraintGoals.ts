@@ -6,7 +6,7 @@ import { readArrangementRange } from '../readArrangementRange';
 import { PERCEPTUAL_CONSTRAINT_INVARIANTS } from './perceptualConstraintInvariants';
 
 /**
- * The hold goals a reading's constraints compile to: each measured invariant on each constrained
+ * The goals a reading's constraints compile to, a hold or a one-way bound as each invariant states it: each measured invariant on each constrained
  * subject over the whole arrangement, and one `unsupported` goal per clause no measurement verifies.
  */
 export function readPerceptualConstraintGoals(
@@ -25,7 +25,7 @@ export function readPerceptualConstraintGoals(
                 targetIds: [targetId],
                 referenceTargetIds: [],
                 range,
-                relation: 'hold',
+                relation: metric.relation,
                 targetValue: null,
                 tolerance: metric.tolerance,
                 source: { kind: 'constraint', constraintId: constraint.constraintId, clause: constraint.clause },
