@@ -1,0 +1,29 @@
+src/modules/AiRuntime/models/LocalModelRefusal.ts
+  s_0547b7605037d4::t_a4694e2a4352c2 8
+src/modules/AiRuntime/AGENTS.md
+  s_0547b7605037d4::t_bf3b4caa9f593f 51
+src/modules/AiRuntime/errors/LocalModelRefusalError.ts
+  s_0547b7605037d4::t_a4694e2a4352c2 10-11,18-20
+src/modules/WorkspaceShell/presentations/views/Prompt/__tests__/LlmStatusBadge.spec.tsx
+  s_0547b7605037d4::t_bf3b4caa9f593f 161-162,165
+src/modules/AiRuntime/repositories/webLlm/initWebLlmEngine.ts
+  s_0547b7605037d4::t_a4694e2a4352c2 277
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_0547b7605037d4::t_bf3b4caa9f593f 987-990
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "62a834cb0dd4f3f14eed218afe784986d80d70eb",
+  "prompts": {},
+  "sessions": {
+    "s_0547b7605037d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "97f8302c-c50a-45c3-a041-49fd06766716",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
