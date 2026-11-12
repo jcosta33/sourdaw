@@ -722,7 +722,7 @@ describe('pruneRemoteBranches', () => {
                 new Map(names.map((name) => [name, { pullRequests: tenMergedAtTip, complete: false }])),
             baseDependentsFor: (names) => new Map(names.map((name) => [name, { pullRequests: [], complete: true }])),
             branchTip: () => target.tip,
-            deleteBranch: (name) => {
+            deleteBranch: ({ name }) => {
                 deleteCalls.push(name);
                 return 'deleted';
             },

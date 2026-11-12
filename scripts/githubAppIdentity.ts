@@ -450,10 +450,10 @@ export function githubAuthorizationGitEnv(parent: NodeJS.ProcessEnv = process.en
     env.GIT_SSH = '/usr/bin/false';
     env.GCM_INTERACTIVE = 'never';
     env.GIT_CONFIG_COUNT = String(REPOSITORY_PROGRAM_OVERRIDES.length);
-    REPOSITORY_PROGRAM_OVERRIDES.forEach(([key, value], index) => {
+    for (const [index, [key, value]] of REPOSITORY_PROGRAM_OVERRIDES.entries()) {
         env[`GIT_CONFIG_KEY_${String(index)}`] = key;
         env[`GIT_CONFIG_VALUE_${String(index)}`] = value;
-    });
+    }
     return env;
 }
 
@@ -715,6 +715,9 @@ function gitGlobalOptions(args: readonly string[]): string[] {
     const options: string[] = [];
     for (let index = 0; index < args.length; index += 1) {
         const arg = args[index];
+        if (arg === undefined) {
+            return options;
+        }
         if (arg === '-C' || arg === '-c') {
             const value = args[index + 1];
             if (value === undefined) {
