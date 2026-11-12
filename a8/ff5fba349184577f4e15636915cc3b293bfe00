@@ -1,0 +1,20 @@
+src/modules/Arrangement/presentations/views/TimelineClipNavigator.tsx
+  h_beb54bf43b47b7 22-23,68,113-123,172-216,253-259
+src/modules/Arrangement/presentations/views/timelineClipNavigatorKeyboard.ts
+  h_beb54bf43b47b7 1-97
+src/modules/Arrangement/presentations/views/timelineClipNavigatorModel.ts
+  h_beb54bf43b47b7 1-27
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenuFocus.integration.spec.tsx
+  h_beb54bf43b47b7 225-227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a8ff5fba349184577f4e15636915cc3b293bfe00",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
