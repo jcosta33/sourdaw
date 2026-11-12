@@ -65,7 +65,11 @@ const ROLE_WORDS: ReadonlyMap<string, SemanticCommandListRoleFamily> = new Map([
 ]);
 const MEASURABLE_TRACK_KINDS = new Set(['audio', 'midi', 'bus']);
 
-const WORD = String.raw`(?!(?:and|or|but)\b)[^\s,.;:!?]+`;
+/**
+ * A word an object member may hold: never a conjunction, a direction, a negation or a copula, so a
+ * member never runs into the next clause ("The vocal is louder and the drums must not …").
+ */
+const WORD = String.raw`(?!(?:and|or|but|louder|quieter|softer|is|are|be|not|never|without|cannot|do|does|will|must|should|may|can|don['’]?t|doesn['’]?t|won['’]?t|mustn['’]?t|shouldn['’]?t|can['’]?t)(?![\p{L}\p{N}'’]))[^\s,.;:!?]+`;
 const MIX_PRONOUN = String.raw`(?:it|everything|anything)`;
 /** The role and mix words an object member may open with, longest first, so "lead vocal" is one member. */
 const SCOPE_WORD = [...ROLE_WORDS.keys(), ...MIX_WORDS]
@@ -122,8 +126,10 @@ const HOLD_PATTERNS = [
  * A direction clause whose object is no list the reader can read ("don't make the vocal brighter and
  * louder"): recorded unsupported rather than held on a guessed scope or dropped.
  */
+/** A character of a fallback object: it never crosses a conjunction or another negation into the next clause. */
+const IN_CLAUSE = String.raw`(?:(?!\b(?:and|or|but|while|so|then)\b|\b${NEGATION})[^,.;:!?])`;
 const UNREADABLE_DIRECTION = new RegExp(
-    String.raw`\b${NEGATION}\s+(?:make|making|get|getting|let|letting)\s+(?<object>[^,.;:!?]+?)\s+${DIRECTION_LEAD}${LOUDNESS_DIRECTION}${CLAUSE_END}`,
+    String.raw`\b${NEGATION}\s+(?:make|making|get|getting|let|letting)\s+(?<object>${IN_CLAUSE}+?(?:\s+(?:and|or))?)\s+${DIRECTION_LEAD}${LOUDNESS_DIRECTION}${CLAUSE_END}`,
     'dgiu'
 );
 const RAISING_VERB = /^(?:rais|increas|boost|push|turn(?:ing)?\s+up)/iu;
@@ -262,7 +268,11 @@ function spanText(prompt: string, span: [number, number] | undefined): string | 
  * Each noun's family, and the clause's one object: the "of" tail or an object standing before a noun.
  * Two different objects in one clause hold no single scope, so the clause is unreadable.
  */
-function readNounClause(match: RegExpExecArray, prompt: string): Omit<HoldClause, 'clause' | 'start' | 'end'> {
+function readNounClause(
+    match: RegExpExecArray,
+    clause: string,
+    prompt: string
+): Omit<HoldClause, 'clause' | 'start' | 'end'> {
     const nounsSpan = match.indices?.groups?.nouns;
     const nouns = match.groups?.nouns ?? '';
     const constraintIds: MeasuredConstraintId[] = [];
@@ -286,7 +296,7 @@ function readNounClause(match: RegExpExecArray, prompt: string): Omit<HoldClause
     return {
         constraintIds,
         object,
-        unreadable: others.length > 0 ? `“${match[0].trim()}” names more than one scope for one hold.` : null,
+        unreadable: others.length > 0 ? `“${clause}” names more than one scope for one hold.` : null,
     };
 }
 
@@ -295,7 +305,7 @@ function readHoldMatch(match: RegExpExecArray, prompt: string): HoldClause {
     const end = start + match[0].length;
     const clause = prompt.slice(start, end).trim();
     if (match.groups?.nouns !== undefined) {
-        return { clause, start, end, ...readNounClause(match, prompt) };
+        return { clause, start, end, ...readNounClause(match, clause, prompt) };
     }
     const direction = match.groups?.direction;
     return {
@@ -320,7 +330,11 @@ function readHoldClauses(masked: string, prompt: string): HoldClause[] {
             unreadable: `“${object}” names no track or mix whose loudness can be measured.`,
         };
     });
-    const clauses = [...readable, ...unreadable].toSorted((left, right) => left.start - right.start);
+    // A readable clause inside a fallback span wins: the fallback only records what no reader reads.
+    const unclaimed = unreadable.filter(
+        (clause) => !readable.some((other) => other.start < clause.end && clause.start < other.end)
+    );
+    const clauses = [...readable, ...unclaimed].toSorted((left, right) => left.start - right.start);
     return clauses.filter(
         (clause, index) =>
             !clauses.slice(0, index).some((other) => other.start < clause.end && clause.start < other.end)

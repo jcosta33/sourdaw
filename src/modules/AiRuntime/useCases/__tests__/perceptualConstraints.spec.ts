@@ -1163,7 +1163,10 @@ function unread(clause: string, reason: string): UnsupportedPerceptualConstraint
     return { constraintId: 'unsupported', clause, reason };
 }
 
-/** The fixture project with a Drums track, a track whose name holds "louder", and any extra names. */
+/**
+ * The fixture project with a Drums track, a track whose name holds "louder", a guitar known only by
+ * its role, and any extra names.
+ */
 function grammarContext(...extraNames: string[]): ProjectContext {
     const context = getProjectContext();
     const template = context.tracks.find((track) => track.id === 'vocal');
@@ -1177,6 +1180,10 @@ function grammarContext(...extraNames: string[]): ProjectContext {
             ...context.tracks,
             named('drums', 'Drums'),
             named('louder-pad', 'Louder Pad'),
+            {
+                ...named('gtr', 'Gtr 1'),
+                canonicalRole: { role: 'guitar', source: 'authored', evidence: 'authored-role' },
+            },
             ...extraNames.map((name, index) => named(`extra-${String(index)}`, name)),
         ],
     };
@@ -1391,6 +1398,120 @@ describe('reading measured holds and bounds', () => {
                 ),
             ],
         ],
+        // a bound beside an unreadable or unrelated clause keeps to its own clause
+        [
+            "don't make the intro longer and don't make the mix louder",
+            [measured('loudness-not-raised-v1', "don't make the mix louder", MIX)],
+            [],
+        ],
+        [
+            "don't make the vocal brighter and don't make the drums louder",
+            [measured('loudness-not-raised-v1', "don't make the drums louder", onTracks('drums'))],
+            [],
+        ],
+        [
+            'without making the vocal harsher and without making the mix quieter',
+            [measured('loudness-not-lowered-v1', 'without making the mix quieter', MIX)],
+            [],
+        ],
+        [
+            'The vocal is louder and the drums must not get louder',
+            [measured('loudness-not-raised-v1', 'the drums must not get louder', onTracks('drums'))],
+            [],
+        ],
+        [
+            'keep the vocal level and the drums width',
+            [],
+            [
+                unread(
+                    'keep the vocal level and the drums width',
+                    '“keep the vocal level and the drums width” names more than one scope for one hold.'
+                ),
+            ],
+        ],
+        ["don't make the intro longer and make the vocal louder", [], []],
+        // every negation spelling and linking verb
+        ['never make it louder', [measured('loudness-not-raised-v1', 'never make it louder', MIX)], []],
+        ['do not make it louder', [measured('loudness-not-raised-v1', 'do not make it louder', MIX)], []],
+        ['the mix will not get louder', [measured('loudness-not-raised-v1', 'the mix will not get louder', MIX)], []],
+        ["the mix won't get louder", [measured('loudness-not-raised-v1', "the mix won't get louder", MIX)], []],
+        [
+            'the mix should not get louder',
+            [measured('loudness-not-raised-v1', 'the mix should not get louder', MIX)],
+            [],
+        ],
+        ["the mix shouldn't get louder", [measured('loudness-not-raised-v1', "the mix shouldn't get louder", MIX)], []],
+        ['the mix may not get louder', [measured('loudness-not-raised-v1', 'the mix may not get louder', MIX)], []],
+        ["the mix can't get louder", [measured('loudness-not-raised-v1', "the mix can't get louder", MIX)], []],
+        ['the mix cannot get louder', [measured('loudness-not-raised-v1', 'the mix cannot get louder', MIX)], []],
+        ["don't make it feel louder", [measured('loudness-not-raised-v1', "don't make it feel louder", MIX)], []],
+        ["don't make it seem louder", [measured('loudness-not-raised-v1', "don't make it seem louder", MIX)], []],
+        [
+            "don't let the mix become louder",
+            [measured('loudness-not-raised-v1', "don't let the mix become louder", MIX)],
+            [],
+        ],
+        ['the mix must not be louder', [measured('loudness-not-raised-v1', 'the mix must not be louder', MIX)], []],
+        // a role word before a held noun, resolved through a track's role or through nothing
+        [
+            'keep the guitar level the same',
+            [measured('loudness-held-v1', 'keep the guitar level the same', onTracks('gtr'))],
+            [],
+        ],
+        [
+            'keep the keys level the same',
+            [],
+            [unread('keep the keys level the same', '“keys” names no track or mix whose loudness can be measured.')],
+        ],
+        // every pronoun means the mix only while nothing narrower is named before it
+        [
+            'keep everything at the same level',
+            [measured('loudness-held-v1', 'keep everything at the same level', MIX)],
+            [],
+        ],
+        [
+            'brighten the drums but keep everything at the same level',
+            [],
+            [
+                unread(
+                    'keep everything at the same level',
+                    '“everything” names no single scope: the request names a track or role before it.'
+                ),
+            ],
+        ],
+        ["don't make anything louder", [measured('loudness-not-raised-v1', "don't make anything louder", MIX)], []],
+        [
+            "brighten the drums but don't make anything louder",
+            [],
+            [
+                unread(
+                    "don't make anything louder",
+                    '“anything” names no single scope: the request names a track or role before it.'
+                ),
+            ],
+        ],
+        // further qualities joined to the first share its object
+        [
+            'keep the vocal bright, dynamic',
+            [
+                measured('brightness-held-v1', 'keep the vocal bright, dynamic', onTracks('vocal')),
+                measured('dynamics-held-v1', 'keep the vocal bright, dynamic', onTracks('vocal')),
+            ],
+            [],
+        ],
+        [
+            'keep the vocal as bright and as dynamic',
+            [
+                measured('brightness-held-v1', 'keep the vocal as bright and as dynamic', onTracks('vocal')),
+                measured('dynamics-held-v1', 'keep the vocal as bright and as dynamic', onTracks('vocal')),
+            ],
+            [],
+        ],
+        [
+            'keep the vocal bright and warm up the drums',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
         // what states no measured hold
         ['make the drums louder', [], []],
         ["don't make the mix louder than the vocal", [], []],
@@ -1526,6 +1647,8 @@ const ADMITTED_ROWS: AdmissionRow[] = [
     ['keep the stereo width of the Vocal', 'vocal', 'sideEnergyFraction', 0.02, 0.01],
     ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 1050],
     ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 950],
+    ["don't make it louder", 'master', 'integratedLoudness', -20, -19.5],
+    ["don't make it quieter", 'master', 'integratedLoudness', -20, -20.5],
 ];
 const BLOCKED_ROWS: AdmissionRow[] = [
     ["don't make it louder", 'master', 'integratedLoudness', -20, -19.4],
@@ -1545,6 +1668,8 @@ const BLOCKED_ROWS: AdmissionRow[] = [
     ['keep the stereo width of the Vocal', 'vocal', 'sideEnergyFraction', 0.02, 0.00995],
     ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 1050.25],
     ['keep the brightness of the Bass', 'bass', 'spectralCentroid', 1000, 949.75],
+    ["don't make it louder", 'master', 'integratedLoudness', -20, -19.4921875],
+    ["don't make it quieter", 'master', 'integratedLoudness', -20, -20.5078125],
 ];
 
 /** The batch the clause rides, compiled for real, then admitted against one proof of the given figures. */
