@@ -1,0 +1,42 @@
+src/modules/Bacteria/presentations/components/BandStrip.tsx
+  h_beb54bf43b47b7 34,51-55,56,57,70-74,75,76
+src/modules/Bacteria/presentations/components/__tests__/BandStrip.spec.tsx
+  h_beb54bf43b47b7 26-27,28-30,31-36,37-55,56
+src/modules/Crust/presentations/components/CrustMeteringStrip.tsx
+  h_beb54bf43b47b7 223-233
+src/modules/Crust/presentations/components/__tests__/CrustMeteringStripBranches.spec.tsx
+  h_beb54bf43b47b7 80-87
+src/modules/Fermenter/presentations/components/PresetBrowser.tsx
+  h_beb54bf43b47b7 104,118,120-123,133,134,135,136,144,164-165,168,188,191,195-196
+src/modules/Fermenter/presentations/components/__tests__/PresetBrowser.spec.tsx
+  h_beb54bf43b47b7 87,90-91,93-94,196-208
+src/modules/Toaster/presentations/components/PadMixer.tsx
+  h_beb54bf43b47b7 30,126,131-133,134,148-150,151
+src/modules/Toaster/presentations/components/__tests__/PadMixer.spec.tsx
+  h_beb54bf43b47b7 120,125,134,153-162,163-165,166-167,168-169,170-177,178
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  h_beb54bf43b47b7 214-224
+src/modules/Yeast/presentations/components/ProcessorParams.tsx
+  h_beb54bf43b47b7 90,117-120,130,710,713-715
+src/modules/Yeast/presentations/components/__tests__/ProcessorParams.spec.tsx
+  h_beb54bf43b47b7 295-311
+src/modules/Toaster/presentations/views/__tests__/ToasterPadMuteWiring.spec.tsx
+  h_beb54bf43b47b7 85
+src/modules/Toaster/presentations/views/__tests__/ToasterPadSoloWiring.spec.tsx
+  h_beb54bf43b47b7 83
+tests/e2e/toasterPadMixerTestId.spec.ts
+  h_beb54bf43b47b7 17,23
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.disclosureRuntime.integration.spec.tsx
+  h_beb54bf43b47b7 293
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4c8fb9b6f0b82a7a6baf7757a2a8f36ee1270100",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
