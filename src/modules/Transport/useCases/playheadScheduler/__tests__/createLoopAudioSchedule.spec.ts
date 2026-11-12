@@ -291,7 +291,7 @@ describe('loop buffer work and lifetime ownership', () => {
             bounded && (emitted.at(-1)?.scheduledStartTime ?? Infinity) <= previousHorizon ? 40 : 0
         );
         owner.refill(input());
-        const successor = owner.poolAt(10.125, true)!.sources[0]!;
+        const successor = owner.poolAt(10.125, true)!.sources[0]! as SourceWithFade;
         expect(successor.scheduledStartTime).toBe(10.625);
         const stopsBeforeChange = vi.mocked(successor.stop).mock.calls.map((call) => [...call]);
 

@@ -278,6 +278,7 @@ function createSource() {
     const source = {
         buffer: null as AudioBuffer | null,
         playbackRate: { value: 1 },
+        fadeGainNode: null,
         connect: vi.fn(),
         disconnect: vi.fn(),
         start(when: number, offset = 0, duration?: number) {
@@ -587,13 +588,21 @@ function assertPassAlreadySubmitted(
 
 type SeamStallOptions = { noteStartBeat?: number; compensationSeconds?: number };
 
+type SeamStallResult = {
+    emissionCountBeforeRecovery: number;
+    pitch60EmissionsBeforeRecovery: number;
+    pitch60EmissionsAfterRecovery: number;
+    preRecoveryPitch60Frames: number[];
+    recoveryPitch60Frames: number[];
+};
+
 async function reproduceSeamStall(
     passFrames: number,
     lastRefillFrame: number,
     frozen: boolean,
     frozenMidi = false,
     options: SeamStallOptions = {}
-): Promise<void> {
+): Promise<SeamStallResult> {
     const loopEnd = passFrames / 24_000; // Fixed fixture:120BPM means24000frames per quarter-note beat.
     const left = seedTrack('left', loopEnd, frozen, 0.375, frozenMidi);
     const right = seedTrack('right', loopEnd, frozen, 1.125, frozenMidi);
