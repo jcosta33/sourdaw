@@ -5,6 +5,7 @@ import {
     type OwnershipDiagnostic,
     type ProcessDiagnostic,
 } from './nativeCommandDiagnostics.ts';
+
 import type { ProcessGroupSnapshot } from './processSnapshot.ts';
 
 export type NativeTestResult = {

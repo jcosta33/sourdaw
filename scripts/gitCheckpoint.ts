@@ -19,12 +19,13 @@ import {
 } from 'node:fs';
 import { constants as osConstants, homedir } from 'node:os';
 import { join } from 'node:path';
-import type { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
 import { checkpointArguments } from './gitCheckpointArguments.ts';
 import { checkpointMountOptions } from './gitCheckpointMount.ts';
 import { command, diagnosticEnv, processIdentity, runCheckpointSample } from './gitCheckpointProcess.ts';
+
+import type { Readable } from 'node:stream';
 
 const script = fileURLToPath(import.meta.url);
 const unavailable = 'unavailable';
@@ -146,6 +147,24 @@ function info(path: string): object {
         return { error: errorCode(error) };
     }
 }
+function discoverPathspecs(paths: string[], discover: boolean, includeIgnored: boolean, trackedOnly: boolean) {
+    if (!discover) {
+        return { matched: [], pathspecDiscovery: 'not requested' };
+    }
+    const argumentsForListing = ['ls-files', '-z', '--cached'];
+    if (!trackedOnly) {
+        argumentsForListing.push('--others');
+    }
+    if (!includeIgnored && !trackedOnly) {
+        argumentsForListing.push('--exclude-standard');
+    }
+    argumentsForListing.push('--', ...new Set(paths));
+    const listing = command('git', argumentsForListing, diagnosticEnv, 750, true);
+    if (listing === null) {
+        return { matched: [], pathspecDiscovery: unavailable };
+    }
+    return { matched: listing.split('\0').filter(Boolean), pathspecDiscovery: 'complete' };
+}
 function observe(
     paths: string[],
     partialPath: string,
@@ -174,25 +193,7 @@ function observe(
         true
     );
     const stagedPaths = staged?.split('\0').filter(Boolean) ?? [];
-    let matched: string[] = [];
-    let pathspecDiscovery = 'not requested';
-    if (discover) {
-        const argumentsForListing = ['ls-files', '-z', '--cached'];
-        if (!trackedOnly) {
-            argumentsForListing.push('--others');
-        }
-        if (!includeIgnored && !trackedOnly) {
-            argumentsForListing.push('--exclude-standard');
-        }
-        argumentsForListing.push('--', ...new Set(paths));
-        const listing = command('git', argumentsForListing, diagnosticEnv, 750, true);
-        if (listing === null) {
-            pathspecDiscovery = unavailable;
-        } else {
-            matched = listing.split('\0').filter(Boolean);
-            pathspecDiscovery = 'complete';
-        }
-    }
+    const { matched, pathspecDiscovery } = discoverPathspecs(paths, discover, includeIgnored, trackedOnly);
     const requestedPaths = discover ? [] : paths;
     const discovered = [...new Set([...requestedPaths, ...matched, ...stagedPaths])];
     const selected = discovered.slice(0, 256);

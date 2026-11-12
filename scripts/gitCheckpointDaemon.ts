@@ -82,7 +82,17 @@ function pidRecord(text: string): { pid: number; startedAtMs: number } | null {
         return null;
     }
 }
-export function checkpointDaemonLog(request: DaemonLogRequest): DaemonLogResult {
+type DaemonAdmission =
+    { status: 'unavailable'; reason: string } | { status: 'matched'; pid: number; identity: string; pidBytes: Buffer };
+function matchesDaemonIdentity(identity: string, uid: number, startedAtMs: number): boolean {
+    const match = identity.trim().match(/^(\d+)\s+(.+)$/);
+    if (!match || match[1] === undefined || match[2] === undefined) {
+        return false;
+    }
+    const start = Date.parse(match[2]);
+    return Number(match[1]) === uid && Number.isFinite(start) && Math.abs(start - startedAtMs) < 2000;
+}
+function admitDaemon(request: DaemonLogRequest): DaemonAdmission {
     if (!request.socket || request.socket !== request.expectedSocket || !request.peerRow || request.uid === undefined) {
         return { status: 'unavailable', reason: 'socket or peer identity unavailable' };
     }
@@ -104,29 +114,32 @@ export function checkpointDaemonLog(request: DaemonLogRequest): DaemonLogResult 
         return { status: 'unavailable', reason: 'daemon pid does not match peer' };
     }
     const identity = request.identity(record.pid);
-    const match = identity?.trim().match(/^(\d+)\s+(.+)$/);
-    if (!identity || !match || match[1] === undefined || match[2] === undefined) {
+    if (!identity || !matchesDaemonIdentity(identity, request.uid, record.startedAtMs)) {
         return { status: 'unavailable', reason: 'daemon process uid or start identity does not match' };
     }
-    const start = Date.parse(match[2]);
-    if (Number(match[1]) !== request.uid || !Number.isFinite(start) || Math.abs(start - record.startedAtMs) >= 2000) {
-        return { status: 'unavailable', reason: 'daemon process uid or start identity does not match' };
+    return { status: 'matched', pid: record.pid, identity, pidBytes: pidFile.bytes };
+}
+export function checkpointDaemonLog(request: DaemonLogRequest): DaemonLogResult {
+    const admission = admitDaemon(request);
+    if (admission.status === 'unavailable') {
+        return admission;
     }
-    const log = readBounded(join(request.logDirectory, `${record.pid}.log`), 64 * 1024, true);
+    const { pid, identity, pidBytes } = admission;
+    const log = readBounded(join(request.logDirectory, `${pid}.log`), 64 * 1024, true);
     if (!log) {
         const pidAfter = readBounded(request.pidFile, 4096, false);
-        if (pidAfter && pidAfter.bytes.equals(pidFile.bytes) && request.identity(record.pid) === identity) {
-            return { status: 'unavailable', reason: 'daemon log unavailable', pid: record.pid, identity };
+        if (pidAfter && pidAfter.bytes.equals(pidBytes) && request.identity(pid) === identity) {
+            return { status: 'unavailable', reason: 'daemon log unavailable', pid, identity };
         }
         return { status: 'unavailable', reason: 'daemon identity changed while checking log' };
     }
     const pidAfter = readBounded(request.pidFile, 4096, false);
-    if (!pidAfter || !pidAfter.bytes.equals(pidFile.bytes) || request.identity(record.pid) !== identity) {
+    if (!pidAfter || !pidAfter.bytes.equals(pidBytes) || request.identity(pid) !== identity) {
         return { status: 'unavailable', reason: 'daemon identity changed while reading log' };
     }
     return {
         status: 'available',
-        pid: record.pid,
+        pid,
         identity,
         before: log.before,
         after: log.after,
