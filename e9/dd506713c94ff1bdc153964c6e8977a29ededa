@@ -1,0 +1,52 @@
+src/modules/Automation/useCases/automation/projectBatchSendState.ts
+  s_35b9801a6d6336::t_76e80cfa16a6ff 1-57
+  s_35b9801a6d6336::t_fba09487773ee3 58-60
+src/modules/Automation/AGENTS.md
+  s_eec9d24f84ae15::t_247ac7dc3f0bf7 22
+src/modules/Automation/handlers/automation/automationPointSnapshotsMatch.ts
+  s_126e3d478b4f75::t_01bf600adc0253 22
+src/modules/Automation/handlers/automation/handleRemoveAutomationLane.ts
+  s_eec9d24f84ae15::t_3dd3349f93aa02 2,11,21-45,80,107
+src/modules/Automation/handlers/automation/handleAutomateParameterRange.ts
+  s_35b9801a6d6336::t_3e9ad1747e3b92 7,22-34,50,53-67,73-77,80-82,169,185,199-203
+src/modules/Automation/handlers/automation/handleAutomateSendRanges.ts
+  s_35b9801a6d6336::t_c98eb4c5c7b215 7,37
+src/modules/Automation/handlers/automation/handleRestoreAutomationLanePoints.ts
+  s_35b9801a6d6336::t_52cbdaea4d3e37 75-78
+src/modules/Automation/useCases/__tests__/automateParameterRange.spec.ts
+  s_35b9801a6d6336::t_8e668d34fea2fa 13,161-162,857-1037
+src/modules/Automation/useCases/automation/planParameterRangeWrite.ts
+  s_35b9801a6d6336::t_5a1624e995a0dd 14,23,79-84,96-97,101,140-144,153,167-219,361-365,373,377-380
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e9dd506713c94ff1bdc153964c6e8977a29ededa",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
