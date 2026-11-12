@@ -143,7 +143,9 @@ export function runCheckpointSample(
         identity: (daemonPid) => command('ps', ['-p', String(daemonPid), '-o', 'uid=,lstart='])?.slice(0, 1024) ?? null,
     });
     observation.daemonLog = daemonLog;
-    if (daemonLog.pid !== undefined && daemonLog.identity !== undefined) {
+    if (daemonLog.status === 'available') {
+        observation.receiver = { status: 'matched', pid: daemonLog.pid, identity: daemonLog.identity };
+    } else if (daemonLog.pid !== undefined && daemonLog.identity !== undefined) {
         observation.receiver = { status: 'matched', pid: daemonLog.pid, identity: daemonLog.identity };
     } else {
         observation.receiver = { status: 'unavailable', reason: daemonLog.reason };

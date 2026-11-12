@@ -105,14 +105,11 @@ export function checkpointDaemonLog(request: DaemonLogRequest): DaemonLogResult 
     }
     const identity = request.identity(record.pid);
     const match = identity?.trim().match(/^(\d+)\s+(.+)$/);
-    const start = match ? Date.parse(match[2]) : NaN;
-    if (
-        !identity ||
-        !match ||
-        Number(match[1]) !== request.uid ||
-        !Number.isFinite(start) ||
-        Math.abs(start - record.startedAtMs) >= 2000
-    ) {
+    if (!identity || !match || match[1] === undefined || match[2] === undefined) {
+        return { status: 'unavailable', reason: 'daemon process uid or start identity does not match' };
+    }
+    const start = Date.parse(match[2]);
+    if (Number(match[1]) !== request.uid || !Number.isFinite(start) || Math.abs(start - record.startedAtMs) >= 2000) {
         return { status: 'unavailable', reason: 'daemon process uid or start identity does not match' };
     }
     const log = readBounded(join(request.logDirectory, `${record.pid}.log`), 64 * 1024, true);
