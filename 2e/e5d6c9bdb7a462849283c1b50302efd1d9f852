@@ -1,0 +1,21 @@
+scripts/__tests__/oxlintWarnLevels.spec.ts
+  s_50cbc34e8b61c3::t_ca7cd49bd45860 67
+  s_50cbc34e8b61c3::t_fe665aad53fbf0 64-66,68-73,78,84-102
+  s_50cbc34e8b61c3::t_925701ce1b78da 39-42,44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2ee5d6c9bdb7a462849283c1b50302efd1d9f852",
+  "prompts": {},
+  "sessions": {
+    "s_50cbc34e8b61c3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3ccafa79-c9ba-491d-83f4-7ab63651b7ac",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
