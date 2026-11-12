@@ -141,3 +141,35 @@ it('records production setup before a blocked test module can be collected', asy
         rmSync(fixture, { recursive: true, force: true });
     }
 }, 30_000);
+
+it('keeps builtin spawn interception available after production worker setup', () => {
+    const fixture = mkdtempSync(join(root, 'scripts/__tests__/vitest-progress-'));
+    try {
+        const spec = join(fixture, 'interception.spec.ts');
+        writeFileSync(
+            spec,
+            `import { spawnSync } from 'node:child_process';
+import { afterAll, expect, it, vi } from 'vitest';
+const { restore } = vi.hoisted(() => {
+    const builtin = process.getBuiltinModule('node:child_process');
+    const original = builtin.spawnSync;
+    builtin.spawnSync = () => { throw new Error('intercepted safe echo'); };
+    return { restore: () => { builtin.spawnSync = original; } };
+});
+afterAll(restore);
+it('intercepts safe echo', () => {
+    expect(() => spawnSync('echo', ['probe'])).toThrow('intercepted safe echo');
+});
+`
+        );
+        const result = spawnSync(process.execPath, [join(root, 'scripts/runVitestZeroTestGuard.ts'), spec], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, SOURDAW_VITEST_DIAGNOSTICS_DIR: fixture },
+        });
+        expect(result.status, result.stdout + result.stderr).toBe(0);
+        expect(result.stdout).toContain('1 passed');
+    } finally {
+        rmSync(fixture, { recursive: true, force: true });
+    }
+}, 30_000);
