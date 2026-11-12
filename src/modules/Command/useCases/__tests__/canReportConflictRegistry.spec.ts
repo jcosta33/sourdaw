@@ -8,6 +8,7 @@ import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandl
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import {
     defaultTrackState,
@@ -436,7 +437,44 @@ function createFermenterConflictFixture(): DivergedFixture {
             }
             const inverse = entry.inverseAction;
             const handler = getCommandHandler(inverse);
-            expect(handler?.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
+            if (!handler) {
+                throw new Error('Expected the registered Fermenter handler');
+            }
+            expect(handler.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
+            const rawBeforeValidProbe = JSON.stringify(getCrdtDoc('root'));
+            const projectionBeforeValidProbe = structuredClone(trackStore.value);
+            const historyBeforeValidProbe = structuredClone(undoStore.value);
+            await act(async () => {
+                const transaction = runWithAutomergeStorageTransaction(undefined, () => handler.execute(inverse));
+                let releaseProof: (() => void) | undefined;
+                try {
+                    if (transaction.status === 'threw') {
+                        throw transaction.error;
+                    }
+                    const result = await transaction.value;
+                    releaseProof = result?.commitValidation?.release;
+                    expect(result?.status).toBe('written');
+                    if (!result?.commitValidation) {
+                        throw new Error('Expected a real owned inverse publication proof');
+                    }
+                    expect(result.commitValidation.beforeCommit()).toBeNull();
+                    expect(trackStore.value?.tracks[0]?.devices[0]?.deviceState).toBeUndefined();
+                    expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues.filterCutoff).toBe(600);
+                    expect(JSON.stringify(getCrdtDoc('root'))).toBe(rawBeforeValidProbe);
+                    expect(undoStore.value).toEqual(historyBeforeValidProbe);
+                } finally {
+                    try {
+                        releaseProof?.();
+                    } finally {
+                        transaction.abort();
+                    }
+                }
+            });
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(rawBeforeValidProbe);
+            expect(trackStore.value).toEqual(projectionBeforeValidProbe);
+            expect(undoStore.value).toEqual(historyBeforeValidProbe);
+            expect(audio).toHaveBeenCalledOnce();
+            expect(handler.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
             const published = hydrateFermenterFromProject(deviceId);
             if (!published) {
                 throw new Error('Expected the committed patch before raw divergence');
@@ -463,6 +501,24 @@ function createFermenterConflictFixture(): DivergedFixture {
                 expect(undoStore.value).toEqual(historyBeforeRefusal);
                 expect(audio).toHaveBeenCalledOnce();
             };
+            const divergedTransaction = runWithAutomergeStorageTransaction(undefined, () => handler.execute(inverse));
+            let releaseDivergedProof: (() => void) | undefined;
+            try {
+                if (divergedTransaction.status === 'threw') {
+                    throw divergedTransaction.error;
+                }
+                const result = await divergedTransaction.value;
+                releaseDivergedProof = result?.commitValidation?.release;
+                expect(result).toEqual({ status: 'conflict' });
+                verifyNonEffects();
+            } finally {
+                try {
+                    releaseDivergedProof?.();
+                } finally {
+                    divergedTransaction.abort();
+                }
+            }
+            verifyNonEffects();
             return inverse;
         },
         verifyRefusalNonEffects: () => verifyNonEffects(),
