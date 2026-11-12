@@ -1,0 +1,43 @@
+scripts/nativeCommand.ts
+  s_eec9d24f84ae15::t_4360efa4c40f32 3-4,11,14,24,31,33-39,41-44,49,66-67,97-99,101,118,124,144,151,176,181-182,197,211-219,223-227,231-232,234-237,264-266,287,290,301,304-306,332
+  s_eec9d24f84ae15::t_be9d3fac535062 12-13,15-17,100,127,198-210,220-222,228-230,233,302-303
+scripts/__tests__/verifyNativeTransportMutations.spec.ts
+  s_eec9d24f84ae15::t_93e489d7b5ed67 452-455,1081-1083
+  s_eec9d24f84ae15::t_980044499e14a6 1079-1080
+  s_eec9d24f84ae15::t_8fde4b1b866068 444,1075-1078
+  s_eec9d24f84ae15::t_e0fcff82edd92f 435-436,445-446,448-451,456-457,567,985-990,1042-1044,1070,1072-1074
+  s_eec9d24f84ae15::t_c4745854c30879 419-422,447,1084
+scripts/processSnapshot.ts
+  s_eec9d24f84ae15::t_4360efa4c40f32 1-12,14-29,33-40,42-45,48-57,59-62
+  s_9307cedd8951f1::t_c030916121b00e 13,30-32,41,46-47,58
+scripts/verifyNativeTransportMutations.ts
+  s_eec9d24f84ae15::t_4360efa4c40f32 59,71,131,190,201,263-272,463
+  s_eec9d24f84ae15::t_258a06a8e7dcba 51-58,60
+scripts/__tests__/processSnapshot.spec.ts
+  s_eec9d24f84ae15::t_8fde4b1b866068 8
+  s_eec9d24f84ae15::t_d631288fdfb236 1-7,9-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "329792804bf39a1001bdab3a072b883bf62eaca0",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
