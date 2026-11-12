@@ -212,9 +212,10 @@ function observeNativeCommand(input: NativeCommandObservation): void {
     const processDiagnostic: ProcessDiagnostic = { groupId: child.pid, timeline: [], omittedEvents: 0 };
     const snapshot = (): ProcessGroupSnapshot => {
         try {
-            return child.pid === undefined
-                ? { status: 'unavailable' }
-                : (ports.snapshot ?? captureProcessGroupSnapshot)(child.pid);
+            if (child.pid === undefined) {
+                return { status: 'unavailable' };
+            }
+            return (ports.snapshot ?? captureProcessGroupSnapshot)(child.pid);
         } catch {
             return { status: 'unavailable' };
         }
