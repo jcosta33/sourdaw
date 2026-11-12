@@ -1,0 +1,40 @@
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_3c91dcbb840566::t_af55ae8ea5518e 128-135,142-143,145-146
+  s_3c91dcbb840566::t_e81514dd2b33c7 136-137,144
+  s_3c91dcbb840566::t_c6409fa0cabb18 138-141
+src/modules/AiRuntime/useCases/__tests__/vibeRunInitialBaselines.spec.ts
+  s_3c91dcbb840566::t_ddb762fcb31b3b 561,565-566,595,597,613-615
+  s_3c91dcbb840566::t_adfb14be8b16ee 1192-1193,1283-1284,1325-1326,1328-1329,1354-1356
+  s_3c91dcbb840566::t_8383c689ab9350 155-166,395,1081,1083,1125-1126
+  s_3c91dcbb840566::t_55e212238ea656 748,753-754
+  s_3c91dcbb840566::t_f5238d7980db22 434-454,826-827,1034-1035,1039,1045-1046,1054,1073-1074,1077
+  s_3c91dcbb840566::t_4afdcaa8a755ef 22,27
+src/modules/AiRuntime/useCases/vibeRun/collectVibeRunInitialBaselines.ts
+  s_3c91dcbb840566::t_a069ced0f27406 14-18
+  s_3c91dcbb840566::t_af55ae8ea5518e 124-125
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  s_3c91dcbb840566::t_a069ced0f27406 22
+  s_3c91dcbb840566::t_57dc55a599ad08 23-25,370-371
+src/modules/AiRuntime/useCases/__tests__/vibeRunRealProject.spec.ts
+  s_3c91dcbb840566::t_e81514dd2b33c7 21,187,204-207,209-220,223-224
+  s_3c91dcbb840566::t_c9407e3967a839 5-10,12,14,18,22-25,87-88,153-160,174-175,185,197,199-203,208,221-222
+  s_3c91dcbb840566::t_d999fef4d20b33 198
+  s_3c91dcbb840566::t_72b4e3c22a07f1 196
+  s_3c91dcbb840566::t_9ce1e19d2fa93a 176-178,186,188-195,225-244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2cd2fb1fb82cc0f15a28136ec954b720c4e22736",
+  "prompts": {},
+  "sessions": {
+    "s_3c91dcbb840566": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1058f26-f2e9-46cf-af40-6e3b7eafe1df",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
