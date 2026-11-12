@@ -10,11 +10,14 @@ Lanes predating the launcher or trailing `main` can publish and deliver without 
 
 The launcher imports only Node builtins, so no repository module is evaluated before its check.
 It pins the commit GitHub reports for `main`, read with `git ls-remote` over the explicit public HTTPS
-URL. It never reads the local `refs/remotes/origin/main` or the `origin` remote, which any lane can
-rewrite. Its `ls-remote` and fetch ignore global and system Git config. Their `-c` overrides beat
-repository config for hooks, fsmonitor, TLS verification, proxy, credential helper and askpass. A
-repository `insteadOf` that rewrites that URL refuses, because no override can undo it. Any URL-scoped
-`http.<url>.*` setting refuses for the same reason. Every failure refuses; there is no offline mode.
+URL. It never pins the local `refs/remotes/origin/main` or the `origin` remote, which any lane can
+rewrite. Its `ls-remote` and fetch never read the shared repository's config, because any lane can
+plant transport keys there. They run in a fresh bare repository the launcher creates and removes,
+with global and system config ignored, so the only config read is the one the launcher writes. That
+repository shares the primary's object store, so the fetched objects land where later reads find them.
+Objects are content-addressed, so a planted object cannot pass for the pinned commit. The primary's
+tracking ref seeds the fetch only as a negotiation hint, never as the pin. After verification the
+launcher sets the tracking ref to the pinned commit. Every failure refuses; there is no offline mode.
 
 ## Running the snapshot
 

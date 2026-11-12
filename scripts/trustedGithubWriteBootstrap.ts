@@ -6222,14 +6222,21 @@ function commandRequiresTrustedPowerShell(
  * `refs/remotes/origin/main` and the `origin` URL live in the shared repository any lane can write, so
  * resolving either would let a lane choose the code that runs beside an App key. The launcher asks
  * GitHub by explicit URL and pins the reported SHA; the fetch only brings that commit's objects, which
- * are content-addressed, so a lane cannot forge them, and it refreshes the tracking ref for humans.
+ * are content-addressed, so a lane cannot forge them.
  *
- * Both network calls run under the scrubbed read environment, which ignores global and system config
- * and prompts, plus `-c` overrides that beat the repository config for every transport setting a lane
- * could plant: hooks (the fetch runs the reference-transaction hook), fsmonitor, TLS verification,
- * proxy, credential helpers and askpass programs. URL rewrites (`url.<base>.insteadOf`) and URL-scoped `http.<url>.*`
- * settings cannot be overridden that way — the former is additive, the latter outranks a plain key —
- * so a rewrite of the origin URL, or any URL-scoped HTTP setting, refuses before the network is touched.
+ * The shared repository's config is lane-writable too, and plain keys in it (`http.curloptResolve`,
+ * `http.sslCAInfo`, `url.<base>.insteadOf`, hooks) steer a transport no denylist can enumerate. So the
+ * network calls never run in that repository: they run in a fresh bare repository the launcher creates
+ * and removes, whose config it writes itself, under the scrubbed read environment that ignores global
+ * and system config. Its object directory is the primary's store, so the fetched objects land where
+ * every later read finds them. Its one seed ref, the primary's tracking ref when that names a local
+ * commit, is only a negotiation hint so the fetch need not download the whole history; it is never the
+ * pin. Automatic gc and maintenance stay off because that repository's refs reach only main, so a gc
+ * there would prune the primary's store. `core.askPass` stays empty because the scrubbed environment
+ * still carries `SSH_ASKPASS`, and an anonymous read must refuse rather than prompt.
+ *
+ * Once the pinned commit is verified, the primary's tracking ref is set to it with hooks off, so
+ * commands that read `origin/main` in the primary see the commit they execute.
  *
  * Every failure refuses. There is no offline mode: each trusted command writes to GitHub anyway, so a
  * run that cannot reach it has nothing to do, and running a stale or lane-chosen snapshot is exactly
@@ -6246,22 +6253,15 @@ export type OriginFetchSpawn = (
 /** The public repository the launcher pins; it is read anonymously, so no credential is involved. */
 export const GITHUB_ORIGIN_URL = 'https://github.com/jcosta33/sourdaw.git';
 
-const ORIGIN_NETWORK_OVERRIDES = [
-    '-c',
-    'core.hooksPath=/dev/null',
-    '-c',
-    'core.fsmonitor=false',
-    '-c',
-    'http.sslVerify=true',
-    '-c',
-    'http.proxy=',
-    '-c',
-    'credential.helper=',
-    '-c',
-    'core.askPass=',
-];
+const PINNED_REF = 'refs/pinned/main';
+const SEED_REF = 'refs/pinned/seed';
 
-const UNOVERRIDABLE_TRANSPORT_CONFIG = '^(url\\..*\\.insteadof|http\\..+\\..+)$';
+const PIN_REPOSITORY_CONFIG: readonly (readonly [string, string])[] = [
+    ['gc.auto', '0'],
+    ['maintenance.auto', 'false'],
+    ['fetch.writeCommitGraph', 'false'],
+    ['core.askPass', ''],
+];
 
 function refuseOriginPin(reason: string): never {
     throw new Error(
@@ -6276,24 +6276,6 @@ function spawnDiagnostic(result: { status: number | null; stderr: string | undef
         : `${label} failed: ${detail}`;
 }
 
-/**
- * Reads `git config -z` entries (`key\nvalue\0`). A URL-scoped `http.<url>.*` key refuses outright,
- * because its URL matching has wildcard and normalization rules this check will not reimplement. An
- * `insteadOf` refuses when its value prefixes the origin URL, which is when Git would rewrite it; a
- * rewrite of some other URL, such as one a publishing fixture points at a local remote, cannot
- * redirect this pin.
- */
-function assertNoOriginRewrite(entries: string): void {
-    for (const entry of entries.split('\0').filter((candidate) => candidate !== '')) {
-        const separator = entry.indexOf('\n');
-        const key = separator === -1 ? entry : entry.slice(0, separator);
-        const value = separator === -1 ? '' : entry.slice(separator + 1);
-        if (!key.startsWith('url.') || GITHUB_ORIGIN_URL.startsWith(value)) {
-            refuseOriginPin(`repository config rewrites or scopes the remote transport (${key})`);
-        }
-    }
-}
-
 function reportedMainCommit(stdout: string | undefined): string {
     const lines = (stdout ?? '').split('\n').filter((line) => line !== '');
     const match = lines.length === 1 ? /^([0-9a-f]{40})\trefs\/heads\/main$/u.exec(lines[0] ?? '') : null;
@@ -6304,40 +6286,84 @@ function reportedMainCommit(stdout: string | undefined): string {
 }
 
 export function fetchOriginMain(
-    input: { gitPath: string; primaryRoot: string },
+    input: { gitPath: string; primaryRoot: string; commonDir: string },
     spawn: OriginFetchSpawn = (command, args, options) => spawnSync(command, args, { ...options, encoding: 'utf8' })
 ): OriginFetchOutcome {
-    const env = trustedGitReadEnv();
-    const git = (args: string[]) => spawn(input.gitPath, args, { cwd: input.primaryRoot, env });
+    const pinRepository = mkdtempSync(join(tmpdir(), 'sourdaw-origin-pin-'));
+    try {
+        const pinEnv: NodeJS.ProcessEnv = {
+            ...trustedGitReadEnv(),
+            GIT_CONFIG_NOSYSTEM: '1',
+            GIT_DIR: pinRepository,
+            GIT_OBJECT_DIRECTORY: join(input.commonDir, 'objects'),
+        };
+        const pinGit = (args: string[]) => spawn(input.gitPath, args, { cwd: pinRepository, env: pinEnv });
+        const primaryGit = (args: string[]) =>
+            spawn(input.gitPath, args, { cwd: input.primaryRoot, env: trustedGitReadEnv() });
+        const required = (args: string[], label: string) => {
+            const result = pinGit(args);
+            if (result.status !== 0) {
+                refuseOriginPin(spawnDiagnostic(result, label));
+            }
+            return result;
+        };
 
-    const transport = git(['config', '-z', '--get-regexp', UNOVERRIDABLE_TRANSPORT_CONFIG]);
-    if (transport.status === 0) {
-        assertNoOriginRewrite(transport.stdout ?? '');
-    } else if (transport.status !== 1 || (transport.stdout ?? '') !== '') {
-        refuseOriginPin(spawnDiagnostic(transport, 'reading the repository transport config'));
-    }
+        required(['init', '--quiet', '--bare', '--template='], 'creating the pin repository');
+        for (const [key, value] of PIN_REPOSITORY_CONFIG) {
+            required(['config', key, value], 'configuring the pin repository');
+        }
+        seedNegotiationHint(primaryGit, pinGit);
 
-    const listed = git([...ORIGIN_NETWORK_OVERRIDES, 'ls-remote', GITHUB_ORIGIN_URL, 'refs/heads/main']);
-    if (listed.status !== 0) {
-        refuseOriginPin(spawnDiagnostic(listed, 'git ls-remote'));
-    }
-    const commit = reportedMainCommit(listed.stdout);
+        const commit = reportedMainCommit(
+            required(['ls-remote', GITHUB_ORIGIN_URL, 'refs/heads/main'], 'git ls-remote').stdout
+        );
+        required(
+            [
+                'fetch',
+                '--no-tags',
+                '--no-auto-gc',
+                '--no-write-fetch-head',
+                GITHUB_ORIGIN_URL,
+                `+refs/heads/main:${PINNED_REF}`,
+            ],
+            'git fetch'
+        );
+        required(['cat-file', '-e', `${commit}^{commit}`], `verifying ${commit}`);
 
-    const fetched = git([
-        ...ORIGIN_NETWORK_OVERRIDES,
-        'fetch',
-        '--no-tags',
-        GITHUB_ORIGIN_URL,
-        '+refs/heads/main:refs/remotes/origin/main',
-    ]);
-    if (fetched.status !== 0) {
-        refuseOriginPin(spawnDiagnostic(fetched, 'git fetch'));
+        const tracked = primaryGit([
+            '-c',
+            'core.hooksPath=/dev/null',
+            'update-ref',
+            'refs/remotes/origin/main',
+            commit,
+        ]);
+        if (tracked.status !== 0) {
+            refuseOriginPin(spawnDiagnostic(tracked, 'updating the tracking ref'));
+        }
+        return { commit };
+    } finally {
+        rmSync(pinRepository, { recursive: true, force: true });
     }
-    const verified = git(['cat-file', '-e', `${commit}^{commit}`]);
-    if (verified.status !== 0) {
-        refuseOriginPin(spawnDiagnostic(verified, `verifying ${commit}`));
+}
+
+/**
+ * Seeds the pin repository with the primary's tracking ref so the fetch negotiates from it. A ref that
+ * does not resolve to a commit in the store is simply not offered; the hint can only shrink the
+ * download, because the pin is the SHA GitHub reports and the fetch must still bring that commit.
+ */
+function seedNegotiationHint(
+    primaryGit: (args: string[]) => ReturnType<OriginFetchSpawn>,
+    pinGit: (args: string[]) => ReturnType<OriginFetchSpawn>
+): void {
+    const hint = primaryGit(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main^{commit}']);
+    const seed = (hint.stdout ?? '').trim();
+    if (hint.status !== 0 || !/^[0-9a-f]{40}$/u.test(seed)) {
+        return;
     }
-    return { commit };
+    if (pinGit(['cat-file', '-e', `${seed}^{commit}`]).status !== 0) {
+        return;
+    }
+    pinGit(['update-ref', SEED_REF, seed]);
 }
 
 export function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {

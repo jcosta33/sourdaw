@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -2957,12 +2957,13 @@ describe.each([
 });
 
 /**
- * The pin is the commit GitHub reports for main, never a local ref: `refs/remotes/origin/main` and the
- * remote URL live in the shared repository a lane can write, so the launcher asks GitHub by explicit
- * URL, with every lane-reachable transport setting overridden or refused, and fails closed.
+ * The pin is the commit GitHub reports for main, never a local ref or the shared repository's config:
+ * `refs/remotes/origin/main`, the remote URL and every transport key live where a lane can write, so
+ * the launcher asks GitHub by explicit URL from a fresh repository of its own and fails closed.
  */
 describe('fetchOriginMain', () => {
     const pinned = 'e'.repeat(40);
+    const seed = 'f'.repeat(40);
     type Call = { args: string[]; cwd: string; env: NodeJS.ProcessEnv };
     type Reply = { status: number | null; stdout?: string; stderr?: string };
 
@@ -2979,73 +2980,85 @@ describe('fetchOriginMain', () => {
     }
 
     function healthy(args: string[]): Reply {
-        if (args.includes('--get-regexp')) {
-            return { status: 1 };
-        }
         if (args.includes('ls-remote')) {
             return { status: 0, stdout: `${pinned}\trefs/heads/main\n` };
+        }
+        if (args[0] === 'rev-parse') {
+            return { status: 1 };
         }
         return { status: 0 };
     }
 
-    const input = { gitPath: '/usr/bin/git', primaryRoot: '/repo' };
+    const input = { gitPath: '/usr/bin/git', primaryRoot: '/repo', commonDir: '/repo/.git' };
 
-    it('pins the commit GitHub reports, fetched by explicit URL under lane-proof overrides', () => {
+    it('pins the commit GitHub reports from a fresh repository sharing only the object store', () => {
         const { spawn, calls } = scripted(healthy);
 
         expect(fetchOriginMain(input, spawn)).toEqual({ commit: pinned });
 
-        const overrides = [
-            '-c',
-            'core.hooksPath=/dev/null',
-            '-c',
-            'core.fsmonitor=false',
-            '-c',
-            'http.sslVerify=true',
-            '-c',
-            'http.proxy=',
-            '-c',
-            'credential.helper=',
-            '-c',
-            'core.askPass=',
-        ];
         expect(calls.map(({ args }) => args)).toEqual([
-            ['config', '-z', '--get-regexp', '^(url\\..*\\.insteadof|http\\..+\\..+)$'],
-            [...overrides, 'ls-remote', GITHUB_ORIGIN_URL, 'refs/heads/main'],
-            [...overrides, 'fetch', '--no-tags', GITHUB_ORIGIN_URL, '+refs/heads/main:refs/remotes/origin/main'],
+            ['init', '--quiet', '--bare', '--template='],
+            ['config', 'gc.auto', '0'],
+            ['config', 'maintenance.auto', 'false'],
+            ['config', 'fetch.writeCommitGraph', 'false'],
+            ['config', 'core.askPass', ''],
+            ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main^{commit}'],
+            ['ls-remote', GITHUB_ORIGIN_URL, 'refs/heads/main'],
+            [
+                'fetch',
+                '--no-tags',
+                '--no-auto-gc',
+                '--no-write-fetch-head',
+                GITHUB_ORIGIN_URL,
+                '+refs/heads/main:refs/pinned/main',
+            ],
             ['cat-file', '-e', `${pinned}^{commit}`],
+            ['-c', 'core.hooksPath=/dev/null', 'update-ref', 'refs/remotes/origin/main', pinned],
         ]);
-        for (const { cwd, env } of calls) {
-            expect(cwd).toBe('/repo');
+        const pinCalls = calls.filter(({ cwd }) => cwd !== '/repo');
+        const pinRepository = pinCalls[0]?.env.GIT_DIR;
+        expect(pinRepository).toBeDefined();
+        for (const { cwd, env } of pinCalls) {
+            expect(cwd).toBe(pinRepository);
             expect(env).toMatchObject({
+                GIT_DIR: pinRepository,
+                GIT_OBJECT_DIRECTORY: '/repo/.git/objects',
+                GIT_CONFIG_NOSYSTEM: '1',
                 GIT_CONFIG_GLOBAL: '/dev/null',
                 GIT_CONFIG_SYSTEM: '/dev/null',
                 GIT_TERMINAL_PROMPT: '0',
                 GIT_NO_REPLACE_OBJECTS: '1',
             });
         }
+        expect(pinCalls.map(({ args }) => args[0])).toEqual([
+            'init',
+            'config',
+            'config',
+            'config',
+            'config',
+            'ls-remote',
+            'fetch',
+            'cat-file',
+        ]);
+        expect(existsSync(pinRepository ?? '')).toBe(false);
     });
 
     it.each([
-        [
-            'a rewrite of the origin URL',
-            { status: 0, stdout: 'url.https://evil.example/.insteadof\nhttps://github.com/\0' },
-        ],
-        ['a URL-scoped HTTP setting', { status: 0, stdout: 'http.https://github.com/.proxy\nhttp://evil.example\0' }],
-        ['an unreadable repository config', { status: 128, stderr: 'fatal: bad config line 3' }],
-    ])('refuses %s without touching the network', (_label, reply) => {
-        const { spawn, calls } = scripted((args) => (args.includes('--get-regexp') ? reply : healthy(args)));
-        expect(() => fetchOriginMain(input, spawn)).toThrow(/cannot pin origin\/main from GitHub: .*refusing to run/);
-        expect(calls).toHaveLength(1);
-    });
+        ['a local commit', { status: 0 }, true],
+        ['a commit absent from the store', { status: 1 }, false],
+    ])('offers the tracking ref as a negotiation hint only when it names %s', (_label, present, offered) => {
+        const { spawn, calls } = scripted((args) => {
+            if (args[0] === 'rev-parse') {
+                return { status: 0, stdout: `${seed}\n` };
+            }
+            if (args[0] === 'cat-file' && args[2] === `${seed}^{commit}`) {
+                return present;
+            }
+            return healthy(args);
+        });
 
-    it('pins through a rewrite that cannot apply to the origin URL', () => {
-        const { spawn } = scripted((args) =>
-            args.includes('--get-regexp')
-                ? { status: 0, stdout: 'url.file:///fixture/remote.git.insteadof\nhttps://github.com/other/repo.git\0' }
-                : healthy(args)
-        );
         expect(fetchOriginMain(input, spawn)).toEqual({ commit: pinned });
+        expect(calls.some(({ args }) => args.join(' ') === `update-ref refs/pinned/seed ${seed}`)).toBe(offered);
     });
 
     it.each([
@@ -3057,55 +3070,90 @@ describe('fetchOriginMain', () => {
     ])('refuses %s and never falls back to the local ref', (_label, reply) => {
         const { spawn, calls } = scripted((args) => (args.includes('ls-remote') ? reply : healthy(args)));
         expect(() => fetchOriginMain(input, spawn)).toThrow(/cannot pin origin\/main from GitHub/);
-        expect(calls.some(({ args }) => args.includes('rev-parse') || args.includes('fetch'))).toBe(false);
+        expect(calls.some(({ args }) => args.includes('fetch') || args.includes('update-ref'))).toBe(false);
     });
 
     it.each([
+        ['an uncreatable pin repository', (args: string[]) => args[0] === 'init'],
         ['a failed fetch', (args: string[]) => args.includes('fetch')],
         ['a commit the fetch did not bring', (args: string[]) => args[0] === 'cat-file'],
+        ['an unwritable tracking ref', (args: string[]) => args.includes('update-ref')],
     ])('refuses %s', (_label, failing) => {
         const { spawn } = scripted((args) => (failing(args) ? { status: 1, stderr: 'boom' } : healthy(args)));
         expect(() => fetchOriginMain(input, spawn)).toThrow(/cannot pin origin\/main from GitHub/);
     });
 
-    it('resolves the reported commit even when the local origin/main ref points at a lane commit', () => {
+    it('pins the true origin commit whatever transport config the shared repository plants', () => {
         const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-origin-pin-')));
         const gitPath = resolveTrustedExecutable('git');
-        const git = (...args: string[]) => {
+        const gitAt = (cwd: string, ...args: string[]) => {
             const result = spawnSync(gitPath, args, {
-                cwd: root,
+                cwd,
                 encoding: 'utf8',
-                env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+                env: {
+                    ...process.env,
+                    GIT_CONFIG_GLOBAL: '/dev/null',
+                    GIT_CONFIG_NOSYSTEM: '1',
+                    GIT_AUTHOR_NAME: 'Fixture',
+                    GIT_AUTHOR_EMAIL: 'fixture@example.test',
+                    GIT_COMMITTER_NAME: 'Fixture',
+                    GIT_COMMITTER_EMAIL: 'fixture@example.test',
+                },
             });
             expect(result.status, result.stderr).toBe(0);
             return result.stdout.trim();
         };
         try {
-            git('init', '--quiet', '-b', 'main');
-            git('config', 'user.name', 'Fixture');
-            git('config', 'user.email', 'fixture@example.com');
-            git('commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'reported main');
-            const reported = git('rev-parse', 'HEAD');
-            git('commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'lane commit');
-            const lane = git('rev-parse', 'HEAD');
-            git('update-ref', 'refs/remotes/origin/main', lane);
-            // GitHub is faked; config reading and object verification run real git in the fixture.
+            const primary = join(root, 'primary');
+            const trueOrigin = join(root, 'true.git');
+            const forgedOrigin = join(root, 'forged.git');
+            const hookRan = join(root, 'hook-ran');
+            gitAt(root, 'init', '--quiet', '-b', 'main', primary);
+            gitAt(primary, 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'base');
+            const base = gitAt(primary, 'rev-parse', 'HEAD');
+            gitAt(root, 'init', '--quiet', '--bare', trueOrigin);
+            gitAt(root, 'init', '--quiet', '--bare', forgedOrigin);
+            gitAt(primary, 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'true main');
+            const truth = gitAt(primary, 'rev-parse', 'HEAD');
+            gitAt(primary, 'push', '--quiet', trueOrigin, `${truth}:refs/heads/main`);
+            gitAt(primary, 'commit', '--quiet', '--allow-empty', '--no-gpg-sign', '-m', 'forged main');
+            const forged = gitAt(primary, 'rev-parse', 'HEAD');
+            gitAt(primary, 'push', '--quiet', forgedOrigin, `${forged}:refs/heads/main`);
+            gitAt(primary, 'update-ref', 'refs/heads/main', base);
+            gitAt(primary, 'update-ref', 'refs/remotes/origin/main', base);
+            gitAt(primary, 'reflog', 'expire', '--expire=now', '--all');
+            gitAt(primary, 'gc', '--quiet', '--prune=now');
+            expect(spawnSync(gitPath, ['cat-file', '-e', truth], { cwd: primary }).status).not.toBe(0);
+            // Everything a lane can plant in the shared config: a rewrite of the URL the launcher
+            // asks, a forced resolve and CA for the GitHub host, and a hook the fetch would run.
+            const trueUrl = pathToFileURL(trueOrigin).href;
+            gitAt(primary, 'config', `url.${pathToFileURL(forgedOrigin).href}.insteadOf`, trueUrl);
+            gitAt(primary, 'config', 'http.curloptResolve', 'github.com:443:127.0.0.1');
+            gitAt(primary, 'config', 'http.sslCAInfo', join(root, 'lane-ca.pem'));
+            mkdirSync(join(root, 'hooks'));
+            writeFileSync(
+                join(root, 'hooks', 'reference-transaction'),
+                `#!/bin/sh\ntouch ${JSON.stringify(hookRan)}\n`
+            );
+            chmodSync(join(root, 'hooks', 'reference-transaction'), 0o700);
+            gitAt(primary, 'config', 'core.hooksPath', join(root, 'hooks'));
+            // GitHub is the local true origin; every git call is real.
             const spawn: OriginFetchSpawn = (command, args, options) => {
-                if (args.includes('ls-remote')) {
-                    return { status: 0, stdout: `${reported}\trefs/heads/main\n`, stderr: '' };
-                }
-                if (args.includes('fetch')) {
-                    return { status: 0, stdout: '', stderr: '' };
-                }
-                const result = spawnSync(command, args, { ...options, encoding: 'utf8' });
+                const result = spawnSync(
+                    command,
+                    args.map((arg) => (arg === GITHUB_ORIGIN_URL ? trueUrl : arg)),
+                    { ...options, encoding: 'utf8' }
+                );
                 return { status: result.status, stdout: result.stdout, stderr: result.stderr };
             };
 
-            expect(fetchOriginMain({ gitPath, primaryRoot: root }, spawn)).toEqual({ commit: reported });
-            expect(git('rev-parse', 'refs/remotes/origin/main')).toBe(lane);
-
-            git('config', 'url.https://evil.example/.insteadOf', GITHUB_ORIGIN_URL);
-            expect(() => fetchOriginMain({ gitPath, primaryRoot: root }, spawn)).toThrow(/rewrites/);
+            expect(fetchOriginMain({ gitPath, primaryRoot: primary, commonDir: join(primary, '.git') }, spawn)).toEqual(
+                { commit: truth }
+            );
+            expect(gitAt(primary, 'rev-parse', 'refs/remotes/origin/main')).toBe(truth);
+            expect(gitAt(primary, 'cat-file', '-t', truth)).toBe('commit');
+            expect(gitAt(primary, 'for-each-ref', '--format=%(refname)', 'refs/pinned')).toBe('');
+            expect(existsSync(hookRan)).toBe(false);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

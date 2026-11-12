@@ -4697,7 +4697,7 @@ describe('origin/main snapshot freshness (#4436)', () => {
         expect(oldHead).not.toBe(newHead);
 
         const pinned = fetchOriginMain(
-            { gitPath: 'git', primaryRoot: primary },
+            { gitPath: 'git', primaryRoot: primary, commonDir: join(primary, '.git') },
             redirectedSpawn(join(dirname(primary), 'origin.git'))
         );
 
@@ -4719,7 +4719,10 @@ describe('origin/main snapshot freshness (#4436)', () => {
         runGit(primary, ['update-ref', 'refs/remotes/origin/main', head]);
 
         expect(() =>
-            fetchOriginMain({ gitPath: 'git', primaryRoot: primary }, redirectedSpawn(join(fixtureRoot, 'missing.git')))
+            fetchOriginMain(
+                { gitPath: 'git', primaryRoot: primary, commonDir: join(primary, '.git') },
+                redirectedSpawn(join(fixtureRoot, 'missing.git'))
+            )
         ).toThrow(
             /cannot pin origin\/main from GitHub: git ls-remote failed: [\s\S]*; refusing to run a trusted write/
         );
@@ -4729,43 +4732,46 @@ describe('origin/main snapshot freshness (#4436)', () => {
     it('fetchOriginMain runs under the scrubbed read environment and refuses every failure shape', () => {
         const calls: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }[] = [];
         const pinned = 'f'.repeat(40);
+        const input = { gitPath: '/usr/bin/git', primaryRoot: '/repo', commonDir: '/repo/.git' };
         const spawn: OriginFetchSpawn = (command, args, options) => {
             calls.push({ command, args, cwd: options.cwd, env: options.env });
-            if (args.includes('--get-regexp')) {
+            if (args[0] === 'rev-parse') {
                 return { status: 1, stdout: '', stderr: '' };
             }
             return { status: 0, stdout: args.includes('ls-remote') ? `${pinned}\trefs/heads/main\n` : '', stderr: '' };
         };
-        expect(fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, spawn)).toEqual({ commit: pinned });
-        expect(calls.map(({ command, cwd }) => ({ command, cwd }))).toEqual(
-            Array.from({ length: 4 }, () => ({ command: '/usr/bin/git', cwd: '/repo' }))
-        );
+        expect(fetchOriginMain(input, spawn)).toEqual({ commit: pinned });
+        expect(calls.every(({ command }) => command === '/usr/bin/git')).toBe(true);
         // The ambient environment would carry a lane-reachable credential helper, proxy or askpass;
-        // the pin runs under the same scrubbed environment every launcher Git read uses.
-        for (const { env } of calls) {
-            expect(env).toEqual(trustedGitReadEnv());
+        // the pin runs under the same scrubbed environment every launcher Git read uses, and the
+        // network calls add only the launcher's own repository and the primary's object store.
+        for (const { cwd, env } of calls) {
+            if (cwd === '/repo') {
+                expect(env).toEqual(trustedGitReadEnv());
+            } else {
+                expect(env).toEqual({
+                    ...trustedGitReadEnv(),
+                    GIT_CONFIG_NOSYSTEM: '1',
+                    GIT_DIR: cwd,
+                    GIT_OBJECT_DIRECTORY: '/repo/.git/objects',
+                });
+            }
         }
 
-        const failing =
+        const failingLsRemote =
             (reply: { status: number | null; stderr: string | undefined }): OriginFetchSpawn =>
-            (_command, args) =>
-                args.includes('--get-regexp') ? { status: 1, stdout: '', stderr: '' } : { ...reply, stdout: '' };
-        expect(() =>
-            fetchOriginMain(
-                { gitPath: '/usr/bin/git', primaryRoot: '/repo' },
-                failing({ status: 128, stderr: 'fatal: remote error\n' })
-            )
-        ).toThrow('cannot pin origin/main from GitHub: git ls-remote failed: fatal: remote error;');
-        expect(() =>
-            fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, failing({ status: null, stderr: '' }))
-        ).toThrow('git ls-remote failed without diagnostics (exit signal)');
+            (command, args, options) =>
+                args.includes('ls-remote') ? { ...reply, stdout: '' } : spawn(command, args, options);
+        expect(() => fetchOriginMain(input, failingLsRemote({ status: 128, stderr: 'fatal: remote error\n' }))).toThrow(
+            'cannot pin origin/main from GitHub: git ls-remote failed: fatal: remote error;'
+        );
+        expect(() => fetchOriginMain(input, failingLsRemote({ status: null, stderr: '' }))).toThrow(
+            'git ls-remote failed without diagnostics (exit signal)'
+        );
         // A spawn-level failure (EMFILE, ENOENT) answers status null with stderr undefined; the
         // refusal must survive it rather than crash on .trim of undefined.
-        expect(() =>
-            fetchOriginMain(
-                { gitPath: '/usr/bin/git', primaryRoot: '/repo' },
-                failing({ status: null, stderr: undefined })
-            )
-        ).toThrow('git ls-remote failed without diagnostics (exit signal)');
+        expect(() => fetchOriginMain(input, failingLsRemote({ status: null, stderr: undefined }))).toThrow(
+            'git ls-remote failed without diagnostics (exit signal)'
+        );
     });
 });
