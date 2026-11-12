@@ -1,0 +1,33 @@
+scripts/__tests__/eslintConfig.spec.ts
+  s_db65665fc1d0c1::t_5d53c168f5bcab 136-141,144,146-152,154-157,160,173-174
+  s_db65665fc1d0c1::t_ef9972111ab9cd 142-143,158-159,161-172
+  s_db65665fc1d0c1::t_6e9ae093f30699 145,153
+eslint.config.mjs
+  s_db65665fc1d0c1::t_ce2fd30f431072 2687-2691
+  s_db65665fc1d0c1::t_f58706bb34ab66 2646,2652,2654-2660,2666-2667,2670,2672,3173-3185
+  s_76ccd61d453edf::t_6bafc68972d4aa 3186-3188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7b38d694b4b60c89884798d6fd89c570714aca7a",
+  "prompts": {},
+  "sessions": {
+    "s_76ccd61d453edf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "108ea70a-a924-42ce-b7b8-fd9c1012e902",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_db65665fc1d0c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f79ceb19-eb31-4445-8d19-e07aa8e75dd6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
