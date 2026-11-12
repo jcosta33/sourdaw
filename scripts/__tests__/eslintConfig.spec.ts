@@ -65,6 +65,10 @@ describe('ESLint configuration', () => {
         if (!config) {
             throw new Error('ESLint did not load the app configuration');
         }
+        expect(config.plugins['@tanstack/query']).toBeDefined();
+        expect(config.rules['@tanstack/query/exhaustive-deps']).toEqual([2]);
+        expect(config.rules['@tanstack/query/no-unstable-deps']).toEqual([2]);
+        expect(config.rules['@tanstack/query/stable-query-client']).toEqual([2]);
         const plugin = config.plugins.sourdaw;
         const parser = config.languageOptions.parser;
         expect(plugin).toBeDefined();

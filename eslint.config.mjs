@@ -18,7 +18,6 @@ import { dirname, resolve } from 'node:path';
 import eslintPluginReact from '@eslint-react/eslint-plugin';
 import eslintPluginComments from '@eslint-community/eslint-plugin-eslint-comments/configs';
 import eslintPluginStylistic from '@stylistic/eslint-plugin';
-import { defineConfig } from 'eslint/config';
 import { parseForESLint } from '@typescript-eslint/parser';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import eslintPluginImport, { createNodeResolver } from 'eslint-plugin-import-x';
@@ -724,11 +723,11 @@ const moduleSubgroupFolders = new Set(['Common', 'Supporting']);
  */
 function parseModulePath(modulePath) {
     const segments = modulePath.split('/').filter(Boolean);
-    if (segments.length === 0) {
+    const [firstSegment, secondSegment] = segments;
+    if (!firstSegment) {
         return null;
     }
 
-    const [firstSegment, secondSegment] = segments;
     if (moduleSubgroupFolders.has(firstSegment)) {
         if (!secondSegment) {
             return null;
@@ -753,7 +752,7 @@ function parseModulePath(modulePath) {
 function getModuleLocation(filename) {
     const normalizedFilename = normalizeFilePath(filename);
     const match = /^(.*\/src\/modules\/)(.+)$/.exec(normalizedFilename);
-    if (!match) {
+    if (!match?.[2]) {
         return null;
     }
 
@@ -817,7 +816,7 @@ function isSameModuleRepositoryReexportPath(filename, source) {
  */
 function getModuleImportLocation(filename, source) {
     const aliasMatch = /^#\/modules\/(.+)$/.exec(source);
-    if (aliasMatch) {
+    if (aliasMatch?.[1]) {
         return parseModulePath(aliasMatch[1]);
     }
 
@@ -863,7 +862,7 @@ const privatePresentationFolders = new Set(['components', 'context', 'hooks', 'r
 function getPrivateImportFolder(importPath) {
     const [firstSegment, secondSegment] = importPath.split('/');
 
-    if (privateModuleFolders.has(firstSegment)) {
+    if (firstSegment && privateModuleFolders.has(firstSegment)) {
         return firstSegment;
     }
 
@@ -932,7 +931,7 @@ function getDeepContractImportFolder(importPath) {
     const segments = importPath.split('/').filter(Boolean);
     const [firstSegment, secondSegment] = segments;
 
-    if (moduleContractFolders.has(firstSegment)) {
+    if (firstSegment && moduleContractFolders.has(firstSegment)) {
         if (segments.length > 1) {
             return firstSegment;
         }
@@ -983,7 +982,10 @@ function isStoresContractImportPath(importPath) {
         return false;
     }
 
-    return segments.length === 1 || (segments.length === 2 && /^index(?:\.[cm]?tsx?)?$/.test(secondSegment));
+    return (
+        segments.length === 1 ||
+        (segments.length === 2 && !!secondSegment && /^index(?:\.[cm]?tsx?)?$/.test(secondSegment))
+    );
 }
 
 /**
@@ -1390,6 +1392,9 @@ function getLiteralStringValue(node) {
 
     if (node?.type === AST_NODE_TYPES.TemplateLiteral && node.expressions.length === 0 && node.quasis.length === 1) {
         const [quasi] = node.quasis;
+        if (!quasi) {
+            return null;
+        }
         const cooked = quasi.value?.cooked;
         if (typeof cooked === 'string') {
             return cooked;
@@ -1497,6 +1502,7 @@ function createReactImportSourceVisitors(reportSource) {
     };
 }
 
+/** @satisfies {import('@typescript-eslint/utils').TSESLint.FlatConfig.Plugin} */
 const sourdawPlugin = {
     meta: {
         name: 'eslint-plugin-sourdaw',
@@ -2170,6 +2176,7 @@ const sourdawPlugin = {
                  * @returns {import('@typescript-eslint/utils').TSESLint.Scope.Variable | null}
                  */
                 function getResolvedVariable(identifier) {
+                    /** @type {import('@typescript-eslint/utils').TSESLint.Scope.Scope | null} */
                     let scope = sourceCode.getScope(identifier);
                     while (scope) {
                         const variable = scope.set.get(identifier.name);
@@ -2258,8 +2265,9 @@ const sourdawPlugin = {
                             return;
                         }
 
+                        const aliasName = node.id.name;
                         const variables = sourceCode.getDeclaredVariables(node);
-                        const aliasVariable = variables.find((variable) => variable.name === node.id.name);
+                        const aliasVariable = variables.find((variable) => variable.name === aliasName);
                         if (!aliasVariable) {
                             return;
                         }
@@ -2725,6 +2733,7 @@ const sourdawPlugin = {
     },
 };
 
+/** @type {import('@typescript-eslint/utils').TSESLint.FlatConfig.Config[]} */
 const sizeBaselineConfig = [];
 if (sizeBaselineFiles.length > 0) {
     sizeBaselineConfig.push({
@@ -2738,7 +2747,8 @@ if (sizeBaselineFiles.length > 0) {
     });
 }
 
-export default defineConfig(
+// ESLint's plugin types do not yet accept the TSESTree rule contexts used here.
+export default tseslint.config(
     // ─── Base configs ────────────────────────────────────────────────────────
     // Only configs whose rules oxlint 1.74 cannot run are kept here. Everything
     // oxlint covers (ESLint core/recommended, unicorn, promise, import-x,
@@ -2806,9 +2816,8 @@ export default defineConfig(
             '@stylistic': eslintPluginStylistic,
             '@typescript-eslint': tseslint.plugin,
             'import-x': eslintPluginImport,
-            'jsx-a11y-x': eslintPluginJsxA11yX,
+            'jsx-a11y-x': eslintPluginJsxA11yX.configs.recommended.plugins['jsx-a11y-x'],
             promise: eslintPluginPromise,
-            '@tanstack/query': eslintPluginQuery,
             sourdaw: sourdawPlugin,
         },
         languageOptions: {
