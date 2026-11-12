@@ -60,6 +60,7 @@ beforeEach(() => {
     });
     vi.mocked(setLoopRegion).mockReturnValue(true);
     vi.mocked(setLoopEnabled).mockReturnValue(true);
+    vi.mocked(seekPlayhead).mockResolvedValue(true);
 });
 
 describe('handleNavigateSection', () => {
@@ -117,10 +118,17 @@ describe('handleRehearseSection', () => {
     it.each([
         { loop: false, label: 'Play Section' },
         { loop: true, label: 'Loop Section' },
-    ])('$label uses exact live boundaries and existing transport owners', ({ loop }) => {
+    ])('$label uses exact live boundaries and existing transport owners', async ({ loop }) => {
         withSections([section('picked', 'Picked', 4.5, 12.75)]);
 
-        handleRehearseSection.execute({ type: 'rehearseSection', payload: { sectionId: 'picked', loop } });
+        const execution = handleRehearseSection.execute({
+            type: 'rehearseSection',
+            payload: { sectionId: 'picked', loop },
+        });
+        if (!execution || execution instanceof Promise || !execution.afterRuntimeExecution) {
+            throw new Error('Expected rehearsal runtime completion');
+        }
+        await execution.afterRuntimeExecution();
 
         expect(readMusicalRange).toHaveBeenCalledWith({ range: { startBeat: 4.5, endBeat: 12.75 } });
         expect(setLoopRegion).toHaveBeenCalledExactlyOnceWith(4.5, 12.75, loop);
@@ -156,12 +164,19 @@ describe('handleRehearseSection', () => {
         expect(setPlayback).not.toHaveBeenCalled();
     });
 
-    it('re-resolves the section ID after an edit instead of reusing a context-menu range', () => {
+    it('re-resolves the section ID after an edit instead of reusing a context-menu range', async () => {
         const original = section('picked', 'Picked', 4, 12);
         const edited = { ...original, startBeat: 8.25, endBeat: 20.5 };
         withSections([edited]);
 
-        handleRehearseSection.execute({ type: 'rehearseSection', payload: { sectionId: original.id, loop: true } });
+        const execution = handleRehearseSection.execute({
+            type: 'rehearseSection',
+            payload: { sectionId: original.id, loop: true },
+        });
+        if (!execution || execution instanceof Promise || !execution.afterRuntimeExecution) {
+            throw new Error('Expected rehearsal runtime completion');
+        }
+        await execution.afterRuntimeExecution();
 
         expect(setLoopRegion).toHaveBeenCalledWith(8.25, 20.5, true);
         expect(setLoopRegion).not.toHaveBeenCalledWith(4, 12, true);

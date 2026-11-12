@@ -20,8 +20,12 @@ export const handleRehearseSection = createHandler<'rehearseSection'>({
         if (!action.payload.loop && !setLoopEnabled(false)) {
             return;
         }
-        seekPlayhead(range.startBeat);
-        setPlayback(true);
+        const completion = seekPlayhead(range.startBeat).then((committed) => {
+            if (committed) {
+                setPlayback(true);
+            }
+        });
+        return { status: 'written', afterRuntimeExecution: () => completion };
     },
     describe: (action) => {
         const name = getMarkerState()?.sections.find((section) => section.id === action.payload.sectionId)?.name;

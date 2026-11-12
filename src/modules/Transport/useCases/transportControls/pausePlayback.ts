@@ -13,11 +13,13 @@ import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadSchedule
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
 
 import { captureManualRecordingEnd } from './captureManualRecordingEnd';
+import { invalidatePendingPlayheadSeek } from './executePlayheadSeek';
 import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
 
 export function pausePlayback(): void {
     audioEngine.beginAudioPreviewIntent().release();
+    invalidatePendingPlayheadSeek();
     const state = getTransportState();
     if (!state) {
         return;

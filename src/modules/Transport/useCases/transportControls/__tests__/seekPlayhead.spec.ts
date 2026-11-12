@@ -78,7 +78,7 @@ describe('seekPlayhead', () => {
         playheadPositionRef.current = 0;
     });
 
-    it('should clamp beat and update transport when stopped', () => {
+    it('should clamp beat and update transport when stopped', async () => {
         const update = vi.fn();
         const beforeSeekEpoch = schedulerSession.discontinuityEpoch;
         vi.mocked(getTransportState).mockReturnValue({
@@ -88,7 +88,7 @@ describe('seekPlayhead', () => {
         });
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        seekPlayhead(10);
+        expect(await seekPlayhead(10)).toBe(true);
 
         expect(stopPlayheadScheduler).not.toHaveBeenCalled();
         expect(stopActiveRecording).not.toHaveBeenCalled();
@@ -189,9 +189,9 @@ describe('seekPlayhead', () => {
         vi.mocked(updateTransportState).mockImplementation(update);
         vi.mocked(stopActiveRecording).mockRejectedValueOnce(recordingError);
 
-        seekPlayhead(3);
+        expect(await seekPlayhead(3)).toBe(false);
 
-        await vi.waitFor(() => expect(startPlayheadScheduler).toHaveBeenCalled());
+        expect(startPlayheadScheduler).toHaveBeenCalled();
 
         expect(loggerMock.error).toHaveBeenCalledWith(expect.objectContaining({ cause: recordingError }));
         expect(update).toHaveBeenCalledWith({ playheadPosition: 3 });
