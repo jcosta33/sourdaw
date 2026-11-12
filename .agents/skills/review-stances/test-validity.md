@@ -33,6 +33,20 @@ release and provenance drift in `release-provenance-drift.md`.
    same defect (#5749, #5809): assert the real control while the dirty state holds, before waiting for Save or
    autosave, by its stable identity and a separate expected-name assertion, then make that control unavailable
    (rename its test id) and require the named case to fail at admission.
+   Proof's benchmark (#974, retained by #1084; related level test #832) passed invalid
+   `limiter_ceiling`/`limiter_threshold` names through an unchecked wrapper. Defaults could still
+   sound and reduce about 0.36 dB, so even a negative GR reading did not prove the configured
+   load. Drive the actual `buildDevices` recipe against committed WASM with canonical `input_gain`
+   +6 dB and `lim_ceiling` -1 dB; require finite audible stereo PCM and over 1 dB negative gain
+   reduction in both verification windows. Reverting the valid setter hunk must fail
+   `crates/daw-dsp/benches/wasm/__tests__/deviceRecipes.spec.ts`. Historical review draws for
+   these introductions were unavailable; do not infer their models or stances.
+   Duplicate Rust `#[test]` attributes also duplicate admission: Levain's tone-history case
+   acquired two attributes in #1002 (`1fdd29862146d80096b74fbe78e6cb0eb66f7d5e`). Read the
+   collected names and count, not just the green total; the exact
+   `re_engaging_after_bypass_continues_from_the_signal_not_from_silence` filter must execute
+   one case. Removing only the redundant attribute must retain its PCM assertions. The
+   introducing commit does not establish historical review draws; do not infer them.
    The piano roll numeric zoom assertion was conditional on the slider appearing (#1452): remove
    the required slider and require the numeric case to fail.
    (#4441, #1531, #1536, #1590, #5370, #2606, #4356, #4933, #5111, #4987, #5144, #5749)
