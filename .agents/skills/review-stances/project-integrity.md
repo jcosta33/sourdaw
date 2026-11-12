@@ -136,8 +136,8 @@ Split out (a stance matching one carries that file, not this one): replay agains
     audible behavior or engine acceptance.
     Full Fermenter patches include macro and mapping arrays (#6321; introducing source and unknown review
     provenance in `command-entry-and-state-oracles.md` probe 2). After real continuous macro/morph and scalar edits,
-    compare the complete raw device chunk with fresh hydration and engine projection under the current history
-    policy; numeric mirrors and persister calls cannot prove those arrays survived. For saved-patch claims, save
+    compare the complete raw device chunk with fresh hydration, engine projection and declared history behavior;
+    numeric mirrors and persister calls cannot prove those arrays survived. For saved-patch claims, save
     through the real owner, clear warm state and binary-reopen the actual saved snapshot before asserting the patch
     and first visible controls. Restore preset highlight and filtered Next from the actual patch/registry identity,
     without persisting an A/B UI session. Keep pending M → N → Undo M → Redo N and stale queued refusal coherent

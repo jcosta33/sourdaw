@@ -97,7 +97,7 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    Fermenter macro keyboard cases awaited an unrelated `oscLevel` scalar while macro/mapping arrays could be lost
    (#6321; provenance in `command-entry-and-state-oracles.md` probe 2). Drive the rendered controls and real
    macro/morph bridge through Command/CRDT, then read the complete authoritative device chunk, fresh hydration,
-   current history policy and engine projection. Removing array persistence must fail
+   declared history behavior and engine projection. Removing array persistence must fail
    `src/modules/Fermenter/presentations/views/__tests__/fermenterPatchAuditionUndo.integration.spec.tsx`
    "persists $label arrays in raw truth and fresh hydration after a whole patch" for both macro and morph; a
    persister spy, numeric mirror or unchanged neighbouring scalar is not that oracle. Require the same real owner
