@@ -294,11 +294,12 @@ describe('locateMissingMedia', () => {
         const state = trackStore.value!;
         trackStore.set({
             ...state,
-            tracks: state.tracks.map((owner) =>
-                owner.id === 'track-two'
-                    ? { ...owner, frozen: true, freezeState: { status: 'frozen', frozenBufferId: 'rendered-bass' } }
-                    : owner
-            ),
+            tracks: state.tracks.map((owner) => {
+                if (owner.id !== 'track-two') {
+                    return owner;
+                }
+                return { ...owner, frozen: true, freezeState: { status: 'frozen', frozenBufferId: 'rendered-bass' } };
+            }),
         });
         flushAutomergeStorageWrites();
         mocks.buffers.set('rendered-bass', {} as AudioBuffer);

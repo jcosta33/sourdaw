@@ -501,4 +501,57 @@ describe('missing-media recovery through real CRDT and Command', () => {
         expect(io.decode).toHaveBeenCalledTimes(1);
         expect(undoHistoryStore.value?.past).toEqual([]);
     });
+
+    it.each(['picker', 'decode'] as const)(
+        'does not report a stale %s rejection after an arrangement switch',
+        async (stage) => {
+            const entered = Promise.withResolvers<void>();
+            const pending = Promise.withResolvers<never>();
+            if (stage === 'picker') {
+                vi.mocked(pickFiles).mockImplementationOnce(() => {
+                    entered.resolve();
+                    return pending.promise;
+                });
+            } else {
+                io.decode.mockImplementationOnce(() => {
+                    entered.resolve();
+                    return pending.promise;
+                });
+            }
+
+            const locating = locateMissingMedia({ sourceBufferId: 'missing', label: 'clip-a.wav' });
+            await entered.promise;
+            await switchArrangement('arr-b');
+            flushAutomergeStorageWrites();
+            const tracksBefore = JSON.stringify(getCrdtDoc<Root>('root')?.tracks);
+            const historyBefore = JSON.stringify(undoHistoryStore.value);
+            vi.mocked(notifyUser).mockClear();
+
+            pending.reject(new Error('held IO failed'));
+            await locating;
+            flushAutomergeStorageWrites();
+
+            expect(JSON.stringify(getCrdtDoc<Root>('root')?.tracks)).toBe(tracksBefore);
+            expect(JSON.stringify(undoHistoryStore.value)).toBe(historyBefore);
+            if (stage === 'picker') {
+                expect(io.decode).not.toHaveBeenCalled();
+            }
+            expect(notifyUser).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['picker', 'decode'] as const)('reports a current %s rejection', async (stage) => {
+        if (stage === 'picker') {
+            vi.mocked(pickFiles).mockRejectedValueOnce(new Error('IO failed'));
+        } else {
+            io.decode.mockRejectedValueOnce(new Error('IO failed'));
+        }
+
+        await locateMissingMedia({ sourceBufferId: 'missing', label: 'clip-a.wav' });
+
+        expect(notifyUser).toHaveBeenCalledWith(
+            expect.stringContaining(stage === 'picker' ? 'picker could not be opened' : 'could not be decoded'),
+            'error'
+        );
+    });
 });

@@ -27,11 +27,13 @@ function comparableSourceName(name: string): string {
     return normalized.slice(0, extensionStart);
 }
 
-async function pickReplacements(multiple: boolean): Promise<File[] | null> {
+async function pickReplacements(multiple: boolean, isCurrent: () => boolean): Promise<File[] | null> {
     try {
         return await pickFiles({ filters: [AUDIO_FILTER], multiple });
     } catch {
-        notifyUser('The audio file picker could not be opened. No missing media was changed.', 'error');
+        if (isCurrent()) {
+            notifyUser('The audio file picker could not be opened. No missing media was changed.', 'error');
+        }
         return null;
     }
 }
@@ -46,7 +48,9 @@ async function relinkReplacement(source: MissingSource, file: File, isCurrent: (
     try {
         replacementBufferId = (await decodeAudioFile(file)).id;
     } catch {
-        notifyUser(`"${file.name}" could not be decoded. The missing source was left unchanged.`, 'error');
+        if (isCurrent()) {
+            notifyUser(`"${file.name}" could not be decoded. The missing source was left unchanged.`, 'error');
+        }
         return false;
     }
     if (!isCurrent()) {
@@ -70,6 +74,9 @@ async function relinkReplacement(source: MissingSource, file: File, isCurrent: (
     }
 
     discardDecodedAudioFile(replacementBufferId);
+    if (!isCurrent()) {
+        return false;
+    }
     notifyUser(
         `"${file.name}" could not relink "${source.label}". The source may already have been repaired.`,
         'error'
@@ -110,7 +117,7 @@ async function offerSameFolderRecovery(excludedBufferId: string, isCurrent: () =
         return;
     }
 
-    const files = await pickReplacements(true);
+    const files = await pickReplacements(true, isCurrent);
     if (!files || !isCurrent()) {
         return;
     }
@@ -174,7 +181,7 @@ export async function locateMissingMedia(source: MissingSource): Promise<void> {
             }
             return;
         }
-        const files = await pickReplacements(false);
+        const files = await pickReplacements(false, isCurrent);
         const file = files?.[0];
         if (!file || !isCurrent()) {
             return;

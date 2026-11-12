@@ -20,7 +20,6 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { pickFiles } from '../../../repositories/nativeFileDialog/pickFiles';
 import { arrangementStore } from '../../../stores/arrangementStore';
 import { missingMediaStore } from '../../../stores/missingMediaStore';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
@@ -35,6 +34,7 @@ const io = vi.hoisted(() => ({
     decode: vi.fn(),
     discard: vi.fn(),
     confirm: vi.fn(),
+    pickFiles: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -48,7 +48,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
     stopPlayback: async () => undefined,
 }));
-vi.mock('../../../repositories/nativeFileDialog/pickFiles', () => ({ pickFiles: vi.fn() }));
+vi.mock('../../../repositories/nativeFileDialog/pickFiles', () => ({ pickFiles: io.pickFiles }));
 vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: io.confirm }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
@@ -96,7 +96,7 @@ describe('MissingMediaPanel frozen source recovery', () => {
             io.buffers.set('replacement', buffer);
             return { id: 'replacement', buffer };
         });
-        vi.mocked(pickFiles).mockResolvedValue([new File(['audio'], 'replacement.wav')]);
+        vi.mocked(io.pickFiles).mockResolvedValue([new File(['audio'], 'replacement.wav')]);
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
         const transition = runProjectLoadTransaction();
         expect(await transition.prepare()).toBe(true);
@@ -150,7 +150,7 @@ describe('MissingMediaPanel frozen source recovery', () => {
         await act(async () => {
             await locateMissingMedia({ sourceBufferId: 'missing', label: 'clip-a.wav' });
         });
-        expect(pickFiles).not.toHaveBeenCalled();
+        expect(io.pickFiles).not.toHaveBeenCalled();
         expect(io.decode).not.toHaveBeenCalled();
         expect(io.discard).not.toHaveBeenCalled();
         expect(JSON.stringify(getCrdtDoc<Root>('root')?.tracks)).toBe(before);
