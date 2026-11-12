@@ -28,7 +28,13 @@ const original = {
     transport: transportStore.value,
     tempoMap: tempoMapStore.value,
     markers: markerStore.value,
-    anchor: { ...playheadClockRef },
+    anchor: {
+        beat: playheadClockRef.beat,
+        audioTimeSeconds: playheadClockRef.audioTimeSeconds,
+        generation: playheadClockRef.generation,
+        pendingLoopSeam: playheadClockRef.pendingLoopSeam,
+        hold: playheadClockRef.hold,
+    },
     publishedBeat: playheadPositionRef.current,
 };
 
