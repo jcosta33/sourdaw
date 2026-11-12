@@ -34,18 +34,21 @@ shared Git publication in `trusted-script-delivery.md`.
    and require the mounted reader to follow without a pointer refresh (Elastic markers; the real
    slider with a selected clip and no open editor must change authoritative automatic markers while
    locked/user rows, another clip and PCM stay exact, and selected-only resolution must not override an
-   explicitly opened editor; do not open the editor to satisfy the test); write points to a linked follower the sampler ignores (#4506). Ask what a
+   explicitly opened editor; do not open the editor to satisfy the test). Ask what a
    one-bit-per-key model cannot represent (two of one key, an order, a count).
 4. **Population and producer sweep.** When a detector, sanitizer, adapter or narrowed store rule
    asserts an invariant over a registered population or every writer of a record, enumerate every member
    and producer at head and drive each through the new clause; the population, not the incident, bounds
    the sweep (#3112: promotion wrote `sourceRevision` for generic effects). Name the throw any empty
    catch around persistence hides and construct the input.
-5. **Witnesses outside the author's list.** A change to a durable record's contents or to a UI label,
+5. **Witnesses outside the author's list.** Runs: CI; the reviewer reads the `Unit suite` and
+   `Affected end-to-end <id>` jobs that ran each named witness on the head, and the greps run from the fixed
+   commit. A change to a durable record's contents or to a UI label,
    selector or layout has readers the author did not name. Grep `src/**/__tests__`, `tests/e2e/**` and
    `scripts/desktopLatency*.ts` for the field, type, literal placeholder or label, name every hit, and
-   require a run of each (`pendingEffectContinuations`, #3506; compact StatusBar moved "Out" behind a
-   popover the nightly harness reads by label). For a reserved routing endpoint such as `hw_out`, the
+   require each to have run on the head (`pendingEffectContinuations`, #3506; compact StatusBar moved "Out" behind a
+   popover the nightly harness reads by label). A reader that runs only in nightly, such as the desktop latency
+   harness, has no evidence on the head: report it as an unverified witness. For a reserved routing endpoint such as `hw_out`, the
    component witness must assert both its human-readable label and the raw ID retained by selection.
 6. **Boundaries and quantized clocks.** Probe one quantum each side of every boundary: the value the
    report named and its neighbour. On a quantized clock list every strict inequality and require each
@@ -136,6 +139,11 @@ shared Git publication in `trusted-script-delivery.md`.
     vs the producer's fixed deadline with zero, negative and `1e309` costs (#2725); filtered keyed
     measurements must keep producer keys (invalid middle calibration plus a missing referenced tail,
     #974). Request each type alone: a `legalSet`-declaring descriptor was the reproduction (#2011).
+    The red check is a case at the worst admitted unit, measured with the consumer's own expression, that fails
+    when the producer's estimate or a fixed cap replaces that expression: clamping the built-in body's `ir_length`
+    in `crates/daw-dsp/src/bacteria/convolution.rs` to 4096 samples must fail
+    `engine_output_retains_late_wood_tail_at_384khz` in `crates/daw-dsp/tests/bacteria_body_switch_rt.rs` under
+    `pnpm guard --profile focused -- pnpm cargo:test --package daw-dsp engine_output_retains_late_wood_tail`.
 13. **Refusal attribution and reallocation.** For every refusal added or moved, state which units it
     stops and what reason each records; a per-unit property read as a run property reports unrelated
     units under a cause that never happened (#4491). A rank or order added for one pairwise inversion
@@ -151,14 +159,9 @@ shared Git publication in `trusted-script-delivery.md`.
     deadline measures progress, not elapsed cohort time, and decoded is not worklet-acknowledged
     (#3318/#3982): at 39 of 161 files just before the old deadline all five consumers must still finish
     ready without rollback; one peer stalled for its own inactivity window while another progresses fails
-    only the stalled peer; obsolete cancellation stays silent. A chunk credit belongs to its posted
-    message until a matching acknowledgement, an ordered reply proven to follow it, or processor end: an
-    early `sampleBankError` refusal does not fence the chunks still queued behind it (#5239). Process the
-    refusal, three stale chunks and `retiredBankReleased` in actual port order; a second port must post
-    no chunk before that release, and an eight-chunk healthy successor must finish with no more than four
-    chunks outstanding across both ports.
+    only the stalled peer; obsolete cancellation stays silent.
 
-15. **Output filtering is not a requested-work bound (#4757 `2e744b8f`; historical stance unknown).** The full
+15. **Output filtering is not a requested-work bound (#4757).** The full
     producer legitimately serves complete receipts; subset callers must execute only their actual dependency closure.
     In `measureAgentScopeRender.spec.ts`, “measures the exact spectral subset once without running unrelated families”
     and “adds real integrated loudness for preview matching without running unrelated families” first prove real
@@ -172,4 +175,11 @@ shared Git publication in `trusted-script-delivery.md`.
 ## Retired lessons
 
 - Optional-effect probe throwing in a Faust compiler upgrade (#4904) → enforced by `compileFaustDSP.spec.ts` "compiles the registered Supersaw voice without probing an absent effect".
-- Tooling paths missing from the browser selector or validation path filter (#4854, #4902, #4484, #4932, #4933) → enforced by `scripts/__tests__/prValidationScope.spec.ts` "keeps known review tooling security checked without browser execution" and "admits exact review helper source and matching spec %s".
+
+## Relocated
+
+- Linked automation follower points the sampler ignores (#4506) → `command-entry-and-state-oracles.md` probe 3.
+- Chunk credits held until a matching acknowledgement across a `sampleBankError` refusal (#5239) →
+  `test-observation-scope.md` probe 6.
+- Retired lesson for tooling paths missing from the browser selector or validation path filter (#4854, #4902) →
+  `validation-scope-selection.md`, Retired lessons.

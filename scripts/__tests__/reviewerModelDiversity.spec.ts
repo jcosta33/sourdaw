@@ -140,6 +140,77 @@ describe('assertReviewerModelDiversity', () => {
         ).toThrow(/matches one of the PR's authoring models/u);
     });
 
+    it('refuses a reviewer model differing from the authoring model only by case or width', () => {
+        for (const reviewerModel of ['GPT-6-Luna', 'ｇｐｔ-6-luna']) {
+            expect(() =>
+                assertReviewerModelDiversity({
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    authorLabels: [authorLabel],
+                    document: { reviewerModel, body: 'The change held.' },
+                })
+            ).toThrow(/matches one of the PR's authoring models/u);
+        }
+    });
+
+    it.each([
+        ['a zero-width space inside', 'gpt-6\u200B-luna'],
+        ['a trailing variation selector', 'gpt-6-luna\uFE0F'],
+        ['a space inside', 'gpt-6 luna'],
+        ['a combining grapheme joiner', 'gpt-6-lu\u034Fna'],
+    ])('refuses a summary reviewer model spelled with %s', (_name, reviewerModel) => {
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                document: { reviewerModel, body: 'The change held.' },
+            })
+        ).toThrow(/review\.json reviewerModel is not a lane model name/u);
+    });
+
+    it('refuses a draw reviewer model spelled with an invisible character', () => {
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                document: {
+                    reviewerModel: 'glm-5.3',
+                    body: 'The change held.',
+                    draws: [
+                        { stance: 'lost identity', reviewerModel: 'glm-5.3', tier: 'standard' },
+                        { stance: 'forged input', reviewerModel: 'gpt-6-luna\u200D', tier: 'standard' },
+                    ],
+                },
+            })
+        ).toThrow(/review\.json draws\[1\]\.reviewerModel is not a lane model name/u);
+    });
+
+    it.each(['GLM-5.3', 'claude-sonnet-4.5', 'gpt-6-luna', ' glm-5.3-flash '])(
+        'admits the lane model spelling %s',
+        (reviewerModel) => {
+            expect(() =>
+                assertReviewerModelDiversity({
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    authorLabels: [{ name: 'other-1', description: 'Authored by other-1' }],
+                    document: { reviewerModel, body: 'The change held.' },
+                })
+            ).not.toThrow();
+        }
+    );
+
+    it('admits the same-model fallback when the body names the reviewer model in another case', () => {
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+                document: {
+                    reviewerModel: 'glm-5.3',
+                    modelExhaustion: 'every other harness on this machine is logged out',
+                    body: 'Reviewed on GLM-5.3 under the same-model fallback.',
+                },
+            })
+        ).not.toThrow();
+    });
+
     it('passes when the reviewer model differs from the authoring model', () => {
         expect(() =>
             assertReviewerModelDiversity({

@@ -84,6 +84,7 @@ import type {
     DeliveryReceiptComment,
     DeliveryReceiptProof,
     DeliveryPort,
+    GateProvenanceFacts,
     PersistedDeliveryReceiptAuthority,
     PersistedPreparedPostMergeValidation,
     PullRequestSnapshot,
@@ -254,9 +255,40 @@ async function expectAmbiguousDeliveryMutationRetainsOwner(
     }
 }
 
+/** One health-gates run whose only attempt's Gate job is the head's one succeeded Gate check run. */
+function cleanGateProvenance(head: string): GateProvenanceFacts {
+    return {
+        commitStatusContexts: [],
+        gateCheckRuns: [
+            { id: 2002, status: 'completed', conclusion: 'success', appNodeId: 'MDM6QXBwMTUzNjg=', checkSuiteId: 1000 },
+        ],
+        workflowRuns: [
+            {
+                id: 100,
+                path: '.github/workflows/health-gates.yml',
+                headSha: head,
+                checkSuiteId: 1000,
+                runAttempt: 1,
+                attempts: [
+                    {
+                        attempt: 1,
+                        conclusion: 'success',
+                        jobs: [
+                            { id: 2001, name: 'Plan required checks', conclusion: 'success' },
+                            { id: 2002, name: 'Gate', conclusion: 'success' },
+                        ],
+                    },
+                ],
+            },
+        ],
+    };
+}
+
 function pullRequestSnapshot(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
     return {
         number: 2495,
+        // Opened before the risk-plan policy: these ports bind a legacy, plan-less review bundle.
+        createdAt: '2026-09-18T12:00:00Z',
         state: 'OPEN',
         isDraft: false,
         title: 'fix(delivery): keep recovery fenced',
@@ -918,6 +950,7 @@ describe('package scripts and gitignore', () => {
                 }
                 return expect.fail(`unexpected pull request read: ${number}`);
             },
+            gateProvenance: (_number, head) => cleanGateProvenance(head),
             gateRequiredCheckNames: () => new Set(['Gate']),
             gateRequiredSkipAliases: () => new Map(),
             headCheckRuns: () => [],
@@ -930,6 +963,7 @@ describe('package scripts and gitignore', () => {
             reviewBundleDeliveryAuthorization: () => ({ kind: 'legacy' }),
             dependents: (baseBranch) => (dependentAfter.baseRefName === baseBranch ? [dependentAfter] : []),
             repositoryDeletesMergedBranches: () => false,
+            mergeCommitMessage: () => expect.fail('the merged recovery path should not run'),
             merge: () => expect.fail('merge should not run after the final snapshot is already merged'),
             retarget: (number, baseBranch) => {
                 retargets.push({ number, base: baseBranch });
@@ -3553,7 +3587,8 @@ describe('package scripts and gitignore', () => {
             reviewPort: () => ({
                 primaryRoot: () => root,
                 assertApprovalContext: () => ({ pr: 2495, headSha: head, baseRefName: 'main', baseSha: 'base' }),
-                pullRequest: () => ({ state: 'OPEN', head }),
+                // Opened before risk plans began, so this plan-less bundle reaches the delivery fence.
+                pullRequest: () => ({ state: 'OPEN', head, createdAt: '2026-09-01T00:00:00Z' }),
                 readReviewJson: (path: string) => JSON.parse(readFileSync(path, 'utf8')),
                 bundleFileExists: (path: string) => existsSync(path),
                 readBundleDiff: (path: string) => readFileSync(path, 'utf8'),
@@ -3900,6 +3935,7 @@ describe('package scripts and gitignore', () => {
                         expect(snapshotNumber).toBe(number);
                         return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
                     },
+                    gateProvenance: () => expect.fail('delivery domain should not run'),
                     gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
                     gateRequiredSkipAliases: () => expect.fail('delivery domain should not run'),
                     headCheckRuns: () => expect.fail('delivery domain should not run'),
@@ -3908,6 +3944,7 @@ describe('package scripts and gitignore', () => {
                     reviewBundleDeliveryAuthorization: () => expect.fail('delivery domain should not run'),
                     dependents: () => expect.fail('delivery domain should not run'),
                     repositoryDeletesMergedBranches: () => expect.fail('delivery domain should not run'),
+                    mergeCommitMessage: () => expect.fail('delivery domain should not run'),
                     merge: () => expect.fail('delivery domain should not run'),
                     retarget: () => expect.fail('delivery domain should not run'),
                     deliveryReceipts: () => expect.fail('delivery domain should not run'),
@@ -3965,6 +4002,7 @@ describe('package scripts and gitignore', () => {
                 expect(number).toBe(2495);
                 return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
             },
+            gateProvenance: () => expect.fail('delivery domain should not run'),
             gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
             gateRequiredSkipAliases: () => expect.fail('delivery domain should not run'),
             headCheckRuns: () => expect.fail('delivery domain should not run'),
@@ -3973,6 +4011,7 @@ describe('package scripts and gitignore', () => {
             reviewBundleDeliveryAuthorization: () => expect.fail('delivery domain should not run'),
             dependents: () => expect.fail('delivery domain should not run'),
             repositoryDeletesMergedBranches: () => expect.fail('delivery domain should not run'),
+            mergeCommitMessage: () => expect.fail('delivery domain should not run'),
             merge: () => expect.fail('delivery domain should not run'),
             retarget: () => expect.fail('delivery domain should not run'),
             deliveryReceipts: () => expect.fail('delivery domain should not run'),
@@ -4500,6 +4539,7 @@ describe('package scripts and gitignore', () => {
                 expect(number).toBe(2495);
                 return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
             },
+            gateProvenance: () => expect.fail('delivery domain should be injected in this coordinator test'),
             gateRequiredCheckNames: () => expect.fail('delivery domain should be injected in this coordinator test'),
             gateRequiredSkipAliases: () => expect.fail('delivery domain should be injected in this coordinator test'),
             headCheckRuns: () => expect.fail('delivery domain should be injected in this coordinator test'),
@@ -4510,6 +4550,7 @@ describe('package scripts and gitignore', () => {
                 expect.fail('delivery domain should be injected in this coordinator test'),
             dependents: () => [],
             repositoryDeletesMergedBranches: () => false,
+            mergeCommitMessage: () => expect.fail('the merged recovery path should not run'),
             merge: () => expect.fail('delivery domain should be injected in this coordinator test'),
             retarget: () => expect.fail('delivery domain should be injected in this coordinator test'),
             deliveryReceipts: () => [],

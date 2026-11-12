@@ -22,6 +22,7 @@ type UndoEntry = ReturnType<typeof import('#/modules/Command/useCases').createUn
 const {
     activeRecording,
     pendingPoints,
+    pendingOwners,
     touchActive,
     laneBaselines,
     findLaneId,
@@ -33,6 +34,7 @@ const {
 } = vi.hoisted(() => {
     const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
     const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
+    const pendingOwners = new Map<string, Array<symbol | undefined>>();
     const touchActive = new Set<string>();
     const laneBaselines = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
     const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
@@ -41,6 +43,7 @@ const {
     return {
         activeRecording,
         pendingPoints,
+        pendingOwners,
         touchActive,
         laneBaselines,
         findLaneId: vi.fn(() => null as string | null),
@@ -90,6 +93,7 @@ vi.mock('../../../stores/automationStore', async (importOriginal) => ({
 vi.mock('../recordingSessionState', () => ({
     activeRecording,
     pendingPoints,
+    pendingOwners,
     touchActive,
     laneBaselines,
 }));
@@ -122,6 +126,7 @@ describe('stopAutomationRecording', () => {
         vi.clearAllMocks();
         activeRecording.clear();
         pendingPoints.clear();
+        pendingOwners.clear();
         touchActive.clear();
         laneBaselines.clear();
         findLaneId.mockReturnValue(null);

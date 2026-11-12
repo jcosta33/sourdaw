@@ -1,21 +1,21 @@
 # Lesson library: asset cache publication
 
 Defects where decoded or durable audio is published into a cache, ownership row or settled record whose target,
-source or authority changed while the work waited. A session may remain current while an active clip's
-decoded-audio target changes, so session ownership alone never authorizes delayed PCM publication; local object
-identity, runtime tokens, lease equality and scope locks never establish persistent PCM identity. Each probe names
-the state to hold, the identity transition to inject, and the mutation that must fail the case. Probes 2 to 4 moved
-from the `state-and-write-paths` skill.
+source or authority changed while the work waited, or where decoded audio loses residency before its owner commits.
+A session may remain current while an active clip's decoded-audio target changes, so session ownership alone never
+authorizes delayed PCM publication; local object identity, runtime tokens, lease equality and scope locks never
+establish persistent PCM identity. Each probe names the state to hold, the identity transition to inject, and the
+mutation that must fail the case.
 
 ## Standing probes
 
-1. **A current session retains a revoked clip alias (peer-asset resolver `1d27112e9a`; #3955 kept the race).**
-   #3955 added session-owner fences but retained the same-session alias and empty-cache races. Hold the shared
-   asset resolver at blob read and decode independently. Keep its session current; change the track, clip, hash or
-   buffer identity, or fill the slot before the old completion. Old PCM must not publish, while later unchanged
-   aliases still resolve. Capture the target before waiting and re-read its active association and empty-slot
-   authority after each yield and before caching. Removing only alias validation or only the empty-slot guard must
-   fail the connected producer case; unchanged-current and later-alias controls must still pass.
+1. **A current session must not retain a revoked clip alias (#3955).** Session-owner fences alone leave the
+   same-session alias and empty-cache races. Hold the shared asset resolver at blob read and decode independently.
+   Keep its session current; change the track, clip, hash or buffer identity, or fill the slot before the old
+   completion. Old PCM must not publish, while later unchanged aliases still resolve. Capture the target before
+   waiting and re-read its active association and empty-slot authority after each yield and before caching.
+   Removing only alias validation or only the empty-slot guard must fail the connected producer case;
+   unchanged-current and later-alias controls must still pass.
 2. **Durable ownership must authenticate the exact current source (#3943).** Checkpoint retention acquired from raw
    audio buffer IDs, so a replaced runtime source could publish ownership over stale disk PCM. Review every
    acquisition route with a genuine durability receipt and active storage scope, then change the source after
@@ -40,32 +40,42 @@ from the `state-and-write-paths` skill.
    authority at mutation admission, before it waits for the storage lock; recapturing inside the queued storage
    phase can authenticate an intervening ordinary replacement as the older prepared commit. Queue an ordinary
    replacement behind the lock and require the older prepared commit to refuse.
-
-7. **Two accepted bounces must not reuse clock-based material identity (#226).** The selection-bounce owner
-   extracted by #226 retained `bounce-sel-${trackId}-${Date.now()}`. This identifies the available owner
-   extraction, not proof of where the earlier clock-based algorithm originated; that PR has no public review.
-   The missing probe is two successful typed bounces on one track while `Date.now()` is fixed, with distinct
-   nonperiodic first PCM and second PCM. Undo the second and authenticate the first cached material through the
-   actual retained clip/history reference; Redo must recover the second. An ID-inequality assertion alone is
-   insufficient: reinstating the timestamp producer must fail the restored first-PCM comparison. Use the
-   platform's unique identity producer and retain unrelated source PCM. This is runtime/history material proof,
-   not a durability receipt or saved-session replay claim.
-
-8. **Decoded imports stay resident until their clip owner commits (#6038 missed manual import lifetimes).**
-   #6038 introduced scoped holds for decoded buffers awaiting placement, but its manual import callers still
-   decoded without a hold. Its public review describes the takes and stem-import protections; the missing probe
-   is manual import under competing cache writes while original-asset staging or the actual snapshot transaction
-   queue holds placement. Staging yields were already present in #3895 and #4255; #4962 routed creation through
-   awaited typed batches. Retain before the decoder's cache write, through the awaited retained batch outcome,
-   and release in `finally` after transfer or terminal cleanup. Exercise existing-track import, new-track import,
-   file drop and the empty-timeline menu through their real producers. Require exact PCM and matching raw/projected
-   clip identity plus actual typed history and grouped Undo. Removing only the lifetime hold must lose the pending
-   source under cache pressure. Cancellation and staging failure must release leases, decoded material and holds;
-   re-cache the now-unowned ID and pressure it to prove a leaked hold cannot hide behind deletion. For a committed
-   source, retire the real clip and history owners before proving the temporary hold ended. Mere residency while
-   the live clip still protects it proves no release, and a readiness wait cannot repair an evicted source.
-   A published imported buffer ID requires PCM on its first material read: decode caches synchronously before
-   returning. #6342 wrapped the Audio-to-MIDI evidence read in a retry, accepting a one-shot source miss as
-   transient; its public review reported permanent-absence/deadline attacks. Inject one null read result for
-   a real cached buffer, then permit subsequent actual reads: the case must fail at that first missing source.
-   Permanent absence alone cannot expose this masking. Historical private prompts and reviewer tiers are unknown.
+7. **Two accepted bounces must not reuse clock-based material identity (#226).** A material ID built from
+   `Date.now()` (`bounce-sel-${trackId}-${Date.now()}`) collides when two bounces land in one clock tick. Run two
+   successful typed bounces on one track while `Date.now()` is fixed, with distinct nonperiodic first PCM and second
+   PCM. Undo the second and authenticate the first cached material through the actual retained clip/history
+   reference; Redo must recover the second. An ID-inequality assertion alone is insufficient: replacing the
+   `crypto.randomUUID()` producer in `bounceSelection.ts` with the timestamp must fail a fixed-clock restored
+   first-PCM comparison in `src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts`. Use the platform's unique
+   identity producer and retain unrelated source PCM. This is runtime/history material proof, not a durability
+   receipt or saved-session replay claim.
+8. **Decoded imports stay resident until their clip owner commits (#6038, #4962).** Scoped holds for decoded
+   buffers awaiting placement protect nothing on a caller that decodes without one. Drive manual import under
+   competing cache writes while original-asset staging or the actual snapshot transaction queue holds placement.
+   Retain before the decoder's cache write, through the awaited retained batch outcome, and release in `finally`
+   after transfer or terminal cleanup. Exercise existing-track import, new-track import, file drop and the
+   empty-timeline menu through their real producers. Require exact PCM and matching raw/projected clip identity
+   plus actual typed history and grouped Undo. Removing only the lifetime hold must lose the pending source under
+   cache pressure in `src/modules/Arrangement/presentations/__tests__/manualAudioImportResidency.integration.spec.tsx`
+   or `src/modules/Arrangement/useCases/__tests__/importAudioClipToTrack.residency.integration.spec.ts`.
+   Cancellation and staging failure must release leases, decoded material and holds; re-cache the now-unowned ID and
+   pressure it to prove a leaked hold cannot hide behind deletion. For a committed source, retire the real clip and
+   history owners before proving the temporary hold ended. Mere residency while the live clip still protects it
+   proves no release, and a readiness wait cannot repair an evicted source.
+9. **A published imported buffer ID has PCM on its first material read (#6342).** Decode caches synchronously
+   before returning, so a retry around an evidence read accepts a one-shot source miss as transient and hides the
+   defect; permanent-absence and deadline attacks do not expose this masking. Inject one null read result for a
+   real cached buffer, then permit subsequent actual reads: the case must fail at that first missing source.
+10. **A sample row placed after eviction restores its original PCM (#4045, #6287, #6372).** Browser sample rows can
+    outlive runtime residency before the placement gesture, and a cache-only lookup at placement substitutes or
+    loses the source. Evict a real imported stereo source while its stored or pending-session PCM remains, then
+    place through the registered Command and verify the same ID, exact runtime Float32 channels, the actual staged
+    WAV's quantized samples and hash, raw/projected state and Undo/Redo. A preview control's Stop label is
+    insufficient when a cache miss substitutes a tone. Restore the original through the existing scoped storage
+    read, hold it until placement commits or aborts, and prove release after the real clip owner retires. The
+    library-file fallback creates another decoded UUID: retain that ID before its cache write too. Revoke project
+    authority during restoration and factory lookup; neither late completion may stage through the new project's
+    global asset owner. Apply eviction before the gesture plus pressure during staging and commit admission, not a
+    longer UI wait. Restoring the cache-only lookup must fail
+    `src/modules/AudioEngine/stores/__tests__/audioBufferCacheUnpinnedRestore.spec.ts` or
+    `src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx`.

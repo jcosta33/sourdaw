@@ -8,6 +8,7 @@
  * Pure by construction: counting takes data, never a live session.
  */
 
+import { REVIEWER_BOT_NODE_ID } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 import {
     reconstructReviewRounds,
@@ -23,13 +24,44 @@ export const REVIEW_ROUND_FREEZE_THRESHOLD = 10;
  * review, so the same review appearing twice, as a paginated read can return it, counts once.
  */
 export function countReviewerRequestChangesRounds(reconstruction: ReviewReconstruction): number {
+    return reviewerRequestChangesReviewIds(reconstruction).size;
+}
+
+function reviewerRequestChangesReviewIds(reconstruction: ReviewReconstruction): Set<number> {
     const reviews = new Set<number>();
     for (const round of reconstruction.rounds) {
         if (round.role === 'reviewer' && round.verdict === 'changes-requested') {
             reviews.add(round.reviewId);
         }
     }
-    return reviews.size;
+    return reviews;
+}
+
+/**
+ * The reviewer request-changes rounds the public history holds, the one count every freeze reader
+ * uses. A dismissed reviewer review that owns an inline comment still counts: `review:publish`
+ * refuses an approval with comments and a request for changes without one, so only a request for
+ * changes leaves that shape, and dismissing it must not lower the count. A dismissed comment-less
+ * review is an approval a later push made stale, and stays uncounted.
+ */
+export function countReviewerRequestChangesRoundsInHistory(
+    number: number,
+    pullRequest: { state: string; head: string },
+    reviews: readonly PublicReview[],
+    comments: readonly PublicReviewComment[]
+): number {
+    const rounds = reviewerRequestChangesReviewIds(reconstructReviewRounds(number, pullRequest, reviews, comments));
+    const commentedReviews = new Set(comments.map((comment) => comment.reviewId));
+    for (const review of reviews) {
+        if (
+            review.state === 'DISMISSED' &&
+            review.actorNodeId === REVIEWER_BOT_NODE_ID &&
+            commentedReviews.has(review.id)
+        ) {
+            rounds.add(review.id);
+        }
+    }
+    return rounds.size;
 }
 
 export function reviewRoundFreezeFlag(number: number, observed: number | 'unreadable'): string {
@@ -64,13 +96,12 @@ export function logReviewRoundFreezeAtThreshold(
         if (reviews === undefined || comments === undefined) {
             return;
         }
-        const reconstruction = reconstructReviewRounds(
+        const requestChanges = countReviewerRequestChangesRoundsInHistory(
             number,
             { state: 'OPEN', head },
             reviews(number),
             comments(number)
         );
-        const requestChanges = countReviewerRequestChangesRounds(reconstruction);
         if (requestChanges >= REVIEW_ROUND_FREEZE_THRESHOLD) {
             log(reviewRoundFreezeFlag(number, requestChanges));
         }

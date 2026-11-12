@@ -69,41 +69,41 @@ describe('CrustGainStrip — keyboard interaction', () => {
         const onChange = vi.fn();
         render(<CrustGainStrip value={6} onChange={onChange} />);
         fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowUp' });
-        expect(onChange).toHaveBeenCalledWith(6.1);
+        expect(onChange).toHaveBeenCalledWith(6.1, false);
     });
 
     it('ArrowDown decreases value by 0.1', () => {
         const onChange = vi.fn();
         render(<CrustGainStrip value={6} onChange={onChange} />);
         fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowDown' });
-        expect(onChange).toHaveBeenCalledWith(5.9);
+        expect(onChange).toHaveBeenCalledWith(5.9, false);
     });
 
     it('Shift+ArrowUp increases value by 1', () => {
         const onChange = vi.fn();
         render(<CrustGainStrip value={6} onChange={onChange} />);
         fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowUp', shiftKey: true });
-        expect(onChange).toHaveBeenCalledWith(7);
+        expect(onChange).toHaveBeenCalledWith(7, false);
     });
 
     it('Shift+ArrowDown decreases value by 1', () => {
         const onChange = vi.fn();
         render(<CrustGainStrip value={6} onChange={onChange} />);
         fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowDown', shiftKey: true });
-        expect(onChange).toHaveBeenCalledWith(5);
+        expect(onChange).toHaveBeenCalledWith(5, false);
     });
 
     it('clamps to MAX (18) on ArrowUp', () => {
         const onChange = vi.fn();
         render(<CrustGainStrip value={17.9} onChange={onChange} />);
         fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowUp' });
-        expect(onChange).toHaveBeenCalledWith(18);
+        expect(onChange).toHaveBeenCalledWith(18, false);
     });
 
     it('clamps to MIN (0) on ArrowDown', () => {
         const onChange = vi.fn();
         render(<CrustGainStrip value={0.05} onChange={onChange} />);
         fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowDown' });
-        expect(onChange).toHaveBeenCalledWith(0);
+        expect(onChange).toHaveBeenCalledWith(0, false);
     });
 });
