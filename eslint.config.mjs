@@ -2733,6 +2733,30 @@ const sourdawPlugin = {
     },
 };
 
+const reactDefaultImportRestrictions = [
+    {
+        selector: "ImportDeclaration[source.value='react'] :matches(ImportDefaultSpecifier, ImportNamespaceSpecifier)",
+        message:
+            'Default React import not allowed since we use the TypeScript jsx-transform. If you need a global type that collides with a React named export (such as `MouseEvent`), use `globalThis.MouseEvent`.',
+    },
+];
+
+const localStorageMessage =
+    'Do not use `localStorage` directly; go through a storage adapter in `src/infra/store/storage/` or a repository.';
+const sessionStorageMessage = 'Do not use `sessionStorage` directly; go through a repository that owns the key.';
+const directStorageRestrictions = [
+    { selector: "CallExpression[callee.object.name='localStorage']", message: localStorageMessage },
+    {
+        selector: "CallExpression[callee.object.object.name='window'][callee.object.property.name='localStorage']",
+        message: localStorageMessage,
+    },
+    { selector: "CallExpression[callee.object.name='sessionStorage']", message: sessionStorageMessage },
+    {
+        selector: "CallExpression[callee.object.object.name='window'][callee.object.property.name='sessionStorage']",
+        message: sessionStorageMessage,
+    },
+];
+
 /** @type {import('@typescript-eslint/utils').TSESLint.FlatConfig.Config[]} */
 const sizeBaselineConfig = [];
 if (sizeBaselineFiles.length > 0) {
@@ -3086,16 +3110,7 @@ export default tseslint.config(
             'sourdaw/no-manual-memoization': 'error',
             'sourdaw/no-tauri-api-in-ui': 'error',
 
-            // No default React import
-            'no-restricted-syntax': [
-                'error',
-                {
-                    selector:
-                        "ImportDeclaration[source.value='react'] :matches(ImportDefaultSpecifier, ImportNamespaceSpecifier)",
-                    message:
-                        'Default React import not allowed since we use the TypeScript jsx-transform. If you need a global type that collides with a React named export (such as `MouseEvent`), use `globalThis.MouseEvent`.',
-                },
-            ],
+            'no-restricted-syntax': ['error', ...reactDefaultImportRestrictions],
         },
     },
 
@@ -3130,41 +3145,29 @@ export default tseslint.config(
     },
 
     // ─── Project-specific restrictions ───────────────────────────────────────
+    // Flat config replaces a rule's options instead of merging them, so each
+    // block that sets `no-restricted-syntax` repeats every selector list meant
+    // for its files. Production TSX carries both lists at the React ban's
+    // `error`; no production TSX calls browser storage directly.
     {
-        files: ['**/*.{ts,tsx,mts,cts}'],
+        files: ['**/*.{ts,mts,cts}'],
         ignores: [
-            '**/*.spec.{ts,tsx}',
-            'src/helpers/Store/Storage/LocalStorageStorage.ts',
-            'src/helpers/Store/Storage/SessionStorageStorage.ts',
-            'src/modules/DevTools/repositories/devToolsStorageRepository.ts',
-            'src/modules/Project/repositories/projectRepository.ts',
-            'src/modules/Project/useCases/recentProjects.ts',
-            'src/modules/Command/stores/undoStore.ts',
+            '**/*.spec.ts',
+            // Designated owners of direct browser storage access.
+            'src/infra/store/storage/createLocalStorage.ts',
+            'src/infra/store/storage/createPlainJsonLocalStorage.ts',
+            // Mirrors the undo stacks into sessionStorage for reload recovery.
+            'src/modules/Command/stores/undoSessionMirror.ts',
         ],
         rules: {
-            'no-restricted-syntax': [
-                'warn',
-                {
-                    selector: "CallExpression[callee.object.name='localStorage']",
-                    message: 'Do not use `localStorage` directly, use the `Store` with `LocalStorageStorage` instead.',
-                },
-                {
-                    selector:
-                        "CallExpression[callee.object.object.name='window'][callee.object.property.name='localStorage']",
-                    message: 'Do not use `localStorage` directly, use the `Store` with `LocalStorageStorage` instead.',
-                },
-                {
-                    selector: "CallExpression[callee.object.name='sessionStorage']",
-                    message:
-                        'Do not use `sessionStorage` directly, use the `Store` with `SessionStorageStorage` instead.',
-                },
-                {
-                    selector:
-                        "CallExpression[callee.object.object.name='window'][callee.object.property.name='sessionStorage']",
-                    message:
-                        'Do not use `sessionStorage` directly, use the `Store` with `SessionStorageStorage` instead.',
-                },
-            ],
+            'no-restricted-syntax': ['warn', ...directStorageRestrictions],
+        },
+    },
+    {
+        files: ['**/*.tsx'],
+        ignores: ['**/*.spec.tsx'],
+        rules: {
+            'no-restricted-syntax': ['error', ...reactDefaultImportRestrictions, ...directStorageRestrictions],
         },
     },
 

@@ -5,6 +5,23 @@ import { join, relative, resolve } from 'node:path';
 import { ESLint, Linter } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
+const REACT_DEFAULT_IMPORT_SELECTOR =
+    "ImportDeclaration[source.value='react'] :matches(ImportDefaultSpecifier, ImportNamespaceSpecifier)";
+const LOCAL_STORAGE_CALL_SELECTOR = "CallExpression[callee.object.name='localStorage']";
+
+const restrictedSyntaxFor = async (filePath: string) => {
+    const config = await new ESLint().calculateConfigForFile(resolve(filePath));
+    const entry: unknown = config?.rules['no-restricted-syntax'];
+    if (!Array.isArray(entry)) {
+        throw new TypeError(`ESLint resolved no no-restricted-syntax entry for ${filePath}`);
+    }
+    const [severity, ...options]: unknown[] = entry;
+    const selectors = options.map((option) =>
+        typeof option === 'object' && option !== null && 'selector' in option ? option.selector : option
+    );
+    return { severity, selectors };
+};
+
 describe('ESLint configuration', () => {
     it('runs both lint engines on the config', () => {
         const result = spawnSync(process.execPath, ['scripts/runLint.ts', 'eslint.config.mjs'], {
@@ -74,6 +91,30 @@ describe('ESLint configuration', () => {
             rmdirSync(directory);
         }
     }, 60_000);
+
+    it('bans default React imports and direct storage calls in production TSX', async () => {
+        const selectors = await restrictedSyntaxFor('src/app/App.tsx');
+
+        expect(selectors.severity).toBe(2);
+        expect(selectors.selectors).toContain(REACT_DEFAULT_IMPORT_SELECTOR);
+        expect(selectors.selectors).toContain(LOCAL_STORAGE_CALL_SELECTOR);
+    });
+
+    it('keeps the default React import ban in spec TSX', async () => {
+        const selectors = await restrictedSyntaxFor('src/app/__tests__/App.spec.tsx');
+
+        expect(selectors.severity).toBe(2);
+        expect(selectors.selectors).toContain(REACT_DEFAULT_IMPORT_SELECTOR);
+        expect(selectors.selectors).not.toContain(LOCAL_STORAGE_CALL_SELECTOR);
+    });
+
+    it('keeps the direct storage restriction non-failing in production TypeScript', async () => {
+        const selectors = await restrictedSyntaxFor('src/app/bootstrap.ts');
+
+        expect(selectors.severity).toBe(1);
+        expect(selectors.selectors).toContain(LOCAL_STORAGE_CALL_SELECTOR);
+        expect(selectors.selectors).not.toContain(REACT_DEFAULT_IMPORT_SELECTOR);
+    });
 
     it('preserves custom rule diagnostics through the loaded plugin', async () => {
         const eslint = new ESLint();
