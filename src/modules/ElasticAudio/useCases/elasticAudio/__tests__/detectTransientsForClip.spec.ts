@@ -190,16 +190,18 @@ describe('scoped product preparation consumer', () => {
     it.each(['direct', 'consumer'] as const)('admits %s work in a host task after the visible frame', async (route) => {
         const task = controlCommitTask();
         let admitted = false;
-        const request =
-            route === 'direct'
-                ? detectTransientsForClip('clip-1', 0.5).then((result) => {
-                      admitted = result.status === 'complete';
-                      return admitted;
-                  })
-                : detectTransientsForClip('clip-1', 0.5, undefined, async (_ready, lifetime) => {
-                      admitted = await lifetime.waitForFrame();
-                      return admitted;
-                  }).then((result) => result.status === 'consumed' && result.value);
+        let request: Promise<boolean>;
+        if (route === 'direct') {
+            request = detectTransientsForClip('clip-1', 0.5).then((result) => {
+                admitted = result.status === 'complete';
+                return admitted;
+            });
+        } else {
+            request = detectTransientsForClip('clip-1', 0.5, undefined, async (_ready, lifetime) => {
+                admitted = await lifetime.waitForFrame();
+                return admitted;
+            }).then((result) => result.status === 'consumed' && result.value);
+        }
         const frame = await task.frame;
         frame(0);
         expect(await Promise.race([task.posted.then(() => 'queued'), request.then(() => 'admitted')])).toBe('queued');
@@ -289,11 +291,11 @@ describe('scoped product preparation consumer', () => {
                 await vi.advanceTimersByTimeAsync(30_001);
             }
             deliverQueuedTask?.call(task.channel.port1, new MessageEvent('message'));
-            expect(await request).toEqual(
-                kind === 'deadline'
-                    ? { status: 'failed', code: 'analysis-timed-out' }
-                    : { status: 'consumed', value: false }
-            );
+            if (kind === 'deadline') {
+                expect(await request).toEqual({ status: 'failed', code: 'analysis-timed-out' });
+            } else {
+                expect(await request).toEqual({ status: 'consumed', value: false });
+            }
             expect(task.closeReceiver).toHaveBeenCalledOnce();
             expect(task.closeSender).toHaveBeenCalledOnce();
             expect(vi.getTimerCount()).toBe(0);
