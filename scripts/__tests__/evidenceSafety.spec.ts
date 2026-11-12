@@ -10,7 +10,9 @@ const anthropicKey = `${['sk', 'ant', 'api03'].join('-')}-${keyBody(40)}`;
 const openAiKey = `${['sk', ''].join('-')}${keyBody(48)}`;
 const openAiProjectKey = `${['sk', 'proj', ''].join('-')}${keyBody(48)}`;
 const slackToken = `${['xo', 'xb'].join('')}-1234567890-${keyBody(24)}`;
-const slackWebhook = `${['https://hooks', 'slack', 'com/services/'].join('.')}T000/B000/${keyBody(24)}`;
+const slackWebhookPath = `/${['services', 'T0123ABCD', 'B0123ABCD'].join('/')}/${keyBody(24)}`;
+const slackWebhook = `${['https://hooks', 'slack', 'com'].join('.')}${slackWebhookPath}`;
+const slackWorkflowWebhook = `/${['workflows', 'T0123ABCD', 'A0123ABCD', '123456789012345678'].join('/')}/${keyBody(24)}`;
 const googleKey = `${['AI', 'za'].join('')}${keyBody(35)}`;
 const gitLabToken = `${['gl', 'pat'].join('')}-${keyBody(20)}`;
 const basicCredential = Buffer.from(['robot', 'hunter2'].join(':')).toString('base64');
@@ -25,6 +27,8 @@ describe('unsafeCredentialReason', () => {
         ['an OpenAI API key', openAiProjectKey],
         ['a Slack token', slackToken],
         ['a Slack webhook URL', slackWebhook],
+        ['a Slack webhook URL', slackWebhookPath],
+        ['a Slack webhook URL', slackWorkflowWebhook],
         ['a Google API key', googleKey],
         ['a GitLab personal access token', gitLabToken],
         ['an HTTP Basic credential', basicHeader],
@@ -41,6 +45,8 @@ describe('unsafeCredentialReason', () => {
         'Basic TypeScript conventions hold',
         'ssh clones from git@github.com:owner/repo.git',
         'the docs live at https://example.com/path?a=1',
+        'see /services/billing/api for details',
+        'the route /workflows/TRANSPORT/SCHEDULER/handles-loop-wraps stays put',
     ])('admits the prose %j', (prose) => {
         expect(unsafeCredentialReason(prose)).toBeUndefined();
     });

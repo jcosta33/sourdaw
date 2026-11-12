@@ -38,7 +38,11 @@ const UNSAFE_VALUE_SHAPES: readonly { readonly reason: string; readonly pattern:
     { reason: 'an Anthropic API key', pattern: /(?<![\w-])sk-ant-[\w-]{20,}/u },
     { reason: 'an OpenAI API key', pattern: /(?<![\w-])sk-(?:proj-)?(?=[\w-]*\d)[\w-]{20,}/u },
     { reason: 'a Slack token', pattern: /(?<![\w-])xox[abposr]-[A-Za-z0-9-]{10,}/u },
-    { reason: 'a Slack webhook URL', pattern: /hooks\.slack\.com\/(?:services|workflows|triggers)\//iu },
+    // The secret is the path (workspace id, hook id, token), so it is matched without the host.
+    {
+        reason: 'a Slack webhook URL',
+        pattern: /\/(?:services|workflows|triggers)\/T[A-Z0-9]{8,}\/[A-Z0-9]{8,}\/[A-Za-z0-9]{16,}/u,
+    },
     { reason: 'a Google API key', pattern: /(?<![\w-])AIza[\w-]{35}/u },
     { reason: 'a GitLab personal access token', pattern: /(?<![\w-])glpat-[\w-]{20,}/u },
     { reason: 'an HTTP Basic credential', pattern: /\bauthorization\s*:\s*basic\s+[A-Za-z0-9+/]{4,}={0,2}/iu },
