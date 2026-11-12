@@ -380,11 +380,23 @@ export type RulesetHardeningPort = {
 export type HardenedRulesetBuilder = (ruleset: RulesetDocument) => RulesetDocument;
 
 /**
+ * The write replaces the whole ruleset with a candidate built from the plan read, so an edit landing
+ * between that read and the write would be silently reverted. Only the writable projection counts:
+ * server-maintained fields such as `updated_at` are not written back and may move freely.
+ */
+function assertUnchangedSincePlan(planned: RulesetDocument, current: RulesetDocument): void {
+    if (canonicalJson(writableRuleset(planned)) !== canonicalJson(writableRuleset(current))) {
+        fail('ruleset changed since it was planned; refusing to overwrite a concurrent edit');
+    }
+}
+
+/**
  * The whole operation against a port. Reading, planning and the rollback capture come first; every
  * guard then runs against the candidate write, so a candidate touching anything outside the
  * approved set, adding a required context, or leaving a field short of its target is refused before
  * the port is asked to write. With `apply` false the plan is reported and nothing is written. On
- * apply, the write is followed by a fresh read and the same guards over the writable projection,
+ * apply, a re-read immediately before the write refuses a ruleset edited since the plan read, and
+ * the write is followed by a fresh read and the same guards over the writable projection,
  * which is what proves the server stored the plan.
  */
 export function hardenRuleset(
@@ -422,6 +434,7 @@ export function hardenRuleset(
         return receipt;
     }
     port.log(`ruleset-rollback:${String(rulesetId)}:${rollback}`);
+    assertUnchangedSincePlan(live, port.readRuleset(rulesetId));
     port.writeRuleset(rulesetId, candidate);
     const readback = port.readRuleset(rulesetId);
     assertNoRequiredContextAdded(live, readback);

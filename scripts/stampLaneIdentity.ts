@@ -11,14 +11,14 @@
 // worktree — is simply set again.
 
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import {
     AUTHOR_BOT_COMMIT_EMAIL,
     AUTHOR_BOT_COMMIT_NAME,
     AUTHOR_LOCK_REASON,
-    assertTrustedExecutingBlob,
-    originMainBlob,
+    assertTrustedImportClosure,
     resolvePrimaryRoot,
     spawnCapture,
     spawnRun,
@@ -26,6 +26,7 @@ import {
 import { authorIdentityExtensionArgs, authorIdentityWorktreeArgs } from './openLane.ts';
 import { fail, isLaneBranch } from './prContract.ts';
 import { parseWorktrees, type Worktree } from './removeLane.ts';
+import { snapshotImportSpecifiers } from './trustedGithubWriteBootstrap.ts';
 
 export const STAMP_LANE_IDENTITY_USAGE = 'usage: pnpm lane:identity';
 
@@ -42,8 +43,12 @@ export function authorLanes(worktrees: Worktree[]): Worktree[] {
 
 export type LaneIdentityStamp = { lane: string; changedKeys: string[] };
 
+/** A locked lane whose directory is gone is `missing`: it is reported, and the run goes on. */
+export type LaneIdentityRun = { stamps: LaneIdentityStamp[]; missing: string[] };
+
 export type StampLaneIdentityPort = {
     worktrees: () => Worktree[];
+    pathExists: (path: string) => boolean;
     /** Runs one git command in `cwd`, failing loudly on a nonzero exit. */
     run: (command: string, args: string[], cwd: string) => void;
     /** Reads one git config value in `cwd`; `undefined` when the key is unset. */
@@ -57,9 +62,16 @@ const IDENTITY_KEYS: Array<{ key: string; expected: string }> = [
     { key: 'commit.gpgsign', expected: 'false' },
 ];
 
-export function stampLaneIdentities(port: StampLaneIdentityPort): LaneIdentityStamp[] {
+export function stampLaneIdentities(port: StampLaneIdentityPort): LaneIdentityRun {
     const stamps: LaneIdentityStamp[] = [];
+    const missing: string[] = [];
     for (const lane of authorLanes(port.worktrees())) {
+        // Git never marks a locked worktree prunable, so a deleted lane directory still lists here.
+        if (!port.pathExists(lane.path)) {
+            missing.push(lane.path);
+            port.log(`${lane.path} is missing on disk; skipped`);
+            continue;
+        }
         // The extension must be on before the `--worktree` reads below work; it lives in the
         // primary's common config, so enabling it here covers every later lane too.
         port.run('git', authorIdentityExtensionArgs(), lane.path);
@@ -79,7 +91,20 @@ export function stampLaneIdentities(port: StampLaneIdentityPort): LaneIdentitySt
                 : `${lane.path} stamped: ${changedKeys.join(', ')}`
         );
     }
-    return stamps;
+    return { stamps, missing };
+}
+
+/** Logs the run's totals; a missing lane fails the run so the stale lock does not go unnoticed. */
+export function summarizeLaneIdentityRun(run: LaneIdentityRun, log: (message: string) => void): number {
+    const checked = run.stamps.length;
+    const restamped = run.stamps.filter((stamp) => stamp.changedKeys.length > 0).length;
+    const totals = `${String(checked)} author ${checked === 1 ? 'lane' : 'lanes'} checked, ${String(restamped)} restamped`;
+    if (run.missing.length === 0) {
+        log(totals);
+        return 0;
+    }
+    log(`${totals}, ${String(run.missing.length)} missing on disk`);
+    return 1;
 }
 
 export function shellPort(cwd: string = process.cwd()): StampLaneIdentityPort {
@@ -87,6 +112,7 @@ export function shellPort(cwd: string = process.cwd()): StampLaneIdentityPort {
     return {
         worktrees: () =>
             parseWorktrees(spawnCapture('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: primaryRoot })),
+        pathExists: (path) => existsSync(path),
         run: (command, args, runCwd) => {
             spawnRun(command, args, { cwd: runCwd });
         },
@@ -117,16 +143,12 @@ function main(): number {
             fail(STAMP_LANE_IDENTITY_USAGE);
         }
         const cwd = process.cwd();
-        assertTrustedExecutingBlob(
-            'scripts/stampLaneIdentity.ts',
-            fileURLToPath(import.meta.url),
-            originMainBlob('scripts/stampLaneIdentity.ts', cwd)
-        );
+        // `lane:identity` holds no GitHub credential and refuses unless its whole relative-import
+        // closure matches origin/main. The check runs after the module graph is evaluated, so it
+        // guards the modules' behaviour, not their import-time side effects.
+        assertTrustedImportClosure(fileURLToPath(import.meta.url), cwd, snapshotImportSpecifiers);
         const port = shellPort(cwd);
-        const stamps = stampLaneIdentities(port);
-        const restamped = stamps.filter((stamp) => stamp.changedKeys.length > 0).length;
-        port.log(`${stamps.length} author ${stamps.length === 1 ? 'lane' : 'lanes'} checked, ${restamped} restamped`);
-        return 0;
+        return summarizeLaneIdentityRun(stampLaneIdentities(port), port.log);
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);
         return 1;

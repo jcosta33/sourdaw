@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { AUTHOR_BOT_COMMIT_EMAIL, AUTHOR_BOT_COMMIT_NAME, AUTHOR_LOCK_REASON } from '../githubAppIdentity.ts';
-import { shellPort, stampLaneIdentities } from '../stampLaneIdentity.ts';
+import { shellPort, stampLaneIdentities, summarizeLaneIdentityRun } from '../stampLaneIdentity.ts';
 
 /**
  * `lane:identity` is the backfill route `lane:publish`'s authorship refusal names, so the fixture
@@ -96,7 +96,7 @@ describe('lane identity stamping', () => {
     it('stamps exactly the locked author lanes and leaves every other worktree unstamped', () => {
         const f = primaryFixture();
 
-        const stamps = stampLaneIdentities(shellPort(f.root));
+        const { stamps, missing } = stampLaneIdentities(shellPort(f.root));
 
         const changedKeys = ['user.name', 'user.email', 'commit.gpgsign'];
         expect([...stamps].sort((a, b) => a.lane.localeCompare(b.lane))).toEqual(
@@ -116,13 +116,14 @@ describe('lane identity stamping', () => {
         expect(existsSync(worktreeConfigFile(f.root, 'scratch'))).toBe(false);
         expect(existsSync(worktreeConfigFile(f.root, 'agent-13-foreign-lock'))).toBe(false);
         expect(existsSync(worktreeConfigFile(f.root, 'stray-author-lock'))).toBe(false);
+        expect(missing).toEqual([]);
     });
 
     it('reports a stamped lane as already carrying the identity on a second run', () => {
         const f = primaryFixture();
         stampLaneIdentities(shellPort(f.root));
 
-        const second = stampLaneIdentities(shellPort(f.root));
+        const second = stampLaneIdentities(shellPort(f.root)).stamps;
 
         expect([...second].sort((a, b) => a.lane.localeCompare(b.lane))).toEqual(
             [f.authorLane, f.typedIssueLane, f.typedIssuelessLane]
@@ -130,5 +131,56 @@ describe('lane identity stamping', () => {
                 .sort((a, b) => a.lane.localeCompare(b.lane))
         );
         expect(fixtureGit(f.authorLane, ['config', 'user.email'])).toBe(AUTHOR_BOT_COMMIT_EMAIL);
+    });
+
+    it('reports a locked author lane whose directory vanished and still stamps every other lane', () => {
+        const f = primaryFixture();
+        // Git never marks a locked worktree prunable, so the record still reads as an author lane.
+        rmSync(f.typedIssuelessLane, { recursive: true, force: true });
+        const logs: string[] = [];
+        const port = { ...shellPort(f.root), log: (message: string) => logs.push(message) };
+
+        const run = stampLaneIdentities(port);
+
+        const changedKeys = ['user.name', 'user.email', 'commit.gpgsign'];
+        expect(run.missing).toEqual([f.typedIssuelessLane]);
+        expect([...run.stamps].sort((a, b) => a.lane.localeCompare(b.lane))).toEqual(
+            [
+                { lane: f.authorLane, changedKeys },
+                { lane: f.typedIssueLane, changedKeys },
+            ].sort((a, b) => a.lane.localeCompare(b.lane))
+        );
+        expect(fixtureGit(f.typedIssueLane, ['config', 'user.email'])).toBe(AUTHOR_BOT_COMMIT_EMAIL);
+        expect(logs).toContain(`${f.typedIssuelessLane} is missing on disk; skipped`);
+    });
+});
+
+describe('lane identity summary', () => {
+    it('exits zero when every author lane was checked', () => {
+        const logs: string[] = [];
+        const code = summarizeLaneIdentityRun(
+            {
+                stamps: [
+                    { lane: '/a', changedKeys: ['user.name'] },
+                    { lane: '/b', changedKeys: [] },
+                ],
+                missing: [],
+            },
+            (message) => logs.push(message)
+        );
+
+        expect(code).toBe(0);
+        expect(logs).toEqual(['2 author lanes checked, 1 restamped']);
+    });
+
+    it('exits nonzero naming the count when an author lane was missing on disk', () => {
+        const logs: string[] = [];
+        const code = summarizeLaneIdentityRun(
+            { stamps: [{ lane: '/a', changedKeys: [] }], missing: ['/gone'] },
+            (message) => logs.push(message)
+        );
+
+        expect(code).toBe(1);
+        expect(logs).toEqual(['1 author lane checked, 0 restamped, 1 missing on disk']);
     });
 });
