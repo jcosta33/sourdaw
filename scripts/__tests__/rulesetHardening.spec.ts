@@ -118,17 +118,25 @@ type FakePort = {
     logs: string[];
 };
 
-/** A port double that answers the first read with `live`, every later read with `readback`. */
-function fakePort(live: RulesetDocument, readback: RulesetDocument = live): FakePort {
+/**
+ * A port double that answers the first read with `live`, the second (the pre-write re-read) with
+ * `beforeWrite`, and every later read with `readback`.
+ */
+function fakePort(
+    live: RulesetDocument,
+    readback: RulesetDocument = live,
+    beforeWrite: RulesetDocument = live
+): FakePort {
     const writes: { rulesetId: number; ruleset: RulesetDocument }[] = [];
     const reads: number[] = [];
     const logs: string[] = [];
+    const answers = [live, beforeWrite];
     return {
         port: {
             resolveRulesetId: () => RULESET_ID,
             readRuleset: (rulesetId) => {
                 reads.push(rulesetId);
-                return reads.length === 1 ? live : readback;
+                return answers[reads.length - 1] ?? readback;
             },
             writeRuleset: (rulesetId, ruleset) => {
                 writes.push({ rulesetId, ruleset });
@@ -516,7 +524,7 @@ describe('hardenRuleset', () => {
         });
         expect(writes).toHaveLength(1);
         expect(writes[0]).toEqual({ rulesetId: RULESET_ID, ruleset: hardened });
-        expect(reads).toEqual([RULESET_ID, RULESET_ID]);
+        expect(reads).toEqual([RULESET_ID, RULESET_ID, RULESET_ID]);
         expect(writes[0]?.ruleset).toEqual(
             fixture({ dismissStaleReviews: true, requireLastPushApproval: true, reviewCount: 1 })
         );
@@ -614,6 +622,39 @@ describe('hardenRuleset', () => {
         const live = liveShape();
         const { port } = fakePort(live, live);
         expect(() => hardenRuleset(true, port)).toThrow('rules[2].parameters.required_approving_review_count');
+    });
+
+    it('should refuse a readback that changed a non-approved writable field while meeting every target', () => {
+        const live = liveShape();
+        const readback = { ...buildHardenedRuleset(live), enforcement: 'disabled' };
+        const { port, writes } = fakePort(live, readback);
+        expect(() => hardenRuleset(true, port)).toThrow(
+            'refusing ruleset change outside the approved set dismiss_stale_reviews_on_push, require_last_push_approval, required_approving_review_count: 1 disallowed difference(s), first at enforcement'
+        );
+        expect(writes).toHaveLength(1);
+    });
+
+    it('should refuse before writing when the ruleset changed between the plan read and the write', () => {
+        const live = liveShape();
+        const concurrent = fixture({
+            dismissStaleReviews: true,
+            requireLastPushApproval: true,
+            bypassActors: [{ actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'always' }],
+        });
+        const { port, writes, reads } = fakePort(live, buildHardenedRuleset(live), concurrent);
+        expect(() => hardenRuleset(true, port)).toThrow(
+            'ruleset changed since it was planned; refusing to overwrite a concurrent edit'
+        );
+        expect(writes).toEqual([]);
+        expect(reads).toEqual([RULESET_ID, RULESET_ID]);
+    });
+
+    it('should write once when the pre-write re-read matches the plan read in a server-only field alone', () => {
+        const live = liveShape();
+        const reread = { ...liveShape(), updated_at: '2026-11-12T09:00:00.000+02:00' };
+        const { port, writes } = fakePort(live, buildHardenedRuleset(live), reread);
+        expect(hardenRuleset(true, port).outcome).toBe('applied');
+        expect(writes).toHaveLength(1);
     });
 });
 

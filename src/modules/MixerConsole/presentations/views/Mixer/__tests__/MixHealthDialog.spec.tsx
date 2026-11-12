@@ -3,33 +3,25 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { MixHealthDialog } from '../MixHealthDialog';
 
-type HostedTextResult = {
-    status: 'complete' | 'partial' | 'failed' | 'cancelled' | 'unavailable';
-    failure: { safeMessage: string } | null;
-};
-
 const mocks = vi.hoisted(() => ({
     mixHealthAnalysis: vi.fn<(input: { onToken: (text: string) => void; signal?: AbortSignal }) => Promise<void>>(),
-    streamHostedModelText:
-        vi.fn<
-            (input: {
-                messages: Array<{ role: string; content: string }>;
-                onToken: (text: string) => void;
-                signal?: AbortSignal;
-            }) => Promise<HostedTextResult>
-        >(),
+    explainMixHealthReport:
+        vi.fn<(input: { report: string; onToken: (text: string) => void; signal?: AbortSignal }) => Promise<void>>(),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
+    explainMixHealthReport: mocks.explainMixHealthReport,
     mixHealthAnalysis: mocks.mixHealthAnalysis,
-    streamHostedModelText: mocks.streamHostedModelText,
 }));
+
+const NEEDS_MODEL_MESSAGE =
+    'Mix Health needs an AI model. Load the local WebLLM model in Settings > AI, or select the hosted provider there to send this analysis remotely.';
 
 describe('MixHealthDialog', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.mixHealthAnalysis.mockResolvedValue(undefined);
-        mocks.streamHostedModelText.mockResolvedValue({ status: 'complete', failure: null });
+        mocks.explainMixHealthReport.mockResolvedValue(undefined);
     });
 
     it('does not run analysis or render dialog content while closed', () => {
@@ -63,28 +55,27 @@ describe('MixHealthDialog', () => {
         });
         expect(await screen.findByText('Mix looks balanced.')).toBeInTheDocument();
         expect(screen.queryByText('Mentor is thinking...')).not.toBeInTheDocument();
-        expect(screen.getByText('Cloud mentor report')).toBeInTheDocument();
+        expect(screen.getByText('Mentor report')).toBeInTheDocument();
     });
 
-    it('shows an error message when analysis fails', async () => {
-        mocks.mixHealthAnalysis.mockRejectedValue(new Error('network down'));
+    it('shows why the analysis could not run and how to proceed', async () => {
+        mocks.mixHealthAnalysis.mockRejectedValue(new Error(NEEDS_MODEL_MESSAGE));
 
         render(<MixHealthDialog open onOpenChange={vi.fn()} />);
 
-        expect(
-            await screen.findByText('Error generating mix health report. Make sure Cloud AI is connected.')
-        ).toBeInTheDocument();
+        expect(await screen.findByText(NEEDS_MODEL_MESSAGE)).toBeInTheDocument();
+        expect(screen.queryByText(/Cloud AI/)).not.toBeInTheDocument();
         expect(screen.queryByText('Mentor is thinking...')).not.toBeInTheDocument();
     });
 
-    it('requests an ELI5 explanation of the current report with the expected prompt', async () => {
+    it('requests an ELI5 explanation of the current report', async () => {
         mocks.mixHealthAnalysis.mockImplementation(({ onToken }) => {
             onToken('Technical report body.');
             return Promise.resolve();
         });
-        mocks.streamHostedModelText.mockImplementation((input) => {
+        mocks.explainMixHealthReport.mockImplementation((input) => {
             input.onToken('Simple explanation.');
-            return Promise.resolve({ status: 'complete', failure: null });
+            return Promise.resolve();
         });
 
         render(<MixHealthDialog open onOpenChange={vi.fn()} />);
@@ -92,14 +83,8 @@ describe('MixHealthDialog', () => {
 
         fireEvent.click(screen.getByRole('button', { name: "Explain Like I'm 5" }));
 
-        expect(mocks.streamHostedModelText).toHaveBeenCalledTimes(1);
-        const call = mocks.streamHostedModelText.mock.calls[0];
-        if (!call) {
-            throw new Error('streamHostedModelText was not called');
-        }
-        const [{ messages }] = call;
-        expect(messages[0]).toEqual({ role: 'system', content: 'You are a patient music teacher for beginners.' });
-        expect(messages[1]?.content).toContain('Technical report body.');
+        expect(mocks.explainMixHealthReport).toHaveBeenCalledTimes(1);
+        expect(mocks.explainMixHealthReport.mock.calls[0]?.[0].report).toBe('Technical report body.');
 
         expect(await screen.findByText('Simple explanation.')).toBeInTheDocument();
         expect(screen.getByText('ELI5 Translation')).toBeInTheDocument();
@@ -110,12 +95,9 @@ describe('MixHealthDialog', () => {
             onToken('Technical report body.');
             return Promise.resolve();
         });
-        mocks.streamHostedModelText.mockImplementation((input) => {
+        mocks.explainMixHealthReport.mockImplementation((input) => {
             input.onToken('Partial explanation.');
-            return Promise.resolve({
-                status: 'partial',
-                failure: { safeMessage: 'The model provider stopped at its output limit.' },
-            });
+            return Promise.reject(new Error('The model provider stopped at its output limit.'));
         });
 
         render(<MixHealthDialog open onOpenChange={vi.fn()} />);
@@ -125,6 +107,21 @@ describe('MixHealthDialog', () => {
 
         expect(await screen.findByText(/Partial explanation/)).toBeInTheDocument();
         expect(await screen.findByText(/stopped at its output limit/)).toBeInTheDocument();
+    });
+
+    it('shows why the ELI5 explanation could not run', async () => {
+        mocks.mixHealthAnalysis.mockImplementation(({ onToken }) => {
+            onToken('Technical report body.');
+            return Promise.resolve();
+        });
+        mocks.explainMixHealthReport.mockRejectedValue(new Error(NEEDS_MODEL_MESSAGE));
+
+        render(<MixHealthDialog open onOpenChange={vi.fn()} />);
+        await screen.findByText('Technical report body.');
+
+        fireEvent.click(screen.getByRole('button', { name: "Explain Like I'm 5" }));
+
+        expect(await screen.findByText((content) => content.includes(NEEDS_MODEL_MESSAGE))).toBeInTheDocument();
     });
 
     it('disables the ELI5 button until a report exists, and Close notifies the caller', async () => {
@@ -188,9 +185,9 @@ describe('MixHealthDialog', () => {
             return Promise.resolve();
         });
         let eli5Signal: AbortSignal | undefined;
-        mocks.streamHostedModelText.mockImplementation(
+        mocks.explainMixHealthReport.mockImplementation(
             (input) =>
-                new Promise<HostedTextResult>(() => {
+                new Promise<void>(() => {
                     eli5Signal = input.signal;
                 })
         );

@@ -290,7 +290,7 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         expect(screen.getByText('Fill tools')).toBeInTheDocument();
         expect(screen.getByRole('combobox', { name: 'Pattern groove template' })).toBeInTheDocument();
         view('simple');
-        expect(screen.queryByRole('button', { name: 'M' })).not.toBeInTheDocument();
+        expect(screen.queryByText('Pad mixer')).not.toBeInTheDocument();
         expect(screen.queryByTestId('toaster-step-0-0')).not.toBeInTheDocument();
         expect(screen.getAllByRole('slider', { name: 'Master' })).toHaveLength(1);
     });

@@ -11,7 +11,11 @@ import { SafeMarkdown } from '#/components/SafeMarkdown';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { logger } from '#/infra/logger/appLogger';
-import { mixHealthAnalysis, streamHostedModelText } from '#/modules/AiRuntime/useCases';
+import { explainMixHealthReport, mixHealthAnalysis } from '#/modules/AiRuntime/useCases';
+
+function describeFailure(error: unknown, fallback: string): string {
+    return error instanceof Error && error.message.length > 0 ? error.message : fallback;
+}
 
 type MixHealthDialogProps = {
     open: boolean;
@@ -54,7 +58,7 @@ const MixHealthDialogContent = ({ onOpenChange }: MixHealthDialogContentProps): 
             } catch (error) {
                 if (!controller.signal.aborted) {
                     logger.warn('Mix health analysis failed:', error);
-                    setReport('Error generating mix health report. Make sure Cloud AI is connected.');
+                    setReport(describeFailure(error, 'Error generating mix health report.'));
                 }
             } finally {
                 if (!controller.signal.aborted) {
@@ -83,16 +87,8 @@ const MixHealthDialogContent = ({ onOpenChange }: MixHealthDialogContentProps): 
         setReport(reportRef.current);
 
         try {
-            const outcome = await streamHostedModelText({
-                correlationId: `mix-health-eli5-${crypto.randomUUID()}`,
-                messages: [
-                    { role: 'system', content: 'You are a patient music teacher for beginners.' },
-                    {
-                        role: 'user',
-                        content: `Here is a technical mix analysis:\n\n${originalReport}\n\nPlease explain this to me like I am a 5 year old beginner. Focus entirely on simple analogies.`,
-                    },
-                ],
-                maxOutputTokens: 2_048,
+            await explainMixHealthReport({
+                report: originalReport,
                 onToken: (token) => {
                     if (controller.signal.aborted) {
                         return;
@@ -102,17 +98,10 @@ const MixHealthDialogContent = ({ onOpenChange }: MixHealthDialogContentProps): 
                 },
                 signal: controller.signal,
             });
-            if (controller.signal.aborted) {
-                return;
-            }
-            if (outcome.status !== 'complete') {
-                reportRef.current += `\n[${outcome.failure?.safeMessage ?? 'Hosted AI response incomplete.'}]`;
-                setReport(reportRef.current);
-            }
         } catch (error) {
             if (!controller.signal.aborted) {
                 logger.warn('ELI5 generation failed:', error);
-                reportRef.current += '\n[Error generating ELI5 explanation]';
+                reportRef.current += `\n[${describeFailure(error, 'Error generating ELI5 explanation')}]`;
                 setReport(reportRef.current);
             }
         } finally {
@@ -138,7 +127,7 @@ const MixHealthDialogContent = ({ onOpenChange }: MixHealthDialogContentProps): 
             <DawDialogBody scrollable className="min-h-[200px] max-h-[500px] px-4 py-4 text-sm leading-relaxed">
                 <DawDialogSection
                     title="Analysis"
-                    detail={report ? 'Cloud mentor report' : 'Generating a fresh read on the current mix'}
+                    detail={report ? 'Mentor report' : 'Generating a fresh read on the current mix'}
                 >
                     {report ? (
                         <div className="prose prose-invert prose-sm max-w-none">

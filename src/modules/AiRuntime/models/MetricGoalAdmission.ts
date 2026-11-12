@@ -32,6 +32,10 @@ export type MetricGoal<MetricId extends string> = {
         | 'increase'
         | 'decrease'
         | 'hold'
+        /** A one-way bound: passes while the metric rises by no more than `tolerance`, however far it falls. */
+        | 'no-increase'
+        /** A one-way bound: passes while the metric falls by no more than `tolerance`, however far it rises. */
+        | 'no-decrease'
         | 'match-current'
         | 'greater-than-current'
         | 'less-than-current'

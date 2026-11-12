@@ -670,6 +670,18 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         });
     });
 
+    it('quotes on the brief card each clause of its request that nothing measures, and only those', async () => {
+        scriptPlanningTurns([briefIntake, compileBrief({ vision: 'A late-night record' }, []), proposeCompiled()]);
+
+        await sendChatMessage('make this a late-night record but keep the vocal intimate and keep it warm');
+
+        const { message, confirmation } = getPendingProposal();
+        expect(confirmation.actions.map((action) => action.type)).toEqual(['setProductionBrief']);
+        expect(message.content.split('\n').filter((line) => line.startsWith('Not measured:'))).toEqual([
+            'Not measured: “keep it warm” — nothing the application measures shows that it holds.',
+        ]);
+    });
+
     it('still joins hold goals from the same constraint wording to a batch that changes sound', () => {
         const context = getProjectContext();
         // The clauses each compiled batch is held to, read from the batch it actually compiled.

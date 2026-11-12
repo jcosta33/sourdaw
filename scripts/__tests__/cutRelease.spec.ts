@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { cutRelease, parseCutReleaseArgs, releaseTagMessage, type CutReleasePort } from '../cutRelease.ts';
+import {
+    cutRelease,
+    parseCutReleaseArgs,
+    releaseTagMessage,
+    runCutReleaseCli,
+    trustedCutReleaseRuntime,
+    type CutReleasePort,
+} from '../cutRelease.ts';
 import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import {
     CHANGELOG_PREAMBLE,
@@ -227,5 +234,33 @@ describe('cut refusals', () => {
         const port = fakePort({ releasePullRequest: undefined });
         expect(() => cut(port)).toThrow(`${commit} does not name the release pull request it squashed`);
         expect(port.calls).toEqual([]);
+    });
+});
+
+describe('runCutReleaseCli launcher binding', () => {
+    const launcherEnv = {
+        SOURDAW_TRUSTED_PRIMARY_ROOT: '/primary',
+        SOURDAW_TRUSTED_ORIGIN_COMMIT: 'a'.repeat(40),
+        SOURDAW_TRUSTED_GIT_PATH: '/usr/bin/git',
+        SOURDAW_TRUSTED_GH_PATH: '/usr/bin/gh',
+    };
+
+    it('accepts the runtime the launcher hands it', () => {
+        expect(trustedCutReleaseRuntime(launcherEnv)).toEqual({
+            primaryRoot: '/primary',
+            originCommit: 'a'.repeat(40),
+        });
+    });
+
+    it.each([
+        ['no launcher environment', {}],
+        ['a relative primary root', { ...launcherEnv, SOURDAW_TRUSTED_PRIMARY_ROOT: 'primary' }],
+        ['a non-commit pin', { ...launcherEnv, SOURDAW_TRUSTED_ORIGIN_COMMIT: 'main' }],
+        ['an unfrozen git', { ...launcherEnv, SOURDAW_TRUSTED_GIT_PATH: 'git' }],
+        ['an unfrozen gh', { ...launcherEnv, SOURDAW_TRUSTED_GH_PATH: undefined }],
+    ])('refuses %s before authenticating', async (_label, env) => {
+        await expect(runCutReleaseCli(['1.2.3', '--commit', commit], env)).rejects.toThrow(
+            'release:cut must run through the protected primary checkout launcher'
+        );
     });
 });

@@ -211,6 +211,17 @@ describe('ToasterPanel', () => {
         expect(screen.getByRole('status')).toHaveTextContent('Straight timing is active; no groove is assigned.');
     });
 
+    it('keeps the mode toggles at least 24 pixels high with semantic text', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
+
+        for (const name of ['16 Levels mode', 'Note repeat mode']) {
+            const toggle = screen.getByRole('button', { name });
+            expect(toggle).toHaveClass('min-h-6');
+            expect(toggle.style.fontSize).toBe('var(--text-metadata)');
+        }
+    });
+
     it('toggles 16-levels enters and exits 16-levels session', () => {
         const { unmount } = render(<ToasterPanel deviceId="toaster-test" />);
         fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });

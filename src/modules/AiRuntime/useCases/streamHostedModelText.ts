@@ -16,6 +16,7 @@ import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 
 import { createModelProviderStreamWriter } from './createModelProviderStreamWriter';
 import { remoteTransmissionDisclosure } from './discloseRemoteTransmission';
+import { getBackendChain } from './llmOrchestration/backendResolution/getBackendChain';
 import { createModelProviderProtocol } from './modelProviderProtocol';
 
 type StreamHostedModelTextInput = {
@@ -39,7 +40,20 @@ const UNKNOWN_RETENTION: AgentDataRetention = {
     unknown: 'unknown',
 };
 
-function unavailableResult(input: StreamHostedModelTextInput): ModelProviderResult {
+const PROVIDER_NOT_CONFIGURED = {
+    code: 'hosted-provider-unavailable',
+    safeMessage: 'The hosted model provider is not configured.',
+} as const;
+
+const PROVIDER_NOT_SELECTED = {
+    code: 'hosted-provider-not-selected',
+    safeMessage: 'The hosted model provider is not selected, so nothing was sent to it.',
+} as const;
+
+function unavailableResult(
+    input: StreamHostedModelTextInput,
+    reason: { code: string; safeMessage: string } = PROVIDER_NOT_CONFIGURED
+): ModelProviderResult {
     return {
         schemaVersion: MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
         provider: 'openai-compatible',
@@ -57,10 +71,10 @@ function unavailableResult(input: StreamHostedModelTextInput): ModelProviderResu
         finishReason: 'unavailable',
         partialOutputDisposition: 'none',
         failure: {
-            code: 'hosted-provider-unavailable',
+            code: reason.code,
             correlationId: input.correlationId,
             retryable: true,
-            safeMessage: 'The hosted model provider is not configured.',
+            safeMessage: reason.safeMessage,
             partialOutputDisposition: 'none',
         },
         ignoredProviderEvents: [],
@@ -68,6 +82,11 @@ function unavailableResult(input: StreamHostedModelTextInput): ModelProviderResu
 }
 
 export async function streamHostedModelText(input: StreamHostedModelTextInput): Promise<ModelProviderResult> {
+    // Project data leaves the device only on the user's explicit hosted selection, never under
+    // Automatic; the backend chain is the one place that rule lives.
+    if (!getBackendChain().includes('cloud')) {
+        return unavailableResult(input, PROVIDER_NOT_SELECTED);
+    }
     const providerInfo = getCloudProviderInfo();
     if (providerInfo === null) {
         return unavailableResult(input);

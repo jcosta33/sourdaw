@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -85,6 +86,8 @@ import {
 } from '../publishLane.ts';
 import { changedReviewPaths, type ReviewChangedPath } from '../reviewDiffSummary.ts';
 import { CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL } from '../testInstructions.ts';
+
+import { launcherFixtureOrigin, publishLauncherOrigin, writeLocalLauncher } from './fixtures/trustedLauncherOrigin.ts';
 
 const PRIMARY_ROOT = '/repo';
 const DEFAULT_SUBJECT = 'feat(vcs): add identities';
@@ -788,6 +791,10 @@ describe('lane publish', () => {
                         : '';
                 writeFileSync(join(primary, 'scripts', file), fixtureSource + fetchFixture);
             }
+            writeLocalLauncher(
+                join(primary, 'scripts', 'trustedGithubWriteBootstrap.ts'),
+                launcherFixtureOrigin(primary)
+            );
             writeFileSync(
                 join(primary, 'package.json'),
                 JSON.stringify({
@@ -799,6 +806,7 @@ describe('lane publish', () => {
             fixtureGit(primary, ['add', '.']);
             fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: trusted publisher']);
             fixtureGit(primary, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+            publishLauncherOrigin((args) => fixtureGit(primary, args), launcherFixtureOrigin(primary));
             const fixtureBase = fixtureGit(primary, ['rev-parse', 'HEAD']);
             addLockedLane(primary, siblingIssueLane, 'agent/12/sibling', 'sibling.txt');
             const authorizedHead = addLockedLane(
@@ -843,8 +851,11 @@ describe('lane publish', () => {
                     'const args = process.argv.slice(2);\n' +
                     "const readsBase = args[0] === 'rev-parse' && args[1] === '--verify' && args[2] === 'refs/remotes/origin/main^{commit}';\n" +
                     "if (readsBase && process.env.TEST_BASE_SHA_SEQUENCE) { const sequence = JSON.parse(process.env.TEST_BASE_SHA_SEQUENCE); const counter = process.env.TEST_BASE_SHA_COUNTER; const index = existsSync(counter) ? Number(readFileSync(counter, 'utf8')) : 0; writeFileSync(counter, String(index + 1)); console.log(sequence[Math.min(index, sequence.length - 1)]); process.exit(0); }\n" +
-                    "if (args.includes('fetch')) { appendFileSync(process.env.TEST_EVENT_LOG, 'fetch\\n'); process.exit(0); }\n" +
-                    "if (args.includes('ls-remote')) { console.log('f'.repeat(40) + '\\trefs/heads/main'); process.exit(0); }\n" +
+                    // The launcher's own pin reads its local fixture origin for real; every other remote
+                    // read stays faked.
+                    `const launcherOrigin = args.includes(${JSON.stringify(pathToFileURL(launcherFixtureOrigin(primary)).href)});\n` +
+                    "if (args.includes('fetch')) { appendFileSync(process.env.TEST_EVENT_LOG, 'fetch\\n'); if (!launcherOrigin) process.exit(0); }\n" +
+                    "if (args.includes('ls-remote') && !launcherOrigin) { console.log('f'.repeat(40) + '\\trefs/heads/main'); process.exit(0); }\n" +
                     "if (args.includes('push')) { appendFileSync(process.env.TEST_EVENT_LOG, 'push\\n'); appendFileSync(process.env.TEST_PUSH_LOG, JSON.stringify({ cwd: process.cwd(), args }) + '\\n'); process.exit(0); }\n" +
                     `const result = spawnSync(${JSON.stringify(systemGit)}, args, { stdio: ['inherit', 'inherit', 'pipe'], env: process.env });\n` +
                     'if (result.stderr) process.stderr.write(result.stderr);\n' +
@@ -988,7 +999,7 @@ describe('lane publish', () => {
                     ['--lane', authorizedLane, '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
                     {
                         ...launcherEnv,
-                        TEST_BASE_SHA_SEQUENCE: JSON.stringify([fixtureBase, fixtureBase, fixtureBase, changedBase]),
+                        TEST_BASE_SHA_SEQUENCE: JSON.stringify([fixtureBase, fixtureBase, changedBase]),
                         TEST_BASE_SHA_COUNTER: join(fixtureRoot, 'pre-push-base-counter'),
                     }
                 )
@@ -1005,13 +1016,7 @@ describe('lane publish', () => {
                     ['--lane', authorizedLane, '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
                     {
                         ...launcherEnv,
-                        TEST_BASE_SHA_SEQUENCE: JSON.stringify([
-                            fixtureBase,
-                            fixtureBase,
-                            fixtureBase,
-                            fixtureBase,
-                            changedBase,
-                        ]),
+                        TEST_BASE_SHA_SEQUENCE: JSON.stringify([fixtureBase, fixtureBase, fixtureBase, changedBase]),
                         TEST_BASE_SHA_COUNTER: join(fixtureRoot, 'post-push-base-counter'),
                     }
                 )

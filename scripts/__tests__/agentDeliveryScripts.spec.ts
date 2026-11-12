@@ -61,9 +61,9 @@ import {
     BOOTSTRAP_PATH,
     assertTrustedSourceGraph,
     commandEntries,
-    defaultPort,
     executeTrustedSnapshot,
     fetchOriginMain,
+    GITHUB_ORIGIN_URL,
     resolveTrustedLauncherBinding,
     resolveTrustedExecutable,
     runTrustedGithubWriteCommand,
@@ -75,8 +75,10 @@ import {
     trustedLocalImportClosure,
     trustedSnapshotEnv,
     type TrustedGithubWriteCommand,
-    type TrustedLauncherBinding,
+    type OriginFetchSpawn,
 } from '../trustedGithubWriteBootstrap.ts';
+
+import { launcherFixtureOrigin, publishLauncherOrigin, writeLocalLauncher } from './fixtures/trustedLauncherOrigin.ts';
 
 import type {
     DeliveryAuthentication,
@@ -528,8 +530,9 @@ function trustedPublishFixture(root: string, policy: string): void {
             scripts: { 'lane:publish': 'node scripts/trustedGithubWriteBootstrap.ts lane:publish' },
         })
     );
-    writeFileSync(
+    writeLocalLauncher(
         join(root, 'scripts/trustedGithubWriteBootstrap.ts'),
+        launcherFixtureOrigin(root),
         readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8')
     );
     writeFileSync(
@@ -553,6 +556,7 @@ function trustedPublishFixture(root: string, policy: string): void {
     runGit(root, ['add', '.']);
     runGit(root, ['commit', '--no-gpg-sign', '-m', 'test: trusted publishing fixture']);
     runGit(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+    publishLauncherOrigin((args) => runGit(root, args), launcherFixtureOrigin(root));
 }
 
 let trustedPublishPrimaryTemplateRoot: string | undefined;
@@ -589,8 +593,9 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
             },
         })
     );
-    writeFileSync(
+    writeLocalLauncher(
         join(root, 'scripts/trustedGithubWriteBootstrap.ts'),
+        launcherFixtureOrigin(root),
         readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8')
     );
     writeFileSync(
@@ -670,6 +675,7 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
     runGit(root, ['add', '.']);
     runGit(root, ['commit', '--no-gpg-sign', '-m', 'test: trusted review mutation fixture']);
     runGit(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+    publishLauncherOrigin((args) => runGit(root, args), launcherFixtureOrigin(root));
 }
 
 /**
@@ -1024,7 +1030,8 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['deliver:recover-lock']).toBeUndefined();
         expect(pkg.scripts['pr:supersede']).toBe('node scripts/trustedGithubWriteBootstrap.ts pr:supersede');
         expect(pkg.scripts['pr:retire']).toBe('node scripts/trustedGithubWriteBootstrap.ts pr:retire');
-        expect(pkg.scripts['branch:prune']).toBe('node scripts/pruneRemoteBranches.ts');
+        expect(pkg.scripts['branch:prune']).toBe('node scripts/trustedGithubWriteBootstrap.ts branch:prune');
+        expect(pkg.scripts['release:cut']).toBe('node scripts/trustedGithubWriteBootstrap.ts release:cut');
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
         expect(pkg.scripts['issue:claim']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:claim');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
@@ -2587,6 +2594,7 @@ describe('package scripts and gitignore', () => {
             runGit(primary, ['add', 'main-advanced.txt']);
             runGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: advance main past old lane']);
             runGit(primary, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+            publishLauncherOrigin((args) => runGit(primary, args), launcherFixtureOrigin(primary));
             writeFileSync(
                 join(lane, 'package.json'),
                 JSON.stringify({
@@ -3058,7 +3066,7 @@ describe('package scripts and gitignore', () => {
                 expect(result.stderr).toMatch(/usage: trustedGithubWriteBootstrap\.ts/i);
                 // The usage must name every command `parseCommand` accepts, not a subset of them.
                 expect(result.stderr).toContain(
-                    'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|pr:supersede|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|pr:retire|ruleset:harden>'
+                    'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|pr:supersede|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|pr:retire|ruleset:harden|branch:prune|release:cut>'
                 );
                 expect(result.stderr).not.toMatch(/trusted ps executable|protected primary checkout/i);
             } finally {
@@ -3167,14 +3175,8 @@ describe('package scripts and gitignore', () => {
             trustedPublishFixture(root, 'literal');
             const bootstrap = readFileSync(join(root, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8');
             const literalCommit = runGit(root, ['rev-parse', 'HEAD']);
-            // The launcher fetches origin/main before resolving (#4436): give the fixture a real
-            // remote whose main is the commit under test, so the fetch succeeds without moving
-            // the ref and stderr stays clean.
-            const origin = join(root, 'origin.git');
-            runGit(root, ['init', '--quiet', '--bare', '--initial-branch', 'main', origin]);
-            runGit(root, ['remote', 'add', 'origin', origin]);
-            runGit(root, ['push', '--quiet', 'origin', `${literalCommit}:refs/heads/main`]);
-            runGit(root, ['update-ref', 'refs/remotes/origin/main', literalCommit]);
+            // The fixture's launcher origin already reports the commit under test as main.
+            expect(runGit(launcherFixtureOrigin(root), ['rev-parse', 'refs/heads/main'])).toBe(literalCommit);
 
             writeFileSync(
                 join(root, 'scripts/publishLane.ts'),
@@ -4717,25 +4719,35 @@ describe('origin/main snapshot freshness (#4436)', () => {
         return { primary, oldHead, newHead };
     }
 
-    function bindingFor(primary: string): TrustedLauncherBinding {
-        return {
-            primaryRoot: primary,
-            commonDir: join(primary, '.git'),
-            gitPath: 'git',
-            ghPath: 'gh',
+    /**
+     * Runs real git, but sends the launcher's GitHub URL to a local bare origin: the pin is what the
+     * remote reports, and these cases need a remote they control without reaching github.com.
+     */
+    function redirectedSpawn(origin: string): OriginFetchSpawn {
+        return (command, args, options) => {
+            const result = spawnSync(
+                command,
+                args.map((arg) => (arg === GITHUB_ORIGIN_URL ? pathToFileURL(origin).href : arg)),
+                { ...options, encoding: 'utf8' }
+            );
+            return { status: result.status, stdout: result.stdout, stderr: result.stderr };
         };
     }
 
-    it('fetches before resolving, so a remote merge is visible without an external fetch', () => {
+    it('pins the commit the remote reports, so a remote merge is visible without an external fetch', () => {
         const { primary, oldHead, newHead } = staleCloneFixture();
         expect(oldHead).not.toBe(newHead);
 
-        const resolved = defaultPort(bindingFor(primary)).resolveOriginMain();
+        const pinned = fetchOriginMain(
+            { gitPath: 'git', primaryRoot: primary, commonDir: join(primary, '.git') },
+            redirectedSpawn(join(dirname(primary), 'origin.git'))
+        );
 
-        expect(resolved).toBe(newHead);
+        expect(pinned).toEqual({ commit: newHead });
+        expect(runGit(primary, ['rev-parse', 'refs/remotes/origin/main'])).toBe(newHead);
     }, 30_000);
 
-    it('reports a failed fetch loudly and still resolves the local ref', () => {
+    it('refuses when the remote cannot be reached instead of resolving the local ref', () => {
         const fixtureRoot = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-dead-origin-')));
         scratchRoots.push(fixtureRoot);
         const primary = join(fixtureRoot, 'primary');
@@ -4745,62 +4757,63 @@ describe('origin/main snapshot freshness (#4436)', () => {
         runGit(primary, ['add', 'file.txt']);
         runGit(primary, ['commit', '--quiet', '-m', 'first']);
         const head = runGit(primary, ['rev-parse', 'HEAD']);
-        // A remote that cannot be fetched from, and a tracking ref the resolve falls back to.
-        runGit(primary, ['remote', 'add', 'origin', join(fixtureRoot, 'missing.git')]);
+        // A remote that cannot be reached, and a tracking ref a fallback would have resolved.
         runGit(primary, ['update-ref', 'refs/remotes/origin/main', head]);
-        const warnings: string[] = [];
-        const originalError = console.error;
-        console.error = (message: string) => warnings.push(message);
 
-        try {
-            const resolved = defaultPort(bindingFor(primary)).resolveOriginMain();
-
-            expect(resolved).toBe(head);
-            expect(warnings.some((line) => line.includes('cannot fetch origin/main'))).toBe(true);
-            expect(warnings.some((line) => line.includes('may be stale'))).toBe(true);
-        } finally {
-            console.error = originalError;
-        }
+        expect(() =>
+            fetchOriginMain(
+                { gitPath: 'git', primaryRoot: primary, commonDir: join(primary, '.git') },
+                redirectedSpawn(join(fixtureRoot, 'missing.git'))
+            )
+        ).toThrow(
+            /cannot pin origin\/main from GitHub: git ls-remote failed: [\s\S]*; refusing to run a trusted write/
+        );
+        expect(runGit(primary, ['rev-parse', 'refs/remotes/origin/main'])).toBe(head);
     }, 30_000);
 
-    it('fetchOriginMain pins the fetch argv, the ambient environment, and the failure shapes', () => {
+    it('fetchOriginMain runs under the scrubbed read environment and refuses every failure shape', () => {
         const calls: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }[] = [];
-        const spawn = (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => {
+        const pinned = 'f'.repeat(40);
+        const input = { gitPath: '/usr/bin/git', primaryRoot: '/repo', commonDir: '/repo/.git' };
+        const spawn: OriginFetchSpawn = (command, args, options) => {
             calls.push({ command, args, cwd: options.cwd, env: options.env });
-            return { status: 0, stderr: '' };
+            if (args[0] === 'rev-parse') {
+                return { status: 1, stdout: '', stderr: '' };
+            }
+            return { status: 0, stdout: args.includes('ls-remote') ? `${pinned}\trefs/heads/main\n` : '', stderr: '' };
         };
-        expect(fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, spawn)).toEqual({ fresh: true });
-        expect(calls).toEqual([
-            {
-                command: '/usr/bin/git',
-                args: ['fetch', 'origin', 'main'],
-                cwd: '/repo',
-                // The ambient environment is load-bearing: the scrubbed read env strips the
-                // credential helper, so a fetch routed through trustedGitReadEnv fails against
-                // every non-anonymous remote — the pin holds it to process.env by identity.
-                env: process.env,
-            },
-        ]);
+        expect(fetchOriginMain(input, spawn)).toEqual({ commit: pinned });
+        expect(calls.every(({ command }) => command === '/usr/bin/git')).toBe(true);
+        // The ambient environment would carry a lane-reachable credential helper, proxy or askpass;
+        // the pin runs under the same scrubbed environment every launcher Git read uses, and the
+        // network calls add only the launcher's own repository and the primary's object store.
+        for (const { cwd, env } of calls) {
+            if (cwd === '/repo') {
+                expect(env).toEqual(trustedGitReadEnv());
+            } else {
+                expect(env).toEqual({
+                    ...trustedGitReadEnv(),
+                    GIT_CONFIG_NOSYSTEM: '1',
+                    GIT_DIR: cwd,
+                    GIT_OBJECT_DIRECTORY: '/repo/.git/objects',
+                });
+            }
+        }
 
-        expect(
-            fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, () => ({
-                status: 128,
-                stderr: 'fatal: remote error\n',
-            }))
-        ).toEqual({ fresh: false, reason: 'fatal: remote error' });
-        expect(
-            fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, () => ({
-                status: null,
-                stderr: '',
-            }))
-        ).toEqual({ fresh: false, reason: 'git fetch failed without diagnostics (exit signal)' });
-        // A spawn-level failure (EMFILE, ENOENT) answers status null with stderr undefined;
-        // warn-and-proceed must survive it rather than crash on .trim of undefined.
-        expect(
-            fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, () => ({
-                status: null,
-                stderr: undefined,
-            }))
-        ).toEqual({ fresh: false, reason: 'git fetch failed without diagnostics (exit signal)' });
+        const failingLsRemote =
+            (reply: { status: number | null; stderr: string | undefined }): OriginFetchSpawn =>
+            (command, args, options) =>
+                args.includes('ls-remote') ? { ...reply, stdout: '' } : spawn(command, args, options);
+        expect(() => fetchOriginMain(input, failingLsRemote({ status: 128, stderr: 'fatal: remote error\n' }))).toThrow(
+            'cannot pin origin/main from GitHub: git ls-remote failed: fatal: remote error;'
+        );
+        expect(() => fetchOriginMain(input, failingLsRemote({ status: null, stderr: '' }))).toThrow(
+            'git ls-remote failed without diagnostics (exit signal)'
+        );
+        // A spawn-level failure (EMFILE, ENOENT) answers status null with stderr undefined; the
+        // refusal must survive it rather than crash on .trim of undefined.
+        expect(() => fetchOriginMain(input, failingLsRemote({ status: null, stderr: undefined }))).toThrow(
+            'git ls-remote failed without diagnostics (exit signal)'
+        );
     });
 });

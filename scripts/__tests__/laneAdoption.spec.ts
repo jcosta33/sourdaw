@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -40,6 +41,8 @@ import {
 } from '../prContract.ts';
 import { parsePublishLaneArgs } from '../publishLane.ts';
 import { resolveTrustedExecutable, trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
+
+import { writeLocalLauncher } from './fixtures/trustedLauncherOrigin.ts';
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
@@ -387,6 +390,8 @@ function nativeFixture() {
         mkdirSync(dirname(join(primary, path)), { recursive: true });
         writeFileSync(join(primary, path), source(path));
     }
+    // The launcher pins the fixture remote's main, the same remote the publisher reaches.
+    writeLocalLauncher(join(primary, 'scripts', 'trustedGithubWriteBootstrap.ts'), remote);
     const publisher = source('scripts/publishLane.ts');
     const contract = source('scripts/prContract.ts');
     const identity = source('scripts/githubAppIdentity.ts');
@@ -476,8 +481,8 @@ export async function authenticatePublishingAuthor(input) {
         join(bin, 'git'),
         `#!${process.execPath}
 const fs=require('node:fs');const cp=require('node:child_process');const args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(join(root, 'git-calls'))},JSON.stringify(args)+'\\n');const control=JSON.parse(fs.readFileSync(${JSON.stringify(control)},'utf8'));
-if(control.failFetch&&args[0]==='fetch'&&args[1]==='origin'&&args[2]==='main'){process.stderr.write('controlled origin fetch failure');process.exit(86)}
-const result=cp.spawnSync(${JSON.stringify(gitPath)},args,{env:process.env,encoding:'utf8'});process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');process.exitCode=result.status??87;
+if(control.failFetch&&args.includes('fetch')&&args.includes(${JSON.stringify(pathToFileURL(remote).href)})){process.stderr.write('controlled origin fetch failure');process.exit(86)}
+const result=cp.spawnSync(${JSON.stringify(gitPath)},args,{env:process.env});process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');process.exitCode=result.status??87;
 `,
         { mode: 0o755 }
     );
@@ -640,13 +645,16 @@ describe('real pinned publisher package with a stale physical primary', () => {
         expect(readLaneAdoptionRecord(f.primary, PR.branch)?.sourceCommit).toBe(f.pin);
         expectNoRemoteOrAdoptedExecution(f);
     }, 30_000);
-    it('retains the existing explicit cached-pin fallback and refuses an absent cached pin', () => {
+    it('refuses a failed origin fetch whether or not a cached pin exists', () => {
         const cached = nativeFixture();
         writeFileSync(cached.control, JSON.stringify({ failFetch: true }));
-        const pass = cached.run();
-        expect(pass.status, pass.stderr).toBe(0);
-        expect(pass.stderr).toContain('trusted snapshot may be stale');
-        expect(readLaneAdoptionRecord(cached.primary, PR.branch)?.sourceCommit).toBe(cached.pin);
+        const refused = cached.run();
+        expect(refused.status).toBe(1);
+        expect(refused.stderr).toContain(
+            'cannot pin origin/main from GitHub: git fetch failed: controlled origin fetch failure'
+        );
+        expect(cached.readonlyCalls()).toEqual([]);
+        expect(existsSync(laneAdoptionPath(cached.primary, PR.branch))).toBe(false);
         const absent = nativeFixture();
         absent.git('update-ref', '-d', 'refs/remotes/origin/main', absent.pin);
         writeFileSync(absent.control, JSON.stringify({ failFetch: true }));

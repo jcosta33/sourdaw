@@ -176,6 +176,8 @@ function goal(entry: unknown, metricIds: readonly string[]): entry is MetricGoal
             'increase',
             'decrease',
             'hold',
+            'no-increase',
+            'no-decrease',
             'match-current',
             'greater-than-current',
             'less-than-current',

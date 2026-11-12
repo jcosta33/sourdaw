@@ -58,6 +58,16 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    A warm-up hook that launches a browser, bundles and loads a page under one hook deadline turns a
    stalled step into an anonymous hook timeout and a launch error into a silent skip. Bound each step
    with its own named deadline and skip only on the exact not-installed condition.
+   For browser responsiveness, inspect the complete task containing publication, including Promise
+   continuations, subscriber renders and compositor work; phase measures alone omit surrounding cost.
+   #5843 introduced Detect's Promise settlement inside `requestAnimationFrame`. Its rendering-task/performance
+   stance was mis-prompted: phase measures and an ordinary passing E2E did not require enclosing-task
+   attribution. The escaped task spent 48.449 ms of CPU across 50.075 ms elapsed, so runner preemption
+   cannot excuse the rendering work. Resume heavy post-frame continuations in a separate host task;
+   hold its queued delivery, revoke the operation, and require refusal with no stale writes. Revert
+   that task boundary and require `detectTransientsForClip.spec.ts` to fail. In the real Detect trace,
+   require publication outside `FireAnimationFrame` while preserving PCM, projections, undo/redo,
+   and the original no >=50 ms task and no >=100 ms frame-gap gates.
    (#5191, #6011, #5964, #3270, #3356, #5459, #6000, #4775, #5798, #3222, #2976, #5337, #4228, #5115, #5924, #4331, #6250)
 
 3. **Fixture state leaks across cases or depends on chance or the runner's environment.**

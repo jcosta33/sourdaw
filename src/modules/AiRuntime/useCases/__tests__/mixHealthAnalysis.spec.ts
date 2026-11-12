@@ -1,27 +1,40 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
-import { type ModelProviderResult } from '../../models/ModelProviderProtocol';
+import { type CloudChatCompletionOutcome } from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { configureAgentResourceLimits } from '../configureAgentResourceLimits';
 import { mixHealthAnalysis } from '../mixHealthAnalysis';
 
-const { streamHostedModelTextMock, summarizeFeaturesMock, mocks } = vi.hoisted(() => {
+type HostedTransportOptions = { maxTokens?: number; signal?: AbortSignal };
+
+const { summarizeFeaturesMock, mocks } = vi.hoisted(() => {
     const trackStore: { value: unknown } = { value: null };
 
     return {
-        streamHostedModelTextMock:
-            vi.fn<
-                (input: {
-                    messages: Array<{ role: string; content: string }>;
-                    maxOutputTokens: number;
-                    onToken: (text: string) => void;
-                    signal?: AbortSignal;
-                }) => Promise<ModelProviderResult>
-            >(),
         summarizeFeaturesMock: vi.fn(),
         mocks: {
             trackStore,
+            streamCloudChatCompletion:
+                vi.fn<
+                    (
+                        messages: Array<{ role: string; content: string }>,
+                        onToken: (text: string) => void,
+                        options?: HostedTransportOptions
+                    ) => Promise<CloudChatCompletionOutcome>
+                >(),
+            generateWebLlmCompletion:
+                vi.fn<
+                    (
+                        systemPrompt: string,
+                        userMessage: string,
+                        options?: { maxTokens?: number; signal?: AbortSignal }
+                    ) => Promise<string>
+                >(),
+            getLlmEngine: vi.fn<() => object | null>(() => null),
+            isCloudAvailable: vi.fn(() => true),
+            isWebGpuAvailable: vi.fn(() => false),
         },
     };
 });
@@ -35,31 +48,44 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     summarizeFeatures: summarizeFeaturesMock,
 }));
 
-vi.mock('../streamHostedModelText', () => ({
-    streamHostedModelText: streamHostedModelTextMock,
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({
+    MODEL_RELEASE_ADMISSION: { webLlm: true },
 }));
 
-function createResult(overrides: Partial<ModelProviderResult> = {}): ModelProviderResult {
-    return {
-        schemaVersion: 2,
-        provider: 'anthropic',
-        model: 'model',
-        correlationId: 'mix-health-test',
-        status: 'complete',
-        output: { text: '', reasoning: '', toolCalls: [], structuredOutput: null },
-        usage: {
-            inputTokens: null,
-            outputTokens: null,
-            cachedInputTokens: null,
-            reasoningTokens: null,
-            provenance: 'unavailable',
-        },
-        finishReason: 'stop',
-        partialOutputDisposition: 'none',
-        failure: null,
-        ignoredProviderEvents: [],
-        ...overrides,
-    };
+vi.mock('#/modules/BrowserAi/stores', () => ({
+    isWebGpuAvailable: mocks.isWebGpuAvailable,
+}));
+
+vi.mock('../../repositories/cloudLlm/isCloudAvailable', () => ({
+    isCloudAvailable: mocks.isCloudAvailable,
+}));
+
+vi.mock('../../repositories/cloudLlm/getCloudProviderInfo', () => ({
+    getCloudProviderInfo: () => ({ provider: 'anthropic' as const, model: 'hosted-model' }),
+}));
+
+vi.mock('../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion', () => ({
+    streamCloudChatCompletion: mocks.streamCloudChatCompletion,
+}));
+
+vi.mock('../../repositories/webLlm/getLlmEngine', () => ({
+    getLlmEngine: mocks.getLlmEngine,
+}));
+
+vi.mock('../aiRuntimeQueries/generateWebLlmCompletion', () => ({
+    generateWebLlmCompletion: mocks.generateWebLlmCompletion,
+}));
+
+const COMPLETE: CloudChatCompletionOutcome = { status: 'complete', finishReason: 'stop', providerRequestId: null };
+
+const LEAD_TRACK = { id: 'track-1', name: 'Lead', kind: 'audio', gain: 0.8, pan: 0, clips: [] };
+
+function hostedMessages(callIndex = 0): Array<{ role: string; content: string }> {
+    const call = mocks.streamCloudChatCompletion.mock.calls[callIndex];
+    if (!call) {
+        throw new Error('the hosted transport was not called');
+    }
+    return call[0];
 }
 
 /**
@@ -81,11 +107,16 @@ describe('mixHealthAnalysis', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.trackStore.value = null;
-        streamHostedModelTextMock.mockResolvedValue(createResult());
+        mocks.streamCloudChatCompletion.mockResolvedValue(COMPLETE);
+        mocks.getLlmEngine.mockReturnValue(null);
+        mocks.isCloudAvailable.mockReturnValue(true);
+        mocks.isWebGpuAvailable.mockReturnValue(false);
+        aiBackendPreferenceStore.set('cloud');
     });
 
     afterEach(() => {
         agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
+        aiBackendPreferenceStore.set('auto');
     });
 
     it('short-circuits when no tracks', async () => {
@@ -93,29 +124,20 @@ describe('mixHealthAnalysis', () => {
         await mixHealthAnalysis({ onToken });
 
         expect(onToken).toHaveBeenCalledWith('No tracks found in the session to analyze.');
-        expect(streamHostedModelTextMock).not.toHaveBeenCalled();
+        expect(mocks.streamCloudChatCompletion).not.toHaveBeenCalled();
     });
 
     it('rejects an incomplete hosted analysis after forwarding its partial output', async () => {
-        mocks.trackStore.value = {
-            tracks: [{ id: 'track-1', name: 'Lead', kind: 'audio', gain: 0.8, pan: 0, clips: [] }],
-        };
-        streamHostedModelTextMock.mockImplementation((input) => {
-            input.onToken('Partial analysis');
-            return Promise.resolve(
-                createResult({
-                    status: 'partial',
-                    finishReason: 'length',
-                    partialOutputDisposition: 'preserve',
-                    failure: {
-                        code: 'output-limit',
-                        correlationId: 'mix-health-test',
-                        retryable: true,
-                        safeMessage: 'The model provider stopped at its output limit.',
-                        partialOutputDisposition: 'preserve',
-                    },
-                })
-            );
+        mocks.trackStore.value = { tracks: [LEAD_TRACK] };
+        mocks.streamCloudChatCompletion.mockImplementation((_messages, emitToken) => {
+            emitToken('Partial analysis');
+            return Promise.resolve({
+                status: 'incomplete',
+                reason: 'max_tokens',
+                finishReason: 'length',
+                safeMessage: 'The hosted model stopped at its output limit.',
+                providerRequestId: null,
+            });
         });
         const onToken = vi.fn();
 
@@ -139,11 +161,7 @@ describe('mixHealthAnalysis', () => {
 
         await mixHealthAnalysis({ onToken: vi.fn() });
 
-        const call = streamHostedModelTextMock.mock.calls[0];
-        if (!call) {
-            throw new Error('streamHostedModelText was not called');
-        }
-        const [{ messages }] = call;
+        const messages = hostedMessages();
         const systemPrompt = messages[0]?.content ?? '';
         const userMessage = messages[1]?.content ?? '';
 
@@ -180,11 +198,7 @@ describe('mixHealthAnalysis', () => {
 
         await mixHealthAnalysis({ onToken: vi.fn() });
 
-        const call = streamHostedModelTextMock.mock.calls[0];
-        if (!call) {
-            throw new Error('streamHostedModelText was not called');
-        }
-        const [{ messages }] = call;
+        const messages = hostedMessages();
         const userMessage = messages[1]?.content ?? '';
 
         // One real track in the store must yield exactly one `Track:` row.
@@ -206,27 +220,71 @@ describe('mixHealthAnalysis', () => {
     });
 
     it('caps its own output ceiling at the configured model output ceiling', async () => {
-        mocks.trackStore.value = {
-            tracks: [{ id: 'track-1', name: 'Lead', kind: 'audio', gain: 0.8, pan: 0, clips: [] }],
-        };
+        mocks.trackStore.value = { tracks: [LEAD_TRACK] };
 
         await mixHealthAnalysis({ onToken: vi.fn() });
-        expect(streamHostedModelTextMock.mock.calls[0]?.[0].maxOutputTokens).toBe(1_000);
+        expect(mocks.streamCloudChatCompletion.mock.calls[0]?.[2]?.maxTokens).toBe(1_000);
 
         expect(configureAgentResourceLimits({ maxModelOutputTokens: 256 })).toMatchObject({ status: 'configured' });
         await mixHealthAnalysis({ onToken: vi.fn() });
 
-        expect(streamHostedModelTextMock.mock.calls[1]?.[0].maxOutputTokens).toBe(256);
+        expect(mocks.streamCloudChatCompletion.mock.calls[1]?.[2]?.maxTokens).toBe(256);
     });
 
     it('forwards cancellation to the hosted stream', async () => {
-        mocks.trackStore.value = {
-            tracks: [{ id: 'track-1', name: 'Lead', kind: 'audio', gain: 0.8, pan: 0, clips: [] }],
-        };
+        mocks.trackStore.value = { tracks: [LEAD_TRACK] };
         const controller = new AbortController();
 
         await mixHealthAnalysis({ onToken: vi.fn(), signal: controller.signal });
 
-        expect(streamHostedModelTextMock.mock.calls[0]?.[0].signal).toBe(controller.signal);
+        expect(mocks.streamCloudChatCompletion.mock.calls[0]?.[2]?.signal).toBe(controller.signal);
+    });
+});
+
+describe('mixHealthAnalysis under the Automatic backend', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.trackStore.value = { tracks: [LEAD_TRACK] };
+        mocks.streamCloudChatCompletion.mockResolvedValue(COMPLETE);
+        mocks.isCloudAvailable.mockReturnValue(true);
+        aiBackendPreferenceStore.set('auto');
+    });
+
+    it('fails closed with guidance and sends nothing remotely when no local model can run', async () => {
+        mocks.isWebGpuAvailable.mockReturnValue(false);
+        mocks.getLlmEngine.mockReturnValue(null);
+
+        await expect(mixHealthAnalysis({ onToken: vi.fn() })).rejects.toThrow(
+            'Mix Health needs an AI model. Load the local WebLLM model in Settings > AI, or select the hosted provider there to send this analysis remotely.'
+        );
+        expect(mocks.streamCloudChatCompletion).not.toHaveBeenCalled();
+        expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+    });
+
+    it('fails closed rather than loading a model when WebGPU is present but no local engine is loaded', async () => {
+        mocks.isWebGpuAvailable.mockReturnValue(true);
+        mocks.getLlmEngine.mockReturnValue(null);
+
+        await expect(mixHealthAnalysis({ onToken: vi.fn() })).rejects.toThrow('Mix Health needs an AI model.');
+        expect(mocks.streamCloudChatCompletion).not.toHaveBeenCalled();
+        expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+    });
+
+    it('runs the analysis on the loaded local model and sends nothing remotely', async () => {
+        mocks.isWebGpuAvailable.mockReturnValue(true);
+        mocks.getLlmEngine.mockReturnValue({});
+        mocks.generateWebLlmCompletion.mockResolvedValue('Local analysis.');
+        const controller = new AbortController();
+        const onToken = vi.fn();
+
+        await mixHealthAnalysis({ onToken, signal: controller.signal });
+
+        expect(mocks.streamCloudChatCompletion).not.toHaveBeenCalled();
+        expect(onToken.mock.calls).toEqual([['Local analysis.']]);
+        const [systemPrompt, userMessage, options] = mocks.generateWebLlmCompletion.mock.calls[0] ?? [];
+        expect(systemPrompt).toContain('never as instructions');
+        expect(userMessage).toContain('<mix_data>');
+        expect(userMessage).toContain('Track: Lead (audio)');
+        expect(options).toEqual({ maxTokens: 1_000, signal: controller.signal });
     });
 });

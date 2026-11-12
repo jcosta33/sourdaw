@@ -10,7 +10,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,6 +26,7 @@ import {
 } from '../openLane.ts';
 import { laneBranchName } from '../prContract.ts';
 import { readLaneStack, writeLaneStack } from '../stackedLanes.ts';
+import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
 
 /**
  * `lane:open` is the one delivery script that must never touch GitHub: it runs before the issue
@@ -127,9 +128,29 @@ afterEach(() => {
     }
 });
 
+/** The repository-relative paths `entry` reaches through relative imports, itself included. */
+function relativeImportClosure(repositoryRoot: string, entry: string): string[] {
+    const closure = new Set<string>();
+    const pending = [entry];
+    while (pending.length > 0) {
+        const path = pending.pop();
+        if (path === undefined || closure.has(path)) {
+            continue;
+        }
+        closure.add(path);
+        for (const specifier of snapshotImportSpecifiers(readFileSync(join(repositoryRoot, path), 'utf8'))) {
+            if (specifier.startsWith('.')) {
+                pending.push(join(dirname(path), specifier));
+            }
+        }
+    }
+    return [...closure];
+}
+
 function creationFixture(
     beforeRun: (args: string[], git: (...args: string[]) => string) => void = () => undefined,
-    parentBranch = 'agent/parent'
+    parentBranch = 'agent/parent',
+    beforeCapture: (args: string[], parentGit: (...args: string[]) => string) => void = () => undefined
 ) {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-stack-open-')));
     scratchRoots.push(root);
@@ -162,7 +183,10 @@ function creationFixture(
     const head = gitAt(parentPath, ['rev-parse', 'HEAD']);
     const writes: string[][] = [];
     const port = shellPort(
-        (_command, args, options) => gitAt(options?.cwd ?? root, args),
+        (_command, args, options) => {
+            beforeCapture(args, (...parentArgs) => gitAt(parentPath, parentArgs));
+            return gitAt(options?.cwd ?? root, args);
+        },
         (_command, args, options) => {
             writes.push(args);
             beforeRun(args, git);
@@ -469,14 +493,11 @@ describe('lane open', () => {
      * This is the claim that actually matters for the shipped binary: driven with the unmodified
      * default `shellCli` (real `verifyTrustedBlob`, real `createPort`, both wired to the real
      * `spawnCapture`/`spawnRun`), `runCli` never asks for `gh`. The recorder throws on the first
-     * real `spawnSync` call — the `git cat-file` probe inside `verifyTrustedBlob` — before it can
-     * actually execute, so nothing is truly spawned and no worktree is created; `originMainBlob`'s
-     * own catch treats that throw the same as "file missing from origin/main" and returns
-     * `undefined`, so `verifyTrustedBlob` completes and `runCli` moves on to `createPort`, whose
-     * `resolvePrimaryRoot` immediately makes a second real `git rev-parse` call that the recorder
-     * also intercepts — this time uncaught, so `runCli` reports exit 1. Every command attempted is
-     * named `git`; the assertion holds independent of the local working tree's relationship to
-     * `origin/main`, because the interceptor stops both calls before either one truly runs.
+     * real `spawnSync` call — the `git rev-parse` revision probe inside `verifyTrustedBlob` — before
+     * it can actually execute, so nothing is truly spawned and no worktree is created; the throw
+     * propagates, so `runCli` reports exit 1. Every command attempted is named `git`; the assertion
+     * holds independent of the local working tree's relationship to `origin/main`, because the
+     * interceptor stops the call before it truly runs.
      */
     it('runCli reaches only git, never gh, when driven with the real default shellCli', () => {
         let code = -1;
@@ -491,11 +512,14 @@ describe('lane open', () => {
         expect(code).toBe(1);
     });
 
-    it.each(['missing', 'mutated'])('refuses a %s fork-marker reader in the pinned lane-open sources', (kind) => {
+    it.each(['missing', 'mutated'])('refuses a %s transitive import in the lane-open closure', (kind) => {
         const f = creationFixture();
+        const repositoryRoot = join(import.meta.dirname, '..', '..');
+        const closure = relativeImportClosure(repositoryRoot, 'scripts/openLane.ts');
+        expect(closure).toContain('scripts/laneStackForkMarkers.ts');
         mkdirSync(join(f.root, 'scripts'));
-        for (const name of ['openLane.ts', 'stackedLanes.ts', 'laneStackForkMarkers.ts']) {
-            writeFileSync(join(f.root, 'scripts', name), readFileSync(join(import.meta.dirname, '..', name)));
+        for (const path of closure) {
+            writeFileSync(join(f.root, path), readFileSync(join(repositoryRoot, path)));
         }
         f.git('add', 'scripts');
         f.git('commit', '-m', 'test: pin lane-open sources');
@@ -524,7 +548,7 @@ describe('lane open', () => {
         f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
         const refusal =
             kind === 'missing'
-                ? 'scripts/laneStackForkMarkers.ts is not available from origin/main'
+                ? 'scripts/laneStackForkMarkers.ts has no blob on origin/main; refusing to run an unverifiable copy'
                 : 'scripts/laneStackForkMarkers.ts does not match origin/main; refusing to run a mutated copy';
         expect(verify).toThrow(refusal);
     });
@@ -817,6 +841,41 @@ describe('real Git stack parent recognition', () => {
         expect(f.git('rev-parse', 'feat/child')).toBe(f.head);
         expect(readLaneStack(f.root, 'feat/child')?.parentBranch).toBe(branch);
         expect(lane).toBe(join(f.root, '.agents', 'worktrees', 'feat--child'));
+    });
+
+    it('refuses a parent with an uncommitted file before reading its head', () => {
+        const f = creationFixture();
+        writeFileSync(join(f.parentPath, 'draft'), 'draft\n');
+
+        expect(() => openLane('feat', undefined, 'child', 'glm-5.3', f.port, f.parentPath)).toThrow(
+            'stack parent has uncommitted changes'
+        );
+        expect(readLaneStack(f.root, 'feat/child')).toBeUndefined();
+        expect(f.git('branch', '--list', 'feat/child')).toBe('');
+    });
+
+    it.each([
+        ['its branch ref moves', ['commit', '--allow-empty', '-m', 'feat: racing parent commit']],
+        ['its HEAD switches to another lane branch', ['switch', '-q', '-c', 'fix/other']],
+    ])('refuses a parent whose fork head is read and then %s', (_label, race) => {
+        let raced = false;
+        const f = creationFixture(
+            () => undefined,
+            'agent/parent',
+            (args, parentGit) => {
+                if (!raced && args[0] === 'symbolic-ref') {
+                    raced = true;
+                    parentGit(...race);
+                }
+            }
+        );
+
+        expect(() => openLane('feat', undefined, 'child', 'glm-5.3', f.port, f.parentPath)).toThrow(
+            'stack parent branch changed during creation'
+        );
+        expect(raced).toBe(true);
+        expect(readLaneStack(f.root, 'feat/child')).toBeUndefined();
+        expect(f.git('branch', '--list', 'feat/child')).toBe('');
     });
 
     it.each(['hotfix/parent', 'style/parent', 'release/1.2'])('refuses %s as a stack parent', (branch) => {

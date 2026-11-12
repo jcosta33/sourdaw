@@ -35,6 +35,8 @@ import {
 } from '../syncParentLane.ts';
 import { resolveTrustedExecutable, trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
 
+import { launcherFixtureOrigin, publishLauncherOrigin, writeLocalLauncher } from './fixtures/trustedLauncherOrigin.ts';
+
 const sha = (letter: string) => letter.repeat(40);
 const anchor = 'acf91c9e72a98ce6c25f019593df8813c7a3c61d';
 const child = '5844deb651f303617953c007d7d4cfd81622ce54';
@@ -1987,6 +1989,7 @@ else process.exit(result.status ?? 1);
             mkdirSync(join(root, file, '..'), { recursive: true });
             writeFileSync(join(root, file), readFileSync(join(process.cwd(), file)));
         }
+        writeLocalLauncher(join(root, 'scripts/trustedGithubWriteBootstrap.ts'), launcherFixtureOrigin(root));
         const identityPath = join(root, 'scripts/githubAppIdentity.ts');
         const identity = readFileSync(identityPath, 'utf8');
         const start = identity.indexOf('export async function authenticateRole(');
@@ -2050,6 +2053,7 @@ process.stdout.write(JSON.stringify(result));
         git('commit', '-m', 'test: isolated native inspection');
         git('remote', 'add', 'origin', root);
         git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        publishLauncherOrigin((args) => git(...args), launcherFixtureOrigin(root));
         const source = git('rev-parse', 'HEAD');
         const invocation = nativeParentInspectionInvocation(
             {
@@ -2103,7 +2107,7 @@ process.stdout.write(JSON.stringify(result));
                 timeout: 15000,
             })
         ).toThrow('does not match its pinned');
-    });
+    }, 30_000);
 });
 
 describe('closed parent shell observation boundaries', () => {

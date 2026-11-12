@@ -7,8 +7,7 @@ import {
     AUTHOR_BOT_COMMIT_EMAIL,
     AUTHOR_BOT_COMMIT_NAME,
     AUTHOR_LOCK_REASON,
-    assertTrustedExecutingBlob,
-    originMainBlob,
+    assertTrustedImportClosure,
     resolvePrimaryRoot,
     spawnCapture,
     spawnRun,
@@ -29,6 +28,7 @@ import {
     type LaneChangeType,
 } from './prContract.ts';
 import { assertStackAcyclic, readLaneStack, writeLaneStack, type LaneStack } from './stackedLanes.ts';
+import { snapshotImportSpecifiers } from './trustedGithubWriteBootstrap.ts';
 
 export const OPEN_LANE_USAGE =
     'usage: pnpm lane:open [issue-number] [slug] --type <type> --model <model> [--stack-on <absolute-parent-lane>]';
@@ -382,21 +382,11 @@ export type OpenLaneCli = {
 };
 
 export const shellCli: OpenLaneCli = {
+    // `lane:open` holds no GitHub credential, so it runs outside the launcher; it still refuses
+    // unless its whole relative-import closure matches origin/main. The check runs after the module
+    // graph is evaluated, so it guards the modules' behaviour, not their import-time side effects.
     verifyTrustedBlob: (cwd) => {
-        const executingFile = fileURLToPath(import.meta.url);
-        assertTrustedExecutingBlob('scripts/openLane.ts', executingFile, originMainBlob('scripts/openLane.ts', cwd));
-        const helper = fileURLToPath(new URL('./stackedLanes.ts', import.meta.url));
-        const helperBlob = originMainBlob('scripts/stackedLanes.ts', cwd);
-        if (helperBlob === undefined) {
-            fail('scripts/stackedLanes.ts is not available from origin/main');
-        }
-        assertTrustedExecutingBlob('scripts/stackedLanes.ts', helper, helperBlob);
-        const markerReader = fileURLToPath(new URL('./laneStackForkMarkers.ts', import.meta.url));
-        const markerReaderBlob = originMainBlob('scripts/laneStackForkMarkers.ts', cwd);
-        if (markerReaderBlob === undefined) {
-            fail('scripts/laneStackForkMarkers.ts is not available from origin/main');
-        }
-        assertTrustedExecutingBlob('scripts/laneStackForkMarkers.ts', markerReader, markerReaderBlob);
+        assertTrustedImportClosure(fileURLToPath(import.meta.url), cwd, snapshotImportSpecifiers);
     },
     createPort: (cwd) => shellPort(spawnCapture, spawnRun, cwd),
 };
