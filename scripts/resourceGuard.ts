@@ -228,7 +228,31 @@ type ExplicitRecoveryProof = {
     origin: string;
 };
 
-function createExplicitRecoveryProof(receipt: GuardFailureReceipt): ExplicitRecoveryProof {
+function createExplicitRecoveryProof(
+    receipt: GuardFailureReceipt,
+    recoveryCwd: string,
+    laneRoot: string
+): ExplicitRecoveryProof {
+    if (receipt.command === 'node' && receipt.args[0] === 'scripts/e2eDevServer.ts') {
+        const canonicalLaneRoot = realpathSync(laneRoot);
+        const entrypoint = join(canonicalLaneRoot, 'scripts', 'e2eDevServer.ts');
+        if (
+            recoveryCwd !== canonicalLaneRoot ||
+            realpathSync(entrypoint) !== entrypoint ||
+            !statSync(entrypoint).isFile()
+        ) {
+            throw new Error('recorded node E2E server must use its own lane-root entrypoint and cwd');
+        }
+        const rawPort = receipt.args[1];
+        if (receipt.args.length !== 2 || rawPort === undefined || !/^[0-9]+$/.test(rawPort)) {
+            throw new Error('recorded node E2E server requires exactly one explicit decimal port');
+        }
+        const port = Number(rawPort);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+            throw new Error(`recorded node E2E server has an invalid port: ${rawPort}`);
+        }
+        return { port, origin: `http://127.0.0.1:${port}` };
+    }
     let port = 5173;
     for (let index = 0; index < receipt.args.length; index++) {
         const argument = receipt.args[index];
@@ -3310,13 +3334,21 @@ export async function main(
             });
             assertModulesPreflight(recoveryCwd);
             const hasExplicitProof = input.command !== '';
-            if (hasExplicitProof && pnpmScriptName(receipt.command, receipt.args) !== 'dev') {
-                throw new Error('explicit recovery proof is only valid for a recorded pnpm dev command');
+            if (
+                hasExplicitProof &&
+                pnpmScriptName(receipt.command, receipt.args) !== 'dev' &&
+                !(receipt.command === 'node' && receipt.args[0] === 'scripts/e2eDevServer.ts')
+            ) {
+                throw new Error(
+                    'explicit recovery proof is only valid for a recorded pnpm dev command or node scripts/e2eDevServer.ts PORT command'
+                );
             }
             if (hasExplicitProof && input.lintTargetReplacements.length > 0) {
                 throw new Error('--replace-lint-target cannot be combined with an explicit recovery proof');
             }
-            const explicitProof = hasExplicitProof ? createExplicitRecoveryProof(receipt) : undefined;
+            const explicitProof = hasExplicitProof
+                ? createExplicitRecoveryProof(receipt, recoveryCwd, lane.worktreePath)
+                : undefined;
             const recoveryCommand = hasExplicitProof ? input.command : receipt.command;
             const recoveryArgs = hasExplicitProof
                 ? input.args

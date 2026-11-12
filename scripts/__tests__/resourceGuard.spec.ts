@@ -2255,6 +2255,20 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
             };
         }
 
+        async function createStoppedE2eServerFixture(label: string) {
+            const fixture = await createProofServedDevServerFixture(label);
+            mkdirSync(join(fixture.lane.worktreePath, 'scripts'));
+            writeFileSync(join(fixture.lane.worktreePath, 'scripts', 'e2eDevServer.ts'), 'export {};');
+            const receipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                command: 'node',
+                args: ['scripts/e2eDevServer.ts', String(fixture.port)],
+                reason: 'timeout',
+            };
+            writeGuardFailureReceipt(fixture.repoRoot, receipt);
+            return { ...fixture, receipt };
+        }
+
         it('runs an explicit finite dev-server recovery proof instead of replaying the server', async () => {
             const fixture = await createProofServedDevServerFixture('recover-dev-proof');
             const calls: Parameters<typeof runGuardedCommand>[0][] = [];
@@ -2698,6 +2712,203 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                 ].join('\n')
             );
         };
+
+        it(
+            'discharges a stopped node E2E server through a real finite guarded proof',
+            async () => {
+                const fixture = await createStoppedE2eServerFixture('recover-node-e2e-real-proof');
+                writeMarkerProof(fixture, 'process.env.SOURDAW_E2E_RUN_TOKEN');
+
+                try {
+                    const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                        cwd: fixture.lane.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async (input) =>
+                            runIsolatedGuardedCommand({
+                                ...input,
+                                availableMemoryBytes: abundantMemoryBytes,
+                            }),
+                        assertModulesPreflight: () => undefined,
+                    });
+
+                    expect(code).toBe(0);
+                    expect(JSON.parse(readFileSync(join(fixture.lane.worktreePath, 'observed.json'), 'utf8'))).toEqual({
+                        cwd: realpathSync(fixture.lane.worktreePath),
+                        args: ['launch.spec.ts'],
+                        port: String(fixture.port),
+                    });
+                    expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toBeUndefined();
+                } finally {
+                    rmSync(fixture.repoRoot, { recursive: true, force: true });
+                }
+            },
+            GUARDED_CASE_TIMEOUT_MS
+        );
+
+        it.each([
+            { label: 'another script', args: ['scripts/otherServer.ts', '5387'] },
+            { label: 'inline node code', args: ['-e', 'process.exit(0)'] },
+            { label: 'missing port', args: ['scripts/e2eDevServer.ts'] },
+            { label: 'empty port', args: ['scripts/e2eDevServer.ts', ''] },
+            { label: 'zero port', args: ['scripts/e2eDevServer.ts', '0'] },
+            { label: 'out-of-range port', args: ['scripts/e2eDevServer.ts', '65536'] },
+            { label: 'malformed port', args: ['scripts/e2eDevServer.ts', '5387suffix'] },
+            { label: 'exponential port', args: ['scripts/e2eDevServer.ts', '5e3'] },
+            { label: 'whitespace port', args: ['scripts/e2eDevServer.ts', ' 5387'] },
+            { label: 'extra argument', args: ['scripts/e2eDevServer.ts', '5387', '5388'] },
+        ])('refuses a node E2E receipt with $label before starting a proof', async ({ label, args }) => {
+            const fixture = await createStoppedE2eServerFixture(`recover-node-e2e-${label.replaceAll(' ', '-')}`);
+            const receipt = { ...fixture.receipt, args };
+            writeGuardFailureReceipt(fixture.repoRoot, receipt);
+            const originalBytes = readFileSync(fixture.receiptPath, 'utf8');
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'true'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    assertModulesPreflight: () => undefined,
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(readFileSync(fixture.receiptPath, 'utf8')).toBe(originalBytes);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it.each(['foreign script', 'symlinked script', 'symlinked scripts directory', 'nested cwd'])(
+            'refuses a node E2E receipt with a %s before starting a proof',
+            async (label) => {
+                const fixture = await createStoppedE2eServerFixture(`recover-node-e2e-${label.replaceAll(' ', '-')}`);
+                const foreignDirectory = join(fixture.repoRoot, 'foreign');
+                mkdirSync(foreignDirectory);
+                const foreignScript = join(foreignDirectory, 'e2eDevServer.ts');
+                writeFileSync(foreignScript, 'export {};');
+                const script = join(fixture.lane.worktreePath, 'scripts', 'e2eDevServer.ts');
+                let receipt = fixture.receipt;
+                if (label === 'foreign script') {
+                    receipt = { ...receipt, args: [foreignScript, String(fixture.port)] };
+                } else if (label === 'symlinked script') {
+                    rmSync(script);
+                    symlinkSync(foreignScript, script);
+                } else if (label === 'symlinked scripts directory') {
+                    rmSync(script);
+                    rmSync(join(fixture.lane.worktreePath, 'scripts'), { recursive: true });
+                    symlinkSync(foreignDirectory, join(fixture.lane.worktreePath, 'scripts'));
+                } else {
+                    const nestedCwd = join(fixture.lane.worktreePath, 'nested');
+                    mkdirSync(nestedCwd);
+                    receipt = { ...receipt, cwd: realpathSync(nestedCwd) };
+                }
+                writeGuardFailureReceipt(fixture.repoRoot, receipt);
+                const originalBytes = readFileSync(fixture.receiptPath, 'utf8');
+                let commandRan = false;
+
+                try {
+                    const code = await runGuardCli(['--recover', '--', 'true'], {
+                        cwd: fixture.lane.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async () => {
+                            commandRan = true;
+                            return fakeResult({ code: 0 });
+                        },
+                        assertModulesPreflight: () => undefined,
+                    });
+
+                    expect(code).toBe(1);
+                    expect(commandRan).toBe(false);
+                    expect(readFileSync(fixture.receiptPath, 'utf8')).toBe(originalBytes);
+                } finally {
+                    rmSync(fixture.repoRoot, { recursive: true, force: true });
+                }
+            }
+        );
+
+        it('refuses a node E2E proof when the recorded origin already answers', async () => {
+            const fixture = await createStoppedE2eServerFixture('recover-node-e2e-occupied');
+            const marker = await fixture.startProofServer();
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'true'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    assertModulesPreflight: () => undefined,
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors.join('\n')).toContain('already answers');
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+            } finally {
+                await marker.close();
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it.each(['another checkout', 'stale token', 'missing token', 'failed command', 'failed cleanup'])(
+            'keeps a node E2E stop when its proof has %s',
+            async (label) => {
+                const fixture = await createStoppedE2eServerFixture(`recover-node-e2e-${label.replaceAll(' ', '-')}`);
+                const errors: string[] = [];
+                let marker: { close: () => Promise<void> } | undefined;
+
+                try {
+                    const code = await runGuardCli(['--recover', '--', 'true'], {
+                        cwd: fixture.lane.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async (input) => {
+                            const token =
+                                label === 'missing token'
+                                    ? undefined
+                                    : label === 'stale token'
+                                      ? 'stale-token-from-another-run'
+                                      : input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV];
+                            marker = await startMarkerServer(
+                                label === 'another checkout' ? fixture.repoRoot : fixture.lane.worktreePath,
+                                fixture.port,
+                                token
+                            );
+                            return fakeResult({
+                                code: label === 'failed command' ? 1 : 0,
+                                ...(label === 'failed cleanup' ? { reason: 'leak' } : {}),
+                            });
+                        },
+                        assertModulesPreflight: () => undefined,
+                        error: (message) => errors.push(message),
+                    });
+
+                    expect(code).toBe(1);
+                    const retained = readGuardFailureReceipt(fixture.repoRoot, fixture.laneName);
+                    expect(retained).toMatchObject({ command: 'node', args: fixture.receipt.args });
+                    if (label === 'failed cleanup') {
+                        expect(retained?.reason).toBe('leak');
+                    } else {
+                        expect(retained).toEqual(fixture.receipt);
+                    }
+                    expect(errors.join('\n')).toContain(
+                        label === 'failed command' || label === 'failed cleanup'
+                            ? 'recovery failed'
+                            : 'did not verify the recorded dev server'
+                    );
+                } finally {
+                    await marker?.close();
+                    rmSync(fixture.repoRoot, { recursive: true, force: true });
+                }
+            }
+        );
 
         it('discharges a stopped dev server through a real finite guarded proof', async () => {
             const fixture = await createProofServedDevServerFixture('recover-dev-real-proof');
