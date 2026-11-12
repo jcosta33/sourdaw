@@ -1,0 +1,21 @@
+src/modules/Project/presentations/views/__tests__/MissingMediaRecovery.integration.spec.tsx
+  s_9307cedd8951f1::t_9ee25cc8348db7 1-178
+src/modules/Arrangement/useCases/readRelinkAudioSourceEligibility.ts
+  s_9307cedd8951f1::t_3c0dd8cb9b6f7c 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e65b6579e9fc00565fccafb50ff07e11123225ea",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
