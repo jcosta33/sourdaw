@@ -100,8 +100,8 @@ async function installElasticFrameDiagnostic(page: Page, clipId: string | undefi
             }
             const count = Math.min(input.length, markerCapacity);
             for (let i = 0; i < count; i++) {
-                const from = input[i]!;
-                const to = output[i]!;
+                const from = input[i];
+                const to = output[i];
                 to.id = from.id;
                 to.originalBeat = from.originalBeat;
                 to.warpedBeat = from.warpedBeat;
@@ -189,7 +189,7 @@ async function installElasticFrameDiagnostic(page: Page, clipId: string | undefi
                     result[key] = key.endsWith('Ref') ? identity(value) : value;
                 }
                 if (slot.kind === 'draw') {
-                    const captured = markers[slot.index]!;
+                    const captured = markers[slot.index];
                     result.markers = captured.current.slice(0, captured.count);
                     result.previousMarkers = captured.previous.slice(0, captured.previousCount);
                     const peaks = slot.peaksRef;

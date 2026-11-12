@@ -690,9 +690,10 @@ function drawWaveform(args: DrawArgs): void {
         const background = resolveToken('--color-bg-overlay', '#151515');
         // Peak arrays are retained unchanged by audioBufferCache; publishing/replacing or
         // removing a source invalidates its waveform cache. A new peak identity must redraw.
-        const peaks = clipAudioBufferId
-            ? audioBufferCache.getWaveformPeaks(clipAudioBufferId, Math.floor(width))
-            : null;
+        let peaks: Float32Array | null = null;
+        if (clipAudioBufferId) {
+            peaks = audioBufferCache.getWaveformPeaks(clipAudioBufferId, Math.floor(width));
+        }
         const previous = previousDrawingRef.current;
         if (observation) {
             observation.canvasRef = canvas;
