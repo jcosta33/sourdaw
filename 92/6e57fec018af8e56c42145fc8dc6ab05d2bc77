@@ -1,0 +1,21 @@
+scripts/__tests__/checkBarrelMockCoverage.spec.ts
+  s_eec9d24f84ae15::t_7e3c3181f10766 1-2
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_eec9d24f84ae15::t_7e3c3181f10766 47-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "926e57fec018af8e56c42145fc8dc6ab05d2bc77",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
