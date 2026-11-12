@@ -17,6 +17,7 @@ import {
     setAutoScroll,
     setScrollX,
     setTimelineViewportHeight,
+    setTimelineViewportWidth,
     setTimelineZoom,
     timelineViewStore,
 } from '../../stores/timelineViewStore';
@@ -327,9 +328,9 @@ export const TimelineSurface = (): ReactElement => {
             for (const entry of entries) {
                 const { width, height } = entry.contentRect;
                 rendererRef.current?.resize(width, height);
-                // The store clamps vertical scroll against this viewport, so it
-                // must be right before the first wheel event, not after it.
+                // Navigation and scroll clamping use the real CSS-pixel viewport.
                 setTimelineViewportHeight(height);
+                setTimelineViewportWidth(width);
             }
             // Immediately re-render after resize to prevent a 1-frame flash.
             // Setting canvas.width/height clears all pixel data, but the dirty

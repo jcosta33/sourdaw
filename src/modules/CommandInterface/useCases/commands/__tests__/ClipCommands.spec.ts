@@ -21,7 +21,7 @@ const { mockTrackStore } = vi.hoisted(() => ({
                 {
                     id: 't1',
                     name: 'Track 1',
-                    clips: [{ id: 'c1', name: 'Clip 1', startBeat: 0, endBeat: 4, loopEnabled: false }],
+                    clips: [{ id: 'c1', name: 'Clip 1', type: 'audio', startBeat: 0, endBeat: 4, loopEnabled: false }],
                 },
             ],
         },
@@ -39,6 +39,9 @@ vi.mock('#/modules/Transport/stores', () => ({
 
 vi.mock('../../selectionHelpers/getSelectedClipId', () => ({
     getSelectedClipId: vi.fn(() => 'c1'),
+}));
+vi.mock('../../selectionHelpers/getSelectedClipIdOfType', () => ({
+    getSelectedClipIdOfType: vi.fn(() => 'c1'),
 }));
 vi.mock('../../selectionHelpers/getSelectedClipIds', () => ({
     getSelectedClipIds: vi.fn(() => ['c1', 'c2']),
@@ -94,6 +97,19 @@ describe('clipCommands', () => {
             type: 'reverseClip',
             payload: { clipId: 'c1' },
         });
+    });
+
+    it('rejects Normalize and Reverse when the selected clip is MIDI', async () => {
+        const { getSelectedClipIdOfType } = await import('../../selectionHelpers/getSelectedClipIdOfType');
+        vi.mocked(getSelectedClipIdOfType).mockImplementation((type) => (type === 'midi' ? 'c1' : null));
+
+        for (const id of ['normalize-clip', 'reverse-clip']) {
+            expect(findCommand(id).getInapplicabilityReason?.()).toBe('Select an audio clip first.');
+            runAction(id);
+        }
+        await flush();
+
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('glue-clips dispatches glueClips when 2+ clips are selected', async () => {

@@ -6,7 +6,8 @@ import { executeUserAppAction } from '#/modules/Command/useCases';
 import { elasticCommands } from '../ElasticCommands';
 
 vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('../../selectionHelpers/getSelectedClipId', () => ({ getSelectedClipId: vi.fn() }));
+vi.mock('../../selectionHelpers/getSelectedClipId', () => ({ getSelectedClipId: vi.fn(() => 'clip-1') }));
+vi.mock('../../selectionHelpers/getSelectedClipIdOfType', () => ({ getSelectedClipIdOfType: vi.fn() }));
 
 function runAction(id: string): void {
     const command = elasticCommands.find((entry) => entry.id === id);
@@ -19,8 +20,8 @@ function runAction(id: string): void {
 describe('elasticCommands', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
-        const { getSelectedClipId } = await import('../../selectionHelpers/getSelectedClipId');
-        vi.mocked(getSelectedClipId).mockReturnValue('clip-1');
+        const { getSelectedClipIdOfType } = await import('../../selectionHelpers/getSelectedClipIdOfType');
+        vi.mocked(getSelectedClipIdOfType).mockReturnValue('clip-1');
     });
 
     it('exposes detect-transients, open-editor, and quantize commands under the Editing category', () => {
@@ -75,12 +76,24 @@ describe('elasticCommands', () => {
     });
 
     it('dispatches nothing for any command when no clip is selected', async () => {
-        const { getSelectedClipId } = await import('../../selectionHelpers/getSelectedClipId');
-        vi.mocked(getSelectedClipId).mockReturnValue(null);
+        const { getSelectedClipIdOfType } = await import('../../selectionHelpers/getSelectedClipIdOfType');
+        vi.mocked(getSelectedClipIdOfType).mockReturnValue(null);
 
         runAction('elastic-detect-transients');
         runAction('elastic-open-editor');
         runAction('elastic-quantize');
+
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+    });
+
+    it('blocks every Elastic command when the selected clip is MIDI', async () => {
+        const { getSelectedClipIdOfType } = await import('../../selectionHelpers/getSelectedClipIdOfType');
+        vi.mocked(getSelectedClipIdOfType).mockImplementation((type) => (type === 'midi' ? 'clip-1' : null));
+
+        for (const command of elasticCommands) {
+            expect(command.getInapplicabilityReason?.()).toBe('Select an audio clip first.');
+            runAction(command.id);
+        }
 
         expect(executeUserAppAction).not.toHaveBeenCalled();
     });
