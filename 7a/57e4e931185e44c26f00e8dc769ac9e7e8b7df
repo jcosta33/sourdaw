@@ -1,0 +1,22 @@
+docs/architecture/decisions/0013-client-side-hosted-llm-adapters.md
+  s_08d1fa05c1549e::t_6d78c7a4902253 5
+  s_08d1fa05c1549e::t_501a2892d55793 39
+  s_08d1fa05c1549e::t_c8a432d296a947 6
+  s_08d1fa05c1549e::t_208efe2e782219 49-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7a57e4e931185e44c26f00e8dc769ac9e7e8b7df",
+  "prompts": {},
+  "sessions": {
+    "s_08d1fa05c1549e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2bbbb8d9-f2ce-46c9-9b0c-c9ae1adc888c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
