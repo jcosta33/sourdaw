@@ -187,13 +187,17 @@ export function replaceTimelineWorkingView(
         return;
     }
     const pixelsPerBeat = clampPixelsPerBeat(view?.pixelsPerBeat ?? 12);
+    let scrollX = clampScrollX(view?.scrollX ?? 0, pixelsPerBeat, state.viewportWidth ?? 0);
+    let scrollY = clampScrollY(view?.scrollY ?? 0, state.viewportHeight ?? 0);
+    if (deferViewportClamp) {
+        scrollX = clampScrollX(view?.scrollX ?? 0, pixelsPerBeat, 0);
+        scrollY = Math.max(0, view?.scrollY ?? 0);
+    }
     timelineViewStore.set({
         ...state,
         pixelsPerBeat,
-        scrollX: clampScrollX(view?.scrollX ?? 0, pixelsPerBeat, deferViewportClamp ? 0 : (state.viewportWidth ?? 0)),
-        scrollY: deferViewportClamp
-            ? Math.max(0, view?.scrollY ?? 0)
-            : clampScrollY(view?.scrollY ?? 0, state.viewportHeight ?? 0),
+        scrollX,
+        scrollY,
         autoScrollEnabled: view ? state.autoScrollEnabled : true,
     });
 }

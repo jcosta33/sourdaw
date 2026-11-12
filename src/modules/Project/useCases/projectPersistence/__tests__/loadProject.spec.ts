@@ -407,6 +407,16 @@ describe('loadProject', () => {
         );
     });
 
+    it('publishes an explicit CRDT-load transition before tearing down module stores', async () => {
+        await expect(loadProject({ explicit: true })).resolves.toBe(true);
+
+        const loadingCall = mocks.projectStoreSet.mock.calls.findIndex(([state]) => state.loading === true);
+        expect(loadingCall).toBeGreaterThanOrEqual(0);
+        expect(mocks.projectStoreSet.mock.invocationCallOrder[loadingCall]!).toBeLessThan(
+            mocks.resetModuleStores.mock.invocationCallOrder[0]!
+        );
+    });
+
     it('lands on the launch screen without creating a document when persistence is empty', async () => {
         mocks.loadCrdtProject.mockResolvedValue(false);
 

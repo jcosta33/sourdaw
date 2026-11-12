@@ -14,12 +14,11 @@ export type TimelineExtentTrack = {
 };
 
 function getDrawnClips(track: TimelineExtentTrack): readonly { endBeat: number }[] {
-    if (
-        track.kind === undefined ||
-        track.activeAlternativeId === undefined ||
-        track.alternatives === undefined ||
-        !showsVariationLanes(track)
-    ) {
+    const kind = track.kind;
+    if (kind === undefined || track.activeAlternativeId === undefined || track.alternatives === undefined) {
+        return track.clips;
+    }
+    if (!showsVariationLanes({ kind, showVariationLanes: track.showVariationLanes })) {
         return track.clips;
     }
     return getHeldClips({

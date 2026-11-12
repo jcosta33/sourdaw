@@ -203,10 +203,11 @@ export async function loadProject({
                 }
             }
         }
-        // Publish the transition while the outgoing arrangement still owns the
-        // current offsets, so working-view persistence can flush before hydration.
+        // Explicit replacements publish the transition while the outgoing
+        // arrangement still owns the current offsets, so working-view persistence
+        // can flush before hydration. Implicit startup restore is not abortable.
         const outgoingProjectState = projectStore.value;
-        if (outgoingProjectState && !outgoingProjectState.loading) {
+        if ((directory || explicit) && outgoingProjectState && !outgoingProjectState.loading) {
             projectStore.set({ ...outgoingProjectState, loading: true });
         }
         batchStoreUpdates(() => {
