@@ -45,8 +45,10 @@ export function runZeroTestGuard(options: ZeroTestGuardOptions): number {
     const env = { ...process.env, ...options.env };
     delete env[VITEST_PROGRESS_ENV];
     const progress = createVitestProgress(env);
-    if (progress !== undefined) env[VITEST_PROGRESS_ENV] = progress;
-    if (progress !== undefined) console.error(`vitest progress: ${progress}`);
+    if (progress !== undefined) {
+        env[VITEST_PROGRESS_ENV] = progress;
+        console.error(`vitest progress: ${progress}`);
+    }
     let succeeded = false;
     try {
         const result = spawnSync(
@@ -90,8 +92,11 @@ export function runZeroTestGuard(options: ZeroTestGuardOptions): number {
         return vitestStatus;
     } finally {
         if (progress !== undefined) {
-            if (succeeded) removeVitestProgress(progress);
-            else console.error(`vitest progress retained at ${progress}:\n${summarizeVitestProgress(progress)}`);
+            if (succeeded) {
+                removeVitestProgress(progress);
+            } else {
+                console.error(`vitest progress retained at ${progress}:\n${summarizeVitestProgress(progress)}`);
+            }
         }
         rmSync(directory, { recursive: true, force: true });
     }

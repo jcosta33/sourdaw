@@ -1291,8 +1291,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         status = main();
     } finally {
         if (progress !== undefined) {
-            if (status === 0) removeVitestProgress(progress);
-            else console.error(`barrel scan progress retained at ${progress}:\n${summarizeVitestProgress(progress)}`);
+            if (status === 0) {
+                removeVitestProgress(progress);
+            } else {
+                console.error(`barrel scan progress retained at ${progress}:\n${summarizeVitestProgress(progress)}`);
+            }
         }
     }
     process.exit(status);
