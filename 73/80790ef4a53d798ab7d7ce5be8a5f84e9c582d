@@ -1,0 +1,22 @@
+.agents/skills/playwright-ui-bridge/SKILL.md
+  s_126e3d478b4f75::t_4d0ec5d4401dcc 39-40
+.agents/ui-scripts/utils.ts
+  s_126e3d478b4f75::t_4d0ec5d4401dcc 1-2,15-38,43-50,55,66-69,77-78
+  s_126e3d478b4f75::t_1759b9f347ce5d 39-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7380790ef4a53d798ab7d7ce5be8a5f84e9c582d",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
