@@ -22,6 +22,60 @@ type NotificationHistoryProps = {
     runAction: (id: string) => Promise<void>;
 };
 
+type NotificationHistoryEntryProps = {
+    entry: AppNotification;
+    dismissNotification: (id: string) => void;
+    runAction: (id: string) => Promise<void>;
+};
+
+const NotificationHistoryEntry = ({
+    entry,
+    dismissNotification,
+    runAction,
+}: NotificationHistoryEntryProps): ReactElement => (
+    <li aria-label={`${entry.level}: ${entry.message}`} className="border-b border-border-soft/50 p-3 last:border-b-0">
+        <Row align="start" gap={2}>
+            <div className="min-w-0 flex-1">
+                <p className="text-xs capitalize text-muted-foreground">
+                    {entry.level} · {new Date(entry.timestamp).toLocaleTimeString()}
+                </p>
+                <p className="mt-1 text-xs text-foreground">{entry.message}</p>
+            </div>
+            <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={`Dismiss ${entry.message}`}
+                onClick={() => dismissNotification(entry.id)}
+            >
+                <X />
+            </Button>
+        </Row>
+        {entry.action ? (
+            <div className="mt-2">
+                <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={
+                        entry.actionStatus === 'running' ||
+                        entry.actionStatus === 'success' ||
+                        entry.actionStatus === 'stale'
+                    }
+                    onClick={() => {
+                        void runAction(entry.id);
+                    }}
+                >
+                    {entry.actionStatus === 'running' ? `${entry.action.label}…` : entry.action.label}
+                </Button>
+            </div>
+        ) : null}
+        {entry.actionFeedback ? (
+            <p className="mt-1 text-[11px] text-muted-foreground" role="status">
+                {entry.actionFeedback}
+            </p>
+        ) : null}
+    </li>
+);
+
 const NotificationHistory = ({
     history,
     unreadCount,
@@ -91,53 +145,12 @@ const NotificationHistory = ({
                     {visibleEntries.length > 0 ? (
                         <ul aria-label="Notifications" className="max-h-80 overflow-y-auto">
                             {visibleEntries.map((entry) => (
-                                <li
+                                <NotificationHistoryEntry
                                     key={entry.id}
-                                    aria-label={`${entry.level}: ${entry.message}`}
-                                    className="border-b border-border-soft/50 p-3 last:border-b-0"
-                                >
-                                    <Row align="start" gap={2}>
-                                        <div className="min-w-0 flex-1">
-                                            <p className="text-xs capitalize text-muted-foreground">
-                                                {entry.level} · {new Date(entry.timestamp).toLocaleTimeString()}
-                                            </p>
-                                            <p className="mt-1 text-xs text-foreground">{entry.message}</p>
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon-xs"
-                                            aria-label={`Dismiss ${entry.message}`}
-                                            onClick={() => dismissNotification(entry.id)}
-                                        >
-                                            <X />
-                                        </Button>
-                                    </Row>
-                                    {entry.action ? (
-                                        <div className="mt-2">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                disabled={
-                                                    entry.actionStatus === 'running' ||
-                                                    entry.actionStatus === 'success' ||
-                                                    entry.actionStatus === 'stale'
-                                                }
-                                                onClick={() => {
-                                                    void runAction(entry.id);
-                                                }}
-                                            >
-                                                {entry.actionStatus === 'running'
-                                                    ? `${entry.action.label}…`
-                                                    : entry.action.label}
-                                            </Button>
-                                        </div>
-                                    ) : null}
-                                    {entry.actionFeedback ? (
-                                        <p className="mt-1 text-[11px] text-muted-foreground" role="status">
-                                            {entry.actionFeedback}
-                                        </p>
-                                    ) : null}
-                                </li>
+                                    entry={entry}
+                                    dismissNotification={dismissNotification}
+                                    runAction={runAction}
+                                />
                             ))}
                         </ul>
                     ) : (

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 
-import type { NotificationAction } from '#/utils/Notification/notificationEventBus';
-
 import { onNotification } from './onNotification';
+
+import type { NotificationAction } from '#/utils/Notification/notificationEventBus';
 
 const HISTORY_LIMIT = 50;
 
@@ -32,6 +32,28 @@ function updateHistoryEntry(
     return {
         ...state,
         history: state.history.map((entry) => (entry.id === id ? update(entry) : entry)),
+    };
+}
+
+function updateActionStatus(
+    state: NotificationState,
+    id: string,
+    actionStatus: NotificationActionStatus,
+    actionFeedback: string | undefined
+): NotificationState {
+    return updateHistoryEntry(state, id, (current) => ({ ...current, actionStatus, actionFeedback }));
+}
+
+function dismissCurrentNotification(state: NotificationState): NotificationState {
+    const current = state.items[0];
+    if (!current) {
+        return state;
+    }
+    return {
+        items: state.items.slice(1),
+        history: state.history.map((notification) =>
+            notification.id === current.id ? { ...notification, read: true } : notification
+        ),
     };
 }
 
@@ -91,13 +113,7 @@ export function useNotificationQueue(): {
             return;
         }
 
-        setState((previous) =>
-            updateHistoryEntry(previous, id, (current) => ({
-                ...current,
-                actionStatus: 'running',
-                actionFeedback: undefined,
-            }))
-        );
+        setState((previous) => updateActionStatus(previous, id, 'running', undefined));
 
         let valid: boolean;
         try {
@@ -107,11 +123,7 @@ export function useNotificationQueue(): {
         }
         if (!valid) {
             setState((previous) =>
-                updateHistoryEntry(previous, id, (current) => ({
-                    ...current,
-                    actionStatus: 'stale',
-                    actionFeedback: action.staleMessage ?? 'This action is no longer available.',
-                }))
+                updateActionStatus(previous, id, 'stale', action.staleMessage ?? 'This action is no longer available.')
             );
             return;
         }
@@ -120,28 +132,16 @@ export function useNotificationQueue(): {
             const result = await action.execute();
             if (result === false) {
                 setState((previous) =>
-                    updateHistoryEntry(previous, id, (current) => ({
-                        ...current,
-                        actionStatus: 'refused',
-                        actionFeedback: action.refusedMessage ?? 'The action was refused.',
-                    }))
+                    updateActionStatus(previous, id, 'refused', action.refusedMessage ?? 'The action was refused.')
                 );
                 return;
             }
             setState((previous) =>
-                updateHistoryEntry(previous, id, (current) => ({
-                    ...current,
-                    actionStatus: 'success',
-                    actionFeedback: action.successMessage ?? `${action.label} completed.`,
-                }))
+                updateActionStatus(previous, id, 'success', action.successMessage ?? `${action.label} completed.`)
             );
         } catch {
             setState((previous) =>
-                updateHistoryEntry(previous, id, (current) => ({
-                    ...current,
-                    actionStatus: 'failed',
-                    actionFeedback: action.failureMessage ?? 'The action failed. Try again.',
-                }))
+                updateActionStatus(previous, id, 'failed', action.failureMessage ?? 'The action failed. Try again.')
             );
         }
     };
@@ -151,18 +151,7 @@ export function useNotificationQueue(): {
         history: state.history,
         unreadCount: state.history.filter((notification) => !notification.read).length,
         dismissCurrent: () => {
-            setState((previous) => {
-                const current = previous.items[0];
-                if (!current) {
-                    return previous;
-                }
-                return {
-                    items: previous.items.slice(1),
-                    history: previous.history.map((notification) =>
-                        notification.id === current.id ? { ...notification, read: true } : notification
-                    ),
-                };
-            });
+            setState(dismissCurrentNotification);
         },
         dismissNotification: (id) => {
             setState((previous) => ({
