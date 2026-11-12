@@ -1,0 +1,115 @@
+src/modules/Command/useCases/revertActionGroupsAtomically.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-124
+.agents/skills/delivery-orchestration/references/lane-publication.md
+  s_126e3d478b4f75::t_33f87b73a5953e 38-40,78-81,84-85
+src/modules/AiRuntime/AGENTS.md
+  s_126e3d478b4f75::t_33f87b73a5953e 42,46
+src/components/ui/dropdown-menu.tsx
+  s_126e3d478b4f75::t_33f87b73a5953e 1,21,23,44-45,65-66,89,91,110-111,137-138,163,165,183-184,198
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_126e3d478b4f75::t_33f87b73a5953e 58-59,167-168,312,533-629,656,674
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 62,1889-1906
+  s_126e3d478b4f75::t_ee0f4570bb5e7a 1907-1908
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readSkippedVibeBatchPositions.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-16
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 62-68,2276
+src/modules/AiRuntime/useCases/agentRequestOrchestration/postVibeRunSummary.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-46
+AGENTS.md
+  s_126e3d478b4f75::t_33f87b73a5953e 180-181,195-196,216-219,227,313-315,389-390,471-474,476-481,694-697
+src/modules/AiRuntime/models/AgentRun.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 242,244-252
+evidence/agent-campaign/manifest.json
+  s_126e3d478b4f75::t_7b3adf43bbfef1 623
+crates/daw-plugin-host/src/vst3_wrapper.rs
+  s_126e3d478b4f75::t_33f87b73a5953e 1489-1493,1496
+src/modules/AiRuntime/useCases/__tests__/multiBatchRun.spec.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 6-8,10,13-37,54-55,157,161,663,820-989
+  s_126e3d478b4f75::t_3c741f13988f1f 990
+src/modules/AiRuntime/__tests__/vibeRunWorkflowFixture.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-284
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_126e3d478b4f75::t_33f87b73a5953e 3-15,49,52,162-164,232-245,250,254,269-290
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readVibeRunCards.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-53
+src/components/ui/popover.tsx
+  s_126e3d478b4f75::t_33f87b73a5953e 1,11-12
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 19,150-151,562
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_126e3d478b4f75::t_33f87b73a5953e 47-53
+src/modules/Command/useCases/__tests__/revertActionGroupsAtomically.spec.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-138
+scripts/__tests__/checkBarrelMockCoverage.spec.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 49,56,452-469,613-824
+  s_126e3d478b4f75::t_6deaf91bc8b034 825-826
+src/modules/AiRuntime/models/Chat.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 37-41
+.agents/skills/delivery-orchestration/SKILL.md
+  s_126e3d478b4f75::t_33f87b73a5953e 39,75-76,122-124,179-181,477-478,536-543,611-612
+src/modules/Command/useCases/index.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 111
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-5,21
+src/modules/AiRuntime/useCases/readChatThreadContext.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 8,11-12,28
+src/modules/AiRuntime/useCases/__tests__/vibeBatchSkip.spec.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-343
+crates/daw-engine/src/scheduler.rs
+  s_126e3d478b4f75::t_33f87b73a5953e 4989-4992,4996,5009,5015-5029,5060-5062,5064-5066,5145,5151,5164,6799,6817,7372-7394,7396-7397,7464,9916-9961,10101-10134
+  s_126e3d478b4f75::t_a5b753cf272045 10135-10136
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 360
+src/modules/AiRuntime/useCases/cancelPendingChatActions.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 10-11,70-73,75-78
+scripts/checkBarrelMockCoverage.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 859,885,889-903,949,1007
+scripts/__tests__/eslintConfig.spec.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 2,8-24,95-173
+  s_126e3d478b4f75::t_e67175ab101419 174
+src/modules/AiRuntime/useCases/vibeRun/describeVibeRunSummary.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 12-25,28,31-72,74-76,79,82-83,85
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readConfirmationBatchId.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-16
+crates/daw-plugin-host/src/vst3_wrapper/tests.rs
+  s_126e3d478b4f75::t_33f87b73a5953e 1870-1892
+src/modules/AiRuntime/useCases/readVibeBatchSkipAvailability.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-36
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readAppliedVibeRunBatches.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-40
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readVibeRunBatchSummaries.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-53
+src/modules/AiRuntime/useCases/revertVibeRun.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-123
+src/modules/AiRuntime/useCases/skipPendingVibeBatch.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-73
+src/modules/AiRuntime/useCases/__tests__/vibeRunInitialBaselines.spec.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1179-1180
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeAppliedBatches.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 1-20
+eslint.config.mjs
+  s_126e3d478b4f75::t_33f87b73a5953e 2646,2652,2654-2660,2666-2667,2670,2672,2687-2691,2700-2723,3076,3111-3114,3116,3118-3123,3126-3133,3173-3182
+  s_126e3d478b4f75::t_0ab0df84a132e2 3183
+.agents/skills/delivery-orchestration/references/review-records.md
+  s_126e3d478b4f75::t_33f87b73a5953e 37-40,47-53,61-62,69-70,78-82,111-114,150-152,160-161,168-170
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_126e3d478b4f75::t_33f87b73a5953e 7,32,34,56-64,67-69,76,218,462,467-468,473-474,481-482,485
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a1b66e5a8d140560a95c786c05262d4a06aaaca",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
