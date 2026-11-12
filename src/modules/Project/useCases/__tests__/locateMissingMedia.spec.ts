@@ -6,8 +6,8 @@ import { clearClipPitchAnalysis } from '#/modules/Knead/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { defaultMissingMediaStoreState, missingMediaStore } from '../../stores/missingMediaStore';
 import { pickFiles as pickFilesFromNativeDialog } from '../../repositories/nativeFileDialog/pickFiles';
+import { defaultMissingMediaStoreState, missingMediaStore } from '../../stores/missingMediaStore';
 import { locateMissingMedia } from '../locateMissingMedia';
 
 const mocks = vi.hoisted(() => ({
