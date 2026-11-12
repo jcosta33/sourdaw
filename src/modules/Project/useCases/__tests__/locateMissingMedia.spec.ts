@@ -10,6 +10,7 @@ import { clearHandlerRegistry, registerHandlerMap, undoStore, undoHistoryStore }
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     removeCrdtDoc,
     registerCrdtStorageRuntime,
     resetCrdtProjectAuthority,
@@ -119,6 +120,21 @@ function arrange(clips: Clip[]): void {
             trackName: clip.trackId,
         })),
     });
+    flushAutomergeStorageWrites();
+
+    const rawTracks = getCrdtDoc<{ tracks?: NonNullable<(typeof trackStore)['value']> }>('root')?.tracks?.tracks;
+    expect(rawTracks).toBeDefined();
+    expect(
+        rawTracks?.map((track) => ({
+            trackId: track.id,
+            clips: track.clips.map((clip) => ({ id: clip.id, sourceBufferId: clip.audioBufferId })),
+        }))
+    ).toEqual(
+        clips.map((clip) => ({
+            trackId: clip.trackId,
+            clips: [{ id: clip.id, sourceBufferId: clip.audioBufferId }],
+        }))
+    );
 }
 
 function replacement(name: string): File {
