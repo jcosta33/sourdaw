@@ -1,0 +1,26 @@
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_eec9d24f84ae15::t_f875326191ca44 47-53
+scripts/__tests__/checkBarrelMockCoverage.spec.ts
+  s_eec9d24f84ae15::t_b219c7075f517e 754,778,801,808,819-820
+  s_eec9d24f84ae15::t_b62ff0b9f47f3a 613-687,691-692,719-722,727-753,755-777,779-783,789-800,802-807,809-818,821-826
+  s_eec9d24f84ae15::t_8a40ad55172ed0 693-718
+  s_eec9d24f84ae15::t_7da6a01e902f2a 688-690,723-726,784-788
+scripts/checkBarrelMockCoverage.ts
+  s_eec9d24f84ae15::t_4b5d71e2b3601d 889-903,949,1007
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "971d5bfe16d070f888653bfa01cc6450fc31b781",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
