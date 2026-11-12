@@ -297,7 +297,7 @@ describe('Fermenter whole-patch auditioning through Command', () => {
     async function modifiedAudition(): Promise<FermenterPatch> {
         renderPanel();
         await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(initialPatch));
-        fireEvent.click(screen.getByRole('button', { name: 'Superloaf', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: /^Superloaf$/ }));
         await waitFor(() => expect(depth()).toBe(1));
         const previousMacro = getFermenterState(DEVICE_ID).patch.macros[0];
         const callbacks: FrameRequestCallback[] = [];
@@ -305,7 +305,7 @@ describe('Fermenter whole-patch auditioning through Command', () => {
             callbacks.push(callback);
             return callbacks.length;
         });
-        fireEvent.keyDown(screen.getByRole('slider', { name: 'Brightness', exact: true }), { key: 'ArrowUp' });
+        fireEvent.keyDown(screen.getByRole('slider', { name: /^Brightness$/ }), { key: 'ArrowUp' });
         const edited = cloneFermenterPatch(getFermenterState(DEVICE_ID).patch);
         expect(edited.macros[0]).not.toBe(previousMacro);
         act(() => callbacks[0]!(0));
@@ -330,14 +330,14 @@ describe('Fermenter whole-patch auditioning through Command', () => {
             callbacks.push(callback);
             return callbacks.length;
         });
-        fireEvent.keyDown(screen.getByRole('slider', { name: 'Brightness', exact: true }), { key: 'ArrowUp' });
+        fireEvent.keyDown(screen.getByRole('slider', { name: /^Brightness$/ }), { key: 'ArrowUp' });
         const edited = cloneFermenterPatch(getFermenterState(DEVICE_ID).patch);
         expect(edited.macros[0]).not.toBe(preset.macros[0]);
         act(() => callbacks[0]!(0));
         await waitFor(() => expect(committedPatch()).toEqual(edited));
         raf.mockRestore();
         expect(screen.getByText('Modified')).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Superloaf', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: /^Superloaf$/ }));
         await waitFor(() => expect(getFermenterState(DEVICE_ID).patch.name).toContain('Superloaf'));
         fireEvent.click(screen.getByRole('button', { name: 'Show patch A' }));
         await waitFor(() => expect(committedPatch()).toEqual(edited));
@@ -443,7 +443,7 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         fermenterStore.set({});
         renderPanel();
         await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(firstPatch));
-        fireEvent.click(screen.getByRole('button', { name: 'Synth', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: /^Synth$/ }));
         fireEvent.click(screen.getByRole('button', { name: 'Next preset' }));
         await waitFor(() => expect(committedPatch()).toEqual(secondPatch));
         expect(getFermenterState(DEVICE_ID).patch).toEqual(secondPatch);
