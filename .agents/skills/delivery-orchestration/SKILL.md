@@ -492,7 +492,8 @@ ran for the non-draft head, and a later push starts it again.
    the reviewed revision. It never resolves; re-running the same head and commit posts nothing.
    The optional `--evidence` file is a JSON array of at most eight
    `{ "observable", "verification", "observed" }` string entries, the same claim fields as approval
-   evidence (`parseRepairEvidence` in `scripts/repairReviewFinding.ts`); omit the flag to record none.
+   evidence, each single-line and edge-trimmed (`parseRepairEvidence` in
+   `scripts/repairReviewFinding.ts`, bounds in `scripts/reviewRepair.ts`); omit the flag to record none.
 5. The reviewer App confirms with `pnpm review:confirm <pr> --head <full-sha>`, resolving only the
    threads whose recorded repair validates; any refusal resolves nothing and names the ambiguity to
    fix before re-running.

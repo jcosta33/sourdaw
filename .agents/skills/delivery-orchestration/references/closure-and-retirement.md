@@ -27,22 +27,28 @@ takes exactly these keys:
 }
 ```
 
-`replacementPr` differs from `oldPr`. Each `findingId` is a string, appears
+`replacementPr` differs from `oldPr`. Each `findingId` is a non-blank string, appears
 once, and every live finding on `oldPr` has an entry. `disposition` is
 `repaired`, `transferred` or `discarded`. A `repaired` entry names the
 replacement's finding in `replacementFindingId`; a `transferred` entry may set
 it to `null`; both carry the document's `replacementPr`. A `discarded` entry
 sets `replacementPr` and `replacementFindingId` to `null`. `reason` is always a
-string and may be empty.
+string: it may be empty on a `repaired` or `transferred` entry, and on a
+`discarded` entry it must be non-blank, single-line and edge-trimmed. The file
+may be indented JSON or the rendered marker line.
 
 The transaction then posts the receipt plus a second lineage marker, converges
 duplicates to exactly one of each, and closes only afterwards, so a re-run after
 a partial transaction repairs rather than duplicates.
 
 `pr:retire` closes an owner-released obsolete PR without asserting a merged replacement. The
-caller supplies a `retirement-v1` JSON record, defined by `assertRetirementRecord` in
-`scripts/retirementRecord.ts`. Every object takes exactly the keys shown; a missing or extra key
-refuses:
+caller supplies a canonical `retirement-v1` JSON record, defined by `assertRetirementRecord` in
+`scripts/retirementRecord.ts`. The file must hold one line of canonical JSON — keys sorted at every
+level, no whitespace outside strings — optionally prefixed with `sourdaw-retirement-v1 `
+(`parseMarkerPayload` in `scripts/canonicalRecord.ts`); any other layout refuses with
+`retirement marker line is not the canonical key-sorted, whitespace-free JSON record`. The fields
+below are spread out for reading only. Every object takes exactly the keys shown; a missing or
+extra key refuses:
 
 ```json
 {
@@ -65,10 +71,10 @@ refuses:
 ```
 
 `evidence` holds 1–8 entries whose URLs name this repository. `findings` is the total list of live
-roots, at most 100, none repeating a root or thread; the comment IDs are decimal strings and
+roots, 1–100, none repeating a root or thread; the comment IDs are decimal strings and
 `threadId` is the thread's node ID. `reviewBodies` is an array, not a map: one entry per
-`REQUEST_CHANGES` review, keyed by its node ID, whose `rootCommentIds` are unique and all appear
-in `findings`. `bodyDigest` is the lower-case SHA-256 digest of that exact review body's UTF-8
+`REQUEST_CHANGES` review and at least one, keyed by its node ID, whose `rootCommentIds` are
+non-empty, unique and all appear in `findings`. `bodyDigest` is the lower-case SHA-256 digest of that exact review body's UTF-8
 bytes, without trimming or normalization (`retirementReviewBodyDigest`).
 The command checks this binding initially, before marker writes, before closing, after closing,
 and on closed replay. Unbound historical records and markers refuse; they cannot authorize a new

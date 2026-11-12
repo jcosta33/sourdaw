@@ -5,6 +5,8 @@ title: Fresh review draws stay within the economy and standard tiers
 status: accepted
 date: 2026-11-11
 owner: The Sourdaw team
+supersedes:
+    - 0054
 sources:
     - .agents/decisions/0054-proportional-machine-checked-review-floor.md
     - scripts/reviewerModelDiversity.ts
