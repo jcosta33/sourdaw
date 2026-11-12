@@ -1,0 +1,62 @@
+scripts/checkBarrelMockCoverage.ts
+  s_eec9d24f84ae15::t_c692330f1e1f0c 62-69,1080-1081,1084-1085,1087,1120-1123,1284-1298
+scripts/vitestProgressDiagnostics.ts
+  s_eec9d24f84ae15::t_e3fe726bc898a2 2-8,10-12,15-16,18-23,25,28-29,37-39,41,43-52,54-68
+  s_eec9d24f84ae15::t_dd65ae7ecbd2bc 31-35,42
+  s_eec9d24f84ae15::t_aaf2f4cb3508ee 1,9,13-14,17,24,26-27,30,36,40,53
+scripts/__tests__/vitestZeroTestReport.spec.ts
+  s_eec9d24f84ae15::t_dd65ae7ecbd2bc 206,210,217,228,318,351,384,393-409
+  s_eec9d24f84ae15::t_1b078d9d63883d 410-413
+scripts/__tests__/vitestProgressDiagnostics.spec.ts
+  s_eec9d24f84ae15::t_742e4e99017db4 50
+  s_eec9d24f84ae15::t_2433677d56b64d 1,6,32,43-49,55-62,75-76,82-83
+  s_eec9d24f84ae15::t_dd65ae7ecbd2bc 2,33-34
+  s_eec9d24f84ae15::t_6793c52c5d9504 3-5,7-10,12-15,29-31,38-42,84-86
+  s_eec9d24f84ae15::t_f1257c5f15881f 11
+  s_eec9d24f84ae15::t_e3fe726bc898a2 16-28,35-37,51-54,63-74,77-81
+scripts/__tests__/checkBarrelMockCoverage.spec.ts
+  s_eec9d24f84ae15::t_70972e7173068f 45,629,640-643,645-649,659-664
+  s_eec9d24f84ae15::t_e3fe726bc898a2 650-658
+  s_eec9d24f84ae15::t_e86bba965cd299 630
+  s_eec9d24f84ae15::t_a26e2b822b6f5a 43-44,627-628,631-639,644
+scripts/runVitestZeroTestGuard.ts
+  s_eec9d24f84ae15::t_e3fe726bc898a2 14-19,49-50,54-61,89,92-95
+  s_3df76396fbd4b1::t_ed12e91c567281 45-48,67
+scripts/__tests__/resourceGuard.spec.ts
+  s_eec9d24f84ae15::t_8e3132b3552480 463-479
+scripts/resourceGuard.ts
+  s_eec9d24f84ae15::t_e3fe726bc898a2 31,134,2269-2277,2279-2290
+  s_3df76396fbd4b1::t_25e0925888b82e 2278
+.agents/skills/review-stances/test-validity.md
+  s_eec9d24f84ae15::t_d72c8034a84d31 165-172
+scripts/vitestProgressReporter.ts
+  s_3df76396fbd4b1::t_d1df759b798766 1-23
+scripts/vitestProgressSetup.ts
+  s_3df76396fbd4b1::t_2b024de245d07a 1-3
+vite.config.ts
+  s_3df76396fbd4b1::t_f083edcd858b20 220-223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "40f4a8fd018d2f744c231d48b81c196b2a4935b2",
+  "prompts": {},
+  "sessions": {
+    "s_3df76396fbd4b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8caa473-e64a-4fad-b579-cf6c36add2c2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
