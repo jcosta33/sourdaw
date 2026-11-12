@@ -3,11 +3,19 @@ import { vi } from 'vitest';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { type markerStore, type trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
-import { type renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
+import {
+    audioEngine,
+    initEngineDeviceCollaborators,
+    removeTrackStrip,
+    type renderTrackSubgraphOffline,
+} from '#/modules/AudioEngine/useCases';
+import { setActionHistoryMetadataPort } from '#/modules/Command/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { type ToolCallResult } from '../../models/ToolCallResult';
 import { type ToolSchema } from '../../models/ToolDefinitions';
+import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import { pendingActionConfirmationStore } from '../../stores/pendingActionConfirmationStore';
 import { getBriefMixIntentCatalog } from '../getBriefMixIntentCatalog';
@@ -204,4 +212,74 @@ export function requireOnlyProposedVibeCard(): VibeConfirmation {
 
 export function vibeCardContent(card: VibeConfirmation): string {
     return chatStore.value?.messages.find((message) => message.id === card.assistantMessageId)?.content ?? '';
+}
+
+const SECTION_BEATS = 8;
+/** An ordinary song: eight sections of eight beats. */
+export const ORDINARY_SONG_SECTIONS = vibeSections(
+    ['Intro', 'Verse 1', 'Pre Chorus', 'Chorus 1', 'Verse 2', 'Chorus 2', 'Bridge', 'Outro'],
+    SECTION_BEATS
+);
+export const ORDINARY_SONG_BEATS = ORDINARY_SONG_SECTIONS.length * SECTION_BEATS;
+
+const FAMILY_TRACKS: Readonly<Record<string, readonly (readonly [name: string, role: string])[]>> = {
+    drums: [
+        ['Kick', 'kick'],
+        ['Snare', 'snare'],
+        ['Hats', 'hi-hat'],
+        ['Toms', 'tom'],
+        ['Overheads', 'overhead'],
+        ['Room', 'room'],
+        ['Shaker', 'percussion'],
+    ],
+    vocal: [
+        ['Lead Vox', 'lead vocal'],
+        ['Double', 'lead vocal'],
+        ['Harmony High', 'backing vocal'],
+        ['Harmony Low', 'backing vocal'],
+        ['Ad Libs', 'backing vocal'],
+    ],
+    bass: [
+        ['Bass DI', 'bass'],
+        ['Bass Amp', 'bass'],
+    ],
+    guitar: [
+        ['Rhythm L', 'guitar'],
+        ['Rhythm R', 'guitar'],
+        ['Lead Gtr', 'guitar'],
+        ['Acoustic', 'guitar'],
+    ],
+    keys: [
+        ['Piano', 'keys'],
+        ['Rhodes', 'keys'],
+        ['Organ', 'keys'],
+        ['Synth Lead', 'synth'],
+        ['Pad', 'pad'],
+        ['Strings', 'strings'],
+    ],
+};
+
+/** Two dozen tracks across five role families of unequal size, one larger than a batch holds. */
+export const ORDINARY_SONG_TRACKS: VibeTrackSpec[] = Object.values(FAMILY_TRACKS).flatMap((tracks) =>
+    tracks.map(([name, role]) => ({ id: `track-${name.toLowerCase().replaceAll(' ', '-')}`, name, role }))
+);
+
+/** The engine collaborators and history port a confirmed batch needs to land its devices. */
+export function prepareVibeRunEngine(): void {
+    initEngineDeviceCollaborators();
+    setActionHistoryMetadataPort({
+        record: () => [],
+        markReverted: () => ({ status: 'unavailable' as const }),
+        clear: () => undefined,
+    });
+    clearAiHistory();
+    setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+}
+
+export function releaseVibeRunEngine(tracks: readonly VibeTrackSpec[]): void {
+    for (const track of tracks) {
+        removeTrackStrip(track.id);
+    }
+    audioEngine.setUseCaseDeviceCollaborators(null);
+    clearAiHistory();
 }

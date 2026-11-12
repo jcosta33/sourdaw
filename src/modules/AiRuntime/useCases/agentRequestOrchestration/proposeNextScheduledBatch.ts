@@ -29,6 +29,7 @@ import { type CommittedVibeBatch, describeVibeRunSummary } from '../vibeRun/desc
 
 import { describeAppliedBatches } from './describeAppliedBatches';
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
+import { describeBatchPreviewProgress } from './describeVibeRunRenderProgress';
 import { groundVibeRunBatch } from './groundVibeRunBatch';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';
 import { persistPromptActionConfirmation } from './persistPromptActionConfirmation';
@@ -207,6 +208,7 @@ function settleStoppedBatchPreparation(
     const cancelled = current !== null && current.cancellation.requestedAt !== null;
     updateChatMessage(assistantMessageId, {
         pendingActionConfirmationStatus: cancelled ? 'cancelled' : undefined,
+        stoppableRunId: undefined,
         content: `${cancelled ? 'Cancelled' : 'Stopped'} preparation of batch ${String(position)} of ${String(total)}. ${describeAppliedBatches(position)}`,
     });
 }
@@ -237,6 +239,8 @@ async function proposeMeasuredVibeBatch(input: {
         return { status: 'rejected', reason: 'its measured preview could not be prepared' };
     }
     let proof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
+    // Stop is offered only while the preview renders: it cancels the run, which ends this batch's measurement.
+    updateChatMessage(input.assistantMessageId, { stoppableRunId: run.runId });
     try {
         proof = await prepareMetricGoalPreview({
             state,
@@ -244,8 +248,18 @@ async function proposeMeasuredVibeBatch(input: {
             context: grounded.context,
             prompt: run.request,
             runId: run.runId,
+            onProgress: (progress) =>
+                updateChatMessage(input.assistantMessageId, {
+                    content: describeBatchPreviewProgress({
+                        context: grounded.context,
+                        position,
+                        total: schedule.total,
+                        progress,
+                    }),
+                }),
         });
     } catch (error) {
+        updateChatMessage(input.assistantMessageId, { stoppableRunId: undefined });
         const current = agentRunLifecycle.get(run.runId);
         if (current === null || AGENT_RUN_TERMINAL_PHASES.has(current.phase)) {
             settleStoppedBatchPreparation(input.assistantMessageId, position, schedule.total, current);
@@ -254,6 +268,8 @@ async function proposeMeasuredVibeBatch(input: {
         agentRunLifecycle.updateBatchStatus({ runId: run.runId, batchId, status: 'failed' });
         return { status: 'rejected', reason: error instanceof Error ? error.message : String(error) };
     }
+    // Nothing renders past here, so there is no measurement left to stop.
+    updateChatMessage(input.assistantMessageId, { stoppableRunId: undefined });
     const liveRun = agentRunLifecycle.get(run.runId);
     if (liveRun === null || AGENT_RUN_TERMINAL_PHASES.has(liveRun.phase)) {
         settleStoppedBatchPreparation(input.assistantMessageId, position, schedule.total, liveRun);

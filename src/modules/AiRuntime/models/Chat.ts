@@ -38,6 +38,8 @@ export type ChatMessage = {
     pendingActionConfirmationId?: string;
     pendingActionConfirmationStatus?: ChatActionConfirmationStatus;
     pendingActionFollowUpStatus?: ChatActionFollowUpStatus;
+    /** The run whose measurement this in-progress message reports; the panel offers Stop for it while it is set. */
+    stoppableRunId?: string;
 };
 
 export type ChatState = {

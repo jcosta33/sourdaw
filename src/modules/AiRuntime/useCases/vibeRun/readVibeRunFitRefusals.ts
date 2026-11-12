@@ -173,7 +173,8 @@ function describeFittingFamilies(input: Parameters<typeof readRunWork>[0], budge
     if (best === null) {
         return 'no role family fits on its own';
     }
-    return `${joinFamilies(best.families)} (${String(best.targets)} ${best.targets === 1 ? 'track' : 'tracks'}) fit`;
+    const tracks = `${String(best.targets)} ${best.targets === 1 ? 'track' : 'tracks'}`;
+    return `${joinFamilies(best.families)} (${tracks}) ${best.families.length === 1 ? 'fits' : 'fit'}`;
 }
 
 /**

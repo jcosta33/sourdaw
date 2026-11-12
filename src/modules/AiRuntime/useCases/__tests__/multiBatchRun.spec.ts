@@ -770,8 +770,8 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             const revision = captureProjectRevision();
             const tracks = structuredClone(trackStore.value);
             const history = structuredClone(undoHistoryStore.value);
-            const preparing = chatStore.value?.messages.find(
-                (message) => message.content === 'Preparing batch 3 of 4...'
+            const preparing = chatStore.value?.messages.find((message) =>
+                message.content.startsWith('Preparing batch 3 of 4')
             );
             expect(preparing).toBeDefined();
             const otherMessages = chatStore.value?.messages.filter((message) => message.id !== preparing?.id);
@@ -793,6 +793,7 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
                 expect(chatStore.value?.messages.find((message) => message.id === preparing?.id)).toMatchObject({
                     content: `${stop === 'cancelled' ? 'Cancelled' : 'Stopped'} preparation of batch 3 of 4. Batches 1–2 remain applied.`,
                     pendingActionConfirmationStatus: stop === 'cancelled' ? 'cancelled' : undefined,
+                    stoppableRunId: undefined,
                 });
                 expect(chatStore.value?.messages.filter((message) => message.id !== preparing?.id)).toEqual(
                     otherMessages
@@ -807,6 +808,96 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             expect(trackDeviceTypes(BASS_ID)).toEqual([]);
         }
     );
+
+    it('names the target and document a batch preview renders, and its Stop ends the run with the earlier batches applied', async () => {
+        const brief = await confirmBrief();
+        const drums = requireOnlyProposedCard();
+        const seen: string[] = [];
+        let admitted!: () => void;
+        const admission = new Promise<void>((resolve) => {
+            admitted = resolve;
+        });
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
+            const preparing = chatStore.value?.messages.find((message) =>
+                message.content.startsWith('Preparing batch 3')
+            );
+            seen.push(preparing?.content ?? '');
+            if (seen.length === 2) {
+                admitted();
+                await held;
+            }
+            return renderTrack(input);
+        });
+        const confirmation = confirmPendingChatActions({ confirmationId: drums.id });
+        await admission;
+        // The live project rendered first, then the batch, each named as it began.
+        expect(seen).toEqual([
+            'Preparing batch 3 of 4: rendering Vocal as it is now...',
+            'Preparing batch 3 of 4: rendering Vocal with the whole batch applied...',
+        ]);
+        const preparing = chatStore.value?.messages.find((message) => message.content.startsWith('Preparing batch 3'));
+        expect(preparing?.stoppableRunId).toBe(brief.runId);
+
+        // What the panel's Stop does.
+        await agentRunCancellation.cancel({ runId: brief.runId, reason: 'Cancelled by user' });
+        release();
+        await expect(confirmation).resolves.toEqual({ status: 'executed' });
+
+        expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('partially-completed');
+        expect(chatStore.value?.messages.find((message) => message.id === preparing?.id)).toMatchObject({
+            content: 'Cancelled preparation of batch 3 of 4. Batches 1–2 remain applied.',
+            pendingActionConfirmationStatus: 'cancelled',
+            stoppableRunId: undefined,
+        });
+        expect(proposedCards()).toEqual([]);
+        expect(trackDeviceTypes(DRUMS_ID)).toEqual(['builtin-eq']);
+        expect(trackDeviceTypes(VOCAL_ID)).toEqual([]);
+    });
+
+    it('names the target the initial measurement renders, and its Stop cancels the run before any card', async () => {
+        scriptPlanningTurns(BRIEF_ROUTE);
+        let admitted!: (trackId: string) => void;
+        const admission = new Promise<string>((resolve) => {
+            admitted = resolve;
+        });
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        audio.renderTrackSubgraphOffline.mockImplementationOnce(async (input: RenderInput) => {
+            admitted(input.targetTrackId);
+            await held;
+            return renderTrack(input);
+        });
+        const sending = sendChatMessage(PROMPT);
+        const trackId = await admission;
+        const name = trackStore.value?.tracks.find((track) => track.id === trackId)?.name;
+        const progress = chatStore.value?.messages.filter((message) => message.stoppableRunId !== undefined);
+        expect(progress?.map((message) => message.content)).toEqual([
+            `Measuring the starting point: rendering ${String(name)}...`,
+        ]);
+        const runId = progress?.[0]?.stoppableRunId;
+        if (runId === undefined) {
+            throw new TypeError('Expected the progress message to name its run');
+        }
+
+        // What the panel's Stop does.
+        await agentRunCancellation.cancel({ runId, reason: 'Cancelled by user' });
+        release();
+        await sending;
+
+        expect(
+            chatStore.value?.messages.some((message) => message.content.startsWith('Measuring the starting point'))
+        ).toBe(false);
+        expect(proposedCards()).toEqual([]);
+        expect(agentRunLifecycle.get(runId)?.phase).toBe('cancelled');
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
+        expect(liveBriefRevision()).toBe(BRIEF_REVISION);
+    });
 
     it('blocks approval and retains the failure receipt when a later preview render fails', async () => {
         const brief = await confirmBrief();
@@ -996,7 +1087,7 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
 
         const brief = requireOnlyProposedCard();
         expect(cardContent(brief)).toContain(
-            "No batches were scheduled after the brief: initial measurements and previewing every batch need 9 renders, more than the 4 this run's maxRenderJobs budget has left."
+            "No batches were scheduled after the brief: initial measurements and previewing every batch need 9 renders, more than the 4 this run's maxRenderJobs budget has left; the drums family (1 track) fits."
         );
         expect(agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule).toBeUndefined();
         await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toEqual({

@@ -45,10 +45,14 @@ type PreviewInput = {
     onProgress?: (progress: MetricGoalPreviewProgress) => void;
 };
 
-/** Which target renders now, in which document, and for a prefix document the batch step it ends at. */
-export type MetricGoalPreviewProgress = MeasurementUnitProgress & {
-    /** The step whose prefix document renders; `null` for the live project or the whole batch. */
-    stepId: string | null;
+/** Which target renders now, in which document, and for a prefix document how many of the batch's steps it holds. */
+export type MetricGoalPreviewProgress = Pick<
+    MeasurementUnitProgress,
+    'targetId' | 'document' | 'groupIndex' | 'groupCount'
+> & {
+    /** How many steps the rendered prefix document holds; `null` for the live project or the whole batch. */
+    step: number | null;
+    steps: number;
 };
 type PreviewEnvelope = Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>['envelope'];
 type Binding = NonNullable<MetricGoalState['binding']>;
@@ -448,11 +452,14 @@ export async function prepareMetricGoalPreview(
             controller.signal,
             input.onProgress === undefined
                 ? undefined
-                : (progress) =>
+                : ({ prefix, ...progress }) => {
+                      const index = binding.prefixes.findIndex((candidate) => candidate.after === prefix);
                       input.onProgress?.({
                           ...progress,
-                          stepId: binding.prefixes.find((prefix) => prefix.after === progress.prefix)?.stepId ?? null,
-                      })
+                          step: progress.document === 'project' || index < 0 ? null : index + 1,
+                          steps: binding.prefixes.length,
+                      });
+                  }
         );
         if (previewInvalidated(input, run, snapshot, controller.signal, parsed.envelope.baseRevision)) {
             terminalState = 'cancelled';

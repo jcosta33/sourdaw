@@ -51,6 +51,10 @@ vi.mock('../../../useCases/confirmPendingChatActions', () => ({
     confirmPendingChatActions: vi.fn(),
 }));
 
+vi.mock('../../../useCases/cancelAgentRun', () => ({
+    agentRunCancellation: { cancel: vi.fn(async () => undefined) },
+}));
+
 vi.mock('../../../useCases/cancelPendingChatActions', () => ({
     cancelPendingChatActions: vi.fn(),
 }));
@@ -162,6 +166,7 @@ const { useStore: useRealStore } =
 const { sendChatMessage } = await import('#/modules/AiRuntime/useCases/sendChatMessage');
 const { confirmPendingChatActions } = await import('../../../useCases/confirmPendingChatActions');
 const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
+const { agentRunCancellation } = await import('../../../useCases/cancelAgentRun');
 const { proposeAnswerSuggestion } = await import('../../../useCases/aiPanelActions/proposeAnswerSuggestion');
 const { recoverAgentRunPendingEffects } = await import('../../../useCases/recoverAgentRunPendingEffects');
 const { agentRunStore } = await import('#/modules/AiRuntime/stores/agentRunStore');
@@ -696,6 +701,44 @@ describe('ChatPanel', () => {
         fireEvent.click(propose);
 
         expect(proposeAnswerSuggestion).toHaveBeenCalledExactlyOnceWith('assistant-suggestion');
+    });
+
+    it('offers Stop only on a message still measuring, and cancels that message’s run on activation', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            messages: [
+                {
+                    id: 'batch-preparing',
+                    role: 'assistant',
+                    content: 'Preparing batch 2 of 3: rendering Kick as it is now...',
+                    timestamp: 1,
+                    isCommandAction: true,
+                    stoppableRunId: 'vibe-run',
+                },
+                {
+                    id: 'batch-earlier',
+                    role: 'assistant',
+                    content: 'Batch 1 of 3 committed.',
+                    timestamp: 0,
+                    isCommandAction: true,
+                },
+            ],
+            isGenerating: false,
+            chatMode: 'prompt',
+            enableReasoning: false,
+        });
+
+        render(<ChatPanel />);
+
+        const stops = screen.getAllByRole('button', { name: 'Stop measuring' });
+        expect(stops).toHaveLength(1);
+        expect(agentRunCancellation.cancel).not.toHaveBeenCalled();
+
+        fireEvent.click(stops[0]!);
+
+        expect(agentRunCancellation.cancel).toHaveBeenCalledExactlyOnceWith({
+            runId: 'vibe-run',
+            reason: 'Cancelled by user',
+        });
     });
 
     it('holds the suggestion offer while a request is generating', () => {

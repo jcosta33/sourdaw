@@ -2,20 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
-import {
-    audioEngine,
-    initEngineDeviceCollaborators,
-    removeTrackStrip,
-    type renderTrackSubgraphOffline,
-} from '#/modules/AudioEngine/useCases';
+import { type renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
-import { setActionHistoryMetadataPort } from '#/modules/Command/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
-import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
-import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import {
@@ -28,6 +20,11 @@ import { sendChatMessage } from '../sendChatMessage';
 
 import { configureMetricGoalProject, resetMetricGoalProject } from './metricGoalWorkflowFixture';
 import {
+    ORDINARY_SONG_BEATS as SONG_BEATS,
+    ORDINARY_SONG_SECTIONS as SECTIONS,
+    ORDINARY_SONG_TRACKS as TRACKS,
+    prepareVibeRunEngine,
+    releaseVibeRunEngine,
     renderVibeTimeline,
     requireOnlyProposedVibeCard,
     scriptVibeBriefRoute,
@@ -35,10 +32,8 @@ import {
     sendVibeMessage,
     SECONDS_PER_BEAT,
     vibeCardContent,
-    vibeSections,
     vibeTrack,
     type VibeRenderInput,
-    type VibeTrackSpec,
 } from './vibeRunProjectFixture';
 
 registerDeviceEnginePorts();
@@ -86,53 +81,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 
 /** Two dozen tracks render real buffers through the real measurement path, which takes longer than a unit case. */
 const REAL_PROJECT_TIMEOUT_MS = 60_000;
-const SECTION_BEATS = 8;
-const SECTIONS = vibeSections(
-    ['Intro', 'Verse 1', 'Pre Chorus', 'Chorus 1', 'Verse 2', 'Chorus 2', 'Bridge', 'Outro'],
-    SECTION_BEATS
-);
-const SONG_BEATS = SECTIONS.length * SECTION_BEATS;
 
-const FAMILY_TRACKS: Readonly<Record<string, readonly (readonly [name: string, role: string])[]>> = {
-    drums: [
-        ['Kick', 'kick'],
-        ['Snare', 'snare'],
-        ['Hats', 'hi-hat'],
-        ['Toms', 'tom'],
-        ['Overheads', 'overhead'],
-        ['Room', 'room'],
-        ['Shaker', 'percussion'],
-    ],
-    vocal: [
-        ['Lead Vox', 'lead vocal'],
-        ['Double', 'lead vocal'],
-        ['Harmony High', 'backing vocal'],
-        ['Harmony Low', 'backing vocal'],
-        ['Ad Libs', 'backing vocal'],
-    ],
-    bass: [
-        ['Bass DI', 'bass'],
-        ['Bass Amp', 'bass'],
-    ],
-    guitar: [
-        ['Rhythm L', 'guitar'],
-        ['Rhythm R', 'guitar'],
-        ['Lead Gtr', 'guitar'],
-        ['Acoustic', 'guitar'],
-    ],
-    keys: [
-        ['Piano', 'keys'],
-        ['Rhodes', 'keys'],
-        ['Organ', 'keys'],
-        ['Synth Lead', 'synth'],
-        ['Pad', 'pad'],
-        ['Strings', 'strings'],
-    ],
-};
-
-const TRACKS: VibeTrackSpec[] = Object.values(FAMILY_TRACKS).flatMap((tracks) =>
-    tracks.map(([name, role]) => ({ id: `track-${name.toLowerCase().replaceAll(' ', '-')}`, name, role }))
-);
 /** The acoustic guitar rests through the intro. */
 const RESTING_ID = 'track-acoustic';
 const INTRO = SECTIONS[0]!;
@@ -150,14 +99,7 @@ beforeEach(() => {
         sections: SECTIONS,
     });
     registerHandlerMap(getProjectHandlers());
-    initEngineDeviceCollaborators();
-    setActionHistoryMetadataPort({
-        record: () => [],
-        markReverted: () => ({ status: 'unavailable' as const }),
-        clear: () => undefined,
-    });
-    clearAiHistory();
-    setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+    prepareVibeRunEngine();
     seedVibeBrief(TRACKS);
     vi.mocked(generateToolPlanningOutcome).mockReset();
     runtimeMocks.backend.value = 'cloud';
@@ -171,11 +113,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-    for (const track of TRACKS) {
-        removeTrackStrip(track.id);
-    }
-    audioEngine.setUseCaseDeviceCollaborators(null);
-    clearAiHistory();
+    releaseVibeRunEngine(TRACKS);
     agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
     resetMetricGoalProject();
     vi.restoreAllMocks();
