@@ -8,6 +8,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { DEFAULT_WEBLLM_MODEL_ID, WEBLLM_CONTEXT_WINDOW_TOKENS, WEBLLM_MODELS } from '../../models/ModelInfo';
 import { llmStatusStore } from '../../stores/llmStatusStore';
+import { LocalModelRefusalError } from '../../errors/LocalModelRefusalError';
 import { createWebLlmAppConfig } from '../webLlm/createWebLlmAppConfig';
 import { engineState } from '../webLlm/engineLifecycleState';
 import { getWebLlmArtifactUrl } from '../webLlm/getWebLlmArtifactUrl';
@@ -937,6 +938,28 @@ describe('WebLLM provider artifact admission', () => {
             expect(llmStatusStore.value).toMatchObject({ state: 'error', refusal: { reason: 'insufficient-storage' } });
         });
 
+        it('reclaims an interrupted download before estimating, so its staging bytes never cause a refusal', async () => {
+            const stagingName = `sourdaw/webllm/staging-v1/${encodeURIComponent(LIGHT)}`;
+            cacheEntries.set(stagingName, new Map([['stale-shard', new Response('stale')]]));
+            const dependencies = artifactDependencies({
+                estimateStorage: async () => ({ quota: downloadBytes, usage: cacheEntries.has(stagingName) ? 1 : 0 }),
+            });
+
+            await expect(loader(dependencies)(LIGHT, { downloadConsent: true })).resolves.toBeDefined();
+            expect(dependencies.fetchArtifact).toHaveBeenCalled();
+        });
+
+        it('states a need above the room left as two different figures, even a byte apart', () => {
+            const refusal = new LocalModelRefusalError({
+                reason: 'insufficient-storage',
+                modelId: LIGHT,
+                requiredBytes: 1_000_000_001,
+                availableBytes: 1_000_000_000,
+            });
+
+            expect(refusal.message).toContain('needs 1.01 GB to download, but this browser has 1.00 GB of storage left');
+        });
+
         it('admits a download that exactly fits the remaining storage', async () => {
             const dependencies = artifactDependencies({
                 estimateStorage: async () => ({ quota: downloadBytes + 10, usage: 10 }),
@@ -1013,6 +1036,16 @@ describe('WebLLM provider artifact admission', () => {
             ['an OutOfMemory name', 'OutOfMemoryError: failed to allocate buffer'],
         ])('turns %s at load into a gpu-memory refusal', async (_label, failure) => {
             createWebWorkerEngineMock.mockRejectedValueOnce(failure);
+
+            await expect(loader(artifactDependencies())(LIGHT, { downloadConsent: true })).rejects.toMatchObject({
+                refusal: { reason: 'gpu-memory', modelId: LIGHT },
+            });
+        });
+
+        it('classifies a load failure delivered as an Error, as a worker error event delivers it', async () => {
+            createWebWorkerEngineMock.mockRejectedValueOnce(
+                new Error('The WebGPU device was lost while loading the model: out of memory')
+            );
 
             await expect(loader(artifactDependencies())(LIGHT, { downloadConsent: true })).rejects.toMatchObject({
                 refusal: { reason: 'gpu-memory', modelId: LIGHT },

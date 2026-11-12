@@ -374,8 +374,6 @@ async function fetchAndStageArtifacts(
     dependencies: WebLlmArtifactAdmissionDependencies,
     onProgress: WebLlmArtifactAdmissionOptions['onProgress']
 ): Promise<void> {
-    await deleteArtifactEntries(model, dependencies);
-    await dependencies.deleteCache(stagingCacheName(model.modelId));
     const stagingCache = await dependencies.openCache(stagingCacheName(model.modelId));
     const totalBytes = model.artifacts.reduce((total, artifact) => total + artifact.sizeBytes, 0);
     let verifiedBytes = 0;
@@ -521,6 +519,10 @@ async function admitWebLlmModelArtifactsExclusive(
         throw new Error('Explicit model-download consent is required before WebLLM can fetch this artifact set.');
     }
 
+    // A download needs the whole set anew, so this model's stale entries and an interrupted
+    // download's staging go first: the storage estimate must not count bytes the download reclaims.
+    await deleteArtifactEntries(model, dependencies);
+    await dependencies.deleteCache(stagingCacheName(model.modelId));
     await refuseDownloadBeyondStorage(model, dependencies);
 
     try {

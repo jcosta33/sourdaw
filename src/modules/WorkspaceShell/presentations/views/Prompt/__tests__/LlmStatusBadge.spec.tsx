@@ -126,11 +126,11 @@ describe('LlmStatusBadge', () => {
         const storageRefusal = {
             state: 'error' as const,
             message:
-                'The Pro model needs 5.3 GB to download, but this browser has 1.2 GB of storage left. Free some space or pick a smaller model. Nothing was downloaded.',
+                'The Pro model needs 4.63 GB to download, but this browser has 1.20 GB of storage left. Free some space or pick a smaller model. Nothing was downloaded.',
             refusal: {
                 reason: 'insufficient-storage' as const,
                 modelId: 'Qwen3-8B-q4f16_1-MLC',
-                requiredBytes: 5_300_000_000,
+                requiredBytes: 4_630_000_000,
                 availableBytes: 1_200_000_000,
             },
         };
@@ -141,7 +141,7 @@ describe('LlmStatusBadge', () => {
         }
 
         it.each([
-            { label: 'storage', status: storageRefusal, trigger: 'Not enough storage', sentence: /5\.3 GB.*1\.2 GB/ },
+            { label: 'storage', status: storageRefusal, trigger: 'Not enough storage', sentence: /4\.63 GB.*1\.20 GB/ },
             {
                 label: 'shader-f16',
                 status: {
