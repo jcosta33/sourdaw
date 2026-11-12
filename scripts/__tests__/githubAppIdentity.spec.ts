@@ -94,7 +94,7 @@ describe('orchestrator authentication', () => {
                         expect(options.env[key]).toBeUndefined();
                     }
                     // The inherited count is replaced by the helper's own repository-program overrides.
-                    expect(options.env.GIT_CONFIG_COUNT).toBe('7');
+                    expect(options.env.GIT_CONFIG_COUNT).toBe('12');
                     return 'stored-token';
                 }
                 expect(args).toEqual(['api', '--hostname', 'github.com', 'user']);
@@ -1189,7 +1189,7 @@ describe('isolated gh sessions', () => {
         expect(auth.session.env.GIT_CONFIG_SYSTEM).toBe('/dev/null');
         expect(auth.session.env.GIT_TERMINAL_PROMPT).toBe('0');
         // The inherited `insteadof` entry is replaced by the helper's own repository-program overrides.
-        expect(auth.session.env.GIT_CONFIG_COUNT).toBe('7');
+        expect(auth.session.env.GIT_CONFIG_COUNT).toBe('12');
         expect(auth.session.env.GIT_CONFIG_KEY_0).toBe('core.hooksPath');
         expect(auth.session.env.GIT_CONFIG_VALUE_0).toBe('/dev/null');
         expect(auth.session.env.GIT_CONFIG_PARAMETERS).toBeUndefined();
@@ -1500,7 +1500,7 @@ describe('sterile Git child environments', () => {
             }
             expect(env).toMatchObject({
                 GIT_NO_REPLACE_OBJECTS: '1',
-                GIT_CONFIG_COUNT: '7',
+                GIT_CONFIG_COUNT: '12',
                 GIT_CONFIG_KEY_0: 'core.hooksPath',
                 GIT_CONFIG_VALUE_0: '/dev/null',
                 GIT_CONFIG_KEY_1: 'core.fsmonitor',
@@ -1624,6 +1624,51 @@ describe('sterile Git child environments', () => {
             fetch({ ...env, GIT_CONFIG_COUNT: '0' });
             expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
         });
+    });
+
+    it('runs no git proxy a repository rewrite to git:// points the GitHub remote at', () => {
+        withScratch('sourdaw-git-proxy-', (root) => {
+            const leaked = join(root, 'leaked');
+            const proxy = join(root, 'proxy');
+            writeExecutable(proxy, `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > ${JSON.stringify(leaked)}\nexit 1\n`);
+            fixtureGit(root, ['init', '-q', '-b', 'main']);
+            fixtureGit(root, ['config', 'core.gitProxy', proxy]);
+            fixtureGit(root, ['config', 'url.git://example.invalid/.insteadOf', 'https://github.com/']);
+            const env = githubChildEnv('ghs_sentinel', join(root, 'gh-config'));
+            const fetch = (fetchEnv: NodeJS.ProcessEnv) => () =>
+                spawnCapture('git', ['fetch', GITHUB_HTTPS_REMOTE, 'main'], { cwd: root, env: fetchEnv });
+
+            expect(fetch(env)).toThrow();
+            expect(existsSync(leaked)).toBe(false);
+
+            // Without the environment overrides the rewritten remote runs the proxy with the token.
+            expect(fetch({ ...env, GIT_CONFIG_COUNT: '0' })).toThrow();
+            expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
+        });
+    });
+
+    it('overrides exactly the listed repository config keys, in order', () => {
+        const env = githubAuthorizationGitEnv({});
+        const count = Number(env.GIT_CONFIG_COUNT);
+        const overrides = Array.from({ length: count }, (_, index) => [
+            env[`GIT_CONFIG_KEY_${String(index)}`],
+            env[`GIT_CONFIG_VALUE_${String(index)}`],
+        ]);
+        expect(overrides).toEqual([
+            ['core.hooksPath', '/dev/null'],
+            ['core.fsmonitor', 'false'],
+            ['protocol.ext.allow', 'never'],
+            ['core.askPass', ''],
+            ['push.gpgSign', 'false'],
+            ['commit.gpgSign', 'false'],
+            ['core.alternateRefsCommand', ''],
+            ['protocol.allow', 'never'],
+            ['protocol.https.allow', 'always'],
+            ['protocol.file.allow', 'always'],
+            ['protocol.git.allow', 'never'],
+            ['protocol.ssh.allow', 'never'],
+        ]);
+        expect(env[`GIT_CONFIG_KEY_${String(count)}`]).toBeUndefined();
     });
 
     it('runs no ext:: transport a repository rewrite points the GitHub remote at', () => {

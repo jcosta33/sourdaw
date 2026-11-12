@@ -384,15 +384,23 @@ const INHERITED_AUTHORITY_PREFIXES = ['GIT_', 'GH_', 'GITHUB_', 'SOURDAW_GITHUB_
 
 /**
  * Repository config is shared by every lane of the primary checkout, so any lane can plant a program
- * there that a Git child would run with this process's environment: a hook (`fetch` runs
- * `reference-transaction`), an fsmonitor (`status` and `diff` run it), an `ext::` transport behind a
- * URL rewrite, an askpass program, a signing program, or an alternate-refs command (`fetch`
- * negotiation runs it when `objects/info/alternates` names a store). Environment-supplied config ranks
- * with `git -c`, above repository config for the same key, so these fixed-name entries disarm them for
- * every child. A key whose name the lane chooses — a `.gitattributes` filter, a merge or diff driver,
- * a custom `name::` remote helper — cannot be named here and still runs. Network settings that run no
- * program — URL-scoped or plain `http.*` keys such as `http.curloptResolve`, `http.sslCAInfo`, or
- * `http.proxy` — can still redirect a token-bearing request; keeping the token from same-account
+ * there that a Git child would run with this process's environment. Environment-supplied config ranks
+ * with `git -c`, above repository config for the same key, so each fixed-name entry below disarms one
+ * such program for every child: hooks (`fetch` runs `reference-transaction`), fsmonitor (`status` and
+ * `diff` run it), askpass, commit and push signing, and the alternate-refs command fetch negotiation
+ * runs for a planted `objects/info/alternates` store.
+ *
+ * Transports are an allowlist: only `https` (GitHub) and `file` (local remotes) are allowed. A
+ * repository-level `protocol.<name>.allow` outranks the general `protocol.allow`, so every transport
+ * that runs a program gets its own override: `ext::` runs its command, `ssh` its client, and `git`
+ * runs `core.gitProxy`. That proxy key is multi-valued and the repository's value matches first, so
+ * no environment value disarms it; refusing the `git` transport is the defence.
+ *
+ * This list is not complete. Keys whose names the lane chooses — a `.gitattributes` filter, a merge or
+ * diff driver, a custom `name::` remote helper — cannot be named here and still run. Network settings
+ * that run no program — URL-scoped or plain `http.*` keys such as `http.curloptResolve`,
+ * `http.sslCAInfo`, or `http.proxy` — can still redirect a token-bearing request. Any further
+ * fixed-name key not listed here is also outside it (#6448). Keeping the token from same-account
  * processes is outside this boundary.
  */
 const REPOSITORY_PROGRAM_OVERRIDES = [
@@ -403,6 +411,11 @@ const REPOSITORY_PROGRAM_OVERRIDES = [
     ['push.gpgSign', 'false'],
     ['commit.gpgSign', 'false'],
     ['core.alternateRefsCommand', ''],
+    ['protocol.allow', 'never'],
+    ['protocol.https.allow', 'always'],
+    ['protocol.file.allow', 'always'],
+    ['protocol.git.allow', 'never'],
+    ['protocol.ssh.allow', 'never'],
 ] as const;
 
 /**
