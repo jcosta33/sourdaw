@@ -22,18 +22,24 @@ export function recordVitestProgress(
     const temporary = join(directory, `.${event}-${process.pid % 16}.tmp`);
     let owned = false;
     try {
-        writeFileSync(
-            temporary,
-            JSON.stringify({
-                event,
-                monotonicNs: process.hrtime.bigint().toString(),
-                pid: process.pid,
-                parentPid: process.ppid,
-                detail: detail.slice(0, 512),
-                ...(observation === undefined ? {} : { observation }),
-            }),
-            { mode: 0o600, flag: 'wx' }
-        );
+        const record: {
+            event: ProgressEvent;
+            monotonicNs: string;
+            pid: number;
+            parentPid: number;
+            detail: string;
+            observation?: { monotonicNs: string; processGroup: ProcessGroupSnapshot };
+        } = {
+            event,
+            monotonicNs: process.hrtime.bigint().toString(),
+            pid: process.pid,
+            parentPid: process.ppid,
+            detail: detail.slice(0, 512),
+        };
+        if (observation !== undefined) {
+            record.observation = observation;
+        }
+        writeFileSync(temporary, JSON.stringify(record), { mode: 0o600, flag: 'wx' });
         owned = true;
         renameSync(temporary, join(directory, `${event}.json`));
     } catch {
