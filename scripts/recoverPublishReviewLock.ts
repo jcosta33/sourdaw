@@ -210,7 +210,7 @@ async function recoverFromPersistedReceiptIfPossible(
     if (!planExists && existsSync(join(bundle, 'dossier.json'))) {
         fail(`review-publication recovery found a dossier without its risk plan at ${bundle}`);
     }
-    if (!planExists && readBundleGeneratedSet(bundle)?.has('risk-plan.json') !== true) {
+    if (!planExists && !landedBundleManifestRecordsRiskPlan(bundle)) {
         console.log(`review-publication-lock-already-recovered:${number}:${ownerOid}`);
         return 0;
     }
@@ -219,6 +219,35 @@ async function recoverFromPersistedReceiptIfPossible(
         readDocument: readRecoveryBundleDocument,
         requireDigest: requireMatchingRecoveryDigest,
     });
+}
+
+/**
+ * A bundle with no manifest, or a readable manifest that records no generated risk plan, is a
+ * legacy bundle. A present but unreadable or malformed manifest proves nothing about the plan, so it
+ * fails closed instead of reporting the landed publication recovered without binding its dossier.
+ */
+function landedBundleManifestRecordsRiskPlan(bundle: string): boolean {
+    const path = join(bundle, 'manifest.json');
+    if (!existsSync(path)) {
+        return false;
+    }
+    let manifest: unknown;
+    try {
+        manifest = JSON.parse(readFileSync(path, 'utf8'));
+    } catch {
+        fail(`review-publication recovery cannot read the bundle manifest at ${path}`);
+    }
+    if (typeof manifest !== 'object' || manifest === null || Array.isArray(manifest)) {
+        fail(`review-publication recovery found a malformed bundle manifest at ${path}`);
+    }
+    if (!('generated' in manifest)) {
+        return false;
+    }
+    const generated = readBundleGeneratedSet(bundle);
+    if (generated === undefined) {
+        fail(`review-publication recovery found a malformed generated list in ${path}`);
+    }
+    return generated.has('risk-plan.json');
 }
 
 function replayAdoptedRecoveryReceipt(

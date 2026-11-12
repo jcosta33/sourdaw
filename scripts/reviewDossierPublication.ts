@@ -171,10 +171,9 @@ function assertPublicationAgreement(dossier: ReviewDossier, input: ReviewDossier
 
 /**
  * The record a publication persists or replays. A persisted record that already binds its
- * publication replays unchanged. Otherwise the record is derived from the document's `draws`; a
- * document without them may fall back to an unpublished persisted record only when its findings
- * carry explicit sources. Historical unknown attribution is reserved for proven landed recovery.
- * With neither draws nor a record the publication is refused. A claimed publication is not trusted
+ * publication replays unchanged. Otherwise the record is derived from the document's `draws`, and
+ * a document without them is refused whatever unpublished record the bundle carries. Historical
+ * unknown attribution is reserved for proven landed recovery. A claimed publication is not trusted
  * alone: the publish path's replay must still prove the named review stands live and exact.
  */
 export function buildReviewDossier(input: ReviewDossierBuildInput): ReviewDossierPublication {
@@ -205,14 +204,8 @@ function selectPublicationRecord(persisted: ReviewDossier | undefined, input: Re
     if (input.draws !== undefined) {
         return assembleFromDraws(input, input.draws);
     }
-    if (persisted !== undefined) {
-        // An unpublished record is no evidence that a review landed. A fresh publication still
-        // needs explicit finding sources when a pre-ADR document carries no draws of its own.
-        for (const [index, comment] of input.comments.entries()) {
-            requiredFindingSources(comment, index);
-        }
-        return persisted;
-    }
+    // An unpublished record is bundle-writable and no evidence that a review landed, so it never
+    // supplies a fresh publication's draws.
     return fail(
         `review.json must carry draws for head ${input.plan.headSha}: one { stance, reviewerModel, tier, outcome } entry per completed blind draw`
     );

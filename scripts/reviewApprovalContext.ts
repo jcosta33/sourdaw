@@ -19,6 +19,7 @@ import {
 } from './stackedLanes.ts';
 
 import type { PublishReviewPort, ReviewDocument } from './publishReview.ts';
+import type { AuthorshipLabel } from './reviewerModelDiversity.ts';
 
 export function assertSameApprovalContext(
     expected: ReviewBundleContext | undefined,
@@ -59,16 +60,10 @@ export function publicationApprovalContext(
     return { pr: context.pr, baseRefName: context.baseRefName, baseSha: context.baseSha, headSha: context.headSha };
 }
 
-export function readLiveApprovalContext(
-    primaryRoot: string,
-    number: number,
-    head: string,
-    bundle: string,
-    session: GhSession,
-    capture: typeof spawnCapture
-): ReviewBundleContext {
+function liveCommands(primaryRoot: string, session: GhSession, capture: typeof spawnCapture) {
     const gh = (args: string[]) => capture('gh', args, { cwd: primaryRoot, env: session.env });
     const git = (args: string[]) => capture('git', args, { cwd: primaryRoot, env: session.env });
+    const gitUntrimmed = (args: string[]) => capture('git', args, { cwd: primaryRoot, env: session.env, trim: false });
     const ghExecutable = posixSingleQuote(trustedChildExecutable('gh', session.env));
     const fetch = (shas: string[]) =>
         git([
@@ -81,6 +76,55 @@ export function readLiveApprovalContext(
             GITHUB_HTTPS_REMOTE,
             ...shas,
         ]);
+    return { gh, git, gitUntrimmed, fetch };
+}
+
+/**
+ * The comparison a fresh publication binds its bundle to, read from live pull-request facts and git
+ * objects rather than from caller-editable bundle files. The patch and numstat use exactly the
+ * arguments `review:prepare` writes `diff.patch` and the risk plan from. Any base branch is
+ * accepted: a stack child is reviewed against its parent's head.
+ */
+export type LiveReviewComparison = { mergeBase: string; patch: string; numstat: Buffer };
+
+export function readLiveReviewComparison(
+    primaryRoot: string,
+    number: number,
+    head: string,
+    session: GhSession,
+    capture: typeof spawnCapture
+): LiveReviewComparison {
+    const { gh, git, gitUntrimmed, fetch } = liveCommands(primaryRoot, session, capture);
+    const pr = parseJson<{ headRefOid?: unknown; baseRefOid?: unknown }>(
+        gh(['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'headRefOid,baseRefOid']),
+        'live review comparison'
+    );
+    if (
+        pr.headRefOid !== head ||
+        !/^[0-9a-f]{40,64}$/.test(head) ||
+        typeof pr.baseRefOid !== 'string' ||
+        !/^[0-9a-f]{40,64}$/.test(pr.baseRefOid)
+    ) {
+        fail(`fresh review publication requires pull request #${number} to stand at head ${head}`);
+    }
+    fetch([pr.baseRefOid, head]);
+    const mergeBase = git(['merge-base', pr.baseRefOid, head]);
+    return {
+        mergeBase,
+        patch: gitUntrimmed(['diff', `${mergeBase}...${head}`]),
+        numstat: Buffer.from(gitUntrimmed(['diff', '--numstat', '-z', `${mergeBase}...${head}`])),
+    };
+}
+
+export function readLiveApprovalContext(
+    primaryRoot: string,
+    number: number,
+    head: string,
+    bundle: string,
+    session: GhSession,
+    capture: typeof spawnCapture
+): ReviewBundleContext {
+    const { gh, git, fetch } = liveCommands(primaryRoot, session, capture);
     const pr = parseJson<{
         number?: unknown;
         state?: unknown;
@@ -145,4 +189,63 @@ export function readLiveApprovalContext(
         });
     }
     return context;
+}
+
+/** The live pull request a publication reads: state, head, authorship labels and creation time. */
+export function readPublicationPullRequest(
+    number: number,
+    gh: (args: string[]) => string
+): ReturnType<PublishReviewPort['pullRequest']> {
+    const pullRequest = parseJson<{
+        state?: unknown;
+        headRefOid?: unknown;
+        labels?: unknown;
+        createdAt?: unknown;
+    }>(
+        gh([
+            'pr',
+            'view',
+            String(number),
+            '--repo',
+            REQUIRED_REPOSITORY,
+            '--json',
+            'state,headRefOid,labels,createdAt',
+        ]),
+        'review publication pull request'
+    );
+    if (typeof pullRequest.state !== 'string' || typeof pullRequest.headRefOid !== 'string') {
+        fail('review publication pull request is unreadable');
+    }
+    return {
+        state: pullRequest.state,
+        head: pullRequest.headRefOid,
+        labels: readAuthorshipLabels(pullRequest.labels),
+        createdAt: typeof pullRequest.createdAt === 'string' ? pullRequest.createdAt : undefined,
+    };
+}
+
+/**
+ * `gh pr view --json labels` answers [{name, description}]; the diversity check identifies the
+ * authorship label by its `Authored by ` description fence, so both fields travel together. Absent
+ * labels mean not-comparable, never fatal.
+ */
+function readAuthorshipLabels(labels: unknown): AuthorshipLabel[] | undefined {
+    if (!Array.isArray(labels)) {
+        return undefined;
+    }
+    return labels.flatMap((label): AuthorshipLabel[] => {
+        if (typeof label !== 'object' || label === null) {
+            return [];
+        }
+        const name = (label as Record<string, unknown>).name;
+        if (typeof name !== 'string') {
+            return [];
+        }
+        const description = (label as Record<string, unknown>).description;
+        const entry: AuthorshipLabel = { name };
+        if (typeof description === 'string') {
+            entry.description = description;
+        }
+        return [entry];
+    });
 }

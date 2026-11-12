@@ -59,7 +59,7 @@ describe('CrustGainStrip keyboard interaction', () => {
 
         const event = fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowUp' });
 
-        expect(onChange).toHaveBeenCalledWith(18);
+        expect(onChange).toHaveBeenCalledWith(18, false);
         // ArrowUp is a value-changing key; the default browser scroll behaviour must be suppressed.
         expect(event).toBe(false);
     });
@@ -70,7 +70,7 @@ describe('CrustGainStrip keyboard interaction', () => {
 
         fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowUp', shiftKey: true });
 
-        expect(onChange).toHaveBeenCalledWith(5);
+        expect(onChange).toHaveBeenCalledWith(5, false);
     });
 
     it('decreases the value by 0.1 dB on ArrowDown and clamps to the 0 dB floor', () => {
@@ -79,7 +79,7 @@ describe('CrustGainStrip keyboard interaction', () => {
 
         fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowDown' });
 
-        expect(onChange).toHaveBeenCalledWith(0);
+        expect(onChange).toHaveBeenCalledWith(0, false);
     });
 
     it('decreases the value by a full 1 dB step on Shift+ArrowDown', () => {
@@ -88,7 +88,7 @@ describe('CrustGainStrip keyboard interaction', () => {
 
         fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowDown', shiftKey: true });
 
-        expect(onChange).toHaveBeenCalledWith(3);
+        expect(onChange).toHaveBeenCalledWith(3, false);
     });
 
     it('ignores keys other than the arrow keys', () => {
@@ -124,7 +124,7 @@ describe('CrustGainStrip pointer drag', () => {
         fireEvent.pointerDown(slider, { pointerId: 1, clientY: 100 });
         fireEvent.pointerMove(slider, { pointerId: 1, clientY: 50 });
 
-        expect(onChange).toHaveBeenCalledWith(15);
+        expect(onChange).toHaveBeenCalledWith(15, true);
     });
 
     it('scales the drag delta by 0.1x in fine mode (ctrl/cmd held)', () => {
@@ -137,7 +137,7 @@ describe('CrustGainStrip pointer drag', () => {
         fireEvent.pointerDown(slider, { pointerId: 1, clientY: 100 });
         fireEvent.pointerMove(slider, { pointerId: 1, clientY: 50, ctrlKey: true });
 
-        expect(onChange).toHaveBeenCalledWith(6.9);
+        expect(onChange).toHaveBeenCalledWith(6.9, true);
     });
 
     it('clamps a large downward drag to the 0 dB floor', () => {
@@ -149,7 +149,7 @@ describe('CrustGainStrip pointer drag', () => {
         fireEvent.pointerDown(slider, { pointerId: 1, clientY: 0 });
         fireEvent.pointerMove(slider, { pointerId: 1, clientY: 1000 });
 
-        expect(onChange).toHaveBeenCalledWith(0);
+        expect(onChange).toHaveBeenCalledWith(0, true);
     });
 
     it('stops responding to pointer moves once the pointer is released', () => {

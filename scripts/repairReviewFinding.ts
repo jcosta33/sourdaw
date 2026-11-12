@@ -21,6 +21,8 @@ import { readFileSync } from 'node:fs';
 import { shellIsAncestor } from './gitAncestry.ts';
 import {
     AUTHOR_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
+    REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
     authenticateRole,
     isAuthorBotNodeId,
@@ -41,11 +43,13 @@ import {
     REVIEW_REPAIR_FORMAT,
     REVIEW_THREAD_COMMENT_FIELDS,
     assertReviewRepairRecord,
+    parseRepairEvidence,
     parseReviewRepairReply,
     readCommentDatabaseId,
     readFindingLine,
     readFindingReviewedHead,
     reviewRepairCommitRefusal,
+    reviewRepairRootAuthorRefusal,
     renderReviewRepairReply,
     type ReviewRepairEvidence,
     type ReviewRepairRecord,
@@ -72,7 +76,15 @@ export type RepairReviewFindingThread = {
     pullRequestNumber: number;
     head: string;
     base: string;
-    rootComment: { id: number; path: string; line: number; side: 'LEFT' | 'RIGHT'; reviewedHead: string };
+    rootComment: {
+        id: number;
+        path: string;
+        line: number;
+        side: 'LEFT' | 'RIGHT';
+        reviewedHead: string;
+        /** The root's Bot or User node id; null for a deleted or otherwise unidentified author. */
+        authorNodeId: string | null;
+    };
     replies: RepairReviewFindingReply[];
 };
 
@@ -251,50 +263,6 @@ function describeValue(value: unknown): string {
     return JSON.stringify(value) ?? typeof value;
 }
 
-export function parseRepairEvidence(json: string): ReviewRepairEvidence[] {
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(json);
-    } catch (error) {
-        throw new Error('review repair evidence file is not valid JSON', { cause: error });
-    }
-    if (!Array.isArray(parsed)) {
-        throw new TypeError('review repair evidence file must hold an array of evidence entries');
-    }
-    const entries: ReviewRepairEvidence[] = [];
-    for (let index = 0; index < parsed.length; index += 1) {
-        entries.push(readRepairEvidenceEntry(parsed[index], index));
-    }
-    return entries;
-}
-
-/**
- * Validated here rather than left to `assertReviewRepairRecord`, so a malformed file is named as a
- * malformed file instead of as a malformed record bound to a thread.
- */
-function readRepairEvidenceEntry(value: unknown, index: number): ReviewRepairEvidence {
-    if (!isRecord(value)) {
-        throw new TypeError(
-            `review repair evidence entry ${index} must be a JSON object, found ${describeValue(value)}`
-        );
-    }
-    return {
-        observable: readEvidenceField(value, 'observable', index),
-        verification: readEvidenceField(value, 'verification', index),
-        observed: readEvidenceField(value, 'observed', index),
-    };
-}
-
-function readEvidenceField(entry: Record<string, unknown>, field: string, index: number): string {
-    const value = entry[field];
-    if (typeof value !== 'string') {
-        throw new TypeError(
-            `review repair evidence entry ${index} field ${field} must be a string, found ${describeValue(value)}`
-        );
-    }
-    return value;
-}
-
 function loadRepairEvidence(evidencePath: string | undefined, port: RepairReviewFindingPort): ReviewRepairEvidence[] {
     if (evidencePath === undefined) {
         return [];
@@ -376,6 +344,13 @@ export function repairReviewFinding(
         fail(`GitHub returned thread ${state.threadId} for requested thread ${input.threadId}`);
     }
     assertThreadPrecondition(state, number, input.head);
+    const rootAuthorRefusal = reviewRepairRootAuthorRefusal(state.rootComment.authorNodeId, {
+        reviewerNodeId: REVIEWER_BOT_NODE_ID,
+        ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
+    });
+    if (rootAuthorRefusal !== undefined) {
+        fail(`thread ${state.threadId}: ${rootAuthorRefusal}`);
+    }
     // The freeze flag is advisory here and never blocks a repair: unresolved threads must stay
     // resolvable however many request-changes rounds the pull request has taken.
     logReviewRoundFreezeAtThreshold(number, state.head, port.reviews, port.reviewComments, port.log);
@@ -456,12 +431,17 @@ function readRootComment(
     if (typeof node.path !== 'string' || node.path.trim() === '') {
         fail(`${label} root comment carries no file path`);
     }
+    const author = isRecord(node.author) ? node.author : {};
     return {
         id,
         path: node.path,
         line: readFindingLine(node.line, node.originalLine, `${label} root comment`),
         side,
         reviewedHead: readFindingReviewedHead(node.pullRequestReview, `${label} root comment`),
+        authorNodeId:
+            (author.__typename === 'Bot' || author.__typename === 'User') && typeof author.id === 'string'
+                ? author.id
+                : null,
     };
 }
 
@@ -470,10 +450,11 @@ function readThreadReply(node: ThreadCommentNode, label: string): RepairReviewFi
         fail(`${label} returned an unreadable comment`);
     }
     const author = isRecord(node.author) ? node.author : {};
+    // Only a Bot reply carries an agent identity; a person's reply is never read as a record.
     return {
         id: readCommentDatabaseId(node.databaseId, `${label} comment ${node.id} id`),
         body: node.body,
-        authorNodeId: typeof author.id === 'string' ? author.id : null,
+        authorNodeId: author.__typename === 'Bot' && typeof author.id === 'string' ? author.id : null,
     };
 }
 

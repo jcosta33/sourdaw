@@ -23,4 +23,5 @@ export type SourceWithFade = AudioBufferSourceNode & {
     scheduledPlaybackRate?: number;
     scheduledEndTime?: number;
     scheduledStopTime?: number;
+    scheduledMediaOwnerStopTime?: number;
 };
