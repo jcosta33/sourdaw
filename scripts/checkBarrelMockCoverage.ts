@@ -886,6 +886,21 @@ export function analyzeSpecs({
     barrelKinds,
     exemptions: exemptionRows = exemptions,
 }: AnalyzeInput): AnalysisResult {
+    const resolutions = new Map<string, Map<string, string | null>>();
+    const resolveModuleOnce = (specifier: string, directory: string): string | null => {
+        let bySpecifier = resolutions.get(directory);
+        if (!bySpecifier) {
+            bySpecifier = new Map();
+            resolutions.set(directory, bySpecifier);
+        }
+        const cached = bySpecifier.get(specifier);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const resolved = resolveModule(specifier, directory, fileExists);
+        bySpecifier.set(specifier, resolved);
+        return resolved;
+    };
     const kinds = barrelKinds ?? gatedBarrelKinds;
     const contractBarrelPattern = buildBarrelPattern(kinds);
     const violations: Violation[] = [];
@@ -931,7 +946,7 @@ export function analyzeSpecs({
         const exemptedKeysFor = new Map<string, { row: ExemptionRow; keys: Set<string> }>();
 
         for (const mock of specFacts.mocks) {
-            const resolved = resolveModule(mock.specifier, specDirectory, fileExists);
+            const resolved = resolveModuleOnce(mock.specifier, specDirectory);
             if (!resolved) {
                 continue;
             }
@@ -989,7 +1004,7 @@ export function analyzeSpecs({
                 continue;
             }
             for (const [specifier, names] of facts.imports) {
-                const resolved = resolveModule(specifier, dirname(current), fileExists);
+                const resolved = resolveModuleOnce(specifier, dirname(current));
                 if (!resolved) {
                     continue;
                 }
