@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs';
 import { posix, resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
@@ -220,20 +220,63 @@ function assertInstalledLibraries(files: Map<string, Buffer>, packageRoot: strin
     }
 }
 
+function openFaustSourceArchive(path: string): number | string {
+    try {
+        return openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    } catch (error) {
+        if (error instanceof Error && 'code' in error) {
+            if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
+                return 'corresponding source archive missing';
+            }
+            if (error.code === 'ELOOP' || error.code === 'EISDIR') {
+                return 'corresponding source archive is not a contained regular file';
+            }
+        }
+        throw error;
+    }
+}
+
+function readBoundedFaustSourceArchive(descriptor: number): Buffer {
+    // One extra byte detects growth without reading an unbounded replacement or append.
+    const buffer = Buffer.alloc(ARCHIVE_BYTES + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+        const count = readSync(descriptor, buffer, offset, buffer.length - offset, offset);
+        if (count === 0) {
+            break;
+        }
+        offset += count;
+    }
+    return buffer.subarray(0, offset);
+}
+
 /** The reviewed immutable capsule and installed package hashes, not caller JSON, authorize these source bytes. */
 export function validateFaustCorrespondingSource(root: string): string[] {
     const path = resolve(root, FAUST_SOURCE_ARCHIVE);
-    if (!existsSync(path)) {
-        return ['faustwasm: corresponding source archive missing'];
+    const descriptor = openFaustSourceArchive(path);
+    if (typeof descriptor === 'string') {
+        return [`faustwasm: ${descriptor}`];
     }
-    const stat = lstatSync(path);
-    if (!stat.isFile() || realpathSync(path) !== resolve(realpathSync(root), FAUST_SOURCE_ARCHIVE)) {
-        return ['faustwasm: corresponding source archive is not a contained regular file'];
+    let bytes: Buffer;
+    try {
+        const stat = fstatSync(descriptor);
+        const current = lstatSync(path);
+        if (
+            !stat.isFile() ||
+            !current.isFile() ||
+            current.dev !== stat.dev ||
+            current.ino !== stat.ino ||
+            realpathSync(path) !== resolve(realpathSync(root), FAUST_SOURCE_ARCHIVE)
+        ) {
+            return ['faustwasm: corresponding source archive is not a contained regular file'];
+        }
+        if (stat.size !== ARCHIVE_BYTES) {
+            return ['faustwasm: corresponding source archive digest drifted'];
+        }
+        bytes = readBoundedFaustSourceArchive(descriptor);
+    } finally {
+        closeSync(descriptor);
     }
-    if (stat.size !== ARCHIVE_BYTES) {
-        return ['faustwasm: corresponding source archive digest drifted'];
-    }
-    const bytes = readFileSync(path);
     if (bytes.length !== ARCHIVE_BYTES || hash(bytes) !== FAUST_SOURCE_SHA256) {
         return ['faustwasm: corresponding source archive digest drifted'];
     }

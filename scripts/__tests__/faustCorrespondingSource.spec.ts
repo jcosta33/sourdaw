@@ -1,11 +1,23 @@
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+    copyFileSync,
+    fstatSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    renameSync,
+    rmSync,
+    symlinkSync,
+    truncateSync,
+    writeFileSync,
+    type PathLike,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
 import { Header } from 'tar';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     assertFaustSourceContents,
@@ -14,6 +26,42 @@ import {
     readFaustSourceArchive,
     validateFaustCorrespondingSource,
 } from '../faustCorrespondingSource';
+
+const archiveIo = vi.hoisted(() => {
+    const state: {
+        afterRealpath?: (path: PathLike) => void;
+        afterOpen?: (path: PathLike, descriptor: number) => void;
+        bytesRead: number;
+        readLimit: number;
+    } = { bytesRead: 0, readLimit: Number.POSITIVE_INFINITY };
+    return state;
+});
+
+vi.mock('node:fs', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('node:fs')>();
+    return {
+        ...actual,
+        openSync: (...args: Parameters<typeof actual.openSync>) => {
+            const descriptor = actual.openSync(...args);
+            archiveIo.afterOpen?.(args[0], descriptor);
+            return descriptor;
+        },
+        realpathSync: Object.assign(
+            (...args: Parameters<typeof actual.realpathSync>) => {
+                const result = actual.realpathSync(...args);
+                archiveIo.afterRealpath?.(args[0]);
+                return result;
+            },
+            { native: actual.realpathSync.native }
+        ),
+        readFileSync: vi.fn(actual.readFileSync),
+        readSync: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) => {
+            const count = actual.readSync(descriptor, buffer, offset, Math.min(length, archiveIo.readLimit), position);
+            archiveIo.bytesRead += count;
+            return count;
+        },
+    };
+});
 
 const archive = readFileSync(resolve(FAUST_SOURCE_ARCHIVE));
 const roots: string[] = [];
@@ -51,6 +99,11 @@ function fixture(): string {
 }
 
 afterEach(() => {
+    archiveIo.afterRealpath = undefined;
+    archiveIo.afterOpen = undefined;
+    archiveIo.bytesRead = 0;
+    archiveIo.readLimit = Number.POSITIVE_INFINITY;
+    vi.mocked(readFileSync).mockClear();
     for (const root of roots.splice(0)) {
         rmSync(root, { recursive: true, force: true });
     }
@@ -127,6 +180,79 @@ describe('Faust corresponding-source capsule', () => {
         expect(validateFaustCorrespondingSource(root)).toContain(
             'faustwasm: installed preferred source differs: src/instantiateFaustModuleFromFile.ts'
         );
+    });
+
+    it('bounds actual bytes read when a capsule grows after file admission', () => {
+        const root = fixture();
+        const path = join(root, FAUST_SOURCE_ARCHIVE);
+        vi.mocked(readFileSync).mockClear();
+        archiveIo.afterRealpath = (checked) => {
+            if (checked === root) {
+                archiveIo.afterRealpath = undefined;
+                truncateSync(path, 2 * 1024 * 1024);
+            }
+        };
+        expect(validateFaustCorrespondingSource(root)).toEqual([
+            'faustwasm: corresponding source archive digest drifted',
+        ]);
+        const pathnameBytes = vi.mocked(readFileSync).mock.results.reduce((sum, result) => {
+            return sum + (result.type === 'return' && Buffer.isBuffer(result.value) ? result.value.length : 0);
+        }, 0);
+        expect(archiveIo.bytesRead + pathnameBytes).toBe(archive.length + 1);
+    });
+
+    it('rejects an oversized opened capsule before reading any of its bytes', () => {
+        const root = fixture();
+        truncateSync(join(root, FAUST_SOURCE_ARCHIVE), 2 * 1024 * 1024);
+        vi.mocked(readFileSync).mockClear();
+        expect(validateFaustCorrespondingSource(root)).toEqual([
+            'faustwasm: corresponding source archive digest drifted',
+        ]);
+        expect(archiveIo.bytesRead).toBe(0);
+        expect(readFileSync).not.toHaveBeenCalled();
+    });
+
+    it('rejects a pathname replacement after opening and closes the original descriptor', () => {
+        const root = fixture();
+        const path = join(root, FAUST_SOURCE_ARCHIVE);
+        let opened: number | undefined;
+        archiveIo.afterOpen = (name, descriptor) => {
+            if (name === path) {
+                archiveIo.afterOpen = undefined;
+                opened = descriptor;
+                renameSync(path, `${path}.original`);
+                writeFileSync(path, archive);
+            }
+        };
+        expect(validateFaustCorrespondingSource(root)).toEqual([
+            'faustwasm: corresponding source archive is not a contained regular file',
+        ]);
+        expect(archiveIo.bytesRead).toBe(0);
+        expect(opened).toBeTypeOf('number');
+        expect(() => fstatSync(opened!)).toThrowError(expect.objectContaining({ code: 'EBADF' }));
+    });
+
+    it('assembles short descriptor reads without losing valid capsule bytes', () => {
+        const root = fixture();
+        archiveIo.readLimit = 4096;
+        expect(validateFaustCorrespondingSource(root)).toEqual([]);
+        expect(archiveIo.bytesRead).toBe(archive.length);
+    });
+
+    it('reports a missing capsule', () => {
+        const root = fixture();
+        rmSync(join(root, FAUST_SOURCE_ARCHIVE));
+        expect(validateFaustCorrespondingSource(root)).toEqual(['faustwasm: corresponding source archive missing']);
+    });
+
+    it('rejects a parent directory symlink outside the project', () => {
+        const root = fixture();
+        const outside = fixture();
+        rmSync(join(root, 'public/legal'), { recursive: true });
+        symlinkSync(join(outside, 'public/legal'), join(root, 'public/legal'), 'junction');
+        expect(validateFaustCorrespondingSource(root)).toEqual([
+            'faustwasm: corresponding source archive is not a contained regular file',
+        ]);
     });
 
     it('rejects a capsule symlink outside the project', () => {
