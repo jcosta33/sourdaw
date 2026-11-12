@@ -1,0 +1,22 @@
+scripts/checkBarrelMockCoverage.ts
+  s_eec9d24f84ae15::t_6bccb84ddddd2e 859,885,934,992
+scripts/__tests__/checkBarrelMockCoverage.spec.ts
+  s_eec9d24f84ae15::t_a2b136927a84e2 452-469
+  s_eec9d24f84ae15::t_fd1b16b1b69767 49,56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9a6b68112661e36064b9889b2f9ab1e0c0424874",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
