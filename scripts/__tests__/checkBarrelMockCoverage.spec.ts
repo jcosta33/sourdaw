@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /**
  * Guard: no spec mocks a contract barrel while omitting an export its own module
  * graph imports from that barrel.
@@ -61,6 +63,12 @@ import {
 
 const repoRoot = join(import.meta.dirname, '../..');
 const sourceRoot = join(repoRoot, 'src');
+
+it('runs the scanner checks in Node without DOM globals', () => {
+    expect(process.versions.node).toBeTruthy();
+    expect(typeof window).toBe('undefined');
+    expect(typeof document).toBe('undefined');
+});
 
 function buildFixture(files: Record<string, string>): {
     specPaths: string[];
