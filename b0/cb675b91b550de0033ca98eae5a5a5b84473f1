@@ -1,0 +1,39 @@
+src/modules/AiRuntime/AGENTS.md
+  s_eec9d24f84ae15::t_df326884f1cc3c 42
+src/modules/AiRuntime/models/VibeRunPlan.ts
+  s_4a3e27cafb0879::t_0d03cf56242727 124-125,151-156,206-210
+src/modules/AiRuntime/useCases/__tests__/vibeRunSilentRanges.spec.ts
+  s_4a3e27cafb0879::t_b7976a11199129 336-362,597-660
+src/modules/AiRuntime/useCases/agentRequestOrchestration/groundVibeRunBatch.ts
+  s_4a3e27cafb0879::t_61f5378659fda5 106
+src/modules/AiRuntime/useCases/planWholeProjectVibeRun.ts
+  s_4a3e27cafb0879::t_cc213b3d212c02 375,421-424,474
+src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts
+  s_4a3e27cafb0879::t_76acaed7e8e856 17,282-295,297-298,300,307-311,313-316,320-325,336,370,436,465
+src/modules/AiRuntime/validators/readScheduledVibeRunPlan.ts
+  s_4a3e27cafb0879::t_87b7fc1888ca17 11,230-231,233-234,266,273-284,286-287,289-293,295,297-303
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b0cb675b91b550de0033ca98eae5a5a5b84473f1",
+  "prompts": {},
+  "sessions": {
+    "s_4a3e27cafb0879": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_4a3e27cafb0879",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
