@@ -1,0 +1,25 @@
+src/modules/Arrangement/presentations/views/TimelineMinimap.tsx
+  s_9307cedd8951f1::t_88d71f8aa2acfa 89,115-136,277
+src/modules/Transport/handlers/transport/__tests__/sectionRuntimeHandlers.spec.ts
+  s_9307cedd8951f1::t_736266184a4768 81,83
+src/modules/Arrangement/presentations/views/__tests__/TimelineMinimapCanvas.spec.tsx
+  s_9307cedd8951f1::t_1994b10537a31e 4-5,274-280,283-329
+  s_9307cedd8951f1::t_17171aa3ee6dd4 281-282
+  s_9307cedd8951f1::t_bdc377f2322df5 330-331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "40ec942c13eccb8af5f5d7bd38a7054de903638c",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
