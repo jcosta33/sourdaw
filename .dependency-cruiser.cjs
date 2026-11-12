@@ -239,7 +239,7 @@ module.exports = {
                 path: '^' + MODULE_ROOT.slice(1),
             },
             to: {
-                path: '^$1$2/(?:.*/)?index\\.ts$',
+                path: '^$1$2/(?:index|.+/index)\\.ts$',
             },
         },
 

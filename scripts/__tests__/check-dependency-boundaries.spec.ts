@@ -15,6 +15,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
+import { cruise } from 'dependency-cruiser';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -38,6 +39,7 @@ const require = createRequire(import.meta.url);
 const mainConfig = require('../../.dependency-cruiser.cjs');
 const testConfig = require('../../.dependency-cruiser.tests.cjs');
 const typeConfig = require('../../.dependency-cruiser.types.cjs');
+const reachabilityConfig = require('../../.dependency-cruiser.reachability.cjs');
 
 const rule = {
     severity: 'error',
@@ -530,6 +532,15 @@ describe('check-dependency-boundaries', () => {
         ],
     ])('should report a type-only import of %s on the types cruise', (_name, from, to, expected) => {
         expect(rulesReportingEdge(typeConfig, { from, to, dependencyTypes: ALIASED_TYPE_EDGE })).toEqual(expected);
+    });
+
+    it.each([
+        ['main', mainConfig],
+        ['types', typeConfig],
+        ['tests', testConfig],
+        ['reachability', reachabilityConfig],
+    ])("should pass the %s cruise's rules through dependency-cruiser's own validation", async (_name, config) => {
+        await expect(cruise([], { ruleSet: { forbidden: config.forbidden } })).resolves.toBeDefined();
     });
 
     it('should include tests outside modules and global test setup', () => {
