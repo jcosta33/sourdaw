@@ -1,0 +1,47 @@
+src/modules/AiRuntime/useCases/__tests__/streamHostedModelText.spec.ts
+  s_126e3d478b4f75::t_14d6e3f693df8a 1,4,7,15-28,56-117
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_5b0e6dd75aa63a::t_57d5f9422f301f 82-87
+src/modules/AiRuntime/useCases/__tests__/explainMixHealthReport.spec.ts
+  s_5b0e6dd75aa63a::t_50bc35e100b0d7 1-139
+src/modules/AiRuntime/useCases/__tests__/mixHealthAnalysis.spec.ts
+  s_5b0e6dd75aa63a::t_d9421a032eace9 4,6,10-12,19-37,51-52,55-88,110-114,119,127,131-140,164,201,223,226,231,235,240-288
+src/modules/AiRuntime/useCases/explainMixHealthReport.ts
+  s_5b0e6dd75aa63a::t_34f0e2d6dab253 1-21
+src/modules/AiRuntime/useCases/index.ts
+  s_5b0e6dd75aa63a::t_c734095bb58803 5
+src/modules/AiRuntime/useCases/mixHealthAnalysis.ts
+  s_5b0e6dd75aa63a::t_77271eb323eee9 6,111,113-114
+src/modules/AiRuntime/useCases/runMixHealthModelText.ts
+  s_5b0e6dd75aa63a::t_b32b78ca9c1db9 1-61
+src/modules/AiRuntime/useCases/streamHostedModelText.ts
+  s_5b0e6dd75aa63a::t_25ab93f763f6ab 19,43-56,74,77,85-89
+src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx
+  s_5b0e6dd75aa63a::t_595639237b2bde 14-18,61,90-91,104,130
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MixHealthDialog.spec.tsx
+  s_5b0e6dd75aa63a::t_0458cf1dd9d4be 8-9,13,17-19,24,58,61-62,66-67,71,76,78,86-87,98,100,112-126,188,190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0764860ad0fd1241fa7683f703bdf0fc382494f2",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_5b0e6dd75aa63a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_5b0e6dd75aa63a",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
