@@ -1,0 +1,40 @@
+scripts/gitCheckpoint.ts
+  s_eec9d24f84ae15::t_3d70e7745dac33 25,180-189
+  s_eec9d24f84ae15::t_92da7ed3db6db1 156-158,237-239,243-250,556-558,561-571
+  s_eec9d24f84ae15::t_7b2e77f30ef1b1 443-451
+  s_eec9d24f84ae15::t_533cd96fba4b23 439
+  s_eec9d24f84ae15::t_ab249913f759b8 442
+scripts/__tests__/gitCheckpoint.spec.ts
+  s_eec9d24f84ae15::t_f6f34fa1586422 172,174,176,191-192,197-198
+  s_eec9d24f84ae15::t_28ec9cc93c03e1 233-238
+  s_eec9d24f84ae15::t_0ace1fb3d1ad35 170-171,173,175,177-190,193-196,199-201
+scripts/__tests__/vitestZeroTestReport.spec.ts
+  s_eec9d24f84ae15::t_f6f34fa1586422 1,395-396,404-408,412-413
+  s_eec9d24f84ae15::t_0ace1fb3d1ad35 393-394,397-403,409-411,414-428
+scripts/gitCheckpointDiscovery.ts
+  s_eec9d24f84ae15::t_3d70e7745dac33 67-78,83-97
+  s_eec9d24f84ae15::t_28ec9cc93c03e1 16
+  s_eec9d24f84ae15::t_f4deeb12fdf449 79-82
+  s_eec9d24f84ae15::t_533cd96fba4b23 1-15,17-66
+scripts/runVitestZeroTestGuard.ts
+  s_eec9d24f84ae15::t_d3f5c248672e5d 16,51
+scripts/vitestProgressDiagnostics.ts
+  s_eec9d24f84ae15::t_92da7ed3db6db1 10-17
+  s_eec9d24f84ae15::t_d3f5c248672e5d 30-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2fe0820511b59ae4e816b213ce3e79d0e9420f76",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
