@@ -581,7 +581,7 @@ describe('TimelineClipNavigator', () => {
         });
         openNavigator();
         fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search clips' }), { key: 'Enter' });
-        expect(timelineViewStore.value).toMatchObject({ scrollX: 200, scrollY: 400 });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 450, scrollY: 450 });
     });
 
     it('reveals oversized results that are fully before the viewport', () => {
@@ -609,7 +609,35 @@ describe('TimelineClipNavigator', () => {
         });
         openNavigator();
         fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search clips' }), { key: 'Enter' });
-        expect(timelineViewStore.value).toMatchObject({ scrollX: 200, scrollY: 200 });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 300, scrollY: 400 });
+    });
+
+    it('minimally reveals oversized results clipped beyond the viewport end', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: [
+                    ...Array.from({ length: 5 }, (_, index) =>
+                        track(`before-${index}`, `Before ${index}`, [], { height: 110 })
+                    ),
+                    track('target-track', 'Target', [{ ...clip('target', 'target-track', 55), endBeat: 100 }], {
+                        height: 450,
+                    }),
+                    ...Array.from({ length: 5 }, (_, index) => track(`after-${index}`, `After ${index}`, [])),
+                ],
+            });
+            timelineViewStore.set({
+                scrollX: 500,
+                scrollY: 500,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+                viewportHeight: 100,
+                viewportWidth: 100,
+            });
+        });
+        openNavigator();
+        fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search clips' }), { key: 'Enter' });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 550, scrollY: 550 });
     });
 
     it('minimally reveals a clip before an already scrolled viewport', () => {

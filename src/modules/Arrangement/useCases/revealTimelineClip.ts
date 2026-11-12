@@ -20,6 +20,13 @@ function getRevealScrollPosition(
         return scrollStart;
     }
 
+    if (targetEnd - targetStart > viewportSize) {
+        if (targetStart < scrollStart) {
+            return targetEnd - viewportSize;
+        }
+        return targetStart;
+    }
+
     if (targetStart < scrollStart) {
         return targetStart;
     }
