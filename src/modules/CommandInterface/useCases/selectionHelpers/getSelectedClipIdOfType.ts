@@ -1,6 +1,7 @@
 import { trackStore, type Clip } from '#/modules/Arrangement/stores';
 
 import { type CommandContext } from '../../models/CommandContext';
+
 import { getSelectedClipId } from './getSelectedClipId';
 
 export function getSelectedClipIdOfType(type: Clip['type'], context?: CommandContext): string | null {
