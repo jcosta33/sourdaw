@@ -1,0 +1,285 @@
+scripts/trustedGithubWriteBootstrap.ts
+  s_76ccd61d453edf::t_19bb0f5dcb8101 49-51,424-426,428-439,474-475,6502-6504,6509
+  s_76ccd61d453edf::t_55792fe0544eb6 6134
+  s_76ccd61d453edf::t_b9c711feb198da 18,23,6125,6127,6129,6133,6139,6269-6282,6283-6290,6314,6351,6367
+  s_76ccd61d453edf::t_7b4546fd9b07eb 19-22,24-32,6122-6124,6126,6128,6130-6132,6135,6137-6138,6140-6145,6148,6167,6171-6173,6175,6223-6225,6230,6244-6247,6249,6255-6259,6262,6320,6353,6479
+  s_126e3d478b4f75::t_243949264fcd12 6231-6243,6260-6261,6263-6268,6293,6296-6313,6315-6319,6321-6340,6342-6350,6352,6354-6366,6368-6369,6371
+  s_3ada54e7b1c8ad::t_a192861a00f7c8 3,6226-6229,6374-6476,6480
+  s_76ccd61d453edf::t_f1f67951e0dfe3 6341
+  s_76ccd61d453edf::t_03a64bae236ed3 427
+package.json
+  s_76ccd61d453edf::t_433d0cd68144c2 40
+  s_76ccd61d453edf::t_4866a7c2e553a1 70
+scripts/pruneRemoteBranches.ts
+  s_76ccd61d453edf::t_3f7a827d83459d 1
+  s_76ccd61d453edf::t_182c1ede9554d0 23-31,52,140-142,146-157,229,239,289,308,312-313,376-377,446,452-455,468-494,499,503,516
+  s_76ccd61d453edf::t_668fc7e4fae52f 32-43
+scripts/__tests__/publishLane.spec.ts
+  s_76ccd61d453edf::t_9db3279b799093 1002,1019
+  s_76ccd61d453edf::t_84081a8cb009bd 15,90,794-797,809,854-858
+  s_76ccd61d453edf::t_f3e80ffadc3250 89
+scripts/__tests__/cutRelease.spec.ts
+  s_76ccd61d453edf::t_4ba2ff1ebb8b21 3-10,239-248,253-265
+  s_76ccd61d453edf::t_55792fe0544eb6 249-252
+  s_76ccd61d453edf::t_f16a298fd47108 266
+scripts/__tests__/laneAdoption.spec.ts
+  s_76ccd61d453edf::t_09dd6e78251206 45,393-394,484,648,651-652,656-657
+  s_76ccd61d453edf::t_6a5900787fb0da 15,653-655
+  s_3ada54e7b1c8ad::t_cf290e78b8d70c 485
+  s_76ccd61d453edf::t_f3e80ffadc3250 44
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_76ccd61d453edf::t_7a356d8f607a50 9,23-33,49,55-63,68-89,2910-2911
+  s_76ccd61d453edf::t_55792fe0544eb6 2854-2856
+  s_76ccd61d453edf::t_b5b8e1025c80dc 149,205,477
+  s_76ccd61d453edf::t_b7944e64324ff8 2843-2853,2857-2909,2912-2916,2961,2984,2994,3048,3066,3078,3088,3357-3358,3360-3361
+  s_76ccd61d453edf::t_affc09fe543a0f 3001,3064
+  s_76ccd61d453edf::t_4dcb2d4d1be5b5 36-37,39,53,2917-2959,2963,2967,2989,3036,3167,3359
+  s_76ccd61d453edf::t_f3f5c204239072 356
+  s_76ccd61d453edf::t_ff14e50f0339c4 41-43,90,2960,2962,2968-2969,2971-2983,2985-2986,2987-2988,2993,2995,2997,2999-3000,3002,3003,3019,3021,3027,3031-3035,3049-3050,3067-3076,3079-3080,3082-3083,3085-3087,3089,3148-3149,3151,3153,3163-3166,3202,3208-3210,3304
+  s_126e3d478b4f75::t_4a4260c9f6991e 16,2964-2966,2970,2990-2992,2996,2998,3004-3018,3022-3026,3028-3030,3037-3047,3051-3063,3065,3077,3081,3084,3147,3150,3152,3154-3162,3168-3201,3203-3207,3211-3217
+  s_126e3d478b4f75::t_1b443c57e4e179 17,45,47,3223-3291,3349-3361
+  s_76ccd61d453edf::t_fdae7ace199cc0 3020
+  s_db65665fc1d0c1::t_4c1a0b701220a3 3090-3146
+  s_06dcf8d0ba2c30::t_73dfaa562f914a 3292-3348
+  s_76ccd61d453edf::t_f3e80ffadc3250 22,66
+  s_76ccd61d453edf::t_7e52267a07daec 67
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_76ccd61d453edf::t_1888db55e7febe 66,78,533,535,559,596,598,678,2597,3178-3179
+  s_76ccd61d453edf::t_1c051a22c0e197 4804,4813-4814
+  s_76ccd61d453edf::t_aa7f0fe29c0a76 4744,4768-4770
+  s_76ccd61d453edf::t_a7b76d356bac66 1033-1034,3069
+  s_76ccd61d453edf::t_9e3d86e42c2028 4722-4733,4737,4741,4743,4746-4747,4750,4760,4763,4771,4774,4776,4778,4781-4783,4787,4801
+  s_126e3d478b4f75::t_af54777b532de3 4742,4764-4767,4777,4780,4785-4786,4788-4800,4803,4805-4812,4815-4817
+  s_76ccd61d453edf::t_57ffba81c62b44 82
+  s_76ccd61d453edf::t_f3e80ffadc3250 81
+scripts/__tests__/fixtures/trustedLauncherOrigin.ts
+  s_76ccd61d453edf::t_40c83279b82168 1-16,20-23,25-29,35-46
+  s_76ccd61d453edf::t_1c051a22c0e197 30-34
+  s_9307cedd8951f1::t_498a62ac63c998 17-19,24
+scripts/reviewRiskPolicy.ts
+  s_76ccd61d453edf::t_2d382745e626d6 152,164,168,178-179
+  s_76ccd61d453edf::t_03a64bae236ed3 169
+scripts/__tests__/pruneRemoteBranches.spec.ts
+  s_76ccd61d453edf::t_4ba2ff1ebb8b21 9-10,65,70,1210,1248,1267,1281-1305
+  s_76ccd61d453edf::t_55792fe0544eb6 1200-1202
+  s_76ccd61d453edf::t_3f1f614916def8 26-27,30,33,62,64,66-69,71,77-85,247,279,564,1181-1189,1191-1199,1203-1209,1211,1214,1216,1218,1221,1223,1225,1228-1229,1235,1240,1244-1246,1250-1255,1257-1266,1268-1280
+  s_2e0f950b00e320::t_a882651de18a67 72-76
+  s_eec9d24f84ae15::t_6556b6ffee93a7 727
+  s_76ccd61d453edf::t_03a64bae236ed3 14-21
+scripts/__tests__/historicalStackAdmission.spec.ts
+  s_76ccd61d453edf::t_13159e33989788 38,1992,2056
+  s_76ccd61d453edf::t_f3e80ffadc3250 37
+  s_76ccd61d453edf::t_0f60fb661bee3c 2110
+scripts/cutRelease.ts
+  s_76ccd61d453edf::t_3f7a827d83459d 1
+  s_76ccd61d453edf::t_182c1ede9554d0 18-23,298-324,332,336,338
+  s_76ccd61d453edf::t_3cc7d46c926c88 17
+scripts/measurementRevisionHolders.ts
+  s_76ccd61d453edf::t_fa5a1d40acb0ce 10
+scripts/__tests__/stampLaneIdentity.spec.ts
+  s_76ccd61d453edf::t_5504fcf921683f 178-184
+  s_76ccd61d453edf::t_d8d1a1851f04ac 9,99,119,126,135-155,172-177,185-201
+  s_811eda6b90ae34::t_783cecdd39fdec 156-171
+scripts/__tests__/rulesetHardening.spec.ts
+  s_76ccd61d453edf::t_866dfb234b767c 121-129,133,139
+  s_76ccd61d453edf::t_6e1e7b21dd0958 527
+  s_76ccd61d453edf::t_c0eee4c586ac33 626-658
+scripts/__tests__/openLane.spec.ts
+  s_76ccd61d453edf::t_7e9863173d8819 13,29,131-149,496-500,515,517-519,521-522,551
+  s_76ccd61d453edf::t_dbae5d4804bdea 152-153,186-189,846-879
+  s_76ccd61d453edf::t_ed36d2739d9565 880
+.agents/skills/delivery-orchestration/references/trust-boundary.md
+  s_76ccd61d453edf::t_954e93b721e922 3-12,23-44,66-67
+  s_126e3d478b4f75::t_2e6617b5c31406 13-17,21-22
+  s_9f9e851a57633e::t_3db7ce230e24bc 65
+  s_3ada54e7b1c8ad::t_206e06a1328fdf 18-20
+  s_76ccd61d453edf::t_425e1c9bf1a520 47,56-64
+  s_9307cedd8951f1::t_44dab4fc7b83d5 45-46,48-50
+  s_7fad8e4459bbd4::t_63dfeadfbc9d65 51-55
+scripts/githubAppIdentity.ts
+  s_76ccd61d453edf::t_42d61d4586b97d 932-935,957
+  s_76ccd61d453edf::t_9af2a1a06e7445 953-956
+  s_76ccd61d453edf::t_8fe93a7a5cf33f 902-904,920,927-931,936-952,958-961
+  s_76ccd61d453edf::t_1eb6798a0b748f 383-386,408-411,422-423,426-432,437,439-440,447,452,454-455
+  s_76ccd61d453edf::t_08e0afdbc0e5a9 676
+  s_76ccd61d453edf::t_b188872e691ba0 962-963
+  s_9307cedd8951f1::t_31dc53015b74c0 412-415
+  s_862bb35358b2c2::t_4aab9064cf3ea0 407,416
+  s_76ccd61d453edf::t_5b459544d43e3d 420
+  s_76ccd61d453edf::t_645ef9f9c0e3a5 417-419
+  s_76ccd61d453edf::t_5d7bb501c66dce 421
+  s_76ccd61d453edf::t_08cd79a39e4c6d 387-388,395-406
+  s_76ccd61d453edf::t_49593152259bfe 726,740,782,794
+  s_3df76396fbd4b1::t_adeec8415a0257 5,389-394,701-717,721-725,727-739,741-759,765-781,783-793,795-806,813-814,816,843-844,846
+  s_7fad8e4459bbd4::t_2ead07f1f489e6 760-764
+  s_eec9d24f84ae15::t_349b19cdc6e852 453,456,718-720
+scripts/openLane.ts
+  s_76ccd61d453edf::t_a97bb03e4379d2 385-387
+  s_76ccd61d453edf::t_e5daa6e22b09f7 10,31,389
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_76ccd61d453edf::t_93ffe7e04758e4 1323-1326,1357-1502,1504-1507,1518-1558,1560-1569,1571-1572,1575-1583,1585-1594,1741
+  s_76ccd61d453edf::t_08f4a4d064609b 91-93,96,1191,1193-1194,1570,1573-1574
+  s_76ccd61d453edf::t_831679a16a610c 1559,1584
+  s_76ccd61d453edf::t_cbba4854d4d866 3-14,40,54,64
+  s_76ccd61d453edf::t_f778cffc00e790 1742
+  s_9307cedd8951f1::t_b67da197a4a019 1508-1515,1595,1721-1740
+  s_862bb35358b2c2::t_9c7870951143c6 1516-1517,1596-1628
+  s_76ccd61d453edf::t_f78b006294b7d1 97,1192,1503,1676-1720
+  s_3df76396fbd4b1::t_63229b1373521d 1629-1675
+scripts/__tests__/stackedLanes.spec.ts
+  s_76ccd61d453edf::t_dea7b69540ef06 2,658-739
+  s_76ccd61d453edf::t_e4b3bbab412d10 740
+  s_76ccd61d453edf::t_f3e80ffadc3250 10-15
+  s_76ccd61d453edf::t_1ad6927741a6a5 9
+scripts/rulesetHardening.ts
+  s_76ccd61d453edf::t_5220d3b7194fad 383,389-395
+  s_76ccd61d453edf::t_5231dec698f8b5 441
+  s_76ccd61d453edf::t_c2d86ad70c8fbf 382
+  s_9f9e851a57633e::t_470e45d6dc007c 384-388,401-404
+scripts/stampLaneIdentity.ts
+  s_76ccd61d453edf::t_2940365770c193 47-48,66,68,73-76,96-109,159
+  s_76ccd61d453edf::t_e5daa6e22b09f7 21,29,154-157
+  s_811eda6b90ae34::t_6eafb5e582888d 14,46,51-52,70-72,117-123
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_76ccd61d453edf::t_15c6491aadb452 2052-2054
+scripts/__tests__/claimTrackerIssue.spec.ts
+  s_01cea3204e5755::t_9eb42bc7f48e40 424-426
+scripts/__tests__/retargetCapabilitySnapshot.spec.ts
+  s_fe9c0c7cc0a87f::t_ac28724cc26c14 304
+scripts/pruneRemoteBranchesGithub.ts
+  s_76ccd61d453edf::t_668fc7e4fae52f 1-2,5-230
+  s_76ccd61d453edf::t_57ffba81c62b44 3-4
+release/open-source-inventory.json
+  s_76ccd61d453edf::t_8831677c0ce576 173,1862,2397-2400
+  s_76ccd61d453edf::t_b24a48e46bafb2 2401
+release/dependency-license-proofs.json
+  s_76ccd61d453edf::t_8831677c0ce576 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "09955d656f30f4e53282b56024a2753b452eabac",
+  "prompts": {},
+  "sessions": {
+    "s_01cea3204e5755": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_01cea3204e5755",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_06dcf8d0ba2c30": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c76beb82-00ef-484b-9721-53d783564d85",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2e0f950b00e320": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_2e0f950b00e320",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3ada54e7b1c8ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "03a5a80a-25dd-436b-aca5-abe9c78083de",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3df76396fbd4b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8caa473-e64a-4fad-b579-cf6c36add2c2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_76ccd61d453edf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "108ea70a-a924-42ce-b7b8-fd9c1012e902",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7fad8e4459bbd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_7fad8e4459bbd4",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_811eda6b90ae34": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_811eda6b90ae34",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_862bb35358b2c2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_862bb35358b2c2",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9f9e851a57633e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_9f9e851a57633e",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_db65665fc1d0c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f79ceb19-eb31-4445-8d19-e07aa8e75dd6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fe9c0c7cc0a87f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_fe9c0c7cc0a87f",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
