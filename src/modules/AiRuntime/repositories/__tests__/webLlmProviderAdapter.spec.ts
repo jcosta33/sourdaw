@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { WEBLLM_CONTEXT_WINDOW_TOKENS, WEBLLM_MODELS } from '../../models/ModelInfo';
+import { DEFAULT_WEBLLM_MODEL_ID, WEBLLM_CONTEXT_WINDOW_TOKENS, WEBLLM_MODELS } from '../../models/ModelInfo';
 import { createWebLlmAppConfig } from '../webLlm/createWebLlmAppConfig';
 import { engineState } from '../webLlm/engineLifecycleState';
 import { getWebLlmArtifactUrl } from '../webLlm/getWebLlmArtifactUrl';
@@ -256,7 +256,7 @@ describe('WebLLM provider artifact admission', () => {
     afterEach(() => {
         unloadWebLlmEngine();
         vi.unstubAllGlobals();
-        engineState.activeModelId = 'Qwen3-4B-q4f16_1-MLC';
+        engineState.activeModelId = DEFAULT_WEBLLM_MODEL_ID;
         engineState.activeArtifactSetDigest = null;
     });
 
@@ -332,9 +332,10 @@ describe('WebLLM provider artifact admission', () => {
     });
 
     it('loads the planning window from code, apart from the digested manifest', () => {
-        expect(getWebLlmContextWindowSize('Qwen3-4B-q4f16_1-MLC')).toBe(32_768);
+        expect(DEFAULT_WEBLLM_MODEL_ID).toBe('Qwen3-8B-q4f16_1-MLC');
+        expect(getWebLlmContextWindowSize('Qwen3-8B-q4f16_1-MLC')).toBe(32_768);
+        expect(getWebLlmContextWindowSize('Qwen3-4B-q4f16_1-MLC')).toBe(8_192);
         expect(getWebLlmContextWindowSize('Qwen3-1.7B-q4f16_1-MLC')).toBe(8_192);
-        expect(getWebLlmContextWindowSize('Qwen3-8B-q4f16_1-MLC')).toBe(8_192);
         for (const selectableModel of WEBLLM_MODELS) {
             expect(getWebLlmContextWindowSize(selectableModel.id)).toBe(
                 WEBLLM_CONTEXT_WINDOW_TOKENS[selectableModel.id]
@@ -350,8 +351,8 @@ describe('WebLLM provider artifact admission', () => {
     // picker states decimal gigabytes, like the download size beside it, rounded up to a tenth.
     it.each([
         { modelId: 'Qwen3-1.7B-q4f16_1-MLC', layers: 28, vramMib: 2_484.66, shown: '~2.7 GB' },
-        { modelId: 'Qwen3-4B-q4f16_1-MLC', layers: 36, vramMib: 7_463.59, shown: '~7.9 GB' },
-        { modelId: 'Qwen3-8B-q4f16_1-MLC', layers: 36, vramMib: 6_271.78, shown: '~6.6 GB' },
+        { modelId: 'Qwen3-4B-q4f16_1-MLC', layers: 36, vramMib: 4_007.59, shown: '~4.3 GB' },
+        { modelId: 'Qwen3-8B-q4f16_1-MLC', layers: 36, vramMib: 9_727.78, shown: '~10.3 GB' },
     ])('publishes the memory need of $modelId for the window it loads with', ({ modelId, layers, vramMib, shown }) => {
         const bytesPerMib = 1024 * 1024;
         const kvCacheMibPerToken = (2 * 8 * 128 * 2 * layers) / bytesPerMib;
