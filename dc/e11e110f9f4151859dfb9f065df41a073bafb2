@@ -1,0 +1,25 @@
+.agents/skills/delivery-orchestration/references/trust-boundary.md
+  s_126e3d478b4f75::t_2e6617b5c31406 13-20
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_126e3d478b4f75::t_af54777b532de3 4700,4722-4725,4735,4738,4743-4744,4746-4758,4761,4763-4770,4773-4775
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_126e3d478b4f75::t_4a4260c9f6991e 16,2960-2962,2966,2986-2988,2992,2994,3000-3014,3016,3018-3022,3024-3026,3033-3043,3047-3059,3061,3073,3077,3080,3086,3089,3091,3093-3101,3107-3140,3142-3146,3150-3156
+scripts/trustedGithubWriteBootstrap.ts
+  s_126e3d478b4f75::t_243949264fcd12 6225,6227-6239,6256-6257,6259-6264,6289,6292-6309,6311-6315,6317-6345,6347,6349-6361,6363-6364,6366
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dce11e110f9f4151859dfb9f065df41a073bafb2",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
