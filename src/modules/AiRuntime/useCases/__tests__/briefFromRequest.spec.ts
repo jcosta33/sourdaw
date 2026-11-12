@@ -875,7 +875,11 @@ describe('writing the production brief from a whole-project request (AC-001 of #
 
         it.each([
             { name: 'a hand-off planned on a local model', backend: 'webllm', chatHandOff: true as const },
-            { name: 'a hosted request that asks for no hand-off and has no thread', backend: 'cloud', chatHandOff: undefined },
+            {
+                name: 'a hosted request that asks for no hand-off and has no thread',
+                backend: 'cloud',
+                chatHandOff: undefined,
+            },
         ])('never offers the brief to $name', async ({ backend, chatHandOff }) => {
             runtimeMocks.backend.value = backend;
             const requests = scriptPlanningTurns([decline]);

@@ -6,7 +6,9 @@ export class NoAiBackendError extends Error {
     override readonly name = 'NoAiBackendError';
 
     constructor() {
-        super('No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.');
+        super(
+            'No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.'
+        );
     }
 }
 

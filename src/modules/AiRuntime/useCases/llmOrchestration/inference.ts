@@ -5,9 +5,9 @@ import { selectExecutableAppActionToolSchemasForPrompt } from '#/modules/Command
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError';
-import { NoAiBackendError } from '../../errors/NoAiBackendError';
 import { isHostedToolCallingProtocolError } from '../../errors/HostedToolCallingProtocolError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
+import { NoAiBackendError } from '../../errors/NoAiBackendError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { type AgentDataCategory } from '../../models/AgentDataPolicy';
 import { MANDATORY_PLANNING_TOOL_NAMES } from '../../models/AgentToolCatalogNames';

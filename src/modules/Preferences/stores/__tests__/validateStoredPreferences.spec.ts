@@ -461,7 +461,10 @@ describe('validateStoredPreferences — legacy count-in default migration', () =
             [42],
             [''],
             ['x'.repeat(HOSTED_BACKEND_QUESTION_MAX_IDENTITY_LENGTH + 1)],
-            Array.from({ length: HOSTED_BACKEND_QUESTION_MAX_IDENTITIES + 1 }, (_, index) => `endpoint-${String(index)}`),
+            Array.from(
+                { length: HOSTED_BACKEND_QUESTION_MAX_IDENTITIES + 1 },
+                (_, index) => `endpoint-${String(index)}`
+            ),
         ]) {
             expect(
                 validateStoredPreferences({ ...defaultPreferences, hostedBackendQuestionAsked: corrupt })

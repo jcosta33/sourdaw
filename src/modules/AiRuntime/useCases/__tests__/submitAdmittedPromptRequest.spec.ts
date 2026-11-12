@@ -1587,7 +1587,12 @@ describe('submitAdmittedPromptRequest', () => {
         function pendingThreadProposal(): ReturnType<typeof readChatThreadContext> {
             return {
                 requests: ['Turn the drums down'],
-                pendingProposal: { runId: 'agent-run-pending', confirmationId: 'confirmation-pending', batchPosition: null, commands: [] },
+                pendingProposal: {
+                    runId: 'agent-run-pending',
+                    confirmationId: 'confirmation-pending',
+                    batchPosition: null,
+                    commands: [],
+                },
                 lastCommit: null,
             };
         }
@@ -1599,15 +1604,23 @@ describe('submitAdmittedPromptRequest', () => {
         });
 
         it.each([
-            { reason: 'scheduled-batches' as const, notice: 'Opened in the agent chat: this request runs as successive batches, each approved there one at a time.' },
-            { reason: 'brief' as const, notice: 'Opened in the agent chat: this request writes a production brief, which you approve there before any batch it plans.' },
+            {
+                reason: 'scheduled-batches' as const,
+                notice: 'Opened in the agent chat: this request runs as successive batches, each approved there one at a time.',
+            },
+            {
+                reason: 'brief' as const,
+                notice: 'Opened in the agent chat: this request writes a production brief, which you approve there before any batch it plans.',
+            },
         ])('runs a $reason request in the chat instead of the Prompt Bar', async ({ reason, notice }) => {
             planHandOff(reason);
 
             const result = await submitAdmittedPromptRequest({ prompt: HAND_OFF_PROMPT, source: 'prompt-bar' });
 
             expect(result).toEqual({ status: 'handed-off', runId: RUN_ID });
-            expect(mocks.planPromptActions).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ chatHandOff: true }));
+            expect(mocks.planPromptActions).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ chatHandOff: true })
+            );
             expect(mocks.sendChatMessage).toHaveBeenCalledExactlyOnceWith(HAND_OFF_PROMPT, { mode: 'apply' });
             expect(mocks.toggleChatPanel).toHaveBeenCalledOnce();
             expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(notice, []);
@@ -1630,7 +1643,11 @@ describe('submitAdmittedPromptRequest', () => {
             planHandOff('scheduled-batches');
             const controller = new AbortController();
 
-            await submitAdmittedPromptRequest({ prompt: HAND_OFF_PROMPT, source: 'prompt-bar', signal: controller.signal });
+            await submitAdmittedPromptRequest({
+                prompt: HAND_OFF_PROMPT,
+                source: 'prompt-bar',
+                signal: controller.signal,
+            });
             controller.abort();
 
             expect(mocks.sendChatMessage).toHaveBeenCalledExactlyOnceWith(HAND_OFF_PROMPT, { mode: 'apply' });
@@ -1691,7 +1708,12 @@ describe('submitAdmittedPromptRequest', () => {
         it('keeps a single batch in the Prompt Bar', async () => {
             mocks.planPromptActions.mockResolvedValue({
                 context: { tracks: [] },
-                result: { actions: [action], rawText: 'Play', requiresConfirmation: true, planningOutcome: { kind: 'proposal' } },
+                result: {
+                    actions: [action],
+                    rawText: 'Play',
+                    requiresConfirmation: true,
+                    planningOutcome: { kind: 'proposal' },
+                },
                 projectRevision: 'revision-1',
             });
 
@@ -1743,13 +1765,18 @@ describe('submitAdmittedPromptRequest', () => {
                 projectRevision: 'revision-1',
             });
 
-            const result = await submitAdmittedPromptRequest({ prompt: 'Make the chorus warmer', source: 'prompt-bar' });
+            const result = await submitAdmittedPromptRequest({
+                prompt: 'Make the chorus warmer',
+                source: 'prompt-bar',
+            });
 
             expect(result).toEqual({ status: 'no-op', runId: RUN_ID });
             expect(mocks.sendChatMessage).not.toHaveBeenCalled();
             const notice = mocks.notifyAiChange.mock.calls[0]?.[0];
             expect(notice).toBe(reason);
-            expect(notice).toContain('Automatic uses only the local model and never sends requests to a hosted provider.');
+            expect(notice).toContain(
+                'Automatic uses only the local model and never sends requests to a hosted provider.'
+            );
             expect(notice).toContain('load the local model in Settings > AI > AI Model Manager');
             expect(notice).toContain(
                 'add a hosted provider in Settings > AI > Hosted AI provider (desktop app) and choose Hosted provider as the AI execution backend'

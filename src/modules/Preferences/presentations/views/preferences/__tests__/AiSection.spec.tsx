@@ -474,7 +474,9 @@ describe('AiSection', () => {
             expect(screen.queryByRole('group', { name: QUESTION })).not.toBeInTheDocument();
 
             // A new key and model for the same provider is the same identity.
-            fireEvent.change(screen.getByLabelText('Hosted AI model'), { target: { value: mocks.catalogModelB.value } });
+            fireEvent.change(screen.getByLabelText('Hosted AI model'), {
+                target: { value: mocks.catalogModelB.value },
+            });
             await connectWithKey('sk-second');
 
             expect(mocks.configureCloudProvider).toHaveBeenCalledTimes(2);
