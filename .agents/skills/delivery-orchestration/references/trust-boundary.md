@@ -42,10 +42,13 @@ This isolates lane-controlled files, not operator-running code. The pre-launcher
 is trusted, and same-account processes can read credentials. Snapshot and token-bearing children
 discard redirecting overrides: Node loaders and preloads, and Git, GitHub CLI, GitHub Actions, and App
 configuration, matched without regard to case. They use the launcher-resolved `git` and `gh`.
-Token-bearing Git children override fixed-name repository config: hooks, fsmonitor, askpass,
-commit and push signing, and the alternate-refs command fetch negotiation runs for a planted
+Token-bearing Git children override fixed-name repository config: the hook directory, fsmonitor,
+askpass, commit and push signing, and the alternate-refs command fetch negotiation runs for a planted
 `objects/info/alternates` store. Environment-supplied config outranks repository config for the same
-key, so those programs never run beside a token. Transports are an allowlist of `https` and `file`;
+key, so those programs never run beside a token. Config-defined hooks (`hook.<name>.event` with
+`hook.<name>.command`) ignore `core.hooksPath` and take a lane-chosen name, so a token-bearing Git
+child refuses to start while its repository config defines any `hook.*` key. A child is
+token-bearing when `GH_TOKEN` is in its environment or its arguments install a credential helper. Transports are an allowlist of `https` and `file`;
 `ext::`, `ssh`, and `git` are each refused by their own override, because a repository-level
 per-protocol key outranks the general one. Refusing `git` is what stops `core.gitProxy`, which no
 environment value can override. The list is not complete. Keys whose names the lane chooses still

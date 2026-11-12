@@ -1626,6 +1626,53 @@ describe('sterile Git child environments', () => {
         });
     });
 
+    it('refuses a token-bearing git child while the repository config defines a hook', () => {
+        withScratch('sourdaw-config-hook-', (root) => {
+            const leaked = join(root, 'leaked');
+            const program = join(root, 'hook');
+            const source = join(root, 'source');
+            const repository = join(root, 'repository');
+            for (const path of [source, repository]) {
+                mkdirSync(path);
+                fixtureGit(path, ['init', '-q', '-b', 'main']);
+            }
+            fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: source']);
+            writeExecutable(program, `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > ${JSON.stringify(leaked)}\n`);
+            fixtureGit(repository, ['config', 'hook.lane.event', 'reference-transaction']);
+            fixtureGit(repository, ['config', 'hook.lane.command', program]);
+            const env = githubChildEnv('ghs_sentinel', join(root, 'gh-config'));
+            const fetchArgs = ['fetch', source, 'main'];
+
+            expect(() => spawnCapture('git', fetchArgs, { cwd: repository, env })).toThrow(
+                `refusing a token-bearing git child: repository config defines hook.lane.event`
+            );
+            expect(() => spawnRun('git', ['-C', repository, ...fetchArgs], { env })).toThrow(
+                'repository config defines hook.lane.event'
+            );
+            const credentialArgs = ['-c', 'credential.helper=', '-c', 'credential.helper=!true', ...fetchArgs];
+            expect(() =>
+                spawnCapture('git', credentialArgs, { cwd: repository, env: githubAuthorizationGitEnv() })
+            ).toThrow('repository config defines hook.lane.event');
+            expect(existsSync(leaked)).toBe(false);
+
+            // The fixed-name overrides alone do not stop a config-defined hook: it runs beside the token.
+            spawnSync('git', fetchArgs, { cwd: repository, env });
+            expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
+        });
+    });
+
+    it('runs a git child without a token whatever hooks the repository config defines', () => {
+        withScratch('sourdaw-config-hook-untokened-', (root) => {
+            fixtureGit(root, ['init', '-q', '-b', 'main']);
+            fixtureGit(root, ['config', 'hook.lane.event', 'pre-commit']);
+            fixtureGit(root, ['config', 'hook.lane.command', '/usr/bin/true']);
+
+            expect(
+                spawnCapture('git', ['config', 'hook.lane.event'], { cwd: root, env: githubAuthorizationGitEnv() })
+            ).toBe('pre-commit');
+        });
+    });
+
     it('runs no git proxy a repository rewrite to git:// points the GitHub remote at', () => {
         withScratch('sourdaw-git-proxy-', (root) => {
             const leaked = join(root, 'leaked');
