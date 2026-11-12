@@ -1,0 +1,19 @@
+scripts/__tests__/claimTrackerIssue.spec.ts
+  s_01cea3204e5755::t_9eb42bc7f48e40 363-365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "437444fab2d5c7e25d673752233bc117e8f4f663",
+  "prompts": {},
+  "sessions": {
+    "s_01cea3204e5755": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_01cea3204e5755",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
