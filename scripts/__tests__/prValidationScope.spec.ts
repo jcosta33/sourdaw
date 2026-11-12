@@ -1142,7 +1142,7 @@ describe('required affected verification', () => {
             const known = {
                 test: 'node scripts/other.ts',
                 'retarget:plan': 'node scripts/retargetCapabilitySnapshot.ts',
-                'lane:cleanup': 'node scripts/cleanupLanes.ts',
+                'lane:cleanup': 'node scripts/cleanupLanesCli.ts',
                 'lane:cleanup:install': 'node scripts/installCleanupLanes.ts',
             };
             const baseline = { test: 'node scripts/other.ts' };

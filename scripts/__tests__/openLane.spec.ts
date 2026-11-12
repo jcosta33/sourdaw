@@ -10,7 +10,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,7 +26,8 @@ import {
 } from '../openLane.ts';
 import { laneBranchName } from '../prContract.ts';
 import { readLaneStack, writeLaneStack } from '../stackedLanes.ts';
-import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
+
+import { relativeImportClosure } from './fixtures/relativeImportClosure.ts';
 
 /**
  * `lane:open` is the one delivery script that must never touch GitHub: it runs before the issue
@@ -127,25 +128,6 @@ afterEach(() => {
         rmSync(root, { recursive: true, force: true });
     }
 });
-
-/** The repository-relative paths `entry` reaches through relative imports, itself included. */
-function relativeImportClosure(repositoryRoot: string, entry: string): string[] {
-    const closure = new Set<string>();
-    const pending = [entry];
-    while (pending.length > 0) {
-        const path = pending.pop();
-        if (path === undefined || closure.has(path)) {
-            continue;
-        }
-        closure.add(path);
-        for (const specifier of snapshotImportSpecifiers(readFileSync(join(repositoryRoot, path), 'utf8'))) {
-            if (specifier.startsWith('.')) {
-                pending.push(join(dirname(path), specifier));
-            }
-        }
-    }
-    return [...closure];
-}
 
 function creationFixture(
     beforeRun: (args: string[], git: (...args: string[]) => string) => void = () => undefined,
