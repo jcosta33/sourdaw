@@ -94,6 +94,15 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    `src/modules/AudioEngine/handlers/finalFeature/__tests__/publicWarpActionsAuthority.integration.spec.ts` "enables
    repitch from %s with exact undo/redo and durable history", whose rate assertions observe that projection; a mock
    call cannot prove clip enablement, output or reversible project history.
+   Fermenter macro keyboard cases awaited an unrelated `oscLevel` scalar while macro/mapping arrays could be lost
+   (#6321; provenance in `command-entry-and-state-oracles.md` probe 2). Drive the rendered controls and real
+   macro/morph bridge through Command/CRDT, then read the complete authoritative device chunk, fresh hydration,
+   current history policy and engine projection. Removing array persistence must fail
+   `src/modules/Fermenter/presentations/views/__tests__/fermenterPatchAuditionUndo.integration.spec.tsx`
+   "persists $label arrays in raw truth and fresh hydration after a whole patch" for both macro and morph; a
+   persister spy, numeric mirror or unchanged neighbouring scalar is not that oracle. Require the same real owner
+   cases to observe pending M → N → Undo M → Redo N and stale queued refusal in project, UI and runtime. These
+   in-memory observations do not replace actual save/binary-reopen, browser or audible acceptance when claimed.
    (#3905, #2648, #1049, #5277, #5339, #4128, #2811, #2083, #5643, #5254, #5247, #5215, #474, #5798, #5565, #5387, #5805)
 
 4. **The oracle is computed by the code under test.**

@@ -134,6 +134,15 @@ Split out (a stance matching one carries that file, not this one): replay agains
     rehydration, initialized live state, stale-owner refusal and live meters, with no engine or project write;
     unconditional UI admission and a genuine saved snapshot prevent a vacuous pass. UI evidence does not establish
     audible behavior or engine acceptance.
+    Full Fermenter patches include macro and mapping arrays (#6321; introducing source and unknown review
+    provenance in `command-entry-and-state-oracles.md` probe 2). After real continuous macro/morph and scalar edits,
+    compare the complete raw device chunk with fresh hydration and engine projection under the current history
+    policy; numeric mirrors and persister calls cannot prove those arrays survived. For saved-patch claims, save
+    through the real owner, clear warm state and binary-reopen the actual saved snapshot before asserting the patch
+    and first visible controls. Restore preset highlight and filtered Next from the actual patch/registry identity,
+    without persisting an A/B UI session. Keep pending M → N → Undo M → Redo N and stale queued refusal coherent
+    under current owner fences. Raw-CRDT and fresh-hydration evidence alone establishes neither saved binary reopen,
+    browser behavior nor audible output; run the corresponding acceptance route before making that claim.
 12. **A cold reopen reopens the project's own original before any library or peer (#5778).** Failure: resolving a
     missing asset reads an authorized mapped library or asks a peer although the project already durably owns the
     verified original, so revoking the grant or ending the session takes the source with it. Probe: save a mapped
