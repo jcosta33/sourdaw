@@ -43,6 +43,7 @@ import {
     REVIEW_REPAIR_FORMAT,
     REVIEW_THREAD_COMMENT_FIELDS,
     assertReviewRepairRecord,
+    parseRepairEvidence,
     parseReviewRepairReply,
     readCommentDatabaseId,
     readFindingLine,
@@ -260,50 +261,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function describeValue(value: unknown): string {
     return JSON.stringify(value) ?? typeof value;
-}
-
-export function parseRepairEvidence(json: string): ReviewRepairEvidence[] {
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(json);
-    } catch (error) {
-        throw new Error('review repair evidence file is not valid JSON', { cause: error });
-    }
-    if (!Array.isArray(parsed)) {
-        throw new TypeError('review repair evidence file must hold an array of evidence entries');
-    }
-    const entries: ReviewRepairEvidence[] = [];
-    for (let index = 0; index < parsed.length; index += 1) {
-        entries.push(readRepairEvidenceEntry(parsed[index], index));
-    }
-    return entries;
-}
-
-/**
- * Validated here rather than left to `assertReviewRepairRecord`, so a malformed file is named as a
- * malformed file instead of as a malformed record bound to a thread.
- */
-function readRepairEvidenceEntry(value: unknown, index: number): ReviewRepairEvidence {
-    if (!isRecord(value)) {
-        throw new TypeError(
-            `review repair evidence entry ${index} must be a JSON object, found ${describeValue(value)}`
-        );
-    }
-    return {
-        observable: readEvidenceField(value, 'observable', index),
-        verification: readEvidenceField(value, 'verification', index),
-        observed: readEvidenceField(value, 'observed', index),
-    };
-}
-
-function readEvidenceField(entry: Record<string, unknown>, field: string, index: number): string {
-    const value = entry[field];
-    if (typeof value !== 'string') {
-        throw new TypeError(
-            `review repair evidence entry ${index} field ${field} must be a string, found ${describeValue(value)}`
-        );
-    }
-    return value;
 }
 
 function loadRepairEvidence(evidencePath: string | undefined, port: RepairReviewFindingPort): ReviewRepairEvidence[] {

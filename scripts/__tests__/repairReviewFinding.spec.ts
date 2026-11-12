@@ -26,7 +26,6 @@ import {
     coordinateRepairReviewFinding,
     defaultRepairReviewFindingCoordinatorDependencies,
     isAncestorExitStatus,
-    parseRepairEvidence,
     parseRepairReviewFindingArgs,
     postRepairReply,
     readRepairReviewThread,
@@ -40,7 +39,7 @@ import {
     type RepairReviewFindingPort,
     type RepairReviewFindingThread,
 } from '../repairReviewFinding.ts';
-import { parseReviewRepairReply, renderReviewRepairReply } from '../reviewRepair.ts';
+import { parseRepairEvidence, parseReviewRepairReply, renderReviewRepairReply } from '../reviewRepair.ts';
 import { REVIEW_ROUND_FREEZE_THRESHOLD } from '../reviewRoundEscalation.ts';
 
 import type { ReviewRepairRecord } from '../reviewRepair.ts';
@@ -403,7 +402,7 @@ describe('repairReviewFinding', () => {
     });
 
     it('should read a root the owner wrote by its User node id while its reply stays unattributed', () => {
-        const root = threadNode().data.node.comments.nodes[0];
+        const root = rootCommentNode();
         const gh = () =>
             JSON.stringify(
                 threadNode({
@@ -727,6 +726,19 @@ type ThreadNodeFixture = {
     };
 };
 
+/** The finding's root comment as GitHub returns it, written by the reviewer App. */
+function rootCommentNode(): Record<string, unknown> {
+    return {
+        id: ROOT_COMMENT_NODE_ID,
+        databaseId: ROOT_COMMENT_ID,
+        body: 'Defect.',
+        path: FINDING_PATH,
+        line: FINDING_LINE,
+        pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
+        author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+    };
+}
+
 function threadNode(overrides: Record<string, unknown> = {}): ThreadNodeFixture {
     return {
         data: {
@@ -737,17 +749,7 @@ function threadNode(overrides: Record<string, unknown> = {}): ThreadNodeFixture 
                 diffSide: 'RIGHT',
                 pullRequest: { number: PR, headRefOid: HEAD, baseRefOid: BASE },
                 comments: {
-                    nodes: [
-                        {
-                            id: ROOT_COMMENT_NODE_ID,
-                            databaseId: ROOT_COMMENT_ID,
-                            body: 'Defect.',
-                            path: FINDING_PATH,
-                            line: FINDING_LINE,
-                            pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
-                            author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
-                        },
-                    ],
+                    nodes: [rootCommentNode()],
                     pageInfo: { hasNextPage: false, endCursor: null },
                 },
                 ...overrides,
