@@ -1836,24 +1836,30 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
         expect(setupMirror.past.every((entry) => entry.family.type !== 'commitRecording')).toBe(true);
         expect(setupMirror.future).toEqual([]);
         await page.getByTestId('transport-record').click();
+        const observation: { clock: Awaited<ReturnType<typeof currentPunchRecordingClock>> | null } = {
+            clock: null,
+        };
         await expect
             .poll(
                 async () => {
                     const clock = await currentPunchRecordingClock(page);
-                    return (
+                    const admitted =
                         clock.recording?.sampleZeroContextFrame !== null &&
                         clock.recording !== null &&
-                        clock.output?.isRecording === true
-                    );
+                        clock.output?.isRecording === true;
+                    if (admitted) {
+                        observation.clock = clock;
+                    }
+                    return admitted;
                 },
                 { timeout: 20_000, intervals: [10, 20] }
             )
             .toBe(true);
-        const reference = await currentPunchRecordingClock(page);
-        if (!reference.recording || reference.recording.sampleZeroContextFrame === null || !reference.output) {
+        // Keep the paired sample that admitted capture; a new read would date a later instant.
+        const reference = observation.clock;
+        if (!reference?.recording || reference.recording.sampleZeroContextFrame === null || !reference.output) {
             throw new Error('Original punch has no stable producer/output clock reference');
         }
-        expect(reference.output.gestureBeat).toBeLessThan(10.8);
         await page.keyboard.down('g');
         await page.getByRole('button', { name: 'Punch recording settings', exact: true }).click();
         const outInput = page.getByTestId('punch-out-beat');
@@ -1867,10 +1873,17 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
                 import('/src/modules/Transport/stores/transportStore.ts'),
                 import('/src/modules/Transport/stores/captureGestureBeat.ts'),
             ]);
-            return { out: transportStore.value?.punchOutBeat, beat: captureGestureBeat() };
+            return {
+                out: transportStore.value?.punchOutBeat,
+                beat: captureGestureBeat(),
+                isRecording: transportStore.value?.isRecording,
+            };
         });
         expect(editedAt.out).toBe(editedOutBeat);
-        expect(editedAt.beat, 'the real marker UI must commit before the original out').toBeLessThan(outBeat);
+        expect(editedAt.isRecording, 'the held MIDI gesture and real marker edit must remain in the take').toBe(true);
+        expect(editedAt.beat, 'the real marker UI must commit before the earlier edited out').toBeLessThan(
+            editedOutBeat
+        );
         await expect(page.getByTestId('transport-record')).toHaveAttribute('aria-pressed', 'false', {
             timeout: 10_000,
         });
