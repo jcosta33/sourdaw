@@ -103,7 +103,6 @@ const Knob = ({
             value={value}
             onChange={disabled ? () => {} : onChange}
             gestureAuthority={gestureAuthority}
-            aria-label={label}
             min={min}
             max={max}
             step={step}
@@ -153,7 +152,6 @@ const AutoKnob = ({
             value={value}
             onChange={onChange}
             gestureAuthority={gestureAuthority}
-            aria-label={label}
             min={min}
             max={max}
             step={step}
