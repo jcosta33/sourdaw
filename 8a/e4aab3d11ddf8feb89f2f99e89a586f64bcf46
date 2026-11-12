@@ -1,0 +1,36 @@
+src/modules/AudioAnalysis/repositories/__tests__/loadBasicPitchModel.assets.spec.ts
+  s_126e3d478b4f75::t_0856ae03f10cf2 5,11-31
+tsconfig.e2e.json
+  s_126e3d478b4f75::t_0856ae03f10cf2 11-12
+src/modules/AudioAnalysis/repositories/basicPitchModel.d.ts
+  s_126e3d478b4f75::t_0856ae03f10cf2 1
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_126e3d478b4f75::t_0856ae03f10cf2 19,235-247,251-253
+  s_126e3d478b4f75::t_01a0815b6d9f94 248-250
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.realModel.integration.spec.ts
+  s_126e3d478b4f75::t_0856ae03f10cf2 20
+scripts/basicPitchAssets.ts
+  s_126e3d478b4f75::t_0856ae03f10cf2 73,77
+src/modules/AudioAnalysis/repositories/__tests__/loadBasicPitchModel.spec.ts
+  s_126e3d478b4f75::t_0856ae03f10cf2 15
+src/modules/AudioAnalysis/repositories/loadBasicPitchModel.ts
+  s_126e3d478b4f75::t_0856ae03f10cf2 2
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.spec.ts
+  s_126e3d478b4f75::t_0856ae03f10cf2 67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8ae4aab3d11ddf8feb89f2f99e89a586f64bcf46",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
