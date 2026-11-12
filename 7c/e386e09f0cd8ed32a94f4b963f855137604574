@@ -1,0 +1,49 @@
+src/modules/Arrangement/handlers/trackAlternative/isRestorableAlternativeState.ts
+  s_761a32b1e5284e::t_bd475d0a2527d6 1-4,6-12,14-17,22-28,30
+  s_761a32b1e5284e::t_8eee211eb606b3 5,13,18-21,29
+src/modules/Arrangement/handlers/scratchPad/isRestorableSectionCollection.ts
+  s_761a32b1e5284e::t_2721ab034fa28e 1-32,35-36,38-39
+  s_761a32b1e5284e::t_b1d447d45005e0 33-34,37
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleRestoreTrackAlternativeState.spec.ts
+  s_761a32b1e5284e::t_3cc166a25bb6c8 287,344-393
+  s_761a32b1e5284e::t_7b23074a7dbc7c 256-286,288-343
+src/utils/handlerContract.ts
+  s_761a32b1e5284e::t_2751de7c49ab3d 179,185
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  s_761a32b1e5284e::t_4f19497c56cb33 705
+  s_761a32b1e5284e::t_9c116d067669dd 693
+src/modules/Arrangement/handlers/scratchPad/__tests__/handleRestoreScratchPadState.spec.ts
+  s_761a32b1e5284e::t_e9b1a3ac16a37a 131-168
+src/modules/Arrangement/stores/markerStore.ts
+  s_761a32b1e5284e::t_c34a8ad07e44d7 86
+src/modules/Arrangement/handlers/scratchPad/handleRestoreScratchPadState.ts
+  s_761a32b1e5284e::t_9914f0d7aa9356 7-8
+  s_761a32b1e5284e::t_7e3f833e7f63c2 45
+  s_761a32b1e5284e::t_a35c6b394e7c82 36-38,44
+src/modules/Arrangement/handlers/trackAlternative/handleRestoreTrackAlternativeState.ts
+  s_761a32b1e5284e::t_61dca43ac037bc 40-46
+  s_761a32b1e5284e::t_2afd39d7b145af 78,80
+  s_761a32b1e5284e::t_61686abbdacbe7 8
+  s_761a32b1e5284e::t_093930814cf8e1 62
+release/open-source-inventory.json
+  s_761a32b1e5284e::t_954090e6dc74eb 1217
+src/modules/Arrangement/stores/isExactClipSnapshot.ts
+  s_761a32b1e5284e::t_7c1dbb0e0af21c 136-145
+  s_761a32b1e5284e::t_fd73694c985d04 113-118,121-122,124-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7ce386e09f0cd8ed32a94f4b963f855137604574",
+  "prompts": {},
+  "sessions": {
+    "s_761a32b1e5284e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d03f795b-c73f-41c6-b563-635e2e2fc307",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
