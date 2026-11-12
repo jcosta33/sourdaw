@@ -1398,6 +1398,16 @@ describe('reading measured holds and bounds', () => {
                 ),
             ],
         ],
+        [
+            "don't make the vocal louder but keep it wide",
+            [measured('loudness-not-raised-v1', "don't make the vocal louder", onTracks('vocal'))],
+            [unread('keep it wide', '“it” names no single scope: the request names a track or role before it.')],
+        ],
+        [
+            'keep the level of the vocal the same and keep it bright',
+            [measured('loudness-held-v1', 'keep the level of the vocal the same', onTracks('vocal'))],
+            [unread('keep it bright', '“it” names no single scope: the request names a track or role before it.')],
+        ],
         // a bound beside an unreadable or unrelated clause keeps to its own clause
         [
             "don't make the intro longer and don't make the mix louder",
@@ -1412,6 +1422,16 @@ describe('reading measured holds and bounds', () => {
         [
             'without making the vocal harsher and without making the mix quieter',
             [measured('loudness-not-lowered-v1', 'without making the mix quieter', MIX)],
+            [],
+        ],
+        [
+            "don't make the vocal harsher don't make the mix quieter",
+            [measured('loudness-not-lowered-v1', "don't make the mix quieter", MIX)],
+            [],
+        ],
+        [
+            "don't make the vocal harsher please the mix must not get louder",
+            [measured('loudness-not-raised-v1', 'the mix must not get louder', MIX)],
             [],
         ],
         [
@@ -1452,6 +1472,22 @@ describe('reading measured holds and bounds', () => {
             [],
         ],
         ['the mix must not be louder', [measured('loudness-not-raised-v1', 'the mix must not be louder', MIX)], []],
+        // a member word is never a negation or modal, and only a whole excluded word stops a member
+        [
+            'The vocal cannot clip and the drums must not get louder',
+            [measured('loudness-not-raised-v1', 'the drums must not get louder', onTracks('drums'))],
+            [],
+        ],
+        [
+            'The bell must not get louder',
+            [],
+            [
+                unread(
+                    'The bell must not get louder',
+                    '“The bell” names no track or mix whose loudness can be measured.'
+                ),
+            ],
+        ],
         // a role word before a held noun, resolved through a track's role or through nothing
         [
             'keep the guitar level the same',
@@ -1868,6 +1904,23 @@ describe('the card a constraint criterion is shown on', () => {
                 /^Constraint “don't make it louder”: integrated loudness on “Master output”, beats 0–4, must not rise by more than 0\.5 LUFS\. /u
             ),
         ]);
+    });
+
+    it.each([
+        [
+            'Lower the trim and keep the stereo width',
+            /^Constraint “keep the stereo width”: side energy fraction on “Master output”, beats 0–4, must stay equal within 0\.01 ratio\. /u,
+        ],
+        [
+            'Lower the trim and keep the brightness',
+            /^Constraint “keep the brightness”: spectral centroid on “Master output”, beats 0–4, must stay equal within 50 Hz\. /u,
+        ],
+        [
+            "Lower the trim but don't make it quieter",
+            /^Constraint “don't make it quieter”: integrated loudness on “Master output”, beats 0–4, must not fall by more than 0\.5 LUFS\. /u,
+        ],
+    ])('states the tolerance and unit of the hold or bound under "%s"', (prompt, text) => {
+        expect(criterionTexts(prompt)).toEqual([expect.stringMatching(text)]);
     });
 
     it('quotes a clause nothing measures and says so, with no empty subject', () => {

@@ -127,8 +127,11 @@ const HOLD_PATTERNS = [
  * A direction clause whose object is no list the reader can read ("don't make the vocal brighter and
  * louder"): recorded unsupported rather than held on a guessed scope or dropped.
  */
-/** A character of a fallback object: it never crosses a conjunction or another negation into the next clause. */
-const IN_CLAUSE = String.raw`(?:(?!\b(?:and|or|but|while|so|then)\b|\b${NEGATION})[^,.;:!?])`;
+/**
+ * A character of a fallback object: it never crosses a conjunction, a negation or a "please" into the
+ * next clause. Those and punctuation are every boundary a readable clause opens or ends at.
+ */
+const IN_CLAUSE = String.raw`(?:(?!\b(?:and|or|but|while|so|then|please)\b|\b${NEGATION})[^,.;:!?])`;
 const UNREADABLE_DIRECTION = new RegExp(
     String.raw`\b${NEGATION}\s+(?:make|making|get|getting|let|letting)\s+(?<object>${IN_CLAUSE}+?(?:\s+(?:and|or))?)\s+${DIRECTION_LEAD}${LOUDNESS_DIRECTION}${CLAUSE_END}`,
     'dgiu'
@@ -334,11 +337,9 @@ function readHoldClauses(masked: string, prompt: string): HoldClause[] {
             unreadable: `“${object}” names no track or mix whose loudness can be measured.`,
         };
     });
-    // A readable clause inside a fallback span wins: the fallback only records what no reader reads.
-    const unclaimed = unreadable.filter(
-        (clause) => !readable.some((other) => other.start < clause.end && clause.start < other.end)
-    );
-    const clauses = readable.concat(unclaimed).toSorted((left, right) => left.start - right.start);
+    // No readable clause opens or ends inside a fallback object, so the two overlap only by sharing a
+    // start, where the stable sort keeps the readable clause, which comes first.
+    const clauses = readable.concat(unreadable).toSorted((left, right) => left.start - right.start);
     return clauses.filter(
         (clause, index) =>
             !clauses.slice(0, index).some((other) => other.start < clause.end && clause.start < other.end)
@@ -507,14 +508,19 @@ function readIntimacy(clause: string, object: string, context: ProjectContext, r
     });
 }
 
+/**
+ * `unread` is the masked text with the hold clauses blanked, so no quality is read twice; a pronoun's
+ * scope is still judged against the whole masked request.
+ */
 function readQualityConstraints(
+    unread: string,
     masked: string,
     prompt: string,
     context: ProjectContext,
     reading: PerceptualConstraintReading
 ) {
     const { pattern, termPattern, descriptorOf } = readQualityPattern();
-    for (const match of masked.matchAll(pattern)) {
+    for (const match of unread.matchAll(pattern)) {
         const objectText = match.groups?.object ?? '';
         const objectStart = match.index + match[0].indexOf(objectText);
         const object = prompt.slice(objectStart, objectStart + objectText.length);
@@ -571,6 +577,6 @@ export function compilePerceptualConstraints(prompt: string, context: ProjectCon
         pushMeasuredHolds(reading, hold, masked, context);
     }
     // "keep the stereo width" would otherwise read again as the quality "width" held on "the".
-    readQualityConstraints(maskClauses(masked, holds), prompt, context, reading);
+    readQualityConstraints(maskClauses(masked, holds), masked, prompt, context, reading);
     return unionPerceptualConstraintReadings(reading);
 }
