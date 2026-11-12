@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDocumentTheme } from '#/utils/UI/applyDocumentTheme';
@@ -164,6 +164,7 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
     });
 
     afterEach(() => {
+        cleanup();
         document.documentElement.style.removeProperty('--color-text-primary');
         resetResolvedTokenCache();
         vi.restoreAllMocks();
