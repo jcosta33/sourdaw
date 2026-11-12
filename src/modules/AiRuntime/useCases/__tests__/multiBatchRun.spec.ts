@@ -407,6 +407,8 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
         ['make it warmer but not brighter', ['warm']],
         ['keep the drums punchy and make the vocal warmer', ['warm']],
         ['make it warmer and less muddy', ['warm', 'muddy']],
+        ['make it less muddy but keep the vocal intimate', ['muddy']],
+        ['keep the vocal intimate and make it less muddy', ['muddy']],
         ['make the whole mix warmer around the track called Wider', ['warm']],
         ['make the whole mix warmer around "Wider"', ['warm']],
         ['make this mix warmer and more open', ['wide']],
