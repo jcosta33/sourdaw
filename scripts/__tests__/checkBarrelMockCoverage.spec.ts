@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /**
  * Guard: no spec mocks a contract barrel while omitting an export its own module
  * graph imports from that barrel.
