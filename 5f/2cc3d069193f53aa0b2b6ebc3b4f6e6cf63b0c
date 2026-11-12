@@ -1,0 +1,137 @@
+docs/04-events.md
+  s_87ae37da66d2f0::t_76bbbfa17934f3 21,51-53,56,60,72,89,91,94,96-97,103,121-122,124,168-171,225,230,232,242-243,247-248,251,253,256
+docs/06-testing.md
+  s_87ae37da66d2f0::t_48c1ce42a071a8 103,161-163,165,167-168,170,172,174
+docs/07-conventions.md
+  s_35b9801a6d6336::t_36622ff3fd7aec 730-731
+docs/architecture/03-typescript-module.md
+  s_87ae37da66d2f0::t_57884a5ce6355a 209,341,664,669,673-675,677,679-680,685,1085,1267
+src/app/registerDependencies.ts
+  s_35b9801a6d6336::t_fa5122baed2215 4
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleGenerateBassline.spec.ts
+  s_35b9801a6d6336::t_e68abc2fa32392 28,60,132,189,205-206,250,401,528
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleReplayGeneratedMidi.spec.ts
+  s_c2f4449c5891e9::t_c06ca915ff261c 19,254,283
+src/modules/AiGeneration/handlers/aiMidi/handleGenerateBassline.ts
+  s_3c91dcbb840566::t_15a4f6f0793f17 5,142,148-149,211,219,223,234,240,245,263,368
+src/modules/AiGeneration/handlers/aiMidi/handleReplayGeneratedMidi.ts
+  s_3c91dcbb840566::t_e20751e456f991 1,174,178,185
+src/modules/AiGeneration/handlers/generation/fillPlacement.ts
+  s_87ae37da66d2f0::t_89acbe2bd67045 2,191,198-199,203,232,255
+src/modules/AiGeneration/useCases/actions/__tests__/generateMidiPromptProjectTruth.integration.spec.ts
+  s_35b9801a6d6336::t_dc30f63c56a637 9
+src/modules/AiGeneration/useCases/actions/__tests__/handleGenerateMidiPrompt.spec.ts
+  s_87ae37da66d2f0::t_cce80f312ca97b 181,189,194
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_9307cedd8951f1::t_a9754b90f928a6 977
+src/modules/AiRuntime/useCases/__tests__/confirmedCompoundBusActions.spec.ts
+  s_87ae37da66d2f0::t_6d05187537e561 17,503
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_126e3d478b4f75::t_cde4f4ea5a4893 1297
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_9307cedd8951f1::t_ec93019b3f7ac9 1068
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.spec.ts
+  s_35b9801a6d6336::t_13922df12ebbb9 29,50
+src/modules/Arrangement/handlers/track/__tests__/handleAddTrack.spec.ts
+  s_8f62528cf75f92::t_78d9cb851b7e6a 23,38
+src/modules/Arrangement/handlers/track/duplicateTrack.ts
+  s_35b9801a6d6336::t_728177815e0aad 68
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  s_35b9801a6d6336::t_b5d09bdf2edca3 63,71
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_35b9801a6d6336::t_2af2f2f6b6b83c 269,348
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_35b9801a6d6336::t_f331c49c9c15eb 257
+src/modules/Arrangement/stores/appendTrack.ts
+  s_35b9801a6d6336::t_fcf9ae4dcde896 11-12
+src/modules/Arrangement/useCases/__tests__/addTrack.spec.ts
+  s_8f62528cf75f92::t_65544d89f142ed 26,33,44,58
+src/modules/Arrangement/useCases/__tests__/restoreTrackAtIndex.spec.ts
+  s_8f62528cf75f92::t_2ba2e099e85073 4,14,19,50,60-61,68,100,109
+src/modules/Arrangement/useCases/addTrack.ts
+  s_3c91dcbb840566::t_074c5e915156ef 20-24,26-31,33-34
+src/modules/Arrangement/useCases/duplicateTrack.ts
+  s_87ae37da66d2f0::t_603553a16caafc 23-57,60-109,111-145,148-150,153-155
+src/modules/Arrangement/useCases/index.ts
+  s_3c91dcbb840566::t_953d3e52dcae6e 32
+src/modules/Arrangement/useCases/restoreTrackAtIndex.ts
+  s_35b9801a6d6336::t_2232d97b9811c6 5,110,122-123,128,130
+src/modules/AudioEngine/stores/__tests__/aiPreviewHandoffOwnership.spec.tsx
+  s_87ae37da66d2f0::t_b26c97ecc372ae 152
+src/modules/AudioEngine/stores/__tests__/aiPreviewUndoOwnership.spec.tsx
+  s_87ae37da66d2f0::t_3d6eb88f8a2b95 390
+src/modules/Collaboration/useCases/__tests__/removeClipUndoCommit.integration.spec.ts
+  s_126e3d478b4f75::t_3bc3f5971020b7 106,224
+src/modules/CommandInterface/presentations/views/__tests__/patternPaletteWorkflow.integration.spec.tsx
+  s_35b9801a6d6336::t_9caa2239751e5e 13
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_35b9801a6d6336::t_598bb6c846804d 437
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_c2f4449c5891e9::t_e5a28a5e864b56 274
+src/modules/WorkspaceShell/presentations/views/__tests__/promptBarApprovalParity.spec.tsx
+  s_87ae37da66d2f0::t_f1a7e53603431f 83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f2cc3d069193f53aa0b2b6ebc3b4f6e6cf63b0c",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3c91dcbb840566": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1058f26-f2e9-46cf-af40-6e3b7eafe1df",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_87ae37da66d2f0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e83ca346-1b25-4729-84f5-4e1a6a613aae",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_8f62528cf75f92": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c29af72-5388-4e1c-97b2-12a14f011f7b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_c2f4449c5891e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7817afe8-15e0-436f-b304-529241ac1a61",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
