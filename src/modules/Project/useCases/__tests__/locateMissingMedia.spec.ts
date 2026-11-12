@@ -1,27 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type Clip, type Track, trackStore } from '#/modules/Arrangement/stores';
-import { clearUndoHistory } from '#/modules/Command/useCases';
-import { clearHandlerRegistry, registerHandlerMap, undoStore, undoHistoryStore } from '#/modules/Command/stores';
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { type Clip, type Track, trackStore } from '#/modules/Arrangement/stores';
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap, undoStore, undoHistoryStore } from '#/modules/Command/stores';
+import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
     removeCrdtDoc,
     registerCrdtStorageRuntime,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { projectStore, defaultProjectStoreState } from '../../stores/projectStore';
 import { clearClipPitchAnalysis } from '#/modules/Knead/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { pickFiles as pickFilesFromNativeDialog } from '../../repositories/nativeFileDialog/pickFiles';
-import { defaultMissingMediaStoreState, missingMediaStore } from '../../stores/missingMediaStore';
 import { arrangementStore } from '../../stores/arrangementStore';
+import { defaultMissingMediaStoreState, missingMediaStore } from '../../stores/missingMediaStore';
+import { projectStore, defaultProjectStoreState } from '../../stores/projectStore';
 import { locateMissingMedia } from '../locateMissingMedia';
 
 const mocks = vi.hoisted(() => ({

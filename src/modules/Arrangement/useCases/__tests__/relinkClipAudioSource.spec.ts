@@ -1,16 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-    arrangementStore,
-    defaultArrangementId,
-    projectStore,
-    defaultProjectStoreState,
-} from '#/modules/Project/stores';
-import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
-import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, undo, redo } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
     getCrdtDoc,
@@ -18,19 +13,22 @@ import {
     registerCrdtStorageRuntime,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
-import { clearUndoHistory, undo, redo } from '#/modules/Command/useCases';
-import { getArrangementHandlers } from '../getArrangementHandlers';
+import {
+    arrangementStore,
+    defaultArrangementId,
+    projectStore,
+    defaultProjectStoreState,
+} from '#/modules/Project/stores';
+import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type Clip } from '../../models/Track';
 import { trackStore } from '../../stores/trackStore';
+import { captureRelinkAudioSourceCommitValidation } from '../clipEditing/captureRelinkAudioSourceCommitValidation';
+import { relinkAudioSourceTargetsMatch } from '../clipEditing/relinkAudioSourceTargetsMatch';
+import { getArrangementHandlers } from '../getArrangementHandlers';
 import { relinkClipAudioSource } from '../relinkClipAudioSource';
-import {
-    captureRelinkAudioSourceCommitValidation,
-    relinkAudioSourceTargetsMatch,
-} from '../clipEditing/relinkAudioSourceTargets';
-import { type AppAction } from '#/utils/handlerContract';
 
 const mocks = vi.hoisted(() => ({
     getCachedAudioBuffer: vi.fn<(input: { bufferId: string }) => AudioBuffer | null>(),
@@ -383,11 +381,12 @@ describe('relinkClipAudioSource', () => {
     });
 
     it('rejects atomically when an active matched clip fails the clip-write trust boundary', async () => {
-        mocks.resolveEligibleClipWriteTarget.mockImplementation(({ clipId, trackId }) =>
-            clipId === 'clip-b'
-                ? { status: 'ineligible' }
-                : { status: 'eligible', trackId: trackId ?? 'track-1', clipId }
-        );
+        mocks.resolveEligibleClipWriteTarget.mockImplementation(({ clipId, trackId }) => {
+            if (clipId === 'clip-b') {
+                return { status: 'ineligible' };
+            }
+            return { status: 'eligible', trackId: trackId ?? 'track-1', clipId };
+        });
         const before = trackStore.value;
 
         const result = await relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });

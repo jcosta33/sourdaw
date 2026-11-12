@@ -3,7 +3,8 @@ import { executeUserAppAction, isAppActionCommittedError } from '#/modules/Comma
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { captureRelinkAudioSourceTargets, relinkAudioSourceTargetsMatch } from './clipEditing/relinkAudioSourceTargets';
+import { captureRelinkAudioSourceTargets } from './clipEditing/captureRelinkAudioSourceTargets';
+import { relinkAudioSourceTargetsMatch } from './clipEditing/relinkAudioSourceTargetsMatch';
 
 export type RelinkClipAudioSourceInput = {
     sourceBufferId: string;

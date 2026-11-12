@@ -1,11 +1,9 @@
 import { clearClipPitchAnalysis } from '#/modules/Knead/useCases';
 import { createHandler } from '#/utils/createHandler';
 
-import {
-    applyRelinkAudioSourceTargets,
-    captureRelinkAudioSourceCommitValidation,
-    relinkAudioSourceTargetsMatch,
-} from '../../useCases/clipEditing/relinkAudioSourceTargets';
+import { applyRelinkAudioSourceTargets } from '../../useCases/clipEditing/applyRelinkAudioSourceTargets';
+import { captureRelinkAudioSourceCommitValidation } from '../../useCases/clipEditing/captureRelinkAudioSourceCommitValidation';
+import { relinkAudioSourceTargetsMatch } from '../../useCases/clipEditing/relinkAudioSourceTargetsMatch';
 
 export const handleRelinkClipAudioSources = createHandler<'relinkClipAudioSources'>({
     validate: (action) => relinkAudioSourceTargetsMatch(action.payload.targets),
