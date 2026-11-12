@@ -448,7 +448,8 @@ async function promoteProvenance(
 }
 
 /**
- * Refuses a download the origin has no room for, before any byte is fetched or any cache touched.
+ * Refuses a download the origin has no room for, before any byte is fetched. The caller has already
+ * reclaimed this model's unverified entries and staging, which a download would delete anyway.
  * A missing or failing estimate is not evidence of a shortage, so the download proceeds.
  */
 async function refuseDownloadBeyondStorage(

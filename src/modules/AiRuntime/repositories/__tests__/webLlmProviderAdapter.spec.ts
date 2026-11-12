@@ -960,6 +960,17 @@ describe('WebLLM provider artifact admission', () => {
             expect(refusal.message).toContain('needs 1.01 GB to download, but this browser has 1.00 GB of storage left');
         });
 
+        it('rounds the room left down, so a byte short of the need never reads as enough', () => {
+            const refusal = new LocalModelRefusalError({
+                reason: 'insufficient-storage',
+                modelId: LIGHT,
+                requiredBytes: 1_000_000_000,
+                availableBytes: 999_999_999,
+            });
+
+            expect(refusal.message).toContain('needs 1.00 GB to download, but this browser has 0.99 GB of storage left');
+        });
+
         it('admits a download that exactly fits the remaining storage', async () => {
             const dependencies = artifactDependencies({
                 estimateStorage: async () => ({ quota: downloadBytes + 10, usage: 10 }),
