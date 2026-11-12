@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_9307cedd8951f1::t_43d452f6ff5bce 225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e534b25005d904a6ea1957c8f26fce4d412ae744",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
