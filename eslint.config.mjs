@@ -3171,16 +3171,11 @@ export default tseslint.config(
     },
 
     // ─── Temporary `as never` allowance ────────────────────────────────────
-    // These four Arrangement restore handlers still cast with `as never`; their
+    // This Arrangement restore handler still casts with `as never`; its
     // removal lands in a separate change. `as any` and `as unknown as` stay
     // errors here. Delete this block once the casts are gone.
     {
-        files: [
-            'src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts',
-            'src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts',
-            'src/modules/Arrangement/handlers/scratchPad/handleRestoreScratchPadState.ts',
-            'src/modules/Arrangement/handlers/trackAlternative/handleRestoreTrackAlternativeState.ts',
-        ],
+        files: ['src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts'],
         rules: {
             'sourdaw/no-type-assertion-escape': ['error', { allowAsNever: true }],
         },
