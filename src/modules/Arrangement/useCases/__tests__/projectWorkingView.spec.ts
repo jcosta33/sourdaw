@@ -158,8 +158,8 @@ describe('project timeline working view', () => {
 
         expect(timelineViewStore.value).toMatchObject({ scrollX: 9000, scrollY: 900, pixelsPerBeat: 10 });
 
-        setTimelineViewportSize({ viewportWidth: 1000, viewportHeight: 150 });
-        expect(timelineViewStore.value).toMatchObject({ scrollX: 3000, scrollY: 10 });
+        setTimelineViewportSize({ viewportWidth: 500, viewportHeight: 50 });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 3500, scrollY: 110 });
     });
 
     it('clamps restored zoom and reset offsets without discarding viewport measurements', () => {
@@ -179,6 +179,31 @@ describe('project timeline working view', () => {
             viewportWidth: 500,
             viewportHeight: 50,
         });
+    });
+
+    it('does not publish an unchanged measured view after its offsets are clamped', () => {
+        setTimelineViewportSize({ viewportWidth: 500, viewportHeight: 50 });
+        let publications = 0;
+        const stop = timelineViewStore.subscribe(() => publications++);
+        const before = publications;
+        try {
+            setTimelineViewportSize({ viewportWidth: 500, viewportHeight: 50 });
+            expect(publications).toBe(before);
+        } finally {
+            stop();
+        }
+    });
+
+    it('requests a fresh canvas measurement for repeated restores with identical numeric fields', () => {
+        const view = { scrollX: 240, scrollY: 0, pixelsPerBeat: 20 };
+        restoreTimelineWorkingView(view, { deferViewportClamp: true });
+        expect(timelineViewStore.value?.viewportMeasurementRevision).toBe(1);
+
+        restoreTimelineWorkingView(view, { deferViewportClamp: true });
+        expect(timelineViewStore.value).toMatchObject({ ...view, viewportMeasurementRevision: 2 });
+
+        setTimelineViewportSize({ viewportWidth: 500, viewportHeight: 50 });
+        expect(timelineViewStore.value?.viewportMeasurementRevision).toBe(2);
     });
 
     it('reclamps an existing offset when zoom reduces the horizontal extent', () => {

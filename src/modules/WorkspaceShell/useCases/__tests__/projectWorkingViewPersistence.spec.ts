@@ -130,6 +130,25 @@ describe('project working view persistence', () => {
         expect(writeProjectWorkingView).not.toHaveBeenCalled();
     });
 
+    it('requests a fresh measurement on a same-project reload with equal restored numeric fields', () => {
+        vi.mocked(readProjectWorkingView).mockReturnValue(savedView(240, 320));
+        start();
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 240, viewportMeasurementRevision: 1 });
+
+        publishProject(PROJECT_A, true);
+        publishProject(PROJECT_A, false);
+
+        expect(timelineViewStore.value).toMatchObject({
+            scrollX: 240,
+            scrollY: 0,
+            pixelsPerBeat: 12,
+            viewportMeasurementRevision: 2,
+        });
+        expect(projectStore.value?.projectId).toBe(PROJECT_A);
+        expect(projectStore.value?.dirty).toBe(false);
+        expect(writeProjectWorkingView).not.toHaveBeenCalled();
+    });
+
     it('coalesces persistent changes and ignores viewport and transient-only writes', () => {
         start();
 
@@ -156,6 +175,7 @@ describe('project working view persistence', () => {
         expect(persisted?.workspace).not.toHaveProperty('activeTool');
         expect(persisted?.timeline).not.toHaveProperty('autoScrollEnabled');
         expect(persisted?.timeline).not.toHaveProperty('viewportWidth');
+        expect(persisted?.timeline).not.toHaveProperty('viewportMeasurementRevision');
 
         updateWorkspaceState({ undoHistoryOpen: true });
         setAutoScroll(true);

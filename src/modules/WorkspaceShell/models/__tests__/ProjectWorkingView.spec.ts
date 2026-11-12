@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    allocateMainFirstWidths,
+    MIN_ARRANGE_COLUMN_WIDTH,
+    SHELL_RESIZE_HANDLE_WIDTH,
+} from '#/utils/Layout/allocateMainFirstWidths';
+
+import {
     captureProjectWorkingView,
     createDefaultProjectWorkingView,
     decodeProjectWorkingView,
@@ -51,6 +57,25 @@ describe('ProjectWorkingView', () => {
         expect(view.timeline).not.toHaveProperty('viewportWidth');
     });
 
+    it('keeps a decoded open sidebar visible through the real shell allocation', () => {
+        const allocateSidebar = (sidebarWidth: number): number => {
+            const decoded = decodeProjectWorkingView({ version: 1, workspace: { sidebarWidth, sidebarOpen: true } });
+            if (!decoded) {
+                throw new Error('Expected the current working-view envelope to decode');
+            }
+            expect(decoded.workspace.sidebarOpen).toBe(true);
+            return allocateMainFirstWidths({
+                available: 1024 - SHELL_RESIZE_HANDLE_WIDTH,
+                minMain: MIN_ARRANGE_COLUMN_WIDTH,
+                sides: [{ preferred: decoded.workspace.sidebarWidth, min: 180 }],
+            }).sides[0]!;
+        };
+
+        expect(allocateSidebar(280)).toBe(280);
+        expect(allocateSidebar(280.5)).toBe(280.5);
+        expect(allocateSidebar(1e308)).toBeGreaterThan(0);
+    });
+
     it('falls back field by field for malformed or older partial records', () => {
         const decoded = decodeProjectWorkingView({
             version: 1,
@@ -73,6 +98,29 @@ describe('ProjectWorkingView', () => {
             },
         });
         expect(decoded?.workspace).not.toHaveProperty('commandPaletteOpen');
+    });
+
+    it.each([
+        ['sidebarWidth', 280.5, 180, 500],
+        ['inspectorWidth', 280.5, 200, 500],
+        ['trackListWidth', 220.5, 120, 400],
+        ['sessionViewWidth', 320.5, 200, 800],
+        ['virtualKeyboardHeight', 128.5, 80, 400],
+    ] as const)('restores %s within its owning resize bounds without rounding', (field, fraction, min, max) => {
+        const decode = (value: number) => decodeProjectWorkingView({ version: 1, workspace: { [field]: value } });
+        expect(decode(fraction)?.workspace[field]).toBe(fraction);
+        expect(decode(0)?.workspace[field]).toBe(min);
+        expect(decode(1e308)?.workspace[field]).toBe(max);
+        expect(decode(Number.NaN)?.workspace[field]).toBe(createDefaultProjectWorkingView().workspace[field]);
+    });
+
+    it('keeps large fractional arrangement offsets independent of panel bounds', () => {
+        const decoded = decodeProjectWorkingView({
+            version: 1,
+            timeline: { scrollX: 1e12 + 0.5, scrollY: 1e10 + 0.25, pixelsPerBeat: 20 },
+        });
+        expect(decoded?.timeline).toEqual({ scrollX: 1e12 + 0.5, scrollY: 1e10 + 0.25, pixelsPerBeat: 20 });
+        expect(decodeProjectWorkingView(createDefaultProjectWorkingView())).toEqual(createDefaultProjectWorkingView());
     });
 
     it.each([null, 'corrupt', [], { version: 0 }, { version: 2 }])('rejects an unreadable envelope %j', (value) => {

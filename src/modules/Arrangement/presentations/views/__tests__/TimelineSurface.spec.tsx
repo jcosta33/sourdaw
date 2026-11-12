@@ -336,6 +336,43 @@ describe('TimelineSurface', () => {
         }
     });
 
+    it('remeasures equal numeric working views on each deferred restore without a resize or remount', () => {
+        const measure = vi
+            .spyOn(HTMLDivElement.prototype, 'getBoundingClientRect')
+            .mockReturnValue(new DOMRect(0, 0, 500, 50));
+        try {
+            const view = {
+                scrollX: 9000,
+                scrollY: 900,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: false,
+                viewportWidth: 500,
+                viewportHeight: 50,
+                viewportMeasurementRevision: 0,
+            };
+            act(() => zoomHandlers.timelineViewStoreRef.current?.set(view));
+            renderWithTooltip(<TimelineSurface />);
+            vi.mocked(setTimelineViewportSize).mockClear();
+            measure.mockClear();
+
+            act(() => {
+                zoomHandlers.timelineViewStoreRef.current?.set({ ...view, viewportMeasurementRevision: 1 });
+            });
+
+            expect(measure).toHaveBeenCalled();
+            expect(setTimelineViewportSize).toHaveBeenCalledWith({ viewportWidth: 500, viewportHeight: 50 });
+            vi.mocked(setTimelineViewportSize).mockClear();
+            measure.mockClear();
+            act(() => {
+                zoomHandlers.timelineViewStoreRef.current?.set({ ...view, viewportMeasurementRevision: 2 });
+            });
+            expect(measure).toHaveBeenCalled();
+            expect(setTimelineViewportSize).toHaveBeenCalledExactlyOnceWith({ viewportWidth: 500, viewportHeight: 50 });
+        } finally {
+            measure.mockRestore();
+        }
+    });
+
     it('should render PresenceOverlay', async () => {
         renderWithTooltip(<TimelineSurface />);
         expect(await screen.findByTestId('presence-overlay')).toBeInTheDocument();

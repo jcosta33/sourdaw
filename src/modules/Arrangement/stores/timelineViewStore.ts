@@ -23,6 +23,8 @@ export type TimelineViewState = {
      * type-checking without having to name it.
      */
     viewportHeight?: number;
+    /** Ephemeral deferred-restore request; zero or absent means no measurement requested. */
+    viewportMeasurementRevision?: number;
 };
 
 export type TimelineWorkingView = Pick<TimelineViewState, 'scrollX' | 'scrollY' | 'pixelsPerBeat'>;
@@ -35,6 +37,7 @@ export const timelineViewStore = createStore<TimelineViewState>({
         autoScrollEnabled: true,
         viewportWidth: 0,
         viewportHeight: 0,
+        viewportMeasurementRevision: 0,
     },
 });
 
@@ -132,15 +135,25 @@ export function setTimelineViewportSize({
     viewportHeight: number;
 }): void {
     const state = timelineViewStore.value;
-    if (!state || ((state.viewportWidth ?? 0) === viewportWidth && (state.viewportHeight ?? 0) === viewportHeight)) {
+    if (!state) {
+        return;
+    }
+    const scrollX = clampScrollX(state.scrollX, state.pixelsPerBeat, viewportWidth);
+    const scrollY = clampScrollY(state.scrollY, viewportHeight);
+    if (
+        (state.viewportWidth ?? 0) === viewportWidth &&
+        (state.viewportHeight ?? 0) === viewportHeight &&
+        state.scrollX === scrollX &&
+        state.scrollY === scrollY
+    ) {
         return;
     }
     timelineViewStore.set({
         ...state,
         viewportWidth,
         viewportHeight,
-        scrollX: clampScrollX(state.scrollX, state.pixelsPerBeat, viewportWidth),
-        scrollY: clampScrollY(state.scrollY, viewportHeight),
+        scrollX,
+        scrollY,
     });
 }
 
@@ -199,5 +212,6 @@ export function replaceTimelineWorkingView(
         scrollX,
         scrollY,
         autoScrollEnabled: view ? state.autoScrollEnabled : true,
+        ...(deferViewportClamp ? { viewportMeasurementRevision: (state.viewportMeasurementRevision ?? 0) + 1 } : {}),
     });
 }

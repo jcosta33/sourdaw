@@ -1,4 +1,4 @@
-import { type ReactElement, useRef, useEffect, lazy, Suspense } from 'react';
+import { type ReactElement, useRef, useEffect, useLayoutEffect, lazy, Suspense } from 'react';
 
 import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
@@ -49,6 +49,15 @@ export const TimelineSurface = (): ReactElement => {
         autoScrollEnabled: true,
     });
     const currentTrackStore = useStore(trackStore, { tracks: [], selectedTrackId: null });
+    const viewportMeasurementRevision = currentViewStore.viewportMeasurementRevision ?? 0;
+    useLayoutEffect(() => {
+        const container = containerRef.current;
+        if (!container || viewportMeasurementRevision === 0) {
+            return;
+        }
+        const { width, height } = container.getBoundingClientRect();
+        setTimelineViewportSize({ viewportWidth: width, viewportHeight: height });
+    }, [viewportMeasurementRevision]);
     const timelineMinimumHeight = getTimelineSurfaceMinimumHeight(
         currentTrackStore.tracks,
         currentTrackStore.selectedTrackId

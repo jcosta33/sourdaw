@@ -1,3 +1,12 @@
+import {
+    SIDEBAR_WIDTH_BOUNDS,
+    INSPECTOR_WIDTH_BOUNDS,
+    TRACK_LIST_WIDTH_BOUNDS,
+    SESSION_VIEW_WIDTH_BOUNDS,
+    VIRTUAL_KEYBOARD_HEIGHT_BOUNDS,
+} from '#/utils/Layout/panelDimensionBounds';
+import { clamp } from '#/utils/Math/clamp';
+
 import { defaultWorkspaceState, type WorkspaceMode, type WorkspaceState } from './WorkspaceState';
 
 const PROJECT_WORKING_VIEW_VERSION = 1;
@@ -51,6 +60,10 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
 
 function readDimension(value: unknown, fallback: number): number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function readPanelDimension(value: unknown, fallback: number, bounds: { min: number; max: number }): number {
+    return clamp(readDimension(value, fallback), bounds.min, bounds.max);
 }
 
 function readMode(value: unknown): WorkspaceMode {
@@ -126,20 +139,37 @@ export function decodeProjectWorkingView(value: unknown): ProjectWorkingView | n
             dualViewOpen: readBoolean(workspace.dualViewOpen, defaults.workspace.dualViewOpen),
             scratchPadOpen: readBoolean(workspace.scratchPadOpen, defaults.workspace.scratchPadOpen),
             virtualKeyboardOpen: readBoolean(workspace.virtualKeyboardOpen, defaults.workspace.virtualKeyboardOpen),
-            sidebarWidth: readDimension(workspace.sidebarWidth, defaults.workspace.sidebarWidth),
-            inspectorWidth: readDimension(workspace.inspectorWidth, defaults.workspace.inspectorWidth),
+            sidebarWidth: readPanelDimension(
+                workspace.sidebarWidth,
+                defaults.workspace.sidebarWidth,
+                SIDEBAR_WIDTH_BOUNDS
+            ),
+            inspectorWidth: readPanelDimension(
+                workspace.inspectorWidth,
+                defaults.workspace.inspectorWidth,
+                INSPECTOR_WIDTH_BOUNDS
+            ),
             mixerHeight: readDimension(workspace.mixerHeight, defaults.workspace.mixerHeight),
             editorHeight: readDimension(workspace.editorHeight, defaults.workspace.editorHeight),
             automationPanelWidth: readDimension(
                 workspace.automationPanelWidth,
                 defaults.workspace.automationPanelWidth
             ),
-            trackListWidth: readDimension(workspace.trackListWidth, defaults.workspace.trackListWidth),
-            sessionViewWidth: readDimension(workspace.sessionViewWidth, defaults.workspace.sessionViewWidth),
+            trackListWidth: readPanelDimension(
+                workspace.trackListWidth,
+                defaults.workspace.trackListWidth,
+                TRACK_LIST_WIDTH_BOUNDS
+            ),
+            sessionViewWidth: readPanelDimension(
+                workspace.sessionViewWidth,
+                defaults.workspace.sessionViewWidth,
+                SESSION_VIEW_WIDTH_BOUNDS
+            ),
             scratchPadHeight: readDimension(workspace.scratchPadHeight, defaults.workspace.scratchPadHeight),
-            virtualKeyboardHeight: readDimension(
+            virtualKeyboardHeight: readPanelDimension(
                 workspace.virtualKeyboardHeight,
-                defaults.workspace.virtualKeyboardHeight
+                defaults.workspace.virtualKeyboardHeight,
+                VIRTUAL_KEYBOARD_HEIGHT_BOUNDS
             ),
         },
     };
