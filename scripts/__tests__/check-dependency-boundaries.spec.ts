@@ -37,9 +37,9 @@ import {
 
 const require = createRequire(import.meta.url);
 const mainConfig = require('../../.dependency-cruiser.cjs');
+const reachabilityConfig = require('../../.dependency-cruiser.reachability.cjs');
 const testConfig = require('../../.dependency-cruiser.tests.cjs');
 const typeConfig = require('../../.dependency-cruiser.types.cjs');
-const reachabilityConfig = require('../../.dependency-cruiser.reachability.cjs');
 
 const rule = {
     severity: 'error',
