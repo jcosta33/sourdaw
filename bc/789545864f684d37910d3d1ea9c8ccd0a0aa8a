@@ -1,0 +1,62 @@
+crates/daw-dsp/src/grinder/nam/native_admission.rs
+  s_126e3d478b4f75::t_458f80c9cd6e7b 106
+.agents/skills/review-stances/test-validity.md
+  s_126e3d478b4f75::t_0fc40a6079c7e5 36-49
+crates/daw-engine/src/lib.rs
+  s_126e3d478b4f75::t_0fc40a6079c7e5 100
+crates/daw-dsp/benches/wasm/__tests__/deviceRecipes.spec.ts
+  s_126e3d478b4f75::t_6d23fe6a97efdd 10-46
+  s_c8871fae0d96fe::t_3da5c8a6466581 1-9,47-51
+.agents/skills/review-stances/audio-timing-format-laws.md
+  s_126e3d478b4f75::t_5678277a4524c3 42-48
+.agents/skills/review-stances/test-observation-scope.md
+  s_126e3d478b4f75::t_615dfcb8c8f707 37-42
+.cargo/config.toml
+  s_ff124a0cf68412::t_3fda979e49eba6 2
+Cargo.lock
+  s_126e3d478b4f75::t_c3eb10bb09457f 404,406,718,878,1272,1274,1573,1575,1598,1600,1607,1612,1614,1620,2283,2285,2429,2508,2510,2808,2810,2834,2895,2947,3158,3160,3260,3308,3310,3680,3721,3761
+crates/daw-dsp/benches/quantum.rs
+  s_c8871fae0d96fe::t_1e2d0e228f2f65 944-967,988-989,1615-1633,1635-1638
+crates/daw-dsp/benches/wasm/deviceRecipes.js
+  s_ff124a0cf68412::t_45768351fa55a6 449-468
+crates/daw-dsp/tests/engine_output_level.rs
+  s_ff124a0cf68412::t_5b6355c47f86ff 483
+rust-toolchain.toml
+  s_ff124a0cf68412::t_6a44796fcb5235 2
+scripts/__tests__/ensurePinnedRustToolchain.spec.ts
+  s_c8871fae0d96fe::t_7a64ca1a9f02a0 23,33,37,41,48,57,59,61,65-67,72-74,108-137,144,153,163,185,191,218
+scripts/ensurePinnedRustToolchain.sh
+  s_ff124a0cf68412::t_d0795974d98533 20-21,66-71,73,77,80,83,85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bc789545864f684d37910d3d1ea9c8ccd0a0aa8a",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_c8871fae0d96fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "61825320-06d5-42bf-948c-b3725c21430c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ff124a0cf68412": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5859629c-45b4-4907-85a7-756af720dd80",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
