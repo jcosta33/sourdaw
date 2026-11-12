@@ -116,22 +116,24 @@ source/license chain. The Apache-2.0 text and attribution record are in
 [Apache-2.0.txt](./Apache-2.0.txt) and [Qwen-NOTICE.txt](./Qwen-NOTICE.txt).
 
 The admitted WebGPU modules come from
-[binary-mlc-llm-libs at `025bcaf3780fa8254f5e5efd3bfea0a5397248f4`](https://github.com/mlc-ai/binary-mlc-llm-libs/tree/025bcaf3780fa8254f5e5efd3bfea0a5397248f4/web-llm-models/v0_2_84/base).
-The merged upstream record names MLC-LLM `2008fe8343e1f40ef89ee57b9287aebcf1b86c98`
-and Apache TVM `bc1a904ec1ad89454ee6577d66cde1268b8f6bc8` as their source revisions. MLC-LLM's
-exact notice and TVM's exact root license, notice, and full referenced license/notice trees are in
+[binary-mlc-llm-libs at `146ed9cd4b4062e967b017fd2291f7106b50599f`](https://github.com/mlc-ai/binary-mlc-llm-libs/tree/146ed9cd4b4062e967b017fd2291f7106b50599f/web-llm-models/v0_2_87/base).
+The merged upstream PR168 names MLC-LLM `44fd06d04f22c87820e205b0f2b2e5e6a1f6ca85`
+and Apache TVM `e345029cedf0be76a087fcad9c89a97bed4f7204` as their source revisions.
+TVM pins TIRx `198a04573ea44e060c1087c8223cf082c64a6c03`, which pins TVM FFI
+`6628c464e3b824d09c9cf65ac0c6c24f973f6d56`. The FFI distribution directory below
+is an attribution namespace; its upstream source is nested through TIRx.
+Their exact notices, licenses and referenced legal texts are retained in:
+
 [MLC-LLM-NOTICE.txt](./MLC-LLM-NOTICE.txt),
 [Apache-TVM/NOTICE](./Apache-TVM/NOTICE), [Apache-TVM/LICENSE](./Apache-TVM/LICENSE),
-[Apache-TVM/licenses/LICENSE.blockingconcurrentqueue.txt](./Apache-TVM/licenses/LICENSE.blockingconcurrentqueue.txt),
-[Apache-TVM/licenses/LICENSE.builtin_fp16.txt](./Apache-TVM/licenses/LICENSE.builtin_fp16.txt),
-[Apache-TVM/licenses/LICENSE.concurrentqueue.txt](./Apache-TVM/licenses/LICENSE.concurrentqueue.txt),
 [Apache-TVM/licenses/LICENSE.cutlass.txt](./Apache-TVM/licenses/LICENSE.cutlass.txt),
 [Apache-TVM/licenses/LICENSE.cutlass_fpA_intB_gemm.txt](./Apache-TVM/licenses/LICENSE.cutlass_fpA_intB_gemm.txt),
-[Apache-TVM/licenses/LICENSE.l2_cache_flush.txt](./Apache-TVM/licenses/LICENSE.l2_cache_flush.txt),
 [Apache-TVM/licenses/LICENSE.libflash_attn.txt](./Apache-TVM/licenses/LICENSE.libflash_attn.txt),
-[Apache-TVM/licenses/LICENSE.rang.txt](./Apache-TVM/licenses/LICENSE.rang.txt),
 [Apache-TVM/licenses/LICENSE.tensorrt_llm.txt](./Apache-TVM/licenses/LICENSE.tensorrt_llm.txt),
 [Apache-TVM/licenses/LICENSE.vllm.txt](./Apache-TVM/licenses/LICENSE.vllm.txt),
+[Apache-TVM/3rdparty/tvm-tirx/NOTICE](./Apache-TVM/3rdparty/tvm-tirx/NOTICE),
+[Apache-TVM/3rdparty/tvm-tirx/LICENSE](./Apache-TVM/3rdparty/tvm-tirx/LICENSE),
+[Apache-TVM/3rdparty/tvm-tirx/licenses/LICENSE.builtin_fp16.txt](./Apache-TVM/3rdparty/tvm-tirx/licenses/LICENSE.builtin_fp16.txt),
 [Apache-TVM/3rdparty/tvm-ffi/NOTICE](./Apache-TVM/3rdparty/tvm-ffi/NOTICE),
 [Apache-TVM/3rdparty/tvm-ffi/LICENSE](./Apache-TVM/3rdparty/tvm-ffi/LICENSE),
 [Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt](./Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt),
@@ -141,9 +143,11 @@ and [Apache-TVM/3rdparty/tvm-ffi/licenses/NOTICE.pytorch.txt](./Apache-TVM/3rdpa
 
 The exact downloaded model and WebAssembly bytes remain pinned and verified before storage or
 inference. This admission does not claim hermetic reproduction: the upstream conversions do not map
-to base-checkpoint revisions, and the binary merge record lacks the exact emsdk revision, resolved
-build configuration, and build log. Binary byte identity and the named MLC-LLM/TVM source revisions
-are proven; the exact Qwen source/license chain and complete build-input provenance are not.
+to base-checkpoint revisions, and PR168 lacks the exact emsdk revision, resolved build configuration,
+and build log. MLC's default TVM submodule differs from the publisher-named TVM checkout; the source
+supports an explicit TVM_SOURCE_DIR, but the actual builder environment is not attested. Binary byte
+identity, publisher-named MLC-LLM/TVM sources and the nested TIRx/FFI source pins are proven; the exact
+Qwen source/license chain and complete build-input provenance are not.
 
 ## Plugin interfaces
 
