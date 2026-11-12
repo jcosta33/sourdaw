@@ -1,0 +1,65 @@
+release/dependency-license-proofs.json
+  s_eec9d24f84ae15::t_f89d8580da3b02 64
+tsconfig.eslint-config.json
+  s_eec9d24f84ae15::t_1b81295e5ed829 8
+eslint.config.mjs
+  s_eec9d24f84ae15::t_4ecba201c1ea4a 79,96-97,104,122,131-132,147,195
+  s_eec9d24f84ae15::t_071d26a959b47f 1
+  s_eec9d24f84ae15::t_6adae627f85156 36-46,50,55-59,207,224
+  s_eec9d24f84ae15::t_99c20a82326ee1 1889,1892-1893
+  s_eec9d24f84ae15::t_e8d05a825d7a11 23,1016,1020,1032,1036,1048,1052,1108-1112,1181-1182,1189-1190,1358,1362,1387,1391,1436,1619-1620,1630,1640,1648-1649,1651,2210,2216,2244,2247,2272,2280,2518,2548,2564,2569,2580,2678,2710,2716-2717
+  s_eec9d24f84ae15::t_422df1934252f3 49,310,1447-1448,1518,1561,1602,1676,1714,1746,1759,1791,1798,1865,1873,1968,1975,2056,2063,2148,2156,2160-2161,2169-2170,2321,2328,2372,2390,2402,2415,2607,2641,2667,2704
+  s_eec9d24f84ae15::t_00f65ff50ab683 83,87,89-90,100,109,114,118,140,151,156,162-163,165,173-174,184-185,216,233,326-327,392,398,405,407,419,426,433,435,458,478,492,1140,1150,1159,1164,1200,1205,1217,1222,1228,1233,1290,1570,2431,2446
+  s_eec9d24f84ae15::t_733a253a76f63b 378,384,1124,1175,1196,2378,2380,2427,2442,2457,2460
+  s_eec9d24f84ae15::t_2dd0ed8c375fba 1431-1433
+  s_eec9d24f84ae15::t_006bbcc545a9f9 2727-2740,2817,2854,3037,3227,3271
+  s_eec9d24f84ae15::t_662033149b0f64 22,536,1334
+  s_eec9d24f84ae15::t_fc2b9e923a2f1b 65-67,72-74
+  s_eec9d24f84ae15::t_03f4a7ca6581c9 366-369,955,964,1890-1891,1894
+  s_eec9d24f84ae15::t_6b6f7db8b7be24 200-202,236-239,244-248,465-468,485-486,1235-1238,1419-1421,2504-2507,2519-2520,2555-2558
+  s_eec9d24f84ae15::t_1b81295e5ed829 2
+package.json
+  s_eec9d24f84ae15::t_662033149b0f64 161
+.oxlintrc.json
+  s_eec9d24f84ae15::t_d7d0bcd33b6625 299
+.agents/skills/review-stances/code-craft.md
+  s_eec9d24f84ae15::t_dec16dee46ca78 53-58
+release/open-source-inventory.json
+  s_eec9d24f84ae15::t_f89d8580da3b02 172-173,285,1862,1874
+  s_eec9d24f84ae15::t_9d01fcef86947f 77
+scripts/types/eslint-plugin-promise.d.ts
+  s_eec9d24f84ae15::t_1b81295e5ed829 1-4
+scripts/__tests__/eslintConfig.spec.ts
+  s_eec9d24f84ae15::t_18258491f210ee 53-55,65-67,140-142
+  s_eec9d24f84ae15::t_47cd15712f8627 3,125
+  s_eec9d24f84ae15::t_6bf8cb82dc1e7e 138-139,143-151
+  s_eec9d24f84ae15::t_6b6f7db8b7be24 35-40
+pnpm-lock.yaml
+  s_9307cedd8951f1::t_4cd6237e74dad5 156-158
+public/legal/DEPENDENCY-LICENSES.txt
+  s_eec9d24f84ae15::t_322963d831155f 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "26254c4ef08e04a69aaf0cccb782e63469365b0d",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
