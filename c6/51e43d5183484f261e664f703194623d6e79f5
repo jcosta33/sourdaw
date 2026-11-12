@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/findTrailingRangePhrase.ts
+  s_35b9801a6d6336::t_3d59d110e86855 125-127
+  s_35b9801a6d6336::t_bfba1e8e11a872 146-147,154,160-161
+  s_35b9801a6d6336::t_1aff3c78a395b3 9-14,18-20,23-24,28-29,36-52,57-62,67-70,75-89,92-100,102-103,107-110,112-123,129-143,151-152
+  s_35b9801a6d6336::t_41199695caa6b5 148-149,153
+  s_35b9801a6d6336::t_7d4712623cdba4 128
+  s_35b9801a6d6336::t_cc9666748cc63a 3
+  s_35b9801a6d6336::t_ee8c73c538e5e0 34-35
+  s_35b9801a6d6336::t_7d5894fb374a2b 144-145,150,155-159
+  s_35b9801a6d6336::t_5ed9e39e4722f1 53-56,65-66
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_35b9801a6d6336::t_e31c405974844b 4211-4212,4215-4222,4224,4230,4232-4238,4242-4249,4261-4265
+  s_35b9801a6d6336::t_61f81305aba7f0 4239-4241,4250-4251,4255-4260
+  s_35b9801a6d6336::t_e1c98586f60df9 135
+  s_35b9801a6d6336::t_aaa1becdd31a98 4213-4214,4223,4225-4229,4231,4252-4254
+  s_35b9801a6d6336::t_b0072cce944967 5356-5367
+  s_35b9801a6d6336::t_046f9294c7f3ac 132-134,136
+src/modules/AiRuntime/useCases/agentReference/__tests__/parameterRangeGrounding.spec.ts
+  s_35b9801a6d6336::t_3d59d110e86855 97-101
+  s_35b9801a6d6336::t_ad32ec84b87ddb 1-96,102-230
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c651e43d5183484f261e664f703194623d6e79f5",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
