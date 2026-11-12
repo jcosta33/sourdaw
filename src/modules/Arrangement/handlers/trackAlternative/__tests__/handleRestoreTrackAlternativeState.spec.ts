@@ -253,6 +253,58 @@ describe('handleRestoreTrackAlternativeState', () => {
         expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
     });
 
+    // The active alternative stays alt1 in both cases below, so the promotion check
+    // never runs; only the restore's own shape check stands between the payload and the store.
+    it('refuses a replacement alternative that carries only its id, and writes nothing', () => {
+        const liveTrack = makeTrack();
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [liveTrack] });
+
+        const result = handleRestoreTrackAlternativeState.execute({
+            type: 'restoreTrackAlternativeState',
+            payload: {
+                trackId: 't1',
+                expected: {
+                    alternatives: [{ id: 'alt1' }, { id: 'alt2' }],
+                    activeAlternativeId: 'alt1',
+                    clips: [],
+                },
+                replacement: {
+                    alternatives: [makeAlternative('alt1', 'Alt 1', liveTrack.clips), { id: 'alt2' }],
+                    activeAlternativeId: 'alt1',
+                    clips: liveTrack.clips,
+                },
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('refuses replacement clips that carry only their placement, and writes nothing', () => {
+        const liveTrack = makeTrack();
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [liveTrack] });
+
+        const result = handleRestoreTrackAlternativeState.execute({
+            type: 'restoreTrackAlternativeState',
+            payload: {
+                trackId: 't1',
+                expected: {
+                    alternatives: [{ id: 'alt1' }, { id: 'alt2' }],
+                    activeAlternativeId: 'alt1',
+                    clips: [],
+                },
+                replacement: {
+                    alternatives: [makeAlternative('alt1', 'Alt 1', liveTrack.clips)],
+                    activeAlternativeId: 'alt1',
+                    clips: [{ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4 }],
+                },
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
     describe('isNoop', () => {
         it('is true when the live state already matches the replacement', () => {
             const liveTrack = makeTrack();
