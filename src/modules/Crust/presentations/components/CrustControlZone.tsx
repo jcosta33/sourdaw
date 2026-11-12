@@ -14,7 +14,7 @@ import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
@@ -26,9 +26,19 @@ import { type CrustDither, type CrustPatch } from '../../models/CrustPatch';
 
 import { CrustSatCurve } from './CrustSatCurve';
 
-type Setter = <TKey extends keyof CrustPatch>(key: TKey, value: CrustPatch[TKey]) => void;
+type Setter = <TKey extends keyof CrustPatch>(
+    key: TKey,
+    value: CrustPatch[TKey],
+    transient?: boolean,
+    recordingSample?: boolean
+) => void;
+type NumericControls = {
+    gestureAuthority?: (key: keyof CrustPatch) => GestureAuthority;
+    onCancel?: (key: keyof CrustPatch) => void;
+};
+type SectionProps = { patch: CrustPatch; setParam: Setter } & NumericControls;
 
-type Props = {
+type Props = NumericControls & {
     patch: CrustPatch;
     setParam: Setter;
     lufsIntegrated: number;
@@ -71,9 +81,11 @@ const Knob = ({
     unit,
     def,
     disabled = false,
+    gestureAuthority,
 }: {
     value: number;
-    onChange: (v: number) => void;
+    onChange: (v: number, transient?: boolean) => void;
+    gestureAuthority?: GestureAuthority;
     label: string;
     min: number;
     max: number;
@@ -87,8 +99,10 @@ const Knob = ({
         aria-disabled={disabled}
     >
         <RotaryKnob
+            aria-label={label}
             value={value}
             onChange={disabled ? () => {} : onChange}
+            gestureAuthority={gestureAuthority}
             min={min}
             max={max}
             step={step}
@@ -118,11 +132,13 @@ const AutoKnob = ({
     step,
     def,
     toggleId,
+    gestureAuthority,
 }: {
     auto: boolean;
     onAutoChange: (auto: boolean) => void;
     value: number;
-    onChange: (v: number) => void;
+    onChange: (v: number, transient?: boolean) => void;
+    gestureAuthority?: GestureAuthority;
     label: string;
     min: number;
     max: number;
@@ -132,8 +148,10 @@ const AutoKnob = ({
 }): ReactElement => (
     <Stack align="center" gap={0.5}>
         <RotaryKnob
+            aria-label={label}
             value={value}
             onChange={onChange}
+            gestureAuthority={gestureAuthority}
             min={min}
             max={max}
             step={step}
@@ -162,10 +180,14 @@ const SliderRow = ({
     label,
     value,
     onChange,
+    gestureAuthority,
+    onCancel,
 }: {
     label: string;
     value: number;
-    onChange: (value: number) => void;
+    onChange: (value: number, transient?: boolean, recordingSample?: boolean) => void;
+    gestureAuthority?: GestureAuthority;
+    onCancel?: () => void;
 }): ReactElement => (
     <Row gap={2}>
         <span className="w-14 shrink-0 text-nano text-muted-foreground">{label}</span>
@@ -176,10 +198,27 @@ const SliderRow = ({
             step={1}
             className="flex-1"
             aria-label={label}
+            onPointerDown={() => gestureAuthority?.acquire(() => undefined)}
+            onKeyDownCapture={(event) => {
+                if (
+                    ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(
+                        event.key
+                    )
+                ) {
+                    gestureAuthority?.acquire(() => undefined);
+                }
+            }}
+            onPointerCancel={onCancel}
+            onValueCommit={(values) => {
+                const next = values[0];
+                if (next !== undefined) {
+                    onChange(next, false, false);
+                }
+            }}
             onValueChange={(values) => {
                 const nextValue = values[0];
                 if (nextValue !== undefined) {
-                    onChange(nextValue);
+                    onChange(nextValue, true);
                 }
             }}
         />
@@ -268,7 +307,7 @@ const Level1 = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): R
     </Row>
 );
 
-const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
+const Level2Core = ({ patch, setParam, gestureAuthority, onCancel }: SectionProps): ReactElement => (
     <Stack gap={2} shrink={false}>
         {/* Algorithm pills */}
         <div>
@@ -295,7 +334,8 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
         <Row align="end" gap={3}>
             <Knob
                 value={patch.lookahead}
-                onChange={(v) => setParam(CRUST_PARAM_IDS.lookahead, v)}
+                gestureAuthority={gestureAuthority?.(CRUST_PARAM_IDS.lookahead)}
+                onChange={(v, transient) => setParam(CRUST_PARAM_IDS.lookahead, v, transient)}
                 label="Lookahead"
                 min={0}
                 max={10}
@@ -307,7 +347,8 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 auto={patch.attackAuto}
                 onAutoChange={(auto) => setParam(CRUST_PARAM_IDS.attackAuto, auto)}
                 value={patch.attack}
-                onChange={(v) => setParam(CRUST_PARAM_IDS.attack, v)}
+                gestureAuthority={gestureAuthority?.(CRUST_PARAM_IDS.attack)}
+                onChange={(v, transient) => setParam(CRUST_PARAM_IDS.attack, v, transient)}
                 label="Attack"
                 min={0}
                 max={100}
@@ -319,7 +360,8 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 auto={patch.releaseAuto}
                 onAutoChange={(auto) => setParam(CRUST_PARAM_IDS.releaseAuto, auto)}
                 value={patch.release}
-                onChange={(v) => setParam(CRUST_PARAM_IDS.release, v)}
+                gestureAuthority={gestureAuthority?.(CRUST_PARAM_IDS.release)}
+                onChange={(v, transient) => setParam(CRUST_PARAM_IDS.release, v, transient)}
                 label="Release"
                 min={0}
                 max={1000}
@@ -334,18 +376,26 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
             <SliderRow
                 label="Link Trans"
                 value={patch.channelLinkTransient}
-                onChange={(value) => setParam(CRUST_PARAM_IDS.channelLinkTransient, value)}
+                gestureAuthority={gestureAuthority?.(CRUST_PARAM_IDS.channelLinkTransient)}
+                onCancel={() => onCancel?.(CRUST_PARAM_IDS.channelLinkTransient)}
+                onChange={(value, transient, recordingSample) =>
+                    setParam(CRUST_PARAM_IDS.channelLinkTransient, value, transient, recordingSample)
+                }
             />
             <SliderRow
                 label="Link Rel"
                 value={patch.channelLinkRelease}
-                onChange={(value) => setParam(CRUST_PARAM_IDS.channelLinkRelease, value)}
+                gestureAuthority={gestureAuthority?.(CRUST_PARAM_IDS.channelLinkRelease)}
+                onCancel={() => onCancel?.(CRUST_PARAM_IDS.channelLinkRelease)}
+                onChange={(value, transient, recordingSample) =>
+                    setParam(CRUST_PARAM_IDS.channelLinkRelease, value, transient, recordingSample)
+                }
             />
         </Stack>
     </Stack>
 );
 
-const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
+const SatSection = ({ patch, setParam, gestureAuthority }: SectionProps): ReactElement => (
     <DawPluginSectionCard
         title="Saturation"
         detailMode="badge"
@@ -392,7 +442,8 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 <Stack align="center" gap={0.5}>
                     <Knob
                         value={patch.satDrive}
-                        onChange={(v) => setParam(CRUST_PARAM_IDS.satDrive, v)}
+                        gestureAuthority={gestureAuthority?.(CRUST_PARAM_IDS.satDrive)}
+                        onChange={(v, transient) => setParam(CRUST_PARAM_IDS.satDrive, v, transient)}
                         label="Drive"
                         min={0}
                         max={18}
@@ -407,7 +458,8 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 </Stack>
                 <Knob
                     value={patch.satMix}
-                    onChange={(v) => setParam(CRUST_PARAM_IDS.satMix, v)}
+                    gestureAuthority={gestureAuthority?.(CRUST_PARAM_IDS.satMix)}
+                    onChange={(v, transient) => setParam(CRUST_PARAM_IDS.satMix, v, transient)}
                     label="Mix"
                     min={0}
                     max={100}
@@ -448,7 +500,7 @@ const Level3Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
     </Row>
 );
 
-const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
+const Level4Extra = ({ patch, setParam, gestureAuthority }: SectionProps): ReactElement => (
     <Stack gap={2} shrink={false} className="mt-1 pt-1 border-t border-border/10">
         <Row align="stretch" wrap gap={3}>
             {/* Multi-band mode */}
@@ -503,7 +555,8 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                     {patch.scHpfEnabled ? (
                         <Knob
                             value={patch.scHpfFreq}
-                            onChange={(v) => setParam(CRUST_PARAM_IDS.scHpfFreq, v)}
+                            gestureAuthority={gestureAuthority?.(CRUST_PARAM_IDS.scHpfFreq)}
+                            onChange={(v, transient) => setParam(CRUST_PARAM_IDS.scHpfFreq, v, transient)}
                             label="HPF"
                             min={20}
                             max={200}
@@ -607,6 +660,8 @@ const Level5Stats = ({
 export const CrustControlZone = ({
     patch,
     setParam,
+    gestureAuthority,
+    onCancel,
     lufsIntegrated,
     lufsShortTerm,
     lufsMomentary,
@@ -623,16 +678,20 @@ export const CrustControlZone = ({
             style={{ maxHeight: '100%' }}
         >
             <Level1 patch={patch} setParam={setParam} />
-            {isEffectDisclosureStageVisible(tier, 'shape') ? <Level2Core patch={patch} setParam={setParam} /> : null}
+            {isEffectDisclosureStageVisible(tier, 'shape') ? (
+                <Level2Core patch={patch} setParam={setParam} gestureAuthority={gestureAuthority} onCancel={onCancel} />
+            ) : null}
 
             {isEffectDisclosureStageVisible(tier, 'build') ? (
                 <>
-                    <SatSection patch={patch} setParam={setParam} />
+                    <SatSection patch={patch} setParam={setParam} gestureAuthority={gestureAuthority} />
                     <Level3Extra patch={patch} setParam={setParam} />
                 </>
             ) : null}
 
-            {isEffectDisclosureStageVisible(tier, 'route') ? <Level4Extra patch={patch} setParam={setParam} /> : null}
+            {isEffectDisclosureStageVisible(tier, 'route') ? (
+                <Level4Extra patch={patch} setParam={setParam} gestureAuthority={gestureAuthority} />
+            ) : null}
 
             {isEffectDisclosureStageVisible(tier, 'lab') ? (
                 <Level5Stats

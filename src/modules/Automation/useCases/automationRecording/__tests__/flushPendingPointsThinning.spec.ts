@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { type AutomationPoint, createAutomationLane } from '../../../models/Automation';
 import { automationStore } from '../../../stores/automationStore';
 import { flushPendingPoints } from '../flushPendingPoints';
-import { activeRecording, pendingPoints } from '../recordingSessionState';
+import { activeRecording, pendingOwners, pendingPoints } from '../recordingSessionState';
 
 const batchAddMock = vi.hoisted(() => vi.fn());
 
@@ -42,6 +42,7 @@ describe('flushPendingPoints record-gesture thinning (AU-5)', () => {
         batchAddMock.mockClear();
         activeRecording.clear();
         pendingPoints.clear();
+        pendingOwners.clear();
         automationStore.set({ lanes: [] });
     });
 

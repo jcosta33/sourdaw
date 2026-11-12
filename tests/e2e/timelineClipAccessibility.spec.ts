@@ -19,7 +19,8 @@ test('timeline clips are browsable and selectable without triggering background 
     await browse.click();
 
     const listbox = page.getByRole('listbox', { name: 'Timeline clips' });
-    await expect(listbox).toBeFocused();
+    await expect(page.getByRole('searchbox', { name: 'Search clips' })).toBeFocused();
+    await listbox.focus();
     const option = listbox.getByRole('option', { name: /New midi clip/i });
     await expect(option).toHaveAttribute('aria-posinset', '1');
     await expect(option).toHaveAttribute('aria-setsize', '1');
@@ -112,7 +113,8 @@ for (const width of [1440, 1024]) {
         await browse.focus();
         await browse.press('Enter');
         const listbox = page.getByRole('listbox', { name: 'Timeline clips' });
-        await expect(listbox).toBeFocused();
+        await expect(page.getByRole('searchbox', { name: 'Search clips' })).toBeFocused();
+        await listbox.focus();
         await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
         const option = listbox.getByRole('option', { name: /New midi clip/i });
         await expect(option).toHaveAttribute('aria-setsize', '1');

@@ -353,7 +353,7 @@ describe('Scoring reference gesture authority and shipped DSP', () => {
         async (reference) => {
             const { TunerPanel } = runtime.tuner;
             render(<TunerPanel deviceId={DEVICE_ID} />);
-            const slider = screen.getByRole('slider', { name: 'Parameter control' });
+            const slider = screen.getByRole('slider', { name: 'Concert A reference' });
             expect(slider).toHaveAttribute('aria-valuenow', String(INITIAL_REFERENCE));
             act(() => {
                 detect(INITIAL_REFERENCE);

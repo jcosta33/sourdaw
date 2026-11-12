@@ -18,6 +18,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
     AUTHOR_BOT_COMMIT_EMAIL,
+    AUTHOR_BOT_COMMIT_NAME,
     AUTHOR_LOCK_REASON,
     GITHUB_HTTPS_REMOTE,
     ORCHESTRATOR_USER_NODE_ID,
@@ -73,6 +74,8 @@ import {
     publishLane,
     resolveAuthorLane,
     shellPort,
+    parseCommitIdentities,
+    type CommitIdentity,
     type LabelRow,
     type PullRequestLabelMetadata,
     type PullRequestMergeability,
@@ -209,8 +212,11 @@ type FakeInput = {
     dirty?: boolean;
     /** `null` stands for a lane with no non-merge commit of its own above `origin/main`. */
     subject?: string | null;
-    /** Author emails the publish delta's authorship read answers; defaults to the bot. */
-    commitEmails?: string[];
+    /**
+     * Identities the publish delta's authorship read answers, one per commit; every omitted field
+     * is the author App's, and the whole list defaults to one fully App-stamped commit.
+     */
+    commitIdentities?: Array<Partial<Omit<CommitIdentity, 'sha'>>>;
     /** Object-store rewrites the pre-push read answers; defaults to a clean store. */
     objectStoreRewrites?: { graftsFile?: string; replaceRefs?: number };
     headSha?: string;
@@ -270,8 +276,15 @@ function fakePort(input: FakeInput = {}) {
         aheadBehind: () => ({ ahead: input.ahead ?? 1, behind: input.behind ?? 0 }),
         dirty: () => dirty,
         laneSubject: () => subject,
-        commitAuthorEmails: () =>
-            (input.commitEmails ?? [AUTHOR_BOT_COMMIT_EMAIL]).map((email, index) => ({ sha: `sha${index}`, email })),
+        commitIdentities: () =>
+            (input.commitIdentities ?? [{}]).map((identity, index) => ({
+                sha: `sha${index}`,
+                authorName: AUTHOR_BOT_COMMIT_NAME,
+                authorEmail: AUTHOR_BOT_COMMIT_EMAIL,
+                committerName: AUTHOR_BOT_COMMIT_NAME,
+                committerEmail: AUTHOR_BOT_COMMIT_EMAIL,
+                ...identity,
+            })),
         // The store read is ledgered so the gate-order pins below can prove the classification
         // read follows the object-store verification instead of merely preceding the push.
         objectStoreRewrites: () => {
@@ -507,6 +520,73 @@ describe('stack publication fencing', () => {
         }
     );
 
+    const OPEN_STACK = {
+        branch: 'agent/parent',
+        head: 'parent',
+        parentNumber: 12,
+        parentState: 'OPEN',
+        parentHead: 'parent',
+    } as const;
+
+    it.each<[string, FakeInput, RegExp]>([
+        [
+            'a non-fast-forward remote',
+            { remoteRead: { kind: 'present', sha: 'other' }, ancestor: false },
+            /non-fast-forward/,
+        ],
+        [
+            'an authorship mismatch',
+            { commitIdentities: [{ committerEmail: 'fixture@example.com' }], remoteRead: { kind: 'absent' } },
+            /recorded git identity/,
+        ],
+        ['an unreadable remote listing', { remoteRead: { kind: 'unreadable' } }, /remote listing was unreadable/],
+        [
+            'an absent remote branch beside an open pull request',
+            { existing: 41, remoteRead: { kind: 'absent' } },
+            /did not carry the branch/,
+        ],
+        ['an object-store rewrite', { objectStoreRewrites: { replaceRefs: 1 } }, /object-store rewrites/],
+    ])('leaves the stack parent unpinned when publication refuses %s', (_case, input, refusal) => {
+        const { port, calls } = fakePort(input);
+        port.stackBase = () => OPEN_STACK;
+        port.pinStackParent = (branch, number) => calls.push(`pin:${branch}:${number}`);
+        const read = port.existingOpenPullRequest;
+        port.existingOpenPullRequest = (branch) => {
+            const current = read(branch);
+            return current === undefined ? undefined : { ...current, baseRefName: 'agent/parent', headRefOid: 'abc' };
+        };
+
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(refusal);
+
+        expect(calls.some((call) => call.startsWith('pin:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+    });
+
+    it('pins the stack parent only after every pre-push refusal and before the push', () => {
+        const { port, calls } = fakePort();
+        let created = false;
+        port.stackBase = () => OPEN_STACK;
+        port.pinStackParent = (branch, number) => calls.push(`pin:${branch}:${number}`);
+        port.objectStoreRewrites = () => {
+            calls.push('objectStoreRewrites');
+            return { graftsFile: undefined, replaceRefs: 0 };
+        };
+        port.existingOpenPullRequest = () =>
+            created
+                ? { number: 88, title: DEFAULT_SUBJECT, body: '', baseRefName: 'agent/parent', headRefOid: 'abc' }
+                : undefined;
+        port.createPullRequest = () => {
+            created = true;
+            return 88;
+        };
+
+        expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+        const pin = calls.indexOf('pin:agent/12/work:12');
+        expect(pin).toBeGreaterThan(calls.indexOf('objectStoreRewrites'));
+        expect(pin).toBe(calls.indexOf('push:agent/12/work') - 1);
+    });
+
     it('refuses parent transition before push and unexpected child retargets', () => {
         const f = fakePort();
         let reads = 0;
@@ -625,8 +705,23 @@ const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
     ],
     [
         'a human-authored push delta',
-        { commitEmails: ['fixture-author@example.com'], remoteRead: { kind: 'absent' } },
-        /carries commits above base authored as fixture-author@example\.com/,
+        { commitIdentities: [{ authorEmail: 'fixture-author@example.com' }], remoteRead: { kind: 'absent' } },
+        /carries commits above base whose recorded git identity is not the stamped author App identity; offending commits: sha0 \(author email fixture-author@example\.com\)\./,
+    ],
+    [
+        'a push delta whose committer alone differs',
+        { commitIdentities: [{ committerEmail: 'fixture-committer@example.com' }], remoteRead: { kind: 'absent' } },
+        /offending commits: sha0 \(committer email fixture-committer@example\.com\)\./,
+    ],
+    [
+        'a push delta whose author name alone differs',
+        { commitIdentities: [{ authorName: 'Fixture Person' }], remoteRead: { kind: 'absent' } },
+        /offending commits: sha0 \(author name Fixture Person\)\./,
+    ],
+    [
+        'a push delta whose committer name alone differs',
+        { commitIdentities: [{ committerName: 'Fixture Person' }], remoteRead: { kind: 'absent' } },
+        /offending commits: sha0 \(committer name Fixture Person\)\./,
     ],
     [
         'a lane whose common dir carries a grafts file',
@@ -2070,6 +2165,110 @@ describe('lane publish', () => {
         expect(calls.some((call) => call.includes('enhancement'))).toBe(false);
     });
 
+    it.each(['constructor: x', 'feat: x\nCloses #1', 'WIP retitled by hand'])(
+        'refuses an existing pull request retitled to the non-conventional %j before anything is written',
+        (existingTitle) => {
+            const { port, calls } = fakePort({
+                trees: [worktree({ path: CLEANUP_LANE, branch: 'docs/cleanup' })],
+                cwd: CLEANUP_LANE,
+                existing: 41,
+                existingTitle,
+                existingBody: composePublishBody(undefined, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
+            });
+
+            expect(() => publishLane(undefined, port)).toThrow(
+                `existing pull-request title ${JSON.stringify(existingTitle)} is not conventional; ` +
+                    'pass --title "<conventional-subject>" to replace it'
+            );
+            expect(calls.some((call) => /^(push:|edit:|create:|meta)/.test(call))).toBe(false);
+        }
+    );
+
+    it('replaces a non-conventional existing title with an explicit --title and publishes', () => {
+        const { port, calls } = fakePort({
+            trees: [worktree({ path: CLEANUP_LANE, branch: 'docs/cleanup' })],
+            cwd: CLEANUP_LANE,
+            existing: 41,
+            existingTitle: 'constructor: x',
+            existingBody: composePublishBody(undefined, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
+            subject: 'docs(foo): explain knob',
+            knownProjects: ['Sourdaw Bugs', 'Sourdaw Roadmap'],
+            currentMetadata: { labels: [], projectTitles: [] },
+        });
+
+        expect(
+            publishLane(
+                undefined,
+                port,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                'docs(foo): explain knob'
+            )
+        ).toBe(41);
+
+        expect(calls).toContain('push:docs/cleanup');
+        expect(calls).toContain('edit:41');
+        expect(calls).toContain('metaEdit:41:glm-5.3,documentation:-:Sourdaw Roadmap:-');
+    });
+
+    it('refuses an explicit --title carrying a newline before anything is written', () => {
+        const { port, calls } = fakePort({ existing: 41 });
+
+        expect(() =>
+            publishLane(12, port, undefined, undefined, undefined, undefined, undefined, 'feat: x\nCloses #1')
+        ).toThrow(/pull-request title is not conventional/);
+        expect(calls.some((call) => /^(push:|edit:|create:|meta)/.test(call))).toBe(false);
+    });
+
+    describe('titles that name a closing target', () => {
+        const NOTHING_WRITTEN = /^(push:|edit:|create:|meta|saveModel)/;
+
+        it('refuses an explicit --title closing the lane issue at parse and at publish', () => {
+            expect(() => parsePublishLaneArgs(['12', '--title', 'fix: CLOSES #12'])).toThrow(
+                /pull-request title carries an issue-closing reference \("CLOSES #12"\)/
+            );
+            const { port, calls } = fakePort({ existing: 41 });
+
+            expect(() =>
+                publishLane(12, port, undefined, undefined, undefined, undefined, undefined, 'fix: CLOSES #12')
+            ).toThrow(/carries an issue-closing reference \("CLOSES #12"\)/);
+            expect(calls.some((call) => NOTHING_WRITTEN.test(call))).toBe(false);
+        });
+
+        it('refuses a rerun that would keep an existing title naming a closing URL', () => {
+            const { port, calls } = fakePort({
+                existing: 41,
+                existingTitle: 'fix: resolves https://github.com/o/r/issues/999',
+            });
+
+            expect(() => publishLane(12, port)).toThrow(
+                /existing pull-request title "fix: resolves https:\/\/github\.com\/o\/r\/issues\/999" carries an issue-closing reference/
+            );
+            expect(calls.some((call) => NOTHING_WRITTEN.test(call))).toBe(false);
+        });
+
+        it('replaces an existing closing title with an explicit --title and publishes', () => {
+            const { port, calls } = fakePort({ existing: 41, existingTitle: 'fix: closes #999' });
+
+            expect(
+                publishLane(12, port, undefined, undefined, undefined, undefined, undefined, 'fix: repair the knob')
+            ).toBe(41);
+            expect(calls).toContain('push:agent/12/work');
+        });
+
+        it('refuses a first publish whose newest lane subject names a closing target', () => {
+            const { port, calls } = fakePort({ subject: 'fix: Fixes owner/repo#999' });
+
+            expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(
+                /pull-request title carries an issue-closing reference \("Fixes owner\/repo#999"\)/
+            );
+            expect(calls.some((call) => NOTHING_WRITTEN.test(call))).toBe(false);
+        });
+    });
+
     it('checks a later --summary against the existing GitHub title, not the newest commit subject', () => {
         const { port, calls, bodies } = fakePort({
             existing: 41,
@@ -2155,12 +2354,13 @@ describe('lane publish', () => {
     });
 
     it('caps the refusal at eight named offending commits and counts the tail', () => {
-        const { port } = fakePort({ commitEmails: Array.from({ length: 10 }, () => 'fixture-author@example.com') });
+        const { port } = fakePort({
+            commitIdentities: Array.from({ length: 10 }, () => ({ authorEmail: 'fixture-author@example.com' })),
+        });
 
         const message = refusalMessage(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY));
 
-        expect(message).toContain('authored as fixture-author@example.com');
-        expect(message).toContain('sha7 fixture-author@example.com');
+        expect(message).toContain('sha7 (author email fixture-author@example.com)');
         expect(message).toContain('+2 more');
         expect(message).not.toContain('sha8');
     });
@@ -3920,6 +4120,14 @@ describe('lane publish', () => {
             expect(derivedLabelFromSubject('Knob polishing pass')).toBeUndefined();
         });
 
+        it.each(['constructor: x', 'toString: x', '__proto__: x', 'hasOwnProperty: x', 'valueOf(scope): x'])(
+            'derives no label or board from an object-prototype key posing as a type: %s',
+            (subject) => {
+                expect(derivedLabelFromSubject(subject)).toBeUndefined();
+                expect(derivedProjectFromSubject(subject)).toBeUndefined();
+            }
+        );
+
         it('derives the board an issueless lane belongs on from its type label', () => {
             expect(derivedProjectFromSubject('fix(audio): repair dropout')).toBe('Sourdaw Bugs');
             expect(derivedProjectFromSubject('feat(vcs): add identities')).toBe('Sourdaw Roadmap');
@@ -4364,17 +4572,32 @@ describe('lane publish', () => {
             expect(calls.some((call) => call.includes('bug'))).toBe(false);
         });
 
-        it('derives nothing from a manually retitled pull request', () => {
-            const { port, calls } = fakePort({
+        it('refuses a manually retitled pull request, and derives nothing from an unmapped corrected title', () => {
+            const input: FakeInput = {
                 trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
                 cwd: CLEANUP_LANE,
                 existing: 41,
                 existingTitle: 'Knob polishing pass',
                 existingBody: composePublishBody(undefined, 'Knob polishing pass', DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
                 currentMetadata: { labels: [], projectTitles: [] },
-            });
+            };
+            const refused = fakePort(input);
+            expect(() => publishLane(undefined, refused.port)).toThrow(/pass --title "<conventional-subject>"/);
+            expect(refused.calls.some((call) => /^(push:|edit:|meta)/.test(call))).toBe(false);
 
-            expect(publishLane(undefined, port)).toBe(41);
+            const { port, calls } = fakePort(input);
+            expect(
+                publishLane(
+                    undefined,
+                    port,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    'chore: polish knobs'
+                )
+            ).toBe(41);
 
             expect(calls).toContain('metaEdit:41:glm-5.3:-:-:-');
         });
@@ -4726,6 +4949,8 @@ describe('lane publish', () => {
 describe('push delta authorship gate', () => {
     const BRANCH = 'agent/12/authorship';
     const HUMAN_EMAIL = 'fixture@example.com';
+    /** A human commit made under the fixture's own config differs from the stamp in all four fields. */
+    const HUMAN_IDENTITY_MISMATCH = `author name Fixture, author email ${HUMAN_EMAIL}, committer name Fixture, committer email ${HUMAN_EMAIL}`;
 
     function commitInLane(lane: string, filename: string, message: string, author: 'bot' | 'human'): string {
         writeFileSync(join(lane, filename), `${filename}\n`);
@@ -4830,7 +5055,7 @@ describe('push delta authorship gate', () => {
                 publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
             );
 
-            expect(message).toContain(`authored as ${HUMAN_EMAIL}`);
+            expect(message).toContain(`committer email ${HUMAN_EMAIL}`);
             expect(message).toContain('pnpm lane:identity');
             expect(message).toContain(
                 `git rebase --rebase-merges --exec 'git commit --amend --reset-author --no-edit' ${f.baseSha}`
@@ -4838,6 +5063,73 @@ describe('push delta authorship gate', () => {
             expect(() => fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toThrow();
         } finally {
             dispose(f);
+        }
+    });
+
+    /** Commits with the App's identity except for the given overrides, so one field alone differs. */
+    function commitWithIdentity(lane: string, filename: string, overrides: NodeJS.ProcessEnv): string {
+        writeFileSync(join(lane, filename), `${filename}\n`);
+        fixtureGit(lane, ['add', '--', filename]);
+        execFileSync('git', ['commit', '--no-gpg-sign', '-m', `feat(gate): ${filename}`], {
+            cwd: lane,
+            env: fixtureGitEnv({
+                GIT_AUTHOR_NAME: AUTHOR_BOT_COMMIT_NAME,
+                GIT_AUTHOR_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+                GIT_COMMITTER_NAME: AUTHOR_BOT_COMMIT_NAME,
+                GIT_COMMITTER_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+                ...overrides,
+            }),
+            encoding: 'utf8',
+        });
+        return fixtureGit(lane, ['rev-parse', '--short', 'HEAD']);
+    }
+
+    it.each([
+        ['committer email', { GIT_COMMITTER_EMAIL: HUMAN_EMAIL }, `committer email ${HUMAN_EMAIL}`],
+        ['author name', { GIT_AUTHOR_NAME: 'Fixture Person' }, 'author name Fixture Person'],
+    ])('refuses a commit whose %s alone differs from the stamped identity', (_field, overrides, detail) => {
+        const f = authorshipFixture();
+        try {
+            commitInLane(f.lane, 'one.txt', 'feat(gate): bot commit', 'bot');
+            const offending = commitWithIdentity(f.lane, 'two.txt', overrides);
+
+            const message = refusalMessage(() =>
+                publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
+            );
+
+            expect(message).toContain(`offending commits: ${offending} (${detail}).`);
+            expect(message).toContain('as both author and committer');
+            expect(() => fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toThrow();
+        } finally {
+            dispose(f);
+        }
+    });
+
+    it('reads every identity field of each commit and fails closed on a malformed record', () => {
+        const record = ['abc1234', 'Name', 'a@example.com', 'Committer', 'c@example.com'].join('\0');
+        expect(parseCommitIdentities(`${record}\n`)).toEqual([
+            {
+                sha: 'abc1234',
+                authorName: 'Name',
+                authorEmail: 'a@example.com',
+                committerName: 'Committer',
+                committerEmail: 'c@example.com',
+            },
+        ]);
+        expect(parseCommitIdentities(`${['abc1234', 'Name', '', 'Committer', ''].join('\0')}\n`)[0]).toMatchObject({
+            authorEmail: '',
+            committerEmail: '',
+        });
+        expect(parseCommitIdentities('')).toEqual([]);
+        for (const malformed of [
+            'abc1234 a@example.com\n',
+            `${record}\n\n`,
+            `${['abc1234', 'Name', 'a@example.com', 'Committer'].join('\0')}\n`,
+            `${record}\0extra\n`,
+            `${['', 'Name', 'a@example.com', 'Committer', 'c@example.com'].join('\0')}\n`,
+            record,
+        ]) {
+            expect(() => parseCommitIdentities(malformed)).toThrow(/malformed commit identity record/);
         }
     });
 
@@ -4929,7 +5221,7 @@ describe('push delta authorship gate', () => {
                 publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
             );
 
-            expect(message).toContain(`authored as ${HUMAN_EMAIL}`);
+            expect(message).toContain(`committer email ${HUMAN_EMAIL}`);
             expect(message).not.toContain(FOREIGN_EMAIL);
             expect(fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toBe(remoteTip);
         } finally {
@@ -4976,7 +5268,7 @@ describe('push delta authorship gate', () => {
             // With only the parent head excluded, the gated range still condemns the merged
             // main-side commit; both resolved bases together are what clear it.
             const emails = (excluded: string[]) =>
-                f.port.commitAuthorEmails(f.lane, remoteTip, excluded, head).map((commit) => commit.email);
+                f.port.commitIdentities(f.lane, remoteTip, excluded, head).map((commit) => commit.authorEmail);
             expect(emails([f.baseSha])).toContain(FOREIGN_EMAIL);
             expect(emails([f.baseSha, mainSha])).not.toContain(FOREIGN_EMAIL);
 
@@ -5044,7 +5336,7 @@ describe('push delta authorship gate', () => {
             // `publishes a stack child of a merged parent whose retained commits only the parent-head
             // exclusion clears`.
             const emails = (excluded: string[]) =>
-                f.port.commitAuthorEmails(f.lane, remoteTip, excluded, head).map((commit) => commit.email);
+                f.port.commitIdentities(f.lane, remoteTip, excluded, head).map((commit) => commit.authorEmail);
             expect(emails([f.baseSha])).toContain(HUMAN_EMAIL);
             expect(emails([parentHead])).not.toContain(HUMAN_EMAIL);
 
@@ -5084,8 +5376,8 @@ describe('push delta authorship gate', () => {
             // which is exactly why the read alone cannot decide a push: the store is split.
             expect(
                 f.port
-                    .commitAuthorEmails(f.lane, f.baseSha, [f.baseSha, f.baseSha], humanHead)
-                    .map((commit) => commit.email)
+                    .commitIdentities(f.lane, f.baseSha, [f.baseSha, f.baseSha], humanHead)
+                    .map((commit) => commit.authorEmail)
             ).toContain(HUMAN_EMAIL);
 
             const message = refusalMessage(() =>
@@ -5114,8 +5406,8 @@ describe('push delta authorship gate', () => {
             writeFileSync(graftsPath, `${botHead} ${f.baseSha}\n`);
             expect(
                 f.port
-                    .commitAuthorEmails(f.lane, f.baseSha, [f.baseSha, f.baseSha], botHead)
-                    .map((commit) => commit.email)
+                    .commitIdentities(f.lane, f.baseSha, [f.baseSha, f.baseSha], botHead)
+                    .map((commit) => commit.authorEmail)
             ).not.toContain(HUMAN_EMAIL);
 
             const message = refusalMessage(() =>
@@ -5144,7 +5436,7 @@ describe('push delta authorship gate', () => {
                 publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
             );
 
-            expect(message).toContain(`${shortSha} ${HUMAN_EMAIL}`);
+            expect(message).toContain(`${shortSha} (${HUMAN_IDENTITY_MISMATCH})`);
             expect(message).toContain('pnpm lane:identity');
             // The remote branch already holds lane commits, so no rewrite command is offered at
             // all: the old remote-tip-rooted rebase replayed base-side commits as the App.
@@ -5180,7 +5472,7 @@ describe('push delta authorship gate', () => {
                 publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
             );
 
-            expect(message).toContain(`${shortSha} ${HUMAN_EMAIL}`);
+            expect(message).toContain(`${shortSha} (${HUMAN_IDENTITY_MISMATCH})`);
             expect(message).toContain('re-create the listed offending commits');
             expect(message).not.toContain('git rebase');
             expect(() => fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toThrow();
@@ -5213,7 +5505,7 @@ describe('push delta authorship gate', () => {
                 publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
             );
 
-            expect(message).toContain(`authored as ${HUMAN_EMAIL}`);
+            expect(message).toContain(`committer email ${HUMAN_EMAIL}`);
             expect(message).toContain(
                 `git rebase --rebase-merges --exec 'git commit --amend --reset-author --no-edit' ${mainSha}`
             );
@@ -5314,7 +5606,7 @@ describe('push delta authorship gate', () => {
             // resolved to main, only adding the parent-head exclusion clears what the child retained.
             expect(fixtureGit(f.lane, ['log', '--format=%ae', `${mainSha}..${head}`])).toContain(HUMAN_EMAIL);
             const emails = (excluded: string[]) =>
-                f.port.commitAuthorEmails(f.lane, mainSha, excluded, head).map((commit) => commit.email);
+                f.port.commitIdentities(f.lane, mainSha, excluded, head).map((commit) => commit.authorEmail);
             expect(emails([mainSha])).toContain(HUMAN_EMAIL);
             expect(emails([mainSha, landed.parentHead])).not.toContain(HUMAN_EMAIL);
 
@@ -5355,7 +5647,7 @@ describe('push delta authorship gate', () => {
             // refusal names only the lane's own human commit. A rebase onto main would replay the
             // parent's pre-squash commits re-authored as the App, so re-creation is the only
             // remedy offered.
-            expect(message).toContain(`${humanShortSha} ${HUMAN_EMAIL}`);
+            expect(message).toContain(`${humanShortSha} (${HUMAN_IDENTITY_MISMATCH})`);
             for (const sha of parentShortShas) {
                 expect(message).not.toContain(sha);
             }
@@ -5387,7 +5679,7 @@ describe('push delta authorship gate', () => {
                 publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
             );
 
-            expect(message).toContain('(empty author email)');
+            expect(message).toContain('author email (empty)');
             expect(() => fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toThrow();
         } finally {
             dispose(f);

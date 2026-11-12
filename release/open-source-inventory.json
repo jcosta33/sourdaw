@@ -74,6 +74,7 @@
                 "rust-toolchain.toml",
                 "tsconfig.app.json",
                 "tsconfig.e2e.json",
+                "tsconfig.eslint-config.json",
                 "tsconfig.eslint.json",
                 "tsconfig.json",
                 "tsconfig.scripts.json",
@@ -168,8 +169,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:3135c1befc711ec081d2680b4783b9ab7f9f0b3f73143429c1fe0fae4d1f2f4d:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:6f175db2c8a9c6b161726fcbd79b772a7f3537725489530e1eee69e18c5f37b5:release/dependency-license-proofs.json"
+                "sha256:b640b863db1fa8cb7a9d55a6cb3b798bf2395e11c34e63e71161e965fb318d84:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:d8cffa30ad711d95996e1b540631c8ae0d6e551ea0b9567baca07b95912e37c4:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -281,7 +282,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:8699a2bc66926ecc08621ec524328b7b138475064a18cde0c4a272a68afcf331",
+                "sha256:bc6999447c2fda05dce2f9510e3412eba1c2d82f66234746c5dea40dfe7c389a",
                 "sha256:d5943b73cb367ddf580983190df0e0c073383c75ebce9611aefb3340c1a380b7"
             ],
             "licenses": [
@@ -1212,8 +1213,8 @@
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:20bcf828794365a588f32d7e13808657502a13d0e8427a6543cf78c2cec789ce:grand-boule-discovery-catalog",
                 "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
-                "tracked-set-sha256:f6c8777df4577ebfc7d9c07c9b076c6643c06180ce928487ba51b1396b664bbe:grand-boule-live-runtime",
-                "tracked-set-sha256:689fed538a9379486ae0573c94ed344e6d5d4314dc60c5fe2535eb1733431be5:grand-boule-project-state",
+                "tracked-set-sha256:eaa809018aea8e96f598f3b55ad0711e475c6a79f06c87491af507ad88d346bd:grand-boule-live-runtime",
+                "tracked-set-sha256:ce12132e241739ab5ce1efe2b8093e28f2126e76ae68679267d335afb31cc0d4:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
                 "tracked-set-sha256:fdada292f3fbbf2b5cdd14ce381ac79cc710cebe78e05024e67861cfca822381:grand-boule-release-proof"
             ],
@@ -1858,7 +1859,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "512ef1dcced4af1a094c156ff41e22b910aca3bdbba7e8fd5ed73aa2ff2d1cbf"
+            "sha256": "cc324f3a33c951740cc602a8fd5c0450fcf72f04e66384ad109061f02ec89b81"
         },
         {
             "path": "server/package.json",
@@ -1870,7 +1871,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "8699a2bc66926ecc08621ec524328b7b138475064a18cde0c4a272a68afcf331"
+            "sha256": "bc6999447c2fda05dce2f9510e3412eba1c2d82f66234746c5dea40dfe7c389a"
         },
         {
             "path": "Cargo.toml",

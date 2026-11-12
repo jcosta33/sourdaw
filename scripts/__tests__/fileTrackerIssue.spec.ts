@@ -141,6 +141,23 @@ describe('renderIssueSubmission', () => {
         }
     });
 
+    it('refuses fields the form does not define, naming each unknown key', () => {
+        expect(() =>
+            renderIssueSubmission(parseIssueForm(load('campaign.yml')), {
+                title: 'feat(campaign): native plugins',
+                fields: {
+                    scope: 'plugins',
+                    priority: 'P2',
+                    objective: 'o',
+                    completion: 'c',
+                    authorities: 'a',
+                    stops: 's',
+                    sumary: 'typo',
+                },
+            })
+        ).toThrow('unknown field for this form: scope, sumary');
+    });
+
     it('rejects a missing required field', () => {
         expect(() =>
             renderIssueSubmission(parseIssueForm(load('feature_request.yml')), {
@@ -152,6 +169,12 @@ describe('renderIssueSubmission', () => {
 });
 
 describe('composeIssueTitle', () => {
+    it('substitutes a scope carrying replacement patterns literally', () => {
+        expect(composeIssueTitle('fix(scope): ', 'probe', 'a$&b')).toBe('fix(a$&b): probe');
+        expect(composeIssueTitle('fix(scope): ', 'probe', "a$'b$`c")).toBe("fix(a$'b$`c): probe");
+        expect(composeIssueTitle('fix(scope): ', 'fix(scope): probe', 'a$&b')).toBe('fix(a$&b): probe');
+    });
+
     it('does not double the form prefix', () => {
         expect(composeIssueTitle('spec(scope): ', 'spec(scope): mixer: mute', 'arrangement')).toBe(
             'spec(arrangement): mixer: mute'

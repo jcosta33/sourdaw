@@ -2,11 +2,13 @@
 name: crdt-collaboration
 description: >-
     Keep project truth, undo, persistence, and collaboration consistent through the
-    Automerge CRDT write path. ALWAYS apply when touching executeAppAction or undo,
-    CrdtDocument, CRDT-backed stores or persistence, .sdaw files, collaboration
-    sessions or transports, or projections between the document and stores — even
-    for a one-line store field. Skip pure presentational state, ephemeral UI, and
-    engine-internal RT buffers.
+    Automerge CRDT write path. ALWAYS apply when touching the document write path —
+    `executeAppAction` transactions, re-entering the transaction scope after an
+    `await`, undo inverses and `describe()`, projections between the document and
+    stores, CrdtDocument persistence and `.sdaw` files, or collaboration sessions and
+    transports. Skip classifying a value or choosing its owner (state-and-write-paths),
+    import and layer placement (architecture), ephemeral UI, and engine-internal RT
+    buffers.
 ---
 
 ## Purpose
@@ -17,11 +19,13 @@ Project truth is an Automerge document, not a pile of stores. One write path fee
 
 ### 1. Every project mutation goes through `executeAppAction`
 
-Each action executes inside an Automerge storage transaction and carries a semantic context (`setSemanticContext` from CrdtDocument) that becomes its history entry; that history is also the undo/audit log. No project-truth write outside this path — not "temporary", not "internal".
+Each action executes inside an Automerge storage transaction and carries a semantic context (`setSemanticContext` from CrdtDocument) that labels its Automerge change. No project-truth write outside this path — not "temporary", not "internal". A dispatch a person triggered enters through `executeUserAppAction` rather than a bare `executeAppAction` call (canonical: `ui-patterns` rule 8); programmatic, agent, and handler dispatch use `executeAppAction` directly.
 
-**Why:** a write that skips the transaction is invisible to undo, persistence, and merge — three features lost for the price of one shortcut.
+Undo is not Automerge history. It is an inverse-action stack beside the document: an undoable handler's `describe()` runs before `execute()` and returns the inverse `AppAction`; after the transaction commits, `executeAppAction` pushes the pair onto `undoStore`, and `undo` replays the inverse through `executeAppAction` with `skipUndo`, so an undo is itself an ordinary document write. State the document does not hold (audio buffers, for example) gets a callback entry through `pushUndoEntry`. The semantic context only labels the change; `actionHistoryStore` holds labelled entries without inverses and never serves as the undo log.
 
-**Enforced by:** `src/modules/Command/useCases/__tests__/executeAppAction.spec.ts` and `executeAppActionAbortRollback.spec.ts` for the transaction and abort contract; a bypassing write is review only.
+**Why:** a write that skips the transaction is invisible to undo, persistence, and merge — three features lost for the price of one shortcut. An inverse is captured only by the handler that knows the state it overwrites; no document history can reconstruct it after the fact.
+
+**Enforced by:** `src/modules/Command/useCases/__tests__/executeAppAction.spec.ts` (transaction contract, and `describe()` running before `execute()` with undo recorded only after it resolves), `executeAppActionAbortRollback.spec.ts` for abort, and `undo.spec.ts` (the inverse replays with `skipUndo`); a bypassing write is review only.
 
 ### 2. Re-enter the transaction scope after an `await`
 
@@ -53,13 +57,13 @@ Document lifecycle — create/load/save, branches, merge, semantic action histor
 
 **Enforced by:** `src/modules/CrdtDocument/useCases/projection/__tests__/projectionIsReadOnly.spec.ts` (a projection pass writes to the document only in slots declaring `derivedFromSiblingSlot`); the rest is review only.
 
-### 4. Dispatch the owning action; never `store.set` a CRDT-backed store
+### 4. Only the owner's write path, inside a transaction, writes a CRDT-backed store
 
-A `store.set(...)` on a projected or Automerge-persisted store "to just update the UI" is a defect. Dispatch the owning action; the transaction updates the document and the projection refreshes the store.
+A CRDT-backed (projected or Automerge-persisted) store is written only by its owning module's write path — a handler or use case — while that write runs inside an action's transaction: the synchronous part of `executeAppAction`, or a `scope(...)` captured before the first `await` (rule 2). Everywhere else, dispatch the owning action; the transaction updates the document and the projection refreshes the store. A `store.set(...)` from presentation, from a foreign module, or outside any action transaction "to just update the UI" is the defect. Canonical statement: `state-and-write-paths` rule 3.
 
-**Why:** a direct store write bypasses rule 1: the document, undo, persistence, and collaboration never see it.
+**Why:** a write outside the owner's transaction bypasses rule 1: the document, undo, persistence, and collaboration never see it.
 
-**Enforced by:** ESLint `sourdaw/no-foreign-store-write` (error) for foreign stores only; a write to a module's own CRDT-backed store is review only.
+**Enforced by:** ESLint `sourdaw/no-foreign-store-write` (error) for foreign stores only; an owner's write outside a transaction is review only.
 
 ### 5. The document holds serializable truth only
 
@@ -95,11 +99,11 @@ Transport, session, and presence belong to the Collaboration module; the documen
 
 ### 9. Merges converge automatically; meaning does not
 
-Automerge guarantees convergence of concurrent edits. It does not guarantee sensible undo or reviewable history — those come from the semantic context on each action (rule 1). When adding an action, write the label you would want in a history view.
+Automerge guarantees convergence of concurrent edits. It does not guarantee sensible undo or reviewable history. Sensible undo comes from the inverse each undoable handler's `describe()` returns (rule 1); readable history comes from the action's semantic context and its label. When adding an action, return an exact inverse from `describe()` and write the label you would want in a history view.
 
 **Why:** convergence without semantics yields a technically-consistent document nobody can explain.
 
-**Enforced by:** `src/modules/Command/useCases/__tests__/actionLabels.spec.ts` for the label map; label quality is review only.
+**Enforced by:** `src/modules/Command/useCases/__tests__/actionLabels.spec.ts` for the label map; inverse exactness and label quality are review only.
 
 ## References
 

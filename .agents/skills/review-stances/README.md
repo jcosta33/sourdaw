@@ -30,7 +30,10 @@ lessons for one defect class, and the matching key is the risk the stance attack
 files the diff touches. A stance carries the most specific matching file and never a broader one
 in addition; a stance matching no file dispatches without one. An escape attaches to every file
 whose probes participate in what would have caught it, or mints a new file for a defect class
-none covers.
+none covers. The directory stays a library reached through the reviewer brief and the index below,
+not a loadable skill: stances are derived per task and each reviewer carries exactly the one file
+the orchestrator chose, whereas a description-triggered skill would load files by surface match and
+turn the library back into a menu.
 
 Every stance file opens with a short lead naming its defect class, then `## Standing probes` as its
 first section: a numbered list of five to fifteen probes, each naming the failure mode, the input or
@@ -44,7 +47,52 @@ whose lead then names the absorbed class; one that no file contains stays separa
 under `## Scope`. When a probe or lesson moves to another file, leave a pointer to its new home (file
 and probe number) in a `## Relocated` section, the last section of the file it left.
 
-Release tracked-set drift lessons live in `release-provenance-drift.md`.
+A reviewer can read the fixed commit and bundle, read PR CI results with read-only `gh`, and run
+one focused guarded spec after one targeted mutation through the lane handoff below. It cannot
+install dependencies, regenerate WASM or other generated artifacts, run trusted GitHub-write or
+delivery scripts, take measurements, run desktop or hardware sessions, run Playwright, or run broad
+suites. A probe that needs any of those carries, right after its bold title, exactly one of
+`Runs: author.`, `Runs: orchestrator.`, or `Runs: CI; the reviewer reads <job> on the head.`, then
+says what the reviewer checks from the fixed commit instead.
+
+## Index
+
+This index is the contract for which file owns which failure mode; adding, merging or retiring a
+file updates its line in the same change.
+
+- [ai-request-authority.md](ai-request-authority.md): an AI-originated request reaches project state with authority or protections the user's text never granted.
+- [asset-cache-publication.md](asset-cache-publication.md): decoded or durable audio publishes after its target, source or authority changed, or loses residency early.
+- [async-file-imports.md](async-file-imports.md): an asynchronous import publishes without its request, project or budget authority, or skips autosave bookkeeping.
+- [audio-source-time.md](audio-source-time.md): a reader, edit or saved history selects a different source frame than playback does.
+- [audio-timing-format-laws.md](audio-timing-format-laws.md): tempo, parameter-frame, scheduled start or stop, MIDI or format output disagrees with an independent reference.
+- [bundled-model-assets.md](bundled-model-assets.md): a packaged model misses emitted weights, loses output windows, or breaks cold worker loading.
+- [closure-authority-proof.md](closure-authority-proof.md): a destructive closure acts on an unbound, moved, split or reinterpreted observation.
+- [code-craft.md](code-craft.md): a forbidden construct lands with nothing red: baselined file, missing rule, unobserved rule, or widened baseline.
+- [collaboration-teardown.md](collaboration-teardown.md): collaboration teardown, backup, handoff or receive-side sync acts on a runtime other than its own.
+- [command-entry-and-state-oracles.md](command-entry-and-state-oracles.md): a mutation bypasses Command, half-applies, or overlapping inputs act on state read before an earlier commit.
+- [correctness.md](correctness.md): a generic behavior or invariant break; the baseline every reviewer holds, never dispatched by name.
+- [guard-reclamation-proof.md](guard-reclamation-proof.md): the guard deletes or retains storage, or settles processes, on partial, stale or denied OS observations.
+- [input-monitoring-ownership.md](input-monitoring-ownership.md): capture and monitor owners outlive or lose committed intent, or unproving signals certify recording frames.
+- [keyboard-action-accessibility.md](keyboard-action-accessibility.md): a row's main action is pointer-only, sibling actions trigger it, or keyboard focus paints invisibly.
+- [maintained-e2e-specs.md](maintained-e2e-specs.md): a browser spec loses its locator or precondition, or runs against a foreign server, origin or build.
+- [meter-reading-ownership.md](meter-reading-ownership.md): a destructive meter read lets one consumer drain, borrow or invent another's measurement.
+- [moving-coordinate-inverses.md](moving-coordinate-inverses.md): an inverse, Redo, macro or reader recomputes coordinates against a basis the edit moved.
+- [project-integrity.md](project-integrity.md): saved, imported, recovered or delivered project truth disagrees with what the musician committed.
+- [provider-egress.md](provider-egress.md): provider requests or AI diagnostics leak credentials, misaccount usage, or cross the gateway after cancellation.
+- [public-repair-records.md](public-repair-records.md): repair replies or record values are admitted with wrong identity, ordering, serialization, diagnostics or credential material.
+- [release-provenance-drift.md](release-provenance-drift.md): a source, literal or merge edit leaves release digests or provenance records stale.
+- [rendered-ui-layout.md](rendered-ui-layout.md): rendered layout, paint, contrast or repeated rows differ from what class, state or data implies.
+- [replay-authority.md](replay-authority.md): Undo, Redo or a deferred continuation writes over truth other than the one it captured.
+- [review-authorization.md](review-authorization.md): review evidence keeps authorizing delivery after its artifacts, live state or token permissions stop supporting it.
+- [runtime-instance-lifetimes.md](runtime-instance-lifetimes.md): a continuation acts for a replaced instance, or a lifecycle control reads the wrong state.
+- [security-and-platform.md](security-and-platform.md): native authority, renderer trust, installer, toolchain or secret-scan boundaries admit unowned or unverified inputs.
+- [session-lifecycle.md](session-lifecycle.md): a transport, scheduler, pump or recording runtime acts for a lifetime the gesture or root no longer owns.
+- [startup-entry-availability.md](startup-entry-availability.md): startup leaves a blank document, or recovery repeats effects across a running document.
+- [test-observation-scope.md](test-observation-scope.md): a test observes truth in one place, or replaces the boundary its claim depends on.
+- [test-timing-and-isolation.md](test-timing-and-isolation.md): a verdict depends on elapsed time, unobserved deadline work, leaked state, or one terminal observation.
+- [test-validity.md](test-validity.md): a test passes without observing its subject: unadmitted entry, bypassed route, self-computed oracle, unfalsifiable pin.
+- [trusted-script-delivery.md](trusted-script-delivery.md): a trusted script runs through a substitute path, validates an unmerged tree, or overwrites shared Git publication state.
+- [validation-scope-selection.md](validation-scope-selection.md): a scope planner, collector or reporter covers different files or jobs than those that run or fail.
 
 ## Reviewer isolation
 
@@ -69,9 +117,9 @@ it without overwriting it. If a handoff or execution is unavailable, report the 
 named check, and limitation; the orchestrator arranges author execution. An unrun probe is not a
 pass, and no alternate worktree or clone is allowed.
 
-Run the probe through `pnpm test:run`, never `pnpm exec vitest run`: the same wrapper fails a run
-that collects no case or executes no assertion, while a bare vitest invocation can exit 0 on an
-empty collection and read as a pass.
+Run the probe through `pnpm guard --profile focused -- pnpm test:run <spec>`, never
+`pnpm exec vitest run`: the `test:run` wrapper fails a run that collects no case or executes no
+assertion, while a bare vitest invocation can exit 0 on an empty collection and read as a pass.
 
 Formatting must select the owned file from the owned checkout. Run the formatter with the lane as
 its working directory and lane-relative targets; an external installed formatter binary is fine.
@@ -116,8 +164,6 @@ behalf of", "as orchestrator", "in the capacity of"). Never cite check counts, h
 or tool-generated provenance artifacts. If the sentence could appear unchanged in a CI log,
 it does not belong in a review body.
 
-**Why:** across the September 2026 batch-fix campaigns, every approval body announced the
-orchestrator's identity chain, cited Gate check counts, and relied on the auto-generated
-evidence hash footer for substance. A teammate reading the PR saw process narration, not a
-review. The evidence prose was in the bundle all along — the failure was writing the body
-as an execution log instead of as the finding it should have been.
+**Why:** a body that announces the identity chain, cites Gate check counts, and leans on the
+generated evidence footer gives a teammate process narration instead of a review. The evidence
+already lives in the bundle; the body's job is the finding.

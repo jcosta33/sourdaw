@@ -2,7 +2,17 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+    lstatSync,
+    mkdirSync,
+    readFileSync,
+    readdirSync,
+    realpathSync,
+    renameSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -258,6 +268,90 @@ function launchFailure(observation: LaunchObservation, node: string, primaryRoot
     return undefined;
 }
 
+function assertCanonicalRuntimes(runtimes: string): void {
+    const stat = lstatSync(runtimes);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(runtimes) !== runtimes) {
+        throw new Error('cleanup runtime directory is not inside the primary checkout');
+    }
+}
+
+/** Symlinked entries are skipped, never followed, so pruning cannot reach outside the runtimes directory. */
+function pruneSupersededRuntimes(runtimes: string, current: string): void {
+    assertCanonicalRuntimes(runtimes);
+    for (const entry of readdirSync(runtimes, { withFileTypes: true })) {
+        const path = join(runtimes, entry.name);
+        if (path === current || !entry.isDirectory() || entry.isSymbolicLink()) {
+            continue;
+        }
+        rmSync(path, { recursive: true });
+    }
+}
+
+/** Puts back the job the failed install replaced, or leaves none when there was none before. */
+function restorePreviousJob(port: CleanupInstallationPort, plist: string, previous: string | undefined): void {
+    if (previous === undefined) {
+        rmSync(plist);
+        return;
+    }
+    atomicWrite(plist, previous);
+    port.run('/bin/launchctl', ['bootstrap', `gui/${port.uid}`, plist]);
+}
+
+function bootoutIfLoaded(port: CleanupInstallationPort, service: string): void {
+    try {
+        port.run('/bin/launchctl', ['bootout', service]);
+    } catch (error) {
+        if (
+            !(error instanceof Error) ||
+            !/Could not find service|service not found|No such process/i.test(error.message)
+        ) {
+            throw error;
+        }
+    }
+}
+
+/** Replaces any loaded job with the new plist and returns the launch failure, if any. */
+function activateCleanupJob(
+    port: CleanupInstallationPort,
+    service: string,
+    plist: string,
+    node: string,
+    root: string
+): string | undefined {
+    let loaded = false;
+    try {
+        port.capture('/bin/launchctl', ['print', service]);
+        loaded = true;
+    } catch (error) {
+        if (!(error instanceof Error) || !/Could not find service|service not found/i.test(error.message)) {
+            throw error;
+        }
+    }
+    if (loaded) {
+        port.run('/bin/launchctl', ['bootout', service]);
+    }
+    port.run('/bin/launchctl', ['bootstrap', `gui/${port.uid}`, plist]);
+    return launchFailure(observeFirstLaunch(port, service), node, root);
+}
+
+type CleanupRollback = { service: string; plist: string; previousPlist: string | undefined; runtime: string };
+
+function rollBackCleanupJob(port: CleanupInstallationPort, rollback: CleanupRollback, failure: Error): never {
+    let restoreFailure: string | undefined;
+    try {
+        bootoutIfLoaded(port, rollback.service);
+        restorePreviousJob(port, rollback.plist, rollback.previousPlist);
+    } catch (error) {
+        restoreFailure = error instanceof Error ? error.message : String(error);
+    }
+    if (restoreFailure !== undefined) {
+        // The installed plist may still name the new runtime, so it stays until a reinstall prunes it.
+        throw new Error(`${failure.message} The previous cleanup job could not be restored: ${restoreFailure}`);
+    }
+    rmSync(rollback.runtime, { recursive: true });
+    throw failure;
+}
+
 export function installCleanupLanes(port: CleanupInstallationPort): { plist: string; runtime: string } {
     if (port.platform !== 'darwin') {
         throw new Error('lane cleanup installation requires macOS launchd');
@@ -299,13 +393,7 @@ export function installCleanupLanes(port: CleanupInstallationPort): { plist: str
     const directory = cleanupDirectory(root);
     const runtimes = join(directory, 'runtimes');
     mkdirSync(runtimes, { recursive: true, mode: 0o700 });
-    if (
-        !lstatSync(runtimes).isDirectory() ||
-        lstatSync(runtimes).isSymbolicLink() ||
-        realpathSync(runtimes) !== runtimes
-    ) {
-        throw new Error('cleanup runtime directory is not inside the primary checkout');
-    }
+    assertCanonicalRuntimes(runtimes);
     for (const name of ['worker.log', 'worker-error.log']) {
         assertExclusiveCleanupLog(join(directory, name));
     }
@@ -328,27 +416,20 @@ export function installCleanupLanes(port: CleanupInstallationPort): { plist: str
     refreshCleanupLauncher(port, commit, directory);
     const agents = cleanupLaunchAgents(port.home);
     const plist = join(agents, `${CLEANUP_LABEL}.plist`);
+    const previousPlist = readCleanupFile(plist)?.bytes.toString('utf8');
     atomicWrite(plist, cleanupPlist(binding, runtime));
     const service = `gui/${port.uid}/${CLEANUP_LABEL}`;
-    let loaded = false;
+    const rollback: CleanupRollback = { service, plist, previousPlist, runtime };
+    let failure: string | undefined;
     try {
-        port.capture('/bin/launchctl', ['print', service]);
-        loaded = true;
+        failure = activateCleanupJob(port, service, plist, binding.node, root);
     } catch (error) {
-        if (!(error instanceof Error) || !/Could not find service|service not found/i.test(error.message)) {
-            throw error;
-        }
+        rollBackCleanupJob(port, rollback, error instanceof Error ? error : new Error(String(error)));
     }
-    if (loaded) {
-        port.run('/bin/launchctl', ['bootout', service]);
-    }
-    port.run('/bin/launchctl', ['bootstrap', `gui/${port.uid}`, plist]);
-    const failure = launchFailure(observeFirstLaunch(port, service), binding.node, root);
     if (failure !== undefined) {
-        port.run('/bin/launchctl', ['bootout', service]);
-        rmSync(plist);
-        throw new Error(failure);
+        rollBackCleanupJob(port, rollback, new Error(failure));
     }
+    pruneSupersededRuntimes(runtimes, runtime);
     return { plist, runtime };
 }
 

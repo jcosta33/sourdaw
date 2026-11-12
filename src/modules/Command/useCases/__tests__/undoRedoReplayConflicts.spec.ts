@@ -111,10 +111,11 @@ function callbackEntry(overrides: Partial<CallbackUndoEntry> = {}): CallbackUndo
 
 /** Rejects the inverses named here as guarded conflicts; applies every other. */
 function conflictOn(...actionTypes: readonly string[]): void {
-    mocks.executeAppAction.mockImplementation(async (action) => {
+    mocks.executeAppAction.mockImplementation(async (action, options) => {
         if (actionTypes.includes(action.type)) {
             throw new AppActionConflictError(action.type);
         }
+        options?.onCommitted?.();
     });
 }
 
@@ -180,7 +181,9 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
                 new AppActionCommittedError('toggleRecording', new Error('metadata write failed'))
             );
 
-            await expect(undo()).rejects.toBeInstanceOf(AppActionCommittedError);
+            const onCommitted = vi.fn();
+            await expect(undo({ onCommitted })).rejects.toBeInstanceOf(AppActionCommittedError);
+            expect(onCommitted).toHaveBeenCalledOnce();
 
             // The inverse landed in the document, so the entry must move to
             // `future`. Leaving it in `past` makes the next undo apply the
@@ -198,7 +201,9 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             mocks.undoStoreValue.value = { past: [older, conflicting], future: [] };
             conflictOn('toggleRecording');
 
-            await expect(undo()).resolves.toEqual({ headConsumed: false });
+            const onCommitted = vi.fn();
+            await expect(undo({ onCommitted })).resolves.toEqual({ headConsumed: false });
+            expect(onCommitted).not.toHaveBeenCalled();
 
             // Only the head's inverse is attempted. The step-over gate (#2881)
             // admits the unit beneath only when its inverse handler is flagged
@@ -235,6 +240,7 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             expect(mocks.executeAppAction).not.toHaveBeenCalled();
             expect(mocks.executeAppActionBatch).toHaveBeenCalledWith([second.inverseAction, first.inverseAction], {
                 undoEntryIds: ['g-second', 'g-first'],
+                onCommitted: expect.any(Function),
                 skipUndo: true,
                 skipMacroRecording: true,
                 source: 'manual',
@@ -318,7 +324,9 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             mocks.undoStoreValue.value = { past: [older, conflicting], future: [] };
             conflictOn('setTrackGain');
 
-            await expect(undo()).resolves.toEqual({ headConsumed: false });
+            const onCommitted = vi.fn();
+            await expect(undo({ onCommitted })).resolves.toEqual({ headConsumed: false });
+            expect(onCommitted).toHaveBeenCalledOnce();
 
             // The conflicted head is attempted, then exactly one step onto the
             // conflict-capable unit beneath it — whose inverse handler can

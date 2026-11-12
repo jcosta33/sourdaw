@@ -30,27 +30,30 @@
 //   days old — the honest idle signal: a lane with no local commits carries
 //   `origin/main`'s date, and a lane with fresh commits is being worked.
 
-import { spawnSync } from 'node:child_process';
-import { realpathSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFileSync, realpathSync, rmSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
     AUTHOR_LOCK_REASON,
-    assertTrustedExecutingBlob,
     originMainBlob,
     removalLockPid,
     resolvePrimaryRoot,
+    spawnCapture,
 } from './githubAppIdentity.ts';
-import { fail } from './prContract.ts';
+import { laneIsActive } from './laneActivity.ts';
+import { canonicalPath, fail } from './prContract.ts';
 import {
+    capture as captureRemoval,
     disposableIgnored,
     inside,
+    listIgnored,
     parseWorktrees,
     resolveLaneTarget,
-    type ShellCaptureOptions,
+    type ShellRunner,
     type Worktree,
 } from './removeLane.ts';
+import { trustedLocalImportClosure } from './trustedGithubWriteBootstrap.ts';
 
 export const PRUNE_USAGE =
     'usage: pnpm lane:prune <worktree-path> | pnpm lane:prune --all | pnpm lane:prune --stale-days <days>';
@@ -115,9 +118,19 @@ export function parsePruneArgs(args: string[]): PruneArgs {
     return fail(PRUNE_USAGE);
 }
 
-/** The ignored entries pruning may delete: exactly the output lane removal tolerates discarding. */
+/**
+ * The ignored entries pruning may delete: exactly the output lane removal tolerates discarding, and
+ * never a directory holding an entry it does not — deleting `dist/` would take `dist/.env` with it.
+ */
 export function prunableEntries(ignored: string[]): string[] {
-    return ignored.filter((entry) => disposableIgnored(entry));
+    const kept = ignored.filter((entry) => !disposableIgnored(entry));
+    return ignored.filter(
+        (entry) => disposableIgnored(entry) && !kept.some((other) => other.startsWith(directoryPrefix(entry)))
+    );
+}
+
+function directoryPrefix(entry: string): string {
+    return entry.endsWith('/') ? entry : `${entry}/`;
 }
 
 /**
@@ -243,48 +256,22 @@ export function pruneFleet(port: LanePrunePort, staleDays?: number): FleetPruneO
     return outcome;
 }
 
-export type PruneShell = {
-    capture: (command: string, args: string[], options?: ShellCaptureOptions) => string;
-};
+export type PruneShell = Pick<ShellRunner, 'capture'>;
 
-/** The machine-wide `lsof` listing outgrows spawnSync's 1 MiB default, which would fail with ENOBUFS. */
-const CAPTURE_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
-
-export function capture(command: string, args: string[], options?: ShellCaptureOptions): string {
-    const result = spawnSync(command, args, {
-        cwd: process.cwd(),
-        encoding: 'utf8',
-        shell: false,
-        maxBuffer: CAPTURE_MAX_BUFFER_BYTES,
-    });
-    if (result.error !== undefined) {
-        throw result.error;
-    }
-    if (result.status !== 0) {
-        throw new Error(result.stderr.trim() || `${command} failed with exit ${result.status ?? 'signal'}`);
-    }
-    return options?.preserveStdout === true ? result.stdout : result.stdout.trim();
-}
+/** Removal's capture: pinned system lsof/ps, bounded inspection time, and incomplete-census refusal. */
+export const capture = captureRemoval;
 
 export function shellPort(shell: PruneShell = { capture }): LanePrunePort {
     return {
-        worktrees: () => parseWorktrees(shell.capture('git', ['worktree', 'list', '--porcelain', '-z'])),
+        worktrees: () =>
+            parseWorktrees(shell.capture('git', ['worktree', 'list', '--porcelain', '-z'])).map((worktree) => ({
+                ...worktree,
+                path: canonicalPath(worktree.path, realpathSync),
+            })),
         currentDirectory: () => realpathSync(process.cwd()),
-        active: (path) => {
-            let pid: number | undefined;
-            // Without `-d cwd` lsof lists every open file, the working directory included, so a
-            // build holding lane files open from elsewhere counts as using the lane.
-            for (const line of shell.capture('lsof', ['-nP', '-F', 'pn']).split('\n')) {
-                if (line.startsWith('p')) {
-                    pid = Number(line.slice(1));
-                    continue;
-                }
-                if (line.startsWith('n') && pid !== process.pid && inside(path, line.slice(1))) {
-                    return true;
-                }
-            }
-            return false;
-        },
+        // The same complete same-user census removal trusts: any open file or working directory
+        // under the lane, from any process, keeps a live build's artifacts in place.
+        active: (path) => laneIsActive(path, shell),
         processAlive: (pid) => {
             try {
                 process.kill(pid, 0);
@@ -299,15 +286,7 @@ export function shellPort(shell: PruneShell = { capture }): LanePrunePort {
             return date === '' ? undefined : date;
         },
         // `-z` is the byte-faithful form: no quoting, so an unusual path can never be misread.
-        ignored: (path) =>
-            shell
-                .capture(
-                    'git',
-                    ['-C', path, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'],
-                    { preserveStdout: true }
-                )
-                .split('\0')
-                .filter((entry) => entry !== ''),
+        ignored: (path) => listIgnored(path, shell),
         deleteEntry: (lane, entry) => {
             rmSync(resolve(lane, entry), { recursive: true, force: true });
         },
@@ -315,6 +294,24 @@ export function shellPort(shell: PruneShell = { capture }): LanePrunePort {
             console.log(message);
         },
     };
+}
+
+/**
+ * Prune's deletion authority lives as much in `removeLane.ts` and the rest of its import closure as
+ * in its entry file, so every file it loads must be the approved origin/main source, as the cleanup
+ * installer requires of its runtime.
+ */
+export function assertTrustedClosure(
+    entry: string,
+    readLocal: (path: string) => string,
+    readOrigin: (path: string) => string | undefined
+): void {
+    for (const path of trustedLocalImportClosure(entry, readOrigin)) {
+        const approved = readOrigin(path);
+        if (approved === undefined || readLocal(path) !== approved) {
+            throw new Error(`${path} does not match origin/main; refusing to run a mutated copy`);
+        }
+    }
 }
 
 function main(): number {
@@ -326,10 +323,11 @@ function main(): number {
             return 0;
         }
         const cwd = process.cwd();
-        assertTrustedExecutingBlob(
+        const commit = spawnCapture('git', ['rev-parse', 'origin/main^{commit}'], { cwd });
+        assertTrustedClosure(
             'scripts/pruneLane.ts',
-            fileURLToPath(import.meta.url),
-            originMainBlob('scripts/pruneLane.ts', cwd)
+            (path) => readFileSync(join(dirname(dirname(fileURLToPath(import.meta.url))), path), 'utf8'),
+            (path) => originMainBlob(path, cwd, undefined, 'git', commit)
         );
         if (parsed.mode === 'lane') {
             const target = resolveLaneTarget(parsed.target, resolvePrimaryRoot());

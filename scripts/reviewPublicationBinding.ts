@@ -17,9 +17,8 @@ import {
     reviewBundlePath,
     type ReviewBundleContext,
 } from './prepareReview.ts';
-import { reconstructReviewRounds } from './reconstructReviewRounds.ts';
 import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
-import { changedReviewPaths, numstatFromPatch } from './reviewDiffSummary.ts';
+import { changedReviewPaths } from './reviewDiffSummary.ts';
 import {
     REVIEW_DOSSIER_FORMAT,
     appendReviewDossierEvents,
@@ -37,7 +36,7 @@ import {
 } from './reviewDossierViews.ts';
 import { recordedReviewStands } from './reviewPublicationRemoteInspection.ts';
 import { parseReviewRiskPlan, planReviewRisk, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
-import { assertReviewRoundsBelowFreeze, countReviewerRequestChangesRounds } from './reviewRoundEscalation.ts';
+import { assertReviewRoundsBelowFreeze, countReviewerRequestChangesRoundsInHistory } from './reviewRoundEscalation.ts';
 import { assertReviewDrawFloor, assertReviewEvidenceClaimsSafe } from './reviewStructuralAdmission.ts';
 
 import type { PublishReviewPort } from './publishReview.ts';
@@ -45,6 +44,11 @@ import type { ReviewState } from './pullRequestReviewState.ts';
 import type { DeliveryAuthorization, ReviewDocument } from './reviewDocumentParser.ts';
 
 const REVIEW_RISK_PLAN_NAME = 'risk-plan.json';
+/**
+ * The merge of #4399, when `review:prepare` began writing risk plans. A pull request opened at or
+ * after it has always been prepared with a plan, so a plan-less bundle for it is a deleted plan.
+ */
+export const PLANLESS_REVIEW_BUNDLE_CUTOVER = '2026-09-19T06:51:45Z';
 const REVIEW_DOSSIER_NAME = 'dossier.json';
 /** Caller documents the retired contract required; ADR 0054 reads none of them. */
 const RETIRED_CALLER_DOCUMENTS = ['stances.json', 'discarded.json', 'reassessment.json'] as const;
@@ -92,23 +96,39 @@ function assertReviewRiskPlanBindsBundle(number: number, head: string, plan: Rev
 }
 
 /**
- * A fresh publication recomputes the plan from the bundle's own diff with the planner
- * `review:prepare` used, so a hand-edited `risk-plan.json` cannot lower the floor it is held to.
- * Replays and recovered bindings are exempt: they post nothing and answer to the record they bound.
+ * A fresh publication binds the bundle to live git objects and recomputes the plan from them with
+ * the planner `review:prepare` used, so neither a hand-edited `risk-plan.json`, a replaced
+ * `diff.patch`, nor a moved `baseSha` can lower the floor it is held to or steer the comment
+ * preflight. The plan's `baseSha` is already bound to the manifest; here it must equal the live
+ * merge base. Replays and recovered bindings are exempt: they post nothing and answer to the record
+ * they bound.
  */
-function assertReviewRiskPlanMatchesDiff(plan: ReviewRiskPlan, bundle: string, port: PublishReviewPort): void {
+function assertReviewRiskPlanMatchesLiveDiff(
+    number: number,
+    plan: ReviewRiskPlan,
+    bundle: string,
+    port: PublishReviewPort
+): void {
+    if (port.liveReviewComparison === undefined) {
+        fail('a fresh review publication requires the port to read the live comparison from git objects');
+    }
+    const live = port.liveReviewComparison(number, plan.headSha);
+    const reprepare = `; re-run pnpm review:prepare ${number}`;
+    if (live.mergeBase !== plan.baseSha) {
+        fail(`review risk plan baseSha ${plan.baseSha} is not the live merge base ${live.mergeBase}${reprepare}`);
+    }
+    if (port.readBundleDiff(join(bundle, 'diff.patch')) !== live.patch) {
+        fail(`bundle diff.patch differs from git diff ${plan.baseSha}...${plan.headSha}${reprepare}`);
+    }
     const derived = planReviewRisk({
         pr: plan.pr,
         headSha: plan.headSha,
         baseSha: plan.baseSha,
-        paths: changedReviewPaths(
-            port.primaryRoot(),
-            numstatFromPatch(port.readBundleDiff(join(bundle, 'diff.patch')))
-        ),
+        paths: changedReviewPaths(port.primaryRoot(), live.numstat),
     });
     if (derived.riskClasses.join(',') !== plan.riskClasses.join(',')) {
         fail(
-            `review risk plan riskClasses ${plan.riskClasses.join(', ')} differ from the ${derived.riskClasses.join(', ')} the bundle diff.patch earns`
+            `review risk plan riskClasses ${plan.riskClasses.join(', ')} differ from the ${derived.riskClasses.join(', ')} the live diff earns`
         );
     }
 }
@@ -138,8 +158,11 @@ function observedReviewRoundCount(number: number, head: string, port: PublishRev
     }
     const reviews = port.publicReviews;
     const comments = port.publicReviewComments;
-    return countReviewerRequestChangesRounds(
-        reconstructReviewRounds(number, { state: 'OPEN', head }, reviews(number), comments(number))
+    return countReviewerRequestChangesRoundsInHistory(
+        number,
+        { state: 'OPEN', head },
+        reviews(number),
+        comments(number)
     );
 }
 
@@ -226,10 +249,36 @@ function bundleRecordedPublicationId(bundle: string, port: PublishReviewPort): n
 type DossierPublicationContext = {
     number: number;
     head: string;
+    /** The live pull request's GitHub `createdAt`, read with its head; only a plan-less bundle needs it. */
+    createdAt?: string;
     bundle: string;
     document: ReviewDocument;
     port: PublishReviewPort;
 };
+
+/** Milliseconds since the epoch for a GitHub UTC timestamp, or `undefined` when it is absent or not one. */
+function readableInstant(timestamp: string | undefined): number | undefined {
+    if (timestamp === undefined || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(timestamp)) {
+        return undefined;
+    }
+    const instant = Date.parse(timestamp);
+    return Number.isNaN(instant) ? undefined : instant;
+}
+
+/** A fresh plan-less publication is admitted only for a pull request GitHub records as opened before the cutover. */
+function assertPlanlessBundlePredatesRiskPlans(number: number, planPath: string, createdAt: string | undefined): void {
+    const opened = readableInstant(createdAt);
+    if (opened === undefined) {
+        fail(
+            `missing review risk plan at ${planPath} and pull request #${number} has no readable createdAt; re-run pnpm review:prepare ${number}`
+        );
+    }
+    if (opened >= Date.parse(PLANLESS_REVIEW_BUNDLE_CUTOVER)) {
+        fail(
+            `missing review risk plan at ${planPath}: pull request #${number} was opened at ${createdAt}, after risk plans began (${PLANLESS_REVIEW_BUNDLE_CUTOVER}); re-run pnpm review:prepare ${number}`
+        );
+    }
+}
 
 function readReviewDossierBuildInput(
     input: DossierPublicationContext
@@ -242,6 +291,7 @@ function readReviewDossierBuildInput(
         if (readBundleGeneratedSet(input.bundle)?.has(REVIEW_RISK_PLAN_NAME) === true) {
             fail(`missing review risk plan at ${planPath}; the bundle manifest records generating it`);
         }
+        assertPlanlessBundlePredatesRiskPlans(input.number, planPath, input.createdAt);
         logIgnoredCallerDocuments(input.bundle, undefined, input.port);
         return undefined;
     }
@@ -268,7 +318,7 @@ export function prepareReviewDossierPublication(input: DossierPublicationContext
     }
     const publication = buildReviewDossier(buildInput);
     if (publishedReviewId(publication.dossier) === undefined) {
-        assertReviewRiskPlanMatchesDiff(buildInput.plan, input.bundle, input.port);
+        assertReviewRiskPlanMatchesLiveDiff(input.number, buildInput.plan, input.bundle, input.port);
         assertReviewDrawFloor(buildInput.plan, completedStances(publication.dossier));
     }
     persistCanonicalReviewDossier(publication, input.bundle, input.port);
@@ -312,6 +362,11 @@ export function recordedPublicationReplay(
     const recorded = publishedReviewId(dossier);
     if (recorded === undefined) {
         return undefined;
+    }
+    if (dossier.pr !== number || dossier.headSha !== head) {
+        fail(
+            `review dossier records pr ${dossier.pr} head ${dossier.headSha}, not pull request ${number} head ${head}; refusing to replay it`
+        );
     }
     if (port.remoteReview === undefined) {
         fail(`review publication ${recorded} is recorded but the port has no review inspector to replay it`);

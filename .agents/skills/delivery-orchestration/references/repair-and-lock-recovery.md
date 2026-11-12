@@ -132,8 +132,12 @@ paths.
 
 ## Review-publication lock recovery
 
-`review:publish` and `review:accept` serialize each PR with their own owner ref.
-A run that dies after the journal records `remote-mutation-attempted` but before
+`review:publish` and `review:accept` serialize each PR on the same per-PR mutation ref as
+`deliver`, `refs/sourdaw/delivery/pr-<n>` (`pullRequestMutationLockRef` in
+`scripts/pullRequestMutationLock.ts`). The owner it records names the operation holding the ref,
+so `deliver --recover-lock` refuses an owner a review publication left, with
+`delivery lock recovery requires a delivery lock owner`; recover that owner with
+`review:publish:recover`. A run that dies after the journal records `remote-mutation-attempted` but before
 GitHub answers leaves a dead owner that recovery can neither release nor replace
 with a releasable one: the journal cannot prove the POST never landed, so the
 default refusal has to hold, and adoption only re-creates the same refusal.

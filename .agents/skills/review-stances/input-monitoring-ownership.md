@@ -22,9 +22,8 @@ hardware audibility. Runtime-session companions live in `session-lifecycle.md`.
    reuse (attach to whatever exists, ignore the key) and the assertion reddens. Ownership half: a per-track edge and
    a per-key stream are released exactly once; one key's failed acquisition does not disturb another key's source,
    edge or pending grant.
-2. **A refused monitoring Off must retain the admitted capture (`e21d1877c780`, `4f410257b212`, #4255, #5091).**
-   The setter and the toggle released eagerly before commit (#4255 narrowed the global stop to per-track but kept
-   the pre-commit release; #5091 review exposed it). Start with committed and admitted On for two tracks sharing
+2. **A refused monitoring Off must retain the admitted capture (#4255, #5091).** The setter and the toggle
+   released capture eagerly before commit. Start with committed and admitted On for two tracks sharing
    capture; invoke a real Off gesture inside the actual CRDT transaction; while projection is Off and committed
    state is On, reject and abort the write: both original source edges stay connected with no stop or
    reacquisition, projection returns to On. A committed Off releases only its owner; final Off stops the shared
@@ -57,8 +56,8 @@ hardware audibility. Runtime-session companions live in `session-lifecycle.md`.
    depended on that reset before master teardown and `context.close()`. Through the real reset and dispose callers
    with two controlled captures and a throwing first source: both tracks stopped, graph owners and sends retired,
    the original error retained; disposal attempts every master disconnect, awaits one close and returns the same
-   terminal result on repeat; late-grant rejection stays a separate reset case. Removal faults (#4255, #4449, #5091
-   `1297f963`): through real Command removal, fault targeted and whole-source disconnect independently and together;
+   terminal result on repeat; late-grant rejection stays a separate reset case. Removal faults (#4255, #4449, #5091):
+   through real Command removal, fault targeted and whole-source disconnect independently and together;
    inspect retained captures, modeled source edges and MediaStreamTrack.stop. Last-owner release attempts every
    terminal step while reporting errors; a failed removed edge preserves the shared survivor until its own release.
    Delete two shared owners after an empty optimistic projection and throw from the first targeted disconnect:
@@ -69,9 +68,10 @@ hardware audibility. Runtime-session companions live in `session-lifecycle.md`.
    through `mutateCrdtDoc` while `a` is absent from the optimistic projection. Before commit or abort, `a`'s obsolete
    key and edge retire immediately; a shared eligible `b` keeps the same capture, edge and stream; in the last-owner
    case the old input stops. Do not recreate the absent strip or request permission again. Abort re-admits the
-   current input; commit removes `a`; a same-input abort retains its original owner and capture. #4449's keyed owner
-   retargeted a key only on explicit start, and #5011's Auto-only sweep left direct On outside it (#5091 fixed
-   retirement, #5380 proof).
+   current input; commit removes `a`; a same-input abort retains its original owner and capture. A keyed owner that
+   retargets only on explicit start, or a sweep covering only Auto owners, must fail
+   `src/modules/AudioEngine/repositories/audioRecorder/__tests__/removeTrackInputMonitoring.integration.spec.ts`
+   "retires a hidden On owner after a committed selector change before its shared-input removal commits".
 7. **Committed Undo restores the monitoring runtime too (#5091).** Strip reconstruction alone does not restore the
    capture owners. Admit two On tracks through the real recorder, delete one and Undo, then remove all and Undo;
    inspect raw membership and modes, the store projection, actual owners, source connections and stream stops.
@@ -79,14 +79,14 @@ hardware audibility. Runtime-session companions live in `session-lifecycle.md`.
    a fresh stream after last-owner release. Refuse restore storage, run an isolated preview, and inject a
    published-then-throwing restore: only committed, still-present On owners rearm; denied reacquisition leaves
    restored truth and Undo success intact. Reverting either restore commit hook must redden its runtime assertion.
-   Head `319cc5b5f8` still read the optimistic store after awaited strip effects: hold a second real storage
-   transaction projecting On over a committed Off restoration and abort it; neither normal nor ambiguous restore
+   Restore admission must read committed state after awaited strip effects, not the optimistic store: hold a second
+   real storage transaction projecting On over a committed Off restoration and abort it; neither normal nor ambiguous restore
    may request capture, retain an owner or connect an edge. Change the committed selected input during the strip
    await and while permission is pending: admission uses current committed intent and a late grant attaches only
    current owners of that input. Include a shared pending survivor and last-owner removal so rejecting one stale
    restore cannot orphan another owner's capture.
-8. **Grants settle against current committed intent (#5091 heads `fac4a4f061`, `2511d0c172`, `b2e7491d`,
-   `3b1c0ad9`, `e9672c7966`, `71221839`).** Each head fenced one more window.
+8. **Grants settle against current committed intent (#5091).** A permission grant that settles later must
+   re-check committed deletion, Off, selector, kind, arm and root identity at settlement, in every window below.
     - Ordinary On grants: hold two direct On owners on one pending input, commit deletion of one, commit the
       survivor's input selector change, then grant the old request: it connects neither the removed nor the
       switched owner and the selected input keeps the survivor's admitted intent. Repeat without a reconciliation
@@ -101,17 +101,17 @@ hardware audibility. Runtime-session companions live in `session-lifecycle.md`.
       recreating the strip, and rollback attaches the original grant with no second request. Disarm, Off, input
       change, committed deletion, non-audio Auto and playback without recording still reject it; a monitoring hold
       keeps an eligible retained grant detached until resume. On-only absence and already-granted Auto probes miss it.
-    - Pre-commit On over committed disarmed Auto (`b2e7491d`): begin the gesture in a real storage transaction,
+    - Pre-commit On over committed disarmed Auto: begin the gesture in a real storage transaction,
       delete the authoritative owner while the On row stays projected, then grant before abort: no strip or edge,
       and the unused stream stops once. Pair a still-present owner and a shared pending survivor; an isolated
       runtime without a committed provider is a separate positive control.
-    - Stale On after supersession (`3b1c0ad9`): presence alone did not protect current intent. Hold the optimistic
+    - Stale On after supersession: presence alone did not protect current intent. Hold the optimistic
       gesture over committed Auto, commit each supersession (Off, input replacement), grant the old request before
       abort: zero strip creation, edges, owners and captures, one orphan-stream stop. A relevant committed mode,
       input, kind or arm change takes authority; unchanged Auto/Off and an unrelated commit still permit the gesture.
       Pair shared survivors and an already-admitted selected-input replacement so rejecting the old grant cannot
       retire current permission authority.
-    - Root replacement (`e9672c7966`, `71221839`): replace the installed root while an optimistic On grant over
+    - Root replacement: replace the installed root while an optimistic On grant over
       committed disarmed Auto is pending, keeping track ID, mode, input, kind and arm; repeat after real Command Undo
       restores On and returned `headConsumed`. Each outgoing grant stops unused with no strip, edge, owner or
       capture in the successor; a fresh successor On admission then connects both same-input owners with the stale
@@ -133,7 +133,6 @@ hardware audibility. Runtime-session companions live in `session-lifecycle.md`.
    keeps committed owners while pending, and a successful retry finalizes only its removed owner. Abort and replace
    the project root with a reused track ID: observe observer retirement, then publish a later removal to prove the
    outgoing finalizer cannot tear down the recreated strip.
-
 10. **Worker-ready recording admission reaches the real first-frame seam.** Capture started from a worker-ready
     continuation while the command already returned success before the worklet captured input. Hold worker readiness
     through the real recorder-to-transport route and drive the first nonempty processor block at a known
@@ -155,8 +154,7 @@ hardware audibility. Runtime-session companions live in `session-lifecycle.md`.
 13. **Recording artifact identity is independent of wall-clock time.** Generate one cryptographically unique temp-file
     name at worker initialization. Run two isolated workers sharing a filename-keyed staged OPFS at one timestamp:
     each delivered WAV keeps its own PCM, and removing one staging entry does not remove the other's.
-
-14. **Automatic punch retains its physical terminal frame (#4897, #5891; unpublished #5381).** Drive the actual
+14. **Automatic punch retains its physical terminal frame (#4897, #5891).** Drive the actual
     recording processor/session-owned ring with frame-coded input through off-tick out; require the last exclusive
     out frame and stored source window, including held MIDI in one group. A synthesized terminal buffer or scheduled
     stop proves neither. Removing the frontier wait must lose that frame. Keep first-frame handle release separate
@@ -164,10 +162,14 @@ hardware audibility. Runtime-session companions live in `session-lifecycle.md`.
     wait for their own sounded target and latency-adjusted frontier; first publication/forecast-only observations
     stay pending, while a genuine refusal retains full muted PCM and its visible diagnostic without certifying native
     placement or borrowing browser timing. Pair pending→valid,
-    real Stop, history-gap recovery and teardown; no hardware audibility claim. Historical private tiers/prompts
-    are unestablished. Authenticate the actual chosen MIDI row incarnation after fresh arm/recreation/insertion,
+    real Stop, history-gap recovery and teardown; no hardware audibility claim. Authenticate the actual chosen MIDI row incarnation after fresh arm/recreation/insertion,
     preserving original second-clip/loop-nearest candidates and original-onset late release. See
-    `session-lifecycle.md` probe12 for carrier/occurrence ownership.
+    `session-lifecycle.md` probe 12 for carrier and occurrence ownership.
+15. **Optimistic removal cannot retire active recording input.** Cancel a typed removal after its first write, then
+    drive actual MIDI and Stop. Reattach only this automatic gesture's exact unsubmitted root, raw-row and buffer
+    owner at admission and Stop; no projection sweep or successor attachment. Same-ID replacements cannot receive old
+    note, expression or controller input. Committed removal before and after submission and all-slots-removed Stop
+    remain positives.
 
 ## Retired lessons
 

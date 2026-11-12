@@ -685,15 +685,12 @@ function restoredDevices(
  * its alternative lanes.
  */
 function writeTrackClipState(entry: TrackClipStateSnapshot): void {
-    // The snapshot's `clips`, `devices` and `alternatives` structurally satisfy their
-    // declared element types while actually carrying the whole cloned objects — the
-    // same convention `handleRestoreClip` casts through for a single clip.
     updateTrack(entry.trackId, (track) => {
         const liveByClipId = liveClipsById(track);
         const liveByDeviceId = liveDevicesById(track);
         return {
             ...track,
-            clips: restoredClips(entry.clips, liveByClipId) as never,
+            clips: restoredClips(entry.clips, liveByClipId),
             kind: entry.trackFields.kind,
             devices: restoredDevices(entry.trackFields.devices, liveByDeviceId),
             frozen: entry.trackFields.frozen,
@@ -705,7 +702,7 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
             alternatives: entry.trackFields.alternatives.map((alternative) => ({
                 ...alternative,
                 clips: restoredClips(alternative.clips, liveByClipId),
-            })) as never,
+            })),
         };
     });
 

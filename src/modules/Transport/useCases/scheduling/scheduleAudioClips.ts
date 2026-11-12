@@ -24,6 +24,7 @@ import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import { type TempoChange, tempoMapStore } from '../../stores/tempoMapStore';
 import { cutSource } from '../playheadScheduler/cutSource';
+import { retireSupersededMidiMedia } from '../playheadScheduler/retireSupersededMidiMedia';
 import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
 import { gainNodePool } from './audioClipSchedulingState';
@@ -704,7 +705,9 @@ export function scheduleAudioClips(
     scheduledFrozenTracks: Set<string>,
     activeAudioSources: AudioBufferSourceNode[],
     transport: TransportState,
-    initialSchedulingAnchor?: number
+    initialSchedulingAnchor?: number,
+    mediaOwnerTransition = false,
+    onlyTrackId?: string
 ): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
@@ -758,27 +761,30 @@ export function scheduleAudioClips(
         (transport.isLooping === true && fromBeat === transport.loopStart) ||
         playheadInWrapHandover;
 
-    // Every track's superseded sources are cut before any track emits. An
-    // edit's replacement need not sit on the track or span it cut — a clip
-    // moved to another track, or nudged — and a dedup key dropped by a later
-    // track's cut would otherwise still read as emitted to an earlier track.
+    // Every selected track's superseded sources are cut before any selected
+    // track emits. An edit's replacement need not sit on the track or span it
+    // cut — a clip moved to another track, or nudged — and a dedup key dropped
+    // by a later track's cut would otherwise still read as emitted to an
+    // earlier track. A completed-MIDI handoff selects one track; the ordinary
+    // whole-window pass selects them all.
     const audioTracks: { track: (typeof tracks)[number]; parts: ResolvedAudioPart[] }[] = [];
+    const unfrozenTracks: (typeof tracks)[number][] = [];
     let cutAny = false;
     for (const track of tracks) {
-        if (track.kind !== 'audio') {
+        if (
+            (track.kind !== 'audio' && track.kind !== 'midi') ||
+            (onlyTrackId !== undefined && track.id !== onlyTrackId)
+        ) {
             continue;
         }
-        if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
-            continue;
-        }
-
         if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
             // Key by content, not just track.id (same contract as
             // scheduleMidiNotes): an unfreeze → refreeze keeps the track id but
             // replaces frozenBufferId, and a bare-id key would keep the dedup
             // entry and leave the refrozen track silent for the whole session.
             const frozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
-            if (!scheduledFrozenTracks.has(frozenKey)) {
+            const maySound = !track.muted || track.sends.some((send) => send.preFader && busTrackIds.has(send.busId));
+            if (track.kind === 'audio' && maySound && !scheduledFrozenTracks.has(frozenKey)) {
                 const scheduled = scheduleFrozenTrack(
                     track,
                     accumulatedPosition,
@@ -791,9 +797,21 @@ export function scheduleAudioClips(
                     scheduledFrozenTracks.add(frozenKey);
                 }
             }
+            cutAny =
+                retireSupersededMidiMedia(
+                    [track],
+                    ctx,
+                    scheduledAudioClipsSet,
+                    scheduledFrozenTracks,
+                    activeAudioSources
+                ) || cutAny;
             continue;
         }
 
+        unfrozenTracks.push(track);
+        if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
+            continue;
+        }
         const parts = resolveClipsWithComping(track.id, track.clips);
         cutAny = cutSupersededParts(track.id, parts, scheduledAudioClipsSet, activeAudioSources, ctx) || cutAny;
         audioTracks.push({ track, parts });
@@ -808,8 +826,22 @@ export function scheduleAudioClips(
     // it through the late branch; the dedup set keeps every part an earlier
     // pass emitted from starting again. A window that floors to its own start
     // (a wrap handover or landing) holds nothing before it to rejoin, and a
-    // pass that cut nothing leaves the window rules alone.
-    const rejoinsAtPlayhead = cutAny && !floorsToWindowStart && accumulatedPosition < fromBeat;
+    // pass that cut nothing leaves the window rules alone. The scheduler can
+    // retire a MIDI owner after an awaited rack emission and report that
+    // transition here; direct callers still have their superseded owner here,
+    // so detect it without changing the replacement-onset retirement below.
+    const supersededOwnerPresent = retireSupersededMidiMedia(
+        unfrozenTracks,
+        ctx,
+        scheduledAudioClipsSet,
+        scheduledFrozenTracks,
+        activeAudioSources,
+        'detect'
+    );
+    const rejoinsAtPlayhead =
+        (cutAny || mediaOwnerTransition || supersededOwnerPresent) &&
+        !floorsToWindowStart &&
+        accumulatedPosition < fromBeat;
 
     for (const { track, parts: resolvedAudioClips } of audioTracks) {
         const compensation = getCompensationDelay(track.id);
@@ -897,4 +929,5 @@ export function scheduleAudioClips(
             }
         }
     }
+    retireSupersededMidiMedia(unfrozenTracks, ctx, scheduledAudioClipsSet, scheduledFrozenTracks, activeAudioSources);
 }
