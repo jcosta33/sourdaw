@@ -3,13 +3,17 @@
 Defects where saved, replayed, imported or recovered project truth disagrees with what the musician committed: Save
 certifying data that is not durable, admission accepting what hydration discards, saved history rows whose captured
 relations no longer bind after reload, identity namespaces colliding across reload, imports losing source material,
-recovery replacing a running project, and a saved value missing from the first visible control. Project truth is the
-CRDT root; stores, engine state and session history are its projections or witnesses. Drive production actions and
-real Automerge bytes (save, binary reload, fresh projections, hydrated history) and read raw CRDT truth beside every
-projection; a probe that mocks the owner, starts at epoch 0 or stays in memory observes none of these boundaries.
+recovery replacing a running project, a saved value missing from the first visible control, a cold reopen bypassing
+the project's own original, and runtime delivery admitting stored material the project does not declare. Project
+truth is the CRDT root; stores, engine state and session history are its projections or witnesses. Drive production
+actions and real Automerge bytes (save, binary reload, fresh projections, hydrated history) and read raw CRDT truth
+beside every projection; a probe that mocks the owner, starts at epoch 0 or stays in memory observes none of these
+boundaries.
+
 Split out (a stance matching one carries that file, not this one): replay against foreign or replaced truth in
 `replay-authority.md`; Command entry, state oracles and regeneration footprints in
-`command-entry-and-state-oracles.md`. Runtime-monitor companions live in `session-lifecycle.md`.
+`command-entry-and-state-oracles.md`; runtime-monitor companions in `session-lifecycle.md` and
+`input-monitoring-ownership.md`.
 
 ## Standing probes
 
@@ -110,23 +114,26 @@ Split out (a stance matching one carries that file, not this one): replay agains
    expected revision. Every restoration route, ownerless and private bypass included, against active project
    identity, canonical document contents and catalog selection.
 10. **Recovery and retry must preserve the running project, history and bound undo (#3338, #5595, #3356).**
-    Failure: recovery navigates, replaces, or restores outgoing undo onto a different document truth. Probe: failed
-    branch switch whose durable recovery selects a third branch: final active document and undo history agree
-    (exact rollback is the positive control). Unavailable-entry recovery or initial App rejection on a same-tab
-    saved project with future-side Undo: same identity, raw/projected owners, PCM digests, witness-bound history,
-    successful Undo/Redo, new document (`performance.timeOrigin` changed). Corrupt retry-budget storage fails
-    closed with one budget across host and child; a late entry error to a dirty running project navigates and
-    consumes nothing.
+    Runs: CI; the reviewer reads the "Affected end-to-end" jobs on the head for the same-tab recovery cases, and
+    runs the branch-switch and retry-budget cases under the focused guard. Failure: recovery navigates, replaces, or
+    restores outgoing undo onto a different document truth. Probe: failed branch switch whose durable recovery
+    selects a third branch: final active document and undo history agree (exact rollback is the positive control).
+    Unavailable-entry recovery or initial App rejection on a same-tab saved project with future-side Undo: same
+    identity, raw/projected owners, PCM digests, witness-bound history, successful Undo/Redo, new document
+    (`performance.timeOrigin` changed). Corrupt retry-budget storage fails closed with one budget across host and
+    child; a late entry error to a dirty running project navigates and consumes nothing.
 11. **A saved parameter reaches the first visible control without optional engine registration (#5749; restore
-    paths from #109 and #4169).** Failure: a saved Proof scalar first appears at its default until optional engine
-    registration hydrates the cache. Probe: save a non-default parameter, close the page, and reopen the explicitly
-    saved snapshot in a fresh runtime before playback or editing; assert the exact value on the visible control.
-    Separately seed the persisted row, clear the module cache and mount the actual panel without bridge
-    registration; assert the same value; while mounted, reset the cache with the saved disclosure tier equal to the
-    default tier and assert the saved value again before a gesture. Reverting only the panel restoration call must
-    fail the cold-value case. Preserve validated read-only rehydration, initialized live state, stale-owner refusal
-    and live meters, with no engine or project write; unconditional UI admission and a genuine saved snapshot
-    prevent a vacuous pass. UI evidence does not establish audible behavior or engine acceptance.
+    paths from #109 and #4169).** Runs: CI; the reviewer reads the "Affected end-to-end" jobs on the head for the
+    page-reopen case and runs the mounted-panel cases under the focused guard. Failure: a saved Proof scalar first
+    appears at its default until optional engine registration hydrates the cache. Probe: save a non-default
+    parameter, close the page, and reopen the explicitly saved snapshot in a fresh runtime before playback or
+    editing; assert the exact value on the visible control. Separately seed the persisted row, clear the module
+    cache and mount the actual panel without bridge registration; assert the same value; while mounted, reset the
+    cache with the saved disclosure tier equal to the default tier and assert the saved value again before a
+    gesture. Reverting only the panel restoration call must fail the cold-value case. Preserve validated read-only
+    rehydration, initialized live state, stale-owner refusal and live meters, with no engine or project write;
+    unconditional UI admission and a genuine saved snapshot prevent a vacuous pass. UI evidence does not establish
+    audible behavior or engine acceptance.
 12. **A cold reopen reopens the project's own original before any library or peer (#5778).** Failure: resolving a
     missing asset reads an authorized mapped library or asks a peer although the project already durably owns the
     verified original, so revoking the grant or ending the session takes the source with it. Probe: save a mapped
@@ -135,68 +142,41 @@ Split out (a stance matching one carries that file, not this one): replay agains
     Blob or a still-authorized library file cannot stand in for the project's durable owner. Removing the
     owner-scoped lookup must fail that cold case; keep lease and journal cleanup, alias and PCM protection, and
     terminal retry fences.
-
-## Device automation must retain its current admitted owner
-
-### Ordinary content publication is not root replacement
-
-PR #1648's track-snapshot fence retired runtime ownership on ordinary immutable edits; PR #3847's
-later boolean extraction preserved that behavior. Historical private reviewer prompts, stances and
-tiers are unestablished. Distinguish an installed-root change from immutable track/base edits,
-ancillary child membership, same-lineage peer merge and rollback. Those content publications may
-replace projections while retaining the current root.
-
-A driving lane becoming Off, disabled or removed must resolve its present eligible owner and
-restore that owner's latest saved base, including a peer or typed manual base edit. Pair these
-preservation cases with an actual same-ID/same-content root reinstall and a same-root arrangement
-switch after real transport teardown. Require no outgoing restoration or bypass edge in the new
-owner. Durable IDs and equal bytes do not establish runtime ownership; a fabricated token cannot
-prove the root/session producers.
-
-### Stored keys do not establish descriptor membership
-
-Playback first admitted every stored key in `4f410257b212bbbd2210fa6553f7aaa3394f69bc`; GitHub reports
-no associated PR. Restoration independently introduced that predicate
-in PR #807. PR #831 later bound the global parameter law while deliberately retaining pass-through for a missing
-descriptor; it did not introduce the original omission. Historical private reviewer
-prompts, stances and tiers are unestablished. Connected cases observed runtime writes for an unknown
-Bacteria key and bogus Yeast/Knead keys despite their absent automation declarations.
-
-For a known descriptor, both delivery and Off/disabled/removed-lane restoration must require a
-declared automatable member AND the existing internal-key denial. Probe a valid member beside an
-unknown stored key, an empty descriptor, and a driving receipt whose same-ID owner loses parameter
-admission. Require no invalid runtime write and exact raw/project, semantic/session history and
-macro preservation. Keep the deliberately unknown-family compatibility control and hosted-plugin
-asymmetry: delivery requires its attached published parameter, while restoration invents no
-separate manual base. Narrowing the global law would change unrelated consumers.
-
-### Linked material belongs to the resolved source
-
-`2a0e594f94d36a6e1898a8a567b6b9c5de2ca0d9` introduced linked lanes and a getter that resolved the
-source before checking the follower's local points. Transport retained the opposite empty-points
-gate. GitHub reports no associated PR; historical private reviewer prompts, stances and tiers are
-unestablished. The later cycle guard in `f16dd649e90` and offline parity in PR #765 did not introduce
-that live caller mismatch. A connected witness delivered the valid source's `macro1 = 0.8` but
-omitted the follower's expected `mix = 0.4`.
-
-Carry an empty follower through track playback and clip ownership using real admitted scaled source
-material. Require its exact terminal runtime event and unchanged raw lanes, links, parameter bases,
-semantic/session history and active macro recording. Keep dangling/cyclic/nonlinked-empty refusals,
-Off/disabled/recording gates, and held-versus-source-material duplicate controls. A local empty
-array is not absent linked material, and admitting a link must not revive an invalid source or
-suppress the wrong target. These are required probes; selective gate mutations were not run here.
+13. **Stored keys do not establish descriptor membership (#807, #831).** Failure: playback delivery or
+    Off/disabled/removed-lane restoration admits every stored automation key, so an unknown Bacteria key or bogus
+    Yeast/Knead keys reach the runtime although their descriptors declare no such automatable parameter. Probe: for a
+    known descriptor, require a declared automatable member AND the existing internal-key denial on both delivery and
+    restoration. Drive a valid member beside an unknown stored key, an empty descriptor, and a driving receipt whose
+    same-ID owner loses parameter admission: no invalid runtime write, and raw/project, semantic/session history and
+    macro state unchanged. Carrier positives use admitted parameters (Bacteria `mix`), with an independent real Knead
+    refusal; a declared-values-only fixture cannot expose the permissive fallback, and forcing a carried predicate on
+    Crumbs (an ordinary Web route whose native fallback refuses) cannot prove a native body exists. Keep the unknown-family
+    compatibility control and the hosted-plugin asymmetry (delivery requires its attached published parameter;
+    restoration invents no separate manual base); narrowing the global parameter law would change unrelated
+    consumers. Removing the membership conjunct must fail the unknown-key case.
+14. **Linked automation material belongs to the resolved source.** Failure: the linked-lane getter resolves
+    the source before checking the follower's local points, while Transport keeps an empty-points early return, so a
+    follower with no points of its own delivers nothing (a valid source's `macro1 = 0.8` arrived, the follower's
+    scaled `mix = 0.4` did not). Probe: carry an empty follower, without dummy points, through track playback and
+    clip ownership using real admitted scaled source material; require its exact terminal runtime event on both
+    routes and unchanged raw lanes, links, parameter bases, semantic/session history and active macro recording.
+    Keep dangling, cyclic and nonlinked-empty refusals, Off/disabled/recording gates, and held-versus-source
+    duplicate controls. A local empty array is not absent linked material; admitting a link must not revive an
+    invalid source or suppress the wrong target. A getter value alone is not follower playback evidence; restoring
+    the empty-points early return must fail both routes.
 
 ## Retired lessons
 
 - Chord migration base copies locked chorded projects (#1857) → enforced by
   `src/app/__tests__/captureCommandBatchPreflightState.spec.ts` ("admits a chord track whose migration base");
   scope rule stays in probe 6.
-- Aborted graph repair must restore monitoring from the committed root (#5286) → enforced by
-  `src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts`.
-- A projected absence is not a committed deletion (#5283) → enforced by
-  `src/modules/AudioEngine/repositories/audioRecorder/__tests__/removeTrackInputMonitoring.integration.spec.ts`
-  ("retires a hidden On owner after a committed selector change").
-- A declared Body choice never entered the worklet schema (#5254) → enforced
-  by `src/modules/AudioEngine/worklets/__tests__/bacteriaProcessor.spec.ts` and
-  `src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts` (see `security-and-platform.md` Retired lessons);
-  the producer-to-worklet admission rule stays in `correctness.md` probe 9.
+
+## Relocated
+
+- Ordinary content publication is not root replacement for device automation ownership (#1648, #3847):
+  `session-lifecycle.md` probe 9.
+- Aborted graph repair restoring monitoring from the committed root (#5286): `input-monitoring-ownership.md`
+  Retired lessons.
+- A projected absence is not a committed deletion for input owners (#5283): `input-monitoring-ownership.md` probe 6.
+- A declared Body choice never entered the worklet schema (#5254): `security-and-platform.md` Retired lessons; the
+  producer-to-worklet admission rule is `correctness.md` probe 9.

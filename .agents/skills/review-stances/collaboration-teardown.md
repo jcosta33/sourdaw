@@ -2,7 +2,7 @@
 
 Defects where a collaboration session's teardown, staged backup, asset handoff or receive-side sync acts on a runtime
 other than the one that began it, or reports progress that was never durable or transported. Split out of
-`session-lifecycle.md`; probes moved from the `crdt-collaboration` skill.
+`session-lifecycle.md`.
 Each probe names the failure mode, the input or state to drive and the check that must go red, and names the
 mutation that must fail it where its source lesson established one. Controlled ports (media, graph, scheduler,
 wall-clock) prove ordering, ownership and cleanup; they never establish physical hardware audibility.
@@ -45,10 +45,8 @@ wall-clock) prove ordering, ownership and cleanup; they never establish physical
    owner and persistence work, with scheduling and queued execution both fenced against stop or source disconnect.
    A stopped or disconnected runtime never revives a queue, while a live host still relays accepted content to its
    other connected peers.
-6. **A cold media request reopens the project owner before any transfer (#5778).** A cold session could ask a peer for
-   an asset the project already owned once its mapped-library grant and the session that authorized it were gone.
-   Copy an original into project ownership, revoke the mapped grant, end the transfer session and reopen the project
-   cold: request the hash through the real caller and require the exact verified bytes with zero `asset.request`. A
-   resident Blob or a still-authorized library file cannot satisfy it. Removing the durable-owner lookup must fail
-   the unchanged cold case; preserve lease and journal cleanup, alias and PCM guards, and terminal retry fences
-   across recovery and teardown.
+
+## Relocated
+
+- A cold media request reopening the project's own original before any peer transfer (#5778):
+  `project-integrity.md` probe 12.

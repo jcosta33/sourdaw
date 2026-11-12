@@ -57,6 +57,15 @@ type RecordingSessionState = {
     activeRecording: Map<string, RecordingSession>;
     /** Points buffered during a session, flushed to the store on release/stop. */
     pendingPoints: Map<string, AutomationPoint[]>;
+    /**
+     * Producer ledger for `pendingPoints`: the recording owner (or undefined
+     * for ownerless samples, a class of its own) that pushed each buffered
+     * point, index-for-index with the point array. Every site that creates,
+     * clears, or flushes a `pendingPoints` entry keeps this aligned, so a
+     * discard can remove only the discarding producer's own samples without
+     * destroying points other producers recorded into the same per-key buffer.
+     */
+    pendingOwners: Map<string, Array<symbol | undefined>>;
     /** Keys whose parameter is currently being touched (touch/latch arm). */
     touchActive: Set<string>;
     /**
@@ -73,6 +82,7 @@ function createRecordingSessionState(): RecordingSessionState {
     return {
         activeRecording: new Map<string, RecordingSession>(),
         pendingPoints: new Map<string, AutomationPoint[]>(),
+        pendingOwners: new Map<string, Array<symbol | undefined>>(),
         touchActive: new Set<string>(),
         laneBaselines: new Map<string, AutomationPoint[]>(),
     };
@@ -87,5 +97,6 @@ const sessionState: RecordingSessionState = createRecordingSessionState();
 // recording use-cases mutate directly (`.clear()`/`.set()`/`.get()`/`.add()`).
 export const activeRecording = sessionState.activeRecording;
 export const pendingPoints = sessionState.pendingPoints;
+export const pendingOwners = sessionState.pendingOwners;
 export const touchActive = sessionState.touchActive;
 export const laneBaselines = sessionState.laneBaselines;

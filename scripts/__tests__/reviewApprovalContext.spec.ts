@@ -8,6 +8,15 @@ import { AUTHOR_BOT_NODE_ID, GITHUB_HTTPS_REMOTE, spawnCapture } from '../github
 import { shellPort } from '../publishReview.ts';
 import { writeLaneStack, type LaneStack } from '../stackedLanes.ts';
 
+/**
+ * A host git wrapper can keep writing under .git after `git commit` returns (git-ai records
+ * attribution notes in refs/notes/ai from a background process), so a single removal pass races it
+ * and throws ENOTEMPTY; Node's removal retries let the writer finish.
+ */
+function removeFixture(root: string): void {
+    rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+}
+
 function fixture(parentMergedAt: string | null = '2026-09-13', env: NodeJS.ProcessEnv = {}) {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-approval-context-'));
     const git = (args: string[]) => spawnCapture('git', args, { cwd: root });
@@ -126,7 +135,7 @@ describe('real shell approval context', () => {
                 expect(JSON.stringify(f.calls)).not.toContain(token);
                 expect(existsSync(join(f.root, 'git-credential-github'))).toBe(false);
             } finally {
-                rmSync(f.root, { recursive: true, force: true });
+                removeFixture(f.root);
             }
         }
     );
@@ -138,7 +147,7 @@ describe('real shell approval context', () => {
             expect(f.read()).toEqual(f.context);
             expect(f.calls.some((args) => args.includes('fetch') && args.includes(f.advancedMain))).toBe(true);
         } finally {
-            rmSync(f.root, { recursive: true, force: true });
+            removeFixture(f.root);
         }
     });
 
@@ -162,7 +171,7 @@ describe('real shell approval context', () => {
             }
             expect(f.read).toThrow();
         } finally {
-            rmSync(f.root, { recursive: true, force: true });
+            removeFixture(f.root);
         }
     });
 
@@ -173,7 +182,7 @@ describe('real shell approval context', () => {
             expect(f.read()).toEqual(f.context);
             expect(f.calls.some((args) => args.includes('--paginate') && args.includes('--slurp'))).toBe(true);
         } finally {
-            rmSync(f.root, { recursive: true, force: true });
+            removeFixture(f.root);
         }
     });
 
@@ -199,8 +208,59 @@ describe('real shell approval context', () => {
                 }
                 expect(f.read).toThrow();
             } finally {
-                rmSync(f.root, { recursive: true, force: true });
+                removeFixture(f.root);
             }
         }
     );
+});
+
+describe('real shell live review comparison', () => {
+    function compare(f: ReturnType<typeof fixture>) {
+        const port = shellPort(
+            { configDir: f.root, env: {}, dispose: () => undefined },
+            f.root,
+            (command, args, options) => {
+                if (command === 'gh' && args[0] === 'pr') {
+                    return JSON.stringify(f.live);
+                }
+                if (args.includes('fetch')) {
+                    return '';
+                }
+                return spawnCapture(command, args, options);
+            }
+        );
+        if (port.liveReviewComparison === undefined) {
+            throw new Error('missing real-shell live comparison reader');
+        }
+        return port.liveReviewComparison(42, f.head);
+    }
+
+    it('reads the merge base, patch and numstat from git objects, against a stack parent base too', () => {
+        const f = fixture();
+        try {
+            f.live.baseRefName = 'agent/parent';
+            f.live.baseRefOid = f.advancedMain;
+            const live = compare(f);
+            expect(live.mergeBase).toBe(f.base);
+            expect(live.patch).toBe(
+                spawnCapture('git', ['diff', `${f.base}...${f.head}`], { cwd: f.root, trim: false })
+            );
+            expect(live.patch).toContain('+++ b/child');
+            expect(live.numstat.toString('utf8')).toBe('1\t0\tchild\0');
+        } finally {
+            removeFixture(f.root);
+        }
+    });
+
+    it('refuses when the pull request no longer stands at the publication head', () => {
+        const f = fixture();
+        try {
+            f.live.headRefOid = f.advancedMain;
+            expect(() => compare(f)).toThrow(
+                `fresh review publication requires pull request #42 to stand at head ${f.head}`
+            );
+        } finally {
+            removeFixture(f.root);
+        }
+    });
 });

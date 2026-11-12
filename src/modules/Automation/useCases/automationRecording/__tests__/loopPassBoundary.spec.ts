@@ -7,7 +7,7 @@ import { createAutomationLane } from '../../../models/Automation';
 import { automationStore } from '../../../stores/automationStore';
 import { recordAutomationValue } from '../recordAutomationValue';
 import { setAutomationRecordingDependencies } from '../recordingDependencies';
-import { activeRecording, laneBaselines, pendingPoints, touchActive } from '../recordingSessionState';
+import { activeRecording, laneBaselines, pendingOwners, pendingPoints, touchActive } from '../recordingSessionState';
 import { stopAutomationRecording } from '../stopAutomationRecording';
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -95,6 +95,7 @@ describe('automation recording across a loop boundary', () => {
     beforeEach(() => {
         activeRecording.clear();
         pendingPoints.clear();
+        pendingOwners.clear();
         touchActive.clear();
         laneBaselines.clear();
         setAutomationRecordingDependencies({

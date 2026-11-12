@@ -1,19 +1,34 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { leaveSession } from '#/modules/Collaboration/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { clearUndoHistory, resetActionReplayAuthority, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
 import {
+    clearActionHistory,
     createCrdtDoc,
+    getCrdtDoc,
+    markActionHistoryEntryReverted,
+    recordActionHistoryEntry,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import {
     crustMeterStore,
@@ -71,12 +86,29 @@ function projectParameter(deviceId: string, parameter: string): number | undefin
     return projectDevice(deviceId)?.parameterValues?.[parameter];
 }
 
+function rawParameter(deviceId: string, parameter: string): number | undefined {
+    const root = getCrdtDoc<{ tracks: { tracks: NonNullable<typeof trackStore.value>['tracks'] } }>('root');
+    return root?.tracks.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId)
+        ?.parameterValues[parameter];
+}
+
 async function expectCrustParameter(deviceId: string, parameter: string, value: number): Promise<void> {
     await waitFor(() => expect(projectParameter(deviceId, parameter)).toBe(value));
 }
 
 describe('Crust rendered project controls', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
+        setNotificationEventBus(
+            createEventBus<{
+                'ui.notify': NotifyPayload;
+                'ui.confirm': ConfirmPayload;
+                'ui.prompt': PromptPayload;
+            }>()
+        );
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+        const transition = runProjectLoadTransaction();
+        expect(await transition.prepare()).toBe(true);
+        expect(transition.activate()).toBe(true);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Crust control integration');
         removeCrdtDoc('root');
@@ -84,6 +116,14 @@ describe('Crust rendered project controls', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort({
+            record: recordActionHistoryEntry,
+            markReverted: markActionHistoryEntryReverted,
+            clear: clearActionHistory,
+        });
+        projectStore.set({ ...defaultProjectStoreState, createdAt: 100, updatedAt: 100, loading: false });
         crustStore.set({});
         crustMeterStore.set({});
         audioEngine.updateDeviceParam.mockClear();
@@ -102,6 +142,11 @@ describe('Crust rendered project controls', () => {
         flushAutomergeStorageWrites();
         removeCrdtDoc('root');
         configureAutomergeStoragePort(null);
+        setActionHistoryMetadataPort({
+            record: () => [],
+            markReverted: () => ({ status: 'unavailable' }),
+            clear: () => undefined,
+        });
     });
 
     it('persists each detail tier per device and retains every lower tier control', async () => {
@@ -270,7 +315,13 @@ describe('Crust rendered project controls', () => {
         });
         await expectCrustParameter('crust-a', 'release', 5);
         await waitFor(() =>
-            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'release', 5)
+            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith(
+                'master',
+                'crust-a',
+                'release',
+                5,
+                expect.any(Symbol)
+            )
         );
 
         const lookaheadLabel = screen.getByText('Lookahead', { exact: true });
@@ -289,7 +340,13 @@ describe('Crust rendered project controls', () => {
         });
         await expectCrustParameter('crust-a', 'lookahead', 2.1);
         await waitFor(() =>
-            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'lookahead', 2.1)
+            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith(
+                'master',
+                'crust-a',
+                'lookahead',
+                2.1,
+                expect.any(Symbol)
+            )
         );
     });
 
@@ -298,6 +355,8 @@ describe('Crust rendered project controls', () => {
         render(<CrustPanel deviceId="crust-a" />);
         const ceiling = screen.getByRole('spinbutton', { name: 'Output ceiling in dBTP' });
         expect(ceiling).toHaveValue(-0.3);
+        fireEvent.focus(ceiling);
+        expect(rawParameter('crust-a', 'ceiling')).toBeUndefined();
         fireEvent.change(ceiling, { target: { value: '-2' } });
 
         await waitFor(() => {
@@ -310,9 +369,20 @@ describe('Crust rendered project controls', () => {
                 ceiling: -2,
             });
         });
+        expect(rawParameter('crust-a', 'ceiling')).toBeUndefined();
+        expect(projectParameter('crust-a', 'ceiling')).toBeUndefined();
+        fireEvent.keyDown(ceiling, { key: 'Enter' });
+        fireEvent.blur(ceiling);
         await expectCrustParameter('crust-a', 'ceiling', -2);
+        expect(rawParameter('crust-a', 'ceiling')).toBe(-2);
         await waitFor(() =>
-            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'ceiling', -2)
+            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith(
+                'master',
+                'crust-a',
+                'ceiling',
+                -2,
+                expect.any(Symbol)
+            )
         );
         expect(projectParameter('crust-b', 'ceiling')).toBeUndefined();
     });
@@ -336,7 +406,13 @@ describe('Crust rendered project controls', () => {
         });
         await expectCrustParameter('crust-a', 'channelLinkTransient', 0);
         await waitFor(() =>
-            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'channelLinkTransient', 0)
+            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith(
+                'master',
+                'crust-a',
+                'channelLinkTransient',
+                0,
+                expect.any(Symbol)
+            )
         );
 
         fireEvent.keyDown(link, { key: 'End' });
@@ -346,7 +422,13 @@ describe('Crust rendered project controls', () => {
         });
         await expectCrustParameter('crust-a', 'channelLinkTransient', 100);
         await waitFor(() =>
-            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'channelLinkTransient', 100)
+            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith(
+                'master',
+                'crust-a',
+                'channelLinkTransient',
+                100,
+                expect.any(Symbol)
+            )
         );
         expect(getCrustState('crust-a').patch.channelLinkRelease).toBe(100);
     });
@@ -365,7 +447,13 @@ describe('Crust rendered project controls', () => {
         });
         await expectCrustParameter('crust-a', 'gain', 0.1);
         await waitFor(() =>
-            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'gain', 0.1)
+            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith(
+                'master',
+                'crust-a',
+                'gain',
+                0.1,
+                expect.any(Symbol)
+            )
         );
     });
 
@@ -390,7 +478,13 @@ describe('Crust rendered project controls', () => {
         });
         await expectCrustParameter('crust-a', 'oversampling', 1);
         await waitFor(() =>
-            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'oversampling', 1)
+            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith(
+                'master',
+                'crust-a',
+                'oversampling',
+                1,
+                expect.any(Symbol)
+            )
         );
     });
 
@@ -504,7 +598,13 @@ describe('Crust rendered project controls', () => {
         ).toHaveAttribute('aria-selected', 'true');
         await expectCrustParameter('crust-a', 'ceiling', -1);
         await waitFor(() =>
-            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'ceiling', -1)
+            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith(
+                'master',
+                'crust-a',
+                'ceiling',
+                -1,
+                expect.any(Symbol)
+            )
         );
         expect(projectParameter('crust-b', 'ceiling')).toBeUndefined();
     });
@@ -625,7 +725,13 @@ describe('Crust rendered project controls', () => {
         });
         await expectCrustParameter('crust-a', 'satDrive', 0.1);
         await waitFor(() =>
-            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'satDrive', 0.1)
+            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith(
+                'master',
+                'crust-a',
+                'satDrive',
+                0.1,
+                expect.any(Symbol)
+            )
         );
 
         const mixLabel = screen.getByText('Mix', { exact: true });
@@ -643,7 +749,13 @@ describe('Crust rendered project controls', () => {
         });
         await expectCrustParameter('crust-a', 'satMix', 1);
         await waitFor(() =>
-            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'satMix', 1)
+            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith(
+                'master',
+                'crust-a',
+                'satMix',
+                1,
+                expect.any(Symbol)
+            )
         );
         expect(projectParameter('crust-b', 'satMix')).toBeUndefined();
     });
@@ -704,7 +816,13 @@ describe('Crust rendered project controls', () => {
         await expectCrustParameter('crust-a', 'scHpfEnabled', 1);
         await expectCrustParameter('crust-a', 'scHpfFreq', 61);
         await waitFor(() =>
-            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'scHpfFreq', 61)
+            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith(
+                'master',
+                'crust-a',
+                'scHpfFreq',
+                61,
+                expect.any(Symbol)
+            )
         );
 
         const dither = screen.getByRole('combobox', { name: 'Dither mode' });
@@ -730,7 +848,13 @@ describe('Crust rendered project controls', () => {
         });
         await expectCrustParameter('crust-a', 'outputBitDepth', 32);
         await waitFor(() =>
-            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'outputBitDepth', 32)
+            expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith(
+                'master',
+                'crust-a',
+                'outputBitDepth',
+                32,
+                expect.any(Symbol)
+            )
         );
         expect(projectParameter('crust-b', 'multiBand')).toBeUndefined();
         expect(getCrustState('crust-b').patch.stereoMode).toBe('stereo');

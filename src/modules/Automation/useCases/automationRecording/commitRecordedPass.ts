@@ -1,14 +1,32 @@
+import { type AutomationPoint } from '../../models/Automation';
+
 import { captureLaneBaseline } from './captureLaneBaseline';
 import { clearPointsInRange } from './clearPointsInRange';
 import { findLaneId } from './findLaneId';
 import { flushPendingPoints } from './flushPendingPoints';
 import { latencyCompensatedBeat } from './latencyCompensatedBeat';
-import { activeRecording, pendingPoints } from './recordingSessionState';
+import { activeRecording, pendingOwners, pendingPoints } from './recordingSessionState';
 
 // Automation-local mode union (AGENTS.md §95 — model isolation). Mirrors
 // Arrangement's AutomationMode; touch reaches this call too, and only the
 // write/latch pair overwrites.
 type PassMode = 'write' | 'latch' | 'touch';
+
+/**
+ * Append the boundary held point to the buffer, ledgering it with the owning
+ * producer so the owner ledger stays index-for-index with the buffer until
+ * the flush below empties both.
+ */
+function appendHeldPoint(
+    key: string,
+    points: AutomationPoint[],
+    beat: number,
+    value: number,
+    owner: symbol | undefined
+): void {
+    points.push({ beat, value, curve: 'linear', tension: 0 });
+    pendingOwners.get(key)?.push(owner);
+}
 
 /**
  * Land one recorded pass into its lane and empty the buffer behind it.
@@ -58,6 +76,7 @@ export function commitRecordedPass(key: string, mode: PassMode, boundaryRawBeat:
     if (!points) {
         points = [];
         pendingPoints.set(key, points);
+        pendingOwners.set(key, []);
     }
     const lastGestureBeat = points.length > 0 ? points[points.length - 1]!.beat : null;
 
@@ -86,7 +105,7 @@ export function commitRecordedPass(key: string, mode: PassMode, boundaryRawBeat:
                 // raw beat, and duplicating that beat would break the lane's
                 // strictly-ordered-points invariant for zero replay gain.
                 endBeat = boundaryBeat;
-                points.push({ beat: boundaryBeat, value: session.lastValue, curve: 'linear', tension: 0 });
+                appendHeldPoint(key, points, boundaryBeat, session.lastValue, session.recordingOwner);
             }
         }
     }
