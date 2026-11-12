@@ -1,0 +1,26 @@
+scripts/githubAppIdentity.ts
+  s_76ccd61d453edf::t_5b459544d43e3d 417
+  s_76ccd61d453edf::t_645ef9f9c0e3a5 414-416
+  s_76ccd61d453edf::t_5d7bb501c66dce 418
+  s_76ccd61d453edf::t_08cd79a39e4c6d 387-403
+.agents/skills/delivery-orchestration/references/trust-boundary.md
+  s_76ccd61d453edf::t_425e1c9bf1a520 45-57
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_76ccd61d453edf::t_f78b006294b7d1 97,1192,1503,1629-1673
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7edfed47d7d315f74a6a1b15e5ace6c769d226a6",
+  "prompts": {},
+  "sessions": {
+    "s_76ccd61d453edf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "108ea70a-a924-42ce-b7b8-fd9c1012e902",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
