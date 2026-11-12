@@ -121,6 +121,8 @@ export type VibeRunPlan = {
     readonly briefRevision: number | null;
     readonly batches: readonly VibeRunBatch[];
     readonly excludedTargets: readonly VibeRunExcludedTarget[];
+    /** Each target excluded as `silent`, with the metrics its recipes expect, silent over every required range. */
+    readonly silentTargets: readonly { readonly targetId: string; readonly metrics: readonly string[] }[];
     readonly unplannedRoles: readonly VibeRunUnplannedRole[];
     readonly coverageRefusals: readonly {
         readonly targetId: string;
@@ -144,6 +146,12 @@ export type ScheduledVibeRunBatch = Pick<VibeRunBatch, 'id' | 'ordinal' | 'targe
     readonly witnessIds?: readonly string[];
     /** Ranges a target is silent over, each bound to the initial receipt showing it; absent means none. */
     readonly silentRanges?: readonly VibeRunSilentRange[];
+};
+
+export type VibeRunSilentTarget = {
+    readonly targetId: string;
+    readonly metrics: readonly string[];
+    readonly silences: readonly VibeRunSilentRange[];
 };
 
 /** A target carries no signal over one verification range, as the named initial receipt reads it. */
@@ -195,8 +203,11 @@ export type VibeRunInitialEvidence = {
     readonly arrangementRange: VibeRunVerificationRange;
     readonly receipts: readonly ApplicationToolReceipt[];
     readonly witnesses: readonly VibeRunInitialWitness[];
-    /** Measured targets left out of every batch because they are silent in every range; absent means none. */
-    readonly silentTargetIds?: readonly string[];
+    /**
+     * Measured targets left out of every batch because they are silent in every range, each with the
+     * metrics its recipes expect and one silence per plan range bound to its receipt; absent means none.
+     */
+    readonly silentTargets?: readonly VibeRunSilentTarget[];
 };
 
 export type MeasuredScheduledVibeRunPlan = {

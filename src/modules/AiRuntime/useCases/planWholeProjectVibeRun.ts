@@ -372,6 +372,7 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
         protectedIds.add(targetId);
     }
     const excludedTargets: VibeRunExcludedTarget[] = [];
+    const silentTargets: VibeRunPlan['silentTargets'][number][] = [];
     const tracksByRole = new Map<SemanticCommandListRoleFamily, ProjectContextTrack[]>();
     for (const track of input.context.tracks) {
         const reason = findExclusion(track, protectedIds);
@@ -417,6 +418,10 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
                 const silentRanges = readSilentRanges(input, track.id, expectedDeltas);
                 if (silentRanges.length > 0 && silentRanges.length === input.requiredRanges?.length) {
                     excludedTargets.push({ targetId: track.id, reason: 'silent' });
+                    silentTargets.push({
+                        targetId: track.id,
+                        metrics: [...new Set(expectedDeltas.map((delta) => delta.metric))],
+                    });
                 } else {
                     plannable.push({ id: track.id, recipes, expectedDeltas, commandCount, silentRanges });
                 }
@@ -466,6 +471,7 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
         coverageRefusals,
         batches,
         excludedTargets,
+        silentTargets,
         unplannedRoles,
     };
 }

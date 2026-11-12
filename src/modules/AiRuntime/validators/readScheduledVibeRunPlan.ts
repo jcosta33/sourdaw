@@ -8,6 +8,7 @@ import {
     type VibeRunInitialEvidence,
     type VibeRunInitialWitness,
     type VibeRunSilentRange,
+    type VibeRunSilentTarget,
     type VibeRunVerificationRange,
     type ScheduledVibeRunPlan,
     type VibeRunBatchTarget,
@@ -226,9 +227,11 @@ function readInitialTables(
     const arrangement = readRange(value.arrangementRange);
     const receipts = readEvery(value.receipts, readVibeRunInitialReceipt);
     const targetIds = batches.flatMap((batch) => batch.targetIds);
-    const silentTargetIds = value.silentTargetIds === undefined ? [] : readTexts(value.silentTargetIds);
+    const silentTargets = value.silentTargets === undefined ? [] : readEvery(value.silentTargets, readSilentTarget);
+    const silentTargetIds = silentTargets?.map((target) => target.targetId) ?? [];
     if (
-        silentTargetIds === null ||
+        silentTargets === null ||
+        new Set(silentTargetIds).size !== silentTargetIds.length ||
         silentTargetIds.some((targetId) => targetIds.includes(targetId)) ||
         sections === null ||
         new Set(sections.map((section) => section.id)).size !== sections.length ||
@@ -260,28 +263,44 @@ function readInitialTables(
                     (target) => !targetIds.includes(target.targetId) && !silentTargetIds.includes(target.targetId)
                 )
         ) ||
-        !silentTargetIds.every((targetId) => readsSilentEverywhere(targetId, receipts))
+        !silentTargets.every((target) => silentInEveryRange(target, ranges, receipts, sourceRevision))
     ) {
         return null;
     }
     return { sections, arrangement, receipts, targetIds, ranges, sourceRevision };
 }
 
+function readSilentTarget(value: unknown): VibeRunSilentTarget | null {
+    if (!isRecord(value) || !isText(value.targetId)) {
+        return null;
+    }
+    const metrics = readTexts(value.metrics);
+    const silences = readEvery(value.silences, readSilentRange);
+    if (metrics === null || metrics.length === 0 || silences === null) {
+        return null;
+    }
+    return { targetId: value.targetId, metrics, silences };
+}
+
 /**
- * A target left out as silent everywhere carries no figure in any receipt that measured it. Its
- * expected metrics are not stored, so every figure the receipt holds for it is read: none may be
- * measured, which a target silent over every range never is.
+ * A target left out as silent everywhere carries the evidence a silent cell does, once per plan
+ * range: each silence names that target and binds the receipt that reads it silent for its metrics.
  */
-function readsSilentEverywhere(
-    targetId: string,
-    receipts: readonly NonNullable<ReturnType<typeof readVibeRunInitialReceipt>>[]
+function silentInEveryRange(
+    target: VibeRunSilentTarget,
+    ranges: readonly VibeRunVerificationRange[],
+    receipts: readonly NonNullable<ReturnType<typeof readVibeRunInitialReceipt>>[],
+    sourceRevision: string
 ): boolean {
-    const figures = receipts.flatMap((receipt) =>
-        receipt.data.targets.filter((target) => target.targetId === targetId).map((target) => target.measurements)
-    );
+    const expectedDeltas = target.metrics.map((metric) => ({ metric }));
     return (
-        figures.length > 0 &&
-        figures.every((measurements) => Object.values(measurements).every((entry) => entry?.status === 'unavailable'))
+        target.silences.length === ranges.length &&
+        ranges.every((range) => target.silences.filter((silence) => sameRange(silence.range, range)).length === 1) &&
+        target.silences.every(
+            (record) =>
+                record.targetId === target.targetId &&
+                recordedSilenceHolds({ record, expectedDeltas, receipts, sourceRevision })
+        )
     );
 }
 

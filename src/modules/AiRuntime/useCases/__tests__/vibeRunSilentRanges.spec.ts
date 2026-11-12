@@ -333,6 +333,33 @@ function resealed(
     });
 }
 
+/** Re-bind every recorded receipt digest after a receipt is edited, so only the edited figures can refuse. */
+function rebound(plan: MeasuredScheduledVibeRunPlan): MeasuredScheduledVibeRunPlan {
+    const digestOf = (callId: string) => digest(plan.initial.receipts.find((receipt) => receipt.callId === callId));
+    const rebind = <Entry extends { receiptCallId: string }>(entry: Entry) => ({
+        ...entry,
+        receiptDigest: digestOf(entry.receiptCallId),
+    });
+    return {
+        ...plan,
+        batches: plan.batches.map((batch) =>
+            batch.silentRanges === undefined ? batch : { ...batch, silentRanges: batch.silentRanges.map(rebind) }
+        ),
+        initial: {
+            ...plan.initial,
+            witnesses: plan.initial.witnesses.map(rebind),
+            ...(plan.initial.silentTargets === undefined
+                ? {}
+                : {
+                      silentTargets: plan.initial.silentTargets.map((entry) => ({
+                          ...entry,
+                          silences: entry.silences.map(rebind),
+                      })),
+                  }),
+        },
+    };
+}
+
 const CHORUS = { startBeat: 2, endBeat: 4, sectionId: 'chorus' };
 
 function isDrumsOverChorus(entry: {
@@ -567,7 +594,70 @@ describe('a vibe run around silent verification ranges', () => {
         expect(readScheduledVibeRunPlan(resealed(unknownShape))).toBeNull();
     });
 
-    it('refuses to ground a batch whose silence record went stale', async () => {
+    it('refuses a stored plan whose silent-everywhere exclusion lacks the evidence a silent cell needs', async () => {
+        scriptBriefRoute();
+        await sendChatMessage(PROMPT);
+        const plan = measuredPlan(requireOnlyProposedCard());
+        const [bass] = plan.initial.silentTargets ?? [];
+        if (bass === undefined) {
+            throw new Error('Expected the silent Bass exclusion.');
+        }
+        expect(bass.targetId).toBe(BASS_ID);
+        expect(bass.silences.map((silence) => silence.range.sectionId)).toEqual([null, 'verse', 'chorus']);
+        const withBass = (patch: Partial<typeof bass>) => (value: MeasuredScheduledVibeRunPlan) => ({
+            ...value,
+            initial: { ...value.initial, silentTargets: [{ ...bass, ...patch }] },
+        });
+        const withBassFigures =
+            (figures: (measurements: Record<string, unknown>) => void) => (value: MeasuredScheduledVibeRunPlan) => {
+                for (const receipt of value.initial.receipts) {
+                    const target = readVibeRunInitialReceipt(receipt)?.data.targets.find((t) => t.targetId === BASS_ID);
+                    if (target !== undefined) {
+                        figures(target.measurements);
+                    }
+                }
+                return rebound(value);
+            };
+        const everyFigure = (reason: string) => (measurements: Record<string, unknown>) => {
+            for (const key of Object.keys(measurements)) {
+                Object.assign(measurements, { [key]: { status: 'unavailable', reason } });
+            }
+        };
+        const [first, second, third] = bass.silences;
+        if (first === undefined || second === undefined || third === undefined) {
+            throw new Error('Expected one silence per plan range.');
+        }
+        const tampers: Record<string, (value: MeasuredScheduledVibeRunPlan) => MeasuredScheduledVibeRunPlan> = {
+            'too-short figures': withBassFigures(everyFigure('too-short')),
+            'below-gate figures': withBassFigures(everyFigure('below-gate')),
+            'empty figures': withBassFigures((measurements) => {
+                for (const key of Object.keys(measurements)) {
+                    Reflect.deleteProperty(measurements, key);
+                }
+            }),
+            'a range without its silence': withBass({ silences: [first, second] }),
+            'a duplicate range': withBass({ silences: [first, second, second] }),
+            'an extra range': withBass({
+                silences: [first, second, third, { ...third, range: { startBeat: 0, endBeat: 1, sectionId: null } }],
+            }),
+            'a target also in a batch': withBass({
+                targetId: DRUMS_ID,
+                silences: bass.silences.map((silence) => ({ ...silence, targetId: DRUMS_ID })),
+            }),
+            'empty metrics': withBass({ metrics: [] }),
+            'receipt digest mismatch': withBass({ silences: [{ ...first, receiptDigest: 'stale' }, second, third] }),
+            'a receipt target with no entry': (value) => {
+                const { silentTargets: _silentTargets, ...initial } = value.initial;
+                return { ...value, initial };
+            },
+        };
+        for (const [name, tamper] of Object.entries(tampers)) {
+            expect([name, readScheduledVibeRunPlan(resealed(tamper(structuredClone(plan))))]).toEqual([name, null]);
+        }
+        expect(readScheduledVibeRunPlan(resealed(rebound(structuredClone(plan))))).not.toBeNull();
+    });
+
+    it('refuses through its plan reader to ground a batch whose silence record went stale', async () => {
         scriptBriefRoute();
         await sendChatMessage(PROMPT);
         const brief = requireOnlyProposedCard();

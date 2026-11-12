@@ -14,6 +14,7 @@ import {
     type MeasuredScheduledVibeRunPlan,
     type VibeRunInitialWitness,
     type VibeRunSilentRange,
+    type VibeRunSilentTarget,
     type VibeRunInitialBaselineRefusal,
     type VibeRunVerificationRange,
     type VibeRunExcludedTargetReason,
@@ -278,38 +279,50 @@ function readInitialWitnesses(input: ScheduleInput, collected: Collected, goals:
     return { witnesses, lines, refusals };
 }
 
+/** Binds one silent cell to the one receipt that shows it, found exactly as a witness finds its receipt. */
+function bindSilence(
+    input: ScheduleInput,
+    collected: Collected,
+    targetId: string,
+    range: VibeRunVerificationRange
+): VibeRunSilentRange | string {
+    const [receipt, ...others] = readExactRangeReceipts(input, collected, targetId, range);
+    if (receipt === undefined || others.length > 0) {
+        return `${targetId}, ${range.sectionId ?? 'arrangement'}: no single receipt shows its silence`;
+    }
+    return { targetId, range, receiptCallId: receipt.callId, receiptDigest: digest(receipt) };
+}
+
 /**
- * The measured plan's batches as the schedule stores them, each silent cell bound to the one receipt
- * that shows it, found exactly as a witness finds its receipt.
+ * The measured plan's batches as the schedule stores them and its silent exclusions, each silent
+ * cell bound to the receipt that shows it.
  */
-function readMeasuredBatches(
+function readMeasuredSilences(
     input: ScheduleInput,
     collected: Collected,
     plan: VibeRunPlan,
     ranges: readonly VibeRunVerificationRange[]
 ) {
     const refusals: string[] = [];
-    const batches = plan.batches.map((batch): ScheduledVibeRunBatch => {
-        const silentRanges: VibeRunSilentRange[] = [];
-        for (const cell of batch.silentRanges) {
-            const [receipt, ...others] = readExactRangeReceipts(input, collected, cell.targetId, cell.range);
-            if (receipt === undefined || others.length > 0) {
-                refusals.push(
-                    `${cell.targetId}, ${cell.range.sectionId ?? 'arrangement'}: no single receipt shows its silence`
-                );
-                continue;
-            }
-            silentRanges.push({
-                targetId: cell.targetId,
-                range: cell.range,
-                receiptCallId: receipt.callId,
-                receiptDigest: digest(receipt),
-            });
+    const bind = (targetId: string, range: VibeRunVerificationRange): VibeRunSilentRange[] => {
+        const bound = bindSilence(input, collected, targetId, range);
+        if (typeof bound === 'string') {
+            refusals.push(bound);
+            return [];
         }
+        return [bound];
+    };
+    const batches = plan.batches.map((batch): ScheduledVibeRunBatch => {
+        const silentRanges = batch.silentRanges.flatMap((cell) => bind(cell.targetId, cell.range));
         const scheduled = { ...toScheduledBatch(batch), verificationRanges: ranges };
         return silentRanges.length === 0 ? scheduled : { ...scheduled, silentRanges };
     });
-    return { batches, refusals };
+    const silentTargets = plan.silentTargets.map((target): VibeRunSilentTarget => ({
+        targetId: target.targetId,
+        metrics: [...target.metrics],
+        silences: ranges.flatMap((range) => bind(target.targetId, range)),
+    }));
+    return { batches, silentTargets, refusals };
 }
 
 function buildMeasuredPlan(input: {
@@ -320,7 +333,7 @@ function buildMeasuredPlan(input: {
     arrangementRange: VibeRunVerificationRange;
     collected: Collected;
     witnesses: readonly VibeRunInitialWitness[];
-    silentTargetIds: readonly string[];
+    silentTargets: readonly VibeRunSilentTarget[];
 }): MeasuredScheduledVibeRunPlan {
     const { source, candidate, witnesses } = input;
     const batches = input.batches.map((batch) => ({
@@ -354,7 +367,7 @@ function buildMeasuredPlan(input: {
         arrangementRange: input.arrangementRange,
         receipts: input.collected.receipts,
         witnesses,
-        ...(input.silentTargetIds.length === 0 ? {} : { silentTargetIds: input.silentTargetIds }),
+        ...(input.silentTargets.length === 0 ? {} : { silentTargets: input.silentTargets }),
     };
     const initialDigest = digest(initial);
     return {
@@ -420,7 +433,7 @@ function completeMeasuredSchedule(input: {
             receipts: input.collected.receipts,
         };
     }
-    const measured = readMeasuredBatches(input.source, input.collected, measuredPlan, input.ranges);
+    const measured = readMeasuredSilences(input.source, input.collected, measuredPlan, input.ranges);
     const goals = readInitialGoals(measured.batches, input.catalog, input.arrangementRange);
     if (goals.status === 'refused') {
         return {
@@ -449,9 +462,7 @@ function completeMeasuredSchedule(input: {
         ...input,
         batches: measured.batches,
         witnesses: evidence.witnesses,
-        silentTargetIds: measuredPlan.excludedTargets
-            .filter((excluded) => excluded.reason === 'silent')
-            .map((excluded) => excluded.targetId),
+        silentTargets: measured.silentTargets,
     });
     if (readScheduledVibeRunPlan(JSON.stringify(plan)) === null) {
         return {
