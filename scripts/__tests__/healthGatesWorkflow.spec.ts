@@ -1622,7 +1622,7 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
         linuxConsumerNames.indexOf('Server and Rust workspace health gates')
     );
     const linuxHealth = stepNamed(linuxConsumer, 'Server and Rust workspace health gates');
-    expect(linuxHealth.run).toBe('pnpm health:server:full');
+    expect(linuxHealth.run).toBe('node --run health:server:full');
     expect(recordAt(linuxHealth, 'env')).toEqual({
         CARGO_HTTP_MULTIPLEXING: 'false',
         CARGO_NET_OFFLINE: CARGO_OFFLINE_EXACT,
@@ -2952,7 +2952,7 @@ describe('health gates workflow contract', () => {
 
     it('uses HTTP/1.1 for the Rust and server health gate step', () => {
         const rustHealthStep = stepNamed(jobAt(validationWorkflow, 'rust'), 'Server and Rust workspace health gates');
-        expect(stringAt(rustHealthStep, 'run')).toBe('pnpm health:server:full');
+        expect(stringAt(rustHealthStep, 'run')).toBe('node --run health:server:full');
         expect(recordAt(rustHealthStep, 'env').CARGO_HTTP_MULTIPLEXING).toBe('false');
     });
 
@@ -4672,7 +4672,7 @@ describe('health gates workflow contract', () => {
             expect(scopeFilterPatterns(validationWorkflow, 'rust')).toContain(path);
         }
         expect(stepNamed(jobAt(validationWorkflow, 'rust'), 'Server and Rust workspace health gates').run).toBe(
-            'pnpm health:server:full'
+            'node --run health:server:full'
         );
         expect(stepNamed(jobAt(seed, 'rust'), 'Rust workspace health gates').run).toBe(
             'sh scripts/health-gates-rust.sh'

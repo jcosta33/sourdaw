@@ -766,7 +766,7 @@ jobs:
         env:
           CARGO_HTTP_MULTIPLEXING: 'false'
           CARGO_NET_OFFLINE: ${{ steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}
-        run: pnpm health:server:full
+        run: node --run health:server:full
 
   native-macos:
     name: Native audio backend (macOS)
