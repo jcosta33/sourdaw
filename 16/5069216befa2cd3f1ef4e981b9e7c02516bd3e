@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/__tests__/multiBatchRun.spec.ts
+  s_3c91dcbb840566::t_7cd5ba299bb07a 950-971
+src/modules/AiRuntime/useCases/__tests__/vibeBatchSkip.spec.ts
+  s_126e3d478b4f75::t_9afe29cb982f29 27,135-153,170-173,303-342
+src/modules/AiRuntime/useCases/skipPendingVibeBatch.ts
+  s_126e3d478b4f75::t_f3b08b76658766 1,51-61,64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "165069216befa2cd3f1ef4e981b9e7c02516bd3e",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3c91dcbb840566": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1058f26-f2e9-46cf-af40-6e3b7eafe1df",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
