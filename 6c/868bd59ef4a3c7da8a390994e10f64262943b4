@@ -1,0 +1,120 @@
+crates/daw-dsp/src/grinder/pedals.rs
+  s_0e1e665b35fffe::t_92962e3971f66f 341,353,381
+crates/daw-dsp/src/bacteria/engine.rs
+  s_0e1e665b35fffe::t_3a091cade8fd20 18
+  s_87ae37da66d2f0::t_5889ea6e6f184c 22
+crates/daw-dsp/src/bacteria/modulation.rs
+  s_0e1e665b35fffe::t_39f11a37ebe705 123
+  s_0e1e665b35fffe::t_dc629ea988cd61 3
+  s_50cbc34e8b61c3::t_e42529004fcbff 221-242
+crates/daw-dsp/src/grinder/engine.rs
+  s_0e1e665b35fffe::t_e284fa24b5f1e0 19
+  s_0e1e665b35fffe::t_87dc5841317187 11
+  s_87ae37da66d2f0::t_0faa5411ad4d19 12
+crates/daw-dsp/src/levain/voice.rs
+  s_0e1e665b35fffe::t_8142f890c6c31f 12
+crates/daw-dsp/src/grand_boule/mechanical_noise.rs
+  s_0e1e665b35fffe::t_d22ff1563505bf 120
+crates/daw-dsp/src/bacteria/filter.rs
+  s_0e1e665b35fffe::t_15e32c6e2a1abd 83
+  s_0e1e665b35fffe::t_84290e1938de5b 6
+  s_50cbc34e8b61c3::t_84b6401cebdcd0 191-208
+crates/daw-dsp/src/gluten/smoother.rs
+  s_0e1e665b35fffe::t_82ce0b368c8e11 58
+  s_0e1e665b35fffe::t_23a11191c46c18 3
+  s_50cbc34e8b61c3::t_267164f1d59870 62-78
+crates/daw-dsp/src/fermenter/envelope.rs
+  s_0e1e665b35fffe::t_2364f938203210 107
+  s_50cbc34e8b61c3::t_22cc73fa37510c 109-123
+crates/daw-dsp/src/grinder/input.rs
+  s_0e1e665b35fffe::t_cfea71b4103fe1 5
+  s_0e1e665b35fffe::t_d131cec750e9ec 63
+  s_0e1e665b35fffe::t_68a6003b3fd5c6 244-260
+crates/daw-dsp/tests/dsp_cost_reduction_goldens/shadow/grinder/engine.rs
+  s_0e1e665b35fffe::t_77d49864a02d3f 10
+  s_0e1e665b35fffe::t_4609def64f0d67 18
+  s_87ae37da66d2f0::t_b50673a97c1826 11
+crates/daw-dsp/src/primitives/db.rs
+  s_87ae37da66d2f0::t_0ab0e2bbfe3543 1,11-58
+crates/daw-dsp/src/primitives/mod.rs
+  s_87ae37da66d2f0::t_4e97994f533836 9,19,24
+crates/daw-dsp/src/primitives/one_pole.rs
+  s_87ae37da66d2f0::t_c85eeb6e469035 1-69,73-86,99
+  s_0e1e665b35fffe::t_168f8bb8aa6281 70-72
+  s_0e1e665b35fffe::t_061221710868c1 87-98
+crates/daw-dsp/benches/quantum-cost-table.md
+  s_0e1e665b35fffe::t_51744553528377 145-146,166,179,182-183,258
+  s_0e1e665b35fffe::t_b3aabcfec5442e 158-159,196,267
+  s_0e1e665b35fffe::t_cdc3804f850cc0 147-148,150-151,166,179,182-183,207-225,231,238-240,248,253-256,259,288-307
+release/open-source-inventory.json
+  s_0e1e665b35fffe::t_5124c79394a7bd 1224
+  s_0e1e665b35fffe::t_24682646130eb9 172-173,224-225,232,271-273,280-290,297-300,311-312,376,423,523-526,532-548,552-556,565-570,575-584,586-591,597,601,615,617-618,621,812,1085,1139,1308-1312,1317-1321,1324-1327,1330-1335,1338-1339,1346-1348,1351-1352,1375,1380-1381,1856,1891,1895,1899,1903,1911,1915,2549-2593
+  s_0e1e665b35fffe::t_aeaa1859a35880 1224,1231,1379,1382,1385,1919
+crates/daw-dsp/benches/quantum-cost-table.json
+  s_0e1e665b35fffe::t_af27404469ce17 2-11,14,18-19,22-57,59-60,62-71,73,76,78-92,102-117,128-130,132-133,138,141-145,149-151,157-158,161-163,167-184,195-197,199-200,205,208-211,218-220,226-227,233-234,237-238,243-260,268,271-273,275-277,281,284-288,292-294,300-301,304-306,310-327,335,338-340,342-343,348,351-355,359-361,367-368,372-373,377-382,384-386,388-390,392-394,405-407,409-410,415,418-422,427-428,434-435,439,444-461,463,469,472-474,476-477,482,485-488,491,495-498,503-504,510-511,514-516,520-537,548-550,552-555,558,561-565,570-571,577-578,581-582,587-604,615-617,619-620,625,628-631,637-638,645,648-649,654-671,682-684,686-689,692,695-699,704-705,711-712,715-716,721-738,749-751,753-755,759,762-766,771-772,778-779,782-783,788-805,816-818,820-822,826,829-833,838-839,846,849-850,855-872,883-885,887-888,893,896-899,905-906,912-913,916-917,922-939,950-952,954-958,960,962-966,972-973,979-980,983-984,989-1006,1014,1017-1019,1021-1024,1027,1030-1034,1038-1040,1046-1047,1051-1052,1056-1073,1084-1086,1088-1089,1094,1097-1101,1106-1107,1114-1119,1123-1140,1151-1153,1155-1158,1161,1163-1168,1172-1174,1180-1186,1190-1207,1218-1220,1222-1223,1228,1231-1234,1240-1241,1247-1248,1251-1253,1257-1274,1282,1285-1287,1289-1291,1295,1298-1302,1306-1308,1314-1315,1318-1320,1324-1341,1349,1352-1354,1356-1358,1362,1365-1369,1373-1375,1381-1382,1385-1387,1391-1408,1410,1416,1419-1421,1423-1425,1429,1432-1435,1438,1442-1445,1449-1451,1458,1461-1463,1467-1470
+  s_0e1e665b35fffe::t_215a0bf7a18f92 20-21,58,371,383,387,391,438,440,621-622,644,650,713-714,756,823,828,845,961,1426,1457
+  s_0e1e665b35fffe::t_cdc3804f850cc0 2-15,17-60,62-71,73-76,78-100,102-1470
+public/wasm/manifest.json
+  s_0e1e665b35fffe::t_3a46fb4a16b55a 6,26,30-32,35,54,58
+  s_9d2c481605c4c2::t_37a5361755a7f0 12,16-18,21,40,44-46,49
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_9d2c481605c4c2::t_329d24870c2a2a 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_9d2c481605c4c2::t_f6bd8760d273d3 1
+public/wasm/scoring/scoring.d.ts
+  s_9d2c481605c4c2::t_3bab6e669bb9c9 1
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_9d2c481605c4c2::t_e9e3bd38f03d81 1
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_9d2c481605c4c2::t_e1dda41db1ed8c 1
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_9d2c481605c4c2::t_2bd668fb61f1d6 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6c868bd59ef4a3c7da8a390994e10f64262943b4",
+  "prompts": {},
+  "sessions": {
+    "s_0e1e665b35fffe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "381a1b33-66ac-43c7-a5f6-c58cf462dac3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_50cbc34e8b61c3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3ccafa79-c9ba-491d-83f4-7ab63651b7ac",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_87ae37da66d2f0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e83ca346-1b25-4729-84f5-4e1a6a613aae",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9d2c481605c4c2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_9d2c481605c4c2",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
