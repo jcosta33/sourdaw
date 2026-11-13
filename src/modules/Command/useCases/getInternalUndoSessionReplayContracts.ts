@@ -91,13 +91,6 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
             validateArguments: (payload: unknown) => validateVersionedCommandArguments('deleteTime', payload),
             validateEntry: (entry) => getHandlerByType('deleteTime')?.validateSessionEntry?.(entry) === true,
         },
-        {
-            actionType: 'stripSilence',
-            operationVersion: 1,
-            role: 'forward',
-            validateArguments: (payload: unknown) => validateVersionedCommandArguments('stripSilence', payload),
-            validateEntry: (entry) => getHandlerByType('stripSilence')?.validateSessionEntry?.(entry) === true,
-        },
         createInternalReplayContract('discardCreatedTrack', 1, 'optional'),
         createInternalReplayContract('discardDuplicatedClip', 1, 'optional'),
         createInternalReplayContract('discardDrawnClip', 1, 'optional'),

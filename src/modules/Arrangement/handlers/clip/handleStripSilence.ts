@@ -7,7 +7,7 @@ import { restoreStripSilenceState } from '../../useCases/restoreStripSilenceStat
 import { stripSilence } from '../../useCases/stripSilence';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
-import { isStripSilenceSessionEntry } from './validateClipReplacementSessionEntries';
+import { isMaterializedStripSilencePayload, isStripSilenceSessionEntry } from './validateClipReplacementSessionEntries';
 
 type StripSilenceAction = Extract<AppAction, { type: 'stripSilence' }>;
 
@@ -67,6 +67,7 @@ function prepareAction(action: StripSilenceAction): StripSilencePlanResolution {
 
 export const handleStripSilence = createHandler<'stripSilence'>({
     validateSessionEntry: isStripSilenceSessionEntry,
+    validateMaterializedCommandArguments: isMaterializedStripSilencePayload,
     materializeCommandArguments: (action) => {
         prepareAction(action);
     },

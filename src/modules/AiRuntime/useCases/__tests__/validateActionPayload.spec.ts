@@ -892,6 +892,20 @@ const guardedPayloadContractCases = [
             { clipId: 'clip-1', gridSize: 0.25, plan: {} },
         ],
     }),
+    guardedPayloadCase({
+        actionType: 'stripSilence',
+        validPayload: { clipId: 'clip-1', threshold: -50, minDuration: 0.25 },
+        invalidPayloads: [
+            { clipId: '' },
+            { clipId: 'clip-1', threshold: 3 },
+            { clipId: 'clip-1', threshold: -120 },
+            { clipId: 'clip-1', threshold: Number.NaN },
+            { clipId: 'clip-1', minDuration: 0 },
+            { clipId: 'clip-1', minDuration: 32 },
+            { clipId: 'clip-1', expected: {} },
+            { clipId: 'clip-1', replacement: {} },
+        ],
+    }),
 ] as const;
 
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {

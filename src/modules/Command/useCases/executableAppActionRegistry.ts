@@ -864,6 +864,43 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'stripSilence',
+        risk: 'destructive-reversible',
+        description:
+            'Replace one unlocked audio clip with one clip per passage that rises above a peak threshold, removing the silence between them, as one reversible edit; the segments keep their source position, gain envelope and clip automation.',
+        intentPhrases: [
+            'strip silence',
+            'strip the silence',
+            'strip silence from',
+            'remove silence',
+            'remove the silence',
+            'cut out the silence',
+            'cut the silence',
+        ],
+        targetRules: editableAudioClipTargetRules,
+        materializedArgumentsValidation: 'owner-required',
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked audio clip ID' },
+                threshold: {
+                    type: 'number',
+                    minimum: -96,
+                    maximum: 0,
+                    description:
+                        'Peak level in dBFS below which audio counts as silence, from -96 through 0; defaults to -40',
+                },
+                minDuration: {
+                    type: 'number',
+                    exclusiveMinimum: 0,
+                    maximum: 16,
+                    description:
+                        'Shortest silence in beats that separates two segments, above 0 through 16; shorter gaps stay inside one segment; defaults to 0.5',
+                },
+            },
+            required: ['clipId'],
+        },
+    },
+    {
         actionType: 'crossfadeClips',
         risk: 'broad-reversible',
         description: 'Create a crossfade between two distinct unlocked clips.',
@@ -3296,6 +3333,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     setClipFade: CLIP_MUTATION_IDENTITY,
     glueClips: MANY_CLIPS_MUTATION_IDENTITY,
     quantizeTransients: CLIP_MUTATION_IDENTITY,
+    stripSilence: CLIP_MUTATION_IDENTITY,
     crossfadeClips: DUAL_CLIPS_MUTATION_IDENTITY,
     lockClip: CLIP_MUTATION_IDENTITY,
     setClipLoop: CLIP_MUTATION_IDENTITY,
@@ -3415,6 +3453,7 @@ export const executableAppActionMutationIdempotenceByType = {
     setClipFade: true,
     glueClips: false,
     quantizeTransients: false,
+    stripSilence: false,
     crossfadeClips: false,
     lockClip: true,
     setClipLoop: true,

@@ -66,6 +66,31 @@ function restoresSwapBetween(
     );
 }
 
+function isOptionalFiniteNumber(value: unknown): boolean {
+    return value === undefined || (typeof value === 'number' && Number.isFinite(value));
+}
+
+/**
+ * Only a strip carrying its complete plan is a deterministic command: the one target clip it
+ * replaces and the segments that replace it, both whole snapshots of the same track. A strip that
+ * found no silence to remove carries no plan, so it never compiles.
+ */
+export function isMaterializedStripSilencePayload(value: unknown): boolean {
+    if (!isRecord(value) || !isNonEmptyString(value.clipId)) {
+        return false;
+    }
+    const { clipId, threshold, minDuration } = value;
+    const plan = { expected: value.expected, replacement: value.replacement };
+    return (
+        isOptionalFiniteNumber(threshold) &&
+        isOptionalFiniteNumber(minDuration) &&
+        isClipReplacementRestorePayload(plan) &&
+        plan.expected.clips.length === 1 &&
+        plan.expected.clips[0]?.id === clipId &&
+        plan.replacement.clips.length > 1
+    );
+}
+
 export function isStripSilenceSessionEntry(entry: HandlerSessionActionEntry): boolean {
     if (entry.action.type !== 'stripSilence') {
         return false;

@@ -176,6 +176,7 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     ['setClipFade', 'audio-editing', 'Arrangement'],
     ['glueClips', 'audio-editing', 'Arrangement'],
     ['quantizeTransients', 'audio-editing', 'Arrangement'],
+    ['stripSilence', 'audio-editing', 'Arrangement'],
     ['crossfadeClips', 'audio-editing', 'Arrangement'],
     ['normalizeClip', 'audio-editing', 'Arrangement'],
     ['setClipStretchMode', 'audio-editing', 'Arrangement'],
@@ -407,8 +408,8 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         kind: 'interim-unsupported',
         category: 'audio-editing',
         packet: RUNTIME_ACTION_PACKET,
-        reason: 'Audio and groove extraction edits whose handlers plan deterministically but carry no executable descriptor yet.',
-        actionTypes: ['stripSilence', 'extractGroove'],
+        reason: 'Groove extraction plans deterministically but carries no executable descriptor yet.',
+        actionTypes: ['extractGroove'],
     },
     {
         kind: 'interim-unsupported',

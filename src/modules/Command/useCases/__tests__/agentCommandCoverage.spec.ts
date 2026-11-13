@@ -292,6 +292,7 @@ describe('agent command ledger coverage', () => {
             transposeNotes: 'midi',
             setClipFade: 'audio-editing',
             quantizeTransients: 'audio-editing',
+            stripSilence: 'audio-editing',
             addDevice: 'device',
             setDeviceParameter: 'parameter',
             addAdjustmentRegion: 'automation',

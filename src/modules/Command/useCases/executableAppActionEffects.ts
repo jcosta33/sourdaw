@@ -182,6 +182,12 @@ export const executableAppActionEffectsByType = {
         scope: 'target',
         creates: ['clip', 'automation-lane'],
     },
+    stripSilence: {
+        dimensions: ['clip-audio', 'arrangement', 'automation'],
+        scope: 'target',
+        creates: ['clip', 'automation-lane'],
+        removes: ['clip', 'automation-lane'],
+    },
     crossfadeClips: {
         dimensions: ['clip-audio', 'arrangement'],
         scope: 'target',
