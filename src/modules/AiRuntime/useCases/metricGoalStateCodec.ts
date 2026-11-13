@@ -200,6 +200,7 @@ function authorityIdentity(entry: Record<string, unknown>): boolean {
             'configured-joint-intake',
             'admitted-workflow',
             'answer-suggestion',
+            'last-commit-recipe',
             'perceptual-constraint-reader',
             'vibe-run-plan',
         ]) &&
@@ -403,9 +404,13 @@ function state(entry: unknown, metricIds: readonly string[]): entry is MetricGoa
         keys(
             entry,
             ['schemaVersion', 'authorities', 'steps', 'proofs', 'binding'],
-            ['nativeLiteralUses', 'refinedRequests']
+            ['nativeLiteralUses', 'lastCommitContinuations', 'refinedRequests']
         ) &&
         (entry.refinedRequests === undefined || strings(entry.refinedRequests)) &&
+        (entry.lastCommitContinuations === undefined ||
+            (Array.isArray(entry.lastCommitContinuations) &&
+                entry.lastCommitContinuations.length <= MAX_LLM_ACTIONS_PER_BATCH &&
+                entry.lastCommitContinuations.every(lastCommitContinuation))) &&
         (entry.nativeLiteralUses === undefined ||
             (Array.isArray(entry.nativeLiteralUses) &&
                 entry.nativeLiteralUses.length <= MAX_LLM_ACTIONS_PER_BATCH &&
@@ -419,6 +424,22 @@ function state(entry: unknown, metricIds: readonly string[]): entry is MetricGoa
         entry.proofs.every((proofEntry: unknown) => proof(proofEntry, metricIds)) &&
         entry.steps.every(logicalStep) &&
         batchBinding(entry.binding)
+    );
+}
+
+function lastCommitContinuation(entry: unknown): boolean {
+    return (
+        record(entry) &&
+        keys(entry, ['kind', 'requestDigest', 'actionIndex', 'unit', 'figure', 'comparative', 'committed', 'landed']) &&
+        entry.kind === 'last-commit-continuation' &&
+        text(entry.requestDigest) &&
+        entry.requestDigest.length > 0 &&
+        integer(entry.actionIndex) &&
+        oneOf(entry.unit, ['LUFS', 'dBTP', 'dBFS', 'Hz']) &&
+        finite(entry.figure) &&
+        oneOf(entry.comparative, ['more', 'less']) &&
+        finite(entry.committed) &&
+        finite(entry.landed)
     );
 }
 

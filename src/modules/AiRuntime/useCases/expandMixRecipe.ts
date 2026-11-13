@@ -345,7 +345,12 @@ export function expandMixRecipe(
     return {
         status: 'expanded',
         catalogVersion: catalog.version,
-        recipe: { recipeId: recipe.id, title: recipe.title, targetId: target.id },
+        recipe: {
+            recipeId: recipe.id,
+            title: recipe.title,
+            targetId: target.id,
+            ...(recipe.origin === undefined ? {} : { presetVersion: recipe.origin.presetVersion }),
+        },
         commands,
         values,
     };

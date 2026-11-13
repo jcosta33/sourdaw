@@ -6,7 +6,8 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { getArrangementHandlers, getMixRecipeCatalog, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
@@ -18,6 +19,8 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectIdentity,
+    captureProjectRevision,
     createCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
@@ -32,7 +35,7 @@ import { createAcceptanceFixtureLifetime } from '../../__tests__/acceptanceFixtu
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { agentRunStore } from '../../stores/agentRunStore';
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
-import { chatStore, stopGenerating } from '../../stores/chatStore';
+import { appendChatMessage, chatStore, stopGenerating } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
@@ -40,10 +43,12 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { readLastCommitRequest } from '../../transformers/readLastCommitRequest';
 import { revertThreadCommit } from '../agentRequestOrchestration/revertThreadCommit';
+import { proposeAnswerSuggestion } from '../aiPanelActions/proposeAnswerSuggestion';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { expandMixRecipe } from '../expandMixRecipe';
 import { getProjectContext } from '../getProjectContext';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { planLastCommitContinuation } from '../planLastCommitContinuation';
@@ -80,6 +85,9 @@ const REDERIVED_VOCALS_LEVEL: ProviderCall = {
 };
 
 const runtimeMocks = vi.hoisted(() => ({
+    // Device-chain topology stays on the real runtime path; only the per-parameter write to a live
+    // node is stubbed, because the stubbed AudioParam objects carry no schedulable timeline.
+    updateDeviceParam: vi.fn(),
     generateWebLlmCompletion: vi.fn(),
     getAllSidechainRoutes: vi.fn(() => []),
     resolveToasterPadBinding: vi.fn(() => null),
@@ -88,6 +96,78 @@ const runtimeMocks = vi.hoisted(() => ({
     setTrackPan: vi.fn(),
     setTrackSoloGate: vi.fn(),
 }));
+
+/**
+ * The live device chain is built with real Web Audio nodes. `src/setupTests.ts` stubs an
+ * AudioContext with only the nodes the engine constructor needs, so the filter and panner nodes an
+ * inserted device asks for are added here, exactly as the other device-committing AI workflow
+ * suites do.
+ */
+vi.hoisted(() => {
+    const OriginalAudioContext = globalThis.AudioContext;
+    const createAudioParam = (value: number) => ({
+        value,
+        setValueAtTime: () => undefined,
+        linearRampToValueAtTime: () => undefined,
+        exponentialRampToValueAtTime: () => undefined,
+        setTargetAtTime: () => undefined,
+        cancelScheduledValues: () => undefined,
+    });
+    const createNode = () => ({
+        connect: (destination: unknown) => destination,
+        disconnect: () => undefined,
+    });
+    function AudioContextWithDeviceNodes(options?: AudioContextOptions): AudioContext {
+        const context = new OriginalAudioContext(options);
+        return Object.assign(context, {
+            currentTime: 0,
+            createStereoPanner: () => ({ ...createNode(), pan: createAudioParam(0) }),
+            createBiquadFilter: () => ({
+                ...createNode(),
+                type: 'lowpass',
+                frequency: createAudioParam(350),
+                Q: createAudioParam(1),
+                gain: createAudioParam(0),
+                detune: createAudioParam(0),
+            }),
+            createDynamicsCompressor: () => ({
+                ...createNode(),
+                threshold: createAudioParam(-24),
+                knee: createAudioParam(30),
+                ratio: createAudioParam(12),
+                attack: createAudioParam(0.003),
+                release: createAudioParam(0.25),
+                reduction: 0,
+            }),
+        });
+    }
+    Object.defineProperty(globalThis, 'AudioContext', {
+        configurable: true,
+        writable: true,
+        value: AudioContextWithDeviceNodes,
+    });
+});
+
+/**
+ * Tearing a live strip down closes its meter worklet port, which the jsdom worklet stub in
+ * `src/setupTests.ts` does not provide.
+ */
+vi.hoisted(() => {
+    const OriginalAudioWorkletNode = globalThis.AudioWorkletNode;
+    class AudioWorkletNodeWithClosablePort extends OriginalAudioWorkletNode {
+        constructor(context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions) {
+            super(context, name, options);
+            if (typeof this.port.close !== 'function') {
+                Object.defineProperty(this.port, 'close', { configurable: true, value: () => undefined });
+            }
+        }
+    }
+    Object.defineProperty(globalThis, 'AudioWorkletNode', {
+        configurable: true,
+        writable: true,
+        value: AudioWorkletNodeWithClosablePort,
+    });
+});
 
 const scriptState = { requestTurn: 0, planningTurn: 0 };
 const chatPlanning = vi.hoisted(() => ({
@@ -142,6 +222,7 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({ isWebLlmLoaded: () 
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    updateDeviceParam: runtimeMocks.updateDeviceParam,
     resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
     setTrackGain: runtimeMocks.setTrackGain,
     setTrackMute: runtimeMocks.setTrackMute,
@@ -323,6 +404,14 @@ async function commitThroughCard(prompt: string): Promise<void> {
     }
     await expect(confirmPendingChatActions({ confirmationId: pendingId })).resolves.toEqual({ status: 'executed' });
     expect(readChatThreadContext()?.lastCommit?.standing).toBe('standing');
+}
+
+/** Confirms the card a request left waiting, when the risk policy put it to the user rather than committing it. */
+async function confirmIfProposed(): Promise<void> {
+    const [pendingId] = proposedIds();
+    if (pendingId !== undefined) {
+        await expect(confirmPendingChatActions({ confirmationId: pendingId })).resolves.toEqual({ status: 'executed' });
+    }
 }
 
 function addTrack(track: Track, kind: Track['kind']): void {
@@ -1226,6 +1315,370 @@ describe('relative to the last commit', () => {
         });
     });
 
+    describe('re-targets a committed recipe by expanding it again on the named tracks', () => {
+        /** A factory preset recipe that names no role, so it serves any source track. */
+        const ROLE_LESS_RECIPE = 'preset:fx-eq-high-cut:warm';
+
+        // The engine keeps live strips for the process, so a device one case committed would make the
+        // next case's device-chain delta disagree with the runtime graph it starts from.
+        afterEach(() => {
+            for (const track of trackStore.value?.tracks ?? []) {
+                removeTrackStrip(track.id);
+            }
+        });
+
+        function catalogRecipe(recipeId: string) {
+            const recipe = getMixRecipeCatalog().recipes.find((candidate) => candidate.id === recipeId);
+            if (recipe === undefined) {
+                throw new Error(`Expected recipe ${recipeId} in the catalogue`);
+            }
+            return recipe;
+        }
+
+        /**
+         * Commits a recipe on Vocals through the route that adopts one: an answer's suggestion taken up
+         * with "Propose this", then confirmed, so the card records the recipe as an expansion adopts it.
+         */
+        async function commitRecipeOnVocals(recipeId = ROLE_LESS_RECIPE): Promise<void> {
+            const messageId = `answer-${recipeId}`;
+            appendChatMessage({
+                id: messageId,
+                role: 'assistant',
+                content: 'An answer offering one recipe.',
+                timestamp: Date.now(),
+                projectId: captureProjectIdentity(),
+                projectRevision: captureProjectRevision(),
+                answerSuggestion: {
+                    recipeId,
+                    recipeTitle: catalogRecipe(recipeId).title,
+                    targetId: 'track-vocals',
+                    targetName: 'Vocals',
+                    recipeRole: 'vocal',
+                    roleSource: 'argument',
+                },
+            });
+            await expect(proposeAnswerSuggestion(messageId)).resolves.toBe('requested');
+            const [pendingId] = proposedIds();
+            if (pendingId === undefined) {
+                throw new Error(`Expected the recipe to wait for approval: ${lastAssistantMessage()?.error ?? ''}`);
+            }
+            await expect(confirmPendingChatActions({ confirmationId: pendingId })).resolves.toEqual({
+                status: 'executed',
+            });
+            expect(getTrack('track-vocals').devices.length).toBeGreaterThan(0);
+            expect(readChatThreadContext()?.lastCommit?.standing).toBe('standing');
+        }
+
+        function proposedCard() {
+            const [id] = proposedIds();
+            return pendingActionConfirmationStore.value?.confirmations.find((confirmation) => confirmation.id === id);
+        }
+
+        /** Rewrites what the committed card recorded as adopted, as an older or other expansion would have. */
+        function rewriteCommittedRecipes(
+            rewrite: (
+                recipes: Array<{ recipeId: string; title: string; targetId: string; presetVersion?: string }>
+            ) => Array<{ recipeId: string; title: string; targetId: string; presetVersion?: string }>
+        ): void {
+            const state = pendingActionConfirmationStore.value!;
+            pendingActionConfirmationStore.set({
+                ...state,
+                confirmations: state.confirmations.map((confirmation) =>
+                    confirmation.approvalSnapshot.adoptedRecipes === undefined
+                        ? confirmation
+                        : {
+                              ...confirmation,
+                              approvalSnapshot: {
+                                  ...confirmation.approvalSnapshot,
+                                  adoptedRecipes: rewrite(confirmation.approvalSnapshot.adoptedRecipes),
+                              },
+                          }
+                ),
+            });
+        }
+
+        it.each(['do the same to the Guitars', 'Guitars too', 'apply that recipe to the Guitars'])(
+            '"%s" expands the committed recipe on Guitars, with devices of its own, asking the provider nothing',
+            async (prompt) => {
+                await commitRecipeOnVocals();
+                const vocalsDeviceIds = getTrack('track-vocals').devices.map((device) => device.id);
+                const expected = expandMixRecipe(
+                    { recipeId: ROLE_LESS_RECIPE, targetId: 'track-guitars', role: null, values: [] },
+                    getProjectContext(),
+                    0
+                );
+                if (expected.status !== 'expanded') {
+                    throw new Error(`Expected the recipe to expand on Guitars: ${expected.reason}`);
+                }
+                const calls = providerCallCount();
+
+                await sendChatMessage(prompt);
+
+                expect(providerCallCount()).toBe(calls);
+                const card = proposedCard();
+                expect(card?.approvalSnapshot.adoptedRecipes).toEqual([
+                    {
+                        recipeId: ROLE_LESS_RECIPE,
+                        title: catalogRecipe(ROLE_LESS_RECIPE).title,
+                        targetId: 'track-guitars',
+                        presetVersion: catalogRecipe(ROLE_LESS_RECIPE).origin?.presetVersion,
+                    },
+                ]);
+                expect(card?.actions.map((action) => action.type)).toEqual(
+                    expected.commands.map((command) => command.operation)
+                );
+                expect(card?.actions[0]).toMatchObject({ type: 'addDevice', payload: { trackId: 'track-guitars' } });
+                const payloads = JSON.stringify(card?.actions.map((action) => action.payload));
+                expect(vocalsDeviceIds.filter((id) => payloads.includes(id))).toEqual([]);
+
+                await expect(confirmPendingChatActions({ confirmationId: card?.id ?? '' })).resolves.toEqual({
+                    status: 'executed',
+                });
+                expect(getTrack('track-guitars').devices.map((device) => device.type)).toEqual(
+                    getTrack('track-vocals').devices.map((device) => device.type)
+                );
+                expect(getTrack('track-guitars').devices.map((device) => device.id)).not.toEqual(vocalsDeviceIds);
+            }
+        );
+
+        it('asks when the named track is not in the project', async () => {
+            await commitRecipeOnVocals();
+
+            await expectAnsweredWithoutChange('do the same to the snare', 'not a list of this project');
+        });
+
+        it('refuses a frozen named track, naming it', async () => {
+            await commitRecipeOnVocals();
+            const current = trackStore.value!;
+            trackStore.set({
+                ...current,
+                tracks: current.tracks.map((track) =>
+                    track.id === 'track-guitars'
+                        ? { ...track, frozen: true, freezeState: { status: 'unfrozen' as const } }
+                        : track
+                ),
+            });
+
+            await expectAnsweredWithoutChange('do the same to the Guitars', 'Guitars is frozen');
+            expect(getTrack('track-guitars').devices).toEqual([]);
+        });
+
+        it('refuses a recipe whose roles the named track does not serve, with the expansion reason', async () => {
+            await commitRecipeOnVocals('vocal-warm');
+
+            await expectAnsweredWithoutChange('do the same to the Guitars', 'Guitars cannot take the recipe');
+            expect(lastAssistantMessage()?.content).toContain('recipe "vocal-warm"');
+        });
+
+        it('refuses a committed recipe undone before the request', async () => {
+            await commitRecipeOnVocals();
+            await undo();
+            expect(readChatThreadContext()?.lastCommit?.standing).toBe('undone');
+
+            await expectAnsweredWithoutChange('do the same to the Guitars', 'was undone');
+        });
+
+        it('refuses a preset recipe whose preset changed since the commit', async () => {
+            await commitRecipeOnVocals();
+            rewriteCommittedRecipes((recipes) =>
+                recipes.map((recipe) => ({ ...recipe, presetVersion: 'preset-v1:an-earlier-version' }))
+            );
+
+            await expectAnsweredWithoutChange('do the same to the Guitars', 'has changed since that change');
+        });
+
+        it('refuses a recipe the catalogue no longer publishes', async () => {
+            await commitRecipeOnVocals();
+            rewriteCommittedRecipes((recipes) => recipes.map((recipe) => ({ ...recipe, recipeId: 'retired-recipe' })));
+
+            await expectAnsweredWithoutChange('do the same to the Guitars', 'no longer in the recipe catalogue');
+        });
+
+        it('asks which recipe to repeat when the commit adopted several', async () => {
+            await commitRecipeOnVocals();
+            rewriteCommittedRecipes((recipes) => [...recipes, { ...recipes[0]!, recipeId: 'vocal-warm' }]);
+
+            await expectAnsweredWithoutChange('do the same to the Guitars', 'Which recipe should be repeated');
+        });
+
+        it('refuses the recipe form when the last commit applied no recipe', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+
+            await expectAnsweredWithoutChange('apply that recipe to the Guitars', 'applied no recipe');
+            await expectAnsweredWithoutChange('use the same recipe on Bass', 'applied no recipe');
+            expect(decibelsOf('track-guitars')).toBe(0);
+        });
+    });
+
+    describe('continues a committed pan in the percent its control shows, from the committed pan', () => {
+        /** Commits a pan of Vocals, through its card when the risk policy asks for one. */
+        async function commitVocalsPan(pan: number): Promise<void> {
+            scriptProvider([[{ name: 'setTrackPan', arguments: { trackId: 'track-vocals', pan } }]]);
+            await sendChatMessage(`Pan Vocals ${String(Math.abs(pan))}% ${pan < 0 ? 'left' : 'right'}`);
+            await confirmIfProposed();
+            expect(getTrack('track-vocals').pan).toBe(pan);
+            expect(readChatThreadContext()?.lastCommit?.standing).toBe('standing');
+        }
+
+        it.each([
+            ['another 10%', -20, -30],
+            ['10 percent more', -20, -30],
+            ['10% less', -20, -10],
+            ['an extra 5%', 30, 35],
+            ['20% less', 20, 0],
+        ])('"%s" after a committed pan of %s lands at %s', async (prompt, committedPan, landed) => {
+            await commitVocalsPan(committedPan);
+            // The musician moves the knob after the commit; the continuation reads the committed pan.
+            await executeAppAction({
+                type: 'setTrackPan',
+                payload: { trackId: 'track-vocals', pan: 0, expectedPan: committedPan },
+            });
+            const calls = providerCallCount();
+
+            await sendChatMessage(prompt);
+            await confirmIfProposed();
+
+            expect(providerCallCount()).toBe(calls);
+            expect(getTrack('track-vocals').pan).toBe(landed);
+        });
+
+        it('refuses a continuation past the pan limit, naming the room left, never clamping', async () => {
+            await commitVocalsPan(-40);
+
+            await expectAnsweredWithoutChange('15% more', 'past the pan limit of 50%');
+            expect(lastAssistantMessage()?.content).toContain('10% of room left');
+            expect(getTrack('track-vocals').pan).toBe(-40);
+        });
+
+        it('refuses "more" on a committed pan already at the limit', async () => {
+            await commitVocalsPan(50);
+
+            await expectAnsweredWithoutChange('another 5%', 'already at the pan limit of 50%');
+        });
+
+        it('refuses "less" that would cross the centre', async () => {
+            await commitVocalsPan(-20);
+
+            await expectAnsweredWithoutChange('30% less', 'would cross the centre');
+        });
+
+        it('asks which side for a committed centre pan', async () => {
+            const current = trackStore.value!;
+            trackStore.set({
+                ...current,
+                tracks: current.tracks.map((track) => (track.id === 'track-vocals' ? { ...track, pan: 20 } : track)),
+            });
+            scriptProvider([[{ name: 'setTrackPan', arguments: { trackId: 'track-vocals', pan: 0 } }]]);
+            await sendChatMessage('Pan Vocals to the centre');
+            await confirmIfProposed();
+            expect(getTrack('track-vocals').pan).toBe(0);
+
+            await expectAnsweredWithoutChange('10% more', 'Which side should it move to?');
+        });
+
+        it.each([
+            ['a bit more', 'How much more, in percent?'],
+            ['another 10 Hz', 'sets no value in Hz; its values are in percent (pan)'],
+            ['another 2 dB', 'sets no level in decibels'],
+        ])('"%s" on a committed pan asks or refuses', async (prompt, text) => {
+            await commitVocalsPan(-20);
+
+            await expectAnsweredWithoutChange(prompt, text);
+        });
+
+        it('continues only the pan of a commit that moved a level and a pan, for a figure in percent', async () => {
+            scriptProvider([
+                [VOCALS_DOWN_3_DB, { name: 'setTrackPan', arguments: { trackId: 'track-vocals', pan: -20 } }],
+            ]);
+            await commitThroughCard('Turn Vocals down 3 dB and pan Vocals 20% left');
+
+            await sendChatMessage('another 10%');
+            await confirmIfProposed();
+
+            expect(getTrack('track-vocals').pan).toBe(-30);
+            expect(decibelsOf('track-vocals')).toBe(-3);
+        });
+    });
+
+    describe('continues a committed device parameter in its own unit, from the committed value', () => {
+        const EQ = { id: 'device-eq', name: 'EQ', type: 'builtin-eq', bypassed: false, parameterValues: {} };
+        const CRUST = { id: 'device-crust', name: 'Crust', type: 'crust', bypassed: false, parameterValues: {} };
+
+        /** Commits a parameter write on a Vocals device, rewritten from a committed level as the chat cannot state one. */
+        async function commitVocalsParameter(device: typeof EQ, paramId: string, value: number): Promise<void> {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            rewriteCommittedAction({ type: 'setDeviceParameter', payload: { deviceId: device.id, paramId, value } });
+            const current = trackStore.value!;
+            trackStore.set({
+                ...current,
+                tracks: current.tracks.map((track) =>
+                    track.id === 'track-vocals'
+                        ? { ...track, devices: [{ ...device, parameterValues: { [paramId]: value } }] }
+                        : track
+                ),
+            });
+        }
+
+        function parameterOf(deviceId: string, paramId: string): number | undefined {
+            return getTrack('track-vocals').devices.find((device) => device.id === deviceId)?.parameterValues[paramId];
+        }
+
+        it.each([
+            ['50 Hz more', 200, 250],
+            ['make it 50 hz less than that', 200, 150],
+        ])('"%s" after a committed Low Freq of %s Hz sets it to %s Hz', async (prompt, committedValue, landed) => {
+            await commitVocalsParameter(EQ, 'eq-low-freq', committedValue);
+            const calls = providerCallCount();
+
+            await sendChatMessage(prompt);
+            await confirmIfProposed();
+
+            expect(providerCallCount()).toBe(calls);
+            expect(parameterOf('device-eq', 'eq-low-freq')).toBe(landed);
+        });
+
+        it('continues a parameter declared in decibels by a decibel figure', async () => {
+            await commitVocalsParameter(EQ, 'eq-low-gain', 2);
+
+            await sendChatMessage('1.5 dB more');
+            await confirmIfProposed();
+
+            expect(parameterOf('device-eq', 'eq-low-gain')).toBe(3.5);
+        });
+
+        it.each([
+            ['400 Hz more', 'outside its range of 20 Hz to 500 Hz'],
+            ['another 50 Hz', 'Should it go up or down?'],
+            ['50 ms more', 'sets no value in ms; its values are in Hz (Low Freq)'],
+            ['a bit more', 'How much more, in Hz?'],
+        ])('"%s" against a committed Low Freq of 200 Hz asks or refuses, never clamping', async (prompt, text) => {
+            await commitVocalsParameter(EQ, 'eq-low-freq', 200);
+
+            await expectAnsweredWithoutChange(prompt, text);
+        });
+
+        it('refuses a stepped parameter value its law cannot represent', async () => {
+            await commitVocalsParameter(CRUST, 'oversampling', 4);
+
+            await expectAnsweredWithoutChange('2x more', 'has no setting at 6 x');
+        });
+
+        it('refuses a continuation of a device removed since the commit', async () => {
+            await commitVocalsParameter(EQ, 'eq-low-freq', 200);
+            const current = trackStore.value!;
+            trackStore.set({
+                ...current,
+                tracks: current.tracks.map((track) =>
+                    track.id === 'track-vocals' ? { ...track, devices: [] } : track
+                ),
+            });
+
+            await expectAnsweredWithoutChange('50 Hz more', 'no longer in the project');
+        });
+    });
+
     describe('reads the whole request in one closed grammar', () => {
         const undoRequest = { kind: 'undo' };
         const another = (figure: number) => ({ kind: 'continue', phrasing: 'another', comparative: 'more', figure });
@@ -1259,8 +1712,25 @@ describe('relative to the last commit', () => {
             ['slightly more', vague('more')],
             ['another 2', { kind: 'none' }],
             ['do the same to the Guitars please', { kind: 'retarget', form: 'same', targetText: 'the Guitars' }],
+            ['another 10%', { kind: 'continue', phrasing: 'another', comparative: 'more', figure: 10, unit: '%' }],
+            [
+                '10 percent less',
+                { kind: 'continue', phrasing: 'comparative', comparative: 'less', figure: 10, unit: '%' },
+            ],
+            ['apply that recipe to Keys', { kind: 'retarget', form: 'recipe', targetText: 'Keys' }],
+            ['use the same recipe on the Bass', { kind: 'retarget', form: 'recipe', targetText: 'the Bass' }],
+            ['another 2 Hz', { kind: 'none' }],
         ])('"%s"', (prompt, request) => {
             expect(readLastCommitRequest(prompt)).toEqual(request);
+        });
+
+        it.each([
+            ['another 20 Hz', { kind: 'continue', phrasing: 'another', comparative: 'more', figure: 20, unit: 'Hz' }],
+            ['20hz less', { kind: 'continue', phrasing: 'comparative', comparative: 'less', figure: 20, unit: 'Hz' }],
+            ['another 2 st', { kind: 'continue', phrasing: 'another', comparative: 'more', figure: 2, unit: 'st' }],
+            ['another 2 sec', { kind: 'none' }],
+        ])('"%s" in a unit a device parameter declares', (prompt, request) => {
+            expect(readLastCommitRequest(prompt, ['Hz', 's', 'st'])).toEqual(request);
         });
 
         it('plans "another 2", which states no unit, as any request', async () => {
@@ -1610,11 +2080,17 @@ describe('relative to the last commit', () => {
             expect(request).toMatchObject({ content: 'undo that', isCommandAction: true });
         });
 
-        it('undoes a planned revert on a decision resume, which plans no batch', async () => {
-            scriptProvider([[VOCALS_DOWN_3_DB]]);
-            await commitVocalsDown3Db();
-            const groupId = undoHistoryStore.value?.past.at(-1)?.groupId ?? '';
-            const noGrants = {
+        /** A decision resume carrying no grant, as a resumed request the planner reads as an undo. */
+        const DECISION_RESUME = {
+            sourceRunId: 'source-run',
+            decisionId: 'decision-1',
+            selectedAlternativeId: 'vocals',
+            selectedAlternative: { id: 'vocals', label: 'The Vocals', changesAuthority: false },
+            proposalIdentity: 'proposal-1',
+            capabilitySchemaIdentity: 'catalog-v1',
+            revision: 'revision-1',
+            scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+            grants: {
                 allowedOperationPrefixes: [],
                 create: false,
                 delete: false,
@@ -1625,26 +2101,78 @@ describe('relative to the last commit', () => {
                 audioUpload: false,
                 remoteGeneration: false,
                 autoCommit: false,
-            };
+            },
+            budgets: { limits: {}, consumed: {} },
+        };
 
-            await sendChatMessage('undo that', {
-                resume: {
-                    sourceRunId: 'source-run',
-                    decisionId: 'decision-1',
-                    selectedAlternativeId: 'vocals',
-                    selectedAlternative: { id: 'vocals', label: 'The Vocals', changesAuthority: false },
-                    proposalIdentity: 'proposal-1',
-                    capabilitySchemaIdentity: 'catalog-v1',
-                    revision: 'revision-1',
-                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
-                    grants: noGrants,
-                    budgets: { limits: {}, consumed: {} },
-                },
-            });
+        it('undoes a planned revert on a decision resume, which plans no batch, and reports it done', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            const groupId = undoHistoryStore.value?.past.at(-1)?.groupId ?? '';
+            const label = undoHistoryStore.value?.past.at(-1)?.label ?? '';
+
+            await sendChatMessage('undo that', { resume: DECISION_RESUME });
 
             expect(decibelsOf('track-vocals')).toBe(0);
             expect(undoHistoryStore.value?.future.map((entry) => entry.groupId)).toEqual([groupId]);
-            expect(lastAssistantMessage()?.content).toContain('Undid the last committed change');
+            expect(newestRun('undo that')?.phase).toBe('completed');
+            expect(newestRun('undo that')?.committedWork).toHaveLength(1);
+            expect(lastAssistantMessage()?.content).toBe(`Undid the last committed change:\n\n- ${label}`);
+            expect(lastAssistantMessage()?.error).toBeUndefined();
+        });
+
+        it.each([
+            [
+                'the user undid the commit while it was planned',
+                () => {
+                    const settle = agentRunWorkLease.settle.bind(agentRunWorkLease);
+                    vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+                        void undo();
+                        return settle(input);
+                    });
+                },
+                'no longer stands',
+            ],
+            [
+                'the group revert throws',
+                () => {
+                    revertMocks.outcome = () =>
+                        Promise.reject(new Error('Grouped undo failed: The inverse write failed'));
+                },
+                'Grouped undo failed',
+            ],
+        ])('never reports a resumed undo as done when %s', async (_state, arrange, error) => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            arrange();
+            const undoneBefore = (undoHistoryStore.value?.future ?? []).length;
+            const pastBefore = undoHistoryStore.value?.past.map((entry) => entry.id);
+
+            await sendChatMessage('undo that', { resume: DECISION_RESUME });
+
+            expect(newestRun('undo that')?.phase).not.toBe('completed');
+            expect(newestRun('undo that')?.committedWork ?? []).toEqual([]);
+            expect(lastAssistantMessage()?.content).not.toContain('Undid');
+            expect(lastAssistantMessage()?.error).toContain(error);
+            if (error === 'Grouped undo failed') {
+                expect(undoHistoryStore.value?.past.map((entry) => entry.id)).toEqual(pastBefore);
+                expect(undoHistoryStore.value?.future ?? []).toHaveLength(undoneBefore);
+            }
+        });
+
+        it('refuses a resumed undo under an analyze-only trust ceiling, changing nothing', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            const past = undoHistoryStore.value?.past.map((entry) => entry.id);
+
+            await sendChatMessage('undo that', { resume: DECISION_RESUME, trustCeiling: 'analyze-only' });
+
+            expect(newestRun('undo that')?.phase).not.toBe('completed');
+            expect(lastAssistantMessage()?.content).not.toContain('Undid');
+            expect(lastAssistantMessage()?.content).toContain('Undoing the last committed change changes the project');
+            expect(decibelsOf('track-vocals')).toBe(-3);
+            expect(undoHistoryStore.value?.past.map((entry) => entry.id)).toEqual(past);
+            expect(undoHistoryStore.value?.future ?? []).toEqual([]);
         });
 
         it('lists every command of an undone confirmed batch', async () => {
