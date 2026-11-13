@@ -118,6 +118,7 @@ import {
 } from './llmOrchestration/inference';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
+import { type MeasurementUnitProgress } from './measureProjectUnit';
 import { type MetricRequestAuthority, type MetricGoalState } from './metricGoalContractTypes';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { planAnswerSuggestion } from './planAnswerSuggestion';
@@ -152,6 +153,8 @@ type ParsePromptToActionsInput = {
     providerPlanning?: 'enabled' | 'disabled';
     profile?: PlanningProfile;
     onMeasurementAttempt?: MeasurementAdmitter;
+    /** Called as each initial render of a vibe run begins, naming its target and range group. */
+    onVibeRunProgress?: (progress: MeasurementUnitProgress) => void;
     /** The chat thread's earlier turns, which the planner reads as its `thread_context` section. */
     thread?: ThreadContext | null;
     /** A suggestion an earlier answer offered, which the user asked to see proposed; the prompt is not read. */
@@ -649,6 +652,7 @@ const planPromptIntent = inject({ logger })(
             correction,
             providerPlanning = 'enabled',
             onMeasurementAttempt,
+            onVibeRunProgress,
             thread,
             profile,
             suggestion,
@@ -1667,6 +1671,7 @@ const planPromptIntent = inject({ logger })(
                         signal,
                         admit: onMeasurementAttempt,
                         priorReceipts: planningOutcome.receipts,
+                        onProgress: onVibeRunProgress,
                     });
                     return {
                         metricGoalState: briefMetricGoalState,
@@ -2211,6 +2216,7 @@ async function planBriefVibeRun(input: {
     signal: AbortSignal | undefined;
     admit: MeasurementAdmitter | undefined;
     priorReceipts: readonly ApplicationToolReceipt[];
+    onProgress: ((progress: MeasurementUnitProgress) => void) | undefined;
 }): Promise<
     Pick<IntentResult, 'batchSchedule' | 'plannedRunLines' | 'applicationToolReceipts' | 'initialBaselineRefusal'>
 > {
@@ -2247,6 +2253,7 @@ async function planBriefVibeRun(input: {
         signal: input.signal,
         admit: input.admit,
         priorReceipts: input.priorReceipts,
+        onProgress: input.onProgress,
     });
     if (planned.status === 'none') {
         return {};
