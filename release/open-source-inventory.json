@@ -170,7 +170,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:34625023ef1971a807722658a25ff2509638d9b17d65bf1d8e850f5a138dfa96:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:a0ecef6506cc429cc95218c3ef86e6608b11bfaf9eea3f01831a6f3b02445407:release/dependency-license-proofs.json"
+                "sha256:c2314aacdf30bd566b4b24492f51c79f426574c1ad39905cb9c1f96bf92d6c04:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1230,7 +1230,7 @@
                 "tracked-set-sha256:eaa809018aea8e96f598f3b55ad0711e475c6a79f06c87491af507ad88d346bd:grand-boule-live-runtime",
                 "tracked-set-sha256:16a3004282547e2c00be2b45e3a21b9b78d53fd615790560b7ffbd4f3eb0a7c7:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:346a5fe49409464a9e3418fa70d31f0726b77f70cd27005fa6c111312bb0435c:grand-boule-release-proof"
+                "tracked-set-sha256:595ff372d13747883ebfaa3428abc40d541aaeaa64909a363d2a35e84b2ce1c5:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1906,7 +1906,7 @@
         },
         {
             "path": "Cargo.toml",
-            "sha256": "cbcef1d177ea9d9452c8ad8597290fc1f5ab2c1d0f5d41f7df4b43486e4a59a3"
+            "sha256": "d595db52d6f2a77864e93f1689f44aff695b14e539447f3241b3e44683c20879"
         },
         {
             "path": "Cargo.lock",
