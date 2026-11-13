@@ -21,7 +21,9 @@ vi.mock('#/components/ui/slider', () => ({
 }));
 
 vi.mock('#/components/ui/disabled-feature-wrapper', () => ({
-    DisabledFeatureWrapper: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    DisabledFeatureWrapper: ({ children }: { children: (disabled: boolean) => React.ReactNode }) => (
+        <>{children(false)}</>
+    ),
 }));
 
 vi.mock('#/components/daw/DawControlStrip', () => ({

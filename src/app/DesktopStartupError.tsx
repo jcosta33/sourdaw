@@ -1,5 +1,3 @@
-import { type ReactElement } from 'react';
-
 type DesktopStartupErrorProps = {
     onReload: () => void;
     message?: string;
@@ -8,7 +6,7 @@ type DesktopStartupErrorProps = {
 export function DesktopStartupError({
     onReload,
     message = 'The desktop connection did not load. Reload Sourdaw to try starting it again.',
-}: DesktopStartupErrorProps): ReactElement {
+}: DesktopStartupErrorProps) {
     return (
         <main className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
             <section

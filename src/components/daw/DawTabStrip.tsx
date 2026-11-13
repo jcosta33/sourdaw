@@ -192,12 +192,13 @@ export const DawTabStrip = <TId extends string>({
     const { canScrollLeft, canScrollRight } = useScrollEdges(scrollRef, itemKey);
     useRevealSelectedTab(scrollRef, activeId, itemKey);
 
-    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-        if (event.altKey || event.ctrlKey || event.metaKey) {
+    const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>): void => {
+        const scroller = scrollRef.current;
+        if (event.altKey || event.ctrlKey || event.metaKey || !scroller) {
             return;
         }
-        const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'));
-        const currentIndex = tabs.findIndex((tab) => tab === event.target);
+        const tabs = Array.from(scroller.querySelectorAll<HTMLElement>('[role="tab"]'));
+        const currentIndex = tabs.indexOf(event.currentTarget);
         if (currentIndex === -1) {
             return;
         }
@@ -218,7 +219,6 @@ export const DawTabStrip = <TId extends string>({
                 role="tablist"
                 aria-label={label}
                 className={cn('flex gap-0.5 overflow-x-auto scrollbar-none', scrollerClassName)}
-                onKeyDown={handleKeyDown}
             >
                 {items.map((item) => {
                     const Icon = item.icon;
@@ -236,6 +236,7 @@ export const DawTabStrip = <TId extends string>({
                             size="xs"
                             className={cn(tabClassName, item.className, selected ? item.activeClassName : undefined)}
                             onClick={() => onChange(item.id)}
+                            onKeyDown={handleTabKeyDown}
                             {...item.attributes}
                         >
                             {Icon ? <Icon className="size-3" /> : null}

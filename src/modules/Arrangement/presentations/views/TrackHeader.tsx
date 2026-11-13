@@ -210,6 +210,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     borderTop: '1px solid rgba(255,255,255,0.04)',
                 }}
                 role="row"
+                tabIndex={-1}
                 aria-selected={isSelected}
                 onClick={() => selectTrack(track.id)}
             >
