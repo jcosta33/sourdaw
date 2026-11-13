@@ -2,10 +2,26 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { buildCommand, generationInputsHash } from '../binaryenBuild';
 
 import { readWasmPackageMetadata, validateWasmPackageMetadata } from '../verify-wasm-artifacts';
 import { wasmArtifacts, type WasmManifest, type WasmPackageManifest } from '../wasm-artifacts';
+
+// The OS receipt boundary is absent in this fixture, independent of any prior local build.
+vi.mock('node:fs', async (importOriginal) => {
+    const fs = await importOriginal<typeof import('node:fs')>();
+    return {
+        ...fs,
+        readFileSync: (...args: Parameters<typeof fs.readFileSync>) => {
+            if (String(args[0]).includes('/wasm-build-receipts/') && String(args[0]).endsWith('.json')) {
+                throw new Error('No helper-issued build receipt in fixture');
+            }
+            return fs.readFileSync(...args);
+        },
+    };
+});
 
 /**
  * #2053: `crateSourceHash` records what the committed artifacts were built from.
@@ -192,6 +208,34 @@ describe('buildManifest against the committed repository state', () => {
         };
     }
 
+    it('preserves historical build HEAD across later commits when source controls and output are unchanged', () => {
+        const spec = wasmArtifacts.packages.find((candidate) => candidate.id === 'scoring');
+        const recorded = committed.packages.scoring;
+        if (!spec || !recorded) throw new Error('Missing scoring fixture');
+        const generation = {
+            version: 1 as const,
+            packageId: spec.id,
+            head: '0'.repeat(40),
+            sourceHash: recorded.crateSourceHash,
+            inputsHash: generationInputsHash(wasmArtifacts.repoRoot, spec.id),
+            command: buildCommand(spec.id),
+            artifacts: recorded.artifacts,
+            optimizer: {
+                host: 'linux-x64',
+                release: 'version_133',
+                archive: 'binaryen-version_133-x86_64-linux.tar.gz',
+                archiveSha256: '2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489',
+                executable: 'binaryen-version_133/bin/wasm-opt',
+                executableSha256: 'd'.repeat(64),
+                version: 'wasm-opt version 133',
+            },
+        };
+        const previous = { ...committed, packages: { ...committed.packages, scoring: { ...recorded, generation } } };
+        const { manifest, refreshed } = wasmArtifacts.buildManifest({ previous, rebuilt: new Set() });
+        expect(manifest.packages.scoring?.generation).toEqual(generation);
+        expect(refreshed).toEqual([]);
+    });
+
     it('reproduces the committed manifest when nothing was rebuilt', () => {
         const { manifest, refreshed, preserved } = wasmArtifacts.buildManifest({
             previous: committed,
@@ -217,7 +261,7 @@ describe('buildManifest against the committed repository state', () => {
 
         const { manifest, preserved } = wasmArtifacts.buildManifest({
             previous,
-            rebuilt: new Set(['daw-dsp']),
+            rebuilt: new Set(),
         });
 
         const decoder = manifest.packages['daw-wasm-decoder'];
@@ -229,21 +273,16 @@ describe('buildManifest against the committed repository state', () => {
         expect(decoder?.crateSourceHash).not.toBe(liveHash);
     });
 
-    it('refreshes a declared package so a genuine rebuild still clears the gate', () => {
-        const previous = withStaleRecord('daw-wasm-decoder');
-
-        const { manifest, refreshed } = wasmArtifacts.buildManifest({
-            previous,
-            rebuilt: new Set(['daw-wasm-decoder']),
-        });
-
-        expect(refreshed).toContain('daw-wasm-decoder');
-        expect(manifest.packages['daw-wasm-decoder']?.crateSourceHash).toBe(
-            wasmArtifacts.hashCrateClosure('crates/daw-wasm-decoder')
-        );
+    it('refuses a declaration of rebuild without a helper-issued matching success receipt', () => {
+        expect(() =>
+            wasmArtifacts.buildManifest({
+                previous: withStaleRecord('daw-wasm-decoder'),
+                rebuilt: new Set(['daw-wasm-decoder']),
+            })
+        ).toThrow();
     });
 
-    it('refreshes a package whose committed artifacts no longer match the previous record', () => {
+    it('refuses changed artifacts without a matching build receipt', () => {
         const recorded = committed.packages['daw-dsp'];
         if (recorded === undefined) {
             throw new Error('Package daw-dsp is missing from the committed manifest');
@@ -264,16 +303,10 @@ describe('buildManifest against the committed repository state', () => {
             },
         };
 
-        const { manifest, refreshed } = wasmArtifacts.buildManifest({ previous, rebuilt: new Set() });
-
-        expect(refreshed).toContain('daw-dsp');
-        expect(manifest.packages['daw-dsp']?.crateSourceHash).toBe(wasmArtifacts.hashCrateClosure('crates/daw-dsp'));
+        expect(() => wasmArtifacts.buildManifest({ previous, rebuilt: new Set() })).toThrow();
     });
 
-    it('builds every package fresh when there is no previous manifest to preserve', () => {
-        const { refreshed, preserved } = wasmArtifacts.buildManifest({ previous: null, rebuilt: new Set() });
-
-        expect([...refreshed].sort()).toEqual(wasmArtifacts.packages.map((spec) => spec.id).sort());
-        expect(preserved).toEqual([]);
+    it('refuses a first manifest without actual build receipts', () => {
+        expect(() => wasmArtifacts.buildManifest({ previous: null, rebuilt: new Set() })).toThrow();
     });
 });

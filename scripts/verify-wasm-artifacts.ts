@@ -2,7 +2,7 @@
 /**
  * `pnpm wasm:verify` — deterministic freshness gate for the generated Rust→WASM
  * artifacts (WB-1). Rebuild-and-diff is not byte-reproducible across machines
- * (wasm-opt is bundled per wasm-pack build and not independently pinnable), so
+ * (optimizer archive and executable identity are recorded by the build wrapper), so
  * this gate uses the fingerprint manifest written by `gen-wasm-manifest.ts`:
  *
  *  1. Toolchain pin — wasm-pack / wasm-opt are checked against pinned constants,
@@ -38,6 +38,14 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+    assertRecordedBinaryenIdentity,
+    buildCommand,
+    generationInputsHash,
+    parseBuildGeneration,
+    sameArtifactHashes,
+} from './binaryenBuild.ts';
+
 import { PROJECT_LICENSE_ID } from './checkProjectLicense.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
@@ -62,6 +70,28 @@ function checkToolchain(manifest: WasmManifest): void {
     }
     if (recorded.wasmOpt !== pinned.wasmOpt) {
         fail(`toolchain.wasmOpt: manifest records "${recorded.wasmOpt}" but the pin is "${pinned.wasmOpt}"`);
+    }
+
+    if (recorded.wasmOpt === 'binaryen-version_133') {
+        for (const spec of wasmArtifacts.packages) {
+            try {
+                const entry = manifest.packages[spec.id];
+                const generation = parseBuildGeneration(entry?.generation);
+                assertRecordedBinaryenIdentity(generation.optimizer);
+                if (
+                    generation.packageId !== spec.id ||
+                    generation.sourceHash !== entry?.crateSourceHash ||
+                    generation.inputsHash !== generationInputsHash(wasmArtifacts.repoRoot, spec.id) ||
+                    JSON.stringify(generation.command) !== JSON.stringify(buildCommand(spec.id)) ||
+                    !entry ||
+                    !sameArtifactHashes(generation.artifacts, entry.artifacts)
+                ) {
+                    fail(`${spec.id}: optimizer generation does not bind the recorded source, command and artifacts`);
+                }
+            } catch (error) {
+                fail(`${spec.id}: invalid actual Binaryen generation provenance: ${String(error)}`);
+            }
+        }
     }
 
     // Independent sources: Cargo.lock for wasm-bindgen, rust-toolchain.toml for the channel.

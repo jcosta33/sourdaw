@@ -25,6 +25,15 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from '
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+    buildCommand,
+    currentHead,
+    generationInputsHash,
+    parseBuildGeneration,
+    readBuildReceipt,
+    type WasmBuildGeneration,
+} from './binaryenBuild.ts';
+
 import { wasmToolchainPins } from './wasmToolchainPins.ts';
 import { workspaceDependencyNames, workspaceManifestFingerprintInput } from './workspaceManifestFingerprint.ts';
 
@@ -87,6 +96,7 @@ export type WasmPackageSpec = {
 };
 
 export type WasmPackageManifest = {
+    generation?: WasmBuildGeneration;
     crate: string;
     crateSourceHash: string;
     schemaHash: string;
@@ -625,8 +635,20 @@ function buildPackageManifest(
         liveCrateSourceHash: () => hashCrateClosure(spec.crateDir),
     });
 
+    const previousPackage = options.previous?.packages[spec.id];
+    const generation = provenance.refreshed
+        ? readBuildReceipt(repoRoot, spec.id, {
+              head: currentHead(repoRoot),
+              sourceHash: provenance.crateSourceHash,
+              inputsHash: generationInputsHash(repoRoot, spec.id),
+              command: buildCommand(spec.id),
+              artifacts,
+          })
+        : previousPackage?.generation;
+
     return {
         manifest: {
+            ...(generation === undefined ? {} : { generation }),
             crate: spec.crateDir,
             crateSourceHash: provenance.crateSourceHash,
             schemaHash,
@@ -666,7 +688,12 @@ function buildManifest(options: WasmManifestOptions): WasmManifestBuild {
             wasmPack: wasmToolchainPins.wasmPack,
             wasmBindgen: wasmBindgenLockVersion(),
             rustToolchain: rustToolchainChannel(),
-            wasmOpt: wasmToolchainPins.wasmOpt,
+            wasmOpt: wasmPackages.every((spec) => packages[spec.id]?.generation?.optimizer.release === 'version_133')
+                ? wasmToolchainPins.wasmOpt
+                : (options.previous?.toolchain.wasmOpt ??
+                  (() => {
+                      throw new Error('Every new package requires verified generation provenance');
+                  })()),
         },
         packages,
     };
@@ -713,6 +740,7 @@ function parseToolchain(value: unknown): WasmToolchain {
 function parsePackageManifest(value: unknown, label: string): WasmPackageManifest {
     const record = requireObject(value, label);
     return {
+        ...(record.generation === undefined ? {} : { generation: parseBuildGeneration(record.generation) }),
         crate: requireString(record.crate, `${label}.crate`),
         crateSourceHash: requireString(record.crateSourceHash, `${label}.crateSourceHash`),
         schemaHash: requireString(record.schemaHash, `${label}.schemaHash`),

@@ -15,6 +15,8 @@ import { dirname, join } from 'node:path';
 import { Zip, ZipDeflate, zipSync } from 'fflate';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { buildCommand, generationInputsHash } from '../binaryenBuild';
+
 import {
     buildHostedWasmArtifacts,
     collectHostedArtifacts,
@@ -64,6 +66,8 @@ describe('hosted WASM package selection', () => {
         'scripts/hostedWasmZip.ts',
         'scripts/wasm-artifacts.ts',
         'scripts/wasmToolchainPins.ts',
+        'scripts/binaryenBuild.ts',
+        'scripts/buildWasmPackage.ts',
         'scripts/workspaceManifestFingerprint.ts',
         'scripts/markWasmPackageInternal.ts',
         'scripts/gen-wasm-manifest.ts',
@@ -145,11 +149,66 @@ function fixture(selected = ['scoring', 'proof-chamber']) {
     temporaryDirectories.push(directory);
     const root = join(directory, 'source');
     mkdirSync(root);
+    for (const path of [
+        'Cargo.toml',
+        'Cargo.lock',
+        '.cargo/config.toml',
+        'rust-toolchain.toml',
+        'scripts/binaryenBuild.ts',
+        'scripts/buildWasmPackage.ts',
+        'scripts/wasmToolchainPins.ts',
+        'scripts/markWasmPackageInternal.ts',
+        'scripts/gen-daw-dsp-worklet.ts',
+        'scripts/gen-proof-chamber-worklet.ts',
+        'scripts/gen-scoring-worklet.ts',
+    ]) {
+        mkdirSync(dirname(join(root, path)), { recursive: true });
+        writeFileSync(join(root, path), readFileSync(join(wasmArtifacts.repoRoot, path)));
+    }
     writeFileSync(join(root, 'package.json'), JSON.stringify({ packageManager: 'pnpm@11.6.0' }));
     for (const path of hostedArtifactPaths(selected)) {
         mkdirSync(dirname(join(root, path)), { recursive: true });
         writeFileSync(join(root, path), `generated ${path}`);
     }
+    // Generated child output is the process boundary; real hosted qualification parses/binds it.
+    const packages = Object.fromEntries(
+        selected.map((id) => {
+            const spec = wasmArtifacts.packages.find((candidate) => candidate.id === id);
+            if (!spec) throw new Error('Missing package fixture');
+            const artifacts = Object.fromEntries(
+                spec.artifacts.map((path) => [
+                    path,
+                    `sha256:${createHash('sha256')
+                        .update(readFileSync(join(root, path)))
+                        .digest('hex')}`,
+                ])
+            );
+            return [
+                id,
+                {
+                    generation: {
+                        version: 1,
+                        packageId: id,
+                        head: headSha,
+                        sourceHash: wasmArtifacts.hashCrateClosure(spec.crateDir),
+                        inputsHash: generationInputsHash(root, id),
+                        command: buildCommand(id),
+                        artifacts,
+                        optimizer: {
+                            host: 'linux-x64',
+                            release: 'version_133',
+                            archive: 'binaryen-version_133-x86_64-linux.tar.gz',
+                            archiveSha256: '2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489',
+                            executable: 'binaryen-version_133/bin/wasm-opt',
+                            executableSha256: 'd'.repeat(64),
+                            version: 'wasm-opt version 133',
+                        },
+                    },
+                },
+            ];
+        })
+    );
+    writeFileSync(join(root, 'public/wasm/manifest.json'), JSON.stringify({ packages }));
     const commands: string[][] = [];
     let changed: string[] = [];
     const capture = (command: string, args: string[]) => {
@@ -195,6 +254,16 @@ function fixture(selected = ['scoring', 'proof-chamber']) {
 }
 
 describe('hosted build qualification', () => {
+    it.each(['optimizer', 'head', 'artifacts'])('refuses altered actual build %s before upload', (field) => {
+        const input = fixture(['scoring']);
+        const path = join(input.root, 'public/wasm/manifest.json');
+        const data = JSON.parse(readFileSync(path, 'utf8'));
+        data.packages.scoring.generation[field] = 'invalid';
+        writeFileSync(path, JSON.stringify(data));
+        expect(() => buildHostedWasmArtifacts(input)).toThrow();
+        expect(existsSync(input.outputDirectory)).toBe(false);
+    });
+
     it('builds daw-dsp with its worklet generator and qualifies every declared output', () => {
         const input = fixture(['daw-dsp']);
         const receipt = buildHostedWasmArtifacts(input);
