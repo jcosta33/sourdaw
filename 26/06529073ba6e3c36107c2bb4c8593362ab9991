@@ -1,0 +1,188 @@
+src/modules/Automation/useCases/automation/getPlannedSend.ts
+  s_35b9801a6d6336::t_76e80cfa16a6ff 1-4,5-6,7-36
+  s_35b9801a6d6336::t_fba09487773ee3 37-39
+  s_35b9801a6d6336::t_c8b1d29352dfbd 1-39
+src/modules/Automation/handlers/automation/automationPointSnapshotsMatch.ts
+  s_126e3d478b4f75::t_01bf600adc0253 22
+src/modules/Automation/handlers/automation/handleRemoveAutomationLane.ts
+  s_eec9d24f84ae15::t_3dd3349f93aa02 2,12,22-46,81,108
+  s_35b9801a6d6336::t_74b7c09fa25127 119-124
+  s_9307cedd8951f1::t_54c380f3a1543c 9,125
+src/modules/Automation/handlers/automation/handleAutomateParameterRange.ts
+  s_35b9801a6d6336::t_3e9ad1747e3b92 7,24-36,52,55-69,75-79,82-84,171,187,201-205
+  s_9307cedd8951f1::t_6f60630d3aa21c 11-12,253
+src/modules/Automation/handlers/automation/handleAutomateSendRanges.ts
+  s_35b9801a6d6336::t_c98eb4c5c7b215 40
+  s_9307cedd8951f1::t_b1229eeb4be269 11-12,121
+  s_35b9801a6d6336::t_c8b1d29352dfbd 7-8
+src/modules/Automation/handlers/automation/handleRestoreAutomationLanePoints.ts
+  s_35b9801a6d6336::t_52cbdaea4d3e37 56-59
+  s_126e3d478b4f75::t_34ce89bea321a8 9-12,61
+src/modules/Automation/useCases/__tests__/automateParameterRange.spec.ts
+  s_35b9801a6d6336::t_8e668d34fea2fa 13,161-162,857-937,976-991,1041-1102,1107-1127
+  s_35b9801a6d6336::t_58cac9ddb30722 947,951
+  s_35b9801a6d6336::t_18120a4b57d15f 939-940,942-946,948
+  s_35b9801a6d6336::t_50bf65d72f3e8b 953-961
+  s_35b9801a6d6336::t_fe2abf8c706d0b 938,941,949-950,952,962-970
+  s_35b9801a6d6336::t_7dde55285aa9ab 971-973
+  s_35b9801a6d6336::t_eba18de93aa7ea 974-975
+  s_35b9801a6d6336::t_385bdbcd0345ca 1103-1106
+src/modules/Automation/useCases/automation/planParameterRangeWrite.ts
+  s_35b9801a6d6336::t_5a1624e995a0dd 14,80-85,97-98,102,141-145,154,168-220,362-366,374,378-381
+  s_35b9801a6d6336::t_c8b1d29352dfbd 21-22
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/findTrailingRangePhrase.ts
+  s_35b9801a6d6336::t_4fa132cfeec602 1-2,4,6,8,11,13
+  s_35b9801a6d6336::t_3d59d110e86855 9-11
+  s_35b9801a6d6336::t_1aff3c78a395b3 6-7,13
+  s_35b9801a6d6336::t_7d4712623cdba4 12
+  s_35b9801a6d6336::t_dbbfafeef852e1 3,5
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/classifyPromptDecibelFigures.ts
+  s_35b9801a6d6336::t_a37ac96a672fb5 118-123
+  s_35b9801a6d6336::t_05ec0deebe2329 69-77
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_35b9801a6d6336::t_b34a94d22e7618 132
+  s_35b9801a6d6336::t_e940ef712bdbb4 6-7,1468-1485,1568-1570,2951
+  s_35b9801a6d6336::t_bd8547019dd732 1567
+  s_35b9801a6d6336::t_d114e611c06397 2962
+  s_35b9801a6d6336::t_015cc258d7ad58 2984-2985,2987-2989
+  s_35b9801a6d6336::t_d6b0e74a07885e 2952-2961,2969
+  s_35b9801a6d6336::t_e31c405974844b 4286-4287,4290-4297,4299,4305,4307-4313,4317-4318,4320-4325,4343-4347
+  s_35b9801a6d6336::t_61f81305aba7f0 4314-4316,4326-4327,4337-4342
+  s_35b9801a6d6336::t_aaa1becdd31a98 4288-4289,4298,4300-4304,4306,4328-4329
+  s_35b9801a6d6336::t_b0072cce944967 5451-5452,5454-5463
+  s_b348f66240d751::t_0a19c602872a7e 4319,4330-4336,5453
+  s_35b9801a6d6336::t_39ae2939e440a5 1364
+  s_35b9801a6d6336::t_867fe912c426ab 132,157-158
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_35b9801a6d6336::t_b67e6ab08b63c9 2610-2611,2613-2619,2621-2625
+  s_35b9801a6d6336::t_33e6c671786512 2612
+  s_35b9801a6d6336::t_4f11072d16456b 2620
+src/modules/AiRuntime/useCases/agentReference/__tests__/parameterRangeListGrounding.spec.ts
+  s_35b9801a6d6336::t_98b019eba281f7 1-90,92-114,125-130,132-157
+  s_35b9801a6d6336::t_14c2dbb20fb215 115-117,123-124
+  s_35b9801a6d6336::t_9b2d332c34501f 118-122,131
+src/modules/AiRuntime/useCases/agentReference/__tests__/parameterRangeGrounding.spec.ts
+  s_35b9801a6d6336::t_3d59d110e86855 97-101
+  s_35b9801a6d6336::t_ad32ec84b87ddb 1-96,102-217,272-284
+  s_b348f66240d751::t_babd6666eb968e 242-271
+src/modules/Command/useCases/__tests__/getVersionedCommandTargetRanges.spec.ts
+  s_35b9801a6d6336::t_8f17f42d975e2f 1-6,8-27
+  s_35b9801a6d6336::t_adc916cd0568a8 7
+src/modules/Command/useCases/getVersionedCommandTargetRanges.ts
+  s_35b9801a6d6336::t_0ed6378ccec197 5-10,23-26
+src/modules/Automation/handlers/automation/validateRangeWriteSessionEntries.ts
+  s_35b9801a6d6336::t_29a5854368f03b 1-6,8-47,54-179,181-209,303-308,316-318,320
+  s_35b9801a6d6336::t_db7ed5d54c5128 48-53
+  s_35b9801a6d6336::t_ca7dff79ca11ef 180
+  s_35b9801a6d6336::t_0fd04902a155bc 325
+  s_a7cc15f412c3bf::t_fd57d276362dd4 7,210-248,296-302,309-315,323
+  s_35b9801a6d6336::t_c34fd654863366 249-295,319,321-322,324
+src/modules/Automation/handlers/automation/handleAutomateSendRange.ts
+  s_9307cedd8951f1::t_f4417447b58975 8-9,118
+src/modules/Automation/handlers/automation/handleAutomateTrackGainRange.ts
+  s_9307cedd8951f1::t_445669c9e6b2e5 9-10,109
+src/modules/Automation/handlers/automation/handleRemoveSendAutomationRange.ts
+  s_9307cedd8951f1::t_79901e58636cf6 9-10,98
+src/modules/Automation/handlers/automation/handleRemoveSendAutomationRanges.ts
+  s_9307cedd8951f1::t_f4c184d185266e 11-12,122
+src/modules/Automation/handlers/automation/handleRemoveTrackGainAutomationRange.ts
+  s_9307cedd8951f1::t_1ee0bd80b535ca 11-12,134
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_9307cedd8951f1::t_b1a87f6861d4e8 24-28,114-118
+src/modules/Command/useCases/__tests__/retiredRangeToolStoredCommands.spec.ts
+  s_99d03971054b79::t_1ceb4138f4a925 1,4-8,10-11,18-30,32-33,35,37,42,46,48-50,52,290-540,629-658,660-782,784-790,792-799,801-802,804,808-809,811-813,815,839-842,843,850-851
+  s_a7cc15f412c3bf::t_bae1cfbf9f0437 541-628,791,800,803,805-807,810,814,816-838,844-849
+  s_35b9801a6d6336::t_9057fa72ef041f 659
+  s_35b9801a6d6336::t_385bdbcd0345ca 148,783
+.agents/skills/review-stances/project-integrity.md
+  s_35b9801a6d6336::t_2c2191e9d04e64 167-175
+src/modules/Automation/AGENTS.md
+  s_a7cc15f412c3bf::t_4766c08de3735f 23
+  s_35b9801a6d6336::t_c8b1d29352dfbd 22
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/readStatedRangeBeats.ts
+  s_35b9801a6d6336::t_867fe912c426ab 18-20,37
+  s_35b9801a6d6336::t_dbbfafeef852e1 1-17,21-36,38-71,73-105,107-110
+  s_35b9801a6d6336::t_bf0794d0e65c95 72,106
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/resolveProjectRange.ts
+  s_35b9801a6d6336::t_dbbfafeef852e1 1-20
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_35b9801a6d6336::t_350bec839effdf 437
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/resolveCallRange.ts
+  s_35b9801a6d6336::t_dbbfafeef852e1 1-26
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/findRangePhrases.ts
+  s_35b9801a6d6336::t_dbbfafeef852e1 1-87
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/localPlanningWindow.integration.spec.ts
+  s_35b9801a6d6336::t_350bec839effdf 39,430
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_35b9801a6d6336::t_350bec839effdf 93-97
+src/app/__tests__/agentSourceExamples.spec.ts
+  s_35b9801a6d6336::t_385bdbcd0345ca 131
+src/modules/Automation/useCases/automation/getPlannedBus.ts
+  s_35b9801a6d6336::t_c8b1d29352dfbd 1-24
+evidence/agent-campaign/manifest.json
+  s_35b9801a6d6336::t_5c435dd1ea4798 844
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2606529073ba6e3c36107c2bb4c8593362ab9991",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_99d03971054b79": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_99d03971054b79",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_a7cc15f412c3bf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_a7cc15f412c3bf",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b348f66240d751": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_b348f66240d751",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
