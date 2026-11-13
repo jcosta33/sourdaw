@@ -1,0 +1,51 @@
+scripts/hostedWasmArtifacts.ts
+  s_126e3d478b4f75::t_d9d259b2d78796 23,43,50,172-173,178
+scripts/__tests__/hostedWasmArtifacts.spec.ts
+  s_126e3d478b4f75::t_781170b43ad2b4 416-441,445
+  s_126e3d478b4f75::t_d9d259b2d78796 183-189
+  s_126e3d478b4f75::t_71369204264e27 156-158,444,446-459
+  s_126e3d478b4f75::t_f2ced5016af338 3,65,71,73,75,77-78,155,162-163,167-172,442-443
+scripts/__tests__/hostedWasmSourceContext.spec.ts
+  s_126e3d478b4f75::t_71369204264e27 25-31,51-56,319-332,336-346
+  s_126e3d478b4f75::t_781170b43ad2b4 333-335
+  s_126e3d478b4f75::t_0b1163ef2d41f6 19-20,347-349,371
+scripts/pnpmLock.ts
+  s_126e3d478b4f75::t_71369204264e27 12-14
+  s_126e3d478b4f75::t_9caed892b38082 1-11,15-20,117-118
+scripts/binaryenBuild.ts
+  s_126e3d478b4f75::t_d9d259b2d78796 22-30,246,357,366-369,384-387,421-424,434-437,505-508,527-531,537-552,557-558,560-562,565-571,573-636,639-640,672
+  s_ff124a0cf68412::t_64a774a98876f3 18-19
+scripts/gen-wasm-manifest.ts
+  s_126e3d478b4f75::t_d9d259b2d78796 26,30
+scripts/buildWasmPackage.ts
+  s_126e3d478b4f75::t_d9d259b2d78796 5,25,31,40
+scripts/__tests__/binaryenBuild.spec.ts
+  s_126e3d478b4f75::t_71369204264e27 2-11,251-253,523
+  s_126e3d478b4f75::t_d9d259b2d78796 23,30-32,221-228,235-241,258-504,513-522,524
+  s_126e3d478b4f75::t_781170b43ad2b4 229-231,256
+  s_126e3d478b4f75::t_0fff218cdbeb84 13,22,232-234,242-250,254-255,257,505-512
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bb519e5dd9c9be76a813eff36d6218f2bc5b4d0e",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ff124a0cf68412": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5859629c-45b4-4907-85a7-756af720dd80",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
