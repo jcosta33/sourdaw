@@ -1097,8 +1097,9 @@ describe('lane publish', () => {
 
                 expect(existsSync(hookMarker)).toBe(false);
                 expect(fixtureGit(remote, ['rev-parse', 'refs/heads/agent/12/hook-proof'])).toBe(headSha);
-                expect(fixtureGit(remote, ['rev-parse', 'refs/notes/ai'])).toBe(notesSha);
-                expect(fixtureGit(lane, ['rev-parse', `refs/agents/pending-ai-notes/${notesSha}`])).toBe(notesSha);
+                expect(fixtureGit(lane, ['rev-parse', 'refs/notes/ai'])).toBe(notesSha);
+                expect(fixtureGit(remote, ['for-each-ref', '--format=%(refname)', 'refs/notes/'])).toBe('');
+                expect(fixtureGit(lane, ['for-each-ref', '--format=%(refname)', 'refs/agents/'])).toBe('');
             } finally {
                 session?.dispose();
                 rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
@@ -1106,7 +1107,7 @@ describe('lane publish', () => {
         }
     );
 
-    describe('AI notes publication', () => {
+    describe('source-only publication', () => {
         function notesFixture() {
             const root = mkdtempSync(join(tmpdir(), 'sourdaw-publish-lane-notes-'));
             const primary = join(root, 'primary');
@@ -1174,64 +1175,64 @@ describe('lane publish', () => {
             }
         });
 
-        it.each(['absent remote', 'fast-forward remote'])('publishes AI notes to an %s', (state) => {
-            const f = notesFixture();
-            try {
-                if (state === 'fast-forward remote') {
-                    f.seed();
-                }
-                const notesSha = f.note(f.primary, f.headSha, 'local authorship note');
-                f.push();
-                expect(fixtureGit(f.remote, ['rev-parse', 'refs/heads/agent/12/notes-proof'])).toBe(f.headSha);
-                expect(fixtureGit(f.remote, ['rev-parse', 'refs/notes/ai'])).toBe(notesSha);
-                expect(f.warnings).not.toHaveBeenCalled();
-            } finally {
-                f.cleanup();
-            }
-        });
-
-        it.each(['divergent', 'remote ahead', 'racing'])(
-            'retains peer AI notes and pending local data with a %s writer',
+        it.each(['divergent', 'unreadable'])(
+            'publishes only the exact source and leaves %s metadata untouched',
             (state) => {
                 const f = notesFixture();
                 try {
-                    const initial = f.seed();
-                    const localSha =
-                        state === 'remote ahead' ? initial : f.note(f.primary, f.headSha, 'local authorship note');
-                    const peerSha = f.note(f.peer, f.headSha, 'peer authorship note');
-                    let git = f.systemGit;
-                    if (state === 'racing') {
-                        git = join(f.root, 'racing-git');
-                        // Move the remote after publication captured its local OID, immediately before
-                        // the notes push. Both writers still use real Git's receive-side admission.
-                        writeFileSync(
-                            git,
-                            `#!/usr/bin/env node\nconst {spawnSync}=require('node:child_process');\nconst args=process.argv.slice(2);\nif(args.includes('push') && args.some(arg=>arg.endsWith(':refs/notes/ai'))) {\n const peer=spawnSync(${JSON.stringify(f.systemGit)},['push',${JSON.stringify(f.remote)},'refs/notes/ai:refs/notes/ai'],{cwd:${JSON.stringify(f.peer)},env:process.env,stdio:'inherit'});\n if(peer.status!==0)process.exit(peer.status??1);\n}\nconst result=spawnSync(${JSON.stringify(f.systemGit)},args,{env:process.env,stdio:'inherit'});\nprocess.exit(result.status??1);\n`
-                        );
-                        chmodSync(git, 0o700);
-                    } else {
-                        fixtureGit(f.peer, ['push', f.remote, 'refs/notes/ai:refs/notes/ai']);
+                    f.seed();
+                    const remoteSha = f.note(f.peer, f.headSha, 'remote authorship note');
+                    fixtureGit(f.peer, ['push', f.remote, 'refs/notes/ai:refs/notes/ai']);
+                    let localSha = f.note(f.primary, f.headSha, 'local authorship note');
+                    if (state === 'unreadable') {
+                        localSha = fixtureGit(f.primary, ['hash-object', '-w', 'lane.txt']);
+                        fixtureGit(f.primary, ['update-ref', 'refs/notes/ai', localSha]);
                     }
+                    const commands = join(f.root, 'git-commands.jsonl');
+                    const git = join(f.root, 'source-only-git');
+                    writeFileSync(
+                        git,
+                        `#!/usr/bin/env node\nconst fs=require('node:fs');\nconst {spawnSync}=require('node:child_process');\nconst args=process.argv.slice(2);\nfs.appendFileSync(${JSON.stringify(commands)},JSON.stringify(args)+'\\n');\nif(args.some(arg=>arg.includes('refs/notes/')||arg.includes('ai-notes'))) { console.error('metadata unavailable'); process.exit(23); }\nconst result=spawnSync(${JSON.stringify(f.systemGit)},args,{env:process.env,stdio:'inherit'});\nprocess.exit(result.status??1);\n`
+                    );
+                    chmodSync(git, 0o700);
                     f.push(git);
+                    const invocations = readFileSync(commands, 'utf8')
+                        .trim()
+                        .split('\n')
+                        .map((line) => JSON.parse(line));
+                    expect(invocations).toHaveLength(1);
+                    expect(invocations[0]).toEqual(
+                        expect.arrayContaining(['push', '--no-verify', `${f.headSha}:refs/heads/agent/12/notes-proof`])
+                    );
                     expect(fixtureGit(f.remote, ['rev-parse', 'refs/heads/agent/12/notes-proof'])).toBe(f.headSha);
-                    expect(fixtureGit(f.remote, ['rev-parse', 'refs/notes/ai'])).toBe(peerSha);
-                    expect(fixtureGit(f.remote, ['notes', '--ref=ai', 'show', f.headSha])).toBe('peer authorship note');
-                    const pendingRef = `refs/agents/pending-ai-notes/${localSha}`;
-                    expect(fixtureGit(f.primary, ['rev-parse', pendingRef])).toBe(localSha);
-                    fixtureGit(f.primary, ['fetch', f.remote, '+refs/notes/ai:refs/notes/ai']);
-                    expect(fixtureGit(f.primary, ['rev-parse', pendingRef])).toBe(localSha);
-                    const warning = f.warnings.mock.calls.flat().join('\n');
-                    expect(warning).toContain('warning:');
-                    expect(warning).toContain(pendingRef);
-                    expect(warning).toContain('non-forced');
-                    expect(warning).toContain('source branch was published');
+                    expect(fixtureGit(f.remote, ['rev-parse', 'refs/notes/ai'])).toBe(remoteSha);
+                    expect(fixtureGit(f.primary, ['rev-parse', 'refs/notes/ai'])).toBe(localSha);
+                    expect(fixtureGit(f.primary, ['for-each-ref', '--format=%(refname)', 'refs/agents/'])).toBe('');
+                    expect(f.warnings).not.toHaveBeenCalled();
                 } finally {
                     f.cleanup();
                 }
             }
         );
 
-        it('fails a rejected source push instead of treating it as an optional AI notes failure', () => {
+        it('refuses a non-fast-forward source push without replacing the remote branch', () => {
+            const f = notesFixture();
+            try {
+                writeFileSync(join(f.peer, 'peer-only.txt'), 'peer-only\n');
+                fixtureGit(f.peer, ['add', 'peer-only.txt']);
+                fixtureGit(f.peer, ['commit', '--no-gpg-sign', '-m', 'test: advance remote source']);
+                const peerHead = fixtureGit(f.peer, ['rev-parse', 'HEAD']);
+                fixtureGit(f.peer, ['push', f.remote, `${peerHead}:refs/heads/agent/12/notes-proof`]);
+
+                expect(() => f.push()).toThrow(/non-fast-forward|fetch first/);
+                expect(fixtureGit(f.remote, ['rev-parse', 'refs/heads/agent/12/notes-proof'])).toBe(peerHead);
+                expect(f.warnings).not.toHaveBeenCalled();
+            } finally {
+                f.cleanup();
+            }
+        });
+
+        it('fails a rejected required source push', () => {
             const f = notesFixture();
             try {
                 const localSha = f.note(f.primary, f.headSha, 'local authorship note');

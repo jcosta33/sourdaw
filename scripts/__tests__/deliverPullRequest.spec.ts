@@ -1692,44 +1692,18 @@ describe('pull-request delivery', () => {
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('retarget:43:main'));
     });
 
-    it('invokes syncAuthorshipNotes with merge commit and branch refs when mergeCommit is present on merged snapshot', () => {
-        const syncCalls: Array<{
-            mergeCommitSha: string;
-            headSha: string;
-            headRef: string;
-            baseRef: string;
-        }> = [];
-        const { port, tracker } = fakePort({
-            mergedPrimaryAfterMerge: {
-                mergeCommit: { oid: 'merge-commit-sha-777' },
-            },
-            syncAuthorshipNotes: (args) => {
-                syncCalls.push(args);
-            },
+    it('completes merged delivery without invoking an authorship extension', () => {
+        const sync = vi.fn();
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            mergedPrimaryAfterMerge: { mergeCommit: { oid: 'merge-commit-sha-777' } },
         });
+        Object.assign(port, { syncAuthorshipNotes: sync });
 
         deliverPullRequest(42, port, tracker);
 
-        expect(syncCalls).toEqual([
-            {
-                mergeCommitSha: 'merge-commit-sha-777',
-                headSha: 'head',
-                headRef: 'feat/gate',
-                baseRef: 'main',
-            },
-        ]);
-    });
-
-    it('succeeds delivery normally when syncAuthorshipNotes is not defined on the port', () => {
-        const { port, calls, tracker } = fakePort({
-            mergedPrimaryAfterMerge: {
-                mergeCommit: { oid: 'merge-commit-sha-777' },
-            },
-        });
-        expect(port.syncAuthorshipNotes).toBeUndefined();
-
-        expect(() => deliverPullRequest(42, port, tracker)).not.toThrow();
+        expect(sync).not.toHaveBeenCalled();
         expect(calls).toContain('merge:42:head');
+        expect(persistedReceiptAuthority()?.phase).toBe('terminal');
     });
 
     it('retargets late dependents opened against the delivered branch immediately before squash merge', () => {
@@ -13355,14 +13329,22 @@ describe('delivery shell boundary', () => {
         );
     });
 
-    it.each([false, true])(
-        'preserves the observed notes preimage before a forced refresh (authenticated: %s)',
-        (authenticated) => {
-            const root = mkdtempSync(join(tmpdir(), 'sourdaw-notes-refresh-'));
+    it.each([
+        { authenticated: false, metadata: 'absent' },
+        { authenticated: true, metadata: 'absent' },
+        { authenticated: false, metadata: 'divergent' },
+        { authenticated: true, metadata: 'divergent' },
+        { authenticated: false, metadata: 'unreadable' },
+        { authenticated: true, metadata: 'unreadable' },
+    ])(
+        'fetches and prunes source heads without reading or changing $metadata metadata (authenticated: $authenticated)',
+        ({ authenticated, metadata }) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-source-only-fetch-'));
             const local = join(root, 'local');
             const remote = join(root, 'remote.git');
             const git = (cwd: string, args: string[]) =>
                 execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+            const invocations: Array<{ command: string; args: string[] }> = [];
             try {
                 mkdirSync(local);
                 git(root, ['init', '--bare', '--quiet', remote]);
@@ -13373,529 +13355,87 @@ describe('delivery shell boundary', () => {
                 writeFileSync(join(local, 'file'), 'fixture');
                 git(local, ['add', 'file']);
                 git(local, ['commit', '--quiet', '-m', 'fixture']);
-                const target = git(local, ['rev-parse', 'HEAD']);
-                git(local, ['notes', '--ref=ai', 'add', '-m', 'local-only', target]);
-                const preimage = git(local, ['rev-parse', 'refs/notes/ai']);
-                const localBlob = git(local, ['rev-parse', `refs/notes/ai:${target}`]);
-                git(local, ['update-ref', '-d', 'refs/notes/ai']);
-                git(local, ['notes', '--ref=ai', 'add', '-m', 'remote-only', target]);
-                const remoteNotes = git(local, ['rev-parse', 'refs/notes/ai']);
-                expect(git(local, ['rev-parse', `refs/notes/ai:${target}`])).not.toBe(localBlob);
-                expect(() => git(local, ['merge-base', '--is-ancestor', preimage, remoteNotes])).toThrow();
-                expect(() => git(local, ['merge-base', '--is-ancestor', remoteNotes, preimage])).toThrow();
-                git(local, ['push', '--quiet', 'origin', 'refs/notes/ai:refs/notes/ai']);
-                git(local, ['update-ref', 'refs/notes/ai', preimage]);
+                const head = git(local, ['rev-parse', 'HEAD']);
+                git(local, ['push', '--quiet', 'origin', `${head}:refs/heads/main`, `${head}:refs/heads/feature`]);
+                git(local, ['update-ref', 'refs/remotes/origin/stale', head]);
+                if (metadata !== 'absent') {
+                    git(local, ['notes', '--ref=ai', 'add', '-m', 'remote-only', head]);
+                    git(local, ['push', '--quiet', 'origin', 'refs/notes/ai:refs/notes/ai']);
+                    git(local, ['notes', '--ref=ai', 'add', '-f', '-m', 'local-only', head]);
+                    if (metadata === 'unreadable') {
+                        const blob = git(local, ['hash-object', '-w', 'file']);
+                        git(local, ['update-ref', 'refs/notes/ai', blob]);
+                    }
+                }
+                const snapshot = (cwd: string) =>
+                    git(cwd, ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/notes/', 'refs/agents/']);
+                const localBefore = snapshot(local);
+                const remoteBefore = snapshot(remote);
                 const port = shellPort(
                     'jcosta33/sourdaw',
                     {
-                        capture: (command, args) =>
-                            execFileSync(command, args, {
-                                cwd: local,
-                                encoding: 'utf8',
-                                stdio: ['ignore', 'pipe', 'pipe'],
-                            }).trim(),
+                        capture: () => {
+                            throw new Error('metadata unavailable');
+                        },
                         run: (command, args) => {
-                            const actual =
-                                authenticated && args.includes(GITHUB_HTTPS_REMOTE)
-                                    ? args.map((arg) => (arg === GITHUB_HTTPS_REMOTE ? remote : arg))
-                                    : args;
+                            invocations.push({ command, args });
+                            expect(command).toBe('git');
+                            expect(args.some((arg) => arg.includes('notes') || arg.includes('git-ai'))).toBe(false);
+                            const actual = args.map((arg) => (arg === GITHUB_HTTPS_REMOTE ? remote : arg));
                             execFileSync(command, actual, { cwd: local, stdio: 'pipe' });
                         },
                     },
                     authenticated ? { gitToken: 'ghs_minted', helperDir: root } : {}
                 );
+
                 port.fetch();
-                const recovery = `refs/agents/preserved-ai-notes/${preimage}`;
-                expect(git(local, ['rev-parse', recovery])).toBe(preimage);
-                expect(git(local, ['rev-parse', `${recovery}:${target}`])).toBe(localBlob);
-                expect(git(local, ['rev-parse', 'refs/notes/ai'])).toBe(remoteNotes);
-            } finally {
-                removeTemporaryGitRepository(root);
-            }
-        },
-        30_000
-    );
 
-    it.each([
-        { authenticated: false, timing: 'fetch' },
-        { authenticated: true, timing: 'fetch' },
-        { authenticated: false, timing: 'install' },
-        { authenticated: true, timing: 'install' },
-        { authenticated: false, timing: 'absent' },
-        { authenticated: true, timing: 'absent' },
-        { authenticated: false, timing: 'missing-remote' },
-        { authenticated: true, timing: 'missing-remote' },
-        { authenticated: false, timing: 'capture-change' },
-        { authenticated: true, timing: 'capture-change' },
-        { authenticated: false, timing: 'cleanup-change' },
-        { authenticated: true, timing: 'cleanup-change' },
-    ])(
-        'preserves concurrent notes at $timing (authenticated: $authenticated)',
-        ({ authenticated, timing }) => {
-            const root = mkdtempSync(join(tmpdir(), 'sourdaw-notes-writer-'));
-            const local = join(root, 'local');
-            const remote = join(root, 'remote.git');
-            const git = (args: string[]) =>
-                execFileSync('git', args, { cwd: local, encoding: 'utf8', stdio: 'pipe' }).trim();
-            try {
-                mkdirSync(local);
-                execFileSync('git', ['init', '--bare', '--quiet', remote], { stdio: 'pipe' });
-                git(['init', '--quiet']);
-                git(['config', 'user.name', 'Fixture']);
-                git(['config', 'user.email', 'fixture@example.test']);
-                git(['remote', 'add', 'origin', remote]);
-                writeFileSync(join(local, 'file'), 'fixture');
-                git(['add', 'file']);
-                git(['commit', '--quiet', '-m', 'fixture']);
-                const target = git(['rev-parse', 'HEAD']);
-                git(['notes', '--ref=ai', 'add', '-m', 'remote', target]);
-                const remoteNotes = git(['rev-parse', 'refs/notes/ai']);
-                if (timing !== 'missing-remote') {
-                    git(['push', '--quiet', 'origin', 'refs/notes/ai:refs/notes/ai']);
-                }
-                git(['notes', '--ref=ai', 'add', '-f', '-m', 'initial local', target]);
-                const initial = git(['rev-parse', 'refs/notes/ai']);
-                git(['notes', '--ref=ai', 'add', '-f', '-m', 'concurrent local', target]);
-                const concurrent = git(['rev-parse', 'refs/notes/ai']);
-                const concurrentBlob = git(['rev-parse', `refs/notes/ai:${target}`]);
-                git(['update-ref', 'refs/notes/ai', initial]);
-                if (timing === 'absent') {
-                    git(['update-ref', '-d', 'refs/notes/ai']);
-                }
-                let writerRan = false;
-                let captureReads = 0;
-                let captureRef = '';
-                const runs: string[][] = [];
-                const port = shellPort(
-                    'jcosta33/sourdaw',
-                    {
-                        capture: (_command, args) => {
-                            const result = git(args);
-                            if (args[0] === 'for-each-ref' && args[2]?.startsWith('refs/agents/fetched-ai-notes/')) {
-                                captureRef = args[2];
-                                if (result !== '') {
-                                    captureReads++;
-                                    if (timing === 'capture-change' && captureReads === 2) {
-                                        git(['update-ref', captureRef, concurrent]);
-                                        return git(args);
-                                    }
-                                }
-                            }
-                            return result;
-                        },
-                        run: (_command, args) => {
-                            runs.push(args);
-                            if (timing === 'cleanup-change' && args[0] === 'update-ref' && args[2] === '-d') {
-                                git(['update-ref', captureRef, concurrent]);
-                            }
-                            if (
-                                (timing === 'fetch' && args.includes('fetch')) ||
-                                (timing === 'install' && args[0] === 'update-ref' && args[2] === 'refs/notes/ai')
-                            ) {
-                                git(['update-ref', 'refs/notes/ai', concurrent]);
-                                writerRan = true;
-                            }
-                            git(args.map((arg) => (arg === GITHUB_HTTPS_REMOTE ? remote : arg)));
-                        },
-                    },
-                    authenticated ? { gitToken: 'ghs_minted', helperDir: root } : {}
-                );
-                if (timing === 'fetch') {
-                    port.fetch();
-                    expect(git(['rev-parse', 'refs/notes/ai'])).toBe(remoteNotes);
-                    const recovery = `refs/agents/preserved-ai-notes/${concurrent}`;
-                    expect(git(['rev-parse', recovery])).toBe(concurrent);
-                    expect(git(['rev-parse', `${recovery}:${target}`])).toBe(concurrentBlob);
-                } else if (timing === 'absent') {
-                    port.fetch();
-                    expect(git(['rev-parse', 'refs/notes/ai'])).toBe(remoteNotes);
-                } else if (timing === 'missing-remote') {
-                    expect(() => port.fetch()).toThrow(/couldn't find remote ref refs\/notes\/ai/);
-                    expect(git(['rev-parse', 'refs/notes/ai'])).toBe(initial);
-                } else if (timing === 'capture-change' || timing === 'cleanup-change') {
-                    expect(() => port.fetch()).toThrow(/cannot lock ref|changed after fetch/);
-                    expect(git(['rev-parse', 'refs/notes/ai'])).toBe(
-                        timing === 'capture-change' ? initial : remoteNotes
-                    );
-                    expect(git(['rev-parse', captureRef])).toBe(concurrent);
-                } else {
-                    expect(() => port.fetch()).toThrow(/cannot lock ref|reference already exists/);
-                    expect(git(['rev-parse', 'refs/notes/ai'])).toBe(concurrent);
-                }
-                expect(writerRan).toBe(timing === 'fetch' || timing === 'install');
-                if (timing !== 'absent') {
-                    expect(git(['rev-parse', `refs/agents/preserved-ai-notes/${initial}`])).toBe(initial);
-                }
-                expect(git(['for-each-ref', '--format=%(refname)', 'refs/agents/fetched-ai-notes/'])).toBe(
-                    timing === 'capture-change' || timing === 'cleanup-change' ? captureRef : ''
-                );
-                expect(runs.filter((args) => args.includes('fetch'))).toHaveLength(1);
-            } finally {
-                removeTemporaryGitRepository(root);
-            }
-        },
-        30_000
-    );
-
-    it('refuses a conflicting recovery ref or inspection and pin failures before fetch', () => {
-        const notes = 'a'.repeat(40);
-        const recovery = `refs/agents/preserved-ai-notes/${notes}`;
-        for (const failure of ['collision', 'inspect', 'pin']) {
-            const runs: string[][] = [];
-            const port = shellPort('jcosta33/sourdaw', {
-                capture: (_command, args) => {
-                    if (args[0] === 'cat-file') {
-                        return 'commit';
-                    }
-                    if (args[2] === 'refs/notes/ai') {
-                        if (failure === 'inspect') {
-                            throw new Error('inspection failed');
-                        }
-                        return `refs/notes/ai ${notes} `;
-                    }
-                    return failure === 'collision' ? `${recovery} ${'b'.repeat(40)} ` : '';
-                },
-                run: (_command, args) => {
-                    runs.push(args);
-                    if (args[0] === 'update-ref' && failure === 'pin') {
-                        throw new Error('pin failed');
-                    }
-                },
-            });
-            expect(() => port.fetch()).toThrow();
-            expect(runs.some((args) => args.includes('fetch'))).toBe(false);
-        }
-    });
-
-    function notesFetchShell(initial?: string) {
-        const refs = new Map<string, string>();
-        const fetched = 'b'.repeat(40);
-        if (initial !== undefined) {
-            refs.set('refs/notes/ai', initial);
-            refs.set(`refs/agents/preserved-ai-notes/${initial}`, initial);
-        }
-        const runs: Array<{ command: string; args: string[] }> = [];
-        const shell: ShellRunner = {
-            capture: (_command, args) => {
-                if (args[0] === 'cat-file') {
-                    return 'commit';
-                }
-                const ref = args[2] ?? '';
-                const oid = refs.get(ref);
-                return oid === undefined ? '' : `${ref} ${oid} `;
-            },
-            run: (command, args) => {
-                runs.push({ command, args });
-                if (args.includes('fetch')) {
-                    const refspec = args.at(-1) ?? '';
-                    refs.set(refspec.split(':')[1] ?? '', fetched);
-                }
-            },
-        };
-        return { fetched, refs, runs, shell };
-    }
-
-    it.each(['symbolic', 'noncommit', 'capture-collision'])('refuses invalid notes before fetch (%s)', (failure) => {
-        const notes = 'a'.repeat(40);
-        const { runs, shell } = notesFetchShell(notes);
-        const capture = shell.capture;
-        shell.capture = (command, args) => {
-            if (failure === 'noncommit' && args[0] === 'cat-file') {
-                return 'blob';
-            }
-            if (failure === 'symbolic' && args[2] === 'refs/notes/ai') {
-                return `refs/notes/ai ${notes} refs/notes/other`;
-            }
-            if (failure === 'capture-collision' && args[2]?.startsWith('refs/agents/fetched-ai-notes/')) {
-                return `${args[2]} ${notes} `;
-            }
-            return capture(command, args);
-        };
-        expect(() => shellPort('jcosta33/sourdaw', shell).fetch()).toThrow(
-            /cannot inspect direct Git ref|does not point to a commit|capture ref .* already exists/
-        );
-        expect(runs).toEqual([]);
-    });
-
-    it.each(['missing', 'symbolic', 'noncommit', 'fetch', 'latest-pin'])(
-        'refuses failed or invalid fetched notes without canonical installation (%s)',
-        (failure) => {
-            const notes = 'a'.repeat(40);
-            const { refs, runs, shell } = notesFetchShell(notes);
-            const capture = shell.capture;
-            const run = shell.run;
-            let fetched = false;
-            shell.capture = (command, args) => {
-                if (fetched && args[2]?.startsWith('refs/agents/fetched-ai-notes/')) {
-                    if (failure === 'missing') {
-                        return '';
-                    }
-                    if (failure === 'symbolic') {
-                        return `${args[2]} ${notes} refs/notes/other`;
-                    }
-                }
-                if (fetched && failure === 'noncommit' && args[0] === 'cat-file') {
-                    return 'blob';
-                }
-                return capture(command, args);
-            };
-            shell.run = (command, args) => {
-                if (args.includes('fetch')) {
-                    if (failure === 'fetch') {
-                        throw new Error('fetch failed');
-                    }
-                    fetched = true;
-                    if (failure === 'latest-pin') {
-                        refs.set('refs/notes/ai', 'c'.repeat(40));
-                    }
-                }
-                if (failure === 'latest-pin' && args[2]?.startsWith('refs/agents/preserved-ai-notes/')) {
-                    throw new Error('latest pin failed');
-                }
-                run(command, args);
-            };
-            expect(() => shellPort('jcosta33/sourdaw', shell).fetch()).toThrow(
-                /missing|cannot inspect direct Git ref|does not point to a commit|fetch failed|latest pin failed/
-            );
-            expect(runs.some(({ args }) => args[0] === 'update-ref' && args[2] === 'refs/notes/ai')).toBe(false);
-            expect(refs.get('refs/notes/ai')).toBe(failure === 'latest-pin' ? 'c'.repeat(40) : notes);
-        }
-    );
-
-    it('replays an identical notes recovery ref without rewriting it', () => {
-        const notes = 'a'.repeat(40);
-        const { fetched, runs, shell } = notesFetchShell(notes);
-        shellPort('jcosta33/sourdaw', shell).fetch();
-        expect(runs.filter(({ args }) => args.includes('fetch'))).toHaveLength(1);
-        expect(runs.filter(({ args }) => args[0] === 'update-ref')).toEqual([
-            { command: 'git', args: ['update-ref', '--no-deref', 'refs/notes/ai', fetched, notes] },
-            {
-                command: 'git',
-                args: [
-                    'update-ref',
-                    '--no-deref',
-                    '-d',
-                    expect.stringMatching(/^refs\/agents\/fetched-ai-notes\//),
-                    fetched,
-                ],
-            },
-        ]);
-    });
-
-    it('authenticates fetch by pruning all origin heads over HTTPS', () => {
-        const helperDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-helper-'));
-        const { fetched, runs, shell } = notesFetchShell();
-        try {
-            shellPort('jcosta33/sourdaw', shell, { gitToken: 'ghs_minted', helperDir }).fetch();
-            expect(runs).toHaveLength(3);
-            const args = runs[0]?.args ?? [];
-            expect(args.slice(0, 3)).toEqual(['-c', 'credential.helper=', '-c']);
-            expect(args[3]).toMatch(/^credential\.helper=!'\//);
-            expect(args[3]).not.toContain('ghs_minted');
-            expect(args.slice(4)).toEqual([
-                'fetch',
-                '--prune',
-                GITHUB_HTTPS_REMOTE,
-                '+refs/heads/*:refs/remotes/origin/*',
-                expect.stringMatching(/^refs\/notes\/ai:refs\/agents\/fetched-ai-notes\//),
-            ]);
-            expect(args.join('\0')).not.toContain('ghs_minted');
-            expect(args).not.toContain('--force');
-            expect(args).not.toContain('+refs/heads/main:refs/remotes/origin/main');
-            expect(runs[1]?.args).toEqual(['update-ref', '--no-deref', 'refs/notes/ai', fetched, '0'.repeat(40)]);
-        } finally {
-            rmSync(helperDir, { recursive: true, force: true });
-        }
-    }, 30_000);
-
-    it('fetches origin heads and authorship notes when unauthenticated', () => {
-        const { fetched, runs, shell } = notesFetchShell();
-        shellPort('jcosta33/sourdaw', shell).fetch();
-        expect(runs).toEqual([
-            {
-                command: 'git',
-                args: [
+                expect(invocations).toHaveLength(1);
+                const args = invocations[0]?.args ?? [];
+                const fetchArgs = [
                     'fetch',
                     '--prune',
-                    'origin',
+                    authenticated ? GITHUB_HTTPS_REMOTE : 'origin',
                     '+refs/heads/*:refs/remotes/origin/*',
-                    expect.stringMatching(/^refs\/notes\/ai:refs\/agents\/fetched-ai-notes\//),
-                ],
-            },
-            { command: 'git', args: ['update-ref', '--no-deref', 'refs/notes/ai', fetched, '0'.repeat(40)] },
-            {
-                command: 'git',
-                args: [
-                    'update-ref',
-                    '--no-deref',
-                    '-d',
-                    expect.stringMatching(/^refs\/agents\/fetched-ai-notes\//),
-                    fetched,
-                ],
-            },
-        ]);
-    });
-
-    it('syncs authorship notes unauthenticated by merging and pushing refs/notes/ai', () => {
-        const runs: Array<{ command: string; args: string[] }> = [];
-        const port = shellPort('jcosta33/sourdaw', {
-            capture: (_command, args) =>
-                args[0] === 'cat-file' && args[1] === 'commit' ? `parent ${'b'.repeat(40)}\n\nS` : 'commit',
-            run: (command, args) => runs.push({ command, args }),
-        });
-
-        port.syncAuthorshipNotes?.({
-            mergeCommitSha: 'a'.repeat(40),
-            headSha: 'head-sha-456',
-            headRef: 'feat/test',
-            baseRef: 'main',
-        });
-
-        expect(runs).toEqual([
-            {
-                command: 'git',
-                args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', '+main'],
-            },
-            {
-                command: 'git-ai',
-                args: [
-                    'ci',
-                    'local',
-                    'merge',
-                    '--merge-commit-sha',
-                    'a'.repeat(40),
-                    '--base-ref',
-                    'main',
-                    '--base-sha',
-                    'b'.repeat(40),
-                    '--head-ref',
-                    'feat/test',
-                    '--head-sha',
-                    'head-sha-456',
-                    '--skip-fetch',
-                    '--skip-push',
-                ],
-            },
-            {
-                command: 'git',
-                args: ['push', 'origin', 'refs/notes/ai:refs/notes/ai'],
-            },
-        ]);
-    });
-
-    it('syncs authorship notes through the trusted git-ai path the launcher froze', () => {
-        const runs: Array<{ command: string; args: string[] }> = [];
-        const port = shellPort('jcosta33/sourdaw', {
-            capture: (_command, args) =>
-                args[0] === 'cat-file' && args[1] === 'commit' ? `parent ${'b'.repeat(40)}\n\nS` : 'commit',
-            run: (command, args) => runs.push({ command, args }),
-        });
-        const previous = process.env.SOURDAW_TRUSTED_GIT_AI_PATH;
-        process.env.SOURDAW_TRUSTED_GIT_AI_PATH = '/trusted/bin/git-ai';
-        try {
-            port.syncAuthorshipNotes?.({
-                mergeCommitSha: 'a'.repeat(40),
-                headSha: 'head-sha-456',
-                headRef: 'feat/test',
-                baseRef: 'main',
-            });
-        } finally {
-            if (previous === undefined) {
-                delete process.env.SOURDAW_TRUSTED_GIT_AI_PATH;
-            } else {
-                process.env.SOURDAW_TRUSTED_GIT_AI_PATH = previous;
+                ];
+                if (authenticated) {
+                    expect(args.slice(0, 3)).toEqual(['-c', 'credential.helper=', '-c']);
+                    expect(args[3]).toMatch(/^credential\.helper=!'\//);
+                    expect(args.slice(4)).toEqual(fetchArgs);
+                    expect(args.join('\0')).not.toContain('ghs_minted');
+                } else {
+                    expect(args).toEqual(fetchArgs);
+                }
+                expect(git(local, ['rev-parse', 'refs/remotes/origin/main'])).toBe(head);
+                expect(git(local, ['rev-parse', 'refs/remotes/origin/feature'])).toBe(head);
+                expect(git(local, ['for-each-ref', '--format=%(refname)', 'refs/remotes/origin/stale'])).toBe('');
+                expect(snapshot(local)).toBe(localBefore);
+                expect(snapshot(remote)).toBe(remoteBefore);
+                expect(Reflect.has(port, 'syncAuthorshipNotes')).toBe(false);
+            } finally {
+                removeTemporaryGitRepository(root);
             }
-        }
+        },
+        30_000
+    );
 
-        expect(runs[0]).toEqual({
-            command: 'git',
-            args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', '+main'],
+    it('propagates the required source fetch failure without inspecting metadata', () => {
+        const failure = new Error('source fetch rejected');
+        const captures = vi.fn(() => {
+            throw new Error('metadata unavailable');
         });
-        expect(runs[1]?.command).toBe('/trusted/bin/git-ai');
-        expect(runs[1]?.args).toContain('--merge-commit-sha');
-    });
-
-    it('syncs authorship notes authenticated using credential helper', () => {
-        const helperDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-helper-'));
-        const runs: Array<{ command: string; args: string[] }> = [];
-        try {
-            const port = shellPort(
-                'jcosta33/sourdaw',
-                {
-                    capture: (_command, args) =>
-                        args[0] === 'cat-file' && args[1] === 'commit' ? `parent ${'b'.repeat(40)}\n\nS` : 'commit',
-                    run: (command, args) => runs.push({ command, args }),
-                },
-                { gitToken: 'ghs_notes_token', helperDir }
-            );
-
-            port.syncAuthorshipNotes?.({
-                mergeCommitSha: 'a'.repeat(40),
-                headSha: 'head-sha-456',
-                headRef: 'feat/test',
-                baseRef: 'main',
-            });
-
-            expect(runs).toHaveLength(3);
-            expect(runs[0]).toEqual({
-                command: 'git',
-                args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', '+main'],
-            });
-            expect(runs[1]).toEqual({
-                command: 'git-ai',
-                args: [
-                    'ci',
-                    'local',
-                    'merge',
-                    '--merge-commit-sha',
-                    'a'.repeat(40),
-                    '--base-ref',
-                    'main',
-                    '--base-sha',
-                    'b'.repeat(40),
-                    '--head-ref',
-                    'feat/test',
-                    '--head-sha',
-                    'head-sha-456',
-                    '--skip-fetch',
-                    '--skip-push',
-                ],
-            });
-            expect(runs[2]?.command).toBe('git');
-            const pushArgs = runs[2]?.args ?? [];
-            expect(pushArgs.slice(4)).toEqual(['push', GITHUB_HTTPS_REMOTE, 'refs/notes/ai:refs/notes/ai']);
-            expect(pushArgs.join('\0')).not.toContain('ghs_notes_token');
-        } finally {
-            rmSync(helperDir, { recursive: true, force: true });
-        }
-    }, 30_000);
-
-    it('swallows errors and logs a warning when authorship note sync throws, without failing delivery', () => {
-        const warnings: string[] = [];
-        const originalWarn = console.warn;
-        console.warn = (msg: string) => warnings.push(msg);
-        try {
-            const port = shellPort('jcosta33/sourdaw', {
-                capture: (_command, args) =>
-                    args[0] === 'cat-file' && args[1] === 'commit' ? `parent ${'b'.repeat(40)}\n\nS` : 'commit',
-                run: () => {
-                    throw new Error('git-ai command failed');
-                },
-            });
-
-            expect(() =>
-                port.syncAuthorshipNotes?.({
-                    mergeCommitSha: 'a'.repeat(40),
-                    headSha: 'head-sha-456',
-                    headRef: 'feat/test',
-                    baseRef: 'main',
-                })
-            ).not.toThrow();
-
-            expect(warnings).toEqual(['warning: git-ai authorship sync skipped: git-ai command failed']);
-        } finally {
-            console.warn = originalWarn;
-        }
+        const runs = vi.fn(() => {
+            throw failure;
+        });
+        const port = shellPort('jcosta33/sourdaw', { capture: captures, run: runs });
+        expect(() => port.fetch()).toThrow(failure);
+        expect(captures).not.toHaveBeenCalled();
+        expect(runs).toHaveBeenCalledExactlyOnceWith('git', [
+            'fetch',
+            '--prune',
+            'origin',
+            '+refs/heads/*:refs/remotes/origin/*',
+        ]);
     });
 
     it('reads every review page and refuses a later wrong-head reviewer approval', () => {

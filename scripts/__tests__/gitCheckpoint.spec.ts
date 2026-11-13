@@ -19,7 +19,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { checkpointArguments } from '../gitCheckpointArguments';
 import { checkpointDaemonLog } from '../gitCheckpointDaemon';
 import { checkpointMountOptions } from '../gitCheckpointMount';
-import { checkpointSamplePayload } from '../gitCheckpointProcess';
+import { checkpointSamplePayload, runCheckpointSample } from '../gitCheckpointProcess';
 import { checkpointSocketRows } from '../gitCheckpointSocket';
 
 const runner = resolve('scripts/gitCheckpoint.ts');
@@ -429,6 +429,15 @@ exit 23
         const capped = checkpointArguments(['add', '--', 'x'.repeat(513), ...Array<string>(130).fill('ok')]);
         expect(capped.arguments.length).toBeLessThanOrEqual(128);
         expect(capped.omitted).toBeGreaterThan(0);
+    });
+    it('returns generic observations without GitAI metadata when writer identity is missing', () => {
+        const observation = runCheckpointSample(process.pid, null, '', undefined);
+        expect(observation.identityMatches).toBe(false);
+        expect(observation.queueSnapshots).toHaveLength(2);
+        expect(observation.sample).toBeNull();
+        expect(observation.socketHolderIdentities).toEqual([]);
+        expect(observation).not.toHaveProperty('daemonLog');
+        expect(observation).not.toHaveProperty('receiver');
     });
     it('reads only a bounded log for the matched daemon identity', () => {
         const { root } = fixture();

@@ -2812,7 +2812,7 @@ describe('package scripts and gitignore', () => {
             }
         });
 
-        it('resolves an optional git-ai path for delivery and carries it into the snapshot environment', () => {
+        it('does not discover or carry GitAI into the trusted snapshot environment', () => {
             const { fixtureRoot, primary } = cloneTrustedPublishPrimaryFixture('sourdaw-trusted-git-ai-');
             const gitBin = join(fixtureRoot, 'git-bin');
             const ghBin = join(fixtureRoot, 'gh-bin');
@@ -2839,24 +2839,26 @@ describe('package scripts and gitignore', () => {
                 const pathValue = [gitBin, ghBin, gitAiBin, psBin].join(delimiter);
 
                 const deliver = resolveTrustedLauncherBinding(primary, { PATH: pathValue }, 'deliver');
-                expect(deliver.gitAiPath).toBe(realpathSync(join(gitAiBin, 'git-ai')));
-                const env = trustedSnapshotEnv({
-                    commit: 'a'.repeat(40),
-                    sources: new Map(),
-                    launcher: deliver,
-                });
-                expect(env.SOURDAW_TRUSTED_GIT_AI_PATH).toBe(deliver.gitAiPath);
-                expect(env.PATH).toContain(realpathSync(gitAiBin));
+                expect(Reflect.has(deliver, 'gitAiPath')).toBe(false);
+                const env = trustedSnapshotEnv(
+                    {
+                        commit: 'a'.repeat(40),
+                        sources: new Map(),
+                        launcher: deliver,
+                    },
+                    { SOURDAW_TRUSTED_GIT_AI_PATH: '/untrusted/git-ai' }
+                );
+                expect(env.SOURDAW_TRUSTED_GIT_AI_PATH).toBeUndefined();
+                expect(env.PATH?.split(delimiter)).not.toContain(realpathSync(gitAiBin));
 
-                // Only delivery asks for it, and an operator without git-ai keeps the documented skip.
                 const review = resolveTrustedLauncherBinding(primary, { PATH: pathValue }, 'review:publish');
-                expect(review.gitAiPath).toBeUndefined();
+                expect(Reflect.has(review, 'gitAiPath')).toBe(false);
                 const bare = resolveTrustedLauncherBinding(
                     primary,
                     { PATH: [gitBin, ghBin, psBin].join(delimiter) },
                     'deliver'
                 );
-                expect(bare.gitAiPath).toBeUndefined();
+                expect(Reflect.has(bare, 'gitAiPath')).toBe(false);
                 const bareEnv = trustedSnapshotEnv({
                     commit: 'a'.repeat(40),
                     sources: new Map(),
