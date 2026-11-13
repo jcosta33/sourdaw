@@ -116,5 +116,16 @@ evidence out of the child output unless it explains retention`, where startup, s
     Treating inspection EPERM as absence (returning `false` with the group marked absent from the `alive` EPERM
     branch) must fail the first case, which requires settlement only after the later ESRCH.
 
+12. **Finite recovery must cover the standard server launcher (#6353).** The finite-proof gate admitted only
+    `pnpm dev`, leaving the existing `node scripts/e2eDevServer.ts PORT` launcher unable to recover through a
+    bounded verification command; ordinary server termination is not successful finite proof. This was a missing
+    launcher-coverage probe, not evidence that the server's signal status should be rewritten. Run
+    `scripts/__tests__/resourceGuard.spec.ts` "discharges a stopped node E2E server through a real finite guarded
+    proof": the guard must observe the proof's real HTTP checkout marker and fresh run token, require successful
+    process and resource settlement, and clear only the unchanged receipt. Restoring the pnpm-only eligibility
+    gate must fail this case. Keep arbitrary node scripts, inline code, non-root or foreign/symlinked entrypoints,
+    missing/malformed/extra positional ports, occupied origins, wrong checkout or absent/stale token, failed proof
+    and failed cleanup refused. Do not infer a missing recorded port from the current environment.
+
 [xnu-sig]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c
 [xnu-exit]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_exit.c

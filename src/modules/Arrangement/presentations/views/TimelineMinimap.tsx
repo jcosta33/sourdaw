@@ -6,16 +6,21 @@ import {
     useRef,
     useLayoutEffect,
     useState,
+    useId,
 } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { getBarNumberAtBeat, getLastBarNumberBeforeBeat } from '#/modules/Transport/useCases';
+import { formatMusicalPosition, getBarNumberAtBeat, getLastBarNumberBeforeBeat } from '#/modules/Transport/useCases';
 import {
     normalizeTimelineMinimapHeight,
     TIMELINE_MINIMAP_DEFAULT_HEIGHT,
 } from '#/utils/TimelineMinimap/timelineMinimapHeight';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
+import { SECTION_COLORS } from '../../models/ColorPalette';
+import { type ArrangementSection } from '../../models/Marker';
+import { defaultMarkerStoreState, markerStore } from '../../stores/markerStore';
 import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
 import { trackStore, type TrackStoreState } from '../../stores/trackStore';
 import { setTimelineMinimapAutoScroll } from '../../useCases/setTimelineMinimapAutoScroll';
@@ -44,14 +49,30 @@ function getDevicePixelRatio(): number {
     return dpr;
 }
 
-/** The span the minimap draws: the project's last clip end plus headroom, never under a minimum. */
-function getMinimapTotalBeats(tracks: TrackStoreState['tracks']): number {
+function getOrderedSections(sections: ArrangementSection[]): ArrangementSection[] {
+    return sections
+        .filter((section) => section.endBeat > section.startBeat)
+        .toSorted(
+            (first, second) =>
+                first.startBeat - second.startBeat ||
+                first.endBeat - second.endBeat ||
+                first.id.localeCompare(second.id)
+        );
+}
+
+/** The span the minimap draws: the project's last clip or section end plus headroom. */
+function getMinimapTotalBeats(tracks: TrackStoreState['tracks'], sections: ArrangementSection[]): number {
     let maxEndBeat = 0;
     for (const track of tracks) {
         for (const clip of track.clips) {
             if (clip.endBeat > maxEndBeat) {
                 maxEndBeat = clip.endBeat;
             }
+        }
+    }
+    for (const section of sections) {
+        if (section.endBeat > maxEndBeat) {
+            maxEndBeat = section.endBeat;
         }
     }
     return Math.max(MIN_PROJECT_BEATS, maxEndBeat * 1.1);
@@ -68,6 +89,7 @@ const defaultTimelineView: TimelineViewState = {
 };
 
 export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: TimelineMinimapProps): ReactElement => {
+    const sectionDescriptionId = useId();
     const activeHeight = normalizeTimelineMinimapHeight(height);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -77,11 +99,14 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     // mid-drag can detach them; null when no drag is active.
     const dragCleanupRef = useRef<(() => void) | null>(null);
     const [canvasMetrics, setCanvasMetrics] = useState<CanvasMetrics>({ width: 0, dpr: 1 });
+    const [themeRevision, setThemeRevision] = useState(0);
 
     const trackState = useStore(trackStore, defaultTrackState);
+    const markerState = useStore(markerStore, defaultMarkerStoreState);
     const viewState = useStore(timelineViewStore, defaultTimelineView);
 
     const tracks = trackState.tracks;
+    const sections = markerState.sections;
     const pixelsPerBeat = viewState.pixelsPerBeat;
     const scrollX = viewState.scrollX;
 
@@ -92,13 +117,41 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
         defaultNumerator: transport.timeSignatureNumerator,
         defaultDenominator: transport.timeSignatureDenominator,
     };
-    const sliderMaxBeats = Math.round(getMinimapTotalBeats(tracks));
+    const sliderMaxBeats = Math.round(getMinimapTotalBeats(tracks, sections));
     const readoutPixelsPerBeat = pixelsPerBeat > 0 && Number.isFinite(pixelsPerBeat) ? pixelsPerBeat : 12;
     const scrollStartBeat = Math.max(0, scrollX / readoutPixelsPerBeat);
     const sliderStartBeat = Math.min(sliderMaxBeats, Math.round(scrollStartBeat));
     const visibleEndBeat = scrollStartBeat + canvasMetrics.width / readoutPixelsPerBeat;
     const sliderStartBar = getBarNumberAtBeat({ ...meter, beat: scrollStartBeat });
     const sliderEndBar = Math.max(sliderStartBar, getLastBarNumberBeforeBeat({ ...meter, beat: visibleEndBeat }));
+    const sectionDescriptions = getOrderedSections(sections)
+        .map(
+            (section) =>
+                `${section.name}, start ${formatMusicalPosition({ ...meter, beat: section.startBeat })}, end ${formatMusicalPosition({ ...meter, beat: section.endBeat })}.`
+        )
+        .join(' ');
+
+    useLayoutEffect(() => {
+        if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
+            return undefined;
+        }
+
+        const root = document.documentElement;
+        let subscribed = true;
+        const observer = new MutationObserver(() => {
+            queueMicrotask(() => {
+                if (subscribed) {
+                    setThemeRevision((revision) => revision + 1);
+                }
+            });
+        });
+        observer.observe(root, { attributes: true, attributeFilter: ['class', 'style'] });
+
+        return () => {
+            subscribed = false;
+            observer.disconnect();
+        };
+    }, []);
 
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
@@ -129,9 +182,11 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
 
         const trackCount = tracks.length;
 
-        const totalBeats = getMinimapTotalBeats(tracks);
+        const totalBeats = getMinimapTotalBeats(tracks, sections);
         const beatsToPixels = canvasWidth / totalBeats;
-        const drawableHeight = Math.max(1, activeHeight - 2);
+        const sectionLabelHeight = sections.length > 0 && activeHeight >= 22 ? 11 : 0;
+        const contentTop = 1 + sectionLabelHeight;
+        const drawableHeight = Math.max(1, activeHeight - contentTop - 1);
         const laneStep = trackCount > 0 ? drawableHeight / trackCount : drawableHeight;
 
         // Dark background with subtle gradient
@@ -144,7 +199,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
         if (trackCount > 0) {
             for (let index = 0; index < tracks.length; index++) {
                 const track = tracks[index]!;
-                const y = 1 + index * laneStep;
+                const y = contentTop + index * laneStep;
                 const availableHeight = Math.max(1, activeHeight - 1 - y);
                 const clipHeight = Math.min(Math.max(1, laneStep - 1), availableHeight);
 
@@ -166,6 +221,42 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
             }
             ctx.globalAlpha = 1;
         }
+
+        const orderedSections = getOrderedSections(sections);
+        const sectionLabelColor = resolveToken('--color-text-primary', '#eaeaea');
+        ctx.font = '9px sans-serif';
+        ctx.textBaseline = 'middle';
+        let previousLabelRight = -Infinity;
+        for (const [index, section] of orderedSections.entries()) {
+            const startX = section.startBeat * beatsToPixels;
+            const endX = section.endBeat * beatsToPixels;
+            const color = section.color || SECTION_COLORS[index % SECTION_COLORS.length]!;
+
+            ctx.strokeStyle = color;
+            ctx.globalAlpha = 0.45;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(startX + 0.5, 0.5);
+            ctx.lineTo(startX + 0.5, activeHeight - 0.5);
+            ctx.moveTo(endX - 0.5, 0.5);
+            ctx.lineTo(endX - 0.5, activeHeight - 0.5);
+            ctx.stroke();
+
+            if (sectionLabelHeight === 0) {
+                continue;
+            }
+            const labelX = startX + 4;
+            const labelWidth = ctx.measureText(section.name).width;
+            const labelRight = labelX + labelWidth;
+            if (labelRight > endX - 3 || labelRight > canvasWidth || labelX < previousLabelRight + 4) {
+                continue;
+            }
+            ctx.fillStyle = sectionLabelColor;
+            ctx.globalAlpha = 0.9;
+            ctx.fillText(section.name, labelX, sectionLabelHeight / 2);
+            previousLabelRight = labelRight;
+        }
+        ctx.globalAlpha = 1;
 
         const safePixelsPerBeat = pixelsPerBeat > 0 && Number.isFinite(pixelsPerBeat) ? pixelsPerBeat : 12;
         const viewportStartPx = (scrollX / safePixelsPerBeat) * beatsToPixels;
@@ -195,7 +286,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
             ctx.lineTo(boundedViewportStart + boundedViewportWidth - 0.5, 0.5);
             ctx.stroke();
         }
-    }, [tracks, pixelsPerBeat, scrollX, canvasMetrics, activeHeight]);
+    }, [tracks, sections, pixelsPerBeat, scrollX, canvasMetrics, activeHeight, themeRevision]);
 
     useLayoutEffect(() => {
         const container = containerRef.current;
@@ -269,7 +360,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
         const rect = container.getBoundingClientRect();
         const canvasWidth = rect.width;
 
-        const totalBeats = getMinimapTotalBeats(tracks);
+        const totalBeats = getMinimapTotalBeats(tracks, sections);
         const beatsToPixels = canvasWidth / totalBeats;
         const visibleBeats = canvasWidth / pixelsPerBeat;
         const viewportWidthPx = Math.max(VIEWPORT_MIN_WIDTH, visibleBeats * beatsToPixels);
@@ -354,31 +445,35 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-        const stepPx = 4 * pixelsPerBeat;
-        const pageBeats = canvasMetrics.width > 0 ? canvasMetrics.width / pixelsPerBeat : 16;
-        const pagePx = pageBeats * pixelsPerBeat;
+        // Keys can arrive faster than React re-renders (held auto-repeat), so each step
+        // starts from the store's current scroll, not the render-time closure value.
+        const { scrollX: currentScrollX, pixelsPerBeat: currentPixelsPerBeat } =
+            timelineViewStore.value ?? defaultTimelineView;
+        const stepPx = 4 * currentPixelsPerBeat;
+        const pageBeats = canvasMetrics.width > 0 ? canvasMetrics.width / currentPixelsPerBeat : 16;
+        const pagePx = pageBeats * currentPixelsPerBeat;
         let targetScrollX: number;
 
         switch (event.key) {
             case 'ArrowLeft':
             case 'ArrowDown':
-                targetScrollX = scrollX - stepPx;
+                targetScrollX = currentScrollX - stepPx;
                 break;
             case 'ArrowRight':
             case 'ArrowUp':
-                targetScrollX = scrollX + stepPx;
+                targetScrollX = currentScrollX + stepPx;
                 break;
             case 'PageUp':
-                targetScrollX = scrollX - pagePx;
+                targetScrollX = currentScrollX - pagePx;
                 break;
             case 'PageDown':
-                targetScrollX = scrollX + pagePx;
+                targetScrollX = currentScrollX + pagePx;
                 break;
             case 'Home':
                 targetScrollX = 0;
                 break;
             case 'End':
-                targetScrollX = sliderMaxBeats * pixelsPerBeat;
+                targetScrollX = sliderMaxBeats * currentPixelsPerBeat;
                 break;
             default:
                 return;
@@ -393,23 +488,29 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     };
 
     return (
-        <TimelineChromeSurface
-            tone="subtle"
-            ref={containerRef}
-            className="cursor-pointer"
-            style={{ height: activeHeight }}
-            onMouseDown={handleMouseDown}
-            onKeyDown={handleKeyDown}
-            tabIndex={0}
-            aria-label="Timeline minimap — drag the viewport to scroll, click to jump, or use arrow keys"
-            data-testid="timeline-minimap"
-            role="slider"
-            aria-valuemin={0}
-            aria-valuemax={sliderMaxBeats}
-            aria-valuenow={sliderStartBeat}
-            aria-valuetext={`Bars ${sliderStartBar} to ${sliderEndBar}`}
-        >
-            <canvas ref={canvasRef} className="absolute inset-0" style={{ width: '100%', height: activeHeight }} />
-        </TimelineChromeSurface>
+        <>
+            <TimelineChromeSurface
+                tone="subtle"
+                ref={containerRef}
+                className="cursor-pointer"
+                style={{ height: activeHeight }}
+                onMouseDown={handleMouseDown}
+                onKeyDown={handleKeyDown}
+                tabIndex={0}
+                aria-label="Timeline minimap — drag the viewport to scroll, click to jump, or use arrow keys"
+                aria-describedby={sectionDescriptionId}
+                data-testid="timeline-minimap"
+                role="slider"
+                aria-valuemin={0}
+                aria-valuemax={sliderMaxBeats}
+                aria-valuenow={sliderStartBeat}
+                aria-valuetext={`Bars ${sliderStartBar} to ${sliderEndBar}`}
+            >
+                <canvas ref={canvasRef} className="absolute inset-0" style={{ width: '100%', height: activeHeight }} />
+            </TimelineChromeSurface>
+            <span id={sectionDescriptionId} className="sr-only">
+                {sectionDescriptions ? `Sections: ${sectionDescriptions}` : 'No sections.'}
+            </span>
+        </>
     );
 };

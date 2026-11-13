@@ -1,7 +1,5 @@
 import { type AutomationPointSnapshot } from '#/utils/handlerContract';
 
-import { type AutomationPoint } from '../../models/Automation';
-
 function controlPointsMatch(
     current: { x: number; y: number } | undefined,
     expected: { readonly x: number; readonly y: number } | undefined
@@ -21,7 +19,7 @@ function isComparableSnapshot(value: unknown): value is AutomationPointSnapshot 
 
 /** Whether a lane holds exactly the expected points, field by field and in order. */
 export function automationPointSnapshotsMatch(
-    current: readonly AutomationPoint[],
+    current: readonly AutomationPointSnapshot[],
     expected: readonly AutomationPointSnapshot[]
 ): boolean {
     return (

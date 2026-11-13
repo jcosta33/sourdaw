@@ -1,4 +1,5 @@
 import("stdfaust.lib");
+cs = library("sourdaw-current-sound.lib");
 freq = hslider("frequency", 6000, 2000, 12000, 10);
 bw = hslider("bandwidth", 2.0, 0.5, 6.0, 0.1);
 thresh = hslider("threshold", -15, -60, 0, 0.5);
@@ -11,7 +12,7 @@ ratio = hslider("ratio", 4, 1, 20, 0.5);
 reduction = hslider("reduction", 6, 0, 20, 0.5);
 atk = 0.001; rel = 0.05;
 listen = checkbox("listen");
-sc_signal = fi.resonbp(freq, bw, 1);
+sc_signal = cs.resonbp(freq, bw, 1);
 // Attack/release envelope: fast attack-smoothed level, kept high by the
 // slow release-smoothed level (the original max composition dropped a bus —
 // an arity error).

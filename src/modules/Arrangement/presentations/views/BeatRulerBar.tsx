@@ -248,7 +248,7 @@ export const BeatRulerBar = (): React.ReactElement => {
         const beat = getBeat(event.clientX);
 
         // Always seek playhead on click
-        seekPlayhead(beat);
+        void seekPlayhead(beat);
 
         if (event.shiftKey) {
             // Shift+drag: set/extend loop region (R-B5 predecessor behavior)
@@ -272,7 +272,7 @@ export const BeatRulerBar = (): React.ReactElement => {
 
         if (scrubDragRef.current) {
             // R-B6: scrub — continuously seek the playhead to follow the cursor
-            seekPlayhead(Math.max(0, beat));
+            void seekPlayhead(Math.max(0, beat));
             return;
         }
 

@@ -89,6 +89,7 @@ async function activateTemplateTransition(
     const prepared = await transaction.prepare();
     const activated = prepared && shouldProceed() && transaction.activate();
     if (!activated) {
+        transaction.abandon();
         // Every false return here silently kicks the user back to the
         // LaunchScreen with a generic toast — without this line the field
         // has no way to tell WHICH rejection fired (found chasing an
@@ -216,6 +217,7 @@ export async function createFromTemplate(
         releaseRuntimeTransition();
         return true;
     } catch (error) {
+        transaction.abandon();
         // Past the authority switch there is nothing to restore: the previous
         // project is out of the stores, and restarting autosave would compact
         // the half-built template over it on disk.

@@ -4,7 +4,6 @@ import { type AppAction, type HandlerMaterializationContext } from '#/utils/hand
 import { reserveNextTrackColor } from '../../models/Track';
 import { addTrack } from '../../useCases/addTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
-import { publishTrackAdded } from '../../useCases/publishTrackAdded';
 import { planDefaultTrackName } from '../planDefaultTrackName';
 import { isAddTrackSessionEntry } from '../validateCreationSessionEntries';
 
@@ -61,7 +60,7 @@ const pendingCreatedTrackGuards = new WeakMap<object, { entityJson: string; midi
 function executeAddTrackAction(action: AddTrackAction, context?: HandlerMaterializationContext) {
     ensureStableCreationInputs(action);
     const name = ensureTrackName(action, context);
-    const track = addTrack({ ...action.payload, name, suppressAddedEvent: true });
+    const track = addTrack({ ...action.payload, name });
     if (!track) {
         return { status: 'no-write' as const };
     }
@@ -69,26 +68,7 @@ function executeAddTrackAction(action: AddTrackAction, context?: HandlerMaterial
     if (guard) {
         guard.entityJson = JSON.stringify(track);
     }
-    return {
-        status: 'written' as const,
-        afterCommit: () =>
-            publishTrackAdded({
-                trackId: track.id,
-                name: track.name,
-                kind: track.kind,
-            }),
-        afterAmbiguousCommit: async () => {
-            const committedTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === track.id);
-            if (!committedTrack) {
-                return;
-            }
-            await publishTrackAdded({
-                trackId: committedTrack.id,
-                name: committedTrack.name,
-                kind: committedTrack.kind,
-            });
-        },
-    };
+    return { status: 'written' as const };
 }
 
 export const handleAddTrack = createHandler<'addTrack'>({

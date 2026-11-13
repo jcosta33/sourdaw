@@ -240,16 +240,21 @@ export function getBackingVocalPlatePromptScope(
             name: 'addSend',
             arguments: { trackId, busId: `$${BUS_BINDING}`, level: SEND_LEVEL, preFader: false },
         })),
-        {
-            name: 'automateSendRanges',
-            arguments: {
-                trackIds,
-                busId: `$${BUS_BINDING}`,
-                sectionIds,
-                tailBars: AUTOMATION_TAIL_BARS,
-                targetLevelDb: AUTOMATION_TARGET_LEVEL_DB,
-            },
-        },
+        // One range per backing vocal per chorus: the send ramps from its level across the final
+        // bars of the chorus to the target and steps back at the chorus end. The bus reference is
+        // the plan's own literal; the bridge writes the bus id it mints in its place.
+        ...trackIds.flatMap((trackId) =>
+            chorusSections.map((section) => ({
+                name: 'automateParameterRange',
+                arguments: {
+                    trackId,
+                    parameterId: `send:$${BUS_BINDING}`,
+                    range: { startBeat: section.endBeat - automationLengthBeats, endBeat: section.endBeat },
+                    valueDb: AUTOMATION_TARGET_LEVEL_DB,
+                    rampIn: automationLengthBeats,
+                },
+            }))
+        ),
         { name: 'renderProjectSections', arguments: { sectionIds } },
     ];
     const capability: BackingVocalPlateCapability = {

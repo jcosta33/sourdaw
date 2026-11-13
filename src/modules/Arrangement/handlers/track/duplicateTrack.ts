@@ -6,7 +6,6 @@ import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { serializeClipScopedAutomationLanes } from '../../useCases/clip/serializeClipScopedAutomationLanes';
 import { duplicateTrack } from '../../useCases/duplicateTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
-import { publishTrackAdded } from '../../useCases/publishTrackAdded';
 
 type DuplicateTrackAction = { payload: { trackId: string; targetTrackId?: string; select?: boolean } };
 const duplicableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
@@ -37,10 +36,8 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
         }
         const options: {
             select?: boolean;
-            suppressAddedEvent: boolean;
             targetTrackId: string;
         } = {
-            suppressAddedEvent: true,
             targetTrackId: ensureTargetTrackId(action),
         };
         if (action.payload.select !== undefined) {
@@ -68,26 +65,7 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
                 guard.clipAutomationLanesJson = serializeClipScopedAutomationLanes(clipIds);
             }
         }
-        return {
-            status: 'written',
-            afterCommit: () =>
-                publishTrackAdded({
-                    trackId: track.id,
-                    name: track.name,
-                    kind: track.kind,
-                }),
-            afterAmbiguousCommit: async () => {
-                const committedTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === track.id);
-                if (!committedTrack) {
-                    return;
-                }
-                await publishTrackAdded({
-                    trackId: committedTrack.id,
-                    name: committedTrack.name,
-                    kind: committedTrack.kind,
-                });
-            },
-        };
+        return { status: 'written' };
     },
     describe: (action) => {
         const targetTrackId = ensureTargetTrackId(action);

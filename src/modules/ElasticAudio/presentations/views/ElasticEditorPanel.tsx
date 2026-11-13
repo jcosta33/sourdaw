@@ -24,7 +24,6 @@ import {
     updateWarpMarkerBeat,
 } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { executeAppAction } from '#/modules/Command/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { resolveToken } from '#/utils/UI/resolveToken';
@@ -35,7 +34,7 @@ import { getAlgorithmInfo } from '../../useCases/audioWarping/getAlgorithmInfo';
 import { setDefaultAlgorithm } from '../../useCases/audioWarping/setDefaultAlgorithm';
 import { addManualMarker } from '../../useCases/elasticAudio/addManualMarker';
 import { cancelTransientDetection } from '../../useCases/elasticAudio/cancelTransientDetection';
-import { markElasticDetectionComplete } from '../../useCases/elasticAudio/markElasticDetectionComplete';
+import { detectElasticEditorTransients } from '../../useCases/elasticAudio/detectElasticEditorTransients';
 import { removeMarker } from '../../useCases/elasticAudio/removeMarker';
 import { resolveElasticEditorTarget } from '../../useCases/elasticAudio/resolveElasticEditorTarget';
 import { selectElasticMarkers } from '../../useCases/elasticAudio/selectElasticMarkers';
@@ -208,16 +207,12 @@ export const ElasticEditorPanel = (): ReactElement => {
     const handleDetect = (): void => {
         const request = ++detectRequest.current;
         setDetectionStatus('Detecting…');
-        void executeAppAction({
-            type: 'detectTransients',
-            payload: { clipId, sensitivity: preferences.elasticTransientSensitivity },
-        }).then(
-            () => {
+        void detectElasticEditorTransients(clipId, preferences.elasticTransientSensitivity).then(
+            (completed) => {
                 if (request !== detectRequest.current) {
                     return;
                 }
-                markElasticDetectionComplete();
-                setDetectionStatus('Detection complete');
+                setDetectionStatus(completed ? 'Detection complete' : '');
             },
             () => {
                 if (request === detectRequest.current) {

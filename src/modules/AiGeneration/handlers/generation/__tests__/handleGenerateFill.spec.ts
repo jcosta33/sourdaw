@@ -20,7 +20,6 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 // timing, not the notification text.
 
 type ArrangementTrackEvents = {
-    'track.added': { trackId: string; name: string; kind: string };
     'track.removed': { trackId: string };
     'track.selectionChanged': { trackId: string | null; previousTrackId: string | null };
 };

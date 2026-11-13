@@ -1,11 +1,7 @@
 import { createEventBus } from '#/infra/events/createEventBus';
 import { type VoidPayload } from '#/infra/events/types';
 import { logger } from '#/infra/logger/appLogger';
-import {
-    type TrackAddedPayload,
-    type TrackRemovedPayload,
-    type TrackSelectionChangedPayload,
-} from '#/modules/Arrangement/events';
+import { type TrackRemovedPayload, type TrackSelectionChangedPayload } from '#/modules/Arrangement/events';
 import { type AudioDeviceLoadedPayload, type AudioDeviceRemovedPayload } from '#/modules/AudioEngine/events';
 import { type ToggleVoiceCommandPayload } from '#/modules/Command/events';
 import { type CrumbsModeChangedPayload } from '#/modules/Crumbs/events';
@@ -27,7 +23,6 @@ import { type YeastNotesOffPayload } from '#/modules/Yeast/events';
 
 export type AppEvents = {
     // Domain events
-    'track.added': TrackAddedPayload;
     'track.removed': TrackRemovedPayload;
     'track.selectionChanged': TrackSelectionChangedPayload;
     'audioDevice.loaded': AudioDeviceLoadedPayload;

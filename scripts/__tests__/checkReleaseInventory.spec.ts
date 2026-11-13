@@ -116,13 +116,13 @@ const ddspModelEnforcementPaths = [
 ] as const;
 const WEBLLM_SURFACE_ID = 'webllm-qwen-artifacts';
 const WEBLLM_LEGAL_PATH_PREFIX = 'public/legal/';
-// Re-pinned for the browser codec canonical notice update: the closure's
-// paths, source buckets, and path-to-source mapping are byte-identical to the
-// previous pin; only the shared notice's content digest moved. Any other
-// field moving is a legal-closure change, not drift.
-const WEBLLM_LEGAL_CLOSURE_DIGEST = 'a96c3cbcf13b507b08fd721b409096cde845be1d67c485c3e2a6ac2e82fce651';
-const APACHE_TVM_COMMIT = 'bc1a904ec1ad89454ee6577d66cde1268b8f6bc8';
-const TVM_FFI_COMMIT = '3c35034fd1026011736e19a4e0e1ed0f22058c42';
+// The v0_2_87 libraries introduce the publisher-named TVM → TIRx → FFI chain.
+// Pin the independently reviewed paths, separate source buckets, source mapping
+// and exact legal bytes, including the shared notice's updated attribution.
+const WEBLLM_LEGAL_CLOSURE_DIGEST = '0284201b3f782842e3681b1c1ef6dcef228b1bf4cac0201a91103c6baada01a8';
+const APACHE_TVM_COMMIT = 'e345029cedf0be76a087fcad9c89a97bed4f7204';
+const TVM_TIRX_COMMIT = '198a04573ea44e060c1087c8223cf082c64a6c03';
+const TVM_FFI_COMMIT = '6628c464e3b824d09c9cf65ac0c6c24f973f6d56';
 
 function sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex');
@@ -690,6 +690,10 @@ function writeOwnerVisualAssetFixture(
 function expectedApacheTvmRawSource(path: string): string {
     const apacheTvmPrefix = 'public/legal/Apache-TVM/';
     const tvmFfiPrefix = `${apacheTvmPrefix}3rdparty/tvm-ffi/`;
+    const tvmTirxPrefix = `${apacheTvmPrefix}3rdparty/tvm-tirx/`;
+    if (path.startsWith(tvmTirxPrefix)) {
+        return `https://raw.githubusercontent.com/apache/tvm-tirx/${TVM_TIRX_COMMIT}/${path.slice(tvmTirxPrefix.length)}`;
+    }
     if (path.startsWith(tvmFfiPrefix)) {
         return `https://raw.githubusercontent.com/apache/tvm-ffi/${TVM_FFI_COMMIT}/${path.slice(tvmFfiPrefix.length)}`;
     }
@@ -703,11 +707,13 @@ function isConcreteWebLlmLegalPath(path: string): boolean {
 function webLlmLegalSourceBuckets(sources: readonly string[]): Record<string, string[]> {
     return {
         apacheTvmRaw: sources
-            .filter(
-                (source) =>
-                    source.startsWith('https://raw.githubusercontent.com/apache/tvm/') ||
-                    source.startsWith('https://raw.githubusercontent.com/apache/tvm-ffi/')
-            )
+            .filter((source) => source.startsWith('https://raw.githubusercontent.com/apache/tvm/'))
+            .sort(),
+        tvmTirxRaw: sources
+            .filter((source) => source.startsWith('https://raw.githubusercontent.com/apache/tvm-tirx/'))
+            .sort(),
+        tvmFfiRaw: sources
+            .filter((source) => source.startsWith('https://raw.githubusercontent.com/apache/tvm-ffi/'))
             .sort(),
         mlcLlmNotice: sources.filter((source) => source.startsWith('https://github.com/mlc-ai/mlc-llm/tree/')).sort(),
         qwenLicenseSet: sources.filter((source) => source.startsWith('https://huggingface.co/Qwen/')).sort(),
@@ -716,6 +722,12 @@ function webLlmLegalSourceBuckets(sources: readonly string[]): Record<string, st
 }
 
 function webLlmLegalSourceKinds(path: string): string[] {
+    if (path.startsWith('public/legal/Apache-TVM/3rdparty/tvm-tirx/')) {
+        return ['tvmTirxRaw'];
+    }
+    if (path.startsWith('public/legal/Apache-TVM/3rdparty/tvm-ffi/')) {
+        return ['tvmFfiRaw'];
+    }
     if (path.startsWith('public/legal/Apache-TVM/')) {
         return ['apacheTvmRaw'];
     }
@@ -729,13 +741,14 @@ function webLlmLegalSourceKinds(path: string): string[] {
         return ['webLlmLicense'];
     }
     if (path === 'public/legal/THIRD-PARTY-NOTICES.md') {
-        return ['apacheTvmRaw', 'mlcLlmNotice', 'qwenLicenseSet', 'webLlmLicense'];
+        return ['apacheTvmRaw', 'tvmTirxRaw', 'tvmFfiRaw', 'mlcLlmNotice', 'qwenLicenseSet', 'webLlmLicense'];
     }
     throw new Error(`unexpected WebLLM legal path in oracle: ${path}`);
 }
 
-function webLlmLegalClosureOracle() {
-    const surface = readReleaseInventory(repositoryRoot).surfaces.find(({ id }) => id === WEBLLM_SURFACE_ID);
+function webLlmLegalClosureOracle(
+    surface = readReleaseInventory(repositoryRoot).surfaces.find(({ id }) => id === WEBLLM_SURFACE_ID)
+) {
     if (surface === undefined) {
         throw new Error(`missing ${WEBLLM_SURFACE_ID} surface`);
     }
@@ -1616,6 +1629,9 @@ describe('release inventory', () => {
                 'public/legal/Apache-TVM/NOTICE',
                 'public/legal/Apache-TVM/3rdparty/tvm-ffi/LICENSE',
                 'public/legal/Apache-TVM/3rdparty/tvm-ffi/NOTICE',
+                'public/legal/Apache-TVM/3rdparty/tvm-tirx/LICENSE',
+                'public/legal/Apache-TVM/3rdparty/tvm-tirx/NOTICE',
+                'public/legal/Apache-TVM/3rdparty/tvm-tirx/licenses/LICENSE.builtin_fp16.txt',
             ])
         );
 
@@ -1631,6 +1647,29 @@ describe('release inventory', () => {
 
     it('should reject nested tvm-ffi legal byte drift', () => {
         const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+        const changed = snapshot();
+        changed.releaseFiles.push(path);
+        changed.fileDigests[path] = 'b'.repeat(64);
+
+        expect(validateReleaseInventory(value, changed)).toContain(`runtime: path-addressed digest drifted: ${path}`);
+    });
+
+    it('rejects a missing TIRx source from the independently pinned WebLLM legal closure', () => {
+        const surface = readReleaseInventory(repositoryRoot).surfaces.find(({ id }) => id === WEBLLM_SURFACE_ID);
+        if (!surface) {
+            throw new Error(`missing ${WEBLLM_SURFACE_ID} surface`);
+        }
+        const path = 'public/legal/Apache-TVM/3rdparty/tvm-tirx/licenses/LICENSE.builtin_fp16.txt';
+        const source = expectedApacheTvmRawSource(path);
+        expect(surface.sources).toContain(source);
+        const missingSource = { ...surface, sources: surface.sources.filter((candidate) => candidate !== source) };
+        expect(sha256(JSON.stringify(webLlmLegalClosureOracle(missingSource)))).not.toBe(WEBLLM_LEGAL_CLOSURE_DIGEST);
+    });
+
+    it('rejects nested TIRx legal byte drift', () => {
+        const path = 'public/legal/Apache-TVM/3rdparty/tvm-tirx/licenses/LICENSE.builtin_fp16.txt';
         const value = inventory();
         value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
         const changed = snapshot();

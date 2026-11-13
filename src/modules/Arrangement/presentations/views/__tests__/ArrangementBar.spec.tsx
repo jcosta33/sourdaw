@@ -142,6 +142,24 @@ describe('ArrangementBar', () => {
     // The global shortcut layer gates Delete / Backspace on
     // closest('[role="menu"]') (#3618): without a menu-role ancestor a Delete
     // from inside the open menu deletes the arrangement clips behind it.
+    it.each([
+        { label: 'Play Section', loop: false },
+        { label: 'Loop Section', loop: true },
+    ])('$label dispatches rehearsal for only the selected section ID', ({ label, loop }) => {
+        setSections([section({ id: 's1', name: 'Intro', startBeat: 4, endBeat: 20 })]);
+        const { container } = render(<ArrangementBar pixelsPerBeat={12} scrollX={0} />);
+        const bar = container.querySelector('[role="region"]')!;
+        fireEvent.contextMenu(bar, { clientX: 60, clientY: 10 });
+
+        fireEvent.click(screen.getByRole('button', { name: label }));
+
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'rehearseSection',
+            payload: { sectionId: 's1', loop },
+        });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
     it('section context menu items sit inside a [role="menu"] surface', () => {
         setSections([section({ id: 's1', name: 'Intro', startBeat: 0, endBeat: 16 })]);
         const { container } = render(<ArrangementBar pixelsPerBeat={12} scrollX={0} />);

@@ -250,10 +250,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // updateDeviceParam dependency and its single guarded call; this path
         // intentionally contains no persistence identifier.
         'src/modules/Fermenter/useCases/applyFermenterRuntimeParam.ts': 2,
+        // Count provenance: removed handler 1 and continuous wrappers 6/4/6.
+        // All now delegate to prepareFermenterPatchWrite -> Command -> the
+        // guarded Arrangement atomic patch owner; none contains a direct sink.
         'src/modules/Fermenter/useCases/fermenterParamBridge/helpers.ts': 2,
-        'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts': 6,
-        'src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts': 4,
-        'src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts': 6,
+        // Count provenance: new file, measured 1 — the after-commit effect
+        // restores only the audible engine from the committed whole patch.
+        'src/modules/Fermenter/useCases/reconcileFermenterPatchFromProject.ts': 1,
         // Count provenance: measured 5, was 4. #1437 added `previewParam`, the
         // transient half of a knob gesture — it drives the engine and writes
         // nothing to project truth, so it contributes one `updateDeviceParam`
@@ -736,13 +739,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts': 1,
         'src/modules/Crust/presentations/views/CrustPanel.tsx': 3,
         'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts': 1,
-        // Count provenance: 0 in code, was 1 lexical — a doc-comment reference
-        // to the sibling loadFermenterPatchWithAudio path in `flushMorph` (the
-        // engine write now goes through the same mapFermenterPatchToDspPatch
-        // DSP-id mapping — #548). That write class stays censused under
-        // 'persistence-runtime' at count 6.
-        // 'src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts': removed (0),
-        'src/modules/Fermenter/presentations/views/FermenterPanel.tsx': 7,
+        // Count provenance: measured 3 each — loader identifier import,
+        // module-specifier string and call. These adapters delegate the actual
+        // guarded write to preparation and the shared Command frame.
+        'src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts': 3,
+        'src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts': 3,
+        // Count provenance: measured 4, was 7 — whole-patch preset auditioning
+        // now commits through Command; the remaining macro/mapping preview
+        // calls and their shared import are the only live engine-load route.
+        'src/modules/Fermenter/presentations/views/FermenterPanel.tsx': 4,
         'src/modules/Gluten/useCases/glutenParamBridge/loadGlutenPatchWithAudio.ts': 2,
         'src/modules/Gluten/presentations/views/GlutenPanel.tsx': 3,
         'src/modules/GrandBoule/presentations/components/PianoModel3D.tsx': 4,
@@ -1068,6 +1073,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
+        // Count provenance: measured 5/1/2 — pure working-owner snapshots,
+        // preset reconstruction and current-owner decoding. These return values
+        // and never publish project state.
+        'src/modules/Arrangement/models/DevicePatchWritePlan.ts': 5,
+        'src/modules/Arrangement/models/DeviceSnapshotProjection.ts': 1,
+        'src/modules/Arrangement/models/PlannedDeviceOwnerSource.ts': 2,
         // Guarded clip-state restoration rebuilds the stored device chain inside
         // the registered action transaction.
         'src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts': 3,
@@ -1076,6 +1087,9 @@ const DEVICE_DATA_COUNTS = {
         // writer is `writeDeviceToProject`; this is the handler's topology
         // result, not a foreign store write.
         'src/modules/Arrangement/handlers/device/handleAddDevice.ts': 1,
+        // Count provenance: measured 2 — planned-owner and parameter DTOs read
+        // the prior batch prefix. The parameter owner still performs the write.
+        'src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts': 2,
         // Count provenance: measured 1 — `devices:` on the after-track snapshot
         // for the registered load-external-plugin handler.
         'src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts': 1,
@@ -1084,10 +1098,10 @@ const DEVICE_DATA_COUNTS = {
         // registered loadPreset handler after executeAppAction, not a raw store
         // write from a foreign module.
         'src/modules/Arrangement/handlers/preset/handleLoadPreset.ts': 8,
-        // Count provenance: measured 2 — the Device reconstruction moved out of
-        // handleLoadPreset so the batch projection writes the same chain the
-        // loadPreset handler and its restoring inverse commit.
-        'src/modules/Arrangement/handlers/preset/toPresetProjectDevices.ts': 2,
+        // Count provenance: measured 1, was 2 — only the wrapper's typed
+        // devices input remains; reconstruction moved to projectDeviceSnapshots.
+        // Both are pure planning, not project publication.
+        'src/modules/Arrangement/handlers/preset/toPresetProjectDevices.ts': 1,
         'src/modules/Arrangement/handlers/preset/handleSavePreset.ts': 2,
         // Count provenance: was 1 in `static`, measured 2 — the row moves buckets
         // rather than just incrementing. #2347 rewrote the template validator's
@@ -1121,6 +1135,9 @@ const DEVICE_DATA_COUNTS = {
         // `composeAddedDeviceParameterValues`, which writes nothing, so the
         // remaining hit is the device chain this file writes to the project.
         'src/modules/Arrangement/useCases/device/addDevice.ts': 1,
+        // Count provenance: measured 1 — devices in the sole updateTrack
+        // publication, after eligible-owner/frozen guards and all scalar laws.
+        'src/modules/Arrangement/useCases/device/applyDevicePatchState.ts': 1,
         'src/modules/Arrangement/useCases/device/addExternalDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/addMidiFx.ts': 1,
         'src/modules/Arrangement/useCases/device/bypassDevice.ts': 1,
@@ -1200,6 +1217,10 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Project/useCases/projectTemplates/templateHelpers/createBus.ts': 1,
     },
     static: {
+        // Count provenance: measured 1 each — only neutral footprint and
+        // planned-owner type fields; neither file executes a project write.
+        'src/modules/Arrangement/models/DevicePatchState.ts': 1,
+        'src/modules/Arrangement/models/PlannedDeviceWrite.ts': 1,
         'src/modules/Arrangement/models/SoundPreset.ts': 2,
         // Count provenance: new file entry from #2347 ("migrate stored device
         // parameters before preset load"), measured 1 — the `parameterValues:
@@ -1284,9 +1305,10 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts',
     'src/modules/Crust/useCases/crustParamBridge/setCrustParamWithAudio.ts',
     'src/modules/Fermenter/useCases/applyFermenterRuntimeParam.ts',
-    'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts',
-    'src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts',
-    'src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts',
+    // Preparation guards before optimistic feedback; the Arrangement owner
+    // independently guards the actual atomic project publication.
+    'src/modules/Fermenter/useCases/prepareFermenterPatchWrite.ts',
+    'src/modules/Arrangement/useCases/device/applyDevicePatchState.ts',
     'src/modules/Gluten/useCases/glutenParamBridge/createFlushHandlers.ts',
     'src/modules/Gluten/useCases/glutenParamBridge/loadGlutenPatchWithAudio.ts',
     'src/modules/Gluten/useCases/glutenParamBridge/setGlutenParamWithAudio.ts',
@@ -1830,7 +1852,7 @@ function countDeviceDataAstWrites(file: SourceText): number {
 }
 
 // AST census walks updateTrack and trackStore.set; property-syntax
-// devices:/parameterValues: hits are regex-owned and must not parse here.
+// devices:/parameterValues: hits remain regex-owned apart from ternary separators.
 function codeMayContainDeviceDataAstWrites(code: string): boolean {
     if (code.length === 0) {
         return false;
@@ -1838,12 +1860,50 @@ function codeMayContainDeviceDataAstWrites(code: string): boolean {
     return code.includes('updateTrack') || code.includes('trackStore');
 }
 
+const DEVICE_DATA_COLON_PATTERN = /\b(?:parameterValues|devices)\s*:/g;
+
+function conditionalColonOffsets(file: ProductionSource): ReadonlySet<number> {
+    const sourceFile = createSourceFile(
+        file.path,
+        file.code,
+        ScriptTarget.Latest,
+        true,
+        file.path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS
+    );
+    const offsets = new Set<number>();
+    const visit = (node: Node): void => {
+        if (isConditionalExpression(node)) {
+            offsets.add(node.colonToken.getStart(sourceFile));
+        }
+        forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return offsets;
+}
+
 function countDeviceDataByPath(files: ReadonlyArray<ProductionSource>): CountByPath {
     const result = countByPath(files, {
-        pattern: /\b(?:parameterValues|devices)\s*:/g,
+        pattern: DEVICE_DATA_COLON_PATTERN,
         includes: includeAllPaths,
     });
     for (const file of files) {
+        const lexicalCount = result[file.path];
+        if (lexicalCount !== undefined && file.code.includes('?')) {
+            const offsets = conditionalColonOffsets(file);
+            let reads = 0;
+            for (const match of file.code.matchAll(DEVICE_DATA_COLON_PATTERN)) {
+                const colonOffset = match.index + match[0].lastIndexOf(':');
+                if (offsets.has(colonOffset)) {
+                    reads += 1;
+                }
+            }
+            const remaining = lexicalCount - reads;
+            if (remaining === 0) {
+                delete result[file.path];
+            } else {
+                result[file.path] = remaining;
+            }
+        }
         if (!codeMayContainDeviceDataAstWrites(file.code)) {
             continue;
         }
@@ -2125,6 +2185,27 @@ describe('device write boundary closure', () => {
             SINK_DEFINITIONS['persistence-runtime']
         );
         expect(sinks['src/modules/Arrangement/codeSink.ts']).toBe(1);
+    });
+
+    it.each([
+        'const devices = Object.hasOwn(track, "devices") ? track.devices : [];',
+        'const devices = present ? track?.devices : fallback;',
+        'const value = present ? (nested ? track.parameterValues : fallback) : {};',
+        'const value = present ? track.devices /* read */ : fallback;',
+    ])('does not count a device-data ternary read as a property write: %s', (source) => {
+        const path = 'src/modules/Arrangement/readDeviceData.ts';
+        expect(countDeviceDataByPath([productionSource(path, source)])[path]).toBeUndefined();
+    });
+
+    it.each([
+        ['const value = present ? { devices: [] } : fallback;', 1],
+        ['const value = present ? { parameterValues: {} } : fallback;', 1],
+        ['const value = present ? track.devices : { devices: [] };', 1],
+        ['const value = present ? track.parameterValues : { parameterValues: {} };', 1],
+        ['const devices: string[] = [];', 1],
+    ])('keeps real device-data colons in the lexical census: %s', (source, expected) => {
+        const path = 'src/modules/Arrangement/propertyDeviceData.ts';
+        expect(countDeviceDataByPath([productionSource(path, source)])[path]).toBe(expected);
     });
 
     it('does not classify read-only destructuring or projection as a shorthand write', () => {

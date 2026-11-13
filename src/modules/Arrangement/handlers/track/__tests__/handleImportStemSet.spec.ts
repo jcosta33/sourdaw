@@ -40,7 +40,6 @@ const mocks = vi.hoisted(() => ({
     initializeTrackStripFromSnapshot: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     promoteDurableStagedAsset: vi.fn(),
     promoteStagedAsset: vi.fn<(leaseId: string) => boolean>(),
-    publishTrackAdded: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     publishTrackRemoved: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     removeBusStrip: vi.fn<() => void>(),
     removeTrackStrip: vi.fn<() => void>(),
@@ -109,9 +108,6 @@ vi.mock('#/modules/Routing/useCases', () => ({
     setSend: mocks.setSend,
     wireSidechainRoutes: mocks.wireSidechainRoutes,
     hydrateSidechainRoutes: vi.fn(),
-}));
-vi.mock('../../../useCases/publishTrackAdded', () => ({
-    publishTrackAdded: mocks.publishTrackAdded,
 }));
 vi.mock('../../../useCases/publishTrackRemoved', () => ({
     publishTrackRemoved: mocks.publishTrackRemoved,
@@ -515,7 +511,6 @@ describe('handleImportStemSet', () => {
             tracks: structuredClone(requireTrackState()),
             promotions: mocks.promoteDurableStagedAsset.mock.calls.length,
             projections: mocks.initializeTrackStripFromSnapshot.mock.calls.length,
-            events: mocks.publishTrackAdded.mock.calls.length,
         };
 
         const { folder, importedTracks } = createImportedStemTracks(action);
@@ -536,7 +531,6 @@ describe('handleImportStemSet', () => {
         expect(requireTrackState()).toEqual(beforeRetry.tracks);
         expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledTimes(beforeRetry.promotions);
         expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledTimes(beforeRetry.projections);
-        expect(mocks.publishTrackAdded).toHaveBeenCalledTimes(beforeRetry.events);
 
         const changedContent = {
             ...action,

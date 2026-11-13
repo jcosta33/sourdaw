@@ -1,6 +1,6 @@
 //! Modulation sources for Bacteria: LFO, envelope follower, Lorenz attractor.
 
-use crate::primitives::flush_denormal;
+use crate::primitives::{flush_denormal, pole_from_ms};
 use std::f32::consts::PI;
 
 /// LFO shape.
@@ -120,7 +120,7 @@ impl EnvelopeFollower {
     }
 
     fn time_to_coeff(ms: f32, sample_rate: f32) -> f32 {
-        (-1.0 / (ms.max(0.01) * 0.001 * sample_rate)).exp()
+        pole_from_ms(ms.max(0.01), sample_rate)
     }
 
     pub fn set_attack(&mut self, ms: f32) {
@@ -216,5 +216,27 @@ impl LorenzAttractor {
         self.x = 0.1;
         self.y = 0.0;
         self.z = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EnvelopeFollower;
+
+    /// Zero and negative times clamp to 0.01 ms, the pole 0x3dff0173 at 48 kHz.
+    #[test]
+    fn follower_time_at_or_below_zero_clamps_to_the_ten_microsecond_pole() {
+        assert_eq!(
+            EnvelopeFollower::time_to_coeff(0.0, 48_000.0).to_bits(),
+            0x3dff_0173
+        );
+        assert_eq!(
+            EnvelopeFollower::time_to_coeff(-1.0, 48_000.0).to_bits(),
+            0x3dff_0173
+        );
+        assert_eq!(
+            EnvelopeFollower::time_to_coeff(5.0, 48_000.0).to_bits(),
+            0x3f7e_ef80
+        );
     }
 }
