@@ -1,0 +1,99 @@
+src/modules/ContentBrowser/presentations/components/Sidebar/PresetItem.tsx
+  s_50cbc34e8b61c3::t_a0c6f1934fdc79 44-47
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  s_50cbc34e8b61c3::t_e1cca07ca348d4 58-60
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  s_50cbc34e8b61c3::t_c5206624eeceab 562-586
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_50cbc34e8b61c3::t_7308947531197a 288-303,305
+eslint.config.mjs
+  s_50cbc34e8b61c3::t_7d248b5a9118a3 223,228-230
+  s_50cbc34e8b61c3::t_7f881ca8618bf7 2789
+  s_50cbc34e8b61c3::t_afee303477dde3 3121,3125-3126
+  s_50cbc34e8b61c3::t_57afda5f1cef6e 2783
+  s_50cbc34e8b61c3::t_f1c1a302d43032 1577
+  s_50cbc34e8b61c3::t_3c59660f84c8e7 2797,2800-2801
+  s_50cbc34e8b61c3::t_0e6d0d5da322d9 3120
+  s_50cbc34e8b61c3::t_1aba4b87258c5e 226-227,231-232
+  s_50cbc34e8b61c3::t_12fc12505e07f2 2807
+  s_50cbc34e8b61c3::t_122df5a559e74d 2968
+  s_50cbc34e8b61c3::t_3f7880c6639313 3136
+  s_50cbc34e8b61c3::t_c623355169ea9c 222
+  s_50cbc34e8b61c3::t_bf076ed8501321 224-225
+src/components/daw/DawTabStrip.tsx
+  s_50cbc34e8b61c3::t_6f58b644347b20 239
+  s_50cbc34e8b61c3::t_9cafb9e821ab84 195-197,200-201
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_50cbc34e8b61c3::t_f9f1cefe874b3a 104,108,110
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.warpSubscription.spec.tsx
+  s_50cbc34e8b61c3::t_3db340f8490ed9 24-26
+src/components/ui/dialog.tsx
+  s_50cbc34e8b61c3::t_95bb7ce3cf944c 124
+  s_50cbc34e8b61c3::t_21b41cb154f6f2 1
+src/modules/Preferences/presentations/views/preferences/AppearanceSection.tsx
+  s_50cbc34e8b61c3::t_38bbcfe9f8fa8a 22,24-26,28
+  s_50cbc34e8b61c3::t_86a837bf93785b 1
+src/modules/Collaboration/presentations/hooks/usePresence.ts
+  s_50cbc34e8b61c3::t_14ab1971e154e3 86-88
+  s_72d11c8b9829ac::t_3cd586cec37240 9-37,73,85,93
+src/app/DesktopStartupError.tsx
+  s_50cbc34e8b61c3::t_e891eef92db822 9
+src/app/ApplicationFirstPaint.tsx
+  s_50cbc34e8b61c3::t_25cd565e619050 8
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_50cbc34e8b61c3::t_5731784625f275 206-210
+src/components/ui/__tests__/disabled-feature-wrapper.spec.tsx
+  s_50cbc34e8b61c3::t_a8e9c1b22137bb 33-37
+  s_50cbc34e8b61c3::t_f0eca52d606780 20-24
+src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx
+  s_50cbc34e8b61c3::t_8394cef00b921a 42
+  s_50cbc34e8b61c3::t_95de20516b633c 1
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_50cbc34e8b61c3::t_ea0637001e4c1e 238,304,478
+  s_50cbc34e8b61c3::t_86a817a0e371fb 302,479
+scripts/__tests__/eslintConfig.spec.ts
+  s_50cbc34e8b61c3::t_17df0196e8c5fe 224-229
+  s_126e3d478b4f75::t_37feb0af38c13a 223
+src/modules/Crumbs/presentations/components/PadGrid.tsx
+  s_50cbc34e8b61c3::t_ea064dd44bfad8 47-48
+  s_50cbc34e8b61c3::t_6101dea83831f1 82-83
+src/components/ui/disabled-feature-wrapper.tsx
+  s_126e3d478b4f75::t_ec66015a1a71b0 5-8,13,22-23,35,43
+src/modules/Arrangement/presentations/views/__tests__/TrackListViewRowSelection.spec.tsx
+  s_50cbc34e8b61c3::t_9b448a89e93d59 1
+  s_50cbc34e8b61c3::t_2be951ca0f7b7d 2-164
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  s_50cbc34e8b61c3::t_5d0aea8d1eb876 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "82abc75f4430d2a2cf6f2bf4c3889185edf38647",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_50cbc34e8b61c3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3ccafa79-c9ba-491d-83f4-7ab63651b7ac",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_72d11c8b9829ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19ed595a-e044-4bc4-a50d-610b24c75b56",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
