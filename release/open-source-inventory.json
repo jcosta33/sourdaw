@@ -169,7 +169,7 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:c0c1a268c557a6a1d946c6ef0fbbc543079d311e8e66c7893ca114a063349039:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:34625023ef1971a807722658a25ff2509638d9b17d65bf1d8e850f5a138dfa96:public/legal/DEPENDENCY-LICENSES.txt",
                 "sha256:a0ecef6506cc429cc95218c3ef86e6608b11bfaf9eea3f01831a6f3b02445407:release/dependency-license-proofs.json"
             ],
             "licenses": [
@@ -268,6 +268,7 @@
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
                 "pnpm-workspace.yaml",
+                "patches/@automerge__automerge@3.5.0.patch",
                 "patches/vite@8.3.8.patch",
                 "public/legal/MLC-WEB-NOTICES.txt",
                 "public/legal/THIRD-PARTY-NOTICES.md"
@@ -277,6 +278,7 @@
                 "server/package.json",
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
+                "patches/@automerge__automerge@3.5.0.patch",
                 "patches/vite@8.3.8.patch",
                 "https://raw.githubusercontent.com/mlc-ai/xgrammar/ace2321a29471130f3f64fb1882741a5547c6f36/NOTICE",
                 "https://raw.githubusercontent.com/msgpack/msgpack-c/8c602e8579c7e7d65d6f9c6703c9699db3fb0488/COPYING",
@@ -294,7 +296,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:5e5e833c5f03d0fa417676644777cb403135bf4f1187af613bb07e6d79c7ed67",
+                "sha256:97444a345f9c78a3f15e942ada60dfaffe7612e7f21ca8a95e067f1ff6f02395",
                 "sha256:4ce2f2f1a4fc0959b7f9fce2a16cf95e6c75af942e0b691407c73270720ab968",
                 "sha256:da20539796075e22f2ad7f835eb6f1be13a6b540a503d633a85173c02c2aa5c7:public/legal/MLC-WEB-NOTICES.txt",
                 "sha256:e1855008bd1805f65df7fcda958163d44e913c8c6cffd96e05042987e1773afd:public/legal/THIRD-PARTY-NOTICES.md"
@@ -308,7 +310,7 @@
                 "collaboration server"
             ],
             "evidence": [
-                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs; pnpm applies the pinned Vite patch as part of dependency source.",
+                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs; pnpm applies the pinned Automerge and Vite patches as part of dependency source.",
                 "MLC-WEB-NOTICES.txt preserves separately sourced SDK and bundled third-party notices; assembled dependency records bind installed metadata and canonical terms without authenticating package attribution or proving the SDK build genealogy."
             ],
             "obligations": [
@@ -1226,7 +1228,7 @@
                 "tracked-set-sha256:20bcf828794365a588f32d7e13808657502a13d0e8427a6543cf78c2cec789ce:grand-boule-discovery-catalog",
                 "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
                 "tracked-set-sha256:eaa809018aea8e96f598f3b55ad0711e475c6a79f06c87491af507ad88d346bd:grand-boule-live-runtime",
-                "tracked-set-sha256:5c611870a3fb4988f766651c248c84ce57210e854b77c52f939ec761c0653e43:grand-boule-project-state",
+                "tracked-set-sha256:16a3004282547e2c00be2b45e3a21b9b78d53fd615790560b7ffbd4f3eb0a7c7:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
                 "tracked-set-sha256:0dc1081cc976553c60bdfca0e2a17ff54d44e5f830825d9c0f0c0d66819ee95e:grand-boule-release-proof"
             ],
@@ -1900,7 +1902,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "5e5e833c5f03d0fa417676644777cb403135bf4f1187af613bb07e6d79c7ed67"
+            "sha256": "97444a345f9c78a3f15e942ada60dfaffe7612e7f21ca8a95e067f1ff6f02395"
         },
         {
             "path": "Cargo.toml",

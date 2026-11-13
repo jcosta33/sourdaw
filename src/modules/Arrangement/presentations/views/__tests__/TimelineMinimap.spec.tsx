@@ -101,6 +101,7 @@ describe('TimelineMinimap', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         transportStoreMock.value = { isPlaying: false };
+        timelineViewStoreMock.value = { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true };
         storeOverrides.values.clear();
         global.ResizeObserver = MockResizeObserver;
     });
@@ -407,12 +408,9 @@ describe('TimelineMinimap', () => {
 
     it.each([true, false])('moves End to the advertised maximum while playing is %s', (isPlaying) => {
         transportStoreMock.value = { isPlaying };
-        storeOverrides.values.set(timelineViewStoreMock, {
-            scrollX: 70,
-            scrollY: 0,
-            pixelsPerBeat: 7,
-            autoScrollEnabled: true,
-        });
+        const scrolledView = { scrollX: 70, scrollY: 0, pixelsPerBeat: 7, autoScrollEnabled: true };
+        storeOverrides.values.set(timelineViewStoreMock, scrolledView);
+        timelineViewStoreMock.value = scrolledView;
         storeOverrides.values.set(trackStoreMock, {
             tracks: [{ clips: [{ endBeat: 200 }] }],
             selectedTrackId: null,

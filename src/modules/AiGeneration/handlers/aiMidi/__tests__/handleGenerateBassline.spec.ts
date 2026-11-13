@@ -4,11 +4,6 @@ import { handleGenerateBassline } from '../handleGenerateBassline';
 
 type TestTrackInput = { id?: string; name: string; kind: string; select?: boolean };
 type TestTrack = { id: string; name: string; kind: string; clips: unknown[] };
-type TestTrackCreation = {
-    track: TestTrack;
-    afterCommit: () => void | Promise<void>;
-    afterAmbiguousCommit: () => void | Promise<void>;
-};
 type TestClipInput = {
     id?: string;
     trackId: string;
@@ -30,7 +25,7 @@ const mocks = vi.hoisted(() => {
     return {
         captureTransactionScope: vi.fn(() => transactionScope),
         transactionScope,
-        addTrack: vi.fn<(input: TestTrackInput) => TestTrackCreation | null>(),
+        addTrack: vi.fn<(input: TestTrackInput) => TestTrack | null>(),
         addClip: vi.fn<(input: TestClipInput) => TestClip | null>(),
         getNotesForClip: vi.fn(),
         setNotesForClip: vi.fn(),
@@ -47,8 +42,6 @@ const mocks = vi.hoisted(() => {
         info: vi.fn(),
         notifyUser: vi.fn(),
         getTrackStoreState: vi.fn(),
-        afterTrackCommit: vi.fn(),
-        afterTrackAmbiguousCommit: vi.fn(),
         serializeMidiStateForClips: vi.fn(),
     };
 });
@@ -64,7 +57,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    addTrackWithDeferredAddedEvent: mocks.addTrack,
+    addTrack: mocks.addTrack,
     addClip: mocks.addClip,
     getTrackStoreState: mocks.getTrackStoreState,
 }));
@@ -89,14 +82,6 @@ vi.mock('../llmNoteHelpers', () => ({
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { info: mocks.info },
 }));
-
-function createTrackCreation(track: TestTrack): TestTrackCreation {
-    return {
-        track,
-        afterCommit: mocks.afterTrackCommit,
-        afterAmbiguousCommit: mocks.afterTrackAmbiguousCommit,
-    };
-}
 
 describe('handleGenerateBassline', () => {
     beforeEach(() => {
@@ -144,9 +129,7 @@ describe('handleGenerateBassline', () => {
 
     it('generates a bassline on a new clip on the new track when trackId is omitted', async () => {
         mocks.getNotesForClip.mockReturnValue([{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }]);
-        mocks.addTrack.mockReturnValue(
-            createTrackCreation({ id: 't2', name: 'Bass (root-fifth)', kind: 'midi', clips: [] })
-        );
+        mocks.addTrack.mockReturnValue({ id: 't2', name: 'Bass (root-fifth)', kind: 'midi', clips: [] });
         mocks.addClip.mockReturnValue({
             id: 'bass-clip',
             startBeat: 4,
@@ -192,22 +175,18 @@ describe('handleGenerateBassline', () => {
         expect(mocks.transactionScope.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.addMidiNote.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
-        expect(mocks.afterTrackCommit).not.toHaveBeenCalled();
         expect(mocks.info).not.toHaveBeenCalled();
         if (result?.status !== 'written') {
             throw new Error('Expected a written bassline result');
         }
         await result.afterCommit?.();
-        expect(mocks.afterTrackCommit).toHaveBeenCalledTimes(1);
         expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('Generated root-fifth bassline'));
     });
 
     it('bails (does not fall back to the source clip) when the reference clip is missing on a new track', async () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
         mocks.getNotesForClip.mockReturnValue([]);
-        mocks.addTrack.mockReturnValue(
-            createTrackCreation({ id: 't2', name: 'Bass (root-fifth)', kind: 'midi', clips: [] })
-        );
+        mocks.addTrack.mockReturnValue({ id: 't2', name: 'Bass (root-fifth)', kind: 'midi', clips: [] });
         mocks.llmGenerateNotes.mockResolvedValue([{ pitch: 36, startBeat: 0, duration: 1, velocity: 80 }]);
 
         const result = await handleGenerateBassline.execute({
@@ -223,10 +202,8 @@ describe('handleGenerateBassline', () => {
         expect(mocks.addMidiNote).not.toHaveBeenCalled();
     });
 
-    it('does not publish deferred effects after an ambiguous non-durable write', async () => {
-        mocks.addTrack.mockReturnValue(
-            createTrackCreation({ id: 't2', name: 'Bass (root-fifth)', kind: 'midi', clips: [] })
-        );
+    it('does not log success after an ambiguous non-durable write', async () => {
+        mocks.addTrack.mockReturnValue({ id: 't2', name: 'Bass (root-fifth)', kind: 'midi', clips: [] });
         mocks.addClip.mockReturnValue({
             id: 'bass-clip',
             startBeat: 4,
@@ -247,7 +224,6 @@ describe('handleGenerateBassline', () => {
 
         await result.afterAmbiguousCommit?.();
 
-        expect(mocks.afterTrackAmbiguousCommit).not.toHaveBeenCalled();
         expect(mocks.info).not.toHaveBeenCalled();
     });
 
@@ -271,9 +247,7 @@ describe('handleGenerateBassline', () => {
         mocks.getNotesForClip.mockReturnValue([
             { id: 'existing-note', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
         ]);
-        mocks.addTrack.mockReturnValueOnce(
-            createTrackCreation({ id: 't2', name: 'Bass (root-fifth)', kind: 'midi', clips: [] })
-        );
+        mocks.addTrack.mockReturnValueOnce({ id: 't2', name: 'Bass (root-fifth)', kind: 'midi', clips: [] });
         mocks.addClip.mockReturnValueOnce(null);
         mocks.llmGenerateNotes.mockResolvedValueOnce([{ pitch: 36, startBeat: 0, duration: 1, velocity: 80 }]);
 
@@ -424,7 +398,7 @@ describe('handleGenerateBassline', () => {
             if (!input.id) {
                 throw new Error('Expected stable track id');
             }
-            return createTrackCreation({ id: input.id, name: input.name, kind: input.kind, clips: [] });
+            return { id: input.id, name: input.name, kind: input.kind, clips: [] };
         });
         mocks.addClip.mockImplementation((input) => {
             if (!input.id) {
@@ -551,7 +525,7 @@ describe('handleGenerateBassline', () => {
             if (!input.id) {
                 throw new Error('Expected stable track id');
             }
-            return createTrackCreation({ id: input.id, name: input.name, kind: input.kind, clips: [] });
+            return { id: input.id, name: input.name, kind: input.kind, clips: [] };
         });
         mocks.addClip.mockImplementation((input) => {
             if (!input.id) {

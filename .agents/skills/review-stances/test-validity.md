@@ -108,6 +108,20 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    `src/modules/AudioEngine/handlers/finalFeature/__tests__/publicWarpActionsAuthority.integration.spec.ts` "enables
    repitch from %s with exact undo/redo and durable history", whose rate assertions observe that projection; a mock
    call cannot prove clip enablement, output or reversible project history.
+   Fermenter macro keyboard cases awaited an unrelated `oscLevel` scalar while macro/mapping arrays could be lost
+   (#6321; provenance in `command-entry-and-state-oracles.md` probe 2). Drive the rendered controls and real
+   macro/morph bridge through Command/CRDT, then read the complete authoritative device chunk, fresh hydration,
+   declared history behavior and engine projection. Removing array persistence must fail
+   `src/modules/Fermenter/presentations/views/__tests__/fermenterPatchAuditionUndo.integration.spec.tsx`
+   "persists $label arrays in raw truth and fresh hydration after a whole patch" for both macro and morph; a
+   persister spy, numeric mirror or unchanged neighbouring scalar is not that oracle. Require the same real owner
+   cases to observe pending M → N → Undo M → Redo N and stale queued refusal in project, UI and runtime. These
+   in-memory observations do not replace actual save/binary-reopen, browser or audible acceptance when claimed.
+   An edited audition is a weak owner probe for PR #6506: the patch mismatch can clear stale A/B even if a plain
+   preset's equal local echo would retain it. Pair the edited control with the maintained “retires an unedited
+   preset audition” project and same-ID device replacement cases, and assert both rendered slot buttons disabled
+   after raw owner replacement. Reverting owner observation must fail those cases; a value-changing fixture alone
+   is not the owner oracle.
    (#3905, #2648, #1049, #5277, #5339, #4128, #2811, #2083, #5643, #5254, #5247, #5215, #474, #5798, #5565, #5387, #5805)
 
 4. **The oracle is computed by the code under test.**
@@ -120,6 +134,13 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    redden. Mutating the shared expression must fail the case. An exact count or shape must derive from
    the thing observed, not from what the code currently produces.
    (#4491, #4393, #5239, #5437, #5723, #5243, #5323, #5495, #5578)
+
+    #1857's batch prefix projector (`064fb88392`, historical review stance unknown) retained -100 where the real
+    cutoff writer clamped to 20 Hz. Compare a literal descriptor boundary and the real writer to the planned
+    prefix; deriving both expected and actual from the same projector hides the divergence. The owner case in
+    `projectTrackThroughPriorBatchActions.spec.ts` must fail if its shared scalar clamp is removed. Mixed recorded
+    macro tests read `undoHistoryStore`, the full public history contract: the label-only `undoStore` cannot
+    witness grouping, captured inverses or replay authority.
 
 5. **A pin cannot fail on its own.**
    Probe: mutate the input each added assertion reads, neighbours as shipped, and require it to fail
@@ -160,7 +181,11 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    cannot carry it. Worker detection must distinguish pending from committed with a held Worker and exercise real
    Undo/Redo plus divergent refusal. Its author-recorded performance evidence must time a real 120-second source from
    click through PCM copy, cold Worker, atomic commit and UI completion, with frames and main-thread tasks recorded
-   over that same interval; the reviewer checks the recorded interval covers all of it. A mock that always returns
+   over that same interval; the reviewer checks the recorded interval covers all of it. Native document parsing
+   and JS-root materialization are separate costs even when one public load call combines them (#5843).
+   Moving either stage outside an existing named measure must leave it inside the full click-to-completion
+   long-task gate. Hold the parsed handle before adoption and require abort or replaced authority to free it
+   without publication. A mock that always returns
    empty hits proves neither suppression nor completion.
    (#4068, #805, #5199, #4987, #2078, #4897, #5209, #4986, #2055, #5858, #2079, #4128, #5274, #4630, #939)
 

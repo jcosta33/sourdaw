@@ -48,7 +48,6 @@ vi.mock('../../../useCases/removeTrackModulationReferences', () => ({
     removeTrackModulationReferences: () => ({ afterCommit: () => undefined, afterAmbiguousCommit: () => undefined }),
 }));
 vi.mock('../../../useCases/publishTrackRemoved', () => ({ publishTrackRemoved: vi.fn() }));
-vi.mock('../../../useCases/publishTrackAdded', () => ({ publishTrackAdded: vi.fn() }));
 vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({ projectTrackToLiveStrip: vi.fn() }));
 vi.mock('../../../useCases/refreshToasterPadBindings', () => ({ refreshToasterPadBindings: vi.fn() }));
 vi.mock('../../../useCases/captureTrackRemovalRuntimeAuthority', () => ({

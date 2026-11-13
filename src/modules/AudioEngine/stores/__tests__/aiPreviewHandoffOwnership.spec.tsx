@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { addClip, addTrack } from '#/modules/Arrangement/useCases';
@@ -150,7 +149,7 @@ function placeDroppedClip(payload: string): { id: string; audioBufferId: string 
 }
 
 function givenAudioTrack(): void {
-    addTrack({ name: 'AI Renders', kind: 'audio', suppressAddedEvent: true });
+    addTrack({ name: 'AI Renders', kind: 'audio' });
 }
 
 function expectResidentPcm(bufferId: string, pcm: Float32Array): void {
@@ -197,7 +196,6 @@ describe('AI preview handoff ownership', () => {
         controls.committedCheckpointRetentions.clear();
         placedClipSources.sources.length = 0;
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
-        injectDependencies(addTrack, { eventBus: { emit: vi.fn() } });
     });
 
     afterEach(async () => {
