@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/readStatedRangeBeats.ts
+  s_35b9801a6d6336::t_bf0794d0e65c95 72,106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "34c2f3a3e72e5006579029a5063b456fb22f5c94",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
