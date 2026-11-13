@@ -1,0 +1,31 @@
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/runProjectLoadTransaction.spec.ts
+  s_9307cedd8951f1::t_3fd50ab47f4df9 300-301,303-304
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  s_9307cedd8951f1::t_a8699701a6b2fc 61,208,280-303
+  s_9307cedd8951f1::t_cf776e0fe94c84 304-306
+src/modules/Fermenter/presentations/views/__tests__/fermenterPatchAuditionUndo.integration.spec.tsx
+  s_9307cedd8951f1::t_b123030d06f5a3 817,822-823,828-848
+  s_9307cedd8951f1::t_5501a2f6da3b43 824-827
+  s_9307cedd8951f1::t_399098b9d5ae80 814-816
+  s_9307cedd8951f1::t_7f3f16dae3d7dc 818-821
+.agents/skills/review-stances/runtime-instance-lifetimes.md
+  s_9307cedd8951f1::t_bc1ec7138ce623 85-90
+.agents/skills/review-stances/async-file-imports.md
+  s_9307cedd8951f1::t_bc1ec7138ce623 42-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "046c81fc09668e4aeb311d761c6cc7c796436380",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
