@@ -12,24 +12,19 @@ import { type ProjectContextSection } from '../models/ProjectContext';
 import { type RetainedCommand } from '../models/RetainedCompilation';
 import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 
+import { artifactOf } from './artifactOf';
 import { beginMeasurementRun } from './beginMeasurementRun';
 import { compilePreviewMeasurementProposal } from './compilePreviewMeasurementProposal';
+import { countMeasurementUnitWork } from './countMeasurementUnitWork';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
-import {
-    artifactOf,
-    measurePreviewTarget,
-    previewFailure,
-    previewRefusalFailure,
-    type ExecutePreviewMeasurementInput,
-    type RenderedPreviewTarget,
-} from './executePreviewMeasurement';
-import { readMeasurementUnitCall, type MeasurementUnitCall, type MeasurementUnitProgress } from './measureProjectUnit';
-import {
-    countMeasurementUnitWork,
-    readGroupPrefixes,
-    type MeasurementRenderGroup,
-    type MeasurementUnit,
-} from './planMetricMeasurementRequests';
+import { type ExecutePreviewMeasurementInput } from './executePreviewMeasurement';
+import { measurePreviewTarget, type RenderedPreviewTarget } from './measurePreviewTarget';
+import { type MeasurementUnitProgress } from './measureProjectUnit';
+import { type MeasurementRenderGroup, type MeasurementUnit } from './planMetricMeasurementRequests';
+import { previewFailure } from './previewFailure';
+import { previewRefusalFailure } from './previewRefusalFailure';
+import { readGroupPrefixes } from './readGroupPrefixes';
+import { readMeasurementUnitCall, type MeasurementUnitCall } from './readMeasurementUnitCall';
 import { reduceMeasuredTargets } from './reduceMeasuredTargets';
 import { resolveAnalysisMeasureBeats } from './resolveAnalysisMeasureBeats';
 
@@ -166,6 +161,93 @@ async function renderPrefixes(
     }
 }
 
+type UnitRead = { read: MeasurementUnit['reads'][number]; call: MeasurementUnitCall; beats: MeasuredPreview['range'] };
+
+/** Every read of the unit as its tool call states it, over the beats its range resolves to. */
+function readUnitReads(
+    unit: MeasurementUnit,
+    sections: readonly ProjectContextSection[]
+): UnitRead[] | MeasurementFailure {
+    const reads: UnitRead[] = [];
+    for (const read of unit.reads) {
+        const call = readMeasurementUnitCall(unit, read);
+        if ('code' in call) {
+            return call;
+        }
+        const resolved = resolveAnalysisMeasureBeats(call.range, sections);
+        if (resolved.status === 'failure') {
+            return resolved.failure;
+        }
+        reads.push({ read, call, beats: resolved.beats });
+    }
+    return reads;
+}
+
+type GroupPair = UnitRead & {
+    windowIndex: number;
+    preview: WindowedSubject;
+    baselineTarget: RenderedPreviewTarget;
+    previewTarget: RenderedPreviewTarget;
+};
+
+const UNPAIRED_PREVIEW: MeasurementFailure = {
+    code: 'preview-unavailable',
+    safeMessage: 'The project and the preview rendered different targets for this scope.',
+    retryable: false,
+};
+
+/**
+ * Each read the group holds, beside the live project's window and its prefix document's window of
+ * that range. Both must hold the one same target, or the pair compares different audio.
+ */
+function pairGroupReads(
+    reads: readonly UnitRead[],
+    group: MeasurementRenderGroup,
+    prefixes: readonly string[],
+    render: RenderedWindows
+): GroupPair[] | MeasurementFailure {
+    const pairs: GroupPair[] = [];
+    for (const { read, call, beats } of reads) {
+        const windowIndex = windowIndexOf(group, beats);
+        const previewIndex = prefixes.indexOf(read.prefix ?? '');
+        if (windowIndex < 0 || previewIndex < 0) {
+            continue;
+        }
+        const preview = render.previews[previewIndex]!;
+        const baselineTarget = singleWindow(render.baseline, windowIndex);
+        const previewTarget = singleWindow(preview, windowIndex);
+        if (baselineTarget === null || previewTarget?.targetId !== baselineTarget.targetId) {
+            return UNPAIRED_PREVIEW;
+        }
+        pairs.push({ read, call, beats, windowIndex, preview, baselineTarget, previewTarget });
+    }
+    return pairs;
+}
+
+/** What one paired read reports: its two windows' renders and seconds, and the target reduced from them. */
+function readPairResult(
+    pair: GroupPair,
+    target: PreviewUnitRead['target'],
+    compiled: ReadonlyMap<string, CompiledPrefix>,
+    baseline: WindowedSubject,
+    warnings: string[]
+): PreviewUnitRead {
+    const prefix = compiled.get(pair.read.prefix ?? '')!;
+    return {
+        requestIndex: pair.read.requestIndex,
+        prefix: pair.read.prefix ?? '',
+        call: pair.call,
+        beats: pair.beats,
+        commands: prefix.commands,
+        batchContentHash: prefix.batchContentHash,
+        target,
+        renders: { baseline: artifactOf(pair.baselineTarget), preview: artifactOf(pair.previewTarget) },
+        baselineSeconds: baseline.windowSeconds[pair.windowIndex]!,
+        previewSeconds: pair.preview.windowSeconds[pair.windowIndex]!,
+        warnings,
+    };
+}
+
 /**
  * Measure one preview unit: one target in the live project and in every prefix document it is read
  * at. Its planned renders and reductions are admitted before anything renders; each range group
@@ -175,21 +257,9 @@ async function renderPrefixes(
  */
 export async function measurePreviewUnit(input: PreviewUnitInput): Promise<PreviewUnitResult> {
     const { unit } = input;
-    const reads: {
-        read: MeasurementUnit['reads'][number];
-        call: MeasurementUnitCall;
-        beats: MeasuredPreview['range'];
-    }[] = [];
-    for (const read of unit.reads) {
-        const call = readMeasurementUnitCall(unit, read);
-        if ('code' in call) {
-            return { status: 'failed', failure: call };
-        }
-        const resolved = resolveAnalysisMeasureBeats(call.range, input.sections);
-        if (resolved.status === 'failure') {
-            return { status: 'failed', failure: resolved.failure };
-        }
-        reads.push({ read, call, beats: resolved.beats });
+    const reads = readUnitReads(unit, input.sections);
+    if (!Array.isArray(reads)) {
+        return { status: 'failed', failure: reads };
     }
     const compiled = compilePrefixes(input);
     if (!(compiled instanceof Map)) {
@@ -244,57 +314,24 @@ export async function measurePreviewUnit(input: PreviewUnitInput): Promise<Previ
                 return { status: 'failed', failure: previewRefusalFailure(render) };
             }
             rendered.push(render);
-            const items = reads.flatMap(({ read, call, beats }) => {
-                const windowIndex = windowIndexOf(group, beats);
-                const previewIndex = prefixes.indexOf(read.prefix ?? '');
-                if (windowIndex < 0 || previewIndex < 0) {
-                    return [];
-                }
-                return [{ read, call, beats, windowIndex, preview: render.previews[previewIndex]! }];
-            });
-            const unpaired: MeasurementFailure = {
-                code: 'preview-unavailable',
-                safeMessage: 'The project and the preview rendered different targets for this scope.',
-                retryable: false,
-            };
-            const pairs = items.map((item) => ({
-                ...item,
-                baselineTarget: singleWindow(render.baseline, item.windowIndex),
-                previewTarget: singleWindow(item.preview, item.windowIndex),
-            }));
-            if (
-                pairs.some(
-                    (pair) =>
-                        pair.baselineTarget === null || pair.previewTarget?.targetId !== pair.baselineTarget.targetId
-                )
-            ) {
-                return { status: 'failed', failure: unpaired };
+            const pairs = pairGroupReads(reads, group, prefixes, render);
+            if (!Array.isArray(pairs)) {
+                return { status: 'failed', failure: pairs };
             }
             const reduction = await reduceMeasuredTargets({
                 targets: pairs,
                 run,
-                reduce: (pair) => measurePreviewTarget(pair.baselineTarget!, pair.previewTarget!, pair.call.metrics),
+                reduce: (pair) => measurePreviewTarget(pair.baselineTarget, pair.previewTarget, pair.call.metrics),
             });
             if (reduction.status === 'stopped') {
                 return { status: 'failed', failure: describeMeasurementStop(reduction.reason) };
             }
             const warnings = [...render.baseline.warnings, ...render.previews.flatMap((subject) => subject.warnings)];
-            for (const [index, pair] of pairs.entries()) {
-                const prefix = compiled.get(pair.read.prefix ?? '')!;
-                results.push({
-                    requestIndex: pair.read.requestIndex,
-                    prefix: pair.read.prefix ?? '',
-                    call: pair.call,
-                    beats: pair.beats,
-                    commands: prefix.commands,
-                    batchContentHash: prefix.batchContentHash,
-                    target: reduction.reduced[index]!,
-                    renders: { baseline: artifactOf(pair.baselineTarget!), preview: artifactOf(pair.previewTarget!) },
-                    baselineSeconds: render.baseline.windowSeconds[pair.windowIndex]!,
-                    previewSeconds: pair.preview.windowSeconds[pair.windowIndex]!,
-                    warnings,
-                });
-            }
+            results.push(
+                ...pairs.map((pair, index) =>
+                    readPairResult(pair, reduction.reduced[index]!, compiled, render.baseline, warnings)
+                )
+            );
         }
         // Retained only now every reduction succeeded, so a unit that stops or throws first leaves the store as it was.
         const retentionWarnings = retainAgentMeasurementRenders({

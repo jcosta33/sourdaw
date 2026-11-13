@@ -25,16 +25,16 @@ import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { describeVibeBatchCard } from '../vibeRun/describeVibeBatchCard';
 
 import { describeAppliedBatches } from './describeAppliedBatches';
+import { describeBatchPreviewProgress } from './describeBatchPreviewProgress';
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
-import { describeBatchPreviewProgress } from './describeVibeRunRenderProgress';
 import { groundVibeRunBatch } from './groundVibeRunBatch';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';
 import { persistPromptActionConfirmation } from './persistPromptActionConfirmation';
 import { postVibeRunSummary } from './postVibeRunSummary';
 import { readBulkSetSliceEvidence } from './readBulkSetSliceEvidence';
 import { readSkippedVibeBatchPositions } from './readSkippedVibeBatchPositions';
-import { settleStoppedBatchPreparation } from './settleStoppedBatchPreparation';
 import { rebaseBulkSetSliceEvidence } from './rebaseBulkSetSliceEvidence';
+import { settleStoppedBatchPreparation } from './settleStoppedBatchPreparation';
 
 type ScheduledBatchOutcome =
     | { status: 'awaiting-approval' }
@@ -208,6 +208,34 @@ function groundScheduledSlice(
 
 type MaterializedBatch = Extract<ReturnType<typeof materializePromptCommandPlan>, { status: 'prepared' }>;
 
+/** The run keeps the batch's measured goal state and every receipt its preview read, after those of earlier batches. */
+function recordBatchPreviewEvidence(
+    liveRun: AgentRun,
+    revision: GroundedBatch['revision'],
+    metricGoalState: string | undefined,
+    receipts: Awaited<ReturnType<typeof prepareMetricGoalPreview>>['receipts']
+): void {
+    if (!liveRun.plan) {
+        return;
+    }
+    const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
+    agentRunLifecycle.recordPlan({
+        runId: liveRun.runId,
+        summary: liveRun.plan.summary,
+        commandIds: liveRun.plan.commandIds,
+        serializedBatchIdentity: liveRun.plan.serializedBatchIdentity,
+        revision,
+        scope: liveRun.scope,
+        grants: liveRun.grants,
+        budgets: liveRun.budgets,
+        plan: {
+            ...liveRun.plan,
+            metricGoalState,
+            applicationToolReceipts: [...priorReceipts, ...receipts],
+        },
+    });
+}
+
 /**
  * A vibe-run batch always waits for approval with a measured preview: the preview renders the live
  * project and the batch for every recipe step, under the run's own render budget, before the card
@@ -277,24 +305,7 @@ async function proposeMeasuredVibeBatch(input: {
         requireExplicitApproval: true,
         metricGoalState: JSON.stringify(proof.state),
     });
-    if (liveRun?.plan) {
-        const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
-        agentRunLifecycle.recordPlan({
-            runId: liveRun.runId,
-            summary: liveRun.plan.summary,
-            commandIds: liveRun.plan.commandIds,
-            serializedBatchIdentity: liveRun.plan.serializedBatchIdentity,
-            revision: grounded.revision,
-            scope: liveRun.scope,
-            grants: liveRun.grants,
-            budgets: liveRun.budgets,
-            plan: {
-                ...liveRun.plan,
-                metricGoalState: approval.metricGoalState ?? undefined,
-                applicationToolReceipts: [...priorReceipts, ...proof.receipts],
-            },
-        });
-    }
+    recordBatchPreviewEvidence(liveRun, grounded.revision, approval.metricGoalState ?? undefined, proof.receipts);
     const evaluation = evaluateMetricGoalAdmission({ state: proof.state, commandBatch });
     const cardLines = describeVibeBatchCard({
         batch: input.batch,

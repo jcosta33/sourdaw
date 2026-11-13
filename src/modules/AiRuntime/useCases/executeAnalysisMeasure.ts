@@ -1,15 +1,14 @@
-import { digest } from '#/utils/canonicalDigest';
-
-import { ANALYSIS_MEASURE_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
-import { type MeasurementAdmitter, type MeasurementFailure } from '../models/MeasurementBudget';
+import { type MeasurementAdmitter } from '../models/MeasurementBudget';
 import { type ProjectContextSection } from '../models/ProjectContext';
 import { type ToolCallResult } from '../models/ToolCallResult';
 
 import { type AnalysisMeasureRead } from './answerContractTypes';
 import { executePreviewMeasurement } from './executePreviewMeasurement';
-import { measureProjectScope, type MeasuredRange, type ReducedTarget } from './measureProjectScope';
+import { measurementFailureReceipt } from './measurementFailureReceipt';
+import { measureProjectScope } from './measureProjectScope';
 import { parseAnalysisMeasureArguments } from './parseAnalysisMeasureArguments';
+import { projectMeasurementReceipt } from './projectMeasurementReceipt';
 
 type ExecuteAnalysisMeasureInput = {
     call: ToolCallResult;
@@ -25,58 +24,6 @@ type ExecuteAnalysisMeasureInput = {
     /** What a `preview` subject compiles and grounds its proposal against; absent, previews are unavailable. */
     preview?: Parameters<typeof executePreviewMeasurement>[0]['preview'];
 };
-
-type ParsedArguments = Extract<ReturnType<typeof parseAnalysisMeasureArguments>, { status: 'valid' }>['value'];
-
-/** The receipt of a measurement that failed, as `analysis.measure` reports one. */
-export function measurementFailureReceipt(
-    input: Pick<ExecuteAnalysisMeasureInput, 'callId' | 'turn'>,
-    failure: MeasurementFailure
-): ApplicationToolReceipt {
-    return {
-        schema: 'sourdaw.application-tool-receipt',
-        schemaVersion: 1,
-        callId: input.callId,
-        toolName: ANALYSIS_MEASURE_TOOL_NAME,
-        turn: input.turn,
-        status: 'failure',
-        revision: null,
-        data: null,
-        summary: failure.safeMessage,
-        warnings: [],
-        error: failure,
-    };
-}
-
-/** The receipt of a successful project measurement, as `analysis.measure` reports one. */
-export function projectMeasurementReceipt(
-    input: Pick<ExecuteAnalysisMeasureInput, 'callId' | 'turn' | 'projectRevision'>,
-    parsed: Pick<ParsedArguments, 'scope' | 'metrics'>,
-    measurement: { range: MeasuredRange; targets: readonly ReducedTarget[]; warnings: readonly string[] }
-): ApplicationToolReceipt {
-    const { range, targets } = measurement;
-    return {
-        schema: 'sourdaw.application-tool-receipt',
-        schemaVersion: 1,
-        callId: input.callId,
-        toolName: ANALYSIS_MEASURE_TOOL_NAME,
-        turn: input.turn,
-        status: 'success',
-        revision: input.projectRevision,
-        data: {
-            kind: 'analysis-measurement',
-            schemaVersion: 1,
-            scope: parsed.scope,
-            sourceRevisionDigest: digest(input.projectRevision),
-            range,
-            metrics: parsed.metrics,
-            targets,
-        },
-        summary: `Measured ${String(targets.length)} target(s) over beats ${String(range.startBeat)} to ${String(range.endBeat)}.`,
-        warnings: [...measurement.warnings],
-        error: null,
-    };
-}
 
 function read(receipt: ApplicationToolReceipt): AnalysisMeasureRead {
     return { receipt, commands: null, measuredPreview: null };

@@ -40,16 +40,16 @@ import { agentWorkBudget } from '../agentWorkBudget';
 import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoop';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
+import { getAgentExecutionModeFailure } from '../getAgentExecutionModeFailure';
 import { getProjectContext } from '../getProjectContext';
 import { type MeasurementUnitProgress } from '../measureProjectUnit';
-import { getAgentExecutionModeFailure } from '../getAgentExecutionModeFailure';
 import { planPromptActions } from '../planPromptActions';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 import { settledProjectContentMatches } from '../settledProjectContentMatches';
 
 import { appendAnswerChatMessages } from './appendAnswerChatMessages';
-import { describeInitialMeasurementProgress } from './describeVibeRunRenderProgress';
+import { describeInitialMeasurementProgress } from './describeInitialMeasurementProgress';
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
 import { executePromptCommandPreview } from './executePromptCommandPreview';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';

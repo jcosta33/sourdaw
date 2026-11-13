@@ -1,4 +1,4 @@
-import { DEFAULT_TEMPO_BPM, tempoMapStore, transportStore, type TempoMapStoreState } from '#/modules/Transport/stores';
+import { type TempoMapStoreState } from '#/modules/Transport/stores';
 import { projectPpqEndpoints } from '#/modules/Transport/useCases';
 
 /** One beat range a measurement reads out of a render. */
@@ -6,11 +6,6 @@ export type AgentMeasurementWindow = { startBeat: number; endBeat: number };
 
 /** The tempo a document places beats on the timeline with: the stores answering when it was read. */
 export type AgentMeasurementTimeline = { tempo: number; changes: TempoMapStoreState['changes'] };
-
-/** The timeline of whichever document's stores answer while this runs. */
-export function readAgentMeasurementTimeline(): AgentMeasurementTimeline {
-    return { tempo: transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM, changes: tempoMapStore.value?.changes ?? [] };
-}
 
 function secondsFromTimelineStart(beat: number, timeline: AgentMeasurementTimeline, sampleRate: number): number {
     const projection = projectPpqEndpoints({
@@ -30,11 +25,11 @@ function secondsFromTimelineStart(beat: number, timeline: AgentMeasurementTimeli
  */
 function readWindowFrames(window: AgentMeasurementWindow, timeline: AgentMeasurementTimeline, sampleRate: number) {
     const endBeat = window.startBeat + (window.endBeat - window.startBeat);
-    const first =
-        window.startBeat <= 0
-            ? 0
-            : Math.round(secondsFromTimelineStart(window.startBeat, timeline, sampleRate) * sampleRate);
-    return { first, end: Math.ceil(secondsFromTimelineStart(endBeat, timeline, sampleRate) * sampleRate) };
+    const end = Math.ceil(secondsFromTimelineStart(endBeat, timeline, sampleRate) * sampleRate);
+    if (window.startBeat <= 0) {
+        return { first: 0, end };
+    }
+    return { first: Math.round(secondsFromTimelineStart(window.startBeat, timeline, sampleRate) * sampleRate), end };
 }
 
 /**
@@ -71,12 +66,4 @@ export function cutAgentMeasurementWindow(input: {
         output.copyToChannel(buffer.getChannelData(channel).subarray(start, end), channel);
     }
     return output;
-}
-
-/** The range every window falls inside: what one render must cover to hold them all. */
-export function readAgentMeasurementSpan(windows: readonly AgentMeasurementWindow[]): AgentMeasurementWindow {
-    return {
-        startBeat: Math.min(...windows.map((window) => window.startBeat)),
-        endBeat: Math.max(...windows.map((window) => window.endBeat)),
-    };
 }

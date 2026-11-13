@@ -13,14 +13,12 @@ import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS, MAX_PLAN_CAPABILITIES } from '../..
 import { chatStore } from '../../stores/chatStore';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { agentRunLifecycle } from '../agentRunLifecycle';
-import {
-    APPLICATION_OWNED_TOOL_LOOP_LIMITS,
-    readApplicationVerificationReceiptLimits,
-} from '../applicationOwnedToolLoop';
+import { APPLICATION_OWNED_TOOL_LOOP_LIMITS } from '../applicationOwnedToolLoop';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
-import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
+import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import { readApplicationVerificationReceiptLimits } from '../readApplicationVerificationReceiptLimits';
 import { sendChatMessage } from '../sendChatMessage';
 
 import { configureMetricGoalProject, resetMetricGoalProject } from './metricGoalWorkflowFixture';
@@ -37,6 +35,7 @@ import {
     seedVibeBrief,
     sendVibeMessage,
     SECONDS_PER_BEAT,
+    VIBE_TEMPO,
     vibeCardContent,
     vibeTrack,
     type VibeRenderInput,
@@ -88,9 +87,10 @@ vi.mock('../evaluateMetricGoalAdmission', async (importOriginal) => {
         ...original,
         evaluateMetricGoalAdmission: (input: Parameters<typeof original.evaluateMetricGoalAdmission>[0]) => {
             const evaluation = original.evaluateMetricGoalAdmission(input);
-            return admission.admitsOutOfTolerance && evaluation.failure === 'out-of-tolerance'
-                ? { ...evaluation, status: 'verified' as const, failure: null }
-                : evaluation;
+            if (admission.admitsOutOfTolerance && evaluation.failure === 'out-of-tolerance') {
+                return { ...evaluation, status: 'verified' as const, failure: null };
+            }
+            return evaluation;
         },
     };
 });
@@ -196,6 +196,7 @@ function renderSong(input: VibeRenderInput): AudioBuffer {
 beforeEach(() => {
     configureMetricGoalProject({
         label: 'ordinary-size vibe run test',
+        tempo: VIBE_TEMPO,
         tracks: TRACKS.map((spec) => vibeTrack(spec, SONG_BEATS)),
         sections: SECTIONS,
     });
@@ -332,7 +333,7 @@ describe('a whole-project vibe run on a song of ordinary size', () => {
                     'u'
                 )
             );
-            const receiptCount = agentRunLifecycle.get(brief.runId)?.plan?.applicationToolReceipts.length ?? 0;
+            const receiptCount = agentRunLifecycle.get(brief.runId)?.plan?.applicationToolReceipts?.length ?? 0;
             // The plan keeps every batch's verification receipts, and one capability per receipt: both
             // outgrow the 256 every other run-store collection keeps and stay within their own bounds.
             const capabilityCount = agentRunLifecycle.get(brief.runId)?.plan?.capabilities.length ?? 0;

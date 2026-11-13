@@ -11,10 +11,10 @@ import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
 import {
     cutAgentMeasurementWindow,
-    readAgentMeasurementSpan,
     type AgentMeasurementTimeline,
     type AgentMeasurementWindow,
 } from './cutAgentMeasurementWindow';
+import { readAgentMeasurementSpan } from './readAgentMeasurementSpan';
 
 /**
  * The master mixdown renders at this rate; an isolated track or bus renders at

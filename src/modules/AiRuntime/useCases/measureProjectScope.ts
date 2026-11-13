@@ -1,8 +1,6 @@
 import { measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
 import { renderAgentMeasurementScope, retainAgentMeasurementRenders } from '#/modules/AudioRendering/useCases';
-import { readSecondsAtBeat } from '#/modules/Transport/stores';
 
-import { ANALYSIS_MEASURE_MAX_WARNING_LENGTH, ANALYSIS_MEASURE_MAX_WARNINGS } from '../models/AnalysisMeasureLimits';
 import {
     describeMeasurementStop,
     planMeasurementWork,
@@ -11,17 +9,16 @@ import {
     type MeasurementRun,
 } from '../models/MeasurementBudget';
 import { type ProjectContextSection } from '../models/ProjectContext';
-import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 
 import { beginMeasurementRun } from './beginMeasurementRun';
+import { boundedMeasurementWarnings } from './boundedMeasurementWarnings';
 import { type parseAnalysisMeasureArguments } from './parseAnalysisMeasureArguments';
-import { readMeasurementRenderedSeconds } from './readMeasurementRenderedSeconds';
+import { projectRefusalFailure } from './projectRefusalFailure';
 import { reduceMeasuredTargets } from './reduceMeasuredTargets';
-import { resolveAnalysisMeasureBeats } from './resolveAnalysisMeasureBeats';
+import { resolveMeasuredRange, type MeasuredRange } from './resolveMeasuredRange';
 
 type ParsedArguments = Extract<ReturnType<typeof parseAnalysisMeasureArguments>, { status: 'valid' }>['value'];
 type ScopeRender = Awaited<ReturnType<typeof renderAgentMeasurementScope>>;
-type ScopeRefusal = Extract<ScopeRender, { status: 'refused' }>;
 type RenderedScopeTarget = Extract<ScopeRender, { status: 'rendered' }>['targets'][number];
 
 /** What a project measurement reads of a call: the scope, the range and the metrics. */
@@ -45,14 +42,6 @@ export type ReducedTarget = Pick<
     measurements: ReturnType<typeof measureAgentScopeRender>;
 };
 
-export type MeasuredRange = {
-    startBeat: number;
-    endBeat: number;
-    sectionId: string | null;
-    measuredSeconds: number;
-    renderedSeconds: number;
-};
-
 export type ProjectMeasurement = {
     range: MeasuredRange;
     targets: readonly ReducedTarget[];
@@ -62,68 +51,6 @@ export type ProjectMeasurement = {
 
 type ProjectMeasurementResult =
     { status: 'measured'; measurement: ProjectMeasurement } | { status: 'failed'; failure: MeasurementFailure };
-
-/** The beat range the arguments name, with the seconds it measures and the seconds its render processes. */
-export function resolveMeasuredRange(
-    range: ProjectMeasurementRequest['range'],
-    sections: readonly ProjectContextSection[]
-): { status: 'range'; range: MeasuredRange } | { status: 'failure'; failure: MeasurementFailure } {
-    const resolved = resolveAnalysisMeasureBeats(range, sections);
-    if (resolved.status === 'failure') {
-        return resolved;
-    }
-    const { startBeat, endBeat, sectionId } = resolved.beats;
-    const { measurementMeasuredSeconds, measurementRenderedSeconds } = readAgentResourceLimits();
-    const measuredSeconds = readSecondsAtBeat({ beat: endBeat }) - readSecondsAtBeat({ beat: startBeat });
-    const renderedSeconds = readMeasurementRenderedSeconds(endBeat);
-    if (measuredSeconds > measurementMeasuredSeconds || renderedSeconds > measurementRenderedSeconds) {
-        return {
-            status: 'failure',
-            failure: {
-                code: 'range-exceeds-ceiling',
-                safeMessage: `A measurement covers at most ${String(measurementMeasuredSeconds)} s and ends within ${String(measurementRenderedSeconds)} s of the project start.`,
-                retryable: true,
-            },
-        };
-    }
-    return { status: 'range', range: { startBeat, endBeat, sectionId, measuredSeconds, renderedSeconds } };
-}
-
-export function projectRefusalFailure(
-    refusal: ScopeRefusal,
-    scope: ProjectMeasurementRequest['scope']
-): MeasurementFailure {
-    const target = refusal.targetId ?? 'master';
-    const failures: Readonly<Record<ScopeRefusal['code'], Omit<MeasurementFailure, 'code'>>> = {
-        'unknown-target': { safeMessage: `Target ${target} is not in the project.`, retryable: true },
-        'kind-mismatch': {
-            safeMessage: `Target ${target} is not one of the ${scope.kind} this scope names.`,
-            retryable: true,
-        },
-        'muted-contributor': {
-            safeMessage: `Target ${target} cannot be measured in isolation: its muted contributor ${String(refusal.contributorId)} would be rendered unmuted.`,
-            retryable: false,
-        },
-        'disabled-contributor': {
-            safeMessage: `Target ${target} cannot be measured in isolation: its disabled contributor ${String(refusal.contributorId)} builds no live strip.`,
-            retryable: false,
-        },
-        'render-busy': { safeMessage: 'Another offline render is in progress.', retryable: true },
-        'stale-revision': {
-            safeMessage: 'The project changed while it was being measured; read it again before measuring.',
-            retryable: true,
-        },
-        'empty-render': { safeMessage: `The render of ${target} holds no audio.`, retryable: false },
-        'render-failed': { safeMessage: `The render of ${target} failed.`, retryable: false },
-    };
-    return { code: refusal.code, ...failures[refusal.code] };
-}
-
-export function boundedMeasurementWarnings(warnings: readonly string[]): string[] {
-    return warnings
-        .slice(0, ANALYSIS_MEASURE_MAX_WARNINGS)
-        .map((warning) => warning.slice(0, ANALYSIS_MEASURE_MAX_WARNING_LENGTH));
-}
 
 async function renderAndReduce(
     input: ProjectMeasurementInput,

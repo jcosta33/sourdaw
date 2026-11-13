@@ -3,7 +3,8 @@ import { DEFAULT_TEMPO_BPM, tempoMapStore, transportStore } from '#/modules/Tran
 
 import { offlinePpqEndpointProjectorState } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 
-import { conservativeSpanEndBeat, readAdjustmentLayerConstancyThresholds } from './offlineAdjustmentLayers';
+import { conservativeSpanEndBeat } from './conservativeSpanEndBeat';
+import { readAdjustmentLayerConstancyThresholds } from './readAdjustmentLayerConstancyThresholds';
 
 /** The renderer a target goes through: the whole-project mixdown, or one target's isolated subgraph. */
 export type OfflineAdjustmentRenderRoute = 'mixdown' | 'subgraph';

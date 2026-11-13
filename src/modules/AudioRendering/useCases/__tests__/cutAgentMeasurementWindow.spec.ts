@@ -9,11 +9,8 @@ import {
     restoreTransportSnapshot,
 } from '#/modules/Transport/useCases';
 
-import {
-    cutAgentMeasurementWindow,
-    readAgentMeasurementTimeline,
-    type AgentMeasurementWindow,
-} from '../cutAgentMeasurementWindow';
+import { cutAgentMeasurementWindow, type AgentMeasurementWindow } from '../cutAgentMeasurementWindow';
+import { readAgentMeasurementTimeline } from '../readAgentMeasurementTimeline';
 
 const SAMPLE_RATE = 44_100;
 

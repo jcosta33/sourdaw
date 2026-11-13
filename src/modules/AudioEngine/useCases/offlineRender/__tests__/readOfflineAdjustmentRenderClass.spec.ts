@@ -9,11 +9,9 @@ import {
 } from '#/modules/Transport/useCases';
 
 import { configureOfflinePpqEndpointProjection } from '../../configureOfflinePpqEndpointProjection';
-import {
-    conservativeSpanEndBeat,
-    readAdjustmentLayerConstancyThresholds,
-    resolveTrackAdjustmentComposition,
-} from '../offlineAdjustmentLayers';
+import { conservativeSpanEndBeat } from '../conservativeSpanEndBeat';
+import { resolveTrackAdjustmentComposition } from '../offlineAdjustmentLayers';
+import { readAdjustmentLayerConstancyThresholds } from '../readAdjustmentLayerConstancyThresholds';
 import { readOfflineAdjustmentRenderClass } from '../readOfflineAdjustmentRenderClass';
 import { resolveRenderContext } from '../resolveRenderContext';
 

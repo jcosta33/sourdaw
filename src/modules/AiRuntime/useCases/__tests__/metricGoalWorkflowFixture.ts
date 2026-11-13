@@ -203,7 +203,8 @@ class MetricGoalWindowBuffer {
     }
 }
 
-function provideWindowBuffers(): void {
+/** jsdom has no `AudioBuffer`; a measured window is copied out of its render into one of these. */
+export function provideMetricGoalWindowBuffers(): void {
     if (typeof globalThis.AudioBuffer === 'undefined') {
         Object.defineProperty(globalThis, 'AudioBuffer', {
             configurable: true,
@@ -218,8 +219,9 @@ export function configureMetricGoalProject(input: {
     tracks: NonNullable<typeof trackStore.value>['tracks'];
     sections: NonNullable<typeof markerStore.value>['sections'];
     label: string;
+    tempo?: number;
 }): void {
-    provideWindowBuffers();
+    provideMetricGoalWindowBuffers();
     clearPendingActionConfirmations();
     agentRunLifecycle.clear();
     chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
@@ -236,7 +238,7 @@ export function configureMetricGoalProject(input: {
     resetActionReplayAuthority();
     trackStore.set({ tracks: input.tracks, selectedTrackId: null, ghostClips: [] });
     markerStore.set({ markers: [], sections: input.sections });
-    transportStore.set({ ...defaultTransportState, tempo: 120 });
+    transportStore.set({ ...defaultTransportState, tempo: input.tempo ?? 120 });
     flushAutomergeStorageWrites();
     clearAgentMeasurementArtifacts();
 }
@@ -257,8 +259,11 @@ export function resetMetricGoalProject(): void {
 }
 
 /** Full native AudioBuffer shape consumed by actual production metering. */
-export function metricGoalAudioBuffer(sample: (seconds: number) => number, seconds: number): AudioBuffer {
-    const sampleRate = 48_000;
+export function metricGoalAudioBuffer(
+    sample: (seconds: number) => number,
+    seconds: number,
+    sampleRate = 48_000
+): AudioBuffer {
     const length = Math.round(seconds * sampleRate);
     const channels = [new Float32Array(length), new Float32Array(length)];
     for (const channel of channels) {

@@ -19,20 +19,19 @@ import { aiBackendPreferenceStore } from '../stores/aiBackendPreferenceStore';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentWorkBudget } from './agentWorkBudget';
-import {
-    APPLICATION_OWNED_TOOL_LOOP_LIMITS,
-    readApplicationVerificationReceiptLimits,
-} from './applicationOwnedToolLoop';
+import { APPLICATION_OWNED_TOOL_LOOP_LIMITS } from './applicationOwnedToolLoop';
 import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { agentRunCancellation } from './cancelAgentRun';
 import { collectMetricGoalProof } from './collectMetricGoalProof';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
-import { measurementFailureReceipt } from './executeAnalysisMeasure';
-import { measuredPreviewRead } from './executePreviewMeasurement';
+import { measuredPreviewRead } from './measuredPreviewRead';
+import { measurementFailureReceipt } from './measurementFailureReceipt';
 import { measurePreviewUnit, type PreviewUnitRead } from './measurePreviewUnit';
 import { type MeasurementUnitProgress } from './measureProjectUnit';
 import { type MetricGoal, type MetricGoalState } from './metricGoalContractTypes';
-import { planMetricMeasurementRequests, planMetricMeasurementUnits } from './planMetricMeasurementRequests';
+import { planMetricMeasurementRequests } from './planMetricMeasurementRequests';
+import { planMetricMeasurementUnits } from './planMetricMeasurementUnits';
+import { readApplicationVerificationReceiptLimits } from './readApplicationVerificationReceiptLimits';
 import { readGoalPrefix } from './readGoalPrefix';
 
 type PreviewInput = {
@@ -269,6 +268,35 @@ function requestTargets(request: PreviewRequest): string[] {
     return request.scope.kind === 'master' ? ['master'] : request.scope.ids;
 }
 
+/** A unit's progress restated as the preview step it renders: the prefix document's place among the batch's steps. */
+function readStepProgress(
+    onProgress: PreviewInput['onProgress'],
+    binding: Binding
+): ((progress: MeasurementUnitProgress) => void) | undefined {
+    if (onProgress === undefined) {
+        return undefined;
+    }
+    return ({ prefix, ...progress }) => {
+        const index = binding.prefixes.findIndex((candidate) => candidate.after === prefix);
+        onProgress({
+            ...progress,
+            step: progress.document === 'project' || index < 0 ? null : index + 1,
+            steps: binding.prefixes.length,
+        });
+    };
+}
+
+/** The receipt a request whose target failed reports: that failure, as its own verification read. */
+function failedRequestReceipt(failure: MeasurementFailure): ApplicationToolReceipt {
+    return boundReceipt(
+        {
+            ...measurementFailureReceipt({ callId: `goal-measure-${crypto.randomUUID()}`, turn: 0 }, failure),
+            origin: 'application-verification',
+        },
+        APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerCall
+    );
+}
+
 /**
  * Renders the requests one target at a time (`planMetricMeasurementUnits`), each target's live render
  * shared by every prefix and range it is read at, then reports each request as the one
@@ -337,18 +365,7 @@ async function measurePreviewRequests(
             continue;
         }
         if (outcome.failure !== null) {
-            rawReceipts.push(
-                boundReceipt(
-                    {
-                        ...measurementFailureReceipt(
-                            { callId: `goal-measure-${crypto.randomUUID()}`, turn: 0 },
-                            outcome.failure
-                        ),
-                        origin: 'application-verification',
-                    },
-                    APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerCall
-                )
-            );
+            rawReceipts.push(failedRequestReceipt(outcome.failure));
             continue;
         }
         const read = previewRequestRead(input, envelope, request, reads);
@@ -452,16 +469,7 @@ export async function prepareMetricGoalPreview(
             requests,
             priorBytes,
             controller.signal,
-            input.onProgress === undefined
-                ? undefined
-                : ({ prefix, ...progress }) => {
-                      const index = binding.prefixes.findIndex((candidate) => candidate.after === prefix);
-                      input.onProgress?.({
-                          ...progress,
-                          step: progress.document === 'project' || index < 0 ? null : index + 1,
-                          steps: binding.prefixes.length,
-                      });
-                  }
+            readStepProgress(input.onProgress, binding)
         );
         if (previewInvalidated(input, run, snapshot, controller.signal, parsed.envelope.baseRevision)) {
             terminalState = 'cancelled';

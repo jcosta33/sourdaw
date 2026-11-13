@@ -14,7 +14,7 @@ import {
     getPendingActionConfirmation,
 } from '../stores/pendingActionConfirmationStore';
 
-import { describeBatchPreviewProgress } from './agentRequestOrchestration/describeVibeRunRenderProgress';
+import { describeBatchPreviewProgress } from './agentRequestOrchestration/describeBatchPreviewProgress';
 import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
 import { readVibeRunBriefDrift } from './agentRequestOrchestration/readVibeRunBriefDrift';
 import { retireSupersededConfirmation } from './agentRequestOrchestration/retireSupersededConfirmation';
@@ -444,6 +444,15 @@ type RePreviewWatch = {
     settle: () => Promise<void>;
 };
 
+/** Hands a re-previewed card back to the live run: no Stop, and the content it showed before the progress lines. */
+function restoreRePreviewedCard(messageId: string, cardContent: string | undefined): void {
+    if (cardContent === undefined) {
+        updateChatMessage(messageId, { stoppableRunId: undefined });
+        return;
+    }
+    updateChatMessage(messageId, { stoppableRunId: undefined, content: cardContent });
+}
+
 /**
  * A vibe-run batch card re-previews as its scheduled preview rendered: while the preview renders, the
  * card's message carries the same progress line and a Stop that cancels the run, which ends the
@@ -477,10 +486,7 @@ function watchVibeBatchRePreview(
         settle: async () => {
             const current = agentRunLifecycle.get(run.runId);
             if (current !== null && !TERMINAL_RUN_PHASES.has(current.phase)) {
-                updateChatMessage(messageId, {
-                    stoppableRunId: undefined,
-                    ...(cardContent === undefined ? {} : { content: cardContent }),
-                });
+                restoreRePreviewedCard(messageId, cardContent);
                 return;
             }
             if (current?.phase === 'cancelled' || current?.phase === 'partially-completed') {

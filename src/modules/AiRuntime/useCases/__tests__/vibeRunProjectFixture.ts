@@ -38,8 +38,15 @@ type Section = NonNullable<typeof markerStore.value>['sections'][number];
 export type VibeConfirmation = NonNullable<typeof pendingActionConfirmationStore.value>['confirmations'][number];
 
 export const VIBE_BRIEF_REVISION = 4;
-/** At 120 BPM a beat lasts half a second, which every scripted render reads its timeline through. */
-export const SECONDS_PER_BEAT = 0.5;
+/**
+ * The vibe-run projects play fast and render at a low rate so two dozen tracks of whole-song renders
+ * stay cheap to synthesize and reduce: at the transport's top tempo of 300 BPM a beat lasts a fifth of
+ * a second, which every scripted render reads its timeline through, and 8 kHz still holds the
+ * fixture's 3 kHz top below Nyquist. Every measurement reads the rate and length off its buffer.
+ */
+export const VIBE_TEMPO = 300;
+export const SECONDS_PER_BEAT = 60 / VIBE_TEMPO;
+const VIBE_RENDER_SAMPLE_RATE = 8_000;
 
 export type VibeTrackSpec = { id: string; name: string; role: string };
 
@@ -186,11 +193,12 @@ export function renderVibeTimeline(input: VibeRenderInput, level: (songSeconds: 
                 (0.4 * low * Math.sin(2 * Math.PI * 100 * song) + 0.2 * high * Math.sin(2 * Math.PI * 3000 * song))
             );
         },
-        (input.endBeat - input.startBeat) * SECONDS_PER_BEAT
+        (input.endBeat - input.startBeat) * SECONDS_PER_BEAT,
+        VIBE_RENDER_SAMPLE_RATE
     );
 }
 
-export async function sendVibeMessage(prompt: string, send: (prompt: string) => Promise<void>): Promise<void> {
+export async function sendVibeMessage(prompt: string, send: (prompt: string) => Promise<unknown>): Promise<void> {
     flushAutomergeStorageWrites();
     await send(prompt);
 }

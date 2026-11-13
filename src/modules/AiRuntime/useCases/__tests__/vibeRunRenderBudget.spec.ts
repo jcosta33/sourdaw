@@ -15,18 +15,16 @@ import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits'
 import { agentResourceLimitsStore, readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { chatStore } from '../../stores/chatStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
-import { agentRunCancellation } from '../cancelAgentRun';
 import { agentWorkBudget } from '../agentWorkBudget';
+import { agentRunCancellation } from '../cancelAgentRun';
 import { configureAgentResourceLimits } from '../configureAgentResourceLimits';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { countMeasurementUnitWork } from '../countMeasurementUnitWork';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { measureProjectUnit } from '../measureProjectUnit';
-import {
-    countMeasurementUnitWork,
-    planMetricMeasurementRequests,
-    planMetricMeasurementUnits,
-} from '../planMetricMeasurementRequests';
+import { planMetricMeasurementRequests } from '../planMetricMeasurementRequests';
+import { planMetricMeasurementUnits } from '../planMetricMeasurementUnits';
 import { sendChatMessage } from '../sendChatMessage';
 
 import { configureMetricGoalProject, metricGoalAudioBuffer, resetMetricGoalProject } from './metricGoalWorkflowFixture';
@@ -42,6 +40,7 @@ import {
     seedVibeBrief,
     sendVibeMessage,
     SECONDS_PER_BEAT,
+    VIBE_TEMPO,
     vibeCardContent,
     vibeSections,
     vibeTrack,
@@ -120,9 +119,14 @@ const EIGHT_SECTIONS = vibeSections(
 /** Per-target timeouts for whole-run cases that render real buffers through the real measurement path. */
 const WHOLE_RUN_TIMEOUT_MS = 30_000;
 
-function useProject(tracks: readonly VibeTrackSpec[], sections: ReturnType<typeof vibeSections>, beats = SONG_BEATS) {
+function openVibeProject(
+    tracks: readonly VibeTrackSpec[],
+    sections: ReturnType<typeof vibeSections>,
+    beats = SONG_BEATS
+) {
     configureMetricGoalProject({
         label: 'vibe run render budget test',
+        tempo: VIBE_TEMPO,
         tracks: tracks.map((spec) => vibeTrack(spec, beats)),
         sections,
     });
@@ -196,12 +200,12 @@ describe('the render count of a vibe run', () => {
     ])(
         'fits and executes the same renders with $label',
         async ({ sections }) => {
-            useProject(DRUM_KIT, sections);
+            openVibeProject(DRUM_KIT, sections);
             const fit = await readFitRenders(['warm']);
             resetMetricGoalProject();
             audio.renderTrackSubgraphOffline.mockClear();
             agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
-            useProject(DRUM_KIT, sections);
+            openVibeProject(DRUM_KIT, sections);
             const executed = await readExecutedRenders(['warm']);
             expect({ fit, executed }).toEqual({ fit: RUN_RENDERS, executed: RUN_RENDERS });
         },
@@ -220,7 +224,7 @@ describe('a section figure', () => {
     }
 
     it('is read from that section’s own samples, exactly as a render of that section alone reads', async () => {
-        useProject([KICK], [VERSE, CHORUS], 16);
+        openVibeProject([KICK], [VERSE, CHORUS], 16);
         audio.renderTrackSubgraphOffline.mockImplementation(async (input) => sectionedLevel(input));
         const context = getProjectContext();
         const ranges = [
@@ -308,7 +312,7 @@ describe('a section figure under an adjustment layer', () => {
     });
 
     it('renders apart the ranges a moving-layer threshold separates, each figure the one its range alone reads', async () => {
-        useProject([KICK], [VERSE, CHORUS], 16);
+        openVibeProject([KICK], [VERSE, CHORUS], 16);
         adjustmentLayerStore.set({ layers: [VERSE_EQ] });
         // The layer reaches the document before the measurement reads its revision.
         flushAutomergeStorageWrites();
@@ -363,7 +367,7 @@ describe('a section figure under an adjustment layer', () => {
 
         /** A one-target run over the verse and the chorus, whose layer splits the preview unit into two range groups. */
         async function proposeBrief(): Promise<VibeConfirmation> {
-            useProject([KICK], [VERSE, CHORUS], 16);
+            openVibeProject([KICK], [VERSE, CHORUS], 16);
             adjustmentLayerStore.set({ layers: [VERSE_EQ] });
             flushAutomergeStorageWrites();
             scriptVibeBriefRoute({ descriptors: ['warm'] });
@@ -504,7 +508,7 @@ describe('a measurement unit that does not finish', () => {
     }
 
     beforeEach(() => {
-        useProject(TARGETS, [], 16);
+        openVibeProject(TARGETS, [], 16);
         startRun();
     });
 
@@ -573,7 +577,7 @@ describe('a measurement unit that does not finish', () => {
 
 describe('a run whose receipts would pass the plan’s receipt bound', () => {
     it('is refused before scheduling with what it needs and what is left, and renders nothing', async () => {
-        useProject(DRUM_KIT, [], 16);
+        openVibeProject(DRUM_KIT, [], 16);
         await readExecutedRenders(['warm']);
         const brief = requireOnlyProposedVibeCard();
         const receipts = agentRunLifecycle.get(brief.runId)?.plan?.applicationToolReceipts ?? [];
@@ -585,7 +589,7 @@ describe('a run whose receipts would pass the plan’s receipt bound', () => {
 
         // One receipt short of what the run persists.
         receiptBound.value = receipts.length - 1;
-        useProject(DRUM_KIT, [], 16);
+        openVibeProject(DRUM_KIT, [], 16);
         scriptVibeBriefRoute({ descriptors: ['warm'] });
         await sendVibeMessage('make this mix warmer', (prompt) => sendChatMessage(prompt));
 
@@ -600,7 +604,7 @@ describe('a run whose receipts would pass the plan’s receipt bound', () => {
 
 describe('a run larger than its render budget', () => {
     it('names the largest set of role families that would fit, and schedules nothing', async () => {
-        useProject(ORDINARY_SONG_TRACKS, ORDINARY_SONG_SECTIONS, ORDINARY_SONG_BEATS);
+        openVibeProject(ORDINARY_SONG_TRACKS, ORDINARY_SONG_SECTIONS, ORDINARY_SONG_BEATS);
         agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, maxRenderJobs: 64 });
         scriptVibeBriefRoute({ descriptors: ['warm', 'wide'] });
 

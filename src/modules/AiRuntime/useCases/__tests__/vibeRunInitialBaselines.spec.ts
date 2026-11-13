@@ -19,8 +19,8 @@ import { getProjectHandlers } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
-import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
+import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
 import { type ToolCallResult } from '../../models/ToolCallResult';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { type MeasuredScheduledVibeRunPlan } from '../../models/VibeRunPlan';
@@ -156,8 +156,8 @@ vi.hoisted(() => {
 const verificationLimits = vi.hoisted((): { maxBytesPerCollection: number | null } => ({
     maxBytesPerCollection: null,
 }));
-vi.mock('../applicationOwnedToolLoop', async (importOriginal) => {
-    const original = await importOriginal<typeof import('../applicationOwnedToolLoop')>();
+vi.mock('../readApplicationVerificationReceiptLimits', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../readApplicationVerificationReceiptLimits')>();
     return {
         ...original,
         readApplicationVerificationReceiptLimits: (collectionReceipts: number) => {
@@ -643,11 +643,12 @@ describe('initial role and exact-section baselines through the brief pipeline', 
                 return renderTrack(input);
             }
             // The processed chorus loses its body and turns harsh, while the verse still improves.
-            return renderSong(input, (song) =>
-                song >= 1
-                    ? 0.01 * Math.sin(2 * Math.PI * 100 * song) + 0.6 * Math.sin(2 * Math.PI * 3000 * song)
-                    : sounding(song)
-            );
+            return renderSong(input, (song) => {
+                if (song < 1) {
+                    return sounding(song);
+                }
+                return 0.01 * Math.sin(2 * Math.PI * 100 * song) + 0.6 * Math.sin(2 * Math.PI * 3000 * song);
+            });
         });
         await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toEqual({ status: 'executed' });
         const batch = requireOnlyProposedCard();

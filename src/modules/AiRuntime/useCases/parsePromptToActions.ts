@@ -118,8 +118,8 @@ import {
 } from './llmOrchestration/inference';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
-import { type MetricRequestAuthority, type MetricGoalState } from './metricGoalContractTypes';
 import { type MeasurementUnitProgress } from './measureProjectUnit';
+import { type MetricRequestAuthority, type MetricGoalState } from './metricGoalContractTypes';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { planAnswerSuggestion } from './planAnswerSuggestion';
 import { planLastCommitContinuation } from './planLastCommitContinuation';

@@ -1,18 +1,22 @@
-import { readOfflineAdjustmentRenderClass } from '#/modules/AudioEngine/useCases';
-import { readSecondsAtBeat } from '#/modules/Transport/stores';
-
 import { ANALYSIS_MEASURE_MAX_TARGETS } from '../models/AnalysisMeasureLimits';
-import { type MeasurementWork } from '../models/MeasurementBudget';
 import { type ProjectContext } from '../models/ProjectContext';
-import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 
 import { type MetricGoal } from './metricGoalContractTypes';
-import { readMeasurementRenderedSeconds } from './readMeasurementRenderedSeconds';
 
-type Range = NonNullable<MetricGoal['range']>;
-type Metric = NonNullable<MetricGoal['metricId']>;
-type Scope = { kind: 'master' } | { kind: 'tracks' | 'buses'; ids: string[] };
-type Request = { prefix: string; scope: Scope; range: Range; metrics: Metric[] };
+export type MeasurementRange = NonNullable<MetricGoal['range']>;
+export type MeasurementMetric = NonNullable<MetricGoal['metricId']>;
+export type MeasurementScope = { kind: 'master' } | { kind: 'tracks' | 'buses'; ids: string[] };
+/** One receipt's worth of reads: one prefix, scope and exact range, over these metrics. */
+export type MeasurementRequest = {
+    prefix: string;
+    scope: MeasurementScope;
+    range: MeasurementRange;
+    metrics: MeasurementMetric[];
+};
+type Range = MeasurementRange;
+type Metric = MeasurementMetric;
+type Scope = MeasurementScope;
+type Request = MeasurementRequest;
 
 /** One range a unit reduces, at one document (`null` for the live project alone), and the receipt it reports in. */
 export type MeasurementUnitRead = { prefix: string | null; range: Range; metrics: Metric[]; requestIndex: number };
@@ -36,8 +40,6 @@ export type MeasurementUnit = {
     groups: MeasurementRenderGroup[];
     reads: MeasurementUnitRead[];
 };
-
-type UnitWork = MeasurementWork & { renderedSeconds: number };
 
 function belongsToScope(targetId: string, kind: Scope['kind'], context: Pick<ProjectContext, 'tracks'>): boolean {
     if (targetId === 'master') {
@@ -101,145 +103,4 @@ export function planMetricMeasurementRequests(input: {
         }
     }
     return requests;
-}
-
-function rangeKey(range: Range): string {
-    return JSON.stringify([range.startBeat, range.endBeat, range.sectionId]);
-}
-
-function measuredSeconds(startBeat: number, endBeat: number): number {
-    return readSecondsAtBeat({ beat: endBeat }) - readSecondsAtBeat({ beat: startBeat });
-}
-
-/**
- * Ranges grouped greedily by start, each group one render from beat 0 to its last end. Two ranges
- * share a render only when it keeps for each what a render of that range alone would:
- *
- * - the group's span stays within the measured-seconds ceiling. A range that alone passes the
- *   ceiling keeps a group of its own, which the render refuses as it would refuse that range;
- * - every range ends where the render takes the same adjustment-layer decisions as at the group's
- *   end (`readOfflineAdjustmentRenderClass`). A layer the render classifies over its whole span is
- *   constant over a short render and moving over a long one, and an offline render skips a moving
- *   DSP layer, so a render ending past that threshold would drop a layer a render of the shorter
- *   range alone applies.
- */
-function groupRanges(reads: readonly MeasurementUnitRead[], scope: Scope): MeasurementRenderGroup[] {
-    const ceiling = readAgentResourceLimits().measurementMeasuredSeconds;
-    const route = scope.kind === 'master' ? 'mixdown' : 'subgraph';
-    const renderClass = (endBeat: number) => readOfflineAdjustmentRenderClass({ endBeat, route });
-    const ranges = [...new Map(reads.map((read) => [rangeKey(read.range), read.range])).values()].sort(
-        (left, right) => left.startBeat - right.startBeat || left.endBeat - right.endBeat
-    );
-    const groups: (MeasurementRenderGroup & { renderClass: number })[] = [];
-    for (const range of ranges) {
-        const current = groups.at(-1);
-        const rangeClass = renderClass(range.endBeat);
-        const endBeat = Math.max(current?.endBeat ?? range.endBeat, range.endBeat);
-        if (
-            current !== undefined &&
-            measuredSeconds(current.startBeat, endBeat) <= ceiling &&
-            rangeClass === current.renderClass &&
-            renderClass(endBeat) === current.renderClass
-        ) {
-            current.endBeat = endBeat;
-            current.ranges.push(range);
-            continue;
-        }
-        groups.push({ startBeat: range.startBeat, endBeat: range.endBeat, ranges: [range], renderClass: rangeClass });
-    }
-    return groups.map(({ startBeat, endBeat, ranges: members }) => ({ startBeat, endBeat, ranges: members }));
-}
-
-function scopeTargets(scope: Scope): string[] {
-    return scope.kind === 'master' ? ['master'] : scope.ids;
-}
-
-function unitScope(kind: Scope['kind'], ids: string[]): Scope {
-    return kind === 'master' ? { kind: 'master' } : { kind, ids };
-}
-
-/**
- * The units the requests render as. A `project` subject reads the live project: requests whose
- * scope holds the same targets join one unit over all their ranges. A `preview` subject reads the
- * prefix each request names beside the live project: one unit per target, over every prefix and
- * range any request reads it at. Measurement execution and whole-run admission both plan through
- * this, so what is admitted is what renders.
- */
-export function planMetricMeasurementUnits(input: {
-    requests: readonly Request[];
-    subject: 'project' | 'preview';
-}): MeasurementUnit[] {
-    const units = new Map<string, { kind: Scope['kind']; ids: string[]; reads: MeasurementUnitRead[] }>();
-    const join = (key: string, kind: Scope['kind'], ids: string[], read: MeasurementUnitRead) => {
-        const unit = units.get(key) ?? { kind, ids, reads: [] };
-        unit.reads.push(read);
-        units.set(key, unit);
-    };
-    for (const [requestIndex, request] of input.requests.entries()) {
-        const { scope, range, metrics } = request;
-        if (input.subject === 'project') {
-            const ids = scope.kind === 'master' ? [] : scope.ids;
-            join(JSON.stringify([scope.kind, ids]), scope.kind, ids, { prefix: null, range, metrics, requestIndex });
-            continue;
-        }
-        for (const targetId of scopeTargets(scope)) {
-            const ids = scope.kind === 'master' ? [] : [targetId];
-            join(JSON.stringify([scope.kind, targetId]), scope.kind, ids, {
-                prefix: request.prefix,
-                range,
-                metrics,
-                requestIndex,
-            });
-        }
-    }
-    return [...units.values()].map(({ kind, ids, reads }) => ({
-        subject: input.subject,
-        scope: unitScope(kind, ids),
-        prefixes: input.subject === 'preview' ? [...new Set(reads.flatMap((read) => read.prefix ?? []))] : [],
-        groups: groupRanges(reads, unitScope(kind, ids)),
-        reads,
-    }));
-}
-
-/** The prefix documents a preview unit renders in one group: each one read over a range the group covers. */
-export function readGroupPrefixes(unit: MeasurementUnit, group: MeasurementRenderGroup): string[] {
-    if (unit.subject === 'project') {
-        return [];
-    }
-    const keys = new Set(group.ranges.map(rangeKey));
-    return unit.prefixes.filter((prefix) =>
-        unit.reads.some((read) => read.prefix === prefix && keys.has(rangeKey(read.range)))
-    );
-}
-
-/**
- * What one unit spends: each target renders once per group in the live project plus once per
- * prefix document read in that group, and reduces once per read. `renderedSeconds` is the mean
- * seconds those renders process, so renders times it is the total the wall-clock allowance reads.
- */
-export function countMeasurementUnitWork(unit: MeasurementUnit): UnitWork {
-    const targets = scopeTargets(unit.scope).length;
-    let renderJobs = 0;
-    let processedSeconds = 0;
-    for (const group of unit.groups) {
-        const renders = targets * (1 + readGroupPrefixes(unit, group).length);
-        renderJobs += renders;
-        processedSeconds += renders * readMeasurementRenderedSeconds(group.endBeat);
-    }
-    return {
-        renderJobs,
-        analyses: targets * unit.reads.length,
-        renderedSeconds: renderJobs === 0 ? 0 : processedSeconds / renderJobs,
-    };
-}
-
-/** The renders and reductions a set of units spends, counted unit by unit. */
-export function countMeasurementWork(units: readonly MeasurementUnit[]): MeasurementWork {
-    return units.reduce(
-        (total, unit) => {
-            const work = countMeasurementUnitWork(unit);
-            return { renderJobs: total.renderJobs + work.renderJobs, analyses: total.analyses + work.analyses };
-        },
-        { renderJobs: 0, analyses: 0 }
-    );
 }

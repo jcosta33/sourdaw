@@ -4,22 +4,17 @@ import { renderAgentMeasurementWindows, retainAgentMeasurementRenders } from '#/
 import { describeMeasurementStop, type MeasurementFailure } from '../models/MeasurementBudget';
 
 import { beginMeasurementRun } from './beginMeasurementRun';
-import {
-    boundedMeasurementWarnings,
-    projectRefusalFailure,
-    resolveMeasuredRange,
-    type MeasuredRange,
-    type ProjectMeasurement,
-    type ProjectMeasurementInput,
-    type ReducedTarget,
-} from './measureProjectScope';
-import { parseAnalysisMeasureArguments } from './parseAnalysisMeasureArguments';
-import { countMeasurementUnitWork, type MeasurementUnit } from './planMetricMeasurementRequests';
+import { boundedMeasurementWarnings } from './boundedMeasurementWarnings';
+import { countMeasurementUnitWork } from './countMeasurementUnitWork';
+import { type ProjectMeasurement, type ProjectMeasurementInput, type ReducedTarget } from './measureProjectScope';
+import { type MeasurementUnit } from './planMetricMeasurementRequests';
+import { projectRefusalFailure } from './projectRefusalFailure';
+import { readMeasurementUnitCall, type MeasurementUnitCall } from './readMeasurementUnitCall';
 import { reduceMeasuredTargets } from './reduceMeasuredTargets';
+import { resolveMeasuredRange, type MeasuredRange } from './resolveMeasuredRange';
 
 type WindowsRender = Awaited<ReturnType<typeof renderAgentMeasurementWindows>>;
 type RenderedWindows = Extract<WindowsRender, { status: 'rendered' }>;
-type ParsedArguments = Extract<ReturnType<typeof parseAnalysisMeasureArguments>, { status: 'valid' }>['value'];
 
 /** Which target of a unit is rendering now, and over which range group. */
 export type MeasurementUnitProgress = {
@@ -31,28 +26,17 @@ export type MeasurementUnitProgress = {
     groupCount: number;
 };
 
-/** One read of a unit as an `analysis.measure` call would state it, so its receipt reads exactly as one. */
-export type MeasurementUnitCall = Pick<ParsedArguments, 'scope' | 'range' | 'metrics'>;
-
 type ProjectUnitResult =
     | { status: 'measured'; reads: { call: MeasurementUnitCall; measurement: ProjectMeasurement }[] }
     | { status: 'failed'; failure: MeasurementFailure };
 
-/** A unit read normalized through the tool's own argument contract: canonical scope, range and metric order. */
-export function readMeasurementUnitCall(
-    unit: MeasurementUnit,
-    read: MeasurementUnit['reads'][number]
-): MeasurementUnitCall | MeasurementFailure {
-    const range =
-        read.range.sectionId === null
-            ? { startBeat: read.range.startBeat, endBeat: read.range.endBeat }
-            : { sectionId: read.range.sectionId };
-    const parsed = parseAnalysisMeasureArguments({ scope: unit.scope, range, metrics: read.metrics });
-    if (parsed.status === 'invalid') {
-        return { code: 'invalid-arguments', safeMessage: parsed.reason, retryable: false };
+function appendReducedTarget(reduced: Map<number, ReducedTarget[]>, readIndex: number, entry: ReducedTarget): void {
+    const entries = reduced.get(readIndex);
+    if (entries === undefined) {
+        reduced.set(readIndex, [entry]);
+        return;
     }
-    const { scope, metrics } = parsed.value;
-    return { scope, range: parsed.value.range, metrics };
+    entries.push(entry);
 }
 
 function windowKey(range: { startBeat: number; endBeat: number }): string {
@@ -71,6 +55,28 @@ function windowRenders(rendered: readonly RenderedWindows[]) {
     );
 }
 
+type UnitRead = { call: MeasurementUnitCall; range: MeasuredRange };
+
+/** Every read of the unit as its tool call states it, over the beats its range resolves to. */
+function readUnitReads(
+    unit: MeasurementUnit,
+    sections: ProjectMeasurementInput['sections']
+): UnitRead[] | MeasurementFailure {
+    const reads: UnitRead[] = [];
+    for (const read of unit.reads) {
+        const call = readMeasurementUnitCall(unit, read);
+        if ('code' in call) {
+            return call;
+        }
+        const resolved = resolveMeasuredRange(call.range, sections);
+        if (resolved.status === 'failure') {
+            return resolved.failure;
+        }
+        reads.push({ call, range: resolved.range });
+    }
+    return reads;
+}
+
 /**
  * Measure one project unit: admit its planned renders and reductions against the run, render each
  * target once per range group over the group's span, and reduce every range from its own window.
@@ -81,17 +87,9 @@ export async function measureProjectUnit(
     input: ProjectMeasurementInput & { onProgress?: (progress: MeasurementUnitProgress) => void },
     unit: MeasurementUnit
 ): Promise<ProjectUnitResult> {
-    const reads: { call: MeasurementUnitCall; range: MeasuredRange }[] = [];
-    for (const read of unit.reads) {
-        const call = readMeasurementUnitCall(unit, read);
-        if ('code' in call) {
-            return { status: 'failed', failure: call };
-        }
-        const resolved = resolveMeasuredRange(call.range, input.sections);
-        if (resolved.status === 'failure') {
-            return { status: 'failed', failure: resolved.failure };
-        }
-        reads.push({ call, range: resolved.range });
+    const reads = readUnitReads(unit, input.sections);
+    if (!Array.isArray(reads)) {
+        return { status: 'failed', failure: reads };
     }
     const work = countMeasurementUnitWork(unit);
     const started = beginMeasurementRun({
@@ -133,9 +131,10 @@ export async function measureProjectUnit(
             rendered.push(render);
             const items = reads.flatMap((read, readIndex) => {
                 const index = windowIndex(group, read.range);
-                return index < 0
-                    ? []
-                    : render.targets.map((target) => ({ readIndex, read, target, window: target.windows[index]! }));
+                if (index < 0) {
+                    return [];
+                }
+                return render.targets.map((target) => ({ readIndex, read, target, window: target.windows[index]! }));
             });
             const reduction = await reduceMeasuredTargets({
                 targets: items,
@@ -150,7 +149,7 @@ export async function measureProjectUnit(
                         artifact: window.artifact,
                         measurements: measureAgentScopeRender(window.buffer, read.call.metrics),
                     };
-                    reduced.set(readIndex, [...(reduced.get(readIndex) ?? []), entry]);
+                    appendReducedTarget(reduced, readIndex, entry);
                     return entry;
                 },
             });
