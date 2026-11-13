@@ -445,31 +445,35 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-        const stepPx = 4 * pixelsPerBeat;
-        const pageBeats = canvasMetrics.width > 0 ? canvasMetrics.width / pixelsPerBeat : 16;
-        const pagePx = pageBeats * pixelsPerBeat;
+        // Keys can arrive faster than React re-renders (held auto-repeat), so each step
+        // starts from the store's current scroll, not the render-time closure value.
+        const { scrollX: currentScrollX, pixelsPerBeat: currentPixelsPerBeat } =
+            timelineViewStore.value ?? defaultTimelineView;
+        const stepPx = 4 * currentPixelsPerBeat;
+        const pageBeats = canvasMetrics.width > 0 ? canvasMetrics.width / currentPixelsPerBeat : 16;
+        const pagePx = pageBeats * currentPixelsPerBeat;
         let targetScrollX: number;
 
         switch (event.key) {
             case 'ArrowLeft':
             case 'ArrowDown':
-                targetScrollX = scrollX - stepPx;
+                targetScrollX = currentScrollX - stepPx;
                 break;
             case 'ArrowRight':
             case 'ArrowUp':
-                targetScrollX = scrollX + stepPx;
+                targetScrollX = currentScrollX + stepPx;
                 break;
             case 'PageUp':
-                targetScrollX = scrollX - pagePx;
+                targetScrollX = currentScrollX - pagePx;
                 break;
             case 'PageDown':
-                targetScrollX = scrollX + pagePx;
+                targetScrollX = currentScrollX + pagePx;
                 break;
             case 'Home':
                 targetScrollX = 0;
                 break;
             case 'End':
-                targetScrollX = sliderMaxBeats * pixelsPerBeat;
+                targetScrollX = sliderMaxBeats * currentPixelsPerBeat;
                 break;
             default:
                 return;
