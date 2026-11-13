@@ -48,7 +48,6 @@ vi.mock('../../../useCases/removeTrackModulationReferences', () => ({
     removeTrackModulationReferences: () => ({ afterCommit: () => undefined, afterAmbiguousCommit: () => undefined }),
 }));
 vi.mock('../../../useCases/publishTrackRemoved', () => ({ publishTrackRemoved: vi.fn() }));
-vi.mock('../../../useCases/publishTrackAdded', () => ({ publishTrackAdded: vi.fn() }));
 vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({ projectTrackToLiveStrip: vi.fn() }));
 vi.mock('../../../useCases/refreshToasterPadBindings', () => ({ refreshToasterPadBindings: vi.fn() }));
 vi.mock('../../../useCases/captureTrackRemovalRuntimeAuthority', () => ({
@@ -59,7 +58,10 @@ vi.mock('../../../useCases/captureTrackRemovalRuntimeAuthority', () => ({
     }),
 }));
 vi.mock('../../../useCases/comping/insertTakeLane', () => ({ insertTakeLane: vi.fn() }));
-vi.mock('../../../stores/takeLaneStore', () => ({ takeLaneStore: { value: { lanes: [] }, set: vi.fn() } }));
+vi.mock('../../../stores/takeLaneStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../stores/takeLaneStore')>()),
+    takeLaneStore: { value: { lanes: [] }, set: vi.fn() },
+}));
 vi.mock('../../../stores/clipSatelliteState', () => ({
     readClipSatelliteEntry: vi.fn(),
     writeClipSatelliteEntry: vi.fn(),

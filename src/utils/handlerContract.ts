@@ -38,6 +38,11 @@ export type DeviceStateChunkSnapshot = {
     readonly data: { readonly [key: string]: DeviceStateValueSnapshot };
 };
 
+export type DevicePatchStateSnapshot = {
+    deviceState: DeviceStateChunkSnapshot | null;
+    parameterValues: Record<string, number | null>;
+};
+
 export type DeviceSnapshot = {
     readonly id: string;
     readonly name: string;
@@ -1999,6 +2004,22 @@ export type AppAction =
       }
     | { type: 'setDeviceState'; payload: { deviceId: string; state: DeviceStateChunkSnapshot } }
     | {
+          type: 'setFermenterPatch';
+          payload: {
+              deviceId: string;
+              before: DeviceStateChunkSnapshot;
+              after: DeviceStateChunkSnapshot;
+              expectedCurrent: DeviceStateChunkSnapshot;
+              beforeProject: DevicePatchStateSnapshot;
+              afterProject: DevicePatchStateSnapshot;
+              expectedProject: DevicePatchStateSnapshot;
+              expectedTrackId: string;
+              expectedDeviceIds: readonly string[];
+              expectedTrackFrozen: boolean;
+              label: string;
+          };
+      }
+    | {
           type: 'setGrandBouleDeviceState';
           payload: {
               deviceId: string;
@@ -2088,6 +2109,8 @@ export type AppAction =
     | { type: 'resizeSection'; payload: { sectionId: string; startBeat: number; endBeat: number } }
     | { type: 'setSectionColor'; payload: { sectionId: string; color: string } }
     | { type: 'reorderSection'; payload: { sectionId: string; direction: 'left' | 'right' } }
+    | { type: 'navigateSection'; payload: { direction: 'previous' | 'next' } }
+    | { type: 'rehearseSection'; payload: { sectionId: string; loop: boolean } }
     | {
           /** Internal guarded inverse for `reorderSection`: restores BOTH swapped
            *  sections' exact pre-reorder beat spans and list positions, the gap

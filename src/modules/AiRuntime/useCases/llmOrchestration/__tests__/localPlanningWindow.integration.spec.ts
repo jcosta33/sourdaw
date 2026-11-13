@@ -36,7 +36,7 @@ import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { getProjectContext } from '../../getProjectContext';
 import { parsePromptToActions } from '../../parsePromptToActions';
 import { getBackendChain } from '../backendResolution/getBackendChain';
-import { type ProviderAttemptAdmission } from '../inference';
+import { type ProviderAttemptAdmission, WEBLLM_TOOL_BUDGET } from '../inference';
 
 registerDeviceEnginePorts();
 
@@ -427,7 +427,7 @@ it('fits a discovered 64-onset receipt with live authority, resume and a full bo
     );
     expect(readBuffer).toHaveBeenCalledWith(bufferId);
     const selected = toolsFrom(attempts[3]!).map((tool) => tool.function.name);
-    expect(selected).toHaveLength(37);
+    expect(selected).toHaveLength(WEBLLM_TOOL_BUDGET);
     expect(selected).toContain('analysis.detectTransients');
     expect(selected).toContain('selectCreativeInterpretation');
     expect(selected).toContain('command.batch.propose');

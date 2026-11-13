@@ -5,7 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { getAgentCapabilityCatalog } from '#/modules/AiRuntime/useCases';
-import { getAgentCommandLedger, getAppActionExecutionPolicy } from '#/modules/Command/useCases';
+import {
+    getAgentCommandLedger,
+    getAppActionExecutionPolicy,
+    getExecutableAppActionToolSchemas,
+} from '#/modules/Command/useCases';
 
 import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
 
@@ -117,6 +121,21 @@ describe('agent source examples corpus (AC-056)', () => {
                     getAppActionExecutionPolicy(actionType).risk,
                     `${example.id}: ${actionType} carries no descriptor risk`
                 ).toBe(example.risk[index]);
+            }
+        }
+    });
+
+    // A recovered example is something a provider can plan today, so every command it binds is one the
+    // provider tool list offers; a command kept executable only for stored batches would not count.
+    it('binds every recovered example only to commands a provider is offered', () => {
+        const offered = new Set<string>(getExecutableAppActionToolSchemas().map((schema) => schema.function.name));
+
+        for (const example of corpus.examples) {
+            if (example.disposition !== 'recovered') {
+                continue;
+            }
+            for (const actionType of example.actionTypes) {
+                expect(offered.has(actionType), `${example.id}: ${actionType} is not offered to providers`).toBe(true);
             }
         }
     });

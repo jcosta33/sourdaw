@@ -10,13 +10,14 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import { configDefaults, defineConfig, type Plugin } from 'vitest/config';
 
+import { basicPitchAssets } from './scripts/basicPitchAssets.ts';
 import {
     createSourdawRootHeaderMiddleware,
     isSourdawE2eServeMode,
     SOURDAW_E2E_RUN_TOKEN_ENV,
-} from './scripts/e2eServerIdentity';
+} from './scripts/e2eServerIdentity.ts';
 import { sourdawE2eStartupDiagnosticsPlugin } from './scripts/e2eStartupDiagnostics.ts';
-import { sourdawE2eUncachedResponsesPlugin } from './scripts/e2eUncachedResponses';
+import { sourdawE2eUncachedResponsesPlugin } from './scripts/e2eUncachedResponses.ts';
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
 
@@ -137,7 +138,7 @@ function sourdawE2ePersistenceEntryPlugin(): Plugin {
         },
         config(_config, { command }) {
             if (command !== 'build') {
-                return;
+                return undefined;
             }
             return {
                 build: {
@@ -195,7 +196,8 @@ export default defineConfig({
         __APP_VERSION__: JSON.stringify(version),
     },
     plugins: [
-        tanstackRouter({ routesDirectory: './src/routes' }),
+        tanstackRouter({ routesDirectory: './src/routes', routeFileIgnorePattern: '^__tests__$' }),
+        basicPitchAssets(),
         babel({ presets: [reactCompilerPreset()] }),
         react(),
         tailwindcss(),
@@ -208,14 +210,7 @@ export default defineConfig({
     test: {
         environment: 'jsdom',
         clearMocks: false,
-        /**
-         * Two workers is the agent-session ceiling: a lane shares its machine
-         * with every other lane and with the resource guard's reservations.
-         * CI has neither constraint and a runner has more cores than that, so
-         * the shards there raise it. The suite spends far more time building
-         * jsdom environments and loading modules than running assertions, so
-         * worker count is the lever that moves it.
-         */
+        /** Tests use at most two workers; hosted shards apply the same limit. */
         maxWorkers: Number(env.VITEST_MAX_WORKERS ?? 2),
         setupFiles: env.SOURDAW_VITEST_PROGRESS
             ? ['./scripts/vitestProgressSetup.ts', './src/setupTests.ts']

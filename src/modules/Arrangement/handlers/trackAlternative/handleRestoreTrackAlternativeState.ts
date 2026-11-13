@@ -41,8 +41,8 @@ export const handleRestoreTrackAlternativeState = createHandler<'restoreTrackAlt
         if (
             typeof replacementActiveAlternativeId !== 'string' ||
             replacementActiveAlternativeId.length === 0 ||
-            !isRestorableAlternatives(alternatives) ||
-            !isRestorableClips(clips)
+            !isRestorableAlternatives(alternatives, trackId) ||
+            !isRestorableClips(clips, trackId)
         ) {
             return { status: 'conflict' };
         }

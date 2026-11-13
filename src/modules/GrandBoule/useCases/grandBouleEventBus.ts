@@ -1,10 +1,8 @@
 import { Container } from '#/infra/di/Container';
 
-import type { TrackAddedPayload } from '#/modules/Arrangement/events';
 import type { MidiNoteOffPayload, MidiNoteOnPayload, MidiPedalCcPayload } from '#/modules/MIDI/events';
 
 type GrandBouleEvents = {
-    'track.added': TrackAddedPayload;
     'midi.noteOn': MidiNoteOnPayload;
     'midi.noteOff': MidiNoteOffPayload;
     'midi.pedalCc': MidiPedalCcPayload;

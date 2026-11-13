@@ -1,11 +1,12 @@
 import("stdfaust.lib");
+cs = library("sourdaw-current-sound.lib");
 
 // F1 — insert-style reverb needs its own dry/wet blend; `zita_rev1_stereo` is
 // 100% wet on its own, and there is no separate dry bus mixing this back in
 // upstream of this node.
 mix = hslider("dry_wet", 0.3, 0, 1, 0.01);
 
-wet = re.zita_rev1_stereo(rdel, f1, f2, t60dc, t60m, ma.SR)
+wet = cs.zita_rev1_stereo(rdel, f1, f2, t60dc, t60m, ma.SR)
 with {
     rdel = 60;
     f1 = 200;

@@ -48,6 +48,64 @@ function projectFor(track: Track, actions: readonly AppAction[]): Track {
 }
 
 describe('projectTrackThroughPriorBatchActions', () => {
+    it('plans numeric device values using the same clamp and deletion law as the actual writer', () => {
+        const track: Track = {
+            ...createTrack({ id: 'track-1', kind: 'midi', name: 'Owner', withoutDefaultDevice: true }),
+            devices: [
+                {
+                    id: 'synth',
+                    type: 'fermenter',
+                    name: 'Synth',
+                    bypassed: false,
+                    parameterValues: { filterCutoff: 600, filterModel: 0, unrelated: 7 },
+                },
+            ],
+        };
+        const planned = projectFor(track, [
+            { type: 'setDeviceParameter', payload: { deviceId: 'synth', paramId: 'filterCutoff', value: -100 } },
+            {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'synth', paramId: 'filterModel', value: 0, deleteParameter: true },
+            },
+        ]);
+        expect(planned.devices[0]?.parameterValues).toEqual({ filterCutoff: 20, unrelated: 7 });
+        expect(Object.hasOwn(planned.devices[0]?.parameterValues ?? {}, 'filterModel')).toBe(false);
+        expect(track.devices[0]?.parameterValues).toEqual({ filterCutoff: 600, filterModel: 0, unrelated: 7 });
+    });
+
+    it('retains catalog defaults and exact restored native snapshot presence through the factored device rules', () => {
+        const track = { ...trackWithClips('track-1', []), devices: [] };
+        const added = projectFor(track, [
+            { type: 'addDevice', payload: { trackId: 'track-1', deviceType: 'fermenter', deviceId: 'new-synth' } },
+        ]);
+        expect(added.devices[0]).toMatchObject({
+            id: 'new-synth',
+            type: 'fermenter',
+            parameterValues: { filterCutoff: 5000 },
+        });
+        const snapshot = {
+            id: 'restored',
+            type: 'native-test',
+            name: 'My alias',
+            bypassed: true,
+            parameterValues: { gain: 0.3 },
+            externalPluginId: '',
+            externalInstanceId: '',
+            externalStateChunk: '',
+            deviceState: { version: 1, data: { routing: [0.2, 0.8] } },
+        };
+        const restored = projectFor(track, [
+            {
+                type: 'restoreDevice',
+                payload: { trackId: 'track-1', deviceIndex: 0, deviceSnapshot: snapshot, expectedDeviceIds: [] },
+            },
+        ]);
+        expect(restored.devices[0]).toEqual(snapshot);
+        expect(restored.devices[0]?.deviceState).not.toBe(snapshot.deviceState);
+        expect(Object.hasOwn(restored.devices[0] ?? {}, 'externalStateChunk')).toBe(true);
+        expect(track.devices).toEqual([]);
+    });
+
     it('removes a clip an earlier discardDuplicatedClip compensated and keeps the rest', () => {
         // A later action in the same batch must plan against the clips that will actually exist by
         // the time it runs, so a compensated creation has to disappear from the projection.

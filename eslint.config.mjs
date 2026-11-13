@@ -2643,54 +2643,63 @@ const sourdawPlugin = {
         },
 
         // AGENTS.md L148: `as`, `as any`, or `as unknown as …` to silence compiler errors is forbidden.
-        // Catches `x as any`, `x as never`, and the `x as unknown as T` double-assertion escape hatch.
+        // Catches `x as any`, `x as never`, and the `x as unknown as T` double-assertion escape hatch,
+        // in both the `as` form and the angle-bracket form (`<any>x`, `<never>x`, `<T>(<unknown>x)`).
         'no-type-assertion-escape': {
             meta: {
                 type: 'problem',
                 docs: {
                     description:
-                        'Disallow `as any`, `as never` and `as unknown as X` — forbidden soundness escapes (AGENTS.md § TypeScript — soundness).',
+                        'Disallow `as any`, `as never` and `as unknown as X` (or `<any>x`, `<never>x`, `<X>(<unknown>x)`) — forbidden soundness escapes (AGENTS.md § TypeScript — soundness).',
                 },
-                schema: [
-                    {
-                        type: 'object',
-                        properties: { allowAsNever: { type: 'boolean' } },
-                        additionalProperties: false,
-                    },
-                ],
+                schema: [],
                 messages: {
                     noAsAny:
-                        '`as any` is forbidden. Fix the value or the type. Use `unknown` + narrowing, `satisfies`, or Zod validation at I/O boundaries.',
+                        '`as any` (or `<any>x`) is forbidden. Fix the value or the type. Use `unknown` + narrowing, `satisfies`, or Zod validation at I/O boundaries.',
                     noAsUnknownAs:
-                        '`as unknown as X` double-assertion is forbidden — it silences the type checker. Narrow via `unknown` + type guards or validate with Zod at I/O boundaries.',
+                        '`as unknown as X` (or `<X>(<unknown>x)`) double-assertion is forbidden — it silences the type checker. Narrow via `unknown` + type guards or validate with Zod at I/O boundaries.',
                     noAsNever:
-                        '`as never` is forbidden — it is assignable to every type, so it silences the type checker. Give the value its real type or narrow it.',
+                        '`as never` (or `<never>x`) is forbidden — it is assignable to every type, so it silences the type checker. Give the value its real type or narrow it.',
                 },
             },
-            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, [{ allowAsNever?: boolean }?]>} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
             create(context) {
-                const allowAsNever = context.options[0]?.allowAsNever === true;
+                /** @param {import('@typescript-eslint/utils').TSESTree.Node | undefined} node */
+                function isUnknownAssertion(node) {
+                    // `!` and `satisfies` change no type, so `(x as unknown)!` is still the
+                    // first half of a double assertion. Assertions are not unwrapped here:
+                    // the inner one is the `unknown` step being looked for.
+                    let operand = node;
+                    while (
+                        operand?.type === AST_NODE_TYPES.TSNonNullExpression ||
+                        operand?.type === AST_NODE_TYPES.TSSatisfiesExpression
+                    ) {
+                        operand = operand.expression;
+                    }
+                    return (
+                        (operand?.type === AST_NODE_TYPES.TSAsExpression ||
+                            operand?.type === AST_NODE_TYPES.TSTypeAssertion) &&
+                        operand.typeAnnotation?.type === AST_NODE_TYPES.TSUnknownKeyword
+                    );
+                }
+                /** @param {import('@typescript-eslint/utils').TSESTree.TSAsExpression | import('@typescript-eslint/utils').TSESTree.TSTypeAssertion} node */
+                function checkAssertion(node) {
+                    if (node.typeAnnotation?.type === AST_NODE_TYPES.TSAnyKeyword) {
+                        context.report({ node, messageId: 'noAsAny' });
+                        return;
+                    }
+                    // An assertion whose operand is itself an assertion to `unknown`, in either form.
+                    if (isUnknownAssertion(node.expression)) {
+                        context.report({ node, messageId: 'noAsUnknownAs' });
+                        return;
+                    }
+                    if (node.typeAnnotation?.type === AST_NODE_TYPES.TSNeverKeyword) {
+                        context.report({ node, messageId: 'noAsNever' });
+                    }
+                }
                 return {
-                    /** @param {import('@typescript-eslint/utils').TSESTree.TSAsExpression} node */
-                    TSAsExpression(node) {
-                        // `x as any`
-                        if (node.typeAnnotation?.type === AST_NODE_TYPES.TSAnyKeyword) {
-                            context.report({ node, messageId: 'noAsAny' });
-                            return;
-                        }
-                        // `x as unknown as T`: outer TSAsExpression where inner is `as unknown`
-                        if (
-                            node.expression?.type === AST_NODE_TYPES.TSAsExpression &&
-                            node.expression.typeAnnotation?.type === AST_NODE_TYPES.TSUnknownKeyword
-                        ) {
-                            context.report({ node, messageId: 'noAsUnknownAs' });
-                            return;
-                        }
-                        // `x as never`
-                        if (node.typeAnnotation?.type === AST_NODE_TYPES.TSNeverKeyword && !allowAsNever) {
-                            context.report({ node, messageId: 'noAsNever' });
-                        }
-                    },
+                    TSAsExpression: checkAssertion,
+                    TSTypeAssertion: checkAssertion,
                 };
             },
         },
@@ -2747,6 +2756,43 @@ export default tseslint.config(
     eslintPluginReact.configs['recommended-type-checked'],
     eslintPluginReactHooks.configs.flat['recommended-latest'],
     eslintPluginQuery.configs['flat/recommended'],
+
+    // ─── Preset warn promotions ──────────────────────────────────────────────
+    // The lint gate runs ESLint with --quiet, which skips warn rules entirely,
+    // so a preset rule left at warn enforces nothing. These have no violations.
+    {
+        rules: {
+            '@eslint-react/dom-no-dangerously-set-innerhtml': 'error',
+            '@eslint-react/dom-no-script-url': 'error',
+            '@eslint-react/dom-no-unsafe-iframe-sandbox': 'error',
+            '@eslint-react/jsx-no-children-prop': 'error',
+            '@eslint-react/jsx-no-comment-textnodes': 'error',
+            '@eslint-react/jsx-no-leaked-dollar': 'error',
+            '@eslint-react/jsx-no-leaked-semicolon': 'error',
+            '@eslint-react/no-children-count': 'error',
+            '@eslint-react/no-children-for-each': 'error',
+            '@eslint-react/no-children-map': 'error',
+            '@eslint-react/no-children-only': 'error',
+            '@eslint-react/no-children-to-array': 'error',
+            '@eslint-react/no-context-provider': 'error',
+            '@eslint-react/no-forward-ref': 'error',
+            '@eslint-react/no-set-state-in-component-did-mount': 'error',
+            '@eslint-react/no-set-state-in-component-did-update': 'error',
+            '@eslint-react/no-set-state-in-component-will-update': 'error',
+            '@eslint-react/no-unsafe-component-will-mount': 'error',
+            '@eslint-react/no-unsafe-component-will-receive-props': 'error',
+            '@eslint-react/no-unsafe-component-will-update': 'error',
+            '@eslint-react/no-unused-class-component-members': 'error',
+            '@eslint-react/web-api-no-leaked-event-listener': 'error',
+            '@eslint-react/web-api-no-leaked-fetch': 'error',
+            '@eslint-react/web-api-no-leaked-intersection-observer': 'error',
+            '@eslint-react/web-api-no-leaked-interval': 'error',
+            '@eslint-react/web-api-no-leaked-resize-observer': 'error',
+            'react-hooks/incompatible-library': 'error',
+            'react-hooks/unsupported-syntax': 'error',
+            '@tanstack/query/no-rest-destructuring': 'error',
+        },
+    },
 
     // ─── Ignores ─────────────────────────────────────────────────────────────
     {
@@ -3063,7 +3109,7 @@ export default tseslint.config(
             '@eslint-react/purity': 'warn',
             'react-hooks/set-state-in-effect': 'warn',
             '@eslint-react/set-state-in-effect': 'warn',
-            '@eslint-react/unsupported-syntax': 'warn',
+            '@eslint-react/unsupported-syntax': 'error',
 
             // Prevent leaked JSX conditions
             '@eslint-react/no-leaked-conditional-rendering': 'error',
@@ -3167,17 +3213,6 @@ export default tseslint.config(
             'max-lines-per-function': 'off',
             'max-depth': 'off',
             complexity: 'off',
-        },
-    },
-
-    // ─── Temporary `as never` allowance ────────────────────────────────────
-    // This Arrangement restore handler still casts with `as never`; its
-    // removal lands in a separate change. `as any` and `as unknown as` stay
-    // errors here. Delete this block once the casts are gone.
-    {
-        files: ['src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts'],
-        rules: {
-            'sourdaw/no-type-assertion-escape': ['error', { allowAsNever: true }],
         },
     },
 

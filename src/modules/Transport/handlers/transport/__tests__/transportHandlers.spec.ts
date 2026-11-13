@@ -22,7 +22,7 @@ import { handleToggleRecording } from '../handleToggleRecording';
 const mocks = vi.hoisted(() => ({
     togglePlayback: vi.fn(),
     stopPlayback: vi.fn(),
-    executePlayheadSeek: vi.fn<() => Promise<void>>(),
+    executePlayheadSeek: vi.fn<() => Promise<boolean>>(),
     toggleLoop: vi.fn(),
     setLoopRegion: vi.fn(),
     addTimeSignatureChange: vi.fn(),
@@ -94,7 +94,7 @@ describe('Transport Handlers', () => {
     });
 
     it('handleSeekPlayhead delegates to the use case and exposes its runtime completion', async () => {
-        mocks.executePlayheadSeek.mockResolvedValueOnce();
+        mocks.executePlayheadSeek.mockResolvedValueOnce(true);
 
         const execution = handleSeekPlayhead.execute({ type: 'seekPlayhead', payload: { beat: 16 } });
 

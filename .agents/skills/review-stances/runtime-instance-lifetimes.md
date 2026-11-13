@@ -56,7 +56,49 @@ wall-clock) prove ordering, ownership and cleanup; they never establish physical
       reopen, source replacement and same-ID root replacement: the old gesture leaves native rows and PCM exact,
       settles its callers and releases listeners; only a fresh gesture may act on the new owner; an unrelated
       selection must not override an explicitly opened target. Removing pending-owner invalidation must fail real
-      raw-state controls, not a cancellation flag.
+      raw-state controls, not a cancellation flag. The same owner must survive a committed command's awaited
+      presentation phase: #5843's direct editor completion fenced only clip IDs and request counters, while its
+      analysis owner was already disposed. Hold a real post-commit host receiver after durable history and session
+      Undo exist; source A/B/A, root replacement with identical values, provider replacement, editor reopen,
+      unmount and successor Detect/sensitivity must retire only the outgoing presentation. Ordinary Undo keeps
+      historical success feedback; no late completion may reapply truth or mark a replacement detected. Reverting
+      the direct caller's source/root or revision fence must fail the registered editor integration cases.
+    - Retained project after failed preparation (#293, caught during #6420): in
+      `fermenterPatchAuditionUndo.integration.spec.tsx` case “admits fresh whole-patch edits after a public load fails
+      before replacing the retained project”, call public `loadProject` with an explicit transaction whose preparation
+      rejects. The original CRDT root stays; the pre-load patch token and any edit captured while preparation is held
+      remain invalid, while a newly captured discrete preset edit and a continuous frame commit to raw truth,
+      projection, panel, runtime and history/Undo/Redo. `runProjectLoadTransaction.spec.ts` cases “never revives an
+      edit captured during a held successor after that successor fails” (including a premature `activate()` returning
+      false) and “settles only the newest failed preparation while an older revoked preparation remains held” pin
+      the two capture orders. Replacing fresh-edit
+      admission with the retired load-ticket check must fail the fresh write; dropping captured admission or its
+      monotonic revocation must fail old/held-token refusal. Also withdraw a successfully prepared public New or
+      Recent replacement before activation while keeping the original root: `fermenterPatchAuditionUndo.integration.spec.tsx`
+      case “admits a fresh preset after a public New project is withdrawn during successful preparation” must commit
+      a new preset and Undo/Redo while the pre-switch token stays retired. `runProjectLoadTransaction.spec.ts` cases
+      “settles a prepared withdrawn successor without reviving captured edits or its ticket” and “keeps edit admission
+      closed until an abandoned held preparation settles” pin the owner terminal, including a late rejection. The
+      real `replaceProjectData.spec.ts` case “settles a real prepared replacement withdrawn before activation” guards
+      the Recent helper route. A merely prepared but withdrawn ticket must never strand its pending owner; a held
+      abandonment must keep fresh edits denied until its I/O continuation settles, and a late older owner must not
+      clear a newer pending owner. On a rejected preparation, the still-latest ticket retains only its transient
+      cleanup right: `fermenterPatchAuditionUndo.integration.spec.tsx` case “restores an opened project after public
+      New preparation rejects and admits a fresh preset” and `replaceProjectData.spec.ts` case “restores retained
+      loading flags after a real replacement preparation rejects” require the old project to regain
+      `initialized: true, loading: false`; actual activation and old edit captures still refuse. These checks do not
+      establish audible output. The shared capture helper was
+      introduced by main PR #293 (`6c63c7a65d8869975ceebbfe79bbaee199d4f120`); its old-capture fence remains
+      necessary. Historical private reviewer models and stances are unestablished.
+    - Fermenter audition session across equal-value successors (PR #6506, caught before merge): a completed,
+      unedited preset leaves the local echo equal to the next project's patch, so value equality can return before
+      retiring A/B slots. In `fermenterPatchAuditionUndo.integration.spec.tsx`, “retires an unedited preset audition
+      across an equal-value successor project with reused IDs” and “retires an unedited preset audition across an
+      equal-value same-ID device replacement” must disable both old slots after actual raw owner replacement. Keep
+      the edited and continuous local controls: ordinary patch writes preserve A/B and Modified. Compare project
+      identity plus raw track/device incarnation before exempting a local echo, and subscribe to owner publications
+      so an equal projected value cannot suppress the observation. These in-memory cases do not prove browser or
+      audible behavior.
 4. **Shutdown reclamation needs a release inside the poll pass (#2976, #5064).** A whole-cascade wall-clock
    assertion names no cascade step and fails on a loaded runner after every stop and destroy assertion passed. Pin
    the scheduler-release transition itself in `crates/sourdaw-native/src/shutdown.rs`: keep an extra runtime owner

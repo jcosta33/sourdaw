@@ -254,7 +254,7 @@ vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
 }));
 
 /**
- * The remove/restore handlers publish `track.removed` / `track.added` through
+ * The remove handlers publish `track.removed` through
  * the DI event bus, which only `bootstrap.ts` wires. A recording stub keeps the
  * post-commit effect list runnable without pulling the composition root in.
  */

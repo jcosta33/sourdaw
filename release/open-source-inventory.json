@@ -169,8 +169,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:b640b863db1fa8cb7a9d55a6cb3b798bf2395e11c34e63e71161e965fb318d84:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:cf70c90fde6f5e9a6c1243fdd7b8c790bcb17d26a02f50ce32589bb8d416a2e4:release/dependency-license-proofs.json"
+                "sha256:34625023ef1971a807722658a25ff2509638d9b17d65bf1d8e850f5a138dfa96:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:a0ecef6506cc429cc95218c3ef86e6608b11bfaf9eea3f01831a6f3b02445407:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -221,15 +221,15 @@
                 "release/desktop-runtime-material.json"
             ],
             "revisions": [
-                "electron 45.2.3 d0a18d02058b21ff292e25d5f53f00bd120f2f61",
-                "Chromium 156.0.8078.80 fb096c0011f9d50f0a264a9376420cdea9c421e3",
+                "electron 45.3.1 3025e0491e87674c112f7a7d2646292c0efa4599",
+                "Chromium 156.0.8078.96 2ad9b7f5a86846e0b264090723a6a78964bb84c4",
                 "Node v24.22.2 f7f273a9bb6445f6f7fb6349105e7532972045fb",
                 "FFmpeg 9db86ce5b5b454dfc96c435f9f0723012980c37f",
                 "pnpm-lock.yaml",
                 "release-proof:exact-candidate-revision"
             ],
             "digests": [
-                "npm-integrity:sha512-Vurzu5UOA5nTGT4LqIwXD16QFGrOZdiXxF+1UP4KNsAOo/YtDcT3/u0jhP4WSwNJ0iLrLDi85hzBJ0arnGDhyw==",
+                "npm-integrity:sha512-1oYau2B4RXF27Df2fzvrFDJoy8AOSVlgS6gklo6wkLZ/QWJemJCJHkY4+uuacvSFUtR8IimiLukLNFoYP0fmjA==",
                 "sha256:5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
                 "public/legal/ELECTRON-SOURCES.json",
                 "release-proof:desktop-mac-arm64-artifact"
@@ -268,22 +268,38 @@
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
                 "pnpm-workspace.yaml",
-                "patches/vite@8.3.6.patch"
+                "patches/@automerge__automerge@3.5.0.patch",
+                "patches/vite@8.3.8.patch",
+                "public/legal/MLC-WEB-NOTICES.txt",
+                "public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "sources": [
                 "package.json",
                 "server/package.json",
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
-                "patches/vite@8.3.6.patch"
+                "patches/@automerge__automerge@3.5.0.patch",
+                "patches/vite@8.3.8.patch",
+                "https://raw.githubusercontent.com/mlc-ai/xgrammar/ace2321a29471130f3f64fb1882741a5547c6f36/NOTICE",
+                "https://raw.githubusercontent.com/msgpack/msgpack-c/8c602e8579c7e7d65d6f9c6703c9699db3fb0488/COPYING",
+                "https://raw.githubusercontent.com/msgpack/msgpack-c/8c602e8579c7e7d65d6f9c6703c9699db3fb0488/NOTICE",
+                "https://raw.githubusercontent.com/msgpack/msgpack-c/8c602e8579c7e7d65d6f9c6703c9699db3fb0488/LICENSE_1_0.txt",
+                "https://raw.githubusercontent.com/google/sentencepiece/f2219b53e24ff5deee4cacdc2d0ca3074e529a07/LICENSE",
+                "https://raw.githubusercontent.com/google/sentencepiece/f2219b53e24ff5deee4cacdc2d0ca3074e529a07/third_party/absl/LICENSE",
+                "https://raw.githubusercontent.com/google/sentencepiece/f2219b53e24ff5deee4cacdc2d0ca3074e529a07/third_party/darts_clone/LICENSE",
+                "https://raw.githubusercontent.com/google/sentencepiece/f2219b53e24ff5deee4cacdc2d0ca3074e529a07/third_party/protobuf-lite/LICENSE",
+                "https://raw.githubusercontent.com/mlc-ai/xgrammar/ace2321a29471130f3f64fb1882741a5547c6f36/3rdparty/picojson/picojson.h",
+                "https://registry.npmjs.org/@mlc-ai/web-runtime/-/web-runtime-0.28.0-dev2.tgz"
             ],
             "revisions": [
                 "exact pnpm lock graph",
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:bc6999447c2fda05dce2f9510e3412eba1c2d82f66234746c5dea40dfe7c389a",
-                "sha256:d5943b73cb367ddf580983190df0e0c073383c75ebce9611aefb3340c1a380b7"
+                "sha256:97444a345f9c78a3f15e942ada60dfaffe7612e7f21ca8a95e067f1ff6f02395",
+                "sha256:4ce2f2f1a4fc0959b7f9fce2a16cf95e6c75af942e0b691407c73270720ab968",
+                "sha256:da20539796075e22f2ad7f835eb6f1be13a6b540a503d633a85173c02c2aa5c7:public/legal/MLC-WEB-NOTICES.txt",
+                "sha256:e1855008bd1805f65df7fcda958163d44e913c8c6cffd96e05042987e1773afd:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "per-package declared terms, retained legal files, or assembled license records"
@@ -294,7 +310,8 @@
                 "collaboration server"
             ],
             "evidence": [
-                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs; pnpm applies the pinned Vite patch as part of dependency source."
+                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs; pnpm applies the pinned Automerge and Vite patches as part of dependency source.",
+                "MLC-WEB-NOTICES.txt preserves separately sourced SDK and bundled third-party notices; assembled dependency records bind installed metadata and canonical terms without authenticating package attribution or proving the SDK build genealogy."
             ],
             "obligations": [
                 "Reconcile every distributed dependency license and notice before release."
@@ -358,7 +375,7 @@
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:e1855008bd1805f65df7fcda958163d44e913c8c6cffd96e05042987e1773afd:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
@@ -405,7 +422,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:9310e8f1debd75adf4b82f062948457313b89b0a18b02763ba531707344c4010",
+                "sha256:87cdca75040bd33b6807332dd8bb82dbf525e5396ed4aed895015b1703f0ef60",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -492,14 +509,9 @@
                 "public/legal/Apache-2.0.txt",
                 "public/legal/Apache-TVM/LICENSE",
                 "public/legal/Apache-TVM/NOTICE",
-                "public/legal/Apache-TVM/licenses/LICENSE.blockingconcurrentqueue.txt",
-                "public/legal/Apache-TVM/licenses/LICENSE.builtin_fp16.txt",
-                "public/legal/Apache-TVM/licenses/LICENSE.concurrentqueue.txt",
                 "public/legal/Apache-TVM/licenses/LICENSE.cutlass.txt",
                 "public/legal/Apache-TVM/licenses/LICENSE.cutlass_fpA_intB_gemm.txt",
-                "public/legal/Apache-TVM/licenses/LICENSE.l2_cache_flush.txt",
                 "public/legal/Apache-TVM/licenses/LICENSE.libflash_attn.txt",
-                "public/legal/Apache-TVM/licenses/LICENSE.rang.txt",
                 "public/legal/Apache-TVM/licenses/LICENSE.tensorrt_llm.txt",
                 "public/legal/Apache-TVM/licenses/LICENSE.vllm.txt",
                 "public/legal/Apache-TVM/3rdparty/tvm-ffi/LICENSE",
@@ -510,38 +522,40 @@
                 "public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/NOTICE.pytorch.txt",
                 "public/legal/MLC-LLM-NOTICE.txt",
                 "public/legal/Qwen-NOTICE.txt",
-                "public/legal/THIRD-PARTY-NOTICES.md"
+                "public/legal/THIRD-PARTY-NOTICES.md",
+                "public/legal/Apache-TVM/3rdparty/tvm-tirx/LICENSE",
+                "public/legal/Apache-TVM/3rdparty/tvm-tirx/NOTICE",
+                "public/legal/Apache-TVM/3rdparty/tvm-tirx/licenses/LICENSE.builtin_fp16.txt"
             ],
             "sources": [
                 "https://huggingface.co/mlc-ai/Qwen3-1.7B-q4f16_1-MLC/tree/80b3abcec6c3b3f5355dc0cc99cc4fb578f192bc",
                 "https://huggingface.co/mlc-ai/Qwen3-4B-q4f16_1-MLC/tree/a5c9fab855e3ccbdfed2e7e69683d75f30332161",
                 "https://huggingface.co/mlc-ai/Qwen3-8B-q4f16_1-MLC/tree/b3d55c289eae58f77095f5b68c895eeea358ee09",
-                "https://github.com/mlc-ai/binary-mlc-llm-libs/tree/025bcaf3780fa8254f5e5efd3bfea0a5397248f4/web-llm-models/v0_2_84/base",
-                "https://github.com/mlc-ai/binary-mlc-llm-libs/pull/165",
-                "https://github.com/mlc-ai/mlc-llm/tree/2008fe8343e1f40ef89ee57b9287aebcf1b86c98",
-                "https://github.com/apache/tvm/tree/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8",
-                "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/LICENSE",
-                "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/NOTICE",
-                "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/licenses/LICENSE.blockingconcurrentqueue.txt",
-                "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/licenses/LICENSE.builtin_fp16.txt",
-                "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/licenses/LICENSE.concurrentqueue.txt",
-                "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/licenses/LICENSE.cutlass.txt",
-                "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/licenses/LICENSE.cutlass_fpA_intB_gemm.txt",
-                "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/licenses/LICENSE.l2_cache_flush.txt",
-                "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/licenses/LICENSE.libflash_attn.txt",
-                "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/licenses/LICENSE.rang.txt",
-                "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/licenses/LICENSE.tensorrt_llm.txt",
-                "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/licenses/LICENSE.vllm.txt",
-                "https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/LICENSE",
-                "https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/NOTICE",
-                "https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/licenses/LICENSE.dlpack.txt",
-                "https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/licenses/LICENSE.libbacktrace.txt",
-                "https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/licenses/LICENSE.pytorch.txt",
-                "https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/licenses/NOTICE.pytorch.txt",
+                "https://github.com/mlc-ai/binary-mlc-llm-libs/tree/146ed9cd4b4062e967b017fd2291f7106b50599f/web-llm-models/v0_2_87/base",
+                "https://github.com/mlc-ai/binary-mlc-llm-libs/pull/168",
+                "https://github.com/mlc-ai/mlc-llm/tree/44fd06d04f22c87820e205b0f2b2e5e6a1f6ca85",
+                "https://github.com/apache/tvm/tree/e345029cedf0be76a087fcad9c89a97bed4f7204",
+                "https://raw.githubusercontent.com/apache/tvm/e345029cedf0be76a087fcad9c89a97bed4f7204/LICENSE",
+                "https://raw.githubusercontent.com/apache/tvm/e345029cedf0be76a087fcad9c89a97bed4f7204/NOTICE",
+                "https://raw.githubusercontent.com/apache/tvm/e345029cedf0be76a087fcad9c89a97bed4f7204/licenses/LICENSE.cutlass.txt",
+                "https://raw.githubusercontent.com/apache/tvm/e345029cedf0be76a087fcad9c89a97bed4f7204/licenses/LICENSE.cutlass_fpA_intB_gemm.txt",
+                "https://raw.githubusercontent.com/apache/tvm/e345029cedf0be76a087fcad9c89a97bed4f7204/licenses/LICENSE.libflash_attn.txt",
+                "https://raw.githubusercontent.com/apache/tvm/e345029cedf0be76a087fcad9c89a97bed4f7204/licenses/LICENSE.tensorrt_llm.txt",
+                "https://raw.githubusercontent.com/apache/tvm/e345029cedf0be76a087fcad9c89a97bed4f7204/licenses/LICENSE.vllm.txt",
+                "https://raw.githubusercontent.com/apache/tvm-ffi/6628c464e3b824d09c9cf65ac0c6c24f973f6d56/LICENSE",
+                "https://raw.githubusercontent.com/apache/tvm-ffi/6628c464e3b824d09c9cf65ac0c6c24f973f6d56/NOTICE",
+                "https://raw.githubusercontent.com/apache/tvm-ffi/6628c464e3b824d09c9cf65ac0c6c24f973f6d56/licenses/LICENSE.dlpack.txt",
+                "https://raw.githubusercontent.com/apache/tvm-ffi/6628c464e3b824d09c9cf65ac0c6c24f973f6d56/licenses/LICENSE.libbacktrace.txt",
+                "https://raw.githubusercontent.com/apache/tvm-ffi/6628c464e3b824d09c9cf65ac0c6c24f973f6d56/licenses/LICENSE.pytorch.txt",
+                "https://raw.githubusercontent.com/apache/tvm-ffi/6628c464e3b824d09c9cf65ac0c6c24f973f6d56/licenses/NOTICE.pytorch.txt",
                 "https://huggingface.co/Qwen/Qwen3-1.7B/blob/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e/LICENSE",
                 "https://huggingface.co/Qwen/Qwen3-4B/blob/1cfa9a7208912126459214e8b04321603b3df60c/LICENSE",
                 "https://huggingface.co/Qwen/Qwen3-8B/blob/b968826d9c46dd6066d109eabc6255188de91218/LICENSE",
-                "https://github.com/mlc-ai/web-llm/blob/9e572d6ed95e248f29634996cd32cc8f3023d89d/LICENSE"
+                "https://github.com/mlc-ai/web-llm/blob/9e572d6ed95e248f29634996cd32cc8f3023d89d/LICENSE",
+                "https://raw.githubusercontent.com/apache/tvm-tirx/198a04573ea44e060c1087c8223cf082c64a6c03/LICENSE",
+                "https://raw.githubusercontent.com/apache/tvm-tirx/198a04573ea44e060c1087c8223cf082c64a6c03/NOTICE",
+                "https://raw.githubusercontent.com/apache/tvm-tirx/198a04573ea44e060c1087c8223cf082c64a6c03/licenses/LICENSE.builtin_fp16.txt",
+                "https://github.com/apache/tvm-tirx/tree/198a04573ea44e060c1087c8223cf082c64a6c03"
             ],
             "revisions": [
                 "MLC conversion Qwen3-1.7B 80b3abcec6c3b3f5355dc0cc99cc4fb578f192bc",
@@ -550,44 +564,43 @@
                 "licensed Qwen3-1.7B candidate 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
                 "licensed Qwen3-4B candidate 1cfa9a7208912126459214e8b04321603b3df60c",
                 "licensed Qwen3-8B candidate b968826d9c46dd6066d109eabc6255188de91218",
-                "binary-mlc-llm-libs merge 025bcaf3780fa8254f5e5efd3bfea0a5397248f4",
-                "MLC-LLM source 2008fe8343e1f40ef89ee57b9287aebcf1b86c98",
-                "Apache TVM source bc1a904ec1ad89454ee6577d66cde1268b8f6bc8",
-                "Apache TVM FFI submodule 3c35034fd1026011736e19a4e0e1ed0f22058c42",
-                "@mlc-ai/web-llm 0.2.84 gitHead 9e572d6ed95e248f29634996cd32cc8f3023d89d"
+                "binary-mlc-llm-libs merge 146ed9cd4b4062e967b017fd2291f7106b50599f",
+                "MLC-LLM source 44fd06d04f22c87820e205b0f2b2e5e6a1f6ca85",
+                "Apache TVM source e345029cedf0be76a087fcad9c89a97bed4f7204",
+                "Apache TVM TIRx FFI submodule 6628c464e3b824d09c9cf65ac0c6c24f973f6d56",
+                "@mlc-ai/web-llm 0.2.84 gitHead 9e572d6ed95e248f29634996cd32cc8f3023d89d",
+                "Apache TVM TIRx submodule 198a04573ea44e060c1087c8223cf082c64a6c03"
             ],
             "digests": [
-                "sha256:932ad158daa0d6814a50c5fb6aa85f88c3d3892a58a0dc20d47ff0b9e6e0b255",
-                "sha256:2438f2a6b58372e12ca0aa949443a49ca7b6060ad3e7971aed0d56b49a35195f",
-                "sha256:7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb",
-                "sha256:8161aaa4b40bccf19fcedb2f2e8c221eb9efb72d2198681f1958c9c1e05a682f:5566554:web-llm-models/v0_2_84/base/Qwen3-1.7B-q4f16_1_cs1k-webgpu.wasm",
-                "sha256:a986a53c92579714eb7ec36856004f5fb75272c9f69091f14eb6b2086eea4440:5847049:web-llm-models/v0_2_84/base/Qwen3-4B-q4f16_1_cs1k-webgpu.wasm",
-                "sha256:bf6384d9b30d6ae1eca567c65a893284ae2228fd57a432c3b795d06a803d9b72:5855792:web-llm-models/v0_2_84/base/Qwen3-8B-q4f16_1_cs1k-webgpu.wasm",
                 "npm-integrity:sha512-hrOWzK4/nGNmgoRKT8pgVmZZ2oEPpbblIWQOwpqNyvK2dysHw3KVB1gNJOuRcQfKOPhucEhX1NJzXzgMDnwSCQ==:@mlc-ai/web-llm@0.2.84",
                 "sha256:832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e:@Qwen3-1.7B-4B-8B-immutable-LICENSE",
-                "sha256:3a7dfb37bb96ce6f5a1cc0d6d4c8da3b8a35e6ec4692647ba0a37f6155c7e694:public/legal/MLC-LLM-NOTICE.txt",
-                "sha256:bc894d48edd3a82ee4160cfb2d1bb9f79bda5ac66226930956eec779e954b315:public/legal/Apache-TVM/LICENSE",
-                "sha256:967cd2fb97712c43271e2b1c4f636c4d8823898869f0f76f65bf8a3232584f0f:public/legal/Apache-TVM/NOTICE",
-                "sha256:1f42da84f75e9d75c9383c91ea0ec07546dd8297f6784ef8e12bf2cc5a93cb6d:public/legal/Apache-TVM/licenses/LICENSE.blockingconcurrentqueue.txt",
-                "sha256:1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d:public/legal/Apache-TVM/licenses/LICENSE.builtin_fp16.txt",
-                "sha256:136e34768622e5969e6eaee1f1b254944e67e07a27b1cc24d45f7ce305e4fd9d:public/legal/Apache-TVM/licenses/LICENSE.concurrentqueue.txt",
-                "sha256:5c0ae811de8913e3285da38f4652d8bf0b1ce89f1eb28efdc0f0e94e3f564d07:public/legal/Apache-TVM/licenses/LICENSE.cutlass.txt",
-                "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30:public/legal/Apache-TVM/licenses/LICENSE.cutlass_fpA_intB_gemm.txt",
-                "sha256:9e45e856bedccee9f67254082ca11851d954de2fed7448c4bed19ad9aab99a91:public/legal/Apache-TVM/licenses/LICENSE.l2_cache_flush.txt",
-                "sha256:8c9ccb96c065e706135b6cbad279b721da6156e51f3a5f27c6b3329af9416d73:public/legal/Apache-TVM/licenses/LICENSE.libflash_attn.txt",
-                "sha256:88d9b4eb60579c191ec391ca04c16130572d7eedc4a86daa58bf28c6e14c9bcd:public/legal/Apache-TVM/licenses/LICENSE.rang.txt",
-                "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30:public/legal/Apache-TVM/licenses/LICENSE.tensorrt_llm.txt",
-                "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:public/legal/Apache-TVM/licenses/LICENSE.vllm.txt",
-                "sha256:bb354d8b94589ad8817f2dff029d39a1133d217407f73679d0b0311c980e511f:public/legal/Apache-TVM/3rdparty/tvm-ffi/LICENSE",
-                "sha256:5181189219b74687e08884d813b8f98c874d0e4ba84eb7afc4bb350d22502c24:public/legal/Apache-TVM/3rdparty/tvm-ffi/NOTICE",
-                "sha256:3e8f6bc39276a586d60c8c5aaece2ff989262181cf2b3d2a128db58f97a9300c:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt",
-                "sha256:769d83cbbb817ba4e25d1f166238426aa45519981eca116011e4113087c7b7b3:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.libbacktrace.txt",
-                "sha256:a8a2c6b67cf8a597ffaa5c82380a6bd1b82629c0417e00673d8013d662eb500a:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.pytorch.txt",
-                "sha256:c2cc7bf0caec7652c2b460a8a470bea1677f241e4ab8e431df34cf17f5a9fec0:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/NOTICE.pytorch.txt",
                 "sha256:d412ab9d5ac17e6931705aac01e5a0d323da5acd2e89a2c19aa8fc05becc59ad:@mlc-ai/web-llm-0.2.84-LICENSE",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
                 "sha256:b9adf0d5d38c111db457713cb7d8684ec9a255c848f75671fed5dd632805f431:public/legal/Qwen-NOTICE.txt",
-                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:e1855008bd1805f65df7fcda958163d44e913c8c6cffd96e05042987e1773afd:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:a8c02294f8d3c23e7ff2a9174d3a575e7809c7463870b6e23d2d6e6f1dac7991",
+                "sha256:363f4dbb789f0518e52295d1f4685d2d61feae4ac4e2a6a95621e4af29450bd7:6589747:web-llm-models/v0_2_87/base/Qwen3-1.7B-q4f16_1_cs1k-webgpu.wasm",
+                "sha256:2e136079f88bb3aea4289642db64fef8d77a0cb4c503ca6ca90a4030e0b75756",
+                "sha256:2afc399ed01d8ae641beac0528567c8ce22e8c9c7203ba0827c44e13c62be99c:6874869:web-llm-models/v0_2_87/base/Qwen3-4B-q4f16_1_cs1k-webgpu.wasm",
+                "sha256:5121d9a5818d4693e0b0f2dc55f2982ece120b875c955203e4650a9269ad6d2a",
+                "sha256:3a8d51dc4315f056b6cffc1b8828b1a5e13d29fe096da3bf19096ac637985b81:6875765:web-llm-models/v0_2_87/base/Qwen3-8B-q4f16_1_cs1k-webgpu.wasm",
+                "sha256:967cd2fb97712c43271e2b1c4f636c4d8823898869f0f76f65bf8a3232584f0f:public/legal/Apache-TVM/NOTICE",
+                "sha256:d09045045216257b05efe68713a50384fb94eb8f31adb724bcdbea2c33a5fef2:public/legal/Apache-TVM/LICENSE",
+                "sha256:3a7dfb37bb96ce6f5a1cc0d6d4c8da3b8a35e6ec4692647ba0a37f6155c7e694:public/legal/MLC-LLM-NOTICE.txt",
+                "sha256:28ae7e5d6c9f2e86cce69167c1614c90a6eab6d94d44c534c4a7e53ece2f8025:public/legal/Apache-TVM/3rdparty/tvm-tirx/LICENSE",
+                "sha256:b6b8e7ee8be210e593b5f5f7af4adf33004f2206b72833e98ea8ce639ec4c9ba:public/legal/Apache-TVM/3rdparty/tvm-tirx/NOTICE",
+                "sha256:5181189219b74687e08884d813b8f98c874d0e4ba84eb7afc4bb350d22502c24:public/legal/Apache-TVM/3rdparty/tvm-ffi/NOTICE",
+                "sha256:bb354d8b94589ad8817f2dff029d39a1133d217407f73679d0b0311c980e511f:public/legal/Apache-TVM/3rdparty/tvm-ffi/LICENSE",
+                "sha256:5c0ae811de8913e3285da38f4652d8bf0b1ce89f1eb28efdc0f0e94e3f564d07:public/legal/Apache-TVM/licenses/LICENSE.cutlass.txt",
+                "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30:public/legal/Apache-TVM/licenses/LICENSE.cutlass_fpA_intB_gemm.txt",
+                "sha256:8c9ccb96c065e706135b6cbad279b721da6156e51f3a5f27c6b3329af9416d73:public/legal/Apache-TVM/licenses/LICENSE.libflash_attn.txt",
+                "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30:public/legal/Apache-TVM/licenses/LICENSE.tensorrt_llm.txt",
+                "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:public/legal/Apache-TVM/licenses/LICENSE.vllm.txt",
+                "sha256:1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d:public/legal/Apache-TVM/3rdparty/tvm-tirx/licenses/LICENSE.builtin_fp16.txt",
+                "sha256:3e8f6bc39276a586d60c8c5aaece2ff989262181cf2b3d2a128db58f97a9300c:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt",
+                "sha256:769d83cbbb817ba4e25d1f166238426aa45519981eca116011e4113087c7b7b3:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.libbacktrace.txt",
+                "sha256:a8a2c6b67cf8a597ffaa5c82380a6bd1b82629c0417e00673d8013d662eb500a:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.pytorch.txt",
+                "sha256:c2cc7bf0caec7652c2b460a8a470bea1677f241e4ab8e431df34cf17f5a9fec0:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/NOTICE.pytorch.txt"
             ],
             "licenses": [
                 "admission-evidence:Apache-2.0-Qwen3-1.7B-4B-8B-licensed-candidates-with-unproven-conversion-mapping",
@@ -601,12 +614,13 @@
             ],
             "evidence": [
                 "The manifest pins each model revision and verifies the exact downloaded artifact bytes by SHA-256 before storage or inference.",
-                "The binary-mlc-llm-libs merge contains the admitted WASM bytes; its merged PR 165 attests exact MLC-LLM and Apache TVM source revisions, and TVM pins tvm-ffi 3c35034fd1026011736e19a4e0e1ed0f22058c42. MLC-LLM's notice, TVM's root LICENSE and NOTICE, and tvm-ffi's root and referenced legal files are shipped byte-for-byte.",
+                "The binary-mlc-llm-libs merge contains the admitted WASM bytes; merged PR168 names exact MLC-LLM and TVM sources. TVM pins TIRx198a04573ea44e060c1087c8223cf082c64a6c03, which pins FFI6628c464e3b824d09c9cf65ac0c6c24f973f6d56. Their exact notices, root licenses and referenced legal files are shipped byte-for-byte; the public FFI attribution namespace does not mirror the nested upstream gitlink.",
                 "Each MLC conversion card attributes its conversion to a Qwen model family; immutable Qwen3 1.7B, 4B, and 8B candidates publish byte-identical Apache-2.0 licenses and support the accepted admission decision.",
-                "The exact conversion cards do not map to base-checkpoint revisions, and PR 165 does not record exact emsdk, resolved configuration, or build-log inputs. Binary byte identity and the named MLC-LLM/TVM source revisions are proven; the exact Qwen source/license chain, hermetic reproduction, and complete build-input provenance are not."
+                "The exact conversion cards do not map to base-checkpoint revisions, and PR168 does not record exact emsdk, resolved configuration, or build-log inputs. MLC supports a TVM_SOURCE_DIR override; its default TVM gitlink is not the publisher-named checkout. Binary byte identity, named MLC-LLM/TVM sources and nested TIRx/FFI source pins are proven; exact Qwen source/license chain, hermetic reproduction, and complete build-input provenance are not.",
+                "The retained @mlc-ai/web-llm0.2.84 source, npm integrity and LICENSE digest are solely an immutable Apache-2.0 grant reference for this admitted legal text, not the current SDK executable or its source identity. Current SDK0.2.88 dependency identity and license disclosure belong to the javascript-dependencies surface and dependency report."
             ],
             "obligations": [
-                "Carry the Apache-2.0 text, Qwen attribution, exact MLC-LLM notice, exact TVM root LICENSE and NOTICE, and exact tvm-ffi root and referenced license/notice trees on the public web and desktop legal surfaces.",
+                "Carry the Apache-2.0 text, Qwen attribution, exact MLC-LLM notice, and exact TVM, TIRx and FFI root licenses/notices and referenced legal files on the public web and desktop legal surfaces.",
                 "Preserve the pinned revisions, artifact digests, byte verification, and fail-closed behavior when WebGPU is unavailable.",
                 "Do not represent the licensed Qwen candidates or incomplete upstream build record as an exact Qwen source/license chain, exact conversion inputs, or a hermetic reproduction recipe.",
                 "Reassess admission if conflicting licensing or provenance evidence appears for an exact conversion artifact."
@@ -797,7 +811,7 @@
                 "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
                 "sha256:f09ba74cf3d2213f7d69c8370aaeedf6414c57d7c00578c8a2ca94261a5c8ac5:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
-                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:e1855008bd1805f65df7fcda958163d44e913c8c6cffd96e05042987e1773afd:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
                 "sha256:f764dafcb6a2fc5f328d023726c09d17aa5e39ca48bc5740f08aa10d4d01d496:src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
                 "sha256:93020ca3edba6d1712fa3d68779fc0e1ade24b9c12cd9919e24c780ee43386f7:src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts",
@@ -1070,7 +1084,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:d5943b73cb367ddf580983190df0e0c073383c75ebce9611aefb3340c1a380b7"
+                "sha256:4ce2f2f1a4fc0959b7f9fce2a16cf95e6c75af942e0b691407c73270720ab968"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1124,7 +1138,7 @@
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
                 "sha256:22f658d32f65c7c535005368d589dc056c0f8417f3f15190d151233de60957a0:public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
-                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:e1855008bd1805f65df7fcda958163d44e913c8c6cffd96e05042987e1773afd:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "MIT"
@@ -1209,14 +1223,14 @@
                 "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
             ],
             "digests": [
-                "tracked-set-sha256:bca1b5c169913723a3c6ccd54b7e592822bf2836b9adb391e8d9be4bda3cb95a:grand-boule-native-rust",
+                "tracked-set-sha256:42b498c3466fc5f939972bf046c39bbe147c45efeaf1fded4378ce7268a6ff6d:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:20bcf828794365a588f32d7e13808657502a13d0e8427a6543cf78c2cec789ce:grand-boule-discovery-catalog",
                 "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
                 "tracked-set-sha256:eaa809018aea8e96f598f3b55ad0711e475c6a79f06c87491af507ad88d346bd:grand-boule-live-runtime",
-                "tracked-set-sha256:ce12132e241739ab5ce1efe2b8093e28f2126e76ae68679267d335afb31cc0d4:grand-boule-project-state",
+                "tracked-set-sha256:16a3004282547e2c00be2b45e3a21b9b78d53fd615790560b7ffbd4f3eb0a7c7:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:fdada292f3fbbf2b5cdd14ce381ac79cc710cebe78e05024e67861cfca822381:grand-boule-release-proof"
+                "tracked-set-sha256:0dc1081cc976553c60bdfca0e2a17ff54d44e5f830825d9c0f0c0d66819ee95e:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1293,34 +1307,51 @@
                 "public/legal/RELINKING.md",
                 "public/legal/SOURCES.json",
                 "public/legal/THIRD-PARTY-NOTICES.md",
-                "public/legal/faustwasm-COPYING.txt"
+                "public/legal/faustwasm-COPYING.txt",
+                "public/legal/faustwasm-0.20.2-corresponding-source.tar.gz",
+                "public/legal/FAUST-CURRENT-SOUND-NOTICE.txt",
+                "src/helpers/faustCurrentSound.lib",
+                "src/helpers/faustCurrentSound.sources.json"
             ],
             "sources": [
                 "https://github.com/grame-cncm/faustwasm",
                 "https://github.com/grame-cncm/faust",
-                "public/legal/SOURCES.json"
+                "public/legal/SOURCES.json",
+                "https://github.com/grame-cncm/faust/archive/21884a6d63713ff99dca2fef95c33aecaedfe643.tar.gz",
+                "https://github.com/grame-cncm/faustlibraries",
+                "https://github.com/grame-cncm/faustlibraries/archive/42fab480c778df7bad5c6b620ca4fd005b2bfe9b.tar.gz",
+                "https://github.com/grame-cncm/faustlibraries/tree/36661b5efd702e0e21b3ad49864e10201aecc602"
             ],
             "revisions": [
-                "@grame/faustwasm@0.18.5",
-                "ba611eaeefcb41f935cab1481ea9580b470ae8eb",
-                "libfaust 2.89.2 at ada86ab32fe875f5d1d028c3a99f17e3a83e0ad8"
+                "@grame/faustwasm@0.20.2",
+                "registry gitHead 4403c779a3e92af4e4f44b5abda98b3ac5fa57d9 unavailable upstream; shipped wrapper source capsule reconstructs entrypoints and build script",
+                "libfaust 2.90.19 at 21884a6d63713ff99dca2fef95c33aecaedfe643; bundled libraries 42fab480c778df7bad5c6b620ca4fd005b2bfe9b",
+                "stock device sound adaptations from faustlibraries 36661b5efd702e0e21b3ad49864e10201aecc602"
             ],
             "digests": [
-                "pnpm-integrity:sha512-mJhyTMv1b6V+ICm/XKcNgOFtxJVX4nAIrTDLqJdB5PW6xTIMeJtNHkUBIg+RlWMrbs0QhGYYBVsq22Y6e87v3w==",
-                "public/legal/SOURCES.json"
+                "pnpm-integrity:sha512-Xtr5w73+3SVfXDA7HMATxQJy5wjfDRH10b6nHv1iximJQz4vnOh9D1f5z+l2kFKmuo5ZzkIOx9y5WI2/vtEI7w==",
+                "public/legal/SOURCES.json",
+                "sha256:7a6f0939e8905e40b7733f8e17cf5c806f3c89fb6c5291985dcc6deb883b3682:public/legal/faustwasm-0.20.2-corresponding-source.tar.gz",
+                "sha256:44b07e51e4984fce1dee5dacdc895d159ca36adbcaf3814ee702d2ce5a614ffe:public/legal/FAUST-CURRENT-SOUND-NOTICE.txt",
+                "sha256:982731adfb34ff859560ec6874edd4fdd3a7f0a11b13b5cd8f7ccd5c5193221b:src/helpers/faustCurrentSound.lib",
+                "sha256:209e3455a2b6474c1a5a5322d79c9aa6a83b85021f52874ab8e12e876b7b91e3:src/helpers/faustCurrentSound.sources.json"
             ],
             "licenses": [
-                "LGPL-2.1-or-later"
+                "LGPL-2.1-or-later",
+                "STK-4.3:adapted-stock-device-sections"
             ],
             "productSurfaces": [
                 "browser Faust compiler",
                 "desktop Faust compiler"
             ],
             "evidence": [
-                "Shipped compiler bytes match the pinned package and embedded compiler source version."
+                "Shipped compiler bytes match the pinned package; reconstructed preferred wrapper sources reproduce its released main wrapper and worklets, and embedded compiler/library identities match the recorded sources.",
+                "Corresponding-source capsule reconstructs the unavailable wrapper entrypoints and build script; released main wrapper and three worklets were reproduced byte-for-byte, while compiler WASM reproducibility is not claimed.",
+                "The adapted stock-device source retains the existing control-to-sound laws and source-specific license notices."
             ],
             "obligations": [
-                "Keep exact source, LGPL text, attribution, modification status, and relink instructions beside every build."
+                "Keep exact source, LGPL text, attribution, modification status, and relink instructions beside every build.",
+                "Preserve the stock-device adaptation source and its GRAME and STK notices alongside distributions."
             ]
         },
         {
@@ -1343,17 +1374,17 @@
                 "crates/scoring/"
             ],
             "revisions": [
-                "rust nightly-2026-04-14",
+                "rust 1.99.1",
                 "wasm-pack 0.15.1",
                 "wasm-bindgen 0.2.130",
                 "wasm-opt bundled-by-wasm-pack@0.15.1",
-                "daw-dsp sha256:dec050feae2a21549cf21e877cb11f0ccf9ec156d40c539b08dabdcfab66b524",
-                "daw-wasm-decoder sha256:955945d152e1d77ca32d1c40e2863e781c983ec411670ad9f402fb553e4ccc9a",
-                "proof-chamber sha256:585883d0b78a8689d8bdaf4f38e566ddefc235d84dfa348838fb12c87e3c826a",
-                "scoring sha256:e8b5a91f9f4409062b70b5431911a970f3d4f8e20ab79bbd57012a5710fba6b6"
+                "daw-dsp sha256:196b1e386d9e94200056eb00c40e079974dde2382d995e789448c1ef97a6bf4d",
+                "daw-wasm-decoder sha256:e6fb1f3b2796b0dd2b66fbffc9ce1e14769859e07dd1fd145ea2fbb23cea83b1",
+                "proof-chamber sha256:929525974036b4805e38589140a67bbb067dc4ea0dbcbb1cb72c0931f3e905de",
+                "scoring sha256:ede94eb496e4a8249390a79d61bc4bea0c8bacafbd81247c69c0ba57d7c35a0b"
             ],
             "digests": [
-                "sha256:a04f1c3e6d0389b60ee1b3c3ceafc1374587c3ead2deb0586e2fccd2311ccdcb:public/wasm/manifest.json"
+                "sha256:5adf6b82644e9c7f2d735401ef6c81f62c6aeab94693bc3d71940021e1f99618:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1824,7 +1855,7 @@
                 "sha256:4e3ab01320777977abfccaedaf0166a2b1ea49e8adf12831996c570b7461bbe2:release/upstream-proofs/audio-export-codecs/BUILD.md",
                 "sha256:95c070480aa027041f59caa2b7b4b989f8c0fbf85195cfd681716de5c2ce7a96:release/upstream-proofs/audio-export-codecs/reproduction-commands.json",
                 "sha256:dff24941db687b3a453063d7647cf4ea67c78a4c651eaceba481615ccb0c1133:release/upstream-proofs/audio-export-codecs/provenance.json",
-                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:e1855008bd1805f65df7fcda958163d44e913c8c6cffd96e05042987e1773afd:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c4bd7e21a0acd609df3f850f98a6eb006626a41cea907a0af0232b69e8ee3d6c:release/upstream-proofs/audio-export-codecs/vorbis-primer-page.patch",
                 "sha256:49ddc53f865c69d4ec9e6cb4d4594afe22ffc805a5920d828d8009cc68c09789:release/upstream-proofs/audio-export-codecs/vorbis-short-leading-context.patch"
             ],
@@ -1859,19 +1890,19 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "3911c478b8388f4e76d0be86f8b0771b7e29864e72bd6af6d3b9b48c80453cb6"
+            "sha256": "ad4b9b7d3c5c959be946b7127fed7c03a1089930f2c44f1cd743e41ce05bf144"
         },
         {
             "path": "server/package.json",
-            "sha256": "3f262992a4157509c6fe9030a5263cabc4c27961eb83fb872b6a68b71bd32964"
+            "sha256": "fc658dc1a5a1074119cd022710a7b5f3ac43a093bc2b32966ee47c2521c274f0"
         },
         {
             "path": "server/package-lock.json",
-            "sha256": "d5943b73cb367ddf580983190df0e0c073383c75ebce9611aefb3340c1a380b7"
+            "sha256": "4ce2f2f1a4fc0959b7f9fce2a16cf95e6c75af942e0b691407c73270720ab968"
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "bc6999447c2fda05dce2f9510e3412eba1c2d82f66234746c5dea40dfe7c389a"
+            "sha256": "97444a345f9c78a3f15e942ada60dfaffe7612e7f21ca8a95e067f1ff6f02395"
         },
         {
             "path": "Cargo.toml",
@@ -1879,15 +1910,15 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "9310e8f1debd75adf4b82f062948457313b89b0a18b02763ba531707344c4010"
+            "sha256": "87cdca75040bd33b6807332dd8bb82dbf525e5396ed4aed895015b1703f0ef60"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
-            "sha256": "1a12000d7702bea0375d0991a5381c457be00c621fffac7ebc2bb29ed91eec08"
+            "sha256": "cd92659b7956f600bd9eb90f51e59766e0d5b122869f5181e5115cf608dc3e21"
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "a04f1c3e6d0389b60ee1b3c3ceafc1374587c3ead2deb0586e2fccd2311ccdcb"
+            "sha256": "5adf6b82644e9c7f2d735401ef6c81f62c6aeab94693bc3d71940021e1f99618"
         }
     ],
     "externalReferences": [
@@ -2071,17 +2102,7 @@
         {
             "surface": "faust-runtime",
             "file": "public/legal/SOURCES.json",
-            "value": "https://github.com/grame-cncm/faust/archive/ada86ab32fe875f5d1d028c3a99f17e3a83e0ad8.tar.gz"
-        },
-        {
-            "surface": "faust-runtime",
-            "file": "public/legal/SOURCES.json",
             "value": "https://github.com/grame-cncm/faustwasm"
-        },
-        {
-            "surface": "faust-runtime",
-            "file": "public/legal/SOURCES.json",
-            "value": "https://github.com/grame-cncm/faustwasm/archive/ba611eaeefcb41f935cab1481ea9580b470ae8eb.tar.gz"
         },
         {
             "surface": "kokoro-model",
@@ -2396,11 +2417,6 @@
         },
         {
             "surface": "project-source",
-            "file": "scripts/trustedGithubWriteBootstrap.ts",
-            "value": "https://github.com/jcosta33/sourdaw.git"
-        },
-        {
-            "surface": "project-source",
             "file": "scripts/run-gitleaks-history-scan.sh",
             "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
             "templateSha256": "cd2621ab9d84245475d6cb77f9d11a1663552fbcc42a5873573cab2e7daafee4"
@@ -2532,6 +2548,51 @@
             "surface": "whisper-model",
             "file": "src/modules/AiRuntime/repositories/voiceInput/whisperModelArtifact.ts",
             "value": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en.bin"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faust/archive/21884a6d63713ff99dca2fef95c33aecaedfe643.tar.gz"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faustlibraries"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/grame-cncm/faustlibraries/archive/42fab480c778df7bad5c6b620ca4fd005b2bfe9b.tar.gz"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/grame-cncm/faustlibraries"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "src/helpers/faustCurrentSound.sources.json",
+            "value": "https://github.com/grame-cncm/faustlibraries/blob/36661b5efd702e0e21b3ad49864e10201aecc602/analyzers.lib"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "src/helpers/faustCurrentSound.sources.json",
+            "value": "https://github.com/grame-cncm/faustlibraries/blob/36661b5efd702e0e21b3ad49864e10201aecc602/filters.lib"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "src/helpers/faustCurrentSound.sources.json",
+            "value": "https://github.com/grame-cncm/faustlibraries/blob/36661b5efd702e0e21b3ad49864e10201aecc602/oscillators.lib"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "src/helpers/faustCurrentSound.sources.json",
+            "value": "https://github.com/grame-cncm/faustlibraries/blob/36661b5efd702e0e21b3ad49864e10201aecc602/reverbs.lib"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/trustedGithubWriteBootstrap.ts",
+            "value": "https://github.com/jcosta33/sourdaw.git"
         }
     ],
     "marks": [

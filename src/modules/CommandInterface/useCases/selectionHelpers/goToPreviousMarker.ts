@@ -10,6 +10,6 @@ export function goToPreviousMarker(): void {
     const sorted = [...markers].sort((alpha, b) => b.beat - alpha.beat);
     const prev = sorted.find((message) => message.beat < playhead);
     if (prev) {
-        seekPlayhead(prev.beat);
+        void seekPlayhead(prev.beat);
     }
 }

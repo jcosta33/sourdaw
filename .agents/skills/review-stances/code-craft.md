@@ -45,6 +45,13 @@ findings without a concrete break ("I'd prefer if") are discarded.
    `scripts/oxlintCraft/plugin.mjs` with `create() { return {}; }` and run
    `pnpm guard --profile focused -- pnpm test:run scripts/oxlintCraft/__tests__/plugin.spec.ts`. That
    rule's `invalid` rows must fail; remaining green means the spec no longer observes the rule.
+   Apply the same paired-syntax probe to source censuses: a lexical `devices:` or
+   `parameterValues:` match after `?` may be a conditional separator following a read, while a property
+   inside the conditional is still a counted write. In
+   `src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts`, require a read-only
+   ternary negative, real property and updater-writer positives, and a full closure assertion. Remove
+   the conditional-colon exclusion: the negative must fail. Bypass the real-property detector: the
+   positive must fail. This guards the false-positive escape introduced by #2839's lexical census.
 7. **Manual memoization in app code.** React Compiler owns memoization. Input: an added `useMemo`,
    `useCallback`, `React.memo` or `forwardRef` outside spec, mock and `__tests__` files. `useMemo`,
    `useCallback` and `React.memo` must turn the `Lint` job red through `sourdaw/no-manual-memoization`;

@@ -727,8 +727,8 @@ type User = { id: number; name: string };
 export const mapUserFromApiToModel = (api: ApiUser): User => ({ id: api.user_id, name: api.full_name });
 
 // Observer pattern (domain events — string keys, unwrapped payload)
-eventBus.on('track.added', (payload) => {
-    auditUseCase.recordTrackAdded(payload);
+eventBus.on('track.removed', (payload) => {
+    auditUseCase.recordTrackRemoved(payload);
 });
 ```
 

@@ -9,6 +9,7 @@ use super::humanize::NoteHumanization;
 use super::mic::MAX_MIC_POSITIONS;
 use super::types::*;
 use super::zone::SamplePool;
+use crate::primitives::db_to_linear;
 
 // ---------------------------------------------------------------------------
 // Cubic Hermite interpolation (default realtime quality)
@@ -23,12 +24,6 @@ fn cubic_hermite(y0: f32, y1: f32, y2: f32, y3: f32, t: f32) -> f32 {
     let c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
     let c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
     ((c3 * t + c2) * t + c1) * t + c0
-}
-
-/// Convert a decibel value to a linear amplitude multiplier.
-#[inline]
-fn db_to_linear(db: f32) -> f32 {
-    10f32.powf(db / 20.0)
 }
 
 /// Source frames consumed per output frame: the sample's decoded rate over the

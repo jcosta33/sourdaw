@@ -1,4 +1,5 @@
 import("stdfaust.lib");
+cs = library("sourdaw-current-sound.lib");
 
 // F1 — insert-style delay needs its own dry/wet blend, and there is no
 // separate dry bus mixing one back in upstream of this node.
@@ -24,7 +25,7 @@ feedback = hslider("feedback", 0.5, 0, 0.95, 0.01);
 // repeat is darker than the last — the tape head-and-electronics roll-off a
 // tone control on this device is expected to model.
 tone = hslider("tone", 4000, 500, 12000, 100);
-wet = (+ : fi.lowpass(1, tone) : de.fdelay(ma.SR * maxdel, delay * ma.SR)) ~ *(feedback);
+wet = (+ : cs.lowpass(1, tone) : de.fdelay(ma.SR * maxdel, delay * ma.SR)) ~ *(feedback);
 
 // Stereo (#3730): the mono dry/wet blend — including its delay line, tone
 // filter and feedback loop — is duplicated per channel, so a stereo insert

@@ -53,10 +53,11 @@ import { fermenterStore, getFermenterState, loadFermenterPatch } from '../../../
 import { applyFermenterRuntimeParam } from '../../../useCases/applyFermenterRuntimeParam';
 import { setFermenterDependencies } from '../../../useCases/fermenterDependencies';
 import { setFermenterParamWithAudio } from '../../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
+import { getFermenterHandlers } from '../../../useCases/getFermenterHandlers';
 import { selectFermenterFilterChoice } from '../../../useCases/selectFermenterFilterChoice';
 import { FermenterPanel } from '../FermenterPanel';
 
-const audio = vi.hoisted(() => ({ updateDeviceParam: vi.fn() }));
+const audio = vi.hoisted(() => ({ updateDeviceParam: vi.fn(), updateDevicePatch: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     updateDeviceParam: audio.updateDeviceParam,
@@ -182,6 +183,7 @@ describe('Fermenter Filter selection through Command', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(getFermenterHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort({
@@ -215,11 +217,13 @@ describe('Fermenter Filter selection through Command', () => {
             clampDeviceParameterValue,
             persistDeviceParam,
             updateDeviceParam: audio.updateDeviceParam,
+            updateDevicePatch: audio.updateDevicePatch,
             resolveEligibleDeviceWriteTarget,
             getAllTracks: () => trackStore.value?.tracks ?? [],
         });
         flushAutomergeStorageWrites();
         audio.updateDeviceParam.mockClear();
+        audio.updateDevicePatch.mockClear();
     });
 
     afterEach(() => {
@@ -660,7 +664,11 @@ describe('Fermenter Filter selection through Command', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Square' }));
         await waitFor(() => expect(rawValues().oscWaveform).toBe(2));
         expect(depth()).toBe(0);
-        expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK_ID, DEVICE_ID, 'osc_waveform', 2);
+        expect(audio.updateDevicePatch).toHaveBeenLastCalledWith(
+            TRACK_ID,
+            DEVICE_ID,
+            expect.objectContaining({ osc_waveform: 2 })
+        );
         fireEvent.click(screen.getAllByRole('tab', { name: /^Filter$/ })[0]!);
         await chooseModel(1, 1);
         act(() => applyFermenterRuntimeParam({ deviceId: DEVICE_ID, paramId: 'filterModel', value: 4 }));
@@ -759,6 +767,7 @@ describe('Fermenter Filter selection through Command', () => {
         act(() => replaceValues({ ...rawValues(), filterModel: 4 }));
         flushAutomergeStorageWrites();
         audio.updateDeviceParam.mockClear();
+        audio.updateDevicePatch.mockClear();
         await act(async () => {
             if (leg === 'undo') {
                 await undo();

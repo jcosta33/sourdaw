@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /**
  * Guard: no spec mocks a contract barrel while omitting an export its own module
  * graph imports from that barrel.
@@ -58,9 +60,16 @@ import {
     type ExemptionRow,
     type FileFacts,
 } from '../checkBarrelMockCoverage';
+import { recordVitestProgress } from '../vitestProgressDiagnostics';
 
 const repoRoot = join(import.meta.dirname, '../..');
 const sourceRoot = join(repoRoot, 'src');
+
+it('runs the scanner checks in Node without DOM globals', () => {
+    expect(process.versions.node).toBeTruthy();
+    expect(typeof window).toBe('undefined');
+    expect(typeof document).toBe('undefined');
+});
 
 function buildFixture(files: Record<string, string>): {
     specPaths: string[];
@@ -930,8 +939,63 @@ describe('checkBarrelMockCoverage — the real tree', () => {
     let everyKind: RealTreeScan;
 
     beforeAll(() => {
-        gated = scanRepository();
-        everyKind = scanRepository(allBarrelKinds);
+        const hookStart = process.hrtime.bigint();
+        const hookCpu = process.cpuUsage();
+        const configuredWorkers = process.env.VITEST_MAX_WORKERS;
+        const workerLimit =
+            configuredWorkers && /^[1-9]\d{0,3}$/.test(configuredWorkers) ? Number(configuredWorkers) : null;
+        let sequence = 0;
+
+        function observeScan(invocation: 'gated' | 'all', kinds?: ReadonlyArray<string>): RealTreeScan {
+            let phaseStart = process.hrtime.bigint();
+            let phaseCpu = process.cpuUsage();
+            function record(stage: string, result?: RealTreeScan): void {
+                const now = process.hrtime.bigint();
+                const cpu = process.cpuUsage();
+                if (result === undefined) {
+                    recordVitestProgress('scan', stage);
+                }
+                const row = {
+                    event: 'barrel-scan-hook',
+                    invocation,
+                    stage,
+                    sequence: ++sequence,
+                    pid: process.pid,
+                    monotonicNs: now.toString(),
+                    phaseWallMs: Number(now - phaseStart) / 1e6,
+                    totalWallMs: Number(now - hookStart) / 1e6,
+                    phaseCpuUs: { user: cpu.user - phaseCpu.user, system: cpu.system - phaseCpu.system },
+                    totalCpuUs: { user: cpu.user - hookCpu.user, system: cpu.system - hookCpu.system },
+                    maxRssKiB: process.resourceUsage().maxRSS,
+                    node: process.version,
+                    platform: process.platform,
+                    arch: process.arch,
+                    workerLimit,
+                };
+                if (result !== undefined) {
+                    Object.assign(row, {
+                        specCount: result.specCount,
+                        analyzedSpecCount: result.analyzedSpecCount,
+                        parsedMockCount: result.parsedMockCount,
+                        resolvedMockCount: result.resolvedMockCount,
+                        graphNodeCount: result.graphNodeCount,
+                        matchedBarrelKindCounts: result.matchedBarrelKindCounts,
+                        violationCount: result.violations.length,
+                        extractionFailureCount: result.extractionFailures.length,
+                        staleExemptionCount: result.staleExemptions.length,
+                    });
+                }
+                console.log(JSON.stringify(row));
+                phaseStart = process.hrtime.bigint();
+                phaseCpu = process.cpuUsage();
+            }
+            const result = scanRepository(kinds, undefined, (stage) => record(stage));
+            record('returned', result);
+            return result;
+        }
+
+        gated = observeScan('gated');
+        everyKind = observeScan('all', allBarrelKinds);
     }, 120_000);
 
     // One claim per gated kind, named for that kind, reading only that kind's

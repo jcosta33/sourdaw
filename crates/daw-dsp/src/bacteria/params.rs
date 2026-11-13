@@ -50,11 +50,6 @@ impl SmoothedParam {
     }
 }
 
-/// Convert dB to linear gain.
-pub fn db_to_linear(db: f32) -> f32 {
-    10.0_f32.powf(db / 20.0)
-}
-
 /// Convert linear gain to dB.
 pub fn linear_to_db(linear: f32) -> f32 {
     if linear <= 0.0 {

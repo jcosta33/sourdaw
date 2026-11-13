@@ -2102,6 +2102,41 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('merge-title:feat(delivery): retitled in UI (#42)');
     });
 
+    it.each([
+        ['fix(delivery): closes #999', '"closes #999"'],
+        ['fix(delivery): Fixes #1', '"Fixes #1"'],
+    ])(
+        'refuses the title %j, which would close an issue from the squash commit, before any remote write',
+        (title, phrase) => {
+            const closes = relationshipBody('Closes #2372');
+            const { port, calls, tracker } = fakePort({
+                primary: [pullRequest({ body: closes, title }), pullRequest({ body: closes, title })],
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+                `PR #42 title carries an issue-closing reference (${phrase})`
+            );
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(calls.some((call) => call.startsWith('merge-title:'))).toBe(false);
+            expect(calls.filter((call) => call.startsWith('receipt-authority:write'))).toHaveLength(0);
+        }
+    );
+
+    it('refuses to merge a title retitled with a closing reference before the final open snapshot', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes, title: 'fix(delivery): tighten the gate' }),
+                pullRequest({ body: closes, title: 'fix(delivery): closes #999' }),
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow('PR #42 title changed during delivery');
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.some((call) => call.startsWith('merge-title:'))).toBe(false);
+    });
+
     it('pins the squash commit message to the validated final body rather than letting GitHub read it live', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({

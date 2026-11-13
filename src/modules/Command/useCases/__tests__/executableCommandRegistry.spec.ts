@@ -21,8 +21,12 @@ import {
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
+import { getExecutableAppActionGroundingCatalog } from '../getExecutableAppActionGroundingCatalog';
 import { getExecutableAppActionGroundingRules } from '../getExecutableAppActionGroundingRules';
+import { getExecutableAppActionIntentCatalog } from '../getExecutableAppActionIntentCatalog';
 import { getExecutableAppActionToolSchemas } from '../getExecutableAppActionToolSchemas';
+import { getExecutableCommandRegistrations } from '../getExecutableCommandRegistrations';
+import { selectExecutableAppActionToolSchemasForPrompt } from '../selectExecutableAppActionToolSchemasForPrompt';
 
 type ExpectedCommandArgs = [string, string, Record<string, unknown>, string[], string, boolean];
 
@@ -1238,79 +1242,6 @@ const EXPECTED_COMMANDS = [
         ['layerId', 'startBeat', 'endBeat', 'blend', 'fadeInBeats', 'fadeOutBeats'],
         'bounded-reversible',
         false
-    ),
-    expectedCommand(
-        'automateSendRange',
-        'Lower an exact set of existing sends by a relative dB amount inside one named section.',
-        {
-            trackIds: {
-                type: 'array',
-                items: { type: 'string' },
-                minItems: 1,
-                uniqueItems: true,
-                description: 'Every exact existing source track named by the request',
-            },
-            busId: { type: 'string', description: 'Existing destination bus ID' },
-            sectionName: { type: 'string', description: 'Existing arrangement section name' },
-            reductionDb: {
-                type: 'number',
-                exclusiveMinimum: 0,
-                maximum: 60,
-                description: 'Positive number of decibels to lower the sends inside the section',
-            },
-        },
-        ['trackIds', 'busId', 'sectionName', 'reductionDb'],
-        'authority-sensitive',
-        true
-    ),
-    expectedCommand(
-        'automateTrackGainRange',
-        'Lift each named bus by a bounded relative dB amount as gain automation inside one named arrangement section.',
-        {
-            trackIds: {
-                type: 'array',
-                items: { type: 'string' },
-                minItems: 1,
-                uniqueItems: true,
-                description: 'The exact buses the request names',
-            },
-            sectionName: { type: 'string', description: 'Existing arrangement section name the request names' },
-            gainDb: {
-                type: 'number',
-                exclusiveMinimum: 0,
-                maximum: 6,
-                description: 'Positive number of decibels the request states to lift the gain inside the section',
-            },
-        },
-        ['trackIds', 'sectionName', 'gainDb'],
-        'authority-sensitive',
-        true
-    ),
-    expectedCommand(
-        'automateSendRanges',
-        'Ramp an exact set of sends to one bounded absolute dB level across the tail of exact arrangement sections.',
-        {
-            trackIds: {
-                type: 'array',
-                items: { type: 'string' },
-                minItems: 1,
-                uniqueItems: true,
-                description: 'Exact app-grounded source track IDs',
-            },
-            busId: { type: 'string', description: 'Earlier batch-local destination bus binding' },
-            sectionIds: {
-                type: 'array',
-                items: { type: 'string' },
-                minItems: 1,
-                uniqueItems: true,
-                description: 'Every exact app-grounded chorus section ID',
-            },
-            tailBars: { type: 'number', minimum: 1, maximum: 16 },
-            targetLevelDb: { type: 'number', minimum: -60, maximum: 0 },
-        },
-        ['trackIds', 'busId', 'sectionIds', 'tailBars', 'targetLevelDb'],
-        'authority-sensitive',
-        true
     ),
     expectedCommand(
         'automateParameterRange',
@@ -2806,58 +2737,34 @@ const EXPECTED_GROUNDING = [
         valueRules: [],
     },
     {
-        actionType: 'automateSendRange',
-        intentPhrases: ['lower every vocal send', 'lower vocal sends', 'lower send', 'automate send'],
-        targetRules: [
-            {
-                argument: 'trackIds',
-                capability: 'routable-source',
-                cardinality: 'many',
-                dependsOn: 'busId',
-                promptRole: 'source',
-            },
-            { argument: 'busId', capability: 'bus', promptRole: 'destination' },
-        ],
-        valueRules: [
-            { argument: 'sectionName', kind: 'section-reference' },
-            { argument: 'reductionDb', kind: 'number-if-present', requiredInPrompt: true },
-        ],
-    },
-    {
-        actionType: 'automateTrackGainRange',
-        intentPhrases: ['lift', 'gain lift'],
-        targetRules: [
-            {
-                argument: 'trackIds',
-                capability: 'routable-source',
-                cardinality: 'many',
-            },
-        ],
-        valueRules: [
-            { argument: 'sectionName', kind: 'section-reference' },
-            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true },
-        ],
-    },
-    {
-        actionType: 'automateSendRanges',
-        intentPhrases: ['automate them to', 'final four bars of every chorus'],
-        targetRules: [
-            {
-                argument: 'trackIds',
-                capability: 'routable-source',
-                cardinality: 'many',
-                dependsOn: 'busId',
-                promptRole: 'source',
-            },
-            { argument: 'busId', capability: 'bus', promptRole: 'destination' },
-        ],
-        valueRules: [],
-    },
-    {
         actionType: 'automateParameterRange',
-        intentPhrases: ['dip', 'duck', 'automate'],
+        intentPhrases: [
+            'dip',
+            'duck',
+            'automate',
+            'lift',
+            'gain lift',
+            'lower every vocal send',
+            'lower vocal sends',
+            'lower send',
+            'lower sends',
+            'automate send',
+        ],
         targetRules: [{ argument: 'trackId', capability: 'track', allowBatchLocal: false }],
-        valueRules: [],
+        valueRules: [
+            {
+                argument: 'valueDb',
+                kind: 'number-if-present',
+                mayOmitWhenUnmentioned: true,
+                levelForm: 'absolute-decibel',
+            },
+            {
+                argument: 'deltaDb',
+                kind: 'number-if-present',
+                mayOmitWhenUnmentioned: true,
+                levelForm: 'relative-decibel',
+            },
+        ],
     },
     {
         actionType: 'renderProjectSections',
@@ -3119,4 +3026,72 @@ describe('executable command registry', () => {
             }))
         );
     });
+});
+
+const RETIRED_RANGE_TOOLS = ['automateTrackGainRange', 'automateSendRange', 'automateSendRanges'];
+
+/** Every command the index lists for an intent, across all its pages. */
+function searchCommandIndex(intent: string): string[] {
+    const names: string[] = [];
+    let cursor: string | undefined;
+    do {
+        const page = getExecutableAppActionIntentCatalog({ intent, page: cursor === undefined ? {} : { cursor } });
+        names.push(...page.items.map((item) => item.name));
+        cursor = page.nextCursor ?? undefined;
+    } while (cursor !== undefined);
+    return names;
+}
+
+/**
+ * The legacy range tools stay registered for what was stored before they were retired, but no route a
+ * provider plans through offers them: hosted, general planning, Explain and decision resume read the
+ * tool schemas, WebLLM selects from them, grounding reads the intent vocabulary, and command-index
+ * search scores the intent catalog. Each route still offers the range tool that replaced them.
+ */
+describe('retired range tools', () => {
+    it('stay registered so stored commands naming them still execute', () => {
+        const registered = getExecutableCommandRegistrations().filter((registration) =>
+            RETIRED_RANGE_TOOLS.includes(registration.actionType)
+        );
+
+        expect(registered.map((registration) => [registration.actionType, registration.discoverability])).toEqual([
+            ['automateSendRange', 'hidden'],
+            ['automateTrackGainRange', 'hidden'],
+            ['automateSendRanges', 'hidden'],
+        ]);
+    });
+
+    it('are absent from the provider tool schemas', () => {
+        const names = getExecutableAppActionToolSchemas().map((schema) => schema.function.name);
+
+        expect(names).toEqual(expect.arrayContaining(['automateParameterRange', 'setTrackGain']));
+        expect(names.filter((name) => RETIRED_RANGE_TOOLS.includes(name))).toEqual([]);
+    });
+
+    it('are absent from the WebLLM selection for a request that names their phrasing', () => {
+        const names = selectExecutableAppActionToolSchemasForPrompt({
+            toolSchemas: getExecutableAppActionToolSchemas(),
+            prompt: 'Lift the Drum Bus gain by 1.5 dB in Chorus Two and lower every vocal send in the chorus',
+        }).map((schema) => schema.function.name);
+
+        expect(names).toContain('automateParameterRange');
+        expect(names.filter((name) => RETIRED_RANGE_TOOLS.includes(name))).toEqual([]);
+    });
+
+    it('are absent from the grounding vocabulary', () => {
+        const actionTypes: string[] = getExecutableAppActionGroundingCatalog().map((entry) => entry.actionType);
+
+        expect(actionTypes).toEqual(expect.arrayContaining(['automateParameterRange', 'setTrackGain']));
+        expect(actionTypes.filter((actionType) => RETIRED_RANGE_TOOLS.includes(actionType))).toEqual([]);
+    });
+
+    it.each(['gain lift', 'lower every vocal send', 'automate them to', 'automate send'])(
+        'are absent from command-index search for "%s"',
+        (intent) => {
+            const names = searchCommandIndex(intent);
+
+            expect(names).toContain('automateParameterRange');
+            expect(names.filter((name) => RETIRED_RANGE_TOOLS.includes(name))).toEqual([]);
+        }
+    );
 });
