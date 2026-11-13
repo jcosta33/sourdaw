@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -308,5 +308,103 @@ describe('buildManifest against the committed repository state', () => {
 
     it('refuses a first manifest without actual build receipts', () => {
         expect(() => wasmArtifacts.buildManifest({ previous: null, rebuilt: new Set() })).toThrow();
+    });
+});
+
+describe('resolved local patch source provenance', () => {
+    function fixture() {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-wasm-patched-source-'));
+        const manifest = `[workspace]\nresolver = "2"\n[patch.crates-io]\nshared = { path = "vendor/rust/shared-1.0.0" }\nnative = { path = "vendor/rust/native-1.0.0" }\n`;
+        const write = (path: string, content: string) => {
+            const absolute = join(root, path);
+            mkdirSync(join(absolute, '..'), { recursive: true });
+            writeFileSync(absolute, content);
+        };
+        write('Cargo.toml', manifest);
+        write(
+            'Cargo.lock',
+            `version = 4\n[[package]]\nname = "subject"\nversion = "1.0.0"\ndependencies = ["shared"]\n[[package]]\nname = "shared"\nversion = "1.0.0"\n[[package]]\nname = "native"\nversion = "1.0.0"\n`
+        );
+        write('crates/subject/Cargo.toml', '[package]\nname = "subject"\nversion = "1.0.0"\n');
+        write('crates/subject/src/lib.rs', 'pub fn subject() {}\n');
+        for (const name of ['shared', 'native']) {
+            write(`vendor/rust/${name}-1.0.0/Cargo.toml`, `[package]\nname = "${name}"\nversion = "1.0.0"\n`);
+            write(`vendor/rust/${name}-1.0.0/src/lib.rs`, 'pub fn original() {}\n');
+        }
+        write('vendor/rust/shared-1.0.0/wrapper.h', '#define VALUE 1\n');
+        write(
+            'vendor/rust/sources.json',
+            JSON.stringify({
+                schemaVersion: 1,
+                sources: ['shared', 'native'].map((name) => ({
+                    package: name,
+                    version: '1.0.0',
+                    directory: `vendor/rust/${name}-1.0.0`,
+                    sourceInputs: name === 'shared' ? ['Cargo.toml', 'src', 'wrapper.h'] : ['Cargo.toml', 'src'],
+                })),
+            })
+        );
+        return { root, manifest, write, hash: () => wasmArtifacts.hashCrateClosure('crates/subject', manifest, root) };
+    }
+
+    it('reads reachable patched Rust and included header bytes without hashing an unrelated native patch', () => {
+        const f = fixture();
+        try {
+            const original = f.hash();
+            f.write('vendor/rust/native-1.0.0/src/lib.rs', 'pub fn native_changed() {}\n');
+            expect(f.hash()).toBe(original);
+            f.write('vendor/rust/shared-1.0.0/src/lib.rs', 'pub fn shared_changed() {}\n');
+            const changedRust = f.hash();
+            expect(changedRust).not.toBe(original);
+            f.write('vendor/rust/shared-1.0.0/wrapper.h', '#define VALUE 2\n');
+            expect(f.hash()).not.toBe(changedRust);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses missing or ambiguous source bindings instead of dropping a resolved package', () => {
+        const f = fixture();
+        try {
+            f.write('vendor/rust/shared-1.0.0/Cargo.toml', '[package]\nname = "wrong"\nversion = "1.0.0"\n');
+            expect(f.hash).toThrow(/patch.*identity/i);
+            f.write('vendor/rust/shared-1.0.0/Cargo.toml', '[package]\nname = "shared"\nversion = "1.0.0"\n');
+            f.write(
+                'Cargo.lock',
+                '[[package]]\nname = "subject"\nversion = "1.0.0"\ndependencies = ["shared"]\n[[package]]\nname = "shared"\nversion = "1.0.0"\n[[package]]\nname = "shared"\nversion = "2.0.0"\n'
+            );
+            expect(f.hash).toThrow(/ambiguous.*shared/i);
+            f.write('Cargo.lock', '[[package]]\nname = "subject"\nversion = "1.0.0"\ndependencies = ["missing"]\n');
+            expect(f.hash).toThrow(/missing.*missing/i);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a symlink or an escaping source input', () => {
+        const f = fixture();
+        try {
+            symlinkSync(
+                join(f.root, 'crates/subject/src/lib.rs'),
+                join(f.root, 'vendor/rust/shared-1.0.0/src/alias.rs')
+            );
+            expect(f.hash).toThrow(/symlink/i);
+            rmSync(join(f.root, 'vendor/rust/shared-1.0.0/src/alias.rs'));
+            f.write(
+                'vendor/rust/sources.json',
+                JSON.stringify({
+                    schemaVersion: 1,
+                    sources: ['shared', 'native'].map((name) => ({
+                        package: name,
+                        version: '1.0.0',
+                        directory: `vendor/rust/${name}-1.0.0`,
+                        sourceInputs: ['Cargo.toml', 'src', '../../../Cargo.lock'],
+                    })),
+                })
+            );
+            expect(f.hash).toThrow(/source input.*escape/i);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
     });
 });

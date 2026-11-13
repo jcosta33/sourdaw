@@ -1,0 +1,659 @@
+{
+    "schemaVersion": 1,
+    "sources": [
+        {
+            "package": "cpal",
+            "version": "0.18.2",
+            "source": "locally patched crates.io source; package version is the original published identity",
+            "upstreamArchive": "https://static.crates.io/crates/cpal/cpal-0.18.2.crate",
+            "upstreamArchiveSha256": "6f02e8d0327b42d3e2e4ab2119af397344eb9fc54a34bf0ddeaa1277af8681f1",
+            "upstreamRepository": "https://github.com/RustAudio/cpal",
+            "upstreamRevision": {
+                "git": {
+                    "sha1": "e1612d5d98152f8dc2a62e1b51ef7cbf4f7f26b7"
+                },
+                "path_in_vcs": ""
+            },
+            "license": "Apache-2.0",
+            "licensePaths": ["LICENSE"],
+            "patch": "patches/cpal-0.18.2.patch.gz",
+            "patchSha256": "f1e4f30d23aff4cd755760d9d239b3bf7c251c970b1a416687548c0f2cc710c6",
+            "changedFiles": [
+                {
+                    "path": ".gitignore",
+                    "original_sha256": "c922e38cb8301a1edfccd41c869bf92688ed656cf8f36539ebad845d361cb0d2",
+                    "patched_sha256": "77930d81bda4199ec2c9d7eb2d942947d8a3da49ede56011834fcdb726488143"
+                },
+                {
+                    "path": "Cargo.toml",
+                    "original_sha256": "3d12cc7e5a8744461a2173c5cd8ac5b61e6067ace219cb3fd45a31894830198b",
+                    "patched_sha256": "cd2ca761596d2486a9d765a5f6929f38b74c774db8f056548dfab15e34241d2c"
+                },
+                {
+                    "path": "Cargo.toml.orig",
+                    "original_sha256": "09cf65ef4c78a12ce619ef55c3e5235b2d310cc30995044d7779b8525e77fdf2",
+                    "patched_sha256": "d130f9672f96d220203dce2ba11c0a1fcf3647c806a48176f5b165bfb1e28932"
+                },
+                {
+                    "path": "SECURITY.md",
+                    "original_sha256": "2746eb40616bd4a89b1fc0f569e463a816e428fae8284315de0f4c74b268c582",
+                    "patched_sha256": "3614dfff34433dca103f1b3029eb1448ac99d223fb7b74804495a004c6115f95"
+                },
+                {
+                    "path": "src/host/alsa/mod.rs",
+                    "original_sha256": "ece7cc31f84d9460934bef283c8d1d16b3a9ca59f29a0d8181db6cecb832857b",
+                    "patched_sha256": "2f3805155e27a1f9c9bb9362e5bbc69be181557cf2df58a364e7abae1e2c185c"
+                },
+                {
+                    "path": "src/host/wasapi/device.rs",
+                    "original_sha256": "4dff40589b4d9786e38571213e83bc479a5b45a1a45ae3d32249a91f99d725e7",
+                    "patched_sha256": "95866b4db771e2fe2a024b9560a2c293f4bb3adcb2829fd04c444d8ede96e907"
+                }
+            ],
+            "purpose": "Retain backend lifecycle and capture/playback timestamps while using current ALSA, Mach, derive, and Windows children.",
+            "directory": "vendor/rust/cpal-0.18.2",
+            "sourceInputs": ["Cargo.toml", "src", "build.rs"],
+            "patchContentSha256": "42883f7a29997450e0c365c272def793b040dfe4a5d3d80a210169a4f6b49e4f",
+            "patchFormat": "gzip-compressed unified diff, zero context, mtime 0"
+        },
+        {
+            "package": "windows",
+            "version": "0.62.2",
+            "source": "locally patched crates.io source; package version is the original published identity",
+            "upstreamArchive": "https://static.crates.io/crates/windows/windows-0.62.2.crate",
+            "upstreamArchiveSha256": "527fadee13e0c05939a6a05d5bd6eec6cd2e3dbd648b9f8e447c6518133d8580",
+            "upstreamRepository": "https://github.com/microsoft/windows-rs",
+            "upstreamRevision": {
+                "git": {
+                    "sha1": "32c3144490c016fe496a0aed769bce60987a2e9d"
+                },
+                "path_in_vcs": "crates/libs/windows"
+            },
+            "license": "MIT OR Apache-2.0",
+            "licensePaths": ["license-apache-2.0", "license-mit"],
+            "patch": "patches/windows-0.62.2.patch.gz",
+            "patchSha256": "9bcab726abf7c3d77fa58f7c70af15f5ca5e59fb8315c14a31ce7e450994ce03",
+            "changedFiles": [
+                {
+                    "path": "Cargo.toml",
+                    "original_sha256": "1faa29a77d208ba8b39979243819dbf07fb10a6e075420c8a847d5eca108db4a",
+                    "patched_sha256": "2ee79f5e164c6363d1f9685ac11731509e3d3c95b74f99a98f5b768191093c3d"
+                },
+                {
+                    "path": "src/Windows/Win32/Foundation/mod.rs",
+                    "original_sha256": "13053bca5f95eb24cae34ffc3b71a0fb24e8f64705b6091ac3f13544731cabc2",
+                    "patched_sha256": "fac97c0f407967b839e0ec9d9ffa5e745f828166ae8a326377d793f702201495"
+                },
+                {
+                    "path": "src/Windows/Win32/Media/Audio/mod.rs",
+                    "original_sha256": "ced77275abee2209ffdf1327677ebde65edec28a004ed1b4981aa325216e374a",
+                    "patched_sha256": "12b90329c71625747703bd9d9b9338bb0276218b2ba6bdd5624a3a76f5099761"
+                },
+                {
+                    "path": "src/Windows/Win32/Media/Multimedia/mod.rs",
+                    "original_sha256": "a209937807d123f8c18e59882cb223781bdfd3cc0a27b926d18cf0cb21817886",
+                    "patched_sha256": "cec144c309a1f6fe30f11dc485f0b59cb9edf1d2ef34fe20399a6ddaa6f76fc6"
+                },
+                {
+                    "path": "src/Windows/Win32/System/Com/StructuredStorage/mod.rs",
+                    "original_sha256": "80cf1f007f95bf87c9bcd3574f4d06dbca4b51e9c09aa34d92d97963e2ba096f",
+                    "patched_sha256": "fedb61ed6940e17d9f958f61739bc5f957d75fc9658c0f2727f09205a5656bc6"
+                },
+                {
+                    "path": "src/Windows/Win32/System/Com/mod.rs",
+                    "original_sha256": "baafc59ea14e937eff7ecfd57a9e29a4774b56d822d7dadd19652f792735cae3",
+                    "patched_sha256": "8917f4ce90cf1a2ad08519d1b7e163dc54e59a23296ed98fa901617d472b1bef"
+                },
+                {
+                    "path": "src/Windows/Win32/System/Performance/mod.rs",
+                    "original_sha256": "e89a6e7f7810e90395999ff2af06c6e07674073ec806b56d4cea6cbc95c2f0bb",
+                    "patched_sha256": "8111d30120d74c4cb1fd98a7191fe377579a86033c5a9e199c62fc5dc1a3f1ca"
+                },
+                {
+                    "path": "src/Windows/Win32/System/Threading/mod.rs",
+                    "original_sha256": "a4caf28ab454d5c886b02cb1caacec628f2d0ef55df507fca545145be2900893",
+                    "patched_sha256": "0317c3507804443dc02977f48bedace7e12c0b0068d14d3462264c526b3efdab"
+                },
+                {
+                    "path": "src/Windows/Win32/UI/Shell/PropertiesSystem/mod.rs",
+                    "original_sha256": "0417e93f36e3ad60e1a6363964e00eb6a8f1ebfed459035b6ebea17a508a8649",
+                    "patched_sha256": "ed0625821d5294163bb4e8ef49c30876ecdeed88ef1275c7f6ff7639ba717cef"
+                },
+                {
+                    "path": "src/Windows/Win32/UI/Shell/mod.rs",
+                    "original_sha256": "2f8f0191baf83d942c67090e12e34746c1dda8426f072f7f2ec498fe8ce25eb0",
+                    "patched_sha256": "c6d045d7d5232faf4e6fe6c5d390a87bd81594acfe4ad5daac978d15ee12afff"
+                },
+                {
+                    "path": "src/lib.rs",
+                    "original_sha256": "d74f1ecad63b22960e7f0b3b721bf4091b1d34c9c11a1d58fdfca789d13a8988",
+                    "patched_sha256": "cdc0bc61e07c9c71c26e2b1998851edfd1479f0dc91577bba17587d19cf88a9c"
+                }
+            ],
+            "purpose": "Keep the enabled native device and MIDI projections coherent with windows-core 0.100; retain the upstream ABI release bodies.",
+            "directory": "vendor/rust/windows-0.62.2",
+            "sourceInputs": ["Cargo.toml", "src"],
+            "patchContentSha256": "4f93aef929faccdd457ca54e9249416a5888182ef718aa8e9f9cf70802577a8f",
+            "patchFormat": "gzip-compressed unified diff, zero context, mtime 0"
+        },
+        {
+            "package": "reqwest",
+            "version": "0.13.5",
+            "source": "locally patched crates.io source; package version is the original published identity",
+            "upstreamArchive": "https://static.crates.io/crates/reqwest/reqwest-0.13.5.crate",
+            "upstreamArchiveSha256": "16a1cfa75cc186dd73d5818e510e042e40927bccc9c236b061cea97e1eb08029",
+            "upstreamRepository": "https://github.com/seanmonstar/reqwest",
+            "upstreamRevision": {
+                "git": {
+                    "sha1": "de55373434f07f42926599dbb5a88550d8e55112"
+                },
+                "path_in_vcs": ""
+            },
+            "license": "MIT OR Apache-2.0",
+            "licensePaths": ["LICENSE-APACHE", "LICENSE-MIT"],
+            "patch": "patches/reqwest-0.13.5.patch.gz",
+            "patchSha256": "06f396d239a05ba0d074e65448e54873ff8bbb0f0776a0e3b3cdce44590ee774",
+            "changedFiles": [
+                {
+                    "path": "Cargo.toml",
+                    "original_sha256": "ab36603e15fa21c4fe1f4e9810245dcb06499cdcf6e6b07296e5d2a3c25c69a1",
+                    "patched_sha256": "f1c88e631615167e63857c1bbd1cd095e9aae5944c8283e3364e2cdefb5ad597"
+                },
+                {
+                    "path": "Cargo.toml.orig",
+                    "original_sha256": "ad220e8ebafd8edf963a8815fbf4f6a78f18277e0e8aadc45269b41c61360dca",
+                    "patched_sha256": "becc7335ee42ac74d448a37aa9fe35062d12308949692814ea10bcb63e22f3de"
+                },
+                {
+                    "path": "LICENSE-MIT",
+                    "original_sha256": "dd87e27dfbaa888cb77ea34592648a7743636b8dce07e49543bddda0fcfc73bc",
+                    "patched_sha256": "917c0fe02296eec634820b2758519e39278716bb0104f055cfee771bd7a4c534"
+                },
+                {
+                    "path": "src/async_impl/client.rs",
+                    "original_sha256": "5b7e2556d122a75cd8d3ef62a33d45e430c8eff229a33bc3f53fc7e9af2d97de",
+                    "patched_sha256": "89a7f93fcb0899bb6de5cd716a0ef26c0f987c3e15e2ea216c00e83c1d31fc21"
+                }
+            ],
+            "purpose": "Retain redirect extension policy and credential filtering while using current tower-http and wasm-streams.",
+            "directory": "vendor/rust/reqwest-0.13.5",
+            "sourceInputs": ["Cargo.toml", "src"],
+            "patchContentSha256": "49fb2e79ba57a760e49514aa8a571daf7e556b1e8a21b2149cf496a89a2789b1",
+            "patchFormat": "gzip-compressed unified diff, zero context, mtime 0"
+        },
+        {
+            "package": "hyper-util",
+            "version": "0.1.21",
+            "source": "locally patched crates.io source; package version is the original published identity",
+            "upstreamArchive": "https://static.crates.io/crates/hyper-util/hyper-util-0.1.21.crate",
+            "upstreamArchiveSha256": "ddc03d96684f9226b8a787cdb71488417b53ab5ea8fdb1dac946cb9431cc8bff",
+            "upstreamRepository": "https://github.com/hyperium/hyper-util",
+            "upstreamRevision": {
+                "git": {
+                    "sha1": "23a868965964c1d6bb1b94f30ba4c420a4bebe7c"
+                },
+                "path_in_vcs": ""
+            },
+            "license": "MIT",
+            "licensePaths": ["LICENSE"],
+            "patch": "patches/hyper-util-0.1.21.patch.gz",
+            "patchSha256": "32c854c9585b7a8cff51b87cb2384706a162516de3902120f083ce9358ff143c",
+            "changedFiles": [
+                {
+                    "path": "Cargo.toml",
+                    "original_sha256": "be68258b960525839b23a699362c550c7c5e73934cabd9dfe1b2a3fdebb37a2e",
+                    "patched_sha256": "f8696abc10fa97420979306a5781480f97a681301dfdfbb7a814e71db63448e1"
+                },
+                {
+                    "path": "Cargo.toml.orig",
+                    "original_sha256": "ecdace19ddd41ff8f9d3c2b87d4cdc3daa1c5820d64a268817f6431ab1ba856c",
+                    "patched_sha256": "abc5b1b6fe0a2818bd5fceac9822e73d142003ec186781621adf7ad3db5f4cff"
+                },
+                {
+                    "path": "src/client/proxy/matcher.rs",
+                    "original_sha256": "c2478808ea3894a8344020386b3cfa377c82637c7e66220097371051d394c329",
+                    "patched_sha256": "51aa9a377ca88d1ef39356deca232b52740f0f08b35354535b15a8efb8d392e9"
+                }
+            ],
+            "purpose": "Retain native proxy discovery while using current Core Foundation and typed Windows registry APIs.",
+            "directory": "vendor/rust/hyper-util-0.1.21",
+            "sourceInputs": ["Cargo.toml", "src"],
+            "patchContentSha256": "0172c2f77737607c58f0f4ef3fd8fe943a78fc867fed249c654f6aebc9be13c4",
+            "patchFormat": "gzip-compressed unified diff, zero context, mtime 0"
+        },
+        {
+            "package": "quinn",
+            "version": "0.11.12",
+            "source": "locally patched crates.io source; package version is the original published identity",
+            "upstreamArchive": "https://static.crates.io/crates/quinn/quinn-0.11.12.crate",
+            "upstreamArchiveSha256": "4051e23e9185c255a7e33ef59cdbca87a22d359052eecd22fc6b901fb37d9d11",
+            "upstreamRepository": "https://github.com/quinn-rs/quinn",
+            "upstreamRevision": {
+                "git": {
+                    "sha1": "eaec0db4bcb698f76df736d89938743c88a2ad5f"
+                },
+                "path_in_vcs": "quinn"
+            },
+            "license": "MIT OR Apache-2.0",
+            "licensePaths": ["LICENSE-APACHE", "LICENSE-MIT"],
+            "patch": "patches/quinn-0.11.12.patch.gz",
+            "patchSha256": "d36ea6c8507b726a3df57961d273e7baa34234c0ee24e70f9ee8a0cdcf4681c6",
+            "changedFiles": [
+                {
+                    "path": "Cargo.toml",
+                    "original_sha256": "dc852465e70040708a87a31b71b62b80e5d5d9be39ee6eacfc924007bdef9eb9",
+                    "patched_sha256": "670635392471de76843deeaccbd58391cc81d2dc209e60e46bd5553f533baa7d"
+                },
+                {
+                    "path": "Cargo.toml.orig",
+                    "original_sha256": "0e1c0441ae39d5f2becb0854e3c6f89ff79014a9cde0d76eba68ceea9d38283b",
+                    "patched_sha256": "d74f7a720f4d28ca54784ba533306927b29852eeb8351de043021d02d6bc15cc"
+                },
+                {
+                    "path": "examples/README.md",
+                    "original_sha256": "8e83b342ead7bc7a1c2d6ca5712e098ed851c14314d37f13f3467b75ffd111cf",
+                    "patched_sha256": "90fae47498f5e0039304e6b52a1436fe3e35d95e2c0c68ec47d89f08ef24b4b1"
+                }
+            ],
+            "purpose": "Retain UDP socket lifecycle, ECN and segmentation APIs with current quinn-udp logging feature names.",
+            "directory": "vendor/rust/quinn-0.11.12",
+            "sourceInputs": ["Cargo.toml", "src", "build.rs"],
+            "patchContentSha256": "81c2ece49131e82faba508ab4db52d8eb037899a4690f0389c471752634ac00a",
+            "patchFormat": "gzip-compressed unified diff, zero context, mtime 0"
+        },
+        {
+            "package": "whisper-rs-sys",
+            "version": "0.15.0",
+            "source": "locally patched crates.io source; package version is the original published identity",
+            "upstreamArchive": "https://static.crates.io/crates/whisper-rs-sys/whisper-rs-sys-0.15.0.crate",
+            "upstreamArchiveSha256": "6986c0fe081241d391f09b9a071fbcbb59720c3563628c3c829057cf69f2a56f",
+            "upstreamRepository": "https://codeberg.org/tazz4843/whisper-rs",
+            "upstreamRevision": {
+                "git": {
+                    "sha1": "7558e1b72f54f2f22a53589afb77e65681834c36"
+                },
+                "path_in_vcs": "sys"
+            },
+            "license": "Unlicense",
+            "licensePaths": ["whisper.cpp/LICENSE"],
+            "patch": "patches/whisper-rs-sys-0.15.0.patch.gz",
+            "patchSha256": "3515e0c42de1bdfecf70d7c85723539d1e31bdf277b2e44db76ab8de05555367",
+            "changedFiles": [
+                {
+                    "path": "Cargo.toml",
+                    "original_sha256": "662014946424b030a3887685a5e47994f9db9ed964433feb46de68920c41589e",
+                    "patched_sha256": "91f9c97ece61d6eebf7464352cbf10e0fab0de19d3d45baa6267a4d7c8087440"
+                },
+                {
+                    "path": "Cargo.toml.orig",
+                    "original_sha256": "c3c5deb2c8ad7d4c8560780442ca99d8b79c8eba8288b3b17201ab4fcdffe500",
+                    "patched_sha256": "5fc1ba5ef79a7f66b4464cec4857b5cdbe02ad4e6e3e552e2e96f08540359af5"
+                },
+                {
+                    "path": "build.rs",
+                    "original_sha256": "c819290c9bee7ffbda54a38dfc0fbf825fb10de1455020999652a6ac85c460c6",
+                    "patched_sha256": "b92218290e91a482d9f099d3269165acfe96a82d582783ef5fe7ddc8afa6bab1"
+                },
+                {
+                    "path": "build_support.rs",
+                    "original_sha256": null,
+                    "patched_sha256": "8e50d290266e03c60185bc0cbb21dc5bbf4c941ec91385c90a6994ffdd8e0416"
+                },
+                {
+                    "path": "whisper.cpp/cmake/FindFFmpeg.cmake",
+                    "original_sha256": "bedd2e8a2bcf9349827794d261ec63ab0fabf9ba6d6a71d7e8788e88f82ae944",
+                    "patched_sha256": "f6f138508ff10dfc24527c0a54a46fe1fc1d67a1beeedbbe2ecfa4799cdc965a"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-cpu/arch/arm/quants.c",
+                    "original_sha256": "bca39e4a4dca6aee63c880e1174346d9da0fdbcec592937b106fbe8335bd0a22",
+                    "patched_sha256": "07b1abea4be0adbb07953ff77ccd369477cf7f281261699c6624502d19cb4cad"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-cpu/arch/loongarch/quants.c",
+                    "original_sha256": "22e4cee5de8f42e549f91af341367030a7ca9409afe3993507fd14c800308b75",
+                    "patched_sha256": "e3bf3f6ab1e0225d653acbddd96c0d08b6b00d7f092147ff76bc4100d0d65304"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-cpu/arch/powerpc/quants.c",
+                    "original_sha256": "4963a375aba09f193c605144215f8c28f3552a267284e1498f7daf657d36056b",
+                    "patched_sha256": "5a7d65d4cae3cb46adac6cb151349e1a18d571f15306bc46bc9a65eddc8f1c2d"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-cpu/arch/riscv/quants.c",
+                    "original_sha256": "260ef1a0bb9c082d4330906a1fb0c18c6cd4e1b37b8477e44512c4997f71e92e",
+                    "patched_sha256": "c18ceb074c4e77ac43cd7c8be00c98a36cf95c36422074c2b510471d09e7b682"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-cpu/arch/s390/quants.c",
+                    "original_sha256": "fc4f6392de14ad26bfbf0bb32ebad52b2d37532fbaa9d47b0b8315ae4dd242f0",
+                    "patched_sha256": "22d4387970fe8b50940c6f785b4fb712c86b25aef0d5a18f06050b5cf743d7a8"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-cpu/arch/wasm/quants.c",
+                    "original_sha256": "276ff5c27359a9b34c0eceb6e84c9c54f3c23a634130c32810483fc9b96162ff",
+                    "patched_sha256": "3d61aaf1103f15c25a1304fe7077512b07cc9984b169ed07b4957b9bdba49279"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-cpu/arch/x86/quants.c",
+                    "original_sha256": "b1e602aff1d03d0c6d2c5a2bce887d9c6f39599fe73520154fc6746d9bd7122e",
+                    "patched_sha256": "76014153503a445524a578a67f421d0a764530c27f8c5373af0259cba57436f7"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-cpu/unary-ops.cpp",
+                    "original_sha256": "2174483110fa31bc2b85459d4a1392be0809693e62c4048338c32d3bc0ac62ee",
+                    "patched_sha256": "609b4f47186beeb36646746781b93d027ae9516b8d5bfef6afb43daf7dcac720"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-hexagon/htp/hvx-utils.c",
+                    "original_sha256": "f8aa4af3b09ad04e85c2c35146ace15870377205ce0650dc13d2a9f2d9e392c6",
+                    "patched_sha256": "788dcc2cc7ca4afeb446064d3a689790c26469cd2756c7dffc5719b775d6ae4c"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-opencl/kernels/mul_mm_f16_f32_kq_kqv.cl",
+                    "original_sha256": "4596e973a925b53d6048d97a628637bf643c0f618d2e34b9989ac9f2edf9d356",
+                    "patched_sha256": "1f488ddf550776494201bfb9d22e76375ff2951745b7bc9acd6e69d34ef768ea"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-sycl/CMakeLists.txt",
+                    "original_sha256": "ae41b1101b3e2fcbf654b0c04cb0a6f99c83e06550d4dc7bf6514d2fa0744395",
+                    "patched_sha256": "84c5442f1d20dc278ce1d72bb4a276674fdf70f275fb746f5eebc739ef1ed7b7"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-sycl/binbcast.cpp",
+                    "original_sha256": "173d47f420757357d517ca8a6be082633c47c29c4ff53990b5c5eaf24c374465",
+                    "patched_sha256": "a07336b5738ce1d673dc6f40343974c67a32c477c54eaa3bacfb8764c3ab0ca5"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-sycl/binbcast.hpp",
+                    "original_sha256": "4367da6ebbd049510e81e4120eb7a16a0d84e5d0855bc27d2db1a0a85170e828",
+                    "patched_sha256": "afa94271d67e7bab50ed6bec91eff4103714005df3426015c1d81f9c39ba69d6"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-sycl/conv.cpp",
+                    "original_sha256": "769cff4286d9880cf393ed88c8959c228689421584c321f1b1fa2ad2752dc50d",
+                    "patched_sha256": "53599603717c9a540eb501cce7b6058f1ba732b556b1620467887a1ba725a5c2"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-sycl/outprod.hpp",
+                    "original_sha256": "b79b96799b00f56896946040ac3087ae5ea0ab611903f08d60487263892e867e",
+                    "patched_sha256": "c95617271f5f371063b082c55a250d02cdbdf8fe1d1cf903c4e252e5887cb497"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-sycl/rope.cpp",
+                    "original_sha256": "7811d3a6d028363534b2ea22cdd699182db2c3a7f634d34423ed573df1c6f905",
+                    "patched_sha256": "e464c1ab26b8cefdd21ac0a1a440fc3d14f5169208fda88e29b597d367180a94"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-vulkan/vulkan-shaders/acc.comp",
+                    "original_sha256": "7b93f21386657edf28ed4e760b738c82adaef7bbce585dbe1ea63af899810f42",
+                    "patched_sha256": "8f76f3578fe86b378e029374ce2552c752008562cabc72c631310539873bf340"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-vulkan/vulkan-shaders/conv2d_dw.comp",
+                    "original_sha256": "993919df7caf99e4e688c302c9b4ea4c01fb66482718b013e2f37c0a62605cec",
+                    "patched_sha256": "a983fc2c712245b047b1fb621c58838fba72450ec9f2758b0a9170a1ecfb544d"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-vulkan/vulkan-shaders/cumsum_multipass2.comp",
+                    "original_sha256": "823ac3d7c1298bfd6fe1b8f525b8ee8f4e6cc65149596473660e4bf148b4cd67",
+                    "patched_sha256": "ae55e2e9392f57b14417adaa31aaf3ab93de0be4191e6f79ba3d617df8edd326"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_iface.glsl",
+                    "original_sha256": "d6b9eb0c72626710ca08886b4d5d904e3dcc1b32e66333417fb3b210db9130d8",
+                    "patched_sha256": "76c850981a9e46796ebea81bbd50e0571d81e6c8e81c4afa646e681316ffe29d"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-vulkan/vulkan-shaders/rope_funcs.glsl",
+                    "original_sha256": "277d2301aaffa7e747f20b5c68d85c40bef5c14e9397e8f19b35b64c3d0fa321",
+                    "patched_sha256": "ba5e9631ee08b632ac61f1d22341745fd624793ce4614624d40951d6f16f583f"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-vulkan/vulkan-shaders/rope_head.glsl",
+                    "original_sha256": "a788a62207d3847b2e8e438e24f676540e147e8e0f947b79a88c65e579638ba9",
+                    "patched_sha256": "cd8819a662e4ff779f73d92e0eb7ded9c8f25978fc8fc2c65334834670507dc4"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-vulkan/vulkan-shaders/sum_rows.glsl",
+                    "original_sha256": "ad97f4f35cc891920810a2540ea07c4419c59ab1e468a39c577f9853305ff0fa",
+                    "patched_sha256": "d64c97cb4a090de91251903d54b8ad46feaa7c40f9423ff73e758fc34dfbc3eb"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-webgpu/wgsl-shaders/set_rows.tmpl.wgsl",
+                    "original_sha256": "7fed22bec519783616735374a60991cb6d2926cdbc9152896f82dcee6619518c",
+                    "patched_sha256": "8b6639302dfa50295352fe8c557c08d4b737076214b363f852415fda39998c73"
+                },
+                {
+                    "path": "whisper.cpp/ggml/src/ggml-webgpu/wgsl-shaders/unary_op.wgsl",
+                    "original_sha256": "6558bff070ff3e6e1d2d8574c53fca98e6d08b4a33ded0a53bc74cfd160eefb3",
+                    "patched_sha256": "4f5b2653e9ab58ccd90058c543dc3f8970ad3819ab6e42e6ae9ff65dcf4159f0"
+                }
+            ],
+            "purpose": "Generate bindings from the bundled headers with current bindgen and fail generation errors rather than silently selecting older generated bindings.",
+            "directory": "vendor/rust/whisper-rs-sys-0.15.0",
+            "sourceInputs": ["Cargo.toml", "src", "build.rs", "wrapper.h", "whisper.cpp", "build_support.rs"],
+            "patchContentSha256": "194d2a69772ef171aa9ccad4f2fe5f511aa3a26b895f519c0a13b213fe1811c0",
+            "patchFormat": "gzip-compressed unified diff, zero context, mtime 0"
+        },
+        {
+            "package": "clang-sys",
+            "version": "1.9.1",
+            "source": "locally patched crates.io source; package version is the original published identity",
+            "upstreamArchive": "https://static.crates.io/crates/clang-sys/clang-sys-1.9.1.crate",
+            "upstreamArchiveSha256": "157a8ba7b480713b56f4c09fd13fc3e0a22a5dfab8097ba61cbc5feef950788a",
+            "upstreamRepository": "https://github.com/KyleMayes/clang-sys",
+            "upstreamRevision": {
+                "git": {
+                    "sha1": "8844c21292e54818d200980cd90a5498e2a5a644"
+                },
+                "path_in_vcs": ""
+            },
+            "license": "Apache-2.0",
+            "licensePaths": ["LICENSE.txt"],
+            "patch": "patches/clang-sys-1.9.1.patch.gz",
+            "patchSha256": "52963f59fafa26b458c8628d8528b7f525b377d15f17c9dcc4971c04efabeae5",
+            "changedFiles": [
+                {
+                    "path": "Cargo.toml",
+                    "original_sha256": "d55d70b4f3c64f15f82df99d55b91ea61303c78e1803fb70bf705157ea9bf323",
+                    "patched_sha256": "79a2b01a872ae296727c619c129e6b3786a8765b3d0bb97876c68188ac9e3e00"
+                },
+                {
+                    "path": "Cargo.toml.orig",
+                    "original_sha256": "e2a6a646f1cde7bdd53d91647639ffc2ab118b1b706cf051d4ba0444d0ba2d4a",
+                    "patched_sha256": "2d4a7a1909862ba227a230711b9ccda72bd972da1215ba98ed5b6f250f29694d"
+                }
+            ],
+            "purpose": "Retain dynamic libclang discovery and symbol loading while using current libloading.",
+            "directory": "vendor/rust/clang-sys-1.9.1",
+            "sourceInputs": ["Cargo.toml", "src", "build.rs", "build"],
+            "patchContentSha256": "4550edc8ab7f27209e62e5b0101e0030c4386a8da5ffcba3e325737e27c2fb6b",
+            "patchFormat": "gzip-compressed unified diff, zero context, mtime 0"
+        },
+        {
+            "package": "cexpr",
+            "version": "0.6.0",
+            "source": "locally patched crates.io source; package version is the original published identity",
+            "upstreamArchive": "https://static.crates.io/crates/cexpr/cexpr-0.6.0.crate",
+            "upstreamArchiveSha256": "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766",
+            "upstreamRepository": "https://github.com/jethrogb/rust-cexpr",
+            "upstreamRevision": {
+                "git": {
+                    "sha1": "c7ccdfbc37b508cfda1171ab4f89afaeb72e82f3"
+                }
+            },
+            "license": "Apache-2.0/MIT",
+            "licensePaths": ["LICENSE-APACHE", "LICENSE-MIT"],
+            "patch": "patches/cexpr-0.6.0.patch.gz",
+            "patchSha256": "e97d13484240f8002872e5a8b4b5db2485da7fa6c551d8a9774a76d0bf80bb0c",
+            "changedFiles": [
+                {
+                    "path": "Cargo.toml",
+                    "original_sha256": "3300e6f2f5fc184c613a78251df3d1333530c9b54193e137b75c88f6db5a6fa6",
+                    "patched_sha256": "a43c86ab5148a1b919aead5b3c5f5b38065e36230555bf11087ce3bbc8ee97a4"
+                },
+                {
+                    "path": "Cargo.toml.orig",
+                    "original_sha256": "cb6c93b8f4c1b681296427608ca2e7c6772ba3a6b824df6d968ed027afb1d851",
+                    "patched_sha256": "dfcc378d0712ec834265a18e6269dd0524836a653d9c529e9a3647d735276088"
+                },
+                {
+                    "path": "src/expr.rs",
+                    "original_sha256": "dad9327dac3af9d2f5818937aac91000e02d835dc600da6185c06e9e12047b1e",
+                    "patched_sha256": "c9f5be0a03121b6ba1b63e6f61d10f1c335f507bb95f4a6bade056a30439bc9c"
+                },
+                {
+                    "path": "src/lib.rs",
+                    "original_sha256": "ff218b9b734ab2eaef813a6ee3a907cb5cd71d483dfaa28d44926824a5b6d804",
+                    "patched_sha256": "52b1a94306ddd61491778a3793332173233e27a431a6ce8ecaa04fe520a2d8bb"
+                },
+                {
+                    "path": "src/literal.rs",
+                    "original_sha256": "6fdefc0357b8a14444df21b05c90556861dc0466e63a57669786f3ef3a3dc1c3",
+                    "patched_sha256": "49ad464dee823a03950263edbbfc4cd11198c77a9bdefc18f3b2191f71e0cda0"
+                },
+                {
+                    "path": "src/token_input.rs",
+                    "original_sha256": null,
+                    "patched_sha256": "a0b8737c888fa03da0945ca8bd45fdf129301b7605ad7251a29d0ed646dec70d"
+                },
+                {
+                    "path": "tests/input/int_unsigned.h",
+                    "original_sha256": "7b8023ba468ec76b184912692bc40e8fbcdd92ad86ec5a7c0dbcb02f2b8d961d",
+                    "patched_sha256": "c82222defdd8bde7bf49a5ee2e2089408a94118e9a4450e4318962c003624955"
+                }
+            ],
+            "purpose": "Keep public expression parser results, slice identity and errors while adapting the token input and combinators to Nom 8.",
+            "directory": "vendor/rust/cexpr-0.6.0",
+            "sourceInputs": ["Cargo.toml", "src"],
+            "patchContentSha256": "b2eaf767f584690fa4f6a85df757b5bd5fbf5154725fd98213fefc59297b3ab0",
+            "patchFormat": "gzip-compressed unified diff, zero context, mtime 0"
+        },
+        {
+            "package": "tracing-attributes",
+            "version": "0.1.31",
+            "source": "locally patched crates.io source; package version is the original published identity",
+            "upstreamArchive": "https://static.crates.io/crates/tracing-attributes/tracing-attributes-0.1.31.crate",
+            "upstreamArchiveSha256": "7490cfa5ec963746568740651ac6781f701c9c5ea257c58e057f3ba8cf69e8da",
+            "upstreamRepository": "https://github.com/tokio-rs/tracing",
+            "upstreamRevision": {
+                "git": {
+                    "sha1": "55086231ec4aaeffcaab9932e696f40278f06bd1"
+                },
+                "path_in_vcs": "tracing-attributes"
+            },
+            "license": "MIT",
+            "licensePaths": ["LICENSE"],
+            "patch": "patches/tracing-attributes-0.1.31.patch.gz",
+            "patchSha256": "4f757bc54eeb6e707eecfb75aea90d03cf9851e1f34f7eea861017965df5ab57",
+            "changedFiles": [
+                {
+                    "path": "CHANGELOG.md",
+                    "original_sha256": "c37d95cb1e7b62a2ee7dedecd56e5c4a110aecc0b98582cf5dbe5a49d528c885",
+                    "patched_sha256": "cbebf527567999237707b8ae94f449d3d412449ca7d49f91803e95701d823245"
+                },
+                {
+                    "path": "Cargo.toml",
+                    "original_sha256": "646214905e4c61a54c111ba9b16834c692fda2969be6f2cdb190a910ab1f2a51",
+                    "patched_sha256": "fdee3a33dc51dc558138519034d96686eeb7f5ba365832b1fba8311f904536cc"
+                },
+                {
+                    "path": "Cargo.toml.orig",
+                    "original_sha256": "f48e7f46d8576494136169e62925a03e2e80870db6479f0e1b8bd148622a0fcf",
+                    "patched_sha256": "209360891034deedf4d0cf9d96266644f8571780635a585f03d0b63903cf2eac"
+                },
+                {
+                    "path": "src/expand.rs",
+                    "original_sha256": "4541050b6a7397fef08f0dd32da36f5138263ef2497da83a3e2b5e1c43345c30",
+                    "patched_sha256": "3ec41ccaa136a4b8a9ec55a54eca67b3021100c73fea61e68c4516a3ab014d41"
+                },
+                {
+                    "path": "src/lib.rs",
+                    "original_sha256": "635bb0d42e3ca670ef6a2dda49c131db9c65e7229d82129600358991917b7efd",
+                    "patched_sha256": "c63319d452d97a96cc237c86336056400462bc6e51e497fc020f724dae20776d"
+                }
+            ],
+            "purpose": "Preserve function safety, modifiers and async instrumentation while parsing Syn 3.",
+            "directory": "vendor/rust/tracing-attributes-0.1.31",
+            "sourceInputs": ["Cargo.toml", "src"],
+            "patchContentSha256": "3c16f1049dfac125115637075bfdda8903ef56a5c5d6a0f6762ae9221dcbd65c",
+            "patchFormat": "gzip-compressed unified diff, zero context, mtime 0"
+        },
+        {
+            "package": "visibility",
+            "version": "0.1.1",
+            "source": "locally patched crates.io source; package version is the original published identity",
+            "upstreamArchive": "https://static.crates.io/crates/visibility/visibility-0.1.1.crate",
+            "upstreamArchiveSha256": "d674d135b4a8c1d7e813e2f8d1c9a58308aee4a680323066025e53132218bd91",
+            "upstreamRepository": "https://github.com/danielhenrymantilla/visibility.rs",
+            "upstreamRevision": {
+                "git": {
+                    "sha1": "1caddb977e2e8e03c9f6f9672287e148498095ff"
+                },
+                "path_in_vcs": ""
+            },
+            "license": "Zlib OR MIT OR Apache-2.0",
+            "licensePaths": ["LICENSE-APACHE", "LICENSE", "LICENSE-ZLIB", "LICENSE-MIT"],
+            "patch": "patches/visibility-0.1.1.patch.gz",
+            "patchSha256": "d3e5cf6a2033dfcfd5f27c2fe230cf277569d0abccbfe444464c6ffe616dd55e",
+            "changedFiles": [
+                {
+                    "path": "Cargo.toml",
+                    "original_sha256": "a58164491fa17b6958c8909a6a44c6d8ad21a77abe8aa7ab7816db5727c82e5d",
+                    "patched_sha256": "5d4602c27a0e52dba317493f3f606877d81b87a693cf23c8dacef5e9bbe64cfb"
+                },
+                {
+                    "path": "Cargo.toml.orig",
+                    "original_sha256": "ec2980a81721c6f412cee50d5fd9ccf189d5cfaecdabf65b4f4ce07463ff5706",
+                    "patched_sha256": "d60c9a777f3885cf86f8a754cf5f5fff86d7b3651281d8cdd4a1ce3d21863f43"
+                },
+                {
+                    "path": "src/lib.rs",
+                    "original_sha256": "7e25371c90526aa1501abc223020c9f6f77fbb549c877e798b372511f3b5017a",
+                    "patched_sha256": "53264d322d1f472c88dd298666cd02cba7504fcf4871012d55520b90dcc7f5bb"
+                }
+            ],
+            "purpose": "Preserve item visibility and reject unsupported modifiers while parsing Syn 3.",
+            "directory": "vendor/rust/visibility-0.1.1",
+            "sourceInputs": ["Cargo.toml", "src", "README.md"],
+            "patchContentSha256": "fb8172c4178bb3801062b34dbe5730a4d031c86ea88c66401227f26d04f4b02e",
+            "patchFormat": "gzip-compressed unified diff, zero context, mtime 0"
+        },
+        {
+            "package": "num_enum_derive",
+            "version": "0.7.6",
+            "source": "locally patched crates.io source; package version is the original published identity",
+            "upstreamArchive": "https://static.crates.io/crates/num_enum_derive/num_enum_derive-0.7.6.crate",
+            "upstreamArchiveSha256": "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8",
+            "upstreamRepository": "https://github.com/illicitonion/num_enum",
+            "upstreamRevision": {
+                "git": {
+                    "sha1": "f11d81c6cb644489f8a0fc24f9eea9a53d66f92e"
+                },
+                "path_in_vcs": "num_enum_derive"
+            },
+            "license": "BSD-3-Clause OR MIT OR Apache-2.0",
+            "licensePaths": ["LICENSE-APACHE", "LICENSE-BSD", "LICENSE-MIT"],
+            "patch": "patches/num_enum_derive-0.7.6.patch.gz",
+            "patchSha256": "4fbc3ca5506b78267b92e94c84649f8f1ac1895d5a3ae1f2ed84b20e8624c5a1",
+            "changedFiles": [
+                {
+                    "path": "Cargo.toml",
+                    "original_sha256": "c2b63f5feb0277a2d0e0cdd8c4620e144515daa0f53d30f892e1803ed4c835e2",
+                    "patched_sha256": "3191eaa7560d84666ae782f0bc7d17f717b117247ab405a2498d6b971509cff9"
+                },
+                {
+                    "path": "Cargo.toml.orig",
+                    "original_sha256": "927bb6ac1c780524e5808656eab39c0271fbfeed51e574cbc2d17c2b6eb58f6f",
+                    "patched_sha256": "f1d433c4d312a3b45f5d7035db732ab3c380beb48870a3ea448e821f7930cb11"
+                }
+            ],
+            "purpose": "Preserve enum discriminant evaluation and generated conversions while using Syn 3.",
+            "directory": "vendor/rust/num_enum_derive-0.7.6",
+            "sourceInputs": ["Cargo.toml", "src"],
+            "patchContentSha256": "182d503c5248a89549e5adbc2a42bca87b00c2aa390ec6101dada6f168fc9eb6",
+            "patchFormat": "gzip-compressed unified diff, zero context, mtime 0"
+        }
+    ]
+}

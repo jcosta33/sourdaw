@@ -21,8 +21,8 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -35,7 +35,11 @@ import {
 } from './binaryenBuild.ts';
 
 import { wasmToolchainPins } from './wasmToolchainPins.ts';
-import { workspaceDependencyNames, workspaceManifestFingerprintInput } from './workspaceManifestFingerprint.ts';
+import {
+    tomlTableLines,
+    workspaceDependencyNames,
+    workspaceManifestFingerprintInput,
+} from './workspaceManifestFingerprint.ts';
 
 /** Absolute path to the repository root (this file lives in `<root>/scripts`). */
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -290,7 +294,7 @@ const pathDepPattern = /path\s*=\s*"([^"]+)"/g;
  * closure, including `crateDir` itself. Only workspace path deps are walked;
  * registry deps are pinned by Cargo.lock and covered separately.
  */
-function pathDepClosure(crateDir: string): string[] {
+function pathDepClosure(crateDir: string, sourceRoot = repoRoot): string[] {
     const seen = new Set<string>();
     const queue: string[] = [crateDir];
     while (queue.length > 0) {
@@ -299,10 +303,10 @@ function pathDepClosure(crateDir: string): string[] {
             continue;
         }
         seen.add(current);
-        const cargoToml = readFileSync(absolute(join(current, 'Cargo.toml')), 'utf8');
+        const cargoToml = readFileSync(join(sourceRoot, current, 'Cargo.toml'), 'utf8');
         for (const match of cargoToml.matchAll(pathDepPattern)) {
             const depPath = firstCapture(match, `a path dependency in ${current}/Cargo.toml`);
-            queue.push(relative(repoRoot, resolve(absolute(current), depPath)));
+            queue.push(relative(sourceRoot, resolve(sourceRoot, current, depPath)));
         }
     }
     return [...seen].sort();
@@ -318,8 +322,8 @@ type LockPackage = {
 };
 
 /** The `[package] name` declared in a crate's Cargo.toml. */
-function readCrateName(crateDir: string): string {
-    const cargoToml = readFileSync(absolute(join(crateDir, 'Cargo.toml')), 'utf8');
+function readCrateName(crateDir: string, sourceRoot = repoRoot): string {
+    const cargoToml = readFileSync(join(sourceRoot, crateDir, 'Cargo.toml'), 'utf8');
     const match = /(?:^|\n)name = "([^"]+)"/.exec(cargoToml);
     if (!match) {
         throw new Error(`No [package] name found in ${crateDir}/Cargo.toml`);
@@ -328,8 +332,8 @@ function readCrateName(crateDir: string): string {
 }
 
 /** Parse Cargo.lock's [[package]] graph, indexed by crate name (a name may have several versions). */
-function parseCargoLock(): Map<string, LockPackage[]> {
-    const text = readFileSync(absolute('Cargo.lock'), 'utf8');
+function parseCargoLock(sourceRoot = repoRoot): Map<string, LockPackage[]> {
+    const text = readFileSync(join(sourceRoot, 'Cargo.lock'), 'utf8');
     const byName = new Map<string, LockPackage[]>();
     for (const block of text.split('[[package]]').slice(1)) {
         const name = /(?:^|\n)name = "([^"]+)"/.exec(block)?.[1];
@@ -360,18 +364,21 @@ function parseCargoLock(): Map<string, LockPackage[]> {
 }
 
 /** Resolve a Cargo.lock dependency string (`"name"` | `"name version"` | `"name version (source)"`). */
-function resolveLockDep(byName: Map<string, LockPackage[]>, depString: string): LockPackage | undefined {
-    const parts = depString.split(' ');
-    const name = parts[0] ?? '';
-    const version = parts[1];
-    const candidates = byName.get(name);
-    if (candidates === undefined || candidates.length === 0) {
-        return undefined;
+function resolveLockDep(byName: Map<string, LockPackage[]>, depString: string): LockPackage {
+    const match = /^([^ ]+)(?: ([^ ]+))?(?: \((.+)\))?$/.exec(depString);
+    if (!match) throw new Error(`Invalid Cargo.lock dependency: ${depString}`);
+    const [, name, version, source] = match;
+    const candidates = (byName.get(name ?? '') ?? []).filter(
+        (candidate) =>
+            (version === undefined || candidate.version === version) &&
+            (source === undefined || candidate.source === source)
+    );
+    if (candidates.length !== 1) {
+        throw new Error(`${candidates.length === 0 ? 'Missing' : 'Ambiguous'} Cargo.lock dependency: ${depString}`);
     }
-    if (version === undefined) {
-        return candidates[0];
-    }
-    return candidates.find((candidate) => candidate.version === version) ?? candidates[0];
+    const candidate = candidates[0];
+    if (!candidate) throw new Error(`Missing Cargo.lock dependency: ${depString}`);
+    return candidate;
 }
 
 /**
@@ -381,8 +388,8 @@ function resolveLockDep(byName: Map<string, LockPackage[]>, depString: string): 
  * crate actually builds against trips it; a bump confined to an unrelated crate
  * (`sourdaw-native`, `daw-engine`, …) that shares the one workspace lock does not.
  */
-function lockClosureFingerprint(crateName: string): string {
-    const byName = parseCargoLock();
+function resolvedLockClosure(crateName: string, sourceRoot: string): LockPackage[] {
+    const byName = parseCargoLock(sourceRoot);
     const seen = new Set<string>();
     const closure: LockPackage[] = [];
     const queue: string[] = [crateName];
@@ -392,10 +399,7 @@ function lockClosureFingerprint(crateName: string): string {
             continue;
         }
         const pkg = resolveLockDep(byName, depString);
-        if (pkg === undefined) {
-            continue;
-        }
-        const key = `${pkg.name} ${pkg.version}`;
+        const key = `${pkg.name} ${pkg.version} ${pkg.source}`;
         if (seen.has(key)) {
             continue;
         }
@@ -417,11 +421,139 @@ function lockClosureFingerprint(crateName: string): string {
         return 0;
     });
 
+    return closure;
+}
+
+function lockClosureFingerprint(closure: readonly LockPackage[]): string {
     const digest = createHash('sha256');
     for (const pkg of closure) {
         digest.update(`${pkg.name}\0${pkg.version}\0${pkg.source}\0${pkg.checksum}\0${pkg.dependencies.join(',')}\n`);
     }
     return digest.digest('hex');
+}
+
+type LocalPatchSource = { package: string; version: string; directory: string; sourceInputs: string[] };
+
+/** Local sources must stay inside their declared source fence and may not follow links. */
+function fencedSourcePath(root: string, fence: string, path: string): string {
+    const candidate = resolve(fence, path);
+    const within = relative(fence, candidate);
+    if (isAbsolute(path) || within === '..' || within.startsWith(`..${sep}`)) {
+        throw new Error(`Local source input escapes its source fence: ${path}`);
+    }
+    const fromRoot = relative(root, candidate);
+    if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`))
+        throw new Error(`Local source escapes repository: ${path}`);
+    let current = root;
+    for (const part of fromRoot.split(sep)) {
+        current = join(current, part);
+        if (lstatSync(current).isSymbolicLink()) throw new Error(`Local source symlink is unsupported: ${current}`);
+    }
+    return candidate;
+}
+
+function localSourceRecord(value: unknown): LocalPatchSource {
+    if (typeof value !== 'object' || value === null) throw new Error('Invalid local patch source record');
+    const name: unknown = Reflect.get(value, 'package');
+    const version: unknown = Reflect.get(value, 'version');
+    const directory: unknown = Reflect.get(value, 'directory');
+    const inputs: unknown = Reflect.get(value, 'sourceInputs');
+    if (
+        typeof name !== 'string' ||
+        typeof version !== 'string' ||
+        typeof directory !== 'string' ||
+        !Array.isArray(inputs) ||
+        inputs.length === 0 ||
+        !inputs.every((input): input is string => typeof input === 'string' && input.length > 0)
+    ) {
+        throw new Error('Invalid local patch source identity or source inputs');
+    }
+    if (!inputs.includes('Cargo.toml') || !inputs.includes('src'))
+        throw new Error(`Incomplete local patch source inputs: ${name}`);
+    return { package: name, version, directory, sourceInputs: inputs };
+}
+
+function packageIdentity(manifest: string): string {
+    let name: string | undefined;
+    let version: string | undefined;
+    for (const { header, line } of tomlTableLines(manifest)) {
+        if (header !== 'package') continue;
+        const match = /^(name|version)\s*=\s*"([^"\\]+)"$/.exec(line);
+        if (match?.[1] === 'name') name = match[2];
+        if (match?.[1] === 'version') version = match[2];
+    }
+    if (!name || !version) throw new Error('Missing local package identity');
+    return `${name} ${version}`;
+}
+
+/** Bind the actual root patches to their published identities, then read only reachable source inputs. */
+function localPatchSourceFiles(
+    sourceRoot: string,
+    workspaceManifest: string,
+    closure: readonly LockPackage[],
+    workspaceSources: ReadonlySet<string>
+): string[] {
+    const patches = new Map<string, string>();
+    for (const { header, line } of tomlTableLines(workspaceManifest)) {
+        if (!header.startsWith('patch')) continue;
+        if (header !== 'patch.crates-io') throw new Error(`Unsupported local patch source table: ${header}`);
+        const match = /^([\w-]+)\s*=\s*\{\s*path\s*=\s*"([^"\\]+)"\s*\}$/.exec(line);
+        if (!match?.[1] || !match[2] || patches.has(match[1]))
+            throw new Error(`Ambiguous or unsupported local patch binding: ${line}`);
+        patches.set(match[1], match[2]);
+    }
+    if (patches.size === 0) {
+        for (const pkg of closure) {
+            if (!pkg.source && !workspaceSources.has(`${pkg.name} ${pkg.version}`))
+                throw new Error(`Missing local source binding: ${pkg.name} ${pkg.version}`);
+        }
+        return [];
+    }
+    const provenancePath = fencedSourcePath(sourceRoot, sourceRoot, 'vendor/rust/sources.json');
+    const provenance: unknown = JSON.parse(readFileSync(provenancePath, 'utf8'));
+    if (typeof provenance !== 'object' || provenance === null || Reflect.get(provenance, 'schemaVersion') !== 1)
+        throw new Error('Invalid local patch source manifest');
+    const values: unknown = Reflect.get(provenance, 'sources');
+    if (!Array.isArray(values)) throw new Error('Missing local patch source manifest entries');
+    const records = values.map(localSourceRecord);
+    if (records.length !== patches.size)
+        throw new Error('Local patch source manifest does not cover the complete patch table');
+    const bound = new Map<string, { dir: string; record: LocalPatchSource }>();
+    for (const record of records) {
+        const patchPath = patches.get(record.package);
+        if (patchPath !== record.directory)
+            throw new Error(`Missing or ambiguous local patch binding: ${record.package}`);
+        const dir = fencedSourcePath(sourceRoot, sourceRoot, record.directory);
+        const identity = packageIdentity(readFileSync(fencedSourcePath(sourceRoot, dir, 'Cargo.toml'), 'utf8'));
+        if (identity !== `${record.package} ${record.version}`)
+            throw new Error(`Local patch identity mismatch: ${record.package}`);
+        if (bound.has(identity)) throw new Error(`Ambiguous local patch identity: ${identity}`);
+        bound.set(identity, { dir, record });
+    }
+    const files = new Set<string>();
+    function collect(dir: string, path: string): void {
+        const candidate = fencedSourcePath(sourceRoot, dir, path);
+        const status = lstatSync(candidate);
+        if (status.isDirectory()) {
+            for (const child of readdirSync(candidate)) collect(dir, join(path, child));
+        } else if (status.isFile()) {
+            files.add(candidate);
+        } else {
+            throw new Error(`Unsupported local source input: ${candidate}`);
+        }
+    }
+    for (const pkg of closure) {
+        if (pkg.source) continue;
+        const identity = `${pkg.name} ${pkg.version}`;
+        if (workspaceSources.has(identity)) continue;
+        const binding = bound.get(identity);
+        if (!binding) throw new Error(`Missing local source binding: ${identity}`);
+        const buildScript = join(binding.dir, 'build.rs');
+        if (existsSync(buildScript) && !binding.record.sourceInputs.includes('build.rs'))
+            throw new Error(`Missing local build script source input: ${identity}`);
+        for (const input of binding.record.sourceInputs) collect(binding.dir, input);
+    }
+    return [...files];
 }
 
 /**
@@ -438,30 +570,41 @@ function lockClosureFingerprint(crateName: string): string {
  * `workspaceManifestText` defaults to the live root `Cargo.toml` and exists so
  * tests can pin the rendering against fixture text without touching the repo's
  * own manifest; every production caller omits it.
+ * Reachable root path patches are bound by package name, version and source
+ * origin to `vendor/rust/sources.json`; their declared compile inputs are read
+ * from disk, including build support and C/header assets. Unrelated native
+ * patches contribute no source bytes. Missing, ambiguous, escaping or linked
+ * inputs fail closed. `sourceRoot` permits real isolated filesystem fixtures.
  * `tests/`/`benches/` are excluded — they never reach the cdylib.
  */
 function hashCrateClosure(
     crateDir: string,
-    workspaceManifestText: string = readFileSync(absolute('Cargo.toml'), 'utf8')
+    workspaceManifestText: string = readFileSync(absolute('Cargo.toml'), 'utf8'),
+    sourceRoot = repoRoot
 ): string {
+    sourceRoot = realpathSync(sourceRoot);
     const files: string[] = [];
+    const workspaceSources = new Set<string>();
     const usedWorkspaceDependencies = new Set<string>();
-    for (const dir of pathDepClosure(crateDir)) {
-        collectRustSources(absolute(join(dir, 'src')), files);
-        files.push(absolute(join(dir, 'Cargo.toml')));
-        const buildScript = absolute(join(dir, 'build.rs'));
+    for (const dir of pathDepClosure(crateDir, sourceRoot)) {
+        workspaceSources.add(packageIdentity(readFileSync(join(sourceRoot, dir, 'Cargo.toml'), 'utf8')));
+        collectRustSources(join(sourceRoot, dir, 'src'), files);
+        files.push(join(sourceRoot, dir, 'Cargo.toml'));
+        const buildScript = join(sourceRoot, dir, 'build.rs');
         if (existsSync(buildScript)) {
             files.push(buildScript);
         }
-        for (const name of workspaceDependencyNames(readFileSync(absolute(join(dir, 'Cargo.toml')), 'utf8'))) {
+        for (const name of workspaceDependencyNames(readFileSync(join(sourceRoot, dir, 'Cargo.toml'), 'utf8'))) {
             usedWorkspaceDependencies.add(name);
         }
     }
+    const closure = resolvedLockClosure(readCrateName(crateDir, sourceRoot), sourceRoot);
+    files.push(...localPatchSourceFiles(sourceRoot, workspaceManifestText, closure, workspaceSources));
     files.sort();
 
     const digest = createHash('sha256');
     for (const fileAbs of files) {
-        digest.update(relative(repoRoot, fileAbs));
+        digest.update(relative(sourceRoot, fileAbs));
         digest.update('\0');
         digest.update(createHash('sha256').update(readFileSync(fileAbs)).digest('hex'));
         digest.update('\n');
@@ -474,7 +617,7 @@ function hashCrateClosure(
     );
     digest.update('\n');
     digest.update('Cargo.lock closure\0');
-    digest.update(lockClosureFingerprint(readCrateName(crateDir)));
+    digest.update(lockClosureFingerprint(closure));
     digest.update('\n');
     return `sha256:${digest.digest('hex')}`;
 }

@@ -13,6 +13,20 @@ members = [
     "crates/sourdaw-native"
 ]
 resolver = "2"
+exclude = [
+    "vendor/rust/cpal-0.18.2",
+    "vendor/rust/windows-0.62.2",
+    "vendor/rust/reqwest-0.13.5",
+    "vendor/rust/hyper-util-0.1.21",
+    "vendor/rust/quinn-0.11.12",
+    "vendor/rust/whisper-rs-sys-0.15.0",
+    "vendor/rust/clang-sys-1.9.1",
+    "vendor/rust/cexpr-0.6.0",
+    "vendor/rust/tracing-attributes-0.1.31",
+    "vendor/rust/visibility-0.1.1",
+    "vendor/rust/num_enum_derive-0.7.6",
+]
+
 
 [workspace.package]
 authors = ["Jose Costa"]
@@ -25,6 +39,19 @@ repository = "https://github.com/jcosta33/sourdaw"
 # already present in the lockfile through cpal's Windows dependency tree,
 # so both resolve to one copy.
 windows = "0.62.2"
+
+[patch.crates-io]
+cpal = { path = "vendor/rust/cpal-0.18.2" }
+windows = { path = "vendor/rust/windows-0.62.2" }
+reqwest = { path = "vendor/rust/reqwest-0.13.5" }
+hyper-util = { path = "vendor/rust/hyper-util-0.1.21" }
+quinn = { path = "vendor/rust/quinn-0.11.12" }
+whisper-rs-sys = { path = "vendor/rust/whisper-rs-sys-0.15.0" }
+clang-sys = { path = "vendor/rust/clang-sys-1.9.1" }
+cexpr = { path = "vendor/rust/cexpr-0.6.0" }
+tracing-attributes = { path = "vendor/rust/tracing-attributes-0.1.31" }
+visibility = { path = "vendor/rust/visibility-0.1.1" }
+num_enum_derive = { path = "vendor/rust/num_enum_derive-0.7.6" }
 
 [profile.release]
 opt-level = 3

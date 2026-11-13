@@ -1,0 +1,8 @@
+/target
+Cargo.lock
+.cargo/
+.DS_Store
+recorded.wav
+rls*.log
+/.direnv
+!/examples/audioworklet-beep/.cargo/
