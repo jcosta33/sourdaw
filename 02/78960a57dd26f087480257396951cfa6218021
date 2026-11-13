@@ -1,0 +1,25 @@
+pnpm-workspace.yaml
+  s_126e3d478b4f75::t_5dcb69055a2894 45-50
+src/modules/BrowserAi/workers/tfjsInferenceWorker.ts
+  s_126e3d478b4f75::t_77abf55092efd2 61-62
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.realModel.integration.spec.ts
+  s_126e3d478b4f75::t_5f2107f2c6cf42 27-47
+pnpm-lock.yaml
+  s_126e3d478b4f75::t_094c4f3b5d79dc 165-167,2485-2486,2489,2505-2506,2508,2511-2512,2514,2516-2517,3354-3355,7407,7598,7600-7601,7627,7629,7637,7639,7641,7643-7648,7651,8433
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0278960a57dd26f087480257396951cfa6218021",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
