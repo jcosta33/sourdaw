@@ -1,0 +1,26 @@
+src/modules/Fermenter/presentations/views/__tests__/fermenterPatchAuditionUndo.integration.spec.tsx
+  s_9307cedd8951f1::t_60d14b273347fa 526,530-548,553-554
+  s_9307cedd8951f1::t_3faf887e04b09b 95,527-529,549-552
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  s_9307cedd8951f1::t_3faf887e04b09b 146
+.agents/skills/review-stances/project-integrity.md
+  s_9307cedd8951f1::t_27a3c1410ffd79 20-21
+src/modules/Fermenter/useCases/readFermenterPatchOwner.ts
+  s_9307cedd8951f1::t_60e494d94987e4 6,18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1e984e95610137e491d15f10814375a6b51fe37f",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
