@@ -1847,7 +1847,7 @@ function countDeviceDataAstWrites(file: SourceText): number {
 }
 
 // AST census walks updateTrack and trackStore.set; property-syntax
-// devices:/parameterValues: hits are regex-owned and must not parse here.
+// devices:/parameterValues: hits remain regex-owned apart from ternary separators.
 function codeMayContainDeviceDataAstWrites(code: string): boolean {
     if (code.length === 0) {
         return false;
@@ -1855,12 +1855,47 @@ function codeMayContainDeviceDataAstWrites(code: string): boolean {
     return code.includes('updateTrack') || code.includes('trackStore');
 }
 
+const DEVICE_DATA_COLON_PATTERN = /\b(?:parameterValues|devices)\s*:/g;
+
+function conditionalColonOffsets(file: ProductionSource): ReadonlySet<number> {
+    const sourceFile = createSourceFile(
+        file.path,
+        file.code,
+        ScriptTarget.Latest,
+        true,
+        file.path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS
+    );
+    const offsets = new Set<number>();
+    const visit = (node: Node): void => {
+        if (isConditionalExpression(node)) {
+            offsets.add(node.colonToken.getStart(sourceFile));
+        }
+        forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return offsets;
+}
+
 function countDeviceDataByPath(files: ReadonlyArray<ProductionSource>): CountByPath {
     const result = countByPath(files, {
-        pattern: /\b(?:parameterValues|devices)\s*:/g,
+        pattern: DEVICE_DATA_COLON_PATTERN,
         includes: includeAllPaths,
     });
     for (const file of files) {
+        if (result[file.path] && file.code.includes('?')) {
+            const offsets = conditionalColonOffsets(file);
+            let reads = 0;
+            for (const match of file.code.matchAll(DEVICE_DATA_COLON_PATTERN)) {
+                const colonOffset = match.index + match[0].lastIndexOf(':');
+                if (offsets.has(colonOffset)) {
+                    reads += 1;
+                }
+            }
+            result[file.path] -= reads;
+            if (result[file.path] === 0) {
+                delete result[file.path];
+            }
+        }
         if (!codeMayContainDeviceDataAstWrites(file.code)) {
             continue;
         }
@@ -2142,6 +2177,27 @@ describe('device write boundary closure', () => {
             SINK_DEFINITIONS['persistence-runtime']
         );
         expect(sinks['src/modules/Arrangement/codeSink.ts']).toBe(1);
+    });
+
+    it.each([
+        'const devices = Object.hasOwn(track, "devices") ? track.devices : [];',
+        'const devices = present ? track?.devices : fallback;',
+        'const value = present ? (nested ? track.parameterValues : fallback) : {};',
+        'const value = present ? track.devices /* read */ : fallback;',
+    ])('does not count a device-data ternary read as a property write: %s', (source) => {
+        const path = 'src/modules/Arrangement/readDeviceData.ts';
+        expect(countDeviceDataByPath([productionSource(path, source)])[path]).toBeUndefined();
+    });
+
+    it.each([
+        ['const value = present ? { devices: [] } : fallback;', 1],
+        ['const value = present ? { parameterValues: {} } : fallback;', 1],
+        ['const value = present ? track.devices : { devices: [] };', 1],
+        ['const value = present ? track.parameterValues : { parameterValues: {} };', 1],
+        ['const devices: string[] = [];', 1],
+    ])('keeps real device-data colons in the lexical census: %s', (source, expected) => {
+        const path = 'src/modules/Arrangement/propertyDeviceData.ts';
+        expect(countDeviceDataByPath([productionSource(path, source)])[path]).toBe(expected);
     });
 
     it('does not classify read-only destructuring or projection as a shorthand write', () => {
