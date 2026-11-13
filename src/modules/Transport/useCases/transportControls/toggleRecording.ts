@@ -269,7 +269,10 @@ function prepareManualNativeTerminal(
                 'error'
             );
         })
-        .finally(takeHold.release);
+        .finally(takeHold.release)
+        .catch((error: unknown) => {
+            logger.error(new Error('Recovered recording take release failed', { cause: error }));
+        });
     return undefined;
 }
 
@@ -459,10 +462,18 @@ function commitManualTake(
             );
             return 'refused' as const;
         }
-        return commitRecording(recordedClip, captureEvidence, { shouldExecute: stillOwnsCaptureRoot }).catch(
-            (error: unknown) => handleManualRecordingCommitFailure(error, recordedClip.id, stillOwnsCaptureRoot)
-        );
+        return commitOwnedManualTake(recordedClip, captureEvidence, stillOwnsCaptureRoot);
     });
+}
+
+function commitOwnedManualTake(
+    recordedClip: Parameters<typeof commitRecording>[0],
+    captureEvidence: Parameters<typeof commitRecording>[1],
+    stillOwnsCaptureRoot: () => boolean
+): Promise<void | 'refused'> {
+    return commitRecording(recordedClip, captureEvidence, { shouldExecute: stillOwnsCaptureRoot }).catch(
+        (error: unknown) => handleManualRecordingCommitFailure(error, recordedClip.id, stillOwnsCaptureRoot)
+    );
 }
 
 function readManualRecordingAdmission() {
