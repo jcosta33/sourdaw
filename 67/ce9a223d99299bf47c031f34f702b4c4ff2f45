@@ -1,0 +1,318 @@
+src/modules/Arrangement/useCases/__tests__/addTrack.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 26,33,44,58
+src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 151,192
+src/modules/AiGeneration/useCases/actions/__tests__/generateMidiPromptProjectTruth.integration.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 9
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 29,50
+docs/07-conventions.md
+  s_35b9801a6d6336::t_07fcb5d72a3e09 730-731
+src/components/ui/input.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 11
+src/modules/Fermenter/models/FermenterPatchProjectState.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-83
+scripts/__tests__/eslintWarnLevels.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-190
+src/modules/Project/stores/projectTransitionEpoch.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-29
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 253-255,257-259,737-745,1071-1076,1085-1087,1096-1099,1133-1135,1215-1218,1303-1306,1850,1858-1878,1881,1885-1901,2185-2204
+  s_35b9801a6d6336::t_41ce191e00815f 2205
+src/modules/Arrangement/useCases/restoreTrackAtIndex.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-131
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 158
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 250-281,299
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1005
+src/modules/Arrangement/models/PlannedDeviceOwnerSource.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-125
+scripts/__tests__/oxlintWarnLevels.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 87-90
+src/modules/Fermenter/useCases/__tests__/hydrateFermenterFromProject.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 7,77-90
+  s_35b9801a6d6336::t_e3d49f003f46ee 91-92
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 437
+src/modules/Arrangement/models/DevicePatchState.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-7
+src/modules/Arrangement/stores/appendTrack.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 11-12
+src/utils/handlerContract.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 41-45,2006-2021
+src/modules/Arrangement/models/__tests__/PlannedDeviceOwnerSource.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-54
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 22-24,57,82-85,358,360,362-363,365-368,373,376,398,400
+src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 2,4,6,8,10,13,15-19
+src/modules/Fermenter/useCases/commitFermenterPatchFrame.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-47
+src/modules/AudioEngine/stores/__tests__/aiPreviewUndoOwnership.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 390
+docs/06-testing.md
+  s_35b9801a6d6336::t_07fcb5d72a3e09 103,161-163,165,167-168,170,172,174
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 80
+src/modules/Arrangement/useCases/index.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 32,348-350
+src/modules/Arrangement/handlers/preset/toPresetProjectDevices.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 3,5-7
+.agents/skills/review-stances/test-validity.md
+  s_35b9801a6d6336::t_07fcb5d72a3e09 111-124,138-144,184-188
+src/modules/Fermenter/models/__tests__/FermenterPatchProjectState.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-84
+src/modules/Arrangement/useCases/device/applyDevicePatchState.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-40
+src/modules/Fermenter/presentations/components/PresetBrowser.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 7,22,26,60,64,70-86,208,220,222-246
+src/modules/Fermenter/useCases/reconcileFermenterPatchFromProject.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-34
+src/modules/Project/useCases/projectPersistence/captureProjectTransitionAuthority.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1,3-5
+docs/architecture/03-typescript-module.md
+  s_35b9801a6d6336::t_07fcb5d72a3e09 209,341,664,669,673-675,677,679-680,685,1085,1267
+src/modules/Fermenter/presentations/views/__tests__/FermenterControlKeyboard.integration.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 19,24-25,27-28,31-32,38-42,50-51,78-79,307-316
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/runProjectLoadTransaction.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 5,59-262,300-301,303-304,348-457
+src/modules/Project/stores/index.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 20-21
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1297
+src/modules/AiGeneration/handlers/aiMidi/handleReplayGeneratedMidi.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1,174,178,185
+src/modules/Fermenter/__tests__/patchWriteHarness.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-143
+src/modules/Fermenter/models/__tests__/FermenterPatchState.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-72
+src/modules/Fermenter/useCases/commitFermenterPatch.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-10
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 20,127-128,181-182,220-226,568-569
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 350,352,355-357,359,362,371-376
+  s_35b9801a6d6336::t_158ec67891e37e 377
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 257
+src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 2,4,6,8,10-11,14-15
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleGenerateBassline.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 28,60,132,189,205-206,250,401,528
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleReplayGeneratedMidi.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 19,254,283
+src/modules/Fermenter/useCases/fermenterPatchWriteOperations.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-14
+src/modules/Fermenter/useCases/__tests__/presetMorph.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-2,4-6,8,10-11,13,21,85,87-89,91-92,101-148,151-238
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_35b9801a6d6336::t_07fcb5d72a3e09 87-92
+pnpm-workspace.yaml
+  s_35b9801a6d6336::t_07fcb5d72a3e09 42
+.agents/skills/review-stances/project-integrity.md
+  s_35b9801a6d6336::t_07fcb5d72a3e09 82-95,151-159
+src/app/registerDependencies.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 4
+src/app/__tests__/bootstrap.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 602,964
+src/modules/Arrangement/handlers/__tests__/projectTrackThroughPriorBatchActions.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 51-108
+src/modules/Project/useCases/projectPersistence/helpers/runProjectLoadTransaction.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 4,23-58,62,77,80,107-154,160-166,170-171,176-177,179,182,185-186,188-189,192-194,200-212,214-216,218
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 103-104,108
+src/modules/Collaboration/useCases/__tests__/removeClipUndoCommit.integration.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 106,224
+src/modules/Fermenter/useCases/isLocalFermenterPatchWrite.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-18
+src/modules/Arrangement/presentations/views/TimelineMinimap.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 448-454,460,464,467,470,476
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 138,305,448,698,709,748,810,818
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 151,209
+src/modules/Fermenter/useCases/fermenterParamBridge/fermenterParamBatcher.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 3-5,7-29
+src/modules/Fermenter/models/FermenterPatchState.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-193
+src/modules/Fermenter/useCases/getFermenterHandlers.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-5
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 63,71
+src/modules/CommandInterface/presentations/views/__tests__/patternPaletteWorkflow.integration.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 13
+src/modules/Arrangement/useCases/device/__tests__/applyDevicePatchState.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-114
+src/modules/Arrangement/models/DeviceChainActionProjection.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-126
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.offThreadMaterialization.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 67,395-399,566,570,572-578,584-585,594-630,780-786,788,818,955,957
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 290,296-297
+src/modules/Fermenter/useCases/fermenterParamBridge/__tests__/loadFermenterPatchWithAudio.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1,3,5,7,10,12,14-15,18-26,30-33,36,39-63
+src/modules/Arrangement/useCases/device/getPlannedDevicePatchState.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-80
+src/modules/Fermenter/presentations/views/__tests__/fermenterFilterSelectionUndo.integration.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 56,60,186,220,226,667-671,770
+src/modules/AiGeneration/handlers/generation/fillPlacement.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 2,191,198-199,203,232,255
+src/modules/Arrangement/presentations/views/__tests__/TimelineMinimapKeyRepeat.integration.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-52
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1,19-26,34,37,39,41-43,46,81,171,173-177,179-183,436-437,439-441,445,469,474-555,557,583-625,627,632-666,670-672,676-678,729-733,801-821,824,828
+src/modules/Fermenter/useCases/fermenterParamBridge/__tests__/setFermenterParamWithAudio.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1,3-4,8,10-11,13,15-18,21,26-34,38,40-43
+src/modules/Fermenter/useCases/findFermenterPresetId.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-19
+src/modules/Fermenter/useCases/fermenterParamBridge/cancelPendingFermenterPatchWrites.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-5
+src/modules/Arrangement/useCases/device/captureDevicePatchCommitValidation.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-215
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/pickAndImportProjectFile.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 14
+src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 2,4,6
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 14,40-52,54-58,60-63,65-69,299-300
+src/modules/Arrangement/useCases/duplicateTrack.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 23-57,60-109,111-145,148-150,153-155
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1068
+docs/04-events.md
+  s_35b9801a6d6336::t_07fcb5d72a3e09 21,51-53,56,60,72,89,91,94,96-97,103,121-122,124,168-171,225,230,232,242-243,247-248,251,253,256
+src/modules/AiRuntime/useCases/__tests__/confirmedCompoundBusActions.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 17,503
+src/modules/Fermenter/useCases/randomizeFermenterPatch.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-26
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1013
+src/modules/WorkspaceShell/presentations/views/__tests__/promptBarApprovalParity.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 83
+patches/@automerge__automerge@3.5.0.patch
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-421
+src/modules/AiGeneration/useCases/actions/__tests__/handleGenerateMidiPrompt.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 181,189,194
+src/modules/Arrangement/models/__tests__/DevicePatchWritePlan.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-310
+src/modules/Arrangement/models/DevicePatchWritePlan.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-263
+src/modules/Fermenter/useCases/hydrateFermenterFromProject.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 4,28-31,46-50,52-61,64,67-68
+src/modules/Fermenter/handlers/handleSetFermenterPatch.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-158
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreTrack.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 462
+src/modules/Arrangement/handlers/track/__tests__/handleAddTrack.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 23,38
+src/modules/AiGeneration/handlers/aiMidi/handleGenerateBassline.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 5,142,148-149,211,219,223,234,240,245,263,368
+src/modules/Arrangement/useCases/device/__tests__/captureDevicePatchCommitValidation.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-137
+eslint.config.mjs
+  s_35b9801a6d6336::t_07fcb5d72a3e09 2760-2796,3112
+src/modules/Fermenter/presentations/components/__tests__/PresetBrowser.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 22-23,163,166,171-178,181-189,192-196,209-258
+  s_35b9801a6d6336::t_babcc962fdbbbe 259-260
+src/modules/Fermenter/useCases/prepareFermenterPatchWrite.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-260
+.agents/skills/review-stances/code-craft.md
+  s_35b9801a6d6336::t_07fcb5d72a3e09 48-54
+src/modules/Fermenter/useCases/subscribeToFermenterPatchOwner.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-15
+src/modules/Fermenter/models/PreparedFermenterPatchWrite.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-22
+src/modules/Project/useCases/__tests__/importSclFile.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 420-441
+.agents/skills/review-stances/rendered-ui-layout.md
+  s_35b9801a6d6336::t_07fcb5d72a3e09 62-63,85-91
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/runProjectLoadTransactionLaunchRace.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 38-43
+src/modules/Arrangement/useCases/addTrack.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 20-24,26-31,33-34
+src/infra/automerge/__tests__/stagedDocumentLoad.integration.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-206
+src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 4,16-23
+src/modules/Arrangement/models/PlannedDeviceWrite.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-43
+src/modules/Arrangement/presentations/views/__tests__/TimelineMinimap.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 104,411-413
+src/modules/Fermenter/useCases/fermenterParamBridge/cancelPendingFermenterParam.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 3,6
+src/modules/AudioEngine/stores/__tests__/aiPreviewHandoffOwnership.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 152
+.agents/skills/review-stances/async-file-imports.md
+  s_35b9801a6d6336::t_07fcb5d72a3e09 31-48
+src/modules/Fermenter/presentations/views/__tests__/fermenterProjectHydration.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 8-13,19,22-24,88-109
+  s_35b9801a6d6336::t_4646c9fcd5979c 110-111
+release/open-source-inventory.json
+  s_35b9801a6d6336::t_07fcb5d72a3e09 172,271,281,299,313,1231,1905
+src/modules/Arrangement/models/CapturedDevicePatchProjection.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-50
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 8,619-620,623-626,642-650,662-673,675-680,682-683,686,717,720,722-723
+src/modules/Fermenter/useCases/fermenterPatchOperations.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-33
+src/modules/Arrangement/handlers/track/duplicateTrack.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 68
+src/modules/Fermenter/useCases/index.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 4
+src/modules/Fermenter/useCases/readFermenterPatchOwner.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-39
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 92,220
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 2662-2707,2729,2740,2778,2783,2826,2831,2949,2955,2969,2974,3001,3006,3073,3101,3120,3148,3171-3172,3195,3214,3222,3231,3242-3244,3258-3260,3291,3297,3306,3317,3325,3336-3337,3359,3381-3382,3407-3408,3463,3471,3532,3550,3556,3604,3612,3621,3630-3631,3636-3641,3676,3683,3699,3707,3767-3768,3892,3898,3923,3960,3975,3980,3998,4001-4002,4022,4036-4037,4046,4048,4060-4061,4069-4070,4082,4098,4108,4126,4134-4136,4143,4164-4165,4179-4180,4194-4195,4239-4240,4316-4317,4397-4398,4540,4546,4550-4551,4576,4587,4669-4670,4697-4698,4720,4734,4743,4765,4779,4786,4793-4795,4825-4827,4858,4863,4875,4882,4889,4895,4900,4902-4903,4983,5063,5076-5077,5150,5200,5213,5227,5314,6623,6631,6801,6990-6995,7002-7028,7030-7060,7064,7066-7086,7089,7091-7101,7103-7104,7111-7135,7137-7139,7177-7178,7184,7197,7221,7264,7268-7269,7281,7291
+  s_35b9801a6d6336::t_40928a682b8394 4836,4887,4915,4931-4932,4938,4982,4992-4993,5056,5062,5103,5108-5109,5143,5155-5156,5172,5177-5178,5190,5207,5218,5228,5250,5255-5256,5293-5294,5328-5329,5337-5338,5437,5444,5450-5451,5458,5472,5487,5501,5506-5509,5538,5544,5558,5564,5609,5611,5626,5635-5636,5638,5651-5652,5655,5662,5667,5694,5699,5794,5801,5829,5837,5843,5851-5852,5892,5903,5911,5917,5924,5929,5937-5938,5964,5976,5981-5982,5992-5993,6194,6210,6227,6234-6235,6238,6269,6282-6285,6295-6296,6341,6355,6360,6362,6401,6412,6418,6425,6430,6432-6435,6451,6490,6495,6513,6518,6550,6555,6618,6643,6664,6676,6682,6688-6689,6714,6720-6721,6785,6791,6806,6808,6817,6819,6828,6876,6881,6900,6905,7136,7140-7145,7151-7152,7155-7159,7161-7162,7164,7166-7176,7180-7182,7185-7188,7190-7191,7193-7195,7198-7209,7211,7213-7215,7220,7222,7224-7227,7231-7236,7241,7243-7244,7246-7247,7250-7263,7266-7267,7270,7272-7275,7279-7280,7282-7290,7292-7294
+src/modules/Arrangement/models/DeviceSnapshotProjection.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-29
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  s_35b9801a6d6336::t_07fcb5d72a3e09 49-64
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 211
+src/app/getProductionCommandHandlerMaps.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 16,70
+src/modules/Fermenter/useCases/__tests__/findFermenterPresetId.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-34
+.agents/skills/review-stances/runtime-instance-lifetimes.md
+  s_35b9801a6d6336::t_07fcb5d72a3e09 66-101
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 2,8,10-27,29,32-33,38-39,41-42,45,48-50,81-82,340-566,568,1099-1105,1107-1115
+src/modules/Fermenter/presentations/views/__tests__/fermenterPatchAuditionUndo.integration.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-1556
+src/modules/Arrangement/useCases/__tests__/restoreTrackAtIndex.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 1-112
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 61,143-144,146,197,208,253-306
+  s_35b9801a6d6336::t_b7b9067438b897 307
+src/styles/__tests__/semanticThemes.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 105-108,110,113-115,172,194,205-206,386-390,396,450,464,514-517,525,530-535,537-538,579-582,598,600-601,603-608
+src/modules/Project/useCases/projectPersistence/__tests__/newProjectNativeHostAbsent.spec.ts
+  s_35b9801a6d6336::t_07fcb5d72a3e09 89-120
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_35b9801a6d6336::t_07fcb5d72a3e09 269,348
+pnpm-lock.yaml
+  s_35b9801a6d6336::t_c8e2718444cceb 166,175,5767
+public/legal/DEPENDENCY-LICENSES.txt
+  s_35b9801a6d6336::t_1f8a6c76e69ba4 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "67ce9a223d99299bf47c031f34f702b4c4ff2f45",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
