@@ -1,5 +1,3 @@
-import { isAppActionConflictError } from '#/modules/Command/useCases';
-
 import {
     GROOVE_EXTRACTION_ACTION_ERROR_CODES,
     isGrooveExtractionActionError,
@@ -11,16 +9,14 @@ function isGrooveExtractionActionErrorCode(value: unknown): value is GrooveExtra
 }
 
 /**
- * The extraction's refusal code: thrown for a request no project state could satisfy, or carried as
- * the conflict reason when the project moved under the extraction (its clip notes changed since it
- * was pinned, or its template id now holds other content).
+ * The extraction's refusal code, read from what the refusal carried: the error thrown for a request
+ * no project state could satisfy, or the conflict reason the handler returned when the project moved
+ * under the extraction (its clip notes changed since it was pinned, or its template id now holds
+ * other content). The caller that executed the action unwraps the conflict error into its reason.
  */
-export function getGrooveExtractionActionErrorCode(error: unknown): GrooveExtractionActionErrorCode | null {
-    if (isGrooveExtractionActionError(error)) {
-        return error.code;
+export function getGrooveExtractionActionErrorCode(refusal: unknown): GrooveExtractionActionErrorCode | null {
+    if (isGrooveExtractionActionError(refusal)) {
+        return refusal.code;
     }
-    if (isAppActionConflictError(error) && isGrooveExtractionActionErrorCode(error.reason)) {
-        return error.reason;
-    }
-    return null;
+    return isGrooveExtractionActionErrorCode(refusal) ? refusal : null;
 }

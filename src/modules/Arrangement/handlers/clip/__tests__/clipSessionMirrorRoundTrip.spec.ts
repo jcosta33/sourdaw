@@ -1906,8 +1906,10 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 (error: unknown) => error
             );
 
-            expect(isAppActionConflictError(refusal)).toBe(true);
-            expect(getGrooveExtractionActionErrorCode(refusal)).toBe('template-identity-conflict');
+            if (!isAppActionConflictError(refusal)) {
+                throw new Error('Expected the extraction to be refused as a conflict');
+            }
+            expect(getGrooveExtractionActionErrorCode(refusal.reason)).toBe('template-identity-conflict');
             expect(extractedTemplates()).toEqual([{ ...template, name: 'Collaborator groove' }]);
         });
 
@@ -1933,8 +1935,10 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 (error: unknown) => error
             );
 
-            expect(isAppActionConflictError(refusal)).toBe(true);
-            expect(getGrooveExtractionActionErrorCode(refusal)).toBe('source-revision-mismatch');
+            if (!isAppActionConflictError(refusal)) {
+                throw new Error('Expected the extraction to be refused as a conflict');
+            }
+            expect(getGrooveExtractionActionErrorCode(refusal.reason)).toBe('source-revision-mismatch');
             expect(extractedTemplates()).toEqual([]);
             expect(undoStore.value?.past).toEqual([]);
         });
