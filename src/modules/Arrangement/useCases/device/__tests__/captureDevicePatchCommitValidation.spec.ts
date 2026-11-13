@@ -7,6 +7,7 @@ import {
 import {
     createCrdtDoc,
     getCrdtDoc,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -45,6 +46,31 @@ describe('device patch publication transition authority', () => {
         const proof = captureDevicePatchCommitValidation({ trackId, deviceId: 'not-installed', parameterIds: [] });
         expect(proof).not.toBeNull();
         expect(proof?.isCurrent()).toBe(true);
+    });
+
+    it('admits an unrelated omitted device chain but refuses a present malformed chain', () => {
+        mutateCrdtDoc<{ tracks: { tracks: unknown[] } }>({
+            id: 'root',
+            changeFn: (root) => {
+                root.tracks.tracks.push({ id: 'partial', clips: [] });
+            },
+        });
+        const proof = captureDevicePatchCommitValidation({
+            trackId: 'owner',
+            deviceId: 'not-installed',
+            parameterIds: [],
+        });
+        expect(proof?.isCurrent()).toBe(true);
+        mutateCrdtDoc<{ tracks: { tracks: unknown[] } }>({
+            id: 'root',
+            changeFn: (root) => {
+                root.tracks.tracks.push({ id: 'malformed', devices: null });
+            },
+        });
+        expect(proof?.isCurrent()).toBe(false);
+        expect(
+            captureDevicePatchCommitValidation({ trackId: 'owner', deviceId: 'not-installed', parameterIds: [] })
+        ).toBeNull();
     });
 
     it.each(['activate', 'fail'] as const)(

@@ -17,8 +17,6 @@ Split out (a stance matching one carries that file, not this one): replay agains
 
 ## Standing probes
 
-**Raw owner scans must tolerate valid optional fields (#6506).** A correctly admitted current-format project track can omit `devices`; a raw CRDT consumer that iterates the field directly can throw during an unrelated track arrival and unmount a mounted owner. Keep the raw project and track/device object identities as the owner token, and scan `(track.devices ?? [])`. Probe through a mounted consumer and a real CRDT mutation that appends a valid track with no `devices`; the existing owner remains rendered. Preserve duplicate-owner and wrong-device-type refusal, plus equal-value successor and session-reset identity checks. Reverting the optional-field guard must fail the named integration case.
-
 1. **Save certifies the exact snapshot and every asset it references (#964, #1077, #2822, #3877).** Failure: Save
    returns true and clears dirty while the document points at PCM or state that is not durable, was edited after
    capture, or is certified by a receipt belonging to an older candidate. Probe: abort only the referenced asset's
@@ -86,6 +84,15 @@ Split out (a stance matching one carries that file, not this one): replay agains
    clamped it. Require shared scalar law and precise leaf absence through mixed patch/parameter group Undo/Redo,
    including restoration before a patch and terminal owner removal. Authenticate raw incarnation/presence again
    before mutation and the prospective owned intent; an early projected guard alone cannot protect publication.
+   In `fermenterPatchAuditionUndo.integration.spec.tsx`, “keeps the mounted owner when a current-format partial track
+   arrives” must append an unrelated raw track with an omitted `devices` field, then commit a fresh actual preset,
+   Undo and Redo. Raw omission stays exact through forward commit; replay may materialize canonical defaults, so
+   every supplied raw field, row incarnation and the pre-action projected sibling must stay unchanged through
+   both history directions. An absent device chain is empty for this ownership scan; a present malformed chain or
+   ambiguous owner still refuses raw write admission. “keeps a mounted Fermenter and its
+   owner through malformed raw neighbors” must retain the mounted valid owner when null tracks, nonarray chains or
+   null devices arrive in a real CRDT root. The safe read is not evidence that malformed truth admits a write; keep
+   duplicate and wrong-type refusal and raw project/track/device incarnation checks (#6506, caught before merge).
 6. **Identity namespaces are declared, scoped by path, and fail closed across reload and replay (#5157, #4036,
    #1857, #5570).** Failure: the ID walk marks a valid project repair-required (blocking Save, Undo), copied
    subtrees collide, or a replayed entry remints IDs. Probe: load each shipped demo and template, save, reload:

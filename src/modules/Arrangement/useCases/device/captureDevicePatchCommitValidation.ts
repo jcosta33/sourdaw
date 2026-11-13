@@ -32,10 +32,14 @@ function read(document: Readonly<Record<string, unknown>>, input: Input): Snapsh
     let selectedTrack: Record<string, unknown> | null = null;
     let trackValue: unknown = { present: false };
     for (const track of document.tracks.tracks) {
-        if (!isRecord(track) || typeof track.id !== 'string' || !Array.isArray(track.devices)) {
+        if (!isRecord(track) || typeof track.id !== 'string') {
             return null;
         }
-        const deviceIds = track.devices.map((device: unknown) => (isRecord(device) ? device.id : undefined));
+        const devices = Object.hasOwn(track, 'devices') ? track.devices : [];
+        if (!Array.isArray(devices)) {
+            return null;
+        }
+        const deviceIds = devices.map((device: unknown) => (isRecord(device) ? device.id : undefined));
         if (deviceIds.some((id) => typeof id !== 'string')) {
             return null;
         }
@@ -46,7 +50,7 @@ function read(document: Readonly<Record<string, unknown>>, input: Input): Snapsh
             selectedTrack = track;
             trackValue = { present: true, deviceIds, frozen: entry(track, 'frozen') };
         }
-        for (const device of track.devices) {
+        for (const device of devices) {
             if (!isRecord(device) || device.id !== input.deviceId) {
                 continue;
             }

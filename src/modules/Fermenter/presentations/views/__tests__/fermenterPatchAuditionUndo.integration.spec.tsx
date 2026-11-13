@@ -1,3 +1,4 @@
+import { getObjectId } from '@automerge/automerge';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
@@ -12,6 +13,7 @@ import {
 import {
     persistDeviceParam,
     resolveEligibleDeviceWriteTarget,
+    sanitizeTrackSnapshot,
     type Track,
     trackStore,
 } from '#/modules/Arrangement/stores';
@@ -527,6 +529,31 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         const auditioned = await uneditedAudition();
         const ownerToken = readFermenterPatchOwner(DEVICE_ID);
         expect(ownerToken).not.toBeNull();
+        const partial = {
+            id: 'partial',
+            name: 'Partial',
+            kind: 'audio',
+            clips: [],
+            gain: 0.37,
+            pan: -0.26,
+            notes: 'Unrelated',
+        };
+        const rawPartial = (): Record<string, unknown> => {
+            const root = getCrdtDoc<{ tracks: { tracks: Array<Record<string, unknown>> } }>('root');
+            const raw = root?.tracks.tracks.find((track) => track.id === partial.id);
+            if (!raw) {
+                throw new Error('Expected the unrelated partial track');
+            }
+            return raw;
+        };
+        const projectedPartial = (): Track | undefined => {
+            const root = getCrdtDoc<{ tracks: unknown }>('root');
+            return sanitizeTrackSnapshot(root?.tracks).tracks.find((track) => track.id === partial.id);
+        };
+        const expectUntouchedPartial = (): void => {
+            expect(rawPartial()).toEqual(partial);
+            expect(Object.hasOwn(rawPartial(), 'devices')).toBe(false);
+        };
         act(() => {
             mutateCrdtDoc<{
                 tracks: {
@@ -541,15 +568,80 @@ describe('Fermenter whole-patch auditioning through Command', () => {
             }>({
                 id: 'root',
                 changeFn: (root) => {
-                    root.tracks.tracks.push({ id: 'partial', name: 'Partial', kind: 'audio', clips: [] });
+                    root.tracks.tracks.push(partial);
                 },
             });
         });
         await waitFor(() => expect(screen.getByRole('slider', { name: /^Brightness$/ })).toBeInTheDocument());
+        expectUntouchedPartial();
+        const partialIdentity = getObjectId(rawPartial());
+        const baseline = structuredClone(projectedPartial());
+        if (!baseline) {
+            throw new Error('Expected the unrelated projected track');
+        }
+        const expectCanonicalPartial = (): void => {
+            const raw = rawPartial();
+            expect(getObjectId(raw)).toBe(partialIdentity);
+            for (const [key, value] of Object.entries(partial)) {
+                expect(raw[key]).toEqual(value);
+            }
+            for (const [key, value] of Object.entries(raw)) {
+                expect(Object.hasOwn(baseline, key)).toBe(true);
+                expect(value).toEqual(Reflect.get(baseline, key));
+            }
+            expect(projectedPartial()).toEqual(baseline);
+        };
         expect(committedPatch()).toEqual(auditioned);
         expect(readFermenterPatchOwner(DEVICE_ID)).toBe(ownerToken);
         expect(screen.getByRole('button', { name: 'Show patch A' })).toBeEnabled();
         expect(screen.getByRole('button', { name: 'Show patch B' })).toBeEnabled();
+        const next = resolveFermenterPresetPatch('fermenter-init', []);
+        if (!next) {
+            throw new Error('Expected Blank Dough factory preset');
+        }
+        fireEvent.click(screen.getByRole('button', { name: /^Blank Dough$/ }));
+        await waitFor(() => expect(committedPatch()).toEqual(next));
+        expect(getFermenterState(DEVICE_ID).patch).toEqual(next);
+        expect(readFermenterPatchFromProjectDevice(projectedTrack().devices[0]!)).toEqual(next);
+        expect(screen.getByText('Current scene').nextElementSibling).toHaveTextContent(next.name);
+        expectUntouchedPartial();
+        await act(() => undo());
+        await waitFor(() => expect(committedPatch()).toEqual(auditioned));
+        expect(getFermenterState(DEVICE_ID).patch).toEqual(auditioned);
+        expect(readFermenterPatchFromProjectDevice(projectedTrack().devices[0]!)).toEqual(auditioned);
+        expect(screen.getByText('Current scene').nextElementSibling).toHaveTextContent(auditioned.name);
+        expectCanonicalPartial();
+        await act(() => redo());
+        await waitFor(() => expect(committedPatch()).toEqual(next));
+        expect(getFermenterState(DEVICE_ID).patch).toEqual(next);
+        expect(readFermenterPatchFromProjectDevice(projectedTrack().devices[0]!)).toEqual(next);
+        expect(screen.getByText('Current scene').nextElementSibling).toHaveTextContent(next.name);
+        expectCanonicalPartial();
+    });
+
+    it('keeps a mounted Fermenter and its owner through malformed raw neighbors', async () => {
+        await uneditedAudition();
+        const ownerToken = readFermenterPatchOwner(DEVICE_ID);
+        expect(ownerToken).not.toBeNull();
+        const neighbors: unknown[] = [
+            null,
+            { id: 'nonarray-devices', devices: null },
+            { id: 'null-device', devices: [null] },
+        ];
+        for (const neighbor of neighbors) {
+            act(() => {
+                mutateCrdtDoc<{ tracks: { tracks: unknown[] } }>({
+                    id: 'root',
+                    changeFn: (root) => {
+                        root.tracks.tracks.push(neighbor);
+                    },
+                });
+            });
+            expect(projectedTrack().id).toBe(TRACK_ID);
+            expect(screen.getByRole('slider', { name: /^Brightness$/ })).toBeInTheDocument();
+            expect(readFermenterPatchOwner(DEVICE_ID)).toBe(ownerToken);
+            expect(screen.getByRole('button', { name: 'Show patch A' })).toBeEnabled();
+        }
     });
 
     it('clears A/B and Modified when a foreign project patch replaces a local continuous echo', async () => {
