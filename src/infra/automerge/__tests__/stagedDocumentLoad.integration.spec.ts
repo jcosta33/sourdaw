@@ -112,7 +112,7 @@ describe('staged native document load', () => {
             process.stdout.write('verified all package entrypoints');
         `,
             ],
-            { encoding: 'utf8', cwd: process.cwd() }
+            { encoding: 'utf8', cwd: process.cwd(), timeout: 5_000, maxBuffer: 32 * 1024 }
         );
         expect(output).toBe('verified all package entrypoints');
     });
