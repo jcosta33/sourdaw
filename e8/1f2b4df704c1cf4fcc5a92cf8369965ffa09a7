@@ -1,0 +1,19 @@
+scripts/__tests__/rulesetHardening.spec.ts
+  s_3a41107b947644::t_da783b4983f864 61-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e81f2b4df704c1cf4fcc5a92cf8369965ffa09a7",
+  "prompts": {},
+  "sessions": {
+    "s_3a41107b947644": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_3a41107b947644",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
