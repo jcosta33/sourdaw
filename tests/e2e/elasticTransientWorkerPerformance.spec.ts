@@ -5,7 +5,12 @@ import { type Page, type TestInfo } from '@playwright/test';
 
 import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
-import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
+import {
+    attach_first_paint_console,
+    CAPABILITIES_MARKER,
+    wait_for_console_marker,
+    wait_for_console_marker_after,
+} from './firstPaintDiagnostics';
 
 /**
  * The 60 Hz frame budget (16.667 ms) remains the design target, recorded per task
@@ -813,12 +818,8 @@ test('saved 82 sensitivity seeds first Worker Detect on a new clip after complet
     // probe, not just the painted chrome.
     await wait_for_console_marker(boot, CAPABILITIES_MARKER, 30_000);
     await wait_for_workspace_ready(reloaded);
-    await reloaded.reload();
-    // attach_first_paint_console is idempotent per page, so the pre-reload load's
-    // marker is already in this timeline; wait for a fresh occurrence instead.
-    const capabilitiesCount = () => boot.events.filter((event) => event.text.includes(CAPABILITIES_MARKER)).length;
-    const beforeReload = capabilitiesCount();
-    await expect.poll(() => capabilitiesCount(), { timeout: 30_000 }).toBeGreaterThan(beforeReload);
+    // Capture the boundary before reload so a marker emitted during navigation is retained.
+    await wait_for_console_marker_after(boot, CAPABILITIES_MARKER, 30_000, () => reloaded.reload());
     await wait_for_workspace_ready(reloaded);
     const newClip = await importPreferenceClip(reloaded, 'preference-new-after-reload.wav');
     expect(newClip).not.toBe(firstClip);
