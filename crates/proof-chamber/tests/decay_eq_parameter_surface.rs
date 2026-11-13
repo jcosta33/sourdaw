@@ -35,6 +35,8 @@
 //! under all six writes, which is what makes the `structural` gap row in
 //! `src/utils/nativeDspEngineGaps.ts` a measurement rather than an opinion.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::ProofChamberInstance;
 
 /// Two rates, because the stage designs biquads from the sample rate and a

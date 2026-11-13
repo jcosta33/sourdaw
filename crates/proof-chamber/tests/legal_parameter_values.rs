@@ -15,6 +15,8 @@
 //! The observable is the rendered signal, not a name. Two wire values agree
 //! when they render identically, which is the claim a listener can check.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::ProofChamberInstance;
 use serde::Deserialize;
 use std::collections::BTreeMap;

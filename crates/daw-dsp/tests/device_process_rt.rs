@@ -22,6 +22,7 @@
 //! the interceptor is installed rather than assumed.
 
 #![cfg(debug_assertions)]
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
 
 use assert_no_alloc::{assert_no_alloc, AllocDisabler};
 

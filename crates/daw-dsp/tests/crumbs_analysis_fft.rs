@@ -11,6 +11,8 @@
 //! reference DFT is written out inside this file rather than imported, so the
 //! comparison keeps its meaning after the source it checks was swapped.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::f32::consts::PI;
 
 use daw_dsp::crumbs::analysis::fft::RealFftPlan;

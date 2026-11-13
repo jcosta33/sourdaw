@@ -1433,8 +1433,8 @@ impl BacteriaEngine {
         }
 
         // Step sequencer steps: "stepSeqVal_N"
-        if name.starts_with("stepSeqVal_") {
-            if let Ok(idx) = name[11..].parse::<usize>() {
+        if let Some(step) = name.strip_prefix("stepSeqVal_") {
+            if let Ok(idx) = step.parse::<usize>() {
                 self.step_seq.set_step(idx, value);
             }
             return;

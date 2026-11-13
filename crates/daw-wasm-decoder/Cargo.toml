@@ -20,3 +20,6 @@ js-sys = "0.3"
 # opaque `unreachable` trap that silently poisons the decoder wasm instance.
 # Scoped to wasm so the native build is unaffected.
 console_error_panic_hook = "0.1"
+
+[lints]
+workspace = true

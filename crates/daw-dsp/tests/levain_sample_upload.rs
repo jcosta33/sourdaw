@@ -9,6 +9,8 @@
 //! The counters are per thread, so tests running in parallel do not see each
 //! other's allocations.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 

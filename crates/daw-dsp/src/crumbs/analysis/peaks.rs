@@ -49,11 +49,7 @@ pub fn generate_mipmap(samples: &[f32]) -> WaveformMipmap {
     let mut levels = vec![level0];
 
     // Subsequent levels: halve the resolution by combining adjacent pairs.
-    loop {
-        let prev = levels.last().unwrap();
-        if prev.len() <= 1 {
-            break;
-        }
+    while let Some(prev) = levels.last().filter(|level| level.len() > 1) {
         let next = reduce_peaks_by_2(prev);
         levels.push(next);
     }

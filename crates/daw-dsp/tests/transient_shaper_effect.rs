@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::toaster::transient::{TransientShaper, TransientShaperInstance};
 
 #[test]
