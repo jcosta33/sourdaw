@@ -2,9 +2,9 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { prepareStripSilence } from '../../useCases/prepareStripSilence';
 import { restoreStripSilenceState } from '../../useCases/restoreStripSilenceState';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { stripSilence } from '../../useCases/stripSilence';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 

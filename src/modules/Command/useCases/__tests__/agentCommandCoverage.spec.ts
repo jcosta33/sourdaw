@@ -84,10 +84,10 @@ function assertRuntimeActionCensus(
         (type) => recordedTypes.indexOf(type) !== recordedTypes.lastIndexOf(type)
     );
     const stale = distinctRecorded.filter((type) => !runtime.has(type));
-    const undoableOutsideScope = records
+    const outsideScopeTypes = records
         .filter((record) => record.kind === 'outside-agent-scope')
-        .flatMap((record) => record.actionTypes)
-        .filter((type) => undoableHandlerTypes.has(type));
+        .flatMap((record) => record.actionTypes);
+    const undoableOutsideScope = outsideScopeTypes.filter((type) => undoableHandlerTypes.has(type));
     const problems = [
         ...undoableOutsideScope.map((type) => `${type}: outside agent scope but its handler is undoable`),
         ...unaccounted.map((type) => `${type}: no executable descriptor and no accounting record`),
