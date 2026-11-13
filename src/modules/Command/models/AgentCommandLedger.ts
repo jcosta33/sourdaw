@@ -316,6 +316,298 @@ export const AGENT_COMMAND_LEDGER_UNCOVERED_CATEGORIES: readonly {
 ] as const;
 
 /**
+ * Why an AI runtime action type has no executable command. `interim-unsupported` names an edit the
+ * agent should own, which its tracker packet registers or retires from the runtime vocabulary;
+ * `outside-agent-scope` names a view, panel, transport-control or session action that is never a
+ * project edit an agent command commits.
+ */
+export type AgentRuntimeActionAccountingRecord =
+    | {
+          kind: 'interim-unsupported';
+          category: AgentCommandLedgerCategory | 'analysis';
+          packet: string;
+          reason: string;
+          actionTypes: readonly string[];
+      }
+    | {
+          kind: 'outside-agent-scope';
+          category: 'view' | 'panel' | 'transport-control' | 'session';
+          reason: string;
+          actionTypes: readonly string[];
+      };
+
+const RUNTIME_ACTION_PACKET = '#6473';
+
+/**
+ * The accounting for every AI runtime action type (`RUNTIME_ACTION_TYPES`) that no executable
+ * descriptor publishes. A runtime action type is covered exactly once: by a descriptor or by one
+ * record here, never both and never neither, and a record names only live runtime action types.
+ */
+export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccountingRecord[] = [
+    {
+        kind: 'interim-unsupported',
+        category: 'track',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Track-level edits whose handlers carry no executable descriptor, target capability, effect declaration or session replay contract yet; toggleSoloSafe is the non-idempotent form of the registered setSoloSafe.',
+        actionTypes: [
+            'removeAllTracks',
+            'toggleSoloSafe',
+            'disableTrack',
+            'createFolder',
+            'groupTracks',
+            'ungroupTracks',
+            'setTrackNotes',
+            'setTrackInput',
+            'createTrackAlternative',
+            'switchTrackAlternative',
+            'renameTrackAlternative',
+            'deleteTrackAlternative',
+            'autoOrganizeProject',
+            'loadTrackTemplate',
+        ],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'render-freeze-export',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Render and freeze edits replace live tracks or clips with rendered audio through asynchronous jobs; none publishes a preview capability or an inverse a saved history can replay.',
+        actionTypes: [
+            'freezeTrack',
+            'unfreezeTrack',
+            'flattenTrack',
+            'bounceInPlace',
+            'consolidateSelection',
+            'bounceSelection',
+            'consolidateAllTracks',
+            'bounceToNewTrack',
+        ],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'clip',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Clip edits that read the clipboard or the live selection, or create comp and pattern structures, which no target capability grounds yet.',
+        actionTypes: [
+            'copyClip',
+            'cutClip',
+            'pasteClip',
+            'createCompGroup',
+            'createPatternInstance',
+            'detachPatternInstance',
+        ],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'audio-editing',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Audio clip edits with no executable descriptor or typed provider payload yet; their handlers accept unchecked runtime payloads.',
+        actionTypes: ['reverseClip', 'enableWarping', 'setWarpAlgorithm', 'setWarpPitchShift'],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'audio-editing',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Audio and groove extraction edits whose handlers plan deterministically but carry no executable descriptor yet.',
+        actionTypes: ['stripSilence', 'extractGroove'],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'midi',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'MIDI edits with no executable descriptor yet. applyGroove names a groove template id that no target capability grounds, so a provider could name a template the project lacks; the packet adds groove-template grounding before registering it.',
+        actionTypes: [
+            'humanizeNotes',
+            'scaleVelocities',
+            'applyGroove',
+            'enableMpe',
+            'disableMpe',
+            'audioToMidi',
+            'addChordEvent',
+            'removeChordEvent',
+            'clearChordTrack',
+            'toggleChordTrack',
+        ],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'midi',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Generative note actions that predate the MIDI transform route; the packet registers each as a transform that compiles to addNotes or retires it from the runtime vocabulary.',
+        actionTypes: [
+            'generateDrumPattern',
+            'generateMelody',
+            'generateChordProgression',
+            'generateBassline',
+            'generateFill',
+            'generateAllTransitions',
+            'completeMidi',
+            'variationMidi',
+        ],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'project-timeline',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Timeline edits that move or rewrite content across every track; none is registered with a preview capability or a project-wide effect declaration yet.',
+        actionTypes: [
+            'addTimeSignatureChange',
+            'removeTimeSignatureChange',
+            'deleteTime',
+            'insertTime',
+            'duplicateTimeRange',
+            'captureScratchPad',
+            'clearScratchPad',
+            'commitScratchPad',
+        ],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'automation',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Automation edits with no executable descriptor yet; removeAutomationPoint addresses a point by its index, which no target capability grounds.',
+        actionTypes: ['removeAutomationPoint', 'createAdjustmentLayer'],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'device',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Device edits that load external content (presets, plugins, neural models) or rewrite a whole chain; none publishes a preview capability or a typed provider payload yet.',
+        actionTypes: ['loadPreset', 'loadExternalPlugin', 'addCvOutput', 'loadRaveModel', 'setRaveBlend', 'autoFixMix'],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'routing',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'MIDI output and mapping edits target hardware ports and learned mappings, which no target capability grounds yet.',
+        actionTypes: ['setMidiOutput', 'clearMidiOutput', 'clearAllMidiMappings'],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'asset',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'File imports open a file chooser the planner cannot answer; the agent imports through importStemSet.',
+        actionTypes: ['importAudioFile', 'importMidiFile'],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'branch',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Project versions and branches replace or fork the whole document outside the undo history; the agent branches through createDrumPreviewBranches.',
+        actionTypes: ['createProjectVersion', 'createVersionBranch', 'restoreProjectVersion'],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'history',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Internal inverse actions that undo replays and no planner should name; the packet retires them from the runtime vocabulary.',
+        actionTypes: ['restoreLoopRegion', 'restoreClip', 'restoreTrack', 'restoreAutomationLanePoints'],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'analysis',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Analysis actions write no project edit; the packet moves each to a read tool (as analysis.detectTransients already is) or retires it from the runtime vocabulary.',
+        actionTypes: [
+            'analyzeMix',
+            'detectTempo',
+            'detectKey',
+            'detectSongStructure',
+            'detectTransients',
+            'compareToReference',
+            'getMentorTips',
+            'getLatencyReport',
+            'searchSamples',
+        ],
+    },
+    {
+        kind: 'outside-agent-scope',
+        category: 'view',
+        reason: 'View state (selection, tools, zoom, track height and visibility, snap, workspace mode) changes what the musician sees, not the project an agent edits.',
+        actionTypes: [
+            'selectTrack',
+            'setWorkspaceMode',
+            'setEditingTool',
+            'setMarqueeSelection',
+            'hideTrack',
+            'setTrackHeight',
+            'setSnapValue',
+            'zoomToFit',
+            'zoomToSelection',
+            'zoomTracksVertical',
+            'foldTrack',
+        ],
+    },
+    {
+        kind: 'outside-agent-scope',
+        category: 'panel',
+        reason: 'Panels and dialogs open and close application chrome, not project content.',
+        actionTypes: [
+            'openPreferencesDialog',
+            'openMixer',
+            'closeMixer',
+            'toggleSidebar',
+            'toggleInspector',
+            'toggleChatPanel',
+            'toggleNodeView',
+            'toggleUndoTree',
+            'toggleScratchPad',
+        ],
+    },
+    {
+        kind: 'outside-agent-scope',
+        category: 'transport-control',
+        reason: 'Transport, recording and performance toggles drive playback the musician controls live; the agent sets loop, metronome and punch state through the registered set commands.',
+        actionTypes: [
+            'togglePlayback',
+            'toggleRecording',
+            'toggleLoop',
+            'toggleMetronome',
+            'toggleCountIn',
+            'setCountInBars',
+            'togglePreRoll',
+            'setPreRollBars',
+            'toggleLoopRecord',
+            'togglePunchRecording',
+            'triggerScene',
+            'nextSetlistItem',
+            'previousSetlistItem',
+        ],
+    },
+    {
+        kind: 'outside-agent-scope',
+        category: 'session',
+        reason: 'Session actions act on files, collaboration, hardware, monitoring, user libraries, macros and the undo stacks rather than on project content; agent reverts run through revert groups.',
+        actionTypes: [
+            'saveProject',
+            'newProject',
+            'exportProject',
+            'exportMidi',
+            'exportDawProject',
+            'savePreset',
+            'saveTrackTemplate',
+            'deleteTrackTemplate',
+            'createCollabSession',
+            'joinCollabSession',
+            'leaveCollabSession',
+            'scanPlugins',
+            'connectPush',
+            'disconnectPush',
+            'setControlSurface',
+            'switchMonitor',
+            'toggleControlRoomDim',
+            'toggleControlRoomMono',
+            'undo',
+            'redo',
+            'labelUndoBranch',
+            'startMacroRecording',
+            'stopMacroRecording',
+            'playMacro',
+            'deleteMacro',
+        ],
+    },
+];
+
+/**
  * The minimum-write-set rule: an executable command is safe for an agent to commit without
  * explicit confirmation only when its registry risk is `bounded-reversible` and it is visible
  * (discoverability absent or `'visible'`) to planners.

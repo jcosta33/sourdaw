@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
 
+import { getRuntimeActionTypes } from '#/modules/AiRuntime/useCases';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
@@ -17,6 +18,7 @@ import {
     type AgentCommandLedgerClosure,
     type AgentCommandLedgerEntry,
     type AgentCommandLedgerOwner,
+    type AgentRuntimeActionAccountingRecord,
 } from '../../models/AgentCommandLedger';
 import { clearHandlerRegistry } from '../../stores/handlerRegistry';
 import { executableAppActionDescriptors, isExecutableAppActionType } from '../executableAppActionRegistry';
@@ -56,6 +58,108 @@ function buildActionTypeOwnerMap(): Map<string, AgentCommandLedgerOwner> {
     }
     return actionTypeToOwner;
 }
+
+/**
+ * Every runtime action type is covered exactly once, by an executable descriptor or by one
+ * accounting record, and no record names a type the runtime vocabulary no longer holds. Throws an
+ * error naming every type that breaks the rule.
+ */
+function assertRuntimeActionCensus(
+    runtimeActionTypes: readonly string[],
+    registeredActionTypes: readonly string[],
+    records: readonly AgentRuntimeActionAccountingRecord[]
+): void {
+    const runtime = new Set(runtimeActionTypes);
+    const registered = new Set(registeredActionTypes);
+    const recordCounts = new Map<string, number>();
+    for (const actionType of records.flatMap((record) => record.actionTypes)) {
+        recordCounts.set(actionType, (recordCounts.get(actionType) ?? 0) + 1);
+    }
+    const unaccounted = [...runtime].filter((type) => !registered.has(type) && !recordCounts.has(type));
+    const registeredAndRecorded = [...recordCounts.keys()].filter((type) => registered.has(type));
+    const recordedTwice = [...recordCounts].filter(([, count]) => count > 1).map(([type]) => type);
+    const stale = [...recordCounts.keys()].filter((type) => !runtime.has(type));
+    const problems = [
+        ...unaccounted.map((type) => `${type}: no executable descriptor and no accounting record`),
+        ...registeredAndRecorded.map((type) => `${type}: registered and also recorded`),
+        ...recordedTwice.map((type) => `${type}: recorded more than once`),
+        ...stale.map((type) => `${type}: recorded but not a runtime action type`),
+    ];
+    if (problems.length > 0) {
+        throw new Error(`Runtime action census failed:\n${problems.join('\n')}`);
+    }
+}
+
+function getRegisteredActionTypes(): string[] {
+    return executableAppActionDescriptors.map((descriptor) => descriptor.actionType);
+}
+
+function getLiveAccounting(): readonly AgentRuntimeActionAccountingRecord[] {
+    const records = getAgentCommandLedger().runtimeActionAccounting;
+    if (records === undefined) {
+        throw new Error('The live ledger must publish its runtime action accounting');
+    }
+    return records;
+}
+
+describe('runtime action census', () => {
+    it('covers every live runtime action type exactly once by a descriptor or an accounting record', () => {
+        expect(() =>
+            assertRuntimeActionCensus(getRuntimeActionTypes(), getRegisteredActionTypes(), getLiveAccounting())
+        ).not.toThrow();
+    });
+
+    it('fails, naming the type, when a runtime action type has neither a descriptor nor a record', () => {
+        expect(() =>
+            assertRuntimeActionCensus(
+                [...getRuntimeActionTypes(), 'fabricatedRuntimeAction'],
+                getRegisteredActionTypes(),
+                getLiveAccounting()
+            )
+        ).toThrowError(/fabricatedRuntimeAction: no executable descriptor and no accounting record/);
+    });
+
+    it('fails, naming the type, when a record names a type the runtime vocabulary does not hold', () => {
+        const staleRecord: AgentRuntimeActionAccountingRecord = {
+            kind: 'outside-agent-scope',
+            category: 'view',
+            reason: 'stale fixture',
+            actionTypes: ['retiredRuntimeAction'],
+        };
+        expect(() =>
+            assertRuntimeActionCensus(getRuntimeActionTypes(), getRegisteredActionTypes(), [
+                ...getLiveAccounting(),
+                staleRecord,
+            ])
+        ).toThrowError(/retiredRuntimeAction: recorded but not a runtime action type/);
+    });
+
+    it('fails, naming the type, when a registered command is also recorded or a type is recorded twice', () => {
+        const doubleRecord: AgentRuntimeActionAccountingRecord = {
+            kind: 'outside-agent-scope',
+            category: 'view',
+            reason: 'double fixture',
+            actionTypes: ['addTrack', 'selectTrack'],
+        };
+        const run = () =>
+            assertRuntimeActionCensus(getRuntimeActionTypes(), getRegisteredActionTypes(), [
+                ...getLiveAccounting(),
+                doubleRecord,
+            ]);
+        expect(run).toThrowError(/addTrack: registered and also recorded/);
+        expect(run).toThrowError(/selectTrack: recorded more than once/);
+    });
+
+    it('gives every interim record the runtime-action packet and every record a reason', () => {
+        for (const record of getLiveAccounting()) {
+            expect(record.reason.length).toBeGreaterThan(0);
+            expect(record.actionTypes.length).toBeGreaterThan(0);
+            if (record.kind === 'interim-unsupported') {
+                expect(record.packet).toBe('#6473');
+            }
+        }
+    });
+});
 
 describe('agent command ledger coverage', () => {
     beforeEach(() => {
