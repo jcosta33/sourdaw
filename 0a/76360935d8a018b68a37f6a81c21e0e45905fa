@@ -1,0 +1,106 @@
+src/modules/Command/models/ExecutableAppActionEffect.ts
+  s_35b9801a6d6336::t_68974d2f405d79 1-46,49-62
+  s_35b9801a6d6336::t_26406b1ca2b4c6 47-48
+src/modules/Command/useCases/executableAppActionEffects.ts
+  s_35b9801a6d6336::t_096208ef845214 196-199,201
+  s_35b9801a6d6336::t_72842d0aac2ef7 200
+  s_35b9801a6d6336::t_d67633c16f183b 1,3
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_35b9801a6d6336::t_8da43b8daa86c0 118
+  s_35b9801a6d6336::t_8208b0501fc458 32-33
+  s_35b9801a6d6336::t_663df94be090cb 117
+src/modules/Command/useCases/getVersionedCommandBatchEffects.ts
+  s_35b9801a6d6336::t_8f6f6ddb7ecf2b 33
+src/modules/MIDI/AGENTS.md
+  s_35b9801a6d6336::t_e02584ef07a91e 22
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_35b9801a6d6336::t_c66f048a704b89 1291-1298
+src/modules/MIDI/handlers/groove/handleExtractGroove.ts
+  s_35b9801a6d6336::t_f89cec46cd1acf 7
+  s_35b9801a6d6336::t_555242ca953b23 12-13
+  s_35b9801a6d6336::t_410073f46b29ec 151,156-159
+  s_35b9801a6d6336::t_e8200e59a81df7 95-115,117-127
+src/modules/MIDI/handlers/groove/__tests__/handleDeleteGrooveTemplate.spec.ts
+  s_35b9801a6d6336::t_c53ca1a1e0b407 56-91,93-108
+  s_35b9801a6d6336::t_c84ef0477f4267 92
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_35b9801a6d6336::t_14f54f3acc7fcb 62-68
+  s_35b9801a6d6336::t_ded0d89524e2e6 1651-1715,1718-1719,1721-1723
+  s_35b9801a6d6336::t_b42374bb0f4ce6 1716-1717,1720
+  s_35b9801a6d6336::t_0a9648a0a490fa 250
+  s_35b9801a6d6336::t_4f0f7622d17357 1724-1725
+src/modules/MIDI/useCases/grooveTemplates/getGrooveSourceClipName.ts
+  s_35b9801a6d6336::t_a59c550b8f5d96 1-12
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_35b9801a6d6336::t_1eb273744b4f67 171-198
+src/modules/Command/useCases/buildSemanticProjectDiff.ts
+  s_35b9801a6d6336::t_e0d18d2b84a931 46
+src/modules/Command/useCases/macro/playback.ts
+  s_35b9801a6d6336::t_e66db88d8422dd 334-341
+  s_35b9801a6d6336::t_6a263604c94e7e 342-344
+src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts
+  s_35b9801a6d6336::t_3d04cc836db91e 30-50,52-53,55
+  s_35b9801a6d6336::t_7a93596e2bba1a 216-218,223,227
+  s_35b9801a6d6336::t_424703c172a009 8
+  s_35b9801a6d6336::t_48c0d2459b5dec 73-79
+  s_35b9801a6d6336::t_6731eeed0f5b36 80-81
+  s_35b9801a6d6336::t_bc37b8afe2992d 173,212,229-230,233,301
+src/modules/MIDI/handlers/groove/__tests__/handleExtractGroove.spec.ts
+  s_35b9801a6d6336::t_a382b1c6674b0f 273
+  s_35b9801a6d6336::t_941b693a0c1d8f 94,98,101-118
+src/modules/MIDI/handlers/groove/handleDeleteGrooveTemplate.ts
+  s_35b9801a6d6336::t_bd8af884e74fc2 28
+  s_35b9801a6d6336::t_c8af2379b1ae78 2-3,9-24,26-27,29-33,35-37,39-42
+  s_35b9801a6d6336::t_9b381ccc6b2eaa 25
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_35b9801a6d6336::t_94dd130e07141e 7
+  s_35b9801a6d6336::t_4b7ad5e2be3a08 666-679
+  s_35b9801a6d6336::t_88d74192efe75f 2147-2158
+  s_35b9801a6d6336::t_cc462548ecf377 3066
+  s_9307cedd8951f1::t_46bba10c3ed8a1 665,2146
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_35b9801a6d6336::t_6e721d4fc2ba5d 3389
+  s_35b9801a6d6336::t_e37f673aea5a09 3510
+  s_35b9801a6d6336::t_bacef0ee95dd0e 1311-1337
+  s_35b9801a6d6336::t_690baef538f05c 1310,3268-3277
+src/modules/MIDI/handlers/groove/validateExtractGrooveCommand.ts
+  s_35b9801a6d6336::t_56d2db4864c025 1-45
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_35b9801a6d6336::t_e35fd6718c623a 362
+src/modules/Command/models/AgentCommandLedger.ts
+  s_35b9801a6d6336::t_5e69fea335d1ec 108-109,113,119
+  s_35b9801a6d6336::t_5c31740b4ff810 237
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_35b9801a6d6336::t_00b1390c2d2afa 909-921
+src/modules/Command/useCases/__tests__/executableAppActionEffects.spec.ts
+  s_35b9801a6d6336::t_46bd7bc446eca9 3-4
+src/utils/handlerContract.ts
+  s_35b9801a6d6336::t_d3732049d7b1a6 2913-2921
+  s_35b9801a6d6336::t_5d0e269fc13e7a 2935-2953
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_35b9801a6d6336::t_781fd23b338f7a 4786-4794,4841,4869,4872,4881-4886,4888,4892,4936,4946-4947,5010,5016,5057,5062-5063,5097,5109-5110,5126,5131-5132,5144,5161,5172,5182,5204,5209-5210,5247-5248,5282-5283,5291-5292,5329-5336,5391,5398,5404-5405,5412,5426,5441,5455,5460-5463,5492,5498,5512,5518,5563,5565,5580,5589-5590,5592,5605-5606,5609,5616,5621,5648,5653,5748,5755,5783,5791,5797,5805-5806,5846,5857,5865,5871,5878,5883,5891-5892,5918,5930,5935-5936,5946-5947,6148,6164,6181,6188-6189,6192,6223,6236-6239,6249-6250,6295,6309,6314,6316,6355,6366,6372,6379,6384,6386-6389,6405,6444,6449,6467,6472,6504,6509,6572,6597,6618,6630,6636,6642-6643,6668,6674-6675,6739,6745,6760,6762,6771,6773,6782,6830,6835,6854,6859,7089,7093-7098,7104-7105,7108-7112,7114-7115,7117,7119-7129,7133-7135,7138-7141,7143-7144,7146-7148,7151-7162,7164,7166-7168,7173,7175,7177-7180,7184-7189,7194,7196-7197,7199-7200,7203-7216,7219-7220,7223,7225-7228,7232-7233,7235-7243,7245-7247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a76360935d8a018b68a37f6a81c21e0e45905fa",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
