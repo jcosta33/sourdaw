@@ -1,0 +1,26 @@
+scripts/__tests__/eslintWarnLevels.spec.ts
+  s_50cbc34e8b61c3::t_6d1e0dec5871f2 50
+  s_50cbc34e8b61c3::t_50a8b4a39fbfa6 1-7,9-13,52-89,91-112,120,128-152
+  s_50cbc34e8b61c3::t_993f77a8112cd4 8,14-15,27-49,51,90,113-119,121-127
+  s_50cbc34e8b61c3::t_96abc00c8c9fa5 16-26
+eslint.config.mjs
+  s_50cbc34e8b61c3::t_6fe7902ae213a7 2760-2796,3112
+scripts/__tests__/oxlintWarnLevels.spec.ts
+  s_50cbc34e8b61c3::t_6b7972896aee6a 87-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b7a5163e0c7bfe9b8fccddcd0455a64ded290ca2",
+  "prompts": {},
+  "sessions": {
+    "s_50cbc34e8b61c3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3ccafa79-c9ba-491d-83f4-7ab63651b7ac",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
