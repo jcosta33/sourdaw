@@ -2757,6 +2757,43 @@ export default tseslint.config(
     eslintPluginReactHooks.configs.flat['recommended-latest'],
     eslintPluginQuery.configs['flat/recommended'],
 
+    // ─── Preset warn promotions ──────────────────────────────────────────────
+    // The lint gate runs ESLint with --quiet, which skips warn rules entirely,
+    // so a preset rule left at warn enforces nothing. These have no violations.
+    {
+        rules: {
+            '@eslint-react/dom-no-dangerously-set-innerhtml': 'error',
+            '@eslint-react/dom-no-script-url': 'error',
+            '@eslint-react/dom-no-unsafe-iframe-sandbox': 'error',
+            '@eslint-react/jsx-no-children-prop': 'error',
+            '@eslint-react/jsx-no-comment-textnodes': 'error',
+            '@eslint-react/jsx-no-leaked-dollar': 'error',
+            '@eslint-react/jsx-no-leaked-semicolon': 'error',
+            '@eslint-react/no-children-count': 'error',
+            '@eslint-react/no-children-for-each': 'error',
+            '@eslint-react/no-children-map': 'error',
+            '@eslint-react/no-children-only': 'error',
+            '@eslint-react/no-children-to-array': 'error',
+            '@eslint-react/no-context-provider': 'error',
+            '@eslint-react/no-forward-ref': 'error',
+            '@eslint-react/no-set-state-in-component-did-mount': 'error',
+            '@eslint-react/no-set-state-in-component-did-update': 'error',
+            '@eslint-react/no-set-state-in-component-will-update': 'error',
+            '@eslint-react/no-unsafe-component-will-mount': 'error',
+            '@eslint-react/no-unsafe-component-will-receive-props': 'error',
+            '@eslint-react/no-unsafe-component-will-update': 'error',
+            '@eslint-react/no-unused-class-component-members': 'error',
+            '@eslint-react/web-api-no-leaked-event-listener': 'error',
+            '@eslint-react/web-api-no-leaked-fetch': 'error',
+            '@eslint-react/web-api-no-leaked-intersection-observer': 'error',
+            '@eslint-react/web-api-no-leaked-interval': 'error',
+            '@eslint-react/web-api-no-leaked-resize-observer': 'error',
+            'react-hooks/incompatible-library': 'error',
+            'react-hooks/unsupported-syntax': 'error',
+            '@tanstack/query/no-rest-destructuring': 'error',
+        },
+    },
+
     // ─── Ignores ─────────────────────────────────────────────────────────────
     {
         ignores: [
@@ -3072,7 +3109,7 @@ export default tseslint.config(
             '@eslint-react/purity': 'warn',
             'react-hooks/set-state-in-effect': 'warn',
             '@eslint-react/set-state-in-effect': 'warn',
-            '@eslint-react/unsupported-syntax': 'warn',
+            '@eslint-react/unsupported-syntax': 'error',
 
             // Prevent leaked JSX conditions
             '@eslint-react/no-leaked-conditional-rendering': 'error',

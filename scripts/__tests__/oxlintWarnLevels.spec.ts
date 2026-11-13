@@ -84,6 +84,10 @@ describe('.oxlintrc.json warn levels', () => {
         expect(warnEntriesOf(parsedOxlintConfig()).sort()).toEqual(allowed);
     });
 
+    it('extends no file, since an extended config can carry warn rules this pin never reads', () => {
+        expect(parsedOxlintConfig().extends ?? []).toEqual([]);
+    });
+
     it.each([
         [{ rules: { a: 1 } }, ['root:a']],
         [{ rules: { a: [1, {}] } }, ['root:a']],
