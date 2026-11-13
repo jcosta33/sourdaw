@@ -23,10 +23,11 @@
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
+import { wasmGenerationEnvironment } from './binaryenBuild.ts';
 import { wasmArtifacts } from './wasm-artifacts.ts';
 
 function installedWasmPackVersion(): string {
-    const raw = execFileSync('wasm-pack', ['--version'], { encoding: 'utf8' }).trim();
+    const raw = execFileSync('wasm-pack', ['--version'], { encoding: 'utf8', env: wasmGenerationEnvironment() }).trim();
     // `wasm-pack 0.14.0` → `0.14.0`
     const match = /wasm-pack\s+(\S+)/.exec(raw);
     const version = match?.[1];

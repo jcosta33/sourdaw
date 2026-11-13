@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { runVerifiedWasmBuild } from './binaryenBuild.ts';
+import { runVerifiedWasmBuild, wasmGenerationEnvironment } from './binaryenBuild.ts';
 import { wasmArtifacts } from './wasm-artifacts.ts';
 
 const id = process.argv[2];
@@ -22,11 +22,13 @@ await runVerifiedWasmBuild({
         execFileSync(process.execPath, ['scripts/markWasmPackageInternal.ts', spec.id], {
             cwd: wasmArtifacts.repoRoot,
             stdio: 'inherit',
+            env: wasmGenerationEnvironment(),
         });
         if (spec.id !== 'daw-wasm-decoder') {
             execFileSync(process.execPath, [`scripts/gen-${spec.id}-worklet.ts`], {
                 cwd: wasmArtifacts.repoRoot,
                 stdio: 'inherit',
+                env: wasmGenerationEnvironment(),
             });
         }
     },
@@ -35,5 +37,6 @@ if (spec.id === 'daw-wasm-decoder') {
     execFileSync(process.execPath, ['scripts/gen-wasm-manifest.ts', '--package', spec.id], {
         cwd: wasmArtifacts.repoRoot,
         stdio: 'inherit',
+        env: wasmGenerationEnvironment(),
     });
 }

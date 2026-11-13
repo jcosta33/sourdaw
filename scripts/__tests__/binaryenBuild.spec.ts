@@ -1,7 +1,16 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
+import {
+    cpSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    realpathSync,
+    writeFileSync,
+    symlinkSync,
+    rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -10,11 +19,16 @@ import {
     assertBinaryenIdentity,
     assertRecordedBinaryenIdentity,
     buildCommand,
+    generationInputsHash,
+    wasmGenerationEnvironment,
     parseBinaryenIdentity,
     parseBuildGeneration,
     readBoundedArchive,
     validateBuildReceipt,
 } from '../binaryenBuild.ts';
+
+import { snapshotImportSpecifiers, trustedLocalImportClosure } from '../trustedGithubWriteBootstrap.ts';
+import { wasmArtifacts } from '../wasm-artifacts.ts';
 
 const temporary: string[] = [];
 afterEach(() => {
@@ -202,5 +216,309 @@ describe('bounded Binaryen archive response', () => {
         await ready;
         controller.abort(new Error('qualification timeout'));
         await expect(pending).rejects.toThrow('qualification timeout');
+    });
+});
+
+const packageIds = ['daw-dsp', 'proof-chamber', 'scoring', 'daw-wasm-decoder'];
+function producerEntries(id: string): string[] {
+    const entries = [
+        'scripts/buildWasmPackage.ts',
+        'scripts/markWasmPackageInternal.ts',
+        'scripts/gen-wasm-manifest.ts',
+    ];
+    if (id !== 'daw-wasm-decoder') {
+        entries.push(`scripts/gen-${id}-worklet.ts`);
+    }
+    return entries;
+}
+function actualProducerClosure(id: string): string[] {
+    return [
+        ...new Set(
+            producerEntries(id).flatMap((entry) => [
+                ...trustedLocalImportClosure(entry, (path) => readFileSync(join(wasmArtifacts.repoRoot, path), 'utf8')),
+            ])
+        ),
+    ].sort();
+}
+function writeFixture(root: string, path: string, contents: string): void {
+    const destination = join(root, path);
+    mkdirSync(dirname(destination), { recursive: true });
+    writeFileSync(destination, contents);
+}
+function generationFixture(id = 'scoring'): string {
+    const root = temporaryRoot('wasm-selected-generation-');
+    mkdirSync(join(root, 'node_modules'));
+    cpSync(realpathSync(join(wasmArtifacts.repoRoot, 'node_modules/yaml')), join(root, 'node_modules/yaml'), {
+        recursive: true,
+    });
+    for (const path of new Set([...actualProducerClosure(id), 'scripts/pnpmLock.ts'])) {
+        writeFixture(root, path, readFileSync(join(wasmArtifacts.repoRoot, path), 'utf8'));
+    }
+    const live = JSON.parse(readFileSync(join(wasmArtifacts.repoRoot, 'package.json'), 'utf8'));
+    writeFixture(
+        root,
+        'package.json',
+        JSON.stringify({
+            type: 'module',
+            packageManager: live.packageManager,
+            engines: live.engines,
+            scripts: live.scripts,
+            dependencies: { unrelated: '1.0.0' },
+            devDependencies: { yaml: '2.9.1' },
+        })
+    );
+    writeFixture(root, '.node-version', '26.13.1\n');
+    writeFixture(root, '.cargo/config.toml', '[build]\nrustflags = ["--cfg", "fixture"]\n');
+    writeFixture(root, 'rust-toolchain.toml', '[toolchain]\nchannel = "1.100.0"\n');
+    writeFixture(
+        root,
+        'Cargo.toml',
+        '[workspace]\nmembers = ["crates/scoring"]\nresolver = "2"\n[workspace.dependencies]\nactive = "1.0.0"\n[profile.release]\nopt-level = 3\n'
+    );
+    writeFixture(
+        root,
+        'crates/scoring/Cargo.toml',
+        '[package]\nname = "scoring"\nversion = "0.1.0"\n[dependencies]\nactive = { workspace = true }\n'
+    );
+    writeFixture(root, 'crates/scoring/src/lib.rs', 'pub fn value() -> u32 { 7 }\n');
+    writeFixture(
+        root,
+        'Cargo.lock',
+        `version = 4
+[[package]]
+name = "scoring"
+version = "0.1.0"
+dependencies = ["active"]
+[[package]]
+name = "active"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "${'a'.repeat(64)}"
+[[package]]
+name = "native-unrelated"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "${'b'.repeat(64)}"
+`
+    );
+    writeFixture(
+        root,
+        'pnpm-lock.yaml',
+        `lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      unrelated: {specifier: 1.0.0, version: 1.0.0}
+    devDependencies:
+      yaml: {specifier: 2.9.1, version: 2.9.1}
+packages:
+  yaml@2.9.1:
+    resolution: {integrity: sha512-Zml4dHVyZQ==}
+  unrelated@1.0.0:
+    resolution: {integrity: sha512-dW5yZWxhdGVk}
+snapshots:
+  yaml@2.9.1: {}
+  unrelated@1.0.0: {}
+`
+    );
+    return root;
+}
+function editFixture(root: string, path: string, edit: (text: string) => string): void {
+    writeFixture(root, path, edit(readFileSync(join(root, path), 'utf8')));
+}
+function fixtureSourceHash(root: string): string {
+    return wasmArtifacts.hashCrateClosure('crates/scoring', readFileSync(join(root, 'Cargo.toml'), 'utf8'), root);
+}
+function fixtureReceipt(root: string) {
+    return {
+        version: 1,
+        packageId: 'scoring',
+        head: 'e'.repeat(40),
+        sourceHash: fixtureSourceHash(root),
+        inputsHash: generationInputsHash(root, 'scoring'),
+        command: buildCommand('scoring'),
+        artifacts: { 'out.wasm': `sha256:${'c'.repeat(64)}` },
+        optimizer: official,
+    };
+}
+
+describe('selected WASM generation freshness', () => {
+    it.each([
+        'unreachable Cargo lock record',
+        'workspace member',
+        'workspace comment',
+        'application dependency',
+        'unselected script',
+        'unrelated npm lock record',
+        'documentation',
+    ])('preserves a current receipt after an unrelated %s change', (change) => {
+        const root = generationFixture();
+        const receipt = fixtureReceipt(root);
+        switch (change) {
+            case 'unreachable Cargo lock record':
+                editFixture(root, 'Cargo.lock', (text) => text.replace('b'.repeat(64), 'd'.repeat(64)));
+                break;
+            case 'workspace member':
+                editFixture(root, 'Cargo.toml', (text) =>
+                    text.replace(
+                        'members = ["crates/scoring"]',
+                        'members = ["crates/scoring", "crates/native-unrelated"]'
+                    )
+                );
+                break;
+            case 'workspace comment':
+                editFixture(root, 'Cargo.toml', (text) => `${text}# unrelated documentation\n`);
+                break;
+            case 'application dependency':
+                editFixture(root, 'package.json', (text) => {
+                    const data = JSON.parse(text);
+                    data.dependencies.unrelated = '2.0.0';
+                    return JSON.stringify(data);
+                });
+                break;
+            case 'unselected script':
+                editFixture(root, 'package.json', (text) => {
+                    const data = JSON.parse(text);
+                    data.scripts['wasm:dsp'] += ' --unselected';
+                    return JSON.stringify(data);
+                });
+                break;
+            case 'unrelated npm lock record':
+                editFixture(root, 'pnpm-lock.yaml', (text) =>
+                    text.replace('sha512-dW5yZWxhdGVk', 'sha512-bmV3dW5yZWxhdGVk')
+                );
+                break;
+            case 'documentation':
+                writeFixture(root, 'README.md', 'Documentation changed\n');
+                break;
+        }
+        expect(fixtureSourceHash(root)).toBe(receipt.sourceHash);
+        expect(generationInputsHash(root, 'scoring')).toBe(receipt.inputsHash);
+        expect(() =>
+            validateBuildReceipt(receipt, {
+                ...receipt,
+                sourceHash: fixtureSourceHash(root),
+                inputsHash: generationInputsHash(root, 'scoring'),
+            })
+        ).not.toThrow();
+    });
+    it.each([
+        'selected source',
+        'reachable Cargo dependency',
+        'used workspace dependency',
+        'release profile',
+        'root flags',
+        'selected script',
+        'Node pin',
+        'selected yaml archive',
+        'polyfill',
+        'nested marker helper',
+    ])('refuses a stale receipt after a %s change', (change) => {
+        const root = generationFixture();
+        const receipt = fixtureReceipt(root);
+        switch (change) {
+            case 'selected source':
+                editFixture(root, 'crates/scoring/src/lib.rs', (text) => text.replace('7', '8'));
+                break;
+            case 'reachable Cargo dependency':
+                editFixture(root, 'Cargo.lock', (text) => text.replace('a'.repeat(64), 'd'.repeat(64)));
+                break;
+            case 'used workspace dependency':
+                editFixture(root, 'Cargo.toml', (text) => text.replace('active = "1.0.0"', 'active = "2.0.0"'));
+                break;
+            case 'release profile':
+                editFixture(root, 'Cargo.toml', (text) => text.replace('opt-level = 3', 'opt-level = 2'));
+                break;
+            case 'root flags':
+                editFixture(root, '.cargo/config.toml', (text) => text.replace('fixture', 'changed'));
+                break;
+            case 'selected script':
+                editFixture(root, 'package.json', (text) => {
+                    const data = JSON.parse(text);
+                    data.scripts['wasm:scoring'] += ' --changed';
+                    return JSON.stringify(data);
+                });
+                break;
+            case 'Node pin':
+                writeFixture(root, '.node-version', '26.14.0\n');
+                break;
+            case 'selected yaml archive':
+                editFixture(root, 'pnpm-lock.yaml', (text) =>
+                    text.replace('sha512-Zml4dHVyZQ==', 'sha512-Y2hhbmdlZA==')
+                );
+                break;
+            case 'polyfill':
+                editFixture(root, 'scripts/workletPolyfills.ts', (text) => `${text}\n// relevant producer edit\n`);
+                break;
+            case 'nested marker helper':
+                editFixture(root, 'scripts/strictJson.ts', (text) => `${text}\n// relevant producer edit\n`);
+                break;
+        }
+        expect(() =>
+            validateBuildReceipt(receipt, {
+                ...receipt,
+                sourceHash: fixtureSourceHash(root),
+                inputsHash: generationInputsHash(root, 'scoring'),
+            })
+        ).toThrow();
+    });
+    it('refuses an unmodelled yaml runtime dependency instead of silently shrinking the producer closure', () => {
+        const root = generationFixture();
+        editFixture(root, 'pnpm-lock.yaml', (text) =>
+            text.replace('yaml@2.9.1: {}', 'yaml@2.9.1:\n    dependencies: {new-runtime: 1.0.0}')
+        );
+        expect(() => generationInputsHash(root, 'scoring')).toThrow('explicit closure update');
+    });
+    it.each(packageIds)(
+        'binds every actual local producer import for %s without importing the graph at runtime',
+        (id) => {
+            const root = generationFixture(id);
+            const baseline = generationInputsHash(root, id);
+            const closure = actualProducerClosure(id);
+            const externals = new Set(
+                closure
+                    .flatMap((path) =>
+                        snapshotImportSpecifiers(readFileSync(join(wasmArtifacts.repoRoot, path), 'utf8'))
+                    )
+                    .filter((specifier) => !specifier.startsWith('.') && !specifier.startsWith('node:'))
+            );
+            expect([...externals].sort()).toEqual(['yaml']);
+            for (const path of closure) {
+                const previous = readFileSync(join(root, path), 'utf8');
+                editFixture(root, path, (text) => `${text}\n// producer mutation\n`);
+                expect(generationInputsHash(root, id), path).not.toBe(baseline);
+                writeFixture(root, path, previous);
+            }
+        }
+    );
+});
+
+describe('generation loader environment', () => {
+    it('removes inherited loader substitution while preserving PATH and compiler flags without mutating its source', () => {
+        const input = {
+            PATH: '/verified/toolchain',
+            CARGO_ENCODED_RUSTFLAGS: '-Cembed-bitcode=no',
+            LD: 'custom-linker',
+            DYLD_INSERT_LIBRARIES: '/foreign/sentinel.dylib',
+            DYLD_LIBRARY_PATH: '/foreign/lib',
+            DYLD_FALLBACK_LIBRARY_PATH: '/foreign/fallback',
+            DYLD_FRAMEWORK_PATH: '/foreign/frameworks',
+            DYLD_FALLBACK_FRAMEWORK_PATH: '/foreign/fallback-frameworks',
+            DYLD_VERSIONED_LIBRARY_PATH: '/foreign/versioned-lib',
+            DYLD_VERSIONED_FRAMEWORK_PATH: '/foreign/versioned-frameworks',
+            DYLD_IMAGE_SUFFIX: '_foreign',
+            DYLD_ROOT_PATH: '/foreign/root',
+            DYLD_SHARED_CACHE_DIR: '/foreign/cache',
+            DYLD_SHARED_REGION: 'private',
+            LD_PRELOAD: '/foreign/injected.so',
+            LD_LIBRARY_PATH: '/foreign/libs',
+            LD_AUDIT: '/foreign/audit.so',
+        };
+        expect(wasmGenerationEnvironment(input)).toEqual({
+            PATH: input.PATH,
+            CARGO_ENCODED_RUSTFLAGS: input.CARGO_ENCODED_RUSTFLAGS,
+            LD: input.LD,
+        });
+        expect(input.DYLD_INSERT_LIBRARIES).toBe('/foreign/sentinel.dylib');
     });
 });

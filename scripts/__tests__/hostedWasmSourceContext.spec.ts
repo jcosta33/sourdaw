@@ -16,11 +16,19 @@ import { dirname, join } from 'node:path';
 import { zipSync } from 'fflate';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { buildCommand } from '../binaryenBuild';
+
 import { hostedArtifactPaths } from '../hostedWasmArtifacts';
 import { wasmArtifacts } from '../wasm-artifacts';
 
 const directories: string[] = [];
-const fixtureToolkits = ['wasm-artifacts.ts', 'wasmToolchainPins.ts', 'workspaceManifestFingerprint.ts'] as const;
+const fixtureToolkits = [
+    'wasm-artifacts.ts',
+    'wasmToolchainPins.ts',
+    'workspaceManifestFingerprint.ts',
+    'binaryenBuild.ts',
+    'pnpmLock.ts',
+] as const;
 
 afterEach(() => {
     for (const directory of directories.splice(0)) {
@@ -40,6 +48,12 @@ function commit(root: string, message: string): string {
 
 function writeFixtureToolkit(root: string, marker: string): void {
     mkdirSync(join(root, 'scripts'), { recursive: true });
+    // Planning and return fencing must not bootstrap source/control package dependencies.
+    const yaml = join(root, 'node_modules', 'yaml');
+    mkdirSync(yaml, { recursive: true });
+    writeFileSync(join(root, '.gitignore'), 'node_modules/\n');
+    writeFileSync(join(yaml, 'package.json'), JSON.stringify({ name: 'yaml', type: 'module', exports: './index.js' }));
+    writeFileSync(join(yaml, 'index.js'), 'throw new Error("unexpected yaml dependency during control import");\n');
     for (const file of fixtureToolkits) {
         copyFileSync(join(wasmArtifacts.repoRoot, 'scripts', file), join(root, 'scripts', file));
     }
@@ -302,6 +316,37 @@ describe('hosted WASM source context CLI', () => {
             runId: '100',
             runAttempt: 1,
             packages: ['scoring'],
+            generation: {
+                scoring: {
+                    version: 1,
+                    packageId: 'scoring',
+                    head: sourceHead,
+                    sourceHash: JSON.parse(readFileSync(join(input.source, 'public/wasm/manifest.json'), 'utf8'))
+                        .packages.scoring.crateSourceHash,
+                    inputsHash: `sha256:${'f'.repeat(64)}`,
+                    command: buildCommand('scoring'),
+                    artifacts: Object.fromEntries(
+                        hostedArtifactPaths(['scoring'])
+                            .filter((path) => path !== 'public/wasm/manifest.json')
+                            .map((path) => {
+                                const bytes = files[path];
+                                if (bytes === undefined) {
+                                    throw new Error(`Missing generated fixture: ${path}`);
+                                }
+                                return [path, `sha256:${createHash('sha256').update(bytes).digest('hex')}`];
+                            })
+                    ),
+                    optimizer: {
+                        host: 'linux-x64',
+                        release: 'version_133',
+                        archive: 'binaryen-version_133-x86_64-linux.tar.gz',
+                        archiveSha256: '2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489',
+                        executable: 'binaryen-version_133/bin/wasm-opt',
+                        executableSha256: '8f25e9fd5db0fc5f210003aaa432922feb2e52d309e430def2f929e34da9466b',
+                        version: 'wasm-opt version 133',
+                    },
+                },
+            },
             toolchain: {
                 node: 'v24.19.0',
                 pnpm: '11.6.0',
@@ -323,7 +368,7 @@ describe('hosted WASM source context CLI', () => {
         const runPath = join(root, 'run.json');
         const artifactPath = join(root, 'artifact.json');
         const output = join(root, 'verified');
-        const zip = Buffer.from(zipSync(files));
+        const zip = Buffer.from(zipSync(files, { mtime: new Date(Date.UTC(2026, 0, 1, 12)) }));
         writeFileSync(archivePath, zip);
         writeFileSync(
             runPath,

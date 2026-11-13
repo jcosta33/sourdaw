@@ -15,7 +15,18 @@ import {
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, parse, resolve } from 'node:path';
 
+import { parsePnpmLock } from './pnpmLock.ts';
+
 import { wasmToolchainPins } from './wasmToolchainPins.ts';
+
+/** Keep authenticated build tools on their platform loaders' normal library routes. */
+export function wasmGenerationEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    return Object.fromEntries(
+        Object.entries(source).filter(
+            ([key]) => !key.startsWith('DYLD_') && !['LD_PRELOAD', 'LD_LIBRARY_PATH', 'LD_AUDIT'].includes(key)
+        )
+    );
+}
 
 export const binaryenRelease = 'version_133';
 const archivePins: Readonly<Record<string, { archive: string; sha256: string; size: number }>> = {
@@ -232,7 +243,7 @@ export function assertArchiveEntries(names: readonly string[], details: readonly
 export function assertBinaryenIdentity(
     identity: BinaryenRuntimeIdentity,
     capture: (path: string, args: string[]) => string = (path, args) =>
-        execFileSync(path, args, { encoding: 'utf8' }).trim()
+        execFileSync(path, args, { encoding: 'utf8', env: wasmGenerationEnvironment() }).trim()
 ): BinaryenRuntimeIdentity {
     const { executablePath, ...published } = identity;
     parseBinaryenIdentity(published);
@@ -343,7 +354,7 @@ export async function qualifyBinaryenArchive(
     }
     assertArchiveDigest(readFileSync(archivePath), pin.sha256);
     const listing = (args: string[]) =>
-        execFileSync('tar', args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
+        execFileSync('tar', args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, env: wasmGenerationEnvironment() })
             .trimEnd()
             .split('\n');
     assertArchiveEntries(listing(['-tzf', archivePath]), listing(['-tvzf', archivePath]));
@@ -352,7 +363,10 @@ export async function qualifyBinaryenArchive(
     if (!existsSync(extracted)) {
         const staging = mkdtempSync(join(cache, 'partial-'));
         try {
-            execFileSync('tar', ['-xzf', archivePath, '-C', staging], { stdio: 'pipe' });
+            execFileSync('tar', ['-xzf', archivePath, '-C', staging], {
+                stdio: 'pipe',
+                env: wasmGenerationEnvironment(),
+            });
             try {
                 renameSync(staging, extracted);
             } catch (error) {
@@ -367,7 +381,10 @@ export async function qualifyBinaryenArchive(
     privateDirectory(extracted);
     const member = `binaryen-version_133/bin/wasm-opt${host.startsWith('win32-') ? '.exe' : ''}`;
     const executablePath = join(extracted, member);
-    const archiveExecutable = execFileSync('tar', ['-xOzf', archivePath, member], { maxBuffer: 128 * 1024 * 1024 });
+    const archiveExecutable = execFileSync('tar', ['-xOzf', archivePath, member], {
+        maxBuffer: 128 * 1024 * 1024,
+        env: wasmGenerationEnvironment(),
+    });
     assertRealPath(executablePath);
     if (!lstatSync(executablePath).isFile() || digest(readFileSync(executablePath)) !== digest(archiveExecutable)) {
         throw new Error('Binaryen executable bytes differ from verified archive');
@@ -401,7 +418,10 @@ export function assertRuntimeArchiveBindings(
     assertRealPath(archivePath);
     assertArchiveDigest(readFileSync(archivePath), identity.archiveSha256);
     const member = 'binaryen-version_133/lib/libbinaryen.dylib';
-    const expected = execFileSync('tar', ['-xOzf', archivePath, member], { maxBuffer: 128 * 1024 * 1024 });
+    const expected = execFileSync('tar', ['-xOzf', archivePath, member], {
+        maxBuffer: 128 * 1024 * 1024,
+        env: wasmGenerationEnvironment(),
+    });
     const libraryPath = join(dirname(dirname(identity.executablePath)), 'lib', 'libbinaryen.dylib');
     assertOwnedFile(libraryPath);
     if (!lstatSync(libraryPath).isFile() || digest(readFileSync(libraryPath)) !== digest(expected)) {
@@ -411,7 +431,10 @@ export function assertRuntimeArchiveBindings(
 export async function provisionBinaryen(): Promise<BinaryenRuntimeIdentity> {
     const qualified = await qualifyBinaryenArchive(`${process.platform}-${process.arch}`);
     assertRuntimeArchiveBindings(qualified);
-    const version = execFileSync(qualified.executablePath, ['--version'], { encoding: 'utf8' }).trim();
+    const version = execFileSync(qualified.executablePath, ['--version'], {
+        encoding: 'utf8',
+        env: wasmGenerationEnvironment(),
+    }).trim();
     return assertBinaryenIdentity({ ...qualified, version });
 }
 function receiptDirectory(root: string): string {
@@ -479,7 +502,10 @@ export function readBuildReceipt(
     assertRealPath(archivePath);
     assertArchiveDigest(readFileSync(archivePath), identity.archiveSha256);
     const member = `binaryen-version_133/bin/wasm-opt${identity.host.startsWith('win32-') ? '.exe' : ''}`;
-    const archiveExecutable = execFileSync('tar', ['-xOzf', archivePath, member], { maxBuffer: 128 * 1024 * 1024 });
+    const archiveExecutable = execFileSync('tar', ['-xOzf', archivePath, member], {
+        maxBuffer: 128 * 1024 * 1024,
+        env: wasmGenerationEnvironment(),
+    });
     if (digest(archiveExecutable) !== identity.executableSha256) {
         throw new Error('Receipt optimizer bytes are not authenticated by the pinned archive');
     }
@@ -498,36 +524,120 @@ export function buildCommand(packageId: string): string[] {
     return args;
 }
 export function currentHead(root: string): string {
-    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: root,
+        encoding: 'utf8',
+        env: wasmGenerationEnvironment(),
+    }).trim();
     if (!/^[a-f0-9]{40}$/.test(head)) {
         throw new Error('Invalid build source head');
     }
     return head;
 }
-/** Build controls and compiler configuration are inputs even when Rust source is unchanged. */
-export function generationInputsHash(root: string, packageId: string): string {
+function packageBuildScript(packageId: string): string {
+    const scripts: Readonly<Record<string, string>> = {
+        'daw-dsp': 'wasm:dsp',
+        'proof-chamber': 'wasm:proof-chamber',
+        scoring: 'wasm:scoring',
+        'daw-wasm-decoder': 'wasm:decoder',
+    };
+    const script = scripts[packageId];
+    if (script === undefined) {
+        throw new Error(`Unknown WASM build package: ${packageId}`);
+    }
+    return script;
+}
+/** Explicit producer closure; the spec compares it to the actual local import graph for all four routes. */
+function generationControlPaths(packageId: string): string[] {
+    packageBuildScript(packageId);
     const files = [
-        'Cargo.toml',
-        'Cargo.lock',
-        '.cargo/config.toml',
-        'rust-toolchain.toml',
-        'package.json',
         'scripts/binaryenBuild.ts',
         'scripts/buildWasmPackage.ts',
         'scripts/wasmToolchainPins.ts',
+        'scripts/wasm-artifacts.ts',
+        'scripts/workspaceManifestFingerprint.ts',
         'scripts/markWasmPackageInternal.ts',
+        'scripts/strictJson.ts',
+        'scripts/pnpmLock.ts',
+        'scripts/gen-wasm-manifest.ts',
     ];
     if (packageId !== 'daw-wasm-decoder') {
-        files.push(`scripts/gen-${packageId}-worklet.ts`);
+        files.push(`scripts/gen-${packageId}-worklet.ts`, 'scripts/workletPolyfills.ts');
     }
-    const input = files
-        .sort()
-        .map((path) => `${path}\0${digest(readFileSync(join(root, path)))}`)
-        .join('\n');
-    return `sha256:${digest(input)}`;
+    return files.sort();
+}
+function canonicalInput(value: unknown): string {
+    if (Array.isArray(value)) {
+        return `[${value.map(canonicalInput).join(',')}]`;
+    }
+    if (typeof value === 'object' && value !== null) {
+        const fields = object(value);
+        return `{${Object.keys(fields)
+            .sort()
+            .map((key) => `${JSON.stringify(key)}:${canonicalInput(fields[key])}`)
+            .join(',')}}`;
+    }
+    if (value === undefined) {
+        throw new Error('Generation input must not be undefined');
+    }
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined) {
+        throw new Error('Generation input must be JSON-compatible');
+    }
+    return encoded;
+}
+/** yaml is the marker/parser's only non-stdlib producer dependency; refuse an unmodelled runtime graph. */
+function generationYamlIdentity(root: string, manifest: Record<string, unknown>): unknown {
+    const lock = parsePnpmLock(readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8'), root);
+    const importer = lock.application.importers?.['.'];
+    const sections = ['dependencies', 'devDependencies', 'optionalDependencies'] as const;
+    const rows = sections.flatMap((section) => {
+        const row = importer?.[section]?.yaml;
+        if (row === undefined) {
+            return [];
+        }
+        const declared = object(manifest[section]).yaml;
+        if (typeof declared !== 'string' || declared !== row.specifier) {
+            throw new Error('Selected yaml dependency differs from the generation lock');
+        }
+        return [row];
+    });
+    const selected = rows[0];
+    if (rows.length !== 1 || selected?.version === undefined || selected.specifier === undefined) {
+        throw new Error('Expected one locked yaml generation dependency');
+    }
+    const key = `yaml@${selected.version}`;
+    const archive = lock.application.packages[key];
+    if (typeof archive?.resolution?.integrity !== 'string') {
+        throw new Error('Locked yaml generation archive has no integrity');
+    }
+    const snapshot = object(object(lock.application.snapshots)[key]);
+    if (snapshot.dependencies !== undefined || snapshot.optionalDependencies !== undefined) {
+        throw new Error('yaml generation runtime dependencies require an explicit closure update');
+    }
+    return { selected, archive, snapshot };
+}
+/** Cargo compilation inputs are separately bound by crate sourceHash; unrelated manifests/lock rows stay irrelevant. */
+export function generationInputsHash(root: string, packageId: string): string {
+    const manifest = object(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')));
+    const scripts = object(manifest.scripts);
+    const script = packageBuildScript(packageId);
+    const metadata = {
+        node: readFileSync(join(root, '.node-version'), 'utf8').trim(),
+        nodeEngine: text(object(manifest.engines).node),
+        moduleType: text(manifest.type),
+        packageManager: text(manifest.packageManager),
+        scripts: { [script]: text(scripts[script]), 'wasm:manifest': text(scripts['wasm:manifest']) },
+        argv: buildCommand(packageId),
+        yaml: generationYamlIdentity(root, manifest),
+    };
+    const files = [...generationControlPaths(packageId), '.cargo/config.toml', 'rust-toolchain.toml'].sort();
+    const input = files.map((path) => `${path}\0${digest(readFileSync(join(root, path)))}`).join('\n');
+    return `sha256:${digest(`${canonicalInput(metadata)}\n${input}`)}`;
 }
 function assertGeneratedOnlyChanges(root: string, allowed: readonly string[]): void {
-    const capture = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+    const capture = (args: string[]) =>
+        execFileSync('git', args, { cwd: root, encoding: 'utf8', env: wasmGenerationEnvironment() });
     const dirty = [
         capture(['diff', '--name-only', '-z', 'HEAD']),
         capture(['ls-files', '--others', '--exclude-standard', '-z']),
@@ -559,7 +669,7 @@ export async function runVerifiedWasmBuild(input: {
     const inputsHash = generationInputsHash(input.root, input.packageId);
     const optimizer = await provisionBinaryen();
     const env = {
-        ...process.env,
+        ...wasmGenerationEnvironment(),
         PATH: `${dirname(optimizer.executablePath)}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH ?? ''}`,
     };
     const wasmPack = execFileSync('wasm-pack', ['--version'], { cwd: input.root, env, encoding: 'utf8' }).trim();

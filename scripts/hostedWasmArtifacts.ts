@@ -20,6 +20,7 @@ import {
     generationInputsHash,
     parseBuildGeneration,
     sameArtifactHashes,
+    wasmGenerationEnvironment,
     type WasmBuildGeneration,
 } from './binaryenBuild.ts';
 
@@ -39,12 +40,14 @@ const hashPattern = /^sha256:[a-f0-9]{64}$/;
 const shaPattern = /^[a-f0-9]{40}$/;
 export const sharedInputs: ReadonlySet<string> = new Set([
     '.cargo/config.toml',
+    '.node-version',
     '.github/workflows/wasm-artifacts.yml',
     'scripts/hostedWasmArtifacts.ts',
     'scripts/hostedWasmSourceContext.ts',
     'scripts/hostedWasmZip.ts',
     'scripts/wasm-artifacts.ts',
     'scripts/wasmToolchainPins.ts',
+    'scripts/pnpmLock.ts',
     'scripts/binaryenBuild.ts',
     'scripts/buildWasmPackage.ts',
     'scripts/workspaceManifestFingerprint.ts',
@@ -166,12 +169,13 @@ export function readHostedBuildIdentity(env: NodeJS.ProcessEnv): BuildIdentity {
     };
 }
 function captureAt(root: string): Capture {
-    return (command, args) => execFileSync(command, args, { cwd: root, encoding: 'utf8' }).trimEnd();
+    return (command, args) =>
+        execFileSync(command, args, { cwd: root, encoding: 'utf8', env: wasmGenerationEnvironment() }).trimEnd();
 }
 function runAt(root: string): Command {
     return (command, args) => {
         console.log(`Running ${command} ${args.join(' ')}`);
-        execFileSync(command, args, { cwd: root, stdio: 'inherit' });
+        execFileSync(command, args, { cwd: root, stdio: 'inherit', env: wasmGenerationEnvironment() });
     };
 }
 function assertHead(capture: Capture, expected: string): void {
