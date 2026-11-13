@@ -26,7 +26,10 @@ function sizeBaselineEntries(): AllowedWarnRule[] {
 const ALLOWED_WARN_RULES: readonly AllowedWarnRule[] = [
     ['**/*.{js,jsx,ts,tsx,mts,cts}:no-void', TRACKED_IN_6486],
     ['**/*.{js,jsx,ts,tsx,mts,cts}:sourdaw/no-react-import-outside-ui', TRACKED_IN_6486],
-    ['**/*.{ts,mts,cts}:no-restricted-syntax', TRACKED_IN_6486],
+    [
+        '**/*.{ts,mts,cts} !**/*.spec.ts,src/infra/store/storage/createLocalStorage.ts,src/infra/store/storage/createPlainJsonLocalStorage.ts,src/modules/Command/stores/undoSessionMirror.ts:no-restricted-syntax',
+        TRACKED_IN_6486,
+    ],
     ['**/*.{tsx,jsx}:@eslint-react/purity', TRACKED_IN_6486],
     ['**/*.{tsx,jsx}:@eslint-react/set-state-in-effect', TRACKED_IN_6486],
     ['**/*.{tsx,jsx}:jsx-a11y-x/interactive-supports-focus', TRACKED_IN_6486],
@@ -68,14 +71,18 @@ function isGlobal(config: Record<string, unknown>): boolean {
     return config.files === undefined && config.ignores === undefined;
 }
 
+// A nested `files` entry is an AND group, so only a flat list keeps the readable comma form.
+function filesKey(files: readonly unknown[]): string {
+    return files.some(Array.isArray) ? JSON.stringify(files) : files.join(',');
+}
+
 function scopeKey(config: Record<string, unknown>): string {
-    if (Array.isArray(config.files)) {
-        return config.files.flat().join(',');
+    const ignores = Array.isArray(config.ignores) ? `!${config.ignores.join(',')}` : undefined;
+    if (!Array.isArray(config.files)) {
+        return ignores ?? 'global';
     }
-    if (Array.isArray(config.ignores)) {
-        return `!${config.ignores.join(',')}`;
-    }
-    return 'global';
+    const files = filesKey(config.files);
+    return ignores === undefined ? files : `${files} ${ignores}`;
 }
 
 function survivingWarnEntries(configs: readonly unknown[]): string[] {
@@ -124,6 +131,27 @@ describe('eslint.config.mjs warn levels', () => {
                 { files: ['y/**'], rules: { a: 'error' } },
             ],
             ['!x/**:a'],
+        ],
+        [
+            [
+                { files: ['**/*.tsx'], rules: { a: 'warn' } },
+                { files: ['**/*.tsx'], ignores: ['src/**'], rules: { a: 'error' } },
+            ],
+            ['**/*.tsx:a'],
+        ],
+        [
+            [
+                { files: [['**/*.ts', 'src/**']], rules: { a: 'warn' } },
+                { files: ['**/*.ts', 'src/**'], rules: { a: 'error' } },
+            ],
+            ['[["**/*.ts","src/**"]]:a'],
+        ],
+        [
+            [
+                { files: ['**/*.tsx'], ignores: ['src/**'], rules: { a: 'warn' } },
+                { files: ['**/*.tsx'], ignores: ['src/**'], rules: { a: 'error' } },
+            ],
+            [],
         ],
         [[{ rules: { a: 'off', b: 'error', c: 2, d: 0, e: ['error'] } }], []],
     ])('reports %j as %j', (configs, expected) => {
