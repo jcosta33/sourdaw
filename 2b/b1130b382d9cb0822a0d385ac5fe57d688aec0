@@ -1,0 +1,35 @@
+src/modules/Automation/handlers/automation/validateRangeWriteSessionEntries.ts
+  s_35b9801a6d6336::t_c34fd654863366 249-295,319,321-322,324
+src/modules/Automation/useCases/__tests__/automateParameterRange.spec.ts
+  s_35b9801a6d6336::t_385bdbcd0345ca 1103-1106
+src/modules/Command/useCases/__tests__/retiredRangeToolStoredCommands.spec.ts
+  s_35b9801a6d6336::t_385bdbcd0345ca 148,783
+src/modules/Automation/useCases/automation/getPlannedSend.ts
+  s_35b9801a6d6336::t_c8b1d29352dfbd 1-39
+src/app/__tests__/agentSourceExamples.spec.ts
+  s_35b9801a6d6336::t_385bdbcd0345ca 131
+src/modules/Automation/useCases/automation/planParameterRangeWrite.ts
+  s_35b9801a6d6336::t_c8b1d29352dfbd 21-22
+src/modules/Automation/handlers/automation/handleAutomateSendRanges.ts
+  s_35b9801a6d6336::t_c8b1d29352dfbd 7-8
+src/modules/Automation/AGENTS.md
+  s_35b9801a6d6336::t_c8b1d29352dfbd 22
+src/modules/Automation/useCases/automation/getPlannedBus.ts
+  s_35b9801a6d6336::t_c8b1d29352dfbd 1-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2bb1130b382d9cb0822a0d385ac5fe57d688aec0",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
