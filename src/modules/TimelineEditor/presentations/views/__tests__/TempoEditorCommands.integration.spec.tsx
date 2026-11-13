@@ -22,7 +22,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getMidiGrooveHandlers, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import {
     defaultTransportState,
@@ -116,6 +116,7 @@ describe('visible tempo-map command entry', () => {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getMidiGrooveHandlers(),
             getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),

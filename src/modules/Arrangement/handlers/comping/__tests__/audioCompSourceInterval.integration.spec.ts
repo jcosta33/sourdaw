@@ -31,7 +31,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getMidiGrooveHandlers, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
@@ -142,6 +142,7 @@ describe('bounded audio comp source promotion', () => {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getMidiGrooveHandlers(),
             getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),
@@ -533,6 +534,7 @@ describe('bounded audio comp source promotion', () => {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getMidiGrooveHandlers(),
             getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),
