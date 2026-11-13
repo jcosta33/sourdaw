@@ -1308,6 +1308,34 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'extractGroove',
+        risk: 'bounded-reversible',
+        description:
+            "Extract the timing and velocity feel of one MIDI clip into a new groove template in the project's groove pool, named after the clip; the clip itself does not change.",
+        intentPhrases: [
+            'extract groove',
+            'extract the groove',
+            'extract a groove',
+            'capture the groove',
+            'make a groove template',
+            'create a groove template',
+        ],
+        targetRules: editableMidiClipTargetRules,
+        valueRules: [],
+        materializedArgumentsValidation: 'owner-required',
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing MIDI clip ID whose notes carry the groove' },
+                subdivision: {
+                    type: 'string',
+                    enum: ['1/8', '1/16', '1/32', '1/16T'],
+                    description: 'Grid the groove is measured against; defaults to 1/16',
+                },
+            },
+            required: ['clipId'],
+        },
+    },
+    {
         actionType: 'transposeNotes',
         risk: 'broad-reversible',
         description: 'Transpose every note in one MIDI clip by an explicit semitone delta.',
@@ -3237,6 +3265,16 @@ const MIDI_ARTICULATION_COPY_MUTATION_IDENTITY = [
     },
     ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
+/** An extraction reads its source clip and writes only the groove pool, never the clip. */
+const GROOVE_EXTRACTION_MUTATION_IDENTITY = [
+    {
+        arguments: [{ argument: 'clipId' }],
+        destructive: false,
+        resourceFamily: 'clip',
+        resourceReferenceOnly: true,
+    },
+    ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
 const MANY_CLIP_PLACEMENTS_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'moves', cardinality: 'many' }], resourceFamily: 'clip' },
     ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
@@ -3348,6 +3386,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     arpeggiate: CLIP_MUTATION_IDENTITY,
     createDrumPreviewBranches: NO_MUTATION_IDENTITY,
     copyMidiArticulations: MIDI_ARTICULATION_COPY_MUTATION_IDENTITY,
+    extractGroove: GROOVE_EXTRACTION_MUTATION_IDENTITY,
     transposeNotes: CLIP_MUTATION_IDENTITY,
     invertNotes: CLIP_MUTATION_IDENTITY,
     retrogradeNotes: CLIP_MUTATION_IDENTITY,
@@ -3468,6 +3507,7 @@ export const executableAppActionMutationIdempotenceByType = {
     arpeggiate: false,
     createDrumPreviewBranches: false,
     copyMidiArticulations: false,
+    extractGroove: true,
     transposeNotes: false,
     invertNotes: false,
     retrogradeNotes: false,

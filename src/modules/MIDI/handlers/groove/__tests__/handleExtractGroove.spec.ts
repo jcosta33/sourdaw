@@ -91,13 +91,31 @@ describe('handleExtractGroove', () => {
 
     it('uses the canonical extracted identity for both inverse planning and execution', () => {
         const action = createAction('  extracted\uFF0Did  ');
+        const extracted = getExtractedTemplate();
 
         expect(handleExtractGroove.describe(action).inverseAction).toEqual({
             type: 'deleteGrooveTemplate',
-            payload: { templateId: 'extracted-id' },
+            payload: { templateId: 'extracted-id', expectedTemplate: extracted.template },
         });
         void handleExtractGroove.execute(action);
-        expect(grooveTemplateStore.value?.templates).toContainEqual(expect.objectContaining({ id: 'extracted-id' }));
+        expect(grooveTemplateStore.value?.templates).toContainEqual(extracted.template);
+    });
+
+    it('pins the template it will create and the notes it read when it describes the extraction', () => {
+        const action = createAction('extracted-id');
+        const extracted = getExtractedTemplate();
+
+        handleExtractGroove.describe(action);
+
+        expect(action.payload).toEqual({
+            ...createAction('extracted-id').payload,
+            proposal: extracted.template,
+            sourceRevision: extracted.sourceRevision,
+        });
+        mocks.notes = [{ id: 'note', startBeat: 0.04, velocity: 96 }];
+        expect(() => handleExtractGroove.execute(action)).toThrow(
+            expect.objectContaining({ code: 'source-revision-mismatch', name: 'GrooveExtractionActionError' })
+        );
     });
 
     it('propagates typed extraction failure and marks Straight as a true no-write', () => {
@@ -252,7 +270,7 @@ describe('handleExtractGroove', () => {
 
         expect(handleExtractGroove.describe(action).inverseAction).toEqual({
             type: 'deleteGrooveTemplate',
-            payload: { templateId: 'collision-id' },
+            payload: { templateId: 'collision-id', expectedTemplate: action.payload.proposal },
         });
         expect(handleExtractGroove.execute(action)).toEqual({
             status: 'written',

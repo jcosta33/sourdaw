@@ -906,6 +906,19 @@ const guardedPayloadContractCases = [
             { clipId: 'clip-1', replacement: {} },
         ],
     }),
+    guardedPayloadCase({
+        actionType: 'extractGroove',
+        validPayload: { clipId: 'clip-1', subdivision: '1/16T' },
+        invalidPayloads: [
+            { clipId: '' },
+            { clipId: 'clip-1', subdivision: '1/4' },
+            { clipId: 'clip-1', subdivision: 16 },
+            { clipId: 'clip-1', templateId: 'groove-1' },
+            { clipId: 'clip-1', sourceName: 'Lead' },
+            { clipId: 'clip-1', proposal: {} },
+            { clipId: 'clip-1', sourceRevision: '[]' },
+        ],
+    }),
 ] as const;
 
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {

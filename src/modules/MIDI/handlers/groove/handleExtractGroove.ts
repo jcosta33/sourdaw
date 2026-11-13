@@ -4,9 +4,12 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { GrooveExtractionActionError } from '../../errors/GrooveExtractionActionError';
 import { createGrooveTemplate } from '../../useCases/grooveTemplates/createGrooveTemplate';
+import { getGrooveSourceClipName } from '../../useCases/grooveTemplates/getGrooveSourceClipName';
 import { getGrooveTemplate } from '../../useCases/grooveTemplates/getGrooveTemplate';
 import { markGrooveTemplateProjectWrite } from '../../useCases/grooveTemplates/markGrooveTemplateProjectWrite';
 import { prepareGrooveExtraction } from '../../useCases/grooveTemplates/prepareGrooveExtraction';
+
+import { isExtractGrooveSessionEntry, isMaterializedExtractGroovePayload } from './validateExtractGrooveCommand';
 
 type ExtractGrooveAction = Extract<AppAction, { type: 'extractGroove' }>;
 
@@ -89,7 +92,39 @@ function planExtractGroove(action: ExtractGrooveAction): ExtractGroovePlan {
     };
 }
 
+/**
+ * Pins the template this extraction creates and the note revision it read, so the recorded action,
+ * its saved undo entry and a compiled command all name the template execution will create, and a
+ * redo or a late execution refuses rather than extracting from notes edited since.
+ */
+function pinExtraction(action: ExtractGrooveAction): void {
+    if (action.payload.proposal !== undefined) {
+        return;
+    }
+    const result = prepareGrooveExtraction({
+        clipId: action.payload.clipId,
+        sourceName: action.payload.sourceName ?? action.payload.clipId,
+        subdivision: action.payload.subdivision ?? '1/16',
+        templateId: action.payload.templateId ?? `groove-${action.payload.clipId}-v1`,
+    });
+    if (result.status !== 'extracted') {
+        return;
+    }
+    action.payload = { ...action.payload, proposal: result.template, sourceRevision: result.sourceRevision };
+}
+
 export const handleExtractGroove = createHandler<'extractGroove'>({
+    validateSessionEntry: isExtractGrooveSessionEntry,
+    validateMaterializedCommandArguments: isMaterializedExtractGroovePayload,
+    materializeCommandArguments: (action) => {
+        if (action.payload.sourceName === undefined) {
+            const clipName = getGrooveSourceClipName(action.payload.clipId);
+            if (clipName !== null) {
+                action.payload = { ...action.payload, sourceName: clipName };
+            }
+        }
+        pinExtraction(action);
+    },
     isNoop: (action) => {
         const plan = planExtractGroove(action);
         return plan.outcome === 'straight' || plan.outcome === 'identical';
@@ -113,11 +148,15 @@ export const handleExtractGroove = createHandler<'extractGroove'>({
         return { status: 'no-write' };
     },
     describe: (action) => {
+        pinExtraction(action);
         const plan = planExtractGroove(action);
         if (plan.outcome === 'create') {
             return {
                 label: 'Extract groove template',
-                inverseAction: { type: 'deleteGrooveTemplate', payload: { templateId: plan.template.id } },
+                inverseAction: {
+                    type: 'deleteGrooveTemplate',
+                    payload: { templateId: plan.template.id, expectedTemplate: structuredClone(plan.template) },
+                },
             };
         }
         return {

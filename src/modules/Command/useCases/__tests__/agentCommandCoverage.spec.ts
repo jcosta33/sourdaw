@@ -5,7 +5,7 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getMidiGrooveHandlers, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
@@ -27,33 +27,32 @@ import { getAppActionPreviewExecution } from '../getAppActionPreviewExecution';
 import { getExecutableAppActionOperationVersion } from '../getExecutableAppActionOperationVersion';
 import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
 
-/** The registering handler factory name for each owning module, mirroring the ledger's `packet`. */
-const OWNER_FACTORY_NAMES: Record<AgentCommandLedgerOwner, string> = {
-    Arrangement: 'getArrangementHandlers',
-    AudioRendering: 'getAudioRenderingHandlers',
-    Automation: 'getAutomationHandlers',
-    CrdtDocument: 'getDrumPreviewBranchHandlers',
-    MIDI: 'getMidiNoteTransformHandlers',
-    Project: 'getProjectHandlers',
-    Transport: 'getTransportHandlers',
-    Yeast: 'getYeastHandlers',
-};
+type RegisteringFactory = { owner: AgentCommandLedgerOwner; factory: string };
 
-function buildActionTypeOwnerMap(): Map<string, AgentCommandLedgerOwner> {
-    const ownerMaps: readonly [AgentCommandLedgerOwner, Record<string, unknown>][] = [
-        ['Arrangement', getArrangementHandlers()],
-        ['AudioRendering', getAudioRenderingHandlers()],
-        ['Automation', getAutomationHandlers()],
-        ['CrdtDocument', getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true })],
-        ['MIDI', getMidiNoteTransformHandlers()],
-        ['Project', getProjectHandlers()],
-        ['Transport', getTransportHandlers()],
-        ['Yeast', getYeastHandlers()],
+/**
+ * The owning module and the registering handler factory name, mirroring the ledger's `owner` and
+ * `packet`, for every action type a production handler factory registers.
+ */
+function buildActionTypeOwnerMap(): Map<string, RegisteringFactory> {
+    const ownerMaps: readonly [AgentCommandLedgerOwner, string, Record<string, unknown>][] = [
+        ['Arrangement', 'getArrangementHandlers', getArrangementHandlers()],
+        ['AudioRendering', 'getAudioRenderingHandlers', getAudioRenderingHandlers()],
+        ['Automation', 'getAutomationHandlers', getAutomationHandlers()],
+        [
+            'CrdtDocument',
+            'getDrumPreviewBranchHandlers',
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+        ],
+        ['MIDI', 'getMidiNoteTransformHandlers', getMidiNoteTransformHandlers()],
+        ['MIDI', 'getMidiGrooveHandlers', getMidiGrooveHandlers()],
+        ['Project', 'getProjectHandlers', getProjectHandlers()],
+        ['Transport', 'getTransportHandlers', getTransportHandlers()],
+        ['Yeast', 'getYeastHandlers', getYeastHandlers()],
     ];
-    const actionTypeToOwner = new Map<string, AgentCommandLedgerOwner>();
-    for (const [owner, handlerMap] of ownerMaps) {
+    const actionTypeToOwner = new Map<string, RegisteringFactory>();
+    for (const [owner, factory, handlerMap] of ownerMaps) {
         for (const actionType of Object.keys(handlerMap)) {
-            actionTypeToOwner.set(actionType, owner);
+            actionTypeToOwner.set(actionType, { owner, factory });
         }
     }
     return actionTypeToOwner;
@@ -71,14 +70,15 @@ function assertRuntimeActionCensus(
 ): void {
     const runtime = new Set(runtimeActionTypes);
     const registered = new Set(registeredActionTypes);
-    const recordCounts = new Map<string, number>();
-    for (const actionType of records.flatMap((record) => record.actionTypes)) {
-        recordCounts.set(actionType, (recordCounts.get(actionType) ?? 0) + 1);
-    }
-    const unaccounted = [...runtime].filter((type) => !registered.has(type) && !recordCounts.has(type));
-    const registeredAndRecorded = [...recordCounts.keys()].filter((type) => registered.has(type));
-    const recordedTwice = [...recordCounts].filter(([, count]) => count > 1).map(([type]) => type);
-    const stale = [...recordCounts.keys()].filter((type) => !runtime.has(type));
+    const recordedTypes = records.flatMap((record) => record.actionTypes);
+    const recorded = new Set(recordedTypes);
+    const unaccounted = runtimeActionTypes.filter((type) => !registered.has(type) && !recorded.has(type));
+    const distinctRecorded = recordedTypes.filter((type, index) => recordedTypes.indexOf(type) === index);
+    const registeredAndRecorded = distinctRecorded.filter((type) => registered.has(type));
+    const recordedTwice = distinctRecorded.filter(
+        (type) => recordedTypes.indexOf(type) !== recordedTypes.lastIndexOf(type)
+    );
+    const stale = distinctRecorded.filter((type) => !runtime.has(type));
     const problems = [
         ...unaccounted.map((type) => `${type}: no executable descriptor and no accounting record`),
         ...registeredAndRecorded.map((type) => `${type}: registered and also recorded`),
@@ -170,6 +170,7 @@ describe('agent command ledger coverage', () => {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getMidiGrooveHandlers(),
             getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),
@@ -208,24 +209,28 @@ describe('agent command ledger coverage', () => {
         const actionTypeToOwner = buildActionTypeOwnerMap();
 
         for (const entry of getAgentCommandLedger().entries) {
-            expect(entry.owner).toBe(actionTypeToOwner.get(entry.operationId));
+            expect(entry.owner).toBe(actionTypeToOwner.get(entry.operationId)?.owner);
         }
     });
 
-    it("names the owner's registering handler factory as packet for every supported entry", () => {
+    it('names the registering handler factory as packet for every supported entry', () => {
+        const actionTypeToOwner = buildActionTypeOwnerMap();
+
         for (const entry of getAgentCommandLedger().entries) {
             if (entry.closure !== 'supported') {
                 continue;
             }
-            expect(entry.packet).toBe(OWNER_FACTORY_NAMES[entry.owner]);
+            expect(entry.packet).toBe(actionTypeToOwner.get(entry.operationId)?.factory);
         }
     });
 
-    it('has every live entry supported, each packet naming its owner registering factory', () => {
+    it('has every live entry supported, each packet naming its registering factory', () => {
         expectTypeOf<AgentCommandLedgerClosure>().toEqualTypeOf<'supported' | 'interim-unsupported'>();
+        const actionTypeToOwner = buildActionTypeOwnerMap();
+
         for (const entry of getAgentCommandLedger().entries) {
             expect(entry.closure).toBe('supported');
-            expect(entry.packet).toBe(OWNER_FACTORY_NAMES[entry.owner]);
+            expect(entry.packet).toBe(actionTypeToOwner.get(entry.operationId)?.factory);
         }
     });
 
@@ -293,6 +298,7 @@ describe('agent command ledger coverage', () => {
             setClipFade: 'audio-editing',
             quantizeTransients: 'audio-editing',
             stripSilence: 'audio-editing',
+            extractGroove: 'midi',
             addDevice: 'device',
             setDeviceParameter: 'parameter',
             addAdjustmentRegion: 'automation',

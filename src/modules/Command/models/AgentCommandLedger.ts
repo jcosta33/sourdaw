@@ -105,16 +105,18 @@ type SupportedEntryTuple = readonly [
     operationId: string,
     category: AgentCommandLedgerCategory,
     owner: AgentCommandLedgerOwner,
+    /** The registering handler factory, when it is not the owner's usual one. */
+    factory?: string,
 ];
 
 /** Every entry on this head is registered, so descriptor version 1 and `supported` always apply. */
-function toSupportedEntry([operationId, category, owner]: SupportedEntryTuple): AgentCommandLedgerEntry {
+function toSupportedEntry([operationId, category, owner, factory]: SupportedEntryTuple): AgentCommandLedgerEntry {
     return {
         operationId,
         category,
         owner,
         descriptorVersion: 1,
-        packet: SUPPORTED_ENTRY_PACKETS[owner],
+        packet: factory ?? SUPPORTED_ENTRY_PACKETS[owner],
         closure: 'supported',
     };
 }
@@ -232,6 +234,7 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     ['quantizeNoteLengths', 'midi', 'MIDI'],
     ['scaleAllVelocities', 'midi', 'MIDI'],
     ['setAllVelocities', 'midi', 'MIDI'],
+    ['extractGroove', 'midi', 'MIDI', 'getMidiGrooveHandlers'],
 
     // Transport — project-timeline
     ['setTempo', 'project-timeline', 'Transport'],
@@ -403,13 +406,6 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         packet: RUNTIME_ACTION_PACKET,
         reason: 'Audio clip edits with no executable descriptor or typed provider payload yet; their handlers accept unchecked runtime payloads.',
         actionTypes: ['reverseClip', 'enableWarping', 'setWarpAlgorithm', 'setWarpPitchShift'],
-    },
-    {
-        kind: 'interim-unsupported',
-        category: 'audio-editing',
-        packet: RUNTIME_ACTION_PACKET,
-        reason: 'Groove extraction plans deterministically but carries no executable descriptor yet.',
-        actionTypes: ['extractGroove'],
     },
     {
         kind: 'interim-unsupported',

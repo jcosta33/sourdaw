@@ -43,6 +43,7 @@ const CREATED_OPERATIONS = new Set<AppAction['type']>([
     'splitClip',
     'quantizeTransients',
     'stripSilence',
+    'extractGroove',
     'createVcaGroup',
     'addDevice',
     'addSend',

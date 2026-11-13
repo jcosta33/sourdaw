@@ -30,6 +30,7 @@ export const CREATE_OPERATIONS = new Set([
     'duplicateClipAt',
     'addNotes',
     'arpeggiate',
+    'extractGroove',
     'createDrumPreviewBranches',
     'createVcaGroup',
     'addDevice',

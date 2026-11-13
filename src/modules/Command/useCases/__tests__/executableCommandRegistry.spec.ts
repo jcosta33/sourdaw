@@ -4,7 +4,7 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getMidiGrooveHandlers, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import {
@@ -661,6 +661,21 @@ const EXPECTED_COMMANDS = [
         ['sourceClipId', 'targetClipId'],
         'broad-reversible',
         true
+    ),
+    expectedCommand(
+        'extractGroove',
+        "Extract the timing and velocity feel of one MIDI clip into a new groove template in the project's groove pool, named after the clip; the clip itself does not change.",
+        {
+            clipId: { type: 'string', description: 'Existing MIDI clip ID whose notes carry the groove' },
+            subdivision: {
+                type: 'string',
+                enum: ['1/8', '1/16', '1/32', '1/16T'],
+                description: 'Grid the groove is measured against; defaults to 1/16',
+            },
+        },
+        ['clipId'],
+        'bounded-reversible',
+        false
     ),
     expectedCommand(
         'transposeNotes',
@@ -2129,6 +2144,19 @@ const EXPECTED_GROUNDING = [
         valueRules: [],
     },
     {
+        actionType: 'extractGroove',
+        intentPhrases: [
+            'extract groove',
+            'extract the groove',
+            'extract a groove',
+            'capture the groove',
+            'make a groove template',
+            'create a groove template',
+        ],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
+        valueRules: [],
+    },
+    {
         actionType: 'transposeNotes',
         intentPhrases: ['transpose notes', 'transpose midi', 'shift midi notes', 'shift notes'],
         targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
@@ -3035,6 +3063,7 @@ describe('executable command registry', () => {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getMidiGrooveHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),
         ];

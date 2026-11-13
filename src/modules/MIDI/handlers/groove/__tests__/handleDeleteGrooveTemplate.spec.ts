@@ -53,6 +53,59 @@ describe('handleDeleteGrooveTemplate', () => {
         });
     });
 
+    describe('guarded by the template an extraction created', () => {
+        const extracted = {
+            id: 'groove-1',
+            name: 'Lead groove',
+            schemaVersion: 1 as const,
+            subdivision: '1/16' as const,
+            slots: [{ index: 0, timingOffset: 0.08, dynamicsOffset: 0 }],
+            provenance: { type: 'midi-clip' as const, sourceId: 'clip-1', analyzerVersion: 1 },
+        };
+        const guarded = {
+            type: 'deleteGrooveTemplate' as const,
+            payload: { templateId: 'groove-1', expectedTemplate: extracted },
+        };
+
+        it('deletes the template while it is unchanged and unassigned', () => {
+            mockSnapshotDeletion.mockReturnValue({ template: extracted, templateIndex: 0, assignments: [] });
+            mockDeleteGrooveTemplate.mockReset();
+            mockDeleteGrooveTemplate.mockReturnValue({ template: extracted, templateIndex: 0, assignments: [] });
+
+            expect(handleDeleteGrooveTemplate.isNoop?.(guarded)).toBe(false);
+            expect((handleDeleteGrooveTemplate.execute(guarded) as { status: string }).status).toBe('written');
+            expect(mockDeleteGrooveTemplate).toHaveBeenCalledWith('groove-1');
+        });
+
+        it.each([
+            ['absent', null, /no longer in the project/],
+            [
+                'renamed since',
+                { template: { ...extracted, name: 'Renamed' }, templateIndex: 0, assignments: [] },
+                /changed after it was extracted/,
+            ],
+            [
+                'assigned since',
+                {
+                    template: extracted,
+                    templateIndex: 0,
+                    assignments: [{ consumerType: 'clip', consumerId: 'clip-2', templateId: 'groove-1', amount: 1 }],
+                },
+                /assigned to 1 consumer/,
+            ],
+        ])('refuses as a conflict and deletes nothing when the template is %s', (_case, snapshot, reason) => {
+            mockSnapshotDeletion.mockReturnValue(snapshot);
+            mockDeleteGrooveTemplate.mockReset();
+
+            expect(handleDeleteGrooveTemplate.isNoop?.(guarded)).toBe(false);
+            expect(handleDeleteGrooveTemplate.execute(guarded)).toEqual({
+                status: 'conflict',
+                reason: expect.stringMatching(reason),
+            });
+            expect(mockDeleteGrooveTemplate).not.toHaveBeenCalled();
+        });
+    });
+
     it('describe returns null inverse when snapshot does not exist', () => {
         mockSnapshotDeletion.mockReturnValue(null);
         const result = handleDeleteGrooveTemplate.describe(action);
