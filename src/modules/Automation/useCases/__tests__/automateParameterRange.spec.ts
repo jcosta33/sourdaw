@@ -1100,7 +1100,10 @@ describe('automateParameterRange', () => {
             },
             {
                 name: 'an earlier addAutomationLane on the same parameter',
-                earlier: { type: 'addAutomationLane', payload: { trackId: VOCAL_ID, parameterId: 'pan' } },
+                earlier: {
+                    type: 'addAutomationLane',
+                    payload: { trackId: VOCAL_ID, parameterId: 'pan', parameterName: 'Pan' },
+                },
                 range: rangeAction({ parameterId: 'pan', range: { section: 'Bridge' }, value: 0.5 }),
                 reason: 'An earlier addAutomationLane in this batch changes what the pan range',
             },

@@ -18,9 +18,10 @@ import { automationStore } from '../../stores/automationStore';
 
 import { getAutomationLaneCeiling } from './getAutomationLaneCeiling';
 import { getAutomationParameterRangeResolver } from './getAutomationParameterRangeResolver';
+import { getPlannedBus } from './getPlannedBus';
+import { getPlannedSend } from './getPlannedSend';
 import { getSendAutomationBusId } from './getSendAutomationBusId';
 import { isLinearGainAutomationLane } from './isLinearGainAutomationLane';
-import { getPlannedBus, getPlannedSend } from './projectBatchSendState';
 
 type AutomateParameterRangePayload = Extract<AppAction, { type: 'automateParameterRange' }>['payload'];
 

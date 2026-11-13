@@ -145,7 +145,7 @@ function store(action: AppAction): string {
             availableDeviceVersions: {},
             expectedEffect: 'Write the stored range automation',
             normalizedProjectRevision: 'stored-revision',
-            ...compileCommandArgumentMetadata(action.payload, action.type),
+            ...compileCommandArgumentMetadata(payloadOf(action), action.type),
             reason: 'A batch stored before the range tools were retired',
         })
     );
@@ -780,7 +780,7 @@ describe('the saved-history contracts of the range-write inverses', () => {
             throw new Error(`Expected ${action.type} to describe its guarded removal`);
         }
         const otherRemoval = structuredClone(removal);
-        Reflect.set(otherRemoval.payload, level, -24);
+        Reflect.set(payloadOf(otherRemoval), level, -24);
 
         expect(handler.validateSessionEntry({ action, inverseAction: removal })).toBe(true);
         expect(handler.validateSessionEntry({ action, inverseAction: null })).toBe(false);

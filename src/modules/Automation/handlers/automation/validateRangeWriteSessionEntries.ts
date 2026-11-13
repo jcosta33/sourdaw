@@ -246,6 +246,53 @@ function isLaneOfWriteTarget(laneId: string, trackId: string, parameterId: strin
     return lane === undefined || (!lane.clipId && lane.trackId === trackId && lane.parameterId === parameterId);
 }
 
+type LaneRemovalPayload = Extract<AppAction, { type: 'removeAutomationLane' }>['payload'];
+type LanePointsRestorePayload = Extract<AppAction, { type: 'restoreAutomationLanePoints' }>['payload'];
+type ParameterRangeWrite = {
+    writeId: string;
+    startBeat: number;
+    endBeat: number;
+    trackId: string;
+    parameterId: string;
+};
+
+/** The removal of the lane a write created: `<writeId>-lane`, expected to hold exactly the written run. */
+function isCreatedLaneRemoval(
+    payload: LaneRemovalPayload,
+    writeId: string,
+    startBeat: number,
+    endBeat: number
+): boolean {
+    const { laneId, expectedPoints } = payload;
+    return (
+        isRemoveAutomationLanePayload(payload) &&
+        laneId === `${writeId}-lane` &&
+        expectedPoints !== undefined &&
+        isRestorableAutomationPointSet(expectedPoints) &&
+        expectedPoints.every((point) => carriesWriteIdentity(point, writeId)) &&
+        holdsWrittenRun(expectedPoints, writeId, startBeat, endBeat)
+    );
+}
+
+/**
+ * The restore of a lane a write rewrote: never the lane the write would create, expecting the written
+ * run, restoring points the write did not place, on the track's own lane for the written parameter.
+ */
+function isRewrittenLaneRestore(payload: LanePointsRestorePayload, write: ParameterRangeWrite): boolean {
+    const { laneId, points, expectedPoints } = payload;
+    const { writeId, startBeat, endBeat, trackId, parameterId } = write;
+    return (
+        isRestoreAutomationLanePointsPayload(payload) &&
+        laneId !== `${writeId}-lane` &&
+        expectedPoints !== undefined &&
+        isRestorableAutomationPointSet(expectedPoints) &&
+        isRestorableAutomationPointSet(points) &&
+        holdsWrittenRun(expectedPoints, writeId, startBeat, endBeat) &&
+        !points.some((point) => carriesWriteIdentity(point, writeId)) &&
+        isLaneOfWriteTarget(laneId, trackId, parameterId)
+    );
+}
+
 /**
  * A parameter range write undoes by removing the lane it created, `<writeId>-lane`, only while that
  * lane holds exactly the points it wrote, or by restoring the points of the lane it rewrote, only
@@ -268,30 +315,11 @@ export function isParameterRangeWriteSessionEntry(entry: HandlerSessionActionEnt
     ) {
         return false;
     }
-    const createdLaneId = `${writeId}-lane`;
     if (inverseAction.type === 'removeAutomationLane') {
-        const { laneId, expectedPoints } = inverseAction.payload;
-        return (
-            isRemoveAutomationLanePayload(inverseAction.payload) &&
-            laneId === createdLaneId &&
-            expectedPoints !== undefined &&
-            isRestorableAutomationPointSet(expectedPoints) &&
-            expectedPoints.every((point) => carriesWriteIdentity(point, writeId)) &&
-            holdsWrittenRun(expectedPoints, writeId, startBeat, endBeat)
-        );
+        return isCreatedLaneRemoval(inverseAction.payload, writeId, startBeat, endBeat);
     }
-    if (inverseAction.type !== 'restoreAutomationLanePoints') {
-        return false;
+    if (inverseAction.type === 'restoreAutomationLanePoints') {
+        return isRewrittenLaneRestore(inverseAction.payload, { writeId, startBeat, endBeat, trackId, parameterId });
     }
-    const { laneId, points, expectedPoints } = inverseAction.payload;
-    return (
-        isRestoreAutomationLanePointsPayload(inverseAction.payload) &&
-        laneId !== createdLaneId &&
-        expectedPoints !== undefined &&
-        isRestorableAutomationPointSet(expectedPoints) &&
-        isRestorableAutomationPointSet(points) &&
-        holdsWrittenRun(expectedPoints, writeId, startBeat, endBeat) &&
-        !points.some((point) => carriesWriteIdentity(point, writeId)) &&
-        isLaneOfWriteTarget(laneId, trackId, parameterId)
-    );
+    return false;
 }

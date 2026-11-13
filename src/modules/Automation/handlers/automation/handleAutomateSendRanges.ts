@@ -4,7 +4,8 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { applySendAutomationRanges } from '../../useCases/automation/applySendAutomationRanges';
-import { getPlannedBus, getPlannedSend } from '../../useCases/automation/projectBatchSendState';
+import { getPlannedBus } from '../../useCases/automation/getPlannedBus';
+import { getPlannedSend } from '../../useCases/automation/getPlannedSend';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 import { isLegacyRangeWriteSessionEntry } from './validateRangeWriteSessionEntries';

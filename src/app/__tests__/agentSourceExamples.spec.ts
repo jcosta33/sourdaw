@@ -128,7 +128,7 @@ describe('agent source examples corpus (AC-056)', () => {
     // A recovered example is something a provider can plan today, so every command it binds is one the
     // provider tool list offers; a command kept executable only for stored batches would not count.
     it('binds every recovered example only to commands a provider is offered', () => {
-        const offered = new Set(getExecutableAppActionToolSchemas().map((schema) => schema.function.name));
+        const offered = new Set<string>(getExecutableAppActionToolSchemas().map((schema) => schema.function.name));
 
         for (const example of corpus.examples) {
             if (example.disposition !== 'recovered') {
