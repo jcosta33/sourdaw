@@ -439,6 +439,69 @@ async function projectScalePreservedState(page: Page, targetClipId: string) {
     }, targetClipId);
 }
 
+async function seedProjectScaleFixture(page: Page, info: TestInfo) {
+    const diagnostics: {
+        progress: { timestamp: number; text: string }[];
+        maximumDepthErrors: { timestamp: number; text: string; stackTrace: string | null }[];
+        progressCount: number;
+        maximumDepthErrorCount: number;
+        detachFailure: string | null;
+    } = {
+        progress: [],
+        maximumDepthErrors: [],
+        progressCount: 0,
+        maximumDepthErrorCount: 0,
+        detachFailure: null,
+    };
+    const session = await page.context().newCDPSession(page);
+    session.on(
+        'Runtime.consoleAPICalled',
+        (event: { type: string; args: { value?: unknown }[]; timestamp: number; stackTrace?: unknown }) => {
+            const text = event.args
+                .flatMap((argument) => (typeof argument.value === 'string' ? [argument.value] : []))
+                .join(' ');
+            if (text.startsWith('[elastic-project-scale-setup]')) {
+                diagnostics.progressCount++;
+                if (diagnostics.progress.length < 64) {
+                    diagnostics.progress.push({ timestamp: event.timestamp, text: text.slice(0, 2048) });
+                }
+            }
+            if (event.type === 'error' && text.startsWith('Maximum update depth exceeded.')) {
+                diagnostics.maximumDepthErrorCount++;
+                if (diagnostics.maximumDepthErrors.length < 32) {
+                    diagnostics.maximumDepthErrors.push({
+                        timestamp: event.timestamp,
+                        text: text.slice(0, 2048),
+                        stackTrace: JSON.stringify(event.stackTrace)?.slice(0, 32768) ?? null,
+                    });
+                }
+            }
+        }
+    );
+    let fixture: Awaited<ReturnType<typeof import('./elasticProjectScaleFixture').seedElasticProjectScale>>;
+    try {
+        await session.send('Runtime.enable');
+        fixture = await page.evaluate(async () => {
+            const entryPath = '/tests/e2e/elasticProjectScaleFixture.ts';
+            const fixture: typeof import('./elasticProjectScaleFixture') = await import(entryPath);
+            return fixture.seedElasticProjectScale();
+        });
+    } finally {
+        try {
+            await session.detach();
+        } catch (error) {
+            diagnostics.detachFailure = String(error);
+        }
+        await info.attach('elastic-project-scale-setup-diagnostics.json', {
+            body: JSON.stringify(diagnostics, null, 2),
+            contentType: 'application/json',
+        });
+    }
+    expect(diagnostics.maximumDepthErrorCount, 'Project-scale setup logged a React update-depth error').toBe(0);
+    expect(diagnostics.detachFailure, 'Project-scale setup observer must stop before measuring Detect').toBeNull();
+    return fixture;
+}
+
 for (const projectScale of [false, true]) {
     test(
         projectScale
@@ -492,11 +555,7 @@ for (const projectScale of [false, true]) {
             expect(before.projected).toEqual([]);
             if (!before.clipId) throw new Error('Imported Detect source is missing');
             if (projectScale) {
-                const fixture = await page.evaluate(async () => {
-                    const entryPath = '/tests/e2e/elasticProjectScaleFixture.ts';
-                    const fixture: typeof import('./elasticProjectScaleFixture') = await import(entryPath);
-                    return fixture.seedElasticProjectScale();
-                });
+                const fixture = await seedProjectScaleFixture(page, info);
                 await info.attach('elastic-project-scale-before-detect.json', {
                     body: JSON.stringify(fixture, null, 2),
                     contentType: 'application/json',
@@ -508,6 +567,7 @@ for (const projectScale of [false, true]) {
                 expect(fixture.elasticClips).toHaveLength(8);
                 expect(fixture.elasticClips.every((clip) => clip.markers === ATTACKS.length)).toBe(true);
                 expect(fixture.historyEditChanges).toBeGreaterThanOrEqual(2048);
+                expect(fixture.historyRetained).toBe(true);
                 expect(fixture.rootBytes).toBeGreaterThan(0);
                 expect(fixture.targetClipId).toBe(before.clipId);
             }
