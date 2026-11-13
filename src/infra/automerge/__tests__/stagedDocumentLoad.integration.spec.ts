@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+
 import {
     change,
     clone,
@@ -5,6 +7,7 @@ import {
     free,
     from,
     getActorId,
+    getBackend,
     getChanges,
     getHeads,
     getObjectId,
@@ -12,10 +15,72 @@ import {
     load,
     prepareLoad,
     save,
+    type Doc,
 } from '@automerge/automerge';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+type NativeLoadBoundary = Pick<ReturnType<typeof getBackend>, 'materialize' | 'free'>;
+
+function isNativeLoadBoundary(value: unknown): value is NativeLoadBoundary {
+    return (
+        value !== null &&
+        typeof value === 'object' &&
+        'materialize' in value &&
+        typeof value.materialize === 'function' &&
+        'free' in value &&
+        typeof value.free === 'function'
+    );
+}
+
+function nativeLoadPrototype(document: Parameters<typeof getBackend>[0]): NativeLoadBoundary {
+    const prototype: unknown = Object.getPrototypeOf(getBackend(document));
+    if (!isNativeLoadBoundary(prototype)) {
+        throw new Error('Expected initialized native materialize/free prototype');
+    }
+    return prototype;
+}
 
 describe('staged native document load', () => {
+    it('defers native root materialization until adoption and transfers native ownership without freeing it', () => {
+        const original = from({ value: 1 });
+        const bytes = save(original);
+        const prototype = nativeLoadPrototype(original);
+        const nativeMaterialize = vi.spyOn(prototype, 'materialize');
+        const nativeFree = vi.spyOn(prototype, 'free');
+        let pending: ReturnType<typeof prepareLoad<{ value: number }>> | undefined;
+        let staged: Doc<{ value: number }> | undefined;
+        try {
+            pending = prepareLoad<{ value: number }>(bytes);
+            expect(nativeMaterialize).not.toHaveBeenCalled();
+            expect(nativeFree).not.toHaveBeenCalled();
+            staged = pending.materialize();
+            const adoptedBackend = getBackend(staged);
+            expect(nativeMaterialize).toHaveBeenCalledExactlyOnceWith(
+                '/',
+                undefined,
+                expect.objectContaining({ handle: adoptedBackend, heads: undefined, patchCallback: undefined })
+            );
+            expect(nativeMaterialize.mock.contexts[0]).toBe(adoptedBackend);
+            expect(adoptedBackend).not.toBe(getBackend(original));
+            pending.discard();
+            pending.discard();
+            expect(nativeFree).not.toHaveBeenCalled();
+            expect(staged.value).toBe(1);
+            expect(getHeads(staged)).toEqual(getHeads(original));
+        } finally {
+            try {
+                pending?.discard();
+            } finally {
+                nativeMaterialize.mockRestore();
+                nativeFree.mockRestore();
+                if (staged) {
+                    free(staged);
+                }
+                free(original);
+            }
+        }
+    });
+
     it('preserves the checked load, native history and registered scalar datatypes', () => {
         const actor = 'aaaaaaaaaaaaaaaa';
         const original = from(
@@ -49,11 +114,33 @@ describe('staged native document load', () => {
 
     it('discards an unmaterialized native handle idempotently and refuses adoption afterwards', () => {
         const original = from({ value: 1 });
-        const pending = prepareLoad(save(original));
-        pending.discard();
-        expect(() => pending.discard()).not.toThrow();
-        expect(() => pending.materialize()).toThrow('Prepared load has already settled');
-        free(original);
+        const bytes = save(original);
+        const prototype = nativeLoadPrototype(original);
+        const nativeMaterialize = vi.spyOn(prototype, 'materialize');
+        const nativeFree = vi.spyOn(prototype, 'free');
+        let pending: ReturnType<typeof prepareLoad> | undefined;
+        try {
+            pending = prepareLoad(bytes);
+            expect(nativeMaterialize).not.toHaveBeenCalled();
+            expect(nativeFree).not.toHaveBeenCalled();
+            pending.discard();
+            expect(nativeFree).toHaveBeenCalledOnce();
+            const releasedBackend = nativeFree.mock.contexts[0];
+            expect(releasedBackend).not.toBe(getBackend(original));
+            expect(Object.getPrototypeOf(releasedBackend)).toBe(prototype);
+            expect(() => pending?.discard()).not.toThrow();
+            expect(nativeFree).toHaveBeenCalledOnce();
+            expect(() => pending?.materialize()).toThrow('Prepared load has already settled');
+            expect(nativeMaterialize).not.toHaveBeenCalled();
+        } finally {
+            try {
+                pending?.discard();
+            } finally {
+                nativeMaterialize.mockRestore();
+                nativeFree.mockRestore();
+                free(original);
+            }
+        }
     });
 
     it('retains checked loading for truncated content', () => {
@@ -117,4 +204,3 @@ describe('staged native document load', () => {
         expect(output).toBe('verified all package entrypoints');
     });
 });
-import { execFileSync } from 'node:child_process';
