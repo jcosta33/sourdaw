@@ -1,0 +1,21 @@
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_35b9801a6d6336::t_6265a614fb3836 103-105
+evidence/agent-campaign/manifest.json
+  s_35b9801a6d6336::t_f0594ba16fcf24 10,13,178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d5aeca1c7644c92ae7833295a0af952ea106b262",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
