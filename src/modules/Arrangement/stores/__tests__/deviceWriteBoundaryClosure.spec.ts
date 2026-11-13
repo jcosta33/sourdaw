@@ -559,11 +559,22 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // measurement still uses the same grounding and versioned-envelope route, with
         // no device hydration or write.
         'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 7,
-        // Count provenance: new file, measured 5 — the `compilePreviewMeasurementProposal`
-        // import, module-path literal and one call, plus the local `compilePrefixes`
-        // declaration and call. A preview unit compiles each prefix it reads into an
-        // immutable Command envelope; it hydrates no device and writes no engine state.
+        // Count provenance: new file, measured 4 — the `compilePreviewMeasurementProposal`
+        // import, module-path literal and one call, plus the `compilePreviewPrefix`
+        // declaration. It compiles one prefix's prepared batch into an immutable Command
+        // envelope and its content digest; it hydrates no device and writes no engine state.
+        'src/modules/AiRuntime/useCases/compilePreviewPrefix.ts': 4,
+        // Count provenance: measured 5 — the `compilePreviewPrefix` import, module-path
+        // literal and one call, plus the local `compilePrefixes` declaration and call. A
+        // preview unit compiles each prefix it reads into an immutable Command envelope
+        // through that helper; it hydrates no device and writes no engine state.
         'src/modules/AiRuntime/useCases/measurePreviewUnit.ts': 5,
+        // Count provenance: new file, measured 4 — the `compilePreviewPrefix` import and
+        // module-path literal, the type-level `Parameters<typeof compilePreviewPrefix>`
+        // reference and one call. It compiles a prefix, opens its isolated preview
+        // workspace only to read that document's tempo and tempo map, and releases it;
+        // it hydrates no device and writes no engine state.
+        'src/modules/AiRuntime/useCases/readPreviewPrefixTimeline.ts': 4,
         // Count provenance: new prefix-preview file has an envelope-compiler
         // import, type projection and call, plus a local helper declaration and
         // call. It slices and verifies immutable Command metadata; no device
