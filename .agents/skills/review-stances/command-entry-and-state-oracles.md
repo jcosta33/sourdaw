@@ -46,6 +46,22 @@ boundaries.
    cannot commit or restore over newer runtime. Observe event-time automation samples at movement and physical
    release, with synthetic settlement and canonical/replay writes suppressed; real controller call-through is not
    audible-output proof. Restoring the direct bridge must fail history, inverse and raw/projection assertions.
+   Fermenter's numeric-only full-patch writer dropped macro and mapping arrays (#6321), introduced by
+   `173b7a9e7a614feb17ea25910e33082460dc2ee3` (2026-04-16). Commit lookup returned no associated PR; the historical
+   review stance is unestablished. Drive real continuous macro/morph and scalar controls through the typed owner
+   write: compare the complete authoritative device chunk in raw CRDT, fresh hydration, declared history behavior and
+   engine projection. A numeric mirror, engine update or persister spy cannot witness nested persistence. Assert
+   the route's declared history semantics, with one undo unit for each discrete patch edit; continuous gesture Undo
+   remains the separate #2370 obligation. Pending draft M, discrete N, Undo M and Redo N must agree in project, panel
+   and runtime. Hold a queued write across an unrelated revision or owner replacement; refusal reconciles only
+   under current project/device authority and never overwrites the
+   successor. Removing array persistence must fail the macro/morph cases named in `test-validity.md` probe 3;
+   save/binary-reopen and audible claims require their own observations (`project-integrity.md` probe 11).
+   Batch preflight copied an unclamped parameter into the projected prefix while the actual writer clamped it
+   (#1857, introducing `064fb88392`; historical review stance unknown). Probe below/above-range writes followed
+   by a guarded device action against the real registered route: prefix and committed values must obey the same
+   parameter law and leaf-presence rules. The shared projector's retained case "plans numeric device values
+   using the same clamp and deletion law as the actual writer" requires a 20 Hz cutoff after -100, independently of the helper.
 3. **A multi-unit edit half-applies or a linked follower write never reaches the sampler (#4506; #931, #4392).**
    Failure: a generator or batch leaves partial items, or a follower point is stored where playback ignores it. Probe:
    a generator spanning pads or lanes submits one compensated batch bound to project and document identity: fail a

@@ -247,13 +247,38 @@ vi.mock('../../helpers/runProjectLoadTransaction', async () => {
     );
     return {
         projectLoadEpoch: actual.projectLoadEpoch,
-        runProjectLoadTransaction: () => ({
-            prepare: () => Promise.resolve(true),
-            activate: () => true,
-            canActivate: () => true,
-            isCurrent: () => true,
-            signal: new AbortController().signal,
-        }),
+        runProjectLoadTransaction: (): ReturnType<typeof actual.runProjectLoadTransaction> => {
+            const controller = new AbortController();
+            let prepared = false;
+            let activated = false;
+            let abandoned = false;
+            return {
+                prepare: async () => {
+                    if (abandoned) {
+                        return false;
+                    }
+                    prepared = true;
+                    return true;
+                },
+                activate: () => {
+                    if (!prepared || abandoned) {
+                        return false;
+                    }
+                    activated = true;
+                    return true;
+                },
+                abandon: () => {
+                    if (activated || abandoned) {
+                        return;
+                    }
+                    abandoned = true;
+                    controller.abort();
+                },
+                canActivate: () => !abandoned,
+                isCurrent: () => activated,
+                signal: controller.signal,
+            };
+        },
     };
 });
 

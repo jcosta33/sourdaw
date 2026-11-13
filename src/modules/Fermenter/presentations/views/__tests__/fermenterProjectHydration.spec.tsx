@@ -5,15 +5,23 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
+import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
+import {
+    cloneFermenterPatch,
+    type FermenterDeviceStateChunk,
+    toFermenterDeviceState,
+} from '../../../models/FermenterPatchState';
 import { fermenterStore, getFermenterState } from '../../../stores/fermenterStore';
 import { FermenterPanel } from '../FermenterPanel';
 
 const DEVICE_ID = 'fermenter-project-device';
 
-function fermenterTrack(parameterValues: Record<string, number>): Track {
+function fermenterTrack(parameterValues: Record<string, number>, deviceState?: FermenterDeviceStateChunk): Track {
     return {
         ...createTrack({ id: 'track-1', name: 'Synth', kind: 'midi' }),
-        devices: [{ id: DEVICE_ID, name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues }],
+        devices: [
+            { id: DEVICE_ID, name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues, deviceState },
+        ],
     };
 }
 
@@ -75,6 +83,30 @@ describe('FermenterPanel project hydration', () => {
             expect(getFermenterState(DEVICE_ID).patch.filterCutoff).toBe(1400);
             expect(getFermenterState(DEVICE_ID).patch.macros[0]).toBe(0.75);
         });
+    });
+
+    it('restores the complete saved patch after closing and reopening its panel', async () => {
+        const saved = cloneFermenterPatch({
+            ...DEFAULT_PATCH,
+            name: 'Reopened patch',
+            filterCutoff: 1650,
+            macros: [0.12, 0.23, 0.34, 0.45, 0.56, 0.67, 0.78, 0.89],
+        });
+        saved.macroMappings![4]!.targets[0]!.center = 0.625;
+        trackStore.set({
+            tracks: [fermenterTrack({ filterCutoff: 1650 }, toFermenterDeviceState(saved))],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        const first = renderPanel();
+        await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(saved));
+        first.unmount();
+
+        fermenterStore.set({});
+        renderPanel();
+
+        await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(saved));
+        expect(getFermenterState(DEVICE_ID).patch.macroMappings?.[4]?.targets[0]?.center).toBe(0.625);
     });
 
     it('does not crash when trackStore snapshot is null', () => {
