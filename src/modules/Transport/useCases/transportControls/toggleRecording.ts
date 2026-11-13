@@ -452,6 +452,10 @@ function commitManualTake(
     captureEvidence: Parameters<typeof commitRecording>[1],
     stillOwnsCaptureRoot: () => boolean
 ): Promise<void | 'refused'> {
+    const commitOwnedTake = () =>
+        commitRecording(recordedClip, captureEvidence, { shouldExecute: stillOwnsCaptureRoot }).catch(
+            (error: unknown) => handleManualRecordingCommitFailure(error, recordedClip.id, stillOwnsCaptureRoot)
+        );
     return Promise.resolve().then(() => {
         // A fork can replace the root after the terminal queues this
         // continuation but before commitRecording places its takes.
@@ -462,18 +466,8 @@ function commitManualTake(
             );
             return 'refused' as const;
         }
-        return commitOwnedManualTake(recordedClip, captureEvidence, stillOwnsCaptureRoot);
+        return commitOwnedTake();
     });
-}
-
-function commitOwnedManualTake(
-    recordedClip: Parameters<typeof commitRecording>[0],
-    captureEvidence: Parameters<typeof commitRecording>[1],
-    stillOwnsCaptureRoot: () => boolean
-): Promise<void | 'refused'> {
-    return commitRecording(recordedClip, captureEvidence, { shouldExecute: stillOwnsCaptureRoot }).catch(
-        (error: unknown) => handleManualRecordingCommitFailure(error, recordedClip.id, stillOwnsCaptureRoot)
-    );
 }
 
 function readManualRecordingAdmission() {
