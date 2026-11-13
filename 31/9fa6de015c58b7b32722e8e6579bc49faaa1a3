@@ -1,0 +1,21 @@
+.agents/skills/test-design/SKILL.md
+  s_ff124a0cf68412::t_30b952381e9971 129
+docs/06-testing.md
+  s_ff124a0cf68412::t_30b952381e9971 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "319fa6de015c58b7b32722e8e6579bc49faaa1a3",
+  "prompts": {},
+  "sessions": {
+    "s_ff124a0cf68412": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5859629c-45b4-4907-85a7-756af720dd80",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
