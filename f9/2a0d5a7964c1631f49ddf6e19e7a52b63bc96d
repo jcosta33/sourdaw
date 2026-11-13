@@ -1,0 +1,21 @@
+release/dependency-license-proofs.json
+  s_126e3d478b4f75::t_f7b87b09cf4804 12
+release/open-source-inventory.json
+  s_126e3d478b4f75::t_771d4abf124d50 173,1909
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f92a0d5a7964c1631f49ddf6e19e7a52b63bc96d",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
