@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_35b9801a6d6336::t_31e1360bb9833d 1113-1114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a37c1dca5b50c3f76866874485ac2964fa53331b",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
