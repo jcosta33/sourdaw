@@ -1,0 +1,37 @@
+src/modules/Command/errors/AppActionExecutionError.ts
+  s_35b9801a6d6336::t_861f6b8f05e5ed 16-18
+  s_35b9801a6d6336::t_3728038b38ea6e 26
+src/modules/MIDI/AGENTS.md
+  s_35b9801a6d6336::t_743ee2c1d2c40a 22
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_35b9801a6d6336::t_bfbe334fe264f0 1758-1799
+  s_35b9801a6d6336::t_197ae046d1e605 69,71
+  s_35b9801a6d6336::t_67c46851308b21 26
+  s_35b9801a6d6336::t_71b74dede57d99 1800-1801
+src/modules/MIDI/handlers/groove/__tests__/handleExtractGroove.spec.ts
+  s_35b9801a6d6336::t_bfaa5895c88b62 239
+  s_35b9801a6d6336::t_7784375e9bc1db 116,157,165,247
+src/modules/MIDI/handlers/groove/handleExtractGroove.ts
+  s_35b9801a6d6336::t_dc17892ff591a9 23-26
+  s_35b9801a6d6336::t_b9ec4977e29f79 125-127
+  s_35b9801a6d6336::t_6f0d9eea10bf0d 67
+  s_35b9801a6d6336::t_293a0b494a1ac6 40
+src/modules/MIDI/useCases/grooveTemplates/getGrooveExtractionActionErrorCode.ts
+  s_35b9801a6d6336::t_76669d202a5c2a 1,3-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7f46df9f9b9ba41807667315d8bc129c82aa5fda",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
