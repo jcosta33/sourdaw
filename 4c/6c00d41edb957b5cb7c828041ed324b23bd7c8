@@ -1,0 +1,31 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_9d2c481605c4c2::t_329d24870c2a2a 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_9d2c481605c4c2::t_f6bd8760d273d3 1
+public/wasm/manifest.json
+  s_9d2c481605c4c2::t_37a5361755a7f0 12,16-18,21,40,44-46,49
+public/wasm/scoring/scoring.d.ts
+  s_9d2c481605c4c2::t_3bab6e669bb9c9 1
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_9d2c481605c4c2::t_e9e3bd38f03d81 1
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_9d2c481605c4c2::t_e1dda41db1ed8c 1
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_9d2c481605c4c2::t_2bd668fb61f1d6 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4c6c00d41edb957b5cb7c828041ed324b23bd7c8",
+  "prompts": {},
+  "sessions": {
+    "s_9d2c481605c4c2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_9d2c481605c4c2",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
