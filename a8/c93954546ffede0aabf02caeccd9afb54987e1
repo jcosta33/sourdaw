@@ -1,0 +1,30 @@
+src/modules/MIDI/useCases/grooveTemplates/getGrooveExtractionActionErrorCode.ts
+  s_35b9801a6d6336::t_3781ad4c3c2d50 14-16
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_35b9801a6d6336::t_e92a09417f8dc0 66
+  s_35b9801a6d6336::t_3fb476eddb2874 1873-1913
+src/modules/MIDI/handlers/groove/handleExtractGroove.ts
+  s_35b9801a6d6336::t_d562ba49b02cc3 22,24-30
+  s_35b9801a6d6336::t_0942f5721c4f45 126
+  s_35b9801a6d6336::t_4419c2978e2020 81
+src/modules/MIDI/handlers/groove/__tests__/handleExtractGroove.spec.ts
+  s_35b9801a6d6336::t_94af6c7ba36a2d 148-151
+src/modules/MIDI/AGENTS.md
+  s_35b9801a6d6336::t_4162fb49fff1e5 22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a8c93954546ffede0aabf02caeccd9afb54987e1",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
