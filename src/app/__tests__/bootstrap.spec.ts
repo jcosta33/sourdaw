@@ -736,7 +736,6 @@ vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
         initToasterSubscribers: noop,
         initToasterKitPersistence: noop,
         reconcileToasterKitsFromProject: noop,
-        setToasterEventBus: noop,
         setToasterGrooveAssignmentExecutor: toasterGrooveExecutorMock,
         prepareOfflineToaster: noop,
         captureOfflineToaster: vi.fn(() => {

@@ -206,7 +206,7 @@ Four smaller barrels break this amplification: importing from `stores/index.ts` 
 // Another module — correct
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
-import type { TrackAddedPayload } from '#/modules/Arrangement/events';
+import type { TrackRemovedPayload } from '#/modules/Arrangement/events';
 import { ArrangementBar } from '#/modules/Arrangement/presentations/views';
 
 // Another module — FORBIDDEN (direct file access)
@@ -338,7 +338,7 @@ They are used when another concern needs to react independently.
 ### Good examples
 
 ```text
-TrackAddedEvent
+TrackRemovedEvent
 ClipMovedEvent
 TempoChangedEvent
 PluginAddedEvent
@@ -661,41 +661,28 @@ Use cases and other injectable functions declare their dependencies explicitly u
 
 Use cases and service repositories get collaborators only through **`inject(deps)(factory)`**: declare dependencies as a map in the first call; the factory receives them and returns the public function. Resolution happens **at call time** (not import time). Tests substitute deps with **`injectDependencies()`** from `#/infra/di/testing/injectDependencies`.
 
-Do not wire **varying** collaborators by **`Container.get()`** at module scope. Prefer **`inject()`** for event buses, loggers, and other mockable services. Thin same-module repository functions that only read/write the owned store may stay as static imports (common in Arrangement) — see the `addTrack` sample below and `docs/01-dependency-injection.md`.
+Do not wire **varying** collaborators by **`Container.get()`** at module scope. Prefer **`inject()`** for event buses, loggers, and other mockable services. Thin same-module repository functions that only read/write the owned store may stay as static imports (common in Arrangement) — see the `publishTrackRemoved` sample below and `docs/01-dependency-injection.md`.
 
 ### Shape
 
 ```typescript
-// Real shape (Arrangement/useCases/addTrack.ts): inject collaborators that vary in tests;
+// Real shape (Arrangement/useCases/publishTrackRemoved.ts): inject collaborators that vary in tests;
 // pure repos may stay static imports when they are thin store accessors.
 import { inject } from '#/infra/di/inject';
-import { createTrack as createTrackModel } from '../models/Track';
-import { getTrackState } from '../repositories/track/getTrackState';
-import { setTrackState } from '../repositories/track/setTrackState';
+
+import { type TrackRemovedPayload } from '../events/TrackRemovedEvent';
+
 import { ArrangementEventBus } from './arrangementEventBus';
 
-type AddTrackInput = { name: string; kind: TrackKind; select?: boolean };
-
-export const addTrack = inject({ eventBus: ArrangementEventBus })(
+export const publishTrackRemoved = inject({ eventBus: ArrangementEventBus })(
     ({ eventBus }) =>
-        function addTrack(input: AddTrackInput): Track | null {
-            const state = getTrackState();
-            if (!state) {
-                return null;
-            }
-            const track = createTrackModel(input);
-            setTrackState({
-                ...state,
-                tracks: [...state.tracks, track],
-                selectedTrackId: input.select === false ? state.selectedTrackId : track.id,
-            });
-            void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
-            return track;
+        function publishTrackRemoved(payload: TrackRemovedPayload): Promise<void> {
+            return eventBus.emit('track.removed', payload);
         }
 );
 ```
 
-At call time, `addTrack(input)` resolves each dependency in the map and invokes the factory. The caller writes `addTrack(input)` — they do not see or touch the dependency map.
+At call time, `publishTrackRemoved(payload)` resolves each dependency in the map and invokes the factory. The caller writes `publishTrackRemoved(payload)` — they do not see or touch the dependency map.
 
 **The factory must return a function** (the invoker). The curried API is `inject(deps)(factory)` — the first call takes the dependency map, the second takes the factory. Objects/services flow into the injectable via the dependency map, not as the factory's return.
 
@@ -1095,7 +1082,7 @@ Use when:
 - the occurrence has business meaning
 
 ```typescript
-void eventBus.emit('track.added', { trackId, name, kind });
+void eventBus.emit('track.removed', { trackId });
 ```
 
 ## 7.3 Pattern C: shared store / selector read
@@ -1277,7 +1264,7 @@ Arrangement/
 │   ├── TrackNotFoundError.ts
 │   └── ClipOverlapError.ts
 ├── events/
-│   ├── TrackAddedEvent.ts
+│   ├── TrackRemovedEvent.ts
 │   └── ClipMovedEvent.ts
 ├── useCases/
 │   ├── __tests__/                    # Vitest: one spec per use case file

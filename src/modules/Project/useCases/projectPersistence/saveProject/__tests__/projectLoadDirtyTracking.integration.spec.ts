@@ -296,18 +296,13 @@ import { newProject } from '../../newProject';
 import { projectLifecycleRegistry } from '../../projectLifecycleRegistry';
 import { initProjectDirtyTracking } from '../initProjectDirtyTracking';
 
-import type {
-    TrackAddedPayload,
-    TrackRemovedPayload,
-    TrackSelectionChangedPayload,
-} from '#/modules/Arrangement/events';
+import type { TrackRemovedPayload, TrackSelectionChangedPayload } from '#/modules/Arrangement/events';
 import type { HydratableProjectData } from '../../helpers/isHydratableProjectData';
 
 const LOADED_TRACK_ID = 'track-from-disk';
 const LOADED_TRACK_NAME = 'Vocals (from disk)';
 
 type ArrangementEvents = {
-    'track.added': TrackAddedPayload;
     'track.removed': TrackRemovedPayload;
     'track.selectionChanged': TrackSelectionChangedPayload;
 };

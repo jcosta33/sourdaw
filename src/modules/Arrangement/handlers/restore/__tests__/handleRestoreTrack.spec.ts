@@ -32,7 +32,6 @@ const mocks = vi.hoisted(() => {
         ensureBusStrip: vi.fn(),
         projectTrackToLiveStrip: vi.fn(),
         rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
-        publishTrackAdded: vi.fn(),
         refreshToasterPadBindings: vi.fn(),
         restoreAutomationLanes: vi.fn<(laneSnapshots: readonly unknown[]) => void>(),
         restoreSidechainRoutes: vi.fn(),
@@ -89,10 +88,6 @@ vi.mock(
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     rearmCommittedTrackInputMonitoring: mocks.rearmCommittedTrackInputMonitoring,
-}));
-
-vi.mock('../../../useCases/publishTrackAdded', () => ({
-    publishTrackAdded: mocks.publishTrackAdded,
 }));
 
 vi.mock('../../../useCases/refreshToasterPadBindings', () => ({
@@ -242,7 +237,6 @@ describe('handleRestoreTrack', () => {
         });
         expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
         expect(mocks.finalizeSidechainRestore).not.toHaveBeenCalled();
-        expect(mocks.publishTrackAdded).not.toHaveBeenCalled();
 
         const trackOrder = requireCallOrder(mocks.setTrackState.mock.invocationCallOrder, 'track restore');
         const automationOrder = requireCallOrder(
@@ -269,11 +263,6 @@ describe('handleRestoreTrack', () => {
             activateDormantExternalPlugins: true,
         });
         expect(mocks.finalizeSidechainRestore).toHaveBeenCalledOnce();
-        expect(mocks.publishTrackAdded).toHaveBeenCalledWith({
-            trackId: 'track-1',
-            name: 'Restored',
-            kind: 'audio',
-        });
     });
 
     it('restores the gain envelope and warp state of every captured clip (regression #2108)', async () => {
@@ -320,11 +309,6 @@ describe('handleRestoreTrack', () => {
             activateDormantExternalPlugins: true,
         });
         expect(mocks.wireSidechainRoutes).toHaveBeenCalledOnce();
-        expect(mocks.publishTrackAdded).toHaveBeenCalledWith({
-            trackId: 'track-1',
-            name: 'Committed',
-            kind: 'audio',
-        });
     });
 
     it('still reconciles durable sidechain truth when the track restore did not commit', async () => {
@@ -336,7 +320,6 @@ describe('handleRestoreTrack', () => {
 
         expect(mocks.wireSidechainRoutes).toHaveBeenCalledOnce();
         expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
-        expect(mocks.publishTrackAdded).not.toHaveBeenCalled();
         expect(mocks.rearmCommittedTrackInputMonitoring).not.toHaveBeenCalled();
     });
 
@@ -476,7 +459,7 @@ describe('handleRestoreTrack', () => {
         });
     });
 
-    it('attempts sidechain wiring and publication when live strip projection fails', async () => {
+    it('attempts sidechain wiring when live strip projection fails', async () => {
         const failure = new Error('projection failed');
         mocks.getTrackStoreState.mockReturnValue({ tracks: [], selectedTrackId: null, ghostClips: [] });
         mocks.projectTrackToLiveStrip.mockImplementationOnce(() => {
@@ -487,11 +470,6 @@ describe('handleRestoreTrack', () => {
         await expect(result?.afterCommit?.()).rejects.toBe(failure);
 
         expect(mocks.finalizeSidechainRestore).toHaveBeenCalledOnce();
-        expect(mocks.publishTrackAdded).toHaveBeenCalledWith({
-            trackId: 'track-1',
-            name: 'Restored',
-            kind: 'audio',
-        });
     });
 
     it('refreshes every Toaster sibling after restoring a removed middle child', async () => {

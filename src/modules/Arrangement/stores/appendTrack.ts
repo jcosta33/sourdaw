@@ -8,8 +8,8 @@ import { type Track, trackStore } from './trackStore';
  * cross-module barrel cycles.
  *
  * Callers that only need the stock "create empty track of kind X" flow
- * should prefer `addTrack` from `Arrangement/useCases` instead: it emits the
- * `track.added` event and runs the full orchestration.
+ * should prefer `addTrack` from `Arrangement/useCases` instead: it builds the
+ * track through the `Track` model factory and honours the caller's selection.
  */
 export function appendTrack(track: Track): void {
     const state = trackStore.value;

@@ -10,11 +10,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import {
-    type TrackAddedPayload,
-    type TrackRemovedPayload,
-    type TrackSelectionChangedPayload,
-} from '#/modules/Arrangement/events';
+import { type TrackRemovedPayload, type TrackSelectionChangedPayload } from '#/modules/Arrangement/events';
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
 import {
     clearClipSelection,
@@ -59,7 +55,6 @@ import {
 import { CommandPalette } from '../CommandPalette';
 
 type ArrangementEvents = {
-    'track.added': TrackAddedPayload;
     'track.removed': TrackRemovedPayload;
     'track.selectionChanged': TrackSelectionChangedPayload;
 };

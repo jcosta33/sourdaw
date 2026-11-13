@@ -2,7 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { generateToolCalls } from '#/modules/AiRuntime/useCases';
 import { type Clip, type Track } from '#/modules/Arrangement/stores';
-import { addClip, addTrackWithDeferredAddedEvent, getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { addClip, addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { addMidiNote, setNotesForClip } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
@@ -139,23 +139,15 @@ function hasExactResult(state: GenerateBasslineState): boolean {
     });
 }
 
-function createWrittenResult(input: {
-    style: string;
-    state: GenerateBasslineState;
-    trackCreation: ReturnType<typeof addTrackWithDeferredAddedEvent>;
-}) {
+function createWrittenResult(input: { style: string; state: GenerateBasslineState }) {
     const logSuccess = (): void => {
         logger.info(`[AI MIDI] Generated ${input.style} bassline with ${String(input.state.resultNotes.length)} notes`);
     };
     return {
         status: 'written' as const,
-        afterCommit: async () => {
-            await input.trackCreation?.afterCommit();
-            logSuccess();
-        },
-        afterAmbiguousCommit: async () => {
+        afterCommit: logSuccess,
+        afterAmbiguousCommit: () => {
             if (hasExactResult(input.state)) {
-                await input.trackCreation?.afterAmbiguousCommit();
                 logSuccess();
             }
         },
@@ -215,22 +207,20 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
 
             const replayResult = transactionScope(() => {
                 let targetTrack = currentTargetTrack ?? null;
-                let trackCreation: ReturnType<typeof addTrackWithDeferredAddedEvent> = null;
                 if (!alpha.payload.trackId) {
-                    trackCreation = addTrackWithDeferredAddedEvent({
+                    targetTrack = addTrack({
                         id: state.targetTrackId,
                         name: `Bass (${style})`,
                         kind: 'midi',
                         select: false,
                     });
-                    targetTrack = trackCreation?.track ?? null;
                 }
                 if (!targetTrack || targetTrack.id !== state.targetTrackId) {
-                    return { status: 'conflict' as const, trackCreation };
+                    return { status: 'conflict' as const };
                 }
                 const generatedClip = state.generatedClip;
                 if (!generatedClip) {
-                    return { status: 'conflict' as const, trackCreation };
+                    return { status: 'conflict' as const };
                 }
                 const targetClip = addClip({
                     id: state.targetClipId,
@@ -241,18 +231,18 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
                     type: 'midi',
                 });
                 if (!targetClip || targetClip.id !== state.targetClipId) {
-                    return { status: 'conflict' as const, trackCreation };
+                    return { status: 'conflict' as const };
                 }
                 setNotesForClip(
                     targetClip.id,
                     state.resultNotes.map((note) => ({ ...note }))
                 );
-                return { status: 'written' as const, trackCreation };
+                return { status: 'written' as const };
             });
             if (replayResult.status === 'conflict') {
                 return { status: 'conflict' };
             }
-            return createWrittenResult({ style, state, trackCreation: replayResult.trackCreation });
+            return createWrittenResult({ style, state });
         }
 
         const instruction = `Generate a ${style} bassline that harmonically fits these chord/melody notes. The bass should be in octave 2-3 (MIDI 36-59). Use a "${style}" pattern. Output the bass notes using addNotes.`;
@@ -264,20 +254,18 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
 
         const writeResult = transactionScope(() => {
             let targetTrack: Track | null;
-            let trackCreation: ReturnType<typeof addTrackWithDeferredAddedEvent> = null;
             if (alpha.payload.trackId) {
                 targetTrack = getTrackStoreState()?.tracks.find((track) => track.id === alpha.payload.trackId) ?? null;
                 if (targetTrack?.kind !== 'midi') {
                     return { status: 'target-conflict' } as const;
                 }
             } else {
-                trackCreation = addTrackWithDeferredAddedEvent({
+                targetTrack = addTrack({
                     id: state.targetTrackId,
                     name: `Bass (${style})`,
                     kind: 'midi',
                     select: false,
                 });
-                targetTrack = trackCreation?.track ?? null;
             }
             if (!targetTrack) {
                 return { status: 'write-failed' } as const;
@@ -306,7 +294,6 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
                 track: targetTrack,
                 clip: targetClip,
                 notes: writtenNotes,
-                trackCreation,
             } as const;
         });
         if (writeResult.status === 'target-conflict') {
@@ -378,7 +365,7 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
         }
         state.materialized = true;
 
-        return createWrittenResult({ style, state, trackCreation: writeResult.trackCreation });
+        return createWrittenResult({ style, state });
     },
     describe: (action) => {
         const label = `AI: generate ${action.payload.style ?? 'root-fifth'} bassline`;

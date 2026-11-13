@@ -558,7 +558,6 @@ vi.mock('#/modules/Toaster/useCases', () => ({
     getToasterPresetDeviceState: vi.fn(),
     prepareOfflineToaster: vi.fn(),
     projectToasterKitToNativePatch: vi.fn(),
-    setToasterEventBus: vi.fn(),
     initToasterSubscribers: vi.fn(),
     initToasterKitPersistence: vi.fn(),
     getToasterPresets: vi.fn(),
