@@ -1,0 +1,726 @@
+crates/daw-dsp/tests/quantum_bench_census.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 33-34,378-382
+crates/daw-dsp/tests/bacteria_body_switch_rt.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 11
+crates/daw-dsp/tests/engine_output_level.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 43-44
+crates/daw-dsp/tests/gluten_routing_and_patch_state_reach.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 22-23
+crates/daw-dsp/tests/levain_sample_upload.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 12-13
+crates/daw-plugin-host/src/scanner.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 664-667,1585,1590
+crates/daw-plugin-host/src/vst3_module.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 253
+crates/proof-chamber/tests/automation_ordinals.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 5-6
+src/modules/AiRuntime/useCases/__tests__/vibeRunRenderBudget.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-620
+src/modules/AiRuntime/useCases/getRuntimeActionTypes.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-9
+src/modules/AiRuntime/useCases/measurementFailureReceipt.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-23
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1
+src/modules/AiRuntime/useCases/projectRefusalFailure.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-36
+src/modules/Arrangement/presentations/views/__tests__/TrackListViewRowSelection.spec.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-164
+crates/daw-engine/src/lib.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-5
+src/components/layout/__tests__/Divider.spec.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 124,135
+crates/daw-dsp/src/grinder/tone_stack.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 206
+src/modules/AudioRendering/AGENTS.md
+  s_ff124a0cf68412::t_87b6c7fa0302a0 26
+src/modules/AudioRendering/useCases/renderAgentPreviewMeasurementScope.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 2-17,39,41-44,49-52,54,56-62,69-70
+src/modules/Command/errors/AppActionExecutionError.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 16-18,26
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1
+src/modules/AiRuntime/useCases/boundedMeasurementWarnings.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-8
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 42,102
+scripts/health-gates-rust.sh
+  s_ff124a0cf68412::t_87b6c7fa0302a0 41-48
+crates/daw-core/Cargo.toml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 15-17
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.warpSubscription.spec.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 24-26
+src/modules/AudioEngine/worklets/levainProcessor.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 920-922
+src/modules/AiRuntime/services/applicationToolReceiptBudget.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 2,69-82
+  s_ff124a0cf68412::t_d810fa710f655d 83-84
+crates/daw-dsp/tests/toaster_pad_cutoff.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 25-26
+crates/daw-dsp/tests/bacteria_frozen_texture_preset.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-2
+crates/daw-dsp/tests/levain_auto_articulation_suggests_runs.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 10-11
+crates/daw-io/src/audio_decode.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1012
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 104,108,110
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 32-33,117-118
+crates/daw-dsp/tests/levain_bank_retirement.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 17-18
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeHeadExciseWithUndo.integration.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 39,87
+crates/daw-dsp/tests/device_process_rt.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 25
+crates/daw-dsp/src/bacteria/engine.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1436-1437
+crates/daw-dsp/src/crumbs/analysis/onset.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 296
+crates/daw-dsp/tests/gluten_lookahead_every_topology.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 12-13
+crates/daw-dsp/tests/shared_pitch_rt.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 3
+crates/daw-dsp/tests/grinder_ir_slot_rt.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 10-11
+crates/daw-dsp/tests/levain_missing_articulation_falls_back.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 17-18
+crates/proof-chamber/tests/algorithm_switch_parameter_retention.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 50-51
+crates/proof-chamber/tests/in_place_parity.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-2
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 4,6,897-923,1093-1137
+  s_ff124a0cf68412::t_3fb8cfa8f02400 1138
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 11,17,22,25,442-510,534-535,540,543-544,548-549
+src/modules/AudioEngine/useCases/offlineRender/__tests__/legacyAudioCutSource.integration.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 47,75
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ScratchPadView.spec.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 19-23,51,54-55,71,75,77-79
+crates/daw-plugin-host/Cargo.toml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 45-47
+src/modules/WorkspaceShell/handlers/scratchPad/__tests__/scratchPadHandlers.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 3-5,11-17,33-42,47-48,80-116
+  s_ff124a0cf68412::t_48d10e6ee7bc23 117-118
+src/modules/TimelineEditor/presentations/views/Timeline/ScratchPadView.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 31,147,165,185
+src/modules/TimelineEditor/presentations/views/__tests__/TempoEditorCommands.integration.spec.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 25,119
+src/modules/Collaboration/presentations/hooks/usePresence.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 9-37,73,85-88,93
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 54-57,171,810-845
+  s_ff124a0cf68412::t_7e440c71a38fd5 846-847
+crates/daw-dsp/tests/toaster_pad_resonance.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 21-22
+crates/daw-dsp/tests/crumbs_dropped_sample_writes_surface.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 10-11
+AGENTS.md
+  s_ff124a0cf68412::t_87b6c7fa0302a0 601-609
+crates/proof-chamber/tests/reverb_process_rt.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 27
+src/app/DesktopStartupError.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 9
+src/modules/AiRuntime/useCases/planMetricMeasurementUnits.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-153
+src/modules/AudioEngine/useCases/offlineRender/conservativeSpanEndBeat.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-16
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 238,302,304,478-479
+crates/daw-dsp/tests/grinder_automation_rt.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-2
+crates/daw-io/Cargo.toml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 16-18
+src/modules/AudioRendering/useCases/renderAgentMeasurementScope.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-6,8-9,11,24,27,31-32,36-39
+src/modules/AudioEngine/useCases/offlineRender/readOfflineAdjustmentRenderClass.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-55
+crates/daw-dsp/tests/transient_shaper_effect.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-2
+scripts/healthGateWorkflowContract.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 91
+src/app/__tests__/splitGainPointHistory.integration.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 59,127
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 7,417-440,665-679,1922-1935,2146-2158,3066
+crates/daw-dsp/src/toaster/engines/clap_909.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 136,156-157
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 26,30,63-73,255,1591-1944
+src/modules/Command/useCases/executableAppActionEffects.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1,3,125-130,196-200
+  s_ff124a0cf68412::t_9024ad39df3ba7 201
+crates/daw-dsp/src/grinder/nam/mod.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 355-356
+crates/daw-dsp/tests/levain_sample_rate_playback.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 16-17
+crates/daw-dsp/tests/levain_zone_table_staging.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 15-16
+crates/sourdaw-harness-tone/src/lib.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 10-14
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1
+crates/daw-dsp/tests/fermenter_karplus_allpass_decay.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 25-26
+crates/proof-chamber/tests/algorithm_render_character.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 9-10
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1601,1608-1610,1645
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1040-1046,1291-1298
+src/modules/AudioRendering/useCases/readAgentMeasurementSpan.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-9
+src/modules/Command/useCases/__tests__/processingOnlyParameterPolicy.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 23,208
+src/modules/MIDI/useCases/grooveTemplates/getGrooveSourceClipName.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-12
+crates/scoring/tests/quantum_cost.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 50-51
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeBatchPreviewProgress.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-28
+crates/daw-dsp/tests/levain_mic_mix_is_audible.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 12-13
+crates/daw-plugin-host/tests/parameter_events_signal.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 8-9
+src/modules/ElasticAudio/useCases/__tests__/quantizeTransients.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 41,146
+crates/daw-dsp/tests/levain_zone_tune_is_audible.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 15-16
+src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 3-4,9,13,23,32-52,54-55,57,63-216,226,265,269-271,276,280,282-283,286,353-354
+crates/sourdaw-native/src/host/plugin_host_requests.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 341-342
+src/modules/MIDI/AGENTS.md
+  s_ff124a0cf68412::t_87b6c7fa0302a0 22
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1
+crates/proof-chamber/tests/vintage_character.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 10-11
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeMeasurementRangeGroup.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-10
+src/modules/Command/AGENTS.md
+  s_ff124a0cf68412::t_87b6c7fa0302a0 33
+crates/daw-dsp/tests/crumbs_mode_triggering.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 14-15
+src/modules/AudioEngine/useCases/index.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 200
+crates/daw-engine/Cargo.toml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 60-62
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 288-303,305
+src/modules/AiRuntime/useCases/__tests__/readApplicationVerificationReceiptLimits.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-79
+crates/daw-dsp/tests/gluten_detector_controls.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 28-29
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1
+crates/daw-dsp/tests/bacteria_grain_position.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 20-21
+src/modules/CrdtDocument/useCases/startCrdtAutoSave.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 179-181
+src/modules/AiRuntime/useCases/measureProjectUnit.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-179
+crates/sourdaw-native/Cargo.toml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 80-82
+crates/daw-dsp/tests/grand_boule_pedal_offsets.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 10-11
+crates/daw-dsp/tests/levain_keyswitch_selects_articulation.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 11-12
+src/modules/Command/useCases/__tests__/retiredRangeToolStoredCommands.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 29,304
+crates/proof-chamber/tests/reverse_engine_character.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 26-27
+crates/daw-dsp/tests/bacteria_spring_body.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 2-4
+src/modules/AiRuntime/models/AgentResourceLimits.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 59-65
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 157,234
+src/modules/AiRuntime/useCases/__tests__/multiBatchRun.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 15,563-564,586,602-838,1027
+crates/proof-chamber/tests/reverse_grain_continuity.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 31-32
+src/modules/AudioRendering/useCases/readAgentMeasurementTimeline.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-8
+src/modules/Transport/handlers/transport/__tests__/tempoSourcePrefix.integration.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 36,79
+src/modules/AiRuntime/useCases/measureProjectScope.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 14,16,18,27,45,74,105,123
+src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 584-586,590
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 2104-2113
+src/modules/ContentBrowser/presentations/components/Sidebar/PresetItem.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 44-47
+src/components/daw/DawTabStrip.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 195-197,200-201,239
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 8-9,11,27-30,33-34,36,44-57,240-244,246-280,282-297,299-322,326-331,338-339,341-356,360-362,367-368,370-398,408,415-422,491-492,499-500
+src/utils/handlerContract.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 2934-2942,2956-2974
+crates/proof-chamber/tests/fdn_size_tuning.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 27-28
+src/modules/AiRuntime/useCases/resolveMeasuredRange.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-46
+src/modules/AiRuntime/useCases/__tests__/vibeRunProjectFixture.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-293
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1
+crates/daw-dsp/tests/crumbs_render_signal.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 14-15
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 272-275,455-458,469
+crates/proof-chamber/src/convolution.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 593
+src/modules/Arrangement/handlers/comping/__tests__/audioCompSourceInterval.integration.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 34,145,537
+src/modules/Collaboration/useCases/__tests__/removeClipUndoCommit.integration.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 44,799
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1168-1174,3105-3108
+src/modules/AiRuntime/useCases/__tests__/metricGoalPreviewRenders.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 217,221-229,231-232,234-237,295-297
+src/modules/AiRuntime/useCases/__tests__/metricGoalWorkflowFixture.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 170-216,222,224,241,262-266
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 206-210
+src/modules/WorkspaceShell/handlers/scratchPad/handleCaptureScratchPad.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1,4,8-20,22-25,27-31,37-72,74
+src/modules/MIDI/useCases/grooveTemplates/getGrooveExtractionActionErrorCode.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-5,7-21
+crates/daw-dsp/tests/fermenter_portamento_mode_legato.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 70-71
+crates/daw-dsp/src/crumbs/modes/slice.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 178
+crates/scoring/tests/in_place_parity.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-2
+scripts/__tests__/eslintConfig.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 224-229
+  s_ff124a0cf68412::t_d804231412eeb1 223
+crates/daw-dsp/tests/fermenter_glide_origin.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 100-101
+crates/daw-dsp/tests/crumbs_bpm_range.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 16-17
+src/modules/AiRuntime/useCases/measuredPreviewRead.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-129
+crates/proof-chamber/tests/fdn_size_automation_rt.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 21
+src/components/ui/disabled-feature-wrapper.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 5-8,13,22-23,35,43
+src/modules/AiRuntime/stores/chatStore.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 51-59
+src/modules/AiRuntime/useCases/compilePreviewPrefix.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-48
+crates/proof-chamber/tests/quantum_cost.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 58-59
+crates/sourdaw-native/src/commands/plugins.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1402
+crates/daw-dsp/tests/levain_unloaded_instance_is_silent.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 19-20
+crates/proof-chamber/Cargo.toml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 27-29
+src/modules/AiRuntime/useCases/__tests__/vibeRunSilentRanges.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 243-251,253,263-269,273,281-283,285
+src/modules/AudioRendering/useCases/__tests__/cutAgentMeasurementWindow.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-129
+crates/daw-dsp/tests/levain_instrument_identity_is_audible.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 16-17
+src/modules/AiRuntime/models/Chat.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 46-47
+src/modules/AiRuntime/useCases/__tests__/briefFromRequest.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 65-69,368,717,739-741,750-751
+src/modules/ControlSurface/useCases/__tests__/controllerMappingSchema.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1061,1067-1069
+crates/daw-dsp/tests/fermenter_grain_pan_spread_is_audible.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 66-67
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 3062-3116
+src/modules/Command/models/AgentCommandLedger.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 108-109,113,119,181,237,322-617
+  s_ff124a0cf68412::t_b57ad1288224d5 618
+crates/daw-dsp/tests/fermenter_ms20_stability.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 3
+  s_ff124a0cf68412::t_4c0dd5f0598272 2
+scripts/__tests__/rulesetHardening.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 5-6,48-51,55-65,93-95,116-118,120-121,124-129,132-142,146-149,158-159,174,185,189,195,199-201,203,208,210-212,217,221,223-224,226-227,230-240,253,258-264,289-295,299-303,319-336,343,352-362,377-380,389-390,402,407,412,417,422,427,430-464,468-476,485-486,490-492,494-508,516-518,520,524-535,537,610-611,637,639,644,648-649,651-655,658-663,665,677,685-687,692,707-765,767-768,772-792,798,804,806-809,813,815-825,827,832,835,843,846,857
+scripts/desktopLatencyConnect.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 553
+src/modules/AiRuntime/useCases/index.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 37
+src/modules/AudioEngine/useCases/playExclusiveAudioBufferPreview.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 76-80,143,157,190,227
+crates/daw-dsp/src/crumbs/analysis/peaks.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 52
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitAudioClipWithUndo.integration.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 33,99
+crates/daw-dsp/tests/grand_boule_note_offsets.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 10-11
+crates/daw-dsp/benches/quantum-cost-table.md
+  s_ff124a0cf68412::t_87b6c7fa0302a0 147-148,150-151,157-158,163,176,207-225,231,238-240,248,253,256,259,288-306
+src/modules/AiRuntime/AGENTS.md
+  s_ff124a0cf68412::t_87b6c7fa0302a0 33,42
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 58-60
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 103-105
+src/modules/AiRuntime/stores/__tests__/agentRunStore.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 11-17,166-219
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 57-71,917-922,1469-1473,1543-1560
+.github/workflows/cargo-dependency-seed.yml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 100-102
+crates/daw-wasm-decoder/Cargo.toml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 23-25
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetryAfterSave.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 65-66
+crates/daw-dsp/tests/gluten_topology_param_reach.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 35-36
+crates/proof-chamber/tests/legal_parameter_values.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 18-19
+crates/sourdaw-native/src/commands/speech.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1076,1079,1099,1102
+crates/daw-dsp/src/lib.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-5
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 362
+src/modules/AiRuntime/useCases/artifactOf.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-5
+crates/daw-io/src/lib.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-5
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 556-558
+.github/workflows/validation.yml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 844-848
+src/modules/AudioEngine/useCases/livePlayback/syncNativeTimelineSamples.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 76-78
+crates/daw-dsp/tests/audit_gluten_style_topology.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 13-14
+crates/daw-dsp/tests/fermenter_native_wasm_parity.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-2
+src/modules/AudioRendering/useCases/cutAgentMeasurementWindow.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-69
+src/modules/Command/useCases/getVersionedCommandBatchEffects.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 28,33,61
+src/modules/Yeast/useCases/__tests__/commitYeastGrooveExtraction.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 6,13,19,62-69
+  s_ff124a0cf68412::t_aa76a4d143a222 70-71
+crates/daw-dsp/tests/bacteria_mid_side_alignment.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 5-6,490,515
+src/modules/Command/models/ExecutableAppActionEffect.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-62
+src/modules/AiRuntime/useCases/countMeasurementUnitWork.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-32
+crates/sourdaw-native/src/commands/provider_gateway.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 382
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 128
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 4832-4840,4887,4915,4918,4927-4932,4934,4938,4982,4992-4993,5056,5062,5103,5108-5109,5143,5155-5156,5172,5177-5178,5190,5207,5218,5228,5250,5255-5256,5293-5294,5328-5329,5337-5338,5375-5382,5437,5444,5450-5451,5458,5472,5487,5501,5506-5509,5538,5544,5558,5564,5609,5611,5626,5635-5636,5638,5651-5652,5655,5662,5667,5694,5699,5794,5801,5829,5837,5843,5851-5852,5892,5903,5911,5917,5924,5929,5937-5938,5964,5976,5981-5982,5992-5993,6194,6210,6227,6234-6235,6238,6269,6282-6285,6295-6296,6341,6355,6360,6362,6401,6412,6418,6425,6430,6432-6435,6451,6490,6495,6513,6518,6550,6555,6618,6643,6664,6676,6682,6688-6689,6714,6720-6721,6785,6791,6806,6808,6817,6819,6828,6876,6881,6900,6905,7136,7140-7145,7151-7152,7155-7159,7161-7162,7164,7166-7176,7180-7182,7185-7188,7190-7191,7193-7195,7198-7209,7211,7213-7215,7220,7222,7224-7227,7231-7236,7241,7243-7244,7246-7247,7250-7263,7266-7267,7270,7272-7275,7279-7280,7282-7290,7292-7294
+src/modules/Crumbs/presentations/components/PadGrid.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 47-48,82-83
+crates/daw-dsp/tests/crumbs_filter_oversampling.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 16-17
+electron/shutdown.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 272-283,299
+crates/daw-dsp/tests/crust_channel_link.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 32-33
+crates/daw-engine/src/scheduler.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 5121-5124,5135-5138,6645,21308
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 26-32,44-45,52,252-281,1021,1058,1061,1077
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1
+crates/proof-chamber/tests/plate_shimmer_stability.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 16-17
+crates/proof-chamber/tests/decay_eq_parameter_surface.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 38-39
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 121,156-157,655,1674,2219,2256
+crates/daw-collab/Cargo.toml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 21-23
+crates/daw-collab/src/document_store.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 152-155
+src/modules/AiRuntime/useCases/__tests__/planMetricMeasurementUnits.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-120
+src/modules/Transport/useCases/transportControls/syncTransportMapsToNativeSession.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 243-245
+src/modules/AiRuntime/useCases/readPreviewPrefixTimeline.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-34
+src/modules/AiRuntime/useCases/readMeasurementUnitCall.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-34
+crates/daw-dsp/tests/toaster_pad_output.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-2
+src/modules/Arrangement/handlers/clip/validateClipReplacementSessionEntries.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 69-93
+src/components/ui/__tests__/disabled-feature-wrapper.spec.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 20-24,33-37
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1525
+crates/proof-chamber/tests/infinite_space_tail.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 3-4
+eslint.config.mjs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 223-232,1577,2783,2789,2797,2800-2801,2807,2968,3120-3121,3125-3126,3136
+  s_ff124a0cf68412::t_b3c61583a5910e 222
+src/modules/MIDI/handlers/groove/__tests__/handleExtractGroove.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 94,98,101-116,148-151,158,166,240,248,264
+crates/proof-chamber/tests/engine_reset_is_factory_fresh.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 28-29
+release/dependency-license-proofs.json
+  s_ff124a0cf68412::t_87b6c7fa0302a0 12,16,20,24,28,32,36,40,44,48,52,56
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 5-11
+crates/daw-dsp/tests/bacteria_distortion_modes.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 15-16
+crates/daw-dsp/tests/crumbs_loop_crossfade.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 33-34
+crates/daw-dsp/tests/gluten_delta_lookahead.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 7-8
+src/modules/AiRuntime/useCases/agentRequestOrchestration/settleStoppedBatchPreparation.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-24
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 42,110,1010,1040
+src/modules/AiRuntime/useCases/readApplicationVerificationReceiptLimits.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-30
+src/modules/AiRuntime/useCases/vibeRun/readVibeRunFitRefusals.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 2,7-10,13-14,19,29-37,73-79,86-189,192-196,203-205,213-216,228,241,243-267,269-270
+crates/daw-dsp/tests/shared_pitch_contract.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 3-5
+crates/scoring/tests/shared_pitch_contract.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 3-5
+src/modules/MIDI/handlers/groove/validateExtractGrooveCommand.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-45
+src/modules/Arrangement/handlers/clip/handleStripSilence.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 5,11,22-31,81,86-88
+src/modules/Crumbs/useCases/reconcileCrumbsDeviceStateFromProject.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 180-182
+crates/daw-dsp/Cargo.toml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 41-43
+src/modules/AiRuntime/useCases/measurePreviewUnit.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-336
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 562-586
+crates/daw-dsp/src/toaster/engines/clap.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 86-97
+crates/daw-dsp/tests/crumbs_sample_rate_playback.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 14-15
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 171-198
+src/modules/AiRuntime/useCases/vibeRun/collectVibeRunInitialBaselines.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 16-17,19-21,38-39,56-66,72,77,79-85,87,89-119,121,124-125
+crates/daw-dsp/tests/proof_parameter_registry.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 2-4
+src/app/main.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 45-55,74
+src/modules/Command/useCases/buildSemanticProjectDiff.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 45-46,93-94
+src/modules/Command/useCases/macro/playback.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 334-344
+crates/daw-collab/src/lib.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-5
+src/modules/AudioEngine/useCases/offlineRender/__tests__/readOfflineAdjustmentRenderClass.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-179
+crates/daw-dsp/tests/fermenter_voice_steal.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 32-33
+crates/proof-chamber/tests/plate_default_damping.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 36-37
+crates/scoring/Cargo.toml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 29-31
+src/modules/AudioEngine/useCases/offlineRender/buildOfflineWebAudioGraph.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 14
+src/modules/AudioRendering/useCases/index.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 17,19
+crates/daw-dsp/tests/levain_humanization_is_audible.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 14-15
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 31,48-49,218,304
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 2172,2232,2272
+crates/daw-dsp/tests/crumbs_analysis_fft.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 14-15
+src/components/ui/dialog.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1,124
+src/modules/AiRuntime/useCases/planMetricMeasurementRequests.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 6-42,55-58
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 28,37,211-216,218-235,265-266,274-282,285,291-292,296-297,308
+crates/daw-dsp/tests/dsp_cost_reduction_goldens.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 13-14
+crates/daw-dsp/tests/grinder_stacked_lstm_rejection.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-2
+crates/proof-chamber/tests/reverse_rate_bound.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 15-16
+crates/daw-dsp/tests/audit_toaster_fm_decay.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 11-12
+crates/sourdaw-harness-tone/Cargo.toml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 25-27
+src/modules/AiRuntime/useCases/readGroupPrefixes.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-20
+crates/daw-dsp/benches/quantum.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 186-187
+src/modules/Arrangement/handlers/clip/__tests__/audioClipSlipSession.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 32,70
+src/modules/AudioEngine/useCases/offlineRender/readAdjustmentLayerConstancyThresholds.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-35
+crates/scoring/src/lib.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 7-11
+crates/daw-dsp/tests/grinder_wavenet_scratch_width_rejection.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-2
+src/modules/Command/useCases/getAgentCommandLedger.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 7,37-38,70-71,87
+src/modules/Transport/useCases/tempoMap/__tests__/tempoMapCommands.integration.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 37,137,220,262
+crates/daw-dsp/tests/audit_fermenter_delay_glide.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 14-15
+crates/daw-dsp/tests/fermenter_karplus_glide.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-2
+crates/daw-plugin-host/src/lib.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-5
+crates/daw-dsp/tests/legal_parameter_values.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 20-21
+crates/daw-engine/src/midi/midi_clock.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 290
+crates/proof-chamber/src/lib.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 7-11
+src/modules/AiRuntime/useCases/executePreviewMeasurement.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 24,28-29,31-32,40,42,68,119,122-140,250,263
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 14,43,122,131,166,213-226,448-451,511
+public/wasm/scoring/scoring.d.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1
+src/modules/Arrangement/handlers/clip/__tests__/handleStripSilence.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 133-151
+Cargo.toml
+  s_ff124a0cf68412::t_87b6c7fa0302a0 29-84
+src/modules/AiRuntime/useCases/countMeasurementWork.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-15
+crates/proof-chamber/tests/algorithm_wire_contract.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 16,27
+  s_ff124a0cf68412::t_b24493669170de 28
+src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1,42
+crates/proof-chamber/tests/wet_onset_follows_predelay.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 34-35
+src/modules/Arrangement/handlers/clip/__tests__/commandMetadataSourceAdmission.integration.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 51,186
+crates/daw-dsp/tests/fermenter_osc_waveform_is_audible.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 55-56
+src/modules/AiRuntime/useCases/executeAnalysisMeasure.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 2,8-9,11,45-47,53,69,72
+src/modules/AiRuntime/useCases/__tests__/vibeRunRealProject.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-351
+src/modules/AiRuntime/useCases/__tests__/vibeRunInitialBaselines.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 23,27,155-170,284-292,295-296,298,308-318,399,438-458,565,569-570,599,601,617-619,641-643,645-651,753,758-759,831-832,935-938,1039-1040,1044,1050-1051,1059,1078-1079,1082,1086,1088,1130-1131,1197-1198,1289-1290,1331-1332,1334-1335,1360-1362
+release/open-source-inventory.json
+  s_ff124a0cf68412::t_87b6c7fa0302a0 173,825,1226,1231,1233,1381-1384,1387,1909,1921
+src/modules/Preferences/presentations/views/preferences/AppearanceSection.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1,22,24-26,28
+src/modules/AiRuntime/useCases/measurePreviewTarget.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-55
+crates/sourdaw-harness-tone/tests/renders_through_the_host.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 6-7
+crates/daw-dsp/tests/true_peak_tech3341_reference.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-2
+crates/daw-dsp/tests/crumbs_voice_steal.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 38-39
+crates/daw-dsp/tests/crumbs_pan_is_audible.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 9-10
+src/modules/AiRuntime/useCases/projectMeasurementReceipt.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-40
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1
+src/modules/MIDI/handlers/groove/handleExtractGroove.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 7,12-13,22,24-30,44,71,81-102,106-116,123-126,143,148-151
+src/modules/AudioRendering/useCases/renderAgentMeasurementTargets.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 12-18,31-33,36-39,47,50-51,62-70,108,111-112,126-127,131,136-137,152-165,176-178,192-199,213,219-221
+crates/proof-chamber/tests/plate_shimmer_render_contract.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 45-46
+crates/daw-dsp/src/toaster/engines/perc.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 146
+crates/daw-wasm-decoder/src/lib.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 12-16
+crates/sourdaw-native/src/lib.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 10-14
+crates/daw-dsp/tests/audit_fermenter_comp_makeup.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 11-12
+scripts/rulesetHardening.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 3,7-13,18-20,43-49,55-65,151-220,225,235,257-258,260,266-287,290-291,295-296,298-299,301-304,356-359,362,390,392
+src/modules/AiRuntime/useCases/__tests__/digestCommandBatchContentCompileMintedIds.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 363-364
+crates/sourdaw-native/src/bin/sourdaw-plugin-scan-helper.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 39-43
+src/modules/AiRuntime/useCases/previewRefusalFailure.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-47
+src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 29,179-180,509,520-521,576-580,582,584,596
+src/modules/AudioRendering/useCases/renderAgentPreviewMeasurementWindows.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-434
+src/modules/Command/useCases/__tests__/executableAppActionEffects.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 3-4
+crates/proof-chamber/tests/output_stage_parameter_surface.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 27-28
+.oxlintrc.json
+  s_ff124a0cf68412::t_87b6c7fa0302a0 80,205,218,230,232,284
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 866-902,1310-1337,3268-3277,3374,3389,3495,3510
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 24,102
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 7,33
+crates/proof-chamber/tests/non_finite_input_recovery.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 24-25
+crates/daw-dsp/benches/quantum-cost-table.json
+  s_ff124a0cf68412::t_87b6c7fa0302a0 2-208,210-284,286-351,353-418,420-485,487-1510
+src/modules/AudioRendering/useCases/renderAgentMeasurementWindows.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-85
+crates/proof-chamber/tests/plate_parameter_surface.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 33-34
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 562-577
+evidence/agent-campaign/manifest.json
+  s_ff124a0cf68412::t_87b6c7fa0302a0 10,13,178,190,623
+src/app/ApplicationFirstPaint.tsx
+  s_ff124a0cf68412::t_87b6c7fa0302a0 8
+src/modules/AiRuntime/validators/readScheduledVibeRunPlan.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 270-272,367,373-374,402,531-548,555-561
+crates/daw-dsp/tests/fermenter_voice_ceiling.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-2
+crates/sourdaw-native/tests/scan_helper_binary.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 8-9
+crates/daw-core/src/lib.rs
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-5
+public/wasm/manifest.json
+  s_ff124a0cf68412::t_87b6c7fa0302a0 12,16-18,21,26,30-32,35,40,44-46,49,54,58
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeInitialMeasurementProgress.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-13
+src/modules/AiRuntime/useCases/previewFailure.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1-19
+src/modules/MIDI/handlers/groove/handleDeleteGrooveTemplate.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 2-3,9-34,38-41
+src/modules/Yeast/useCases/commitYeastGrooveExtraction.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 1,36
+src/modules/Transport/handlers/transport/__tests__/tempoMapEditSource.integration.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 49,104
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitLoopingMidiClipWithUndo.integration.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 34,70
+src/modules/MIDI/handlers/groove/__tests__/handleDeleteGrooveTemplate.spec.ts
+  s_ff124a0cf68412::t_87b6c7fa0302a0 56-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e22889fc5ffc4c521b5ae9a6cf00dec2beabe3b9",
+  "prompts": {},
+  "sessions": {
+    "s_ff124a0cf68412": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5859629c-45b4-4907-85a7-756af720dd80",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
