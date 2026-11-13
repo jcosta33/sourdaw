@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
 
+import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { getRuntimeActionTypes } from '#/modules/AiRuntime/useCases';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
@@ -9,6 +10,7 @@ import { getMidiGrooveHandlers, getMidiNoteTransformHandlers } from '#/modules/M
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
+import { isRecord } from '#/utils/structuralEquality';
 
 import {
     AGENT_COMMAND_LEDGER_CATEGORIES,
@@ -60,13 +62,16 @@ function buildActionTypeOwnerMap(): Map<string, RegisteringFactory> {
 
 /**
  * Every runtime action type is covered exactly once, by an executable descriptor or by one
- * accounting record, and no record names a type the runtime vocabulary no longer holds. Throws an
- * error naming every type that breaks the rule.
+ * accounting record, and no record names a type the runtime vocabulary no longer holds. Nothing
+ * outside agent scope may be an undoable project edit: an edit the user can undo is one an agent
+ * could be asked to make, so it is interim work, never out of scope. Throws an error naming every
+ * type that breaks a rule.
  */
 function assertRuntimeActionCensus(
     runtimeActionTypes: readonly string[],
     registeredActionTypes: readonly string[],
-    records: readonly AgentRuntimeActionAccountingRecord[]
+    records: readonly AgentRuntimeActionAccountingRecord[],
+    undoableHandlerTypes: ReadonlySet<string>
 ): void {
     const runtime = new Set(runtimeActionTypes);
     const registered = new Set(registeredActionTypes);
@@ -79,7 +84,12 @@ function assertRuntimeActionCensus(
         (type) => recordedTypes.indexOf(type) !== recordedTypes.lastIndexOf(type)
     );
     const stale = distinctRecorded.filter((type) => !runtime.has(type));
+    const undoableOutsideScope = records
+        .filter((record) => record.kind === 'outside-agent-scope')
+        .flatMap((record) => record.actionTypes)
+        .filter((type) => undoableHandlerTypes.has(type));
     const problems = [
+        ...undoableOutsideScope.map((type) => `${type}: outside agent scope but its handler is undoable`),
         ...unaccounted.map((type) => `${type}: no executable descriptor and no accounting record`),
         ...registeredAndRecorded.map((type) => `${type}: registered and also recorded`),
         ...recordedTwice.map((type) => `${type}: recorded more than once`),
@@ -94,6 +104,20 @@ function getRegisteredActionTypes(): string[] {
     return executableAppActionDescriptors.map((descriptor) => descriptor.actionType);
 }
 
+/** Every action type a production handler registers undoable, read from the real handler maps. */
+function getUndoableHandlerTypes(): ReadonlySet<string> {
+    const handlerMaps: readonly Record<string, unknown>[] = getProductionCommandHandlerMaps({
+        canMutateBranchMetadata: () => true,
+    });
+    return new Set(
+        handlerMaps.flatMap((handlerMap) =>
+            Object.entries(handlerMap)
+                .filter(([, handler]) => isRecord(handler) && handler.undoable === true)
+                .map(([actionType]) => actionType)
+        )
+    );
+}
+
 function getLiveAccounting(): readonly AgentRuntimeActionAccountingRecord[] {
     const records = getAgentCommandLedger().runtimeActionAccounting;
     if (records === undefined) {
@@ -105,8 +129,32 @@ function getLiveAccounting(): readonly AgentRuntimeActionAccountingRecord[] {
 describe('runtime action census', () => {
     it('covers every live runtime action type exactly once by a descriptor or an accounting record', () => {
         expect(() =>
-            assertRuntimeActionCensus(getRuntimeActionTypes(), getRegisteredActionTypes(), getLiveAccounting())
+            assertRuntimeActionCensus(
+                getRuntimeActionTypes(),
+                getRegisteredActionTypes(),
+                getLiveAccounting(),
+                getUndoableHandlerTypes()
+            )
         ).not.toThrow();
+    });
+
+    it('fails, naming the type, when a record puts a type whose handler is undoable outside agent scope', () => {
+        const undoableOutsideScope: AgentRuntimeActionAccountingRecord = {
+            kind: 'outside-agent-scope',
+            category: 'view',
+            reason: 'undoable fixture',
+            actionTypes: ['hideTrack'],
+        };
+        expect(() =>
+            assertRuntimeActionCensus(['hideTrack'], [], [undoableOutsideScope], new Set(['hideTrack']))
+        ).toThrowError(/hideTrack: outside agent scope but its handler is undoable/);
+        expect(() => assertRuntimeActionCensus(['hideTrack'], [], [undoableOutsideScope], new Set())).not.toThrow();
+    });
+
+    it('reads every undoable handler type from the production handler maps', () => {
+        const undoable = getUndoableHandlerTypes();
+        expect(undoable.has('addTrack')).toBe(true);
+        expect(undoable.has('selectTrack')).toBe(false);
     });
 
     it('fails, naming the type, when a runtime action type has neither a descriptor nor a record', () => {
@@ -114,7 +162,8 @@ describe('runtime action census', () => {
             assertRuntimeActionCensus(
                 [...getRuntimeActionTypes(), 'fabricatedRuntimeAction'],
                 getRegisteredActionTypes(),
-                getLiveAccounting()
+                getLiveAccounting(),
+                getUndoableHandlerTypes()
             )
         ).toThrowError(/fabricatedRuntimeAction: no executable descriptor and no accounting record/);
     });
@@ -127,10 +176,12 @@ describe('runtime action census', () => {
             actionTypes: ['retiredRuntimeAction'],
         };
         expect(() =>
-            assertRuntimeActionCensus(getRuntimeActionTypes(), getRegisteredActionTypes(), [
-                ...getLiveAccounting(),
-                staleRecord,
-            ])
+            assertRuntimeActionCensus(
+                getRuntimeActionTypes(),
+                getRegisteredActionTypes(),
+                [...getLiveAccounting(), staleRecord],
+                getUndoableHandlerTypes()
+            )
         ).toThrowError(/retiredRuntimeAction: recorded but not a runtime action type/);
     });
 
@@ -142,10 +193,12 @@ describe('runtime action census', () => {
             actionTypes: ['addTrack', 'selectTrack'],
         };
         const run = () =>
-            assertRuntimeActionCensus(getRuntimeActionTypes(), getRegisteredActionTypes(), [
-                ...getLiveAccounting(),
-                doubleRecord,
-            ]);
+            assertRuntimeActionCensus(
+                getRuntimeActionTypes(),
+                getRegisteredActionTypes(),
+                [...getLiveAccounting(), doubleRecord],
+                getUndoableHandlerTypes()
+            );
         expect(run).toThrowError(/addTrack: registered and also recorded/);
         expect(run).toThrowError(/selectTrack: recorded more than once/);
     });

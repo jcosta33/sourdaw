@@ -323,7 +323,8 @@ export const AGENT_COMMAND_LEDGER_UNCOVERED_CATEGORIES: readonly {
  * Why an AI runtime action type has no executable command. `interim-unsupported` names an edit the
  * agent should own, which its tracker packet registers or retires from the runtime vocabulary;
  * `outside-agent-scope` names a view, panel, transport-control or session action that is never a
- * project edit an agent command commits.
+ * project edit an agent command commits. A type whose handler is undoable is a project edit, so it
+ * is never outside agent scope.
  */
 export type AgentRuntimeActionAccountingRecord =
     | {
@@ -368,6 +369,27 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
             'deleteTrackAlternative',
             'autoOrganizeProject',
             'loadTrackTemplate',
+        ],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'track',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Track display edits (hide, fold, height, vertical zoom) are undoable writes to the saved tracks, so they are project edits an agent could be asked to make; none has an executable descriptor or a target capability yet.',
+        actionTypes: ['hideTrack', 'foldTrack', 'setTrackHeight', 'zoomTracksVertical'],
+    },
+    {
+        kind: 'interim-unsupported',
+        category: 'project-timeline',
+        packet: RUNTIME_ACTION_PACKET,
+        reason: 'Undoable transport settings with no executable descriptor yet. toggleLoop and toggleMetronome are the non-idempotent forms of the registered setLoopEnabled and setMetronomeEnabled; the count-in and pre-roll handlers describe no inverse action, so the packet gives them one before registering them or retires the toggles.',
+        actionTypes: [
+            'toggleLoop',
+            'toggleMetronome',
+            'toggleCountIn',
+            'setCountInBars',
+            'togglePreRoll',
+            'setPreRollBars',
         ],
     },
     {
@@ -519,19 +541,15 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
     {
         kind: 'outside-agent-scope',
         category: 'view',
-        reason: 'View state (selection, tools, zoom, track height and visibility, snap, workspace mode) changes what the musician sees, not the project an agent edits.',
+        reason: 'View state (selection, tools, horizontal zoom, snap, workspace mode) changes what the musician sees and records no undo entry, so it is not the project an agent edits.',
         actionTypes: [
             'selectTrack',
             'setWorkspaceMode',
             'setEditingTool',
             'setMarqueeSelection',
-            'hideTrack',
-            'setTrackHeight',
             'setSnapValue',
             'zoomToFit',
             'zoomToSelection',
-            'zoomTracksVertical',
-            'foldTrack',
         ],
     },
     {
@@ -553,16 +571,10 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
     {
         kind: 'outside-agent-scope',
         category: 'transport-control',
-        reason: 'Transport, recording and performance toggles drive playback the musician controls live; the agent sets loop, metronome and punch state through the registered set commands.',
+        reason: 'Transport, recording and performance toggles drive playback the musician controls live and record no undo entry; the agent sets loop, metronome and punch state through the registered set commands.',
         actionTypes: [
             'togglePlayback',
             'toggleRecording',
-            'toggleLoop',
-            'toggleMetronome',
-            'toggleCountIn',
-            'setCountInBars',
-            'togglePreRoll',
-            'setPreRollBars',
             'toggleLoopRecord',
             'togglePunchRecording',
             'triggerScene',
