@@ -44,6 +44,8 @@ export const PadGrid = ({
     // at that index.
     const [flashingPads, setFlashingPads] = useState<Record<number, number>>({});
     const flashTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+    // Stamps each flash so a superseded timer leaves the newer flash in place.
+    const flashSequence = useRef(0);
     // Pads currently held down (keyed by stable pad.id). A note-off must fire once
     // per press: mouseUp and mouseLeave can both follow a single mouseDown, so the
     // held set gates the release to exactly the first one that lands.
@@ -77,7 +79,8 @@ export const PadGrid = ({
         onTriggerPad(index);
         heldPads.current.add(padId);
 
-        const flashId = Date.now();
+        flashSequence.current += 1;
+        const flashId = flashSequence.current;
         setFlashingPads((prev) => ({ ...prev, [padId]: flashId }));
 
         // Clear previous timer for this pad

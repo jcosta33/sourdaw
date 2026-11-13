@@ -12,6 +12,8 @@
 //! Smudge is now wired. Breakdown is not, and the tests at the bottom of this
 //! file pin *why* rather than leaving it to be rediscovered.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::bacteria::BacteriaInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

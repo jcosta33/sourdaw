@@ -56,7 +56,13 @@ export const DEFAULT_AGENT_RESOURCE_LIMITS: AgentResourceLimits = {
     runDurationMs: 30 * 60 * 1000,
     maxCommands: 512,
     maxAutomationPoints: 16_384,
-    maxRenderJobs: 64,
+    /**
+     * A whole-project vibe run renders each target once per document it reads, whatever the section
+     * count: an ordinary song (two dozen tracks across five role families, eight sections, two
+     * characters) needs a little over a hundred renders, and 256 holds a brief's full set of role
+     * tracks while still stopping a run that renders without end.
+     */
+    maxRenderJobs: 256,
     maxImportedAssets: 64,
     maxDeletedObjects: 256,
     remoteTokens: 400_000,

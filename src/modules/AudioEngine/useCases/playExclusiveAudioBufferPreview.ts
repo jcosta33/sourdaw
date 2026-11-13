@@ -73,6 +73,11 @@ function stopExclusive(operation: ExclusiveOperation): Promise<void> {
     return restoreProgramme(operation, settled);
 }
 
+/** Stops with nobody to await the restoration, so its refusal is reported. */
+function stopExclusiveDetached(operation: ExclusiveOperation): void {
+    void stopExclusive(operation).catch(report);
+}
+
 /** Reconcile the released output. A rejection leaves the gate closed until the recovery below retries it. */
 function restoreProgramme(operation: ExclusiveOperation, settled: PromiseWithResolvers<void>): Promise<void> {
     const release = new AbortController();
@@ -135,7 +140,7 @@ function retryRestoration(operation: ExclusiveOperation, settled: PromiseWithRes
 function failed(operation: ExclusiveOperation, error: unknown): Promise<void> {
     const ready = Promise.reject<void>(error);
     void ready.catch(report);
-    void stopExclusive(operation).catch(report);
+    stopExclusiveDetached(operation);
     return ready;
 }
 
@@ -149,7 +154,7 @@ function attachRetainedSource(operation: ExclusiveOperation, witness: { isCurren
         intent: operation.intent ?? undefined,
         destination: audioEngine.audioPreviewOutput,
         onEnded: () => {
-            void stopExclusive(operation).catch(report);
+            stopExclusiveDetached(operation);
             operation.input.onEnded();
         },
     });
@@ -182,7 +187,7 @@ function prepareSource(operation: ExclusiveOperation): Promise<void> {
     const ready = Promise.race([Promise.all([resuming, gated]), cancelled])
         .then(([, witness]) => attachRetainedSource(operation, witness))
         .catch((error: unknown) => {
-            void stopExclusive(operation).catch(report);
+            stopExclusiveDetached(operation);
             throw error;
         })
         .finally(() => {
@@ -219,7 +224,7 @@ export function playExclusiveAudioBufferPreview(input: ExclusiveInput): {
         restoration: null,
         recovering: false,
         invalidate: () => {
-            void stopExclusive(operation).catch(report);
+            stopExclusiveDetached(operation);
         },
     };
     const stop = () => {

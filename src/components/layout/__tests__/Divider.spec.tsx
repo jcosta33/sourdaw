@@ -121,7 +121,7 @@ describe('Divider', () => {
                     data-proof="native"
                     id="test-id"
                     title="Test Title"
-                    role="presentation"
+                    role="toolbar"
                     aria-orientation="vertical"
                     style={{ color: 'rgb(1, 2, 3)' }}
                     onClick={onClick}
@@ -132,7 +132,7 @@ describe('Divider', () => {
             expect(element).toHaveAttribute('id', 'test-id');
             expect(element).toHaveAttribute('title', 'Test Title');
             expect(element).toHaveAttribute('data-proof', 'native');
-            expect(element).toHaveAttribute('role', 'presentation');
+            expect(element).toHaveAttribute('role', 'toolbar');
             expect(element).toHaveAttribute('aria-orientation', 'vertical');
             expect(element).toHaveStyle({ color: 'rgb(1, 2, 3)' });
             expect(onClick).toHaveBeenCalledOnce();

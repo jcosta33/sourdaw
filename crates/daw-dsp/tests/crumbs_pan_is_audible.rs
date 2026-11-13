@@ -6,6 +6,8 @@
 //! asserts the channels actually split — with the no-op arm restored, both
 //! channels carry the mono source equally and the ratio collapses to 1.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::crumbs::CrumbsInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

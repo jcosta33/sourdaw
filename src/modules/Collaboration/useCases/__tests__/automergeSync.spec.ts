@@ -2101,10 +2101,16 @@ describe('AutomergeSync', () => {
                 const timer = setTimeout(() => {
                     reject(new Error(describeUnappliedDelivery(decoded)));
                 }, 2000);
-                applied.then(() => {
-                    clearTimeout(timer);
-                    resolve();
-                });
+                applied.then(
+                    () => {
+                        clearTimeout(timer);
+                        resolve();
+                    },
+                    (error: unknown) => {
+                        clearTimeout(timer);
+                        reject(error);
+                    }
+                );
             });
         }
 

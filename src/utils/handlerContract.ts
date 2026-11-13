@@ -2931,7 +2931,15 @@ export type AppAction =
           type: 'restoreGrooveTemplateName';
           payload: { templateId: string; name: string; expectedName: string };
       }
-    | { type: 'deleteGrooveTemplate'; payload: { templateId: string } }
+    | {
+          type: 'deleteGrooveTemplate';
+          payload: {
+              templateId: string;
+              /** Set only by the inverse of `extractGroove`: delete the template only while it still
+               *  equals this snapshot and nothing is assigned to it, and refuse otherwise. */
+              expectedTemplate?: GrooveTemplateActionSnapshot;
+          };
+      }
     | { type: 'restoreDeletedGrooveTemplate'; payload: DeletedGrooveTemplateActionSnapshot }
     | { type: 'assignGrooveTemplate'; payload: GrooveAssignmentActionSnapshot }
     | {
@@ -2945,15 +2953,25 @@ export type AppAction =
       }
     | {
           type: 'extractGroove';
-          payload: {
-              clipId: string;
-              templateId?: string;
-              sourceName?: string;
-              subdivision?: string;
-          } & (
-              | { proposal: GrooveTemplateActionSnapshot; sourceRevision: string }
-              | { proposal?: undefined; sourceRevision?: undefined }
-          );
+          // Two whole object shapes rather than an intersection: the generated argument schema
+          // closes every object, so an intersection of objects would admit no payload at all.
+          payload:
+              | {
+                    clipId: string;
+                    templateId?: string;
+                    sourceName?: string;
+                    subdivision?: string;
+                    proposal: GrooveTemplateActionSnapshot;
+                    sourceRevision: string;
+                }
+              | {
+                    clipId: string;
+                    templateId?: string;
+                    sourceName?: string;
+                    subdivision?: string;
+                    proposal?: undefined;
+                    sourceRevision?: undefined;
+                };
       }
     | { type: 'applyGroove'; payload: { clipId: string; grooveId: string; amount?: number } }
     | { type: 'setClipStretchMode'; payload: { clipId: string; mode: 'off' | 'repitch' | 'timestretch' } }

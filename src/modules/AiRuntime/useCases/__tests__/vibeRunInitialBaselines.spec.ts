@@ -20,10 +20,11 @@ import { transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
+import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
 import { type ToolCallResult } from '../../models/ToolCallResult';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { type MeasuredScheduledVibeRunPlan } from '../../models/VibeRunPlan';
-import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { agentResourceLimitsStore, readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
@@ -151,6 +152,22 @@ vi.hoisted(() => {
     });
 });
 
+/** The verification-receipt allowance, overridden live so one case can shrink it below what its reads hold. */
+const verificationLimits = vi.hoisted((): { maxBytesPerCollection: number | null } => ({
+    maxBytesPerCollection: null,
+}));
+vi.mock('../readApplicationVerificationReceiptLimits', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../readApplicationVerificationReceiptLimits')>();
+    return {
+        ...original,
+        readApplicationVerificationReceiptLimits: (collectionReceipts: number) => {
+            const limits = original.readApplicationVerificationReceiptLimits(collectionReceipts);
+            const { maxBytesPerCollection } = verificationLimits;
+            return maxBytesPerCollection === null ? limits : { ...limits, maxBytesPerCollection };
+        },
+    };
+});
+
 const audio = vi.hoisted(() => ({
     renderTrackSubgraphOffline: vi.fn<typeof renderTrackSubgraphOffline>(),
     renderOffline: vi.fn(),
@@ -265,10 +282,20 @@ function seededBrief(): ProductionBrief {
 }
 
 /**
- * Every track sounds a 100 Hz body beside a 3 kHz top, each scaled by the low and high shelf gains
- * of the EQs it carries, so a warming recipe raises the bass band and lowers the centroid.
+ * A render as the song it holds: its first frame is the song at its start beat (two beats a second),
+ * so every range read out of a wider render holds that range's own samples.
  */
-function renderTrack(input: RenderInput, chorusStart = 2): AudioBuffer {
+function renderSong(input: RenderInput, sample: (songSeconds: number) => number): AudioBuffer {
+    const startSeconds = input.startBeat / 2;
+    return metricGoalAudioBuffer((time) => sample(startSeconds + time), (input.endBeat - input.startBeat) / 2);
+}
+
+/**
+ * Every track sounds a 100 Hz body beside a 3 kHz top, each scaled by the low and high shelf gains
+ * of the EQs it carries, so a warming recipe raises the bass band and lowers the centroid; the top is
+ * brighter from the chorus on.
+ */
+function trackSample(input: RenderInput, chorusStart = 2): (songSeconds: number) => number {
     const track = input.renderTracks.find((candidate) => candidate.id === input.targetTrackId);
     if (track === undefined) {
         throw new Error('The render target is absent.');
@@ -277,15 +304,18 @@ function renderTrack(input: RenderInput, chorusStart = 2): AudioBuffer {
         track.devices.reduce((total, device) => total + (device.parameterValues[id] ?? 0), 0);
     const low = 10 ** (parameter('eq-low-gain') / 20);
     const high = 10 ** (parameter('eq-high-gain') / 20);
-    const seconds = (input.endBeat - input.startBeat) / 2;
     const frequency = input.targetTrackId === DRUMS_ID ? 100 : 220;
-    const brightness = input.startBeat === chorusStart ? 0.35 : 0.15;
-    return metricGoalAudioBuffer(
-        (time) =>
-            0.4 * low * Math.sin(2 * Math.PI * frequency * time) +
-            brightness * high * Math.sin(2 * Math.PI * 3000 * time),
-        seconds
-    );
+    return (song) => {
+        const brightness = song >= chorusStart / 2 ? 0.35 : 0.15;
+        return (
+            0.4 * low * Math.sin(2 * Math.PI * frequency * song) +
+            brightness * high * Math.sin(2 * Math.PI * 3000 * song)
+        );
+    };
+}
+
+function renderTrack(input: RenderInput, chorusStart = 2): AudioBuffer {
+    return renderSong(input, trackSample(input, chorusStart));
 }
 
 async function sendChatMessage(prompt: string, options?: Parameters<typeof sendChatMessageWithoutDocumentFlush>[1]) {
@@ -366,6 +396,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    verificationLimits.maxBytesPerCollection = null;
     for (const trackId of [DRUMS_ID, VOCAL_ID, BASS_ID]) {
         removeTrackStrip(trackId);
     }
@@ -402,6 +433,27 @@ function keepDrumsOnly() {
         throw new Error('Missing tracks.');
     }
     landProjectEdit(() => trackStore.set({ ...state, tracks: state.tracks.filter((track) => track.id === DRUMS_ID) }));
+}
+
+/** Five drum tracks, roles stated in the brief: more targets than one measurement unit holds, so initial figures take two units. */
+const DRUM_KIT = ['Kick', 'Snare', 'Hats', 'Toms', 'Overheads'] as const;
+
+function useDrumKit() {
+    landProjectEdit(() => {
+        const state = trackStore.value;
+        if (state === null) {
+            throw new Error('Missing tracks.');
+        }
+        const ids = DRUM_KIT.map((name) => `track-${name.toLowerCase()}`);
+        trackStore.set({ ...state, tracks: DRUM_KIT.map((name, index) => sourceTrack(ids[index]!, name)) });
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            productionBrief: {
+                ...seededBrief(),
+                trackRoles: ids.map((trackId) => ({ id: `role-${trackId}`, trackId, role: 'drums', createdAt: 100 })),
+            },
+        });
+    });
 }
 
 function useShortMeasuredSections() {
@@ -510,11 +562,12 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(3);
     });
 
-    it('fits one drum target and two sections at exactly nine renders, six reductions and five commands', async () => {
+    it('fits one drum target and two sections at exactly three renders, six reductions and five commands', async () => {
         keepDrumsOnly();
         agentResourceLimitsStore.set({
             ...DEFAULT_AGENT_RESOURCE_LIMITS,
-            maxRenderJobs: 9,
+            // One initial render covers the arrangement and both sections; the preview renders live and the batch once.
+            maxRenderJobs: 3,
             localAnalysis: 6,
             maxCommands: 5,
         });
@@ -543,9 +596,9 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         expect(state?.proofs.every((proof) => proof.preview.revision !== initial.sourceRevision)).toBe(true);
         await expect(confirmPendingChatActions({ confirmationId: batch.id })).resolves.toEqual({ status: 'executed' });
         expect(trackDeviceTypes(DRUMS_ID)).toEqual(['builtin-eq']);
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(9);
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
         expect(agentRunLifecycle.get(brief.runId)?.budgets.consumed).toMatchObject({
-            maxRenderJobs: 9,
+            maxRenderJobs: 3,
             localAnalysis: 6,
             maxCommands: 5,
         });
@@ -561,9 +614,9 @@ describe('initial role and exact-section baselines through the brief pipeline', 
     });
 
     it.each([
-        { maxRenderJobs: 8, localAnalysis: 6, category: 'maxRenderJobs', needed: '9 renders' },
-        { maxRenderJobs: 9, localAnalysis: 5, category: 'localAnalysis', needed: '6 reductions' },
-        { maxRenderJobs: 9, localAnalysis: 6, maxCommands: 4, category: 'maxCommands', needed: '5 commands' },
+        { maxRenderJobs: 2, localAnalysis: 6, category: 'maxRenderJobs', needed: '3 renders' },
+        { maxRenderJobs: 3, localAnalysis: 5, category: 'localAnalysis', needed: '6 reductions' },
+        { maxRenderJobs: 3, localAnalysis: 6, maxCommands: 4, category: 'maxCommands', needed: '5 commands' },
     ])('refuses an impossible complete run before rendering ($category)', async ({ category, needed, ...limits }) => {
         keepDrumsOnly();
         agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, ...limits });
@@ -585,13 +638,17 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         const initial = measuredPlan(brief).initial;
         audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
             const track = input.renderTracks.find((track) => track.id === input.targetTrackId);
-            if (input.startBeat === 2 && (track?.devices.length ?? 0) > 0) {
-                return metricGoalAudioBuffer(
-                    (time) => 0.01 * Math.sin(2 * Math.PI * 100 * time) + 0.6 * Math.sin(2 * Math.PI * 3000 * time),
-                    1
-                );
+            const sounding = trackSample(input);
+            if ((track?.devices.length ?? 0) === 0) {
+                return renderTrack(input);
             }
-            return renderTrack(input);
+            // The processed chorus loses its body and turns harsh, while the verse still improves.
+            return renderSong(input, (song) => {
+                if (song < 1) {
+                    return sounding(song);
+                }
+                return 0.01 * Math.sin(2 * Math.PI * 100 * song) + 0.6 * Math.sin(2 * Math.PI * 3000 * song);
+            });
         });
         await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toEqual({ status: 'executed' });
         const batch = requireOnlyProposedCard();
@@ -693,12 +750,13 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         if (change === 'save') {
             const brief = requireOnlyProposedCard();
             expect(measuredPlan(brief).initial.sourceRevision).toBe(initialRevision);
-            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
+            expect(measuredPlan(brief).initial.receipts).toHaveLength(3);
         } else {
             expect(proposedCards()).toEqual([]);
-            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
             expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
         }
+        // The held render is the only one: it covers the arrangement and both sections.
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
     });
 
@@ -770,7 +828,8 @@ describe('initial role and exact-section baselines through the brief pipeline', 
             ]) {
                 expect(readScheduledVibeRunPlan(JSON.stringify(tamper(structuredClone(plan))))).toBeNull();
             }
-            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(27);
+            // Three targets render once for every range, and each of the three batch previews twice.
+            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(9);
         },
         MULTI_BATCH_TEST_TIMEOUT_MS
     );
@@ -873,9 +932,10 @@ describe('initial role and exact-section baselines through the brief pipeline', 
 
     it('schedules around a silent required section and never invents zero as its figure', async () => {
         keepDrumsOnly();
-        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) =>
-            input.startBeat === 2 ? metricGoalAudioBuffer(() => 0, 1) : renderTrack(input)
-        );
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
+            const sounding = trackSample(input);
+            return renderSong(input, (song) => (song >= 1 ? 0 : sounding(song)));
+        });
         scriptPlanningTurns(BRIEF_ROUTE);
         await sendChatMessage(PROMPT);
         const card = requireOnlyProposedCard();
@@ -976,17 +1036,19 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         const state = metricGoalStateCodec(batch.approvalSnapshot.metricGoalState);
         expect(measuredPlan(brief).initial.receipts).toHaveLength(2);
         expect(new Set(state?.proofs.map((proof) => proof.preview.range.sectionId))).toEqual(new Set([null, 'entire']));
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(6);
+        // One initial render holds both ranges; the preview renders live and the batch once each.
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
     });
 
     it('refuses budget movement between initial chunks and retains its real failure receipt', async () => {
-        keepDrumsOnly();
-        agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, maxRenderJobs: 9 });
+        useDrumKit();
         audio.renderTrackSubgraphOffline.mockImplementationOnce(async (input: RenderInput) => {
             const run = readAgentRunState().runs.at(-1);
             if (run === undefined) {
                 throw new Error('Missing run');
             }
+            // The first unit reserved its four renders; competing work takes everything else.
+            const left = readAgentResourceLimits().maxRenderJobs - ANALYSIS_MEASURE_MAX_TARGETS;
             expect(
                 agentRunLifecycle.reserveBudgetBatch({
                     runId: run.runId,
@@ -994,7 +1056,7 @@ describe('initial role and exact-section baselines through the brief pipeline', 
                         {
                             attemptId: 'competing-work',
                             category: 'maxRenderJobs',
-                            estimate: 8,
+                            estimate: left,
                             provenance: 'versioned-estimate',
                         },
                     ],
@@ -1013,15 +1075,17 @@ describe('initial role and exact-section baselines through the brief pipeline', 
                 error: expect.objectContaining({ code: 'measurement-budget-exhausted' }),
             })
         );
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
+        // The first unit rendered its four targets once; the second was refused before it rendered.
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(ANALYSIS_MEASURE_MAX_TARGETS);
         expect(run?.workLeases.every((lease) => lease.terminalState !== null)).toBe(true);
         await expect(confirmPendingChatActions({ confirmationId: card.id })).resolves.toEqual({ status: 'executed' });
-        expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
+        expect(trackStore.value?.tracks.every((track) => track.devices.length === 0)).toBe(true);
         expect(proposedCards()).toEqual([]);
     });
 
-    it('refuses successful raw reads whose admitted receipt does not fit the application-turn byte cap', async () => {
+    it('refuses successful raw reads whose admitted receipt does not fit the verification-receipt allowance', async () => {
         keepDrumsOnly();
+        verificationLimits.maxBytesPerCollection = 8_192;
         const markers = markerStore.value;
         const tracks = trackStore.value;
         if (markers === null || tracks === null) {
@@ -1063,8 +1127,8 @@ describe('initial role and exact-section baselines through the brief pipeline', 
                 error: expect.objectContaining({ code: expect.stringMatching(/receipt-budget-spent/u) }),
             })
         );
-        expect(audio.renderTrackSubgraphOffline.mock.calls.length).toBeGreaterThan(1);
-        expect(audio.renderTrackSubgraphOffline.mock.calls.length).toBeLessThan(21);
+        // The unit renders once for all 21 ranges; the allowance refuses at admission, after the reductions.
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
         expect(run?.workLeases.every((lease) => lease.terminalState !== null)).toBe(true);
         await expect(confirmPendingChatActions({ confirmationId: card.id })).resolves.toEqual({ status: 'executed' });
         expect(trackStore.value?.tracks.every((track) => track.devices.length === 0)).toBe(true);
@@ -1130,7 +1194,8 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         expect(trackStore.value).toEqual(tracks);
         expect(undoHistoryStore.value).toEqual(history);
         expect(liveBriefRevision()).toBe(BRIEF_REVISION);
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(9);
+        // Planning rendered each of the three targets once, for every range.
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
     });
 
     it('keeps protected truth and adds one global recipe chain whose single batch Undo removes it', async () => {
@@ -1221,7 +1286,8 @@ describe('initial role and exact-section baselines through the brief pipeline', 
             });
             expect(trackDeviceTypes(VOCAL_ID)).toEqual(['builtin-eq']);
             expect(trackStore.value?.tracks.find((track) => track.id === VOCAL_ID)?.gain).toBe(gain);
-            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(27);
+            // Three targets render once for every range, and each of the three batch previews twice.
+            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(9);
         },
         MULTI_BATCH_TEST_TIMEOUT_MS
     );
@@ -1262,9 +1328,11 @@ describe('initial role and exact-section baselines through the brief pipeline', 
 
     it('rechecks the remaining whole-run fit after the last successful initial read', async () => {
         keepDrumsOnly();
-        agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, maxRenderJobs: 9 });
+        // Exactly the run: one initial render of every range, then the batch preview's two.
+        agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, maxRenderJobs: 3 });
         audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
-            if (audio.renderTrackSubgraphOffline.mock.calls.length === 3) {
+            // The initial render is the last initial read; competing work takes one render while it runs.
+            if (audio.renderTrackSubgraphOffline.mock.calls.length === 1) {
                 const run = readAgentRunState().runs.at(-1);
                 if (run === undefined) {
                     throw new Error('Missing run.');
@@ -1289,9 +1357,9 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         await sendChatMessage(PROMPT);
         const brief = requireOnlyProposedCard();
         expect(agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule).toBeUndefined();
-        expect(cardContent(brief)).toContain('6 renders');
-        expect(cardContent(brief)).toContain('5 this run');
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
+        expect(cardContent(brief)).toContain('2 renders');
+        expect(cardContent(brief)).toContain('1 this run');
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
         await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toEqual({ status: 'executed' });
         expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
     });

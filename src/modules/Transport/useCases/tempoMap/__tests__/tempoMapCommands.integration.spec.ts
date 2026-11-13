@@ -34,7 +34,7 @@ import {
     replaceCrdtDocInLineage,
     setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getMidiGrooveHandlers, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
@@ -134,6 +134,7 @@ describe('public tempo-map musical commands', () => {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getMidiGrooveHandlers(),
             getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),
@@ -216,6 +217,7 @@ describe('public tempo-map musical commands', () => {
                 getAutomationHandlers(),
                 getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
                 getMidiNoteTransformHandlers(),
+                getMidiGrooveHandlers(),
                 getProjectHandlers(),
                 getTransportHandlers(),
                 getYeastHandlers(),
@@ -257,6 +259,7 @@ describe('public tempo-map musical commands', () => {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getMidiGrooveHandlers(),
             getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),

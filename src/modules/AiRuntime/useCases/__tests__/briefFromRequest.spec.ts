@@ -62,7 +62,11 @@ import {
     selectCreativeInterpretationCall,
 } from './highLevelIntentWorkflowFixture';
 import { landProjectEdit } from './landProjectEdit';
-import { literalMetricIntakeTurn, metricGoalAudioBuffer } from './metricGoalWorkflowFixture';
+import {
+    literalMetricIntakeTurn,
+    metricGoalAudioBuffer,
+    provideMetricGoalWindowBuffers,
+} from './metricGoalWorkflowFixture';
 import { decodeReceiptContext, readReceiptSummary } from './receiptContextFixture';
 
 registerDeviceEnginePorts();
@@ -361,6 +365,7 @@ function countCards(): number {
 
 describe('writing the production brief from a whole-project request (AC-001 of #4372)', () => {
     beforeEach(() => {
+        provideMetricGoalWindowBuffers();
         configureAiWorkflowCommandPreflightFixture();
         vi.mocked(generateToolPlanningOutcome).mockReset();
         audio.renderTrackSubgraphOffline.mockReset();
@@ -709,7 +714,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         expect(heldClausesOf({ type: 'setProductionBrief', payload: { expectedRevision: 4, brief } })).toEqual([]);
     });
 
-    // Nine staged renders run real objective DSP, which needs CPU time on loaded runners.
+    // Three staged renders run real objective DSP, which needs CPU time on loaded runners.
     it('grounds a later batch on a track whose role only the confirmed brief gives', async () => {
         const STEM_ID = 'track-stem';
         landProjectEdit(() => {
@@ -731,7 +736,9 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         scriptPlanningTurns([briefIntake, compileBrief(stemRole, ['warm']), proposeCompiled()]);
 
         await sendChatMessage('make it warmer');
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
+        // One render per target and document: the stem's whole-song, verse and chorus baselines are
+        // windows of one render from beat 0, since no adjustment layer splits the range group.
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
 
         const brief = getPendingProposal();
         // The stem's name gives no role; only the brief this card writes does, and the plan reads it.
@@ -740,7 +747,8 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         await expect(confirmPendingChatActions({ confirmationId: brief.confirmation.id })).resolves.toEqual({
             status: 'executed',
         });
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(9);
+        // The batch preview adds one render of the stem per document it reads, each holding all three ranges.
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
 
         const batch = pendingActionConfirmationStore.value?.confirmations.find(
             (card) => card.status === 'proposed' && card.runId === brief.confirmation.runId

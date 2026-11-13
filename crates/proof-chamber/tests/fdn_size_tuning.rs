@@ -24,6 +24,8 @@
 //! stretches it. First arrival is the one thing that moves with the room and
 //! not with the pattern.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::fdn::FdnReverb;
 
 const BLOCK: usize = 128;

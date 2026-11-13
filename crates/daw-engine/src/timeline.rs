@@ -4831,7 +4831,6 @@ mod tests {
                 .find(|send| send.bus_id == 51)
                 .expect("the send into bus B")
                 .level
-                .clone()
         };
 
         let mut located = bus_sending_graph(SendTap::PreFader, 1.0);

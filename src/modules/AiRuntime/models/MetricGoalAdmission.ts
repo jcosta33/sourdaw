@@ -2,8 +2,13 @@ import { type CreativeRequestAuthority, type CreativeSelectionSnapshot } from '.
 import { type MeasuredPreview } from './MeasuredPreview';
 import { type PerceptualConstraintId } from './PerceptualConstraint';
 
-/** Private persistence ceiling, independent of provider and measurement budgets. */
-export const MAX_METRIC_GOAL_STATE_BYTES = 65_536;
+/**
+ * Private persistence ceiling on one batch's goal state, independent of provider and measurement budgets.
+ * A vibe-run batch persists a proof per target, step and range, so the state grows with the arrangement:
+ * the batches of an ordinary song (up to four targets, two recipes each, nine verification ranges: the
+ * arrangement and eight sections) measured up to 361,842 bytes. The ceiling leaves about three times that.
+ */
+export const MAX_METRIC_GOAL_STATE_BYTES = 1_048_576;
 
 /** Intent survives replacement of a preview. Absence never establishes a literal request. */
 export type MetricGoalSource =

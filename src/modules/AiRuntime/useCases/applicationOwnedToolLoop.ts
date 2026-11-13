@@ -125,6 +125,7 @@ export const APPLICATION_OWNED_TOOL_LOOP_LIMITS = {
     maxReceiptBytesPerTurn: 32_768,
     maxTotalReceiptBytes: 65_536,
 } as const;
+
 /** One extra turn so query, search, discovery, interpretation and proposal all fit in one run. */
 const CREATIVE_TURN_ALLOWANCE = 1;
 const MAX_CALL_ID_LENGTH = 256;

@@ -42,6 +42,8 @@ const CREATED_OPERATIONS = new Set<AppAction['type']>([
     'duplicateClipToNextBar',
     'splitClip',
     'quantizeTransients',
+    'stripSilence',
+    'extractGroove',
     'createVcaGroup',
     'addDevice',
     'addSend',
@@ -88,6 +90,8 @@ const REPLACEMENT_OPERATIONS = new Set<AppAction['type']>([
     'loadPreset',
     'loadTrackTemplate',
     'quantizeTransients',
+    // The segments replace the clip and play the same source, which strip silence never rewrites.
+    'stripSilence',
     'restoreProjectVersion',
 ]);
 const CONSOLIDATION_OPERATIONS = new Set<AppAction['type']>([
@@ -107,7 +111,6 @@ const SOURCE_MUTATION_OPERATIONS = new Set<AppAction['type']>([
     'commitPitchEdit',
     'normalizeClip',
     'reverseClip',
-    'stripSilence',
     'enableWarping',
 ]);
 const EXTERNAL_EFFECT_OPERATIONS = new Set<AppAction['type']>([

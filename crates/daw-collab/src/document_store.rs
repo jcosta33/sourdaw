@@ -149,8 +149,10 @@ impl DocumentStore {
 
     /// Create a new empty child document and insert it.
     pub fn create_child_doc(&mut self, id: DocId) -> &mut AutoCommit {
-        self.docs.insert(id.clone(), AutoCommit::new());
-        self.docs.get_mut(&id).unwrap()
+        self.docs
+            .entry(id)
+            .insert_entry(AutoCommit::new())
+            .into_mut()
     }
 
     /// Remove a document by ID.

@@ -598,13 +598,15 @@ last push, resolved threads, and `Gate` on the PR head. It is non-strict: unrela
 movement requires no merge; take `main` only for real conflicts or mergeability, and the new head
 then requires fresh `Gate` and review.
 
-Dismissing stale reviews on push, requiring approval of the last push, and the one-approval count
-are ruleset configuration, and only the trusted ruleset command, `pnpm ruleset:harden`, may change
-them. It is a dry run that prints the planned change unless `--apply` is passed. It plans against
-the live ruleset, refuses a change outside the approved field set — stale-review dismissal,
-last-push approval, and `required_approving_review_count` = 1 — or one that adds a required
-context, captures the live ruleset's canonical bytes as the rollback before writing, applies as the
-verified orchestrator User, and reads back, failing unless all three controls are shown. It has no
+Dismissing stale reviews on push, requiring approval of the last push, the one-approval count, and
+the source the required `Gate` check must come from are ruleset configuration, and only the trusted
+ruleset command, `pnpm ruleset:harden`, may change them. It is a dry run that prints the planned
+change unless `--apply` is passed. It plans against the live ruleset, refuses a change outside the
+approved set — stale-review dismissal, last-push approval, `required_approving_review_count` = 1,
+and `Gate` pinned to GitHub Actions, `integration_id` 15368, so no other identity's check or status
+named `Gate` satisfies it — or one that adds a required context, captures the live ruleset's
+canonical bytes as the rollback before writing, applies as the verified orchestrator User, and
+reads back, failing unless all four are shown. It has no
 throwaway-ruleset mode; the canary evidence #3002 requires for such a change is a live pull request
 — a red `Gate` blocking a merge, fresh approvals required after each push, unresolved threads
 blocking, and reviewer App confirmations resolving threads. Read the live ruleset rather than

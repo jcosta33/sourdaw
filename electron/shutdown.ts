@@ -269,6 +269,18 @@ export const createQuitHandler = (
     let checkingPermission = false;
     let finalExitAllowed = false;
 
+    const runQuit = (): void => {
+        void runAfterQuiesceWithinDeadline(run, beforeRun, timers).then((outcome) => {
+            if (outcome === undefined) {
+                started = false;
+                return;
+            }
+            report(outcome);
+            finalExitAllowed = true;
+            exit(outcome.status === 'timed-out' ? 1 : 0);
+        });
+    };
+
     return (event) => {
         if (finalExitAllowed) {
             finalExitAllowed = false;
@@ -284,15 +296,7 @@ export const createQuitHandler = (
                 if (allowed) {
                     started = true;
                     checkingPermission = false;
-                    void runAfterQuiesceWithinDeadline(run, beforeRun, timers).then((outcome) => {
-                        if (outcome === undefined) {
-                            started = false;
-                            return;
-                        }
-                        report(outcome);
-                        finalExitAllowed = true;
-                        exit(outcome.status === 'timed-out' ? 1 : 0);
-                    });
+                    runQuit();
                     return;
                 }
                 checkingPermission = false;

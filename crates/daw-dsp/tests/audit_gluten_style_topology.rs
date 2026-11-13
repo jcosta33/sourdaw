@@ -10,6 +10,8 @@
 //! clicks a topology button writes only `topology`, leaving `style` as it was.
 //! The panel shows the stored topology, so the engine must run it.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::gluten::GlutenInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

@@ -7,6 +7,8 @@
 //! abort the process with `memory allocation of N bytes failed` rather than
 //! fail as a normal assertion.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use assert_no_alloc::{assert_no_alloc, AllocDisabler};
 use daw_dsp::grinder::engine::GrinderEngine;
 

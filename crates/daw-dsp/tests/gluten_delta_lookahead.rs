@@ -4,6 +4,8 @@
 //! When Mix = 0 and lookahead > 0, Gluten Delta listen must output silence (< 1e-5),
 //! not a comb-filtered difference between delayed and undelayed audio.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::gluten::GlutenInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

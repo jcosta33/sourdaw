@@ -11,6 +11,8 @@
 //! neutering the read, the rate calculation, the gain chain or the pool lookup
 //! turns one of them red rather than merely lowering a level.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::crumbs::CrumbsInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

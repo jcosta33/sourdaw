@@ -52,6 +52,8 @@
 //! both are approximations of the *same* four harmonic series, so one table of
 //! ratio bounds identifies a waveform on either.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::fermenter::FermenterInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

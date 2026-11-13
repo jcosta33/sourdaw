@@ -5,7 +5,10 @@ import {
 } from '#/modules/Command/useCases';
 import { projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 
+import { ANALYSIS_MEASURE_MAX_WARNINGS } from '../models/AnalysisMeasureLimits';
+import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { type MeasurementFailure } from '../models/MeasurementBudget';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { getCloudProviderRuntime } from '../repositories/cloudLlm/getCloudProviderRuntime';
@@ -21,10 +24,16 @@ import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { agentRunCancellation } from './cancelAgentRun';
 import { collectMetricGoalProof } from './collectMetricGoalProof';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
-import { executeAnalysisMeasure } from './executeAnalysisMeasure';
+import { measuredPreviewRead } from './measuredPreviewRead';
+import { measurementFailureReceipt } from './measurementFailureReceipt';
+import { measurePreviewUnit, type PreviewUnitRead } from './measurePreviewUnit';
+import { type MeasurementUnitProgress } from './measureProjectUnit';
 import { type MetricGoal, type MetricGoalState } from './metricGoalContractTypes';
 import { planMetricMeasurementRequests } from './planMetricMeasurementRequests';
+import { planMetricMeasurementUnits } from './planMetricMeasurementUnits';
+import { readApplicationVerificationReceiptLimits } from './readApplicationVerificationReceiptLimits';
 import { readGoalPrefix } from './readGoalPrefix';
+import { readPreviewPrefixTimeline } from './readPreviewPrefixTimeline';
 
 type PreviewInput = {
     state: MetricGoalState;
@@ -32,6 +41,20 @@ type PreviewInput = {
     context: ProjectContext;
     prompt: string;
     runId: string;
+    /** Called as each render begins, naming its target, document and prefix step. */
+    onProgress?: (progress: MetricGoalPreviewProgress) => void;
+    /** Called once this preview holds the run's one metric-goal preview, before anything renders. */
+    onBegin?: () => void;
+};
+
+/** Which target renders now, in which document, and for a prefix document how many of the batch's steps it holds. */
+export type MetricGoalPreviewProgress = Pick<
+    MeasurementUnitProgress,
+    'targetId' | 'document' | 'groupIndex' | 'groupCount'
+> & {
+    /** How many steps the rendered prefix document holds; `null` for the live project or the whole batch. */
+    step: number | null;
+    steps: number;
 };
 type PreviewEnvelope = Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>['envelope'];
 type Binding = NonNullable<MetricGoalState['binding']>;
@@ -214,72 +237,165 @@ function priorReceiptBytes(priorReceipts: readonly ApplicationToolReceipt[]): nu
     );
 }
 
-function measurementCall(
+type RequestOutcome = { failure: MeasurementFailure | null; reads: Map<string, PreviewUnitRead> };
+
+function previewRequestRead(
+    input: PreviewInput,
+    envelope: PreviewEnvelope,
     request: PreviewRequest,
-    callId: string
-): Parameters<typeof executeAnalysisMeasure>[0]['call'] {
-    let range: { startBeat: number; endBeat: number } | { sectionId: string };
-    if (request.range.sectionId === null) {
-        range = { startBeat: request.range.startBeat, endBeat: request.range.endBeat };
-    } else {
-        range = { sectionId: request.range.sectionId };
+    reads: readonly PreviewUnitRead[]
+): AnalysisMeasureRead {
+    const [first] = reads;
+    return measuredPreviewRead({
+        callId: `goal-measure-${crypto.randomUUID()}`,
+        // turn 0 identifies application verification, not another provider turn or earned allowance.
+        turn: 0,
+        projectRevision: envelope.baseRevision,
+        origin: 'approval-preview',
+        runId: input.runId,
+        // A unit measures one target; the receipt and its proof name every target of the request.
+        scope: request.scope,
+        metrics: first!.call.metrics,
+        beats: first!.beats,
+        commands: first!.commands,
+        batchContentHash: first!.batchContentHash,
+        targets: reads.map((read) => read.target),
+        renders: reads.map((read) => ({ targetId: read.target.targetId, ...read.renders })),
+        baselineSeconds: first!.baselineSeconds,
+        previewSeconds: first!.previewSeconds,
+        warnings: [...new Set(reads.flatMap((read) => read.warnings))].slice(0, ANALYSIS_MEASURE_MAX_WARNINGS),
+    });
+}
+
+function requestTargets(request: PreviewRequest): string[] {
+    return request.scope.kind === 'master' ? ['master'] : request.scope.ids;
+}
+
+/** A unit's progress restated as the preview step it renders: the prefix document's place among the batch's steps. */
+function readStepProgress(
+    onProgress: PreviewInput['onProgress'],
+    binding: Binding
+): ((progress: MeasurementUnitProgress) => void) | undefined {
+    if (onProgress === undefined) {
+        return undefined;
     }
-    return {
-        id: callId,
-        name: 'analysis.measure',
-        arguments: {
-            subject: 'preview',
-            scope: request.scope,
-            range,
-            metrics: request.metrics,
-            proposal: {
-                schemaVersion: 1,
-                items: request.envelope.commands.map((command, index) => ({
-                    id: `prepared-${String(index)}`,
-                    name: command.operation,
-                    arguments: command.arguments,
-                })),
-            },
-        },
+    return ({ prefix, ...progress }) => {
+        const index = binding.prefixes.findIndex((candidate) => candidate.after === prefix);
+        onProgress({
+            ...progress,
+            step: progress.document === 'project' || index < 0 ? null : index + 1,
+            steps: binding.prefixes.length,
+        });
     };
 }
 
+/** The receipt a request whose target failed reports: that failure, as its own verification read. */
+function failedRequestReceipt(failure: MeasurementFailure): ApplicationToolReceipt {
+    return boundReceipt(
+        {
+            ...measurementFailureReceipt({ callId: `goal-measure-${crypto.randomUUID()}`, turn: 0 }, failure),
+            origin: 'application-verification',
+        },
+        APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerCall
+    );
+}
+
+/** Reads each prefix document's timeline at most once, however many units plan on it. */
+function readEachPrefixTimelineOnce(
+    envelopes: ReadonlyMap<string, PreviewEnvelope>,
+    projectRevision: string,
+    preview: Parameters<typeof readPreviewPrefixTimeline>[0]['preview']
+) {
+    const timelines = new Map<string, ReturnType<typeof readPreviewPrefixTimeline>>();
+    return (prefix: string) => {
+        const known = timelines.get(prefix);
+        if (known !== undefined) {
+            return known;
+        }
+        const timeline = readPreviewPrefixTimeline({
+            prefix,
+            preparedBatch: envelopes.get(prefix),
+            projectRevision,
+            preview,
+        });
+        timelines.set(prefix, timeline);
+        return timeline;
+    };
+}
+
+/**
+ * Renders the requests one target at a time (`planMetricMeasurementUnits`), each target's live render
+ * shared by every prefix and range it is read at, then reports each request as the one
+ * `analysis.measure` receipt and measured compilation it always was: a request whose target failed
+ * carries that failure, and one the stop left unmeasured reports nothing.
+ */
 async function measurePreviewRequests(
     input: PreviewInput,
     state: MetricGoalState,
     envelope: PreviewEnvelope,
     requests: PreviewRequest[],
     priorBytes: number,
-    signal: AbortSignal
+    signal: AbortSignal,
+    onProgress: ((progress: MeasurementUnitProgress) => void) | undefined
 ) {
-    const rawReceipts: ApplicationToolReceipt[] = [];
-    const compilations: RetainedCompilation[] = [];
-    let receipts: ApplicationToolReceipt[] = [];
-    for (const request of requests) {
+    const outcomes: RequestOutcome[] = requests.map(() => ({ failure: null, reads: new Map() }));
+    const envelopes = new Map(requests.map((request) => [request.hash, request.envelope]));
+    const preview = {
+        context: input.context,
+        prompt: input.prompt,
+        runId: input.runId,
+        readCreativeAuthority: () =>
+            state.authorities.find((authority) => authority.creativeAuthority !== null)?.creativeAuthority ?? undefined,
+    };
+    const units = planMetricMeasurementUnits({
+        requests: requests.map(({ hash, scope, range, metrics }) => ({ prefix: hash, scope, range, metrics })),
+        subject: 'preview',
+        readPrefixTimeline: readEachPrefixTimelineOnce(envelopes, envelope.baseRevision, preview),
+    });
+    const measuredRequests = new Set<number>();
+    for (const unit of units) {
         if (signal.aborted || !projectRevisionMatchesLiveIgnoringSaveWrites(envelope.baseRevision)) {
             break;
         }
-        const callId = `goal-measure-${crypto.randomUUID()}`;
-        // turn 0 identifies application verification, not another provider turn or earned allowance.
-        const read = await executeAnalysisMeasure({
-            call: measurementCall(request, callId),
-            callId,
-            turn: 0,
+        const measured = await measurePreviewUnit({
+            unit,
+            envelopes,
             projectRevision: envelope.baseRevision,
             sections: input.context.sections ?? [],
             signal,
             admit: agentWorkBudget.admitMeasurement(input.runId),
-            preview: {
-                context: input.context,
-                prompt: input.prompt,
-                runId: input.runId,
-                origin: 'approval-preview',
-                preparedBatch: request.envelope,
-                readCreativeAuthority: () =>
-                    state.authorities.find((authority) => authority.creativeAuthority !== null)?.creativeAuthority ??
-                    undefined,
-            },
+            preview,
+            onProgress,
         });
+        for (const read of unit.reads) {
+            measuredRequests.add(read.requestIndex);
+        }
+        if (measured.status === 'failed') {
+            for (const read of unit.reads) {
+                outcomes[read.requestIndex]!.failure ??= measured.failure;
+            }
+            continue;
+        }
+        for (const read of measured.reads) {
+            outcomes[read.requestIndex]!.reads.set(read.target.targetId, read);
+        }
+    }
+    const rawReceipts: ApplicationToolReceipt[] = [];
+    const compilations: RetainedCompilation[] = [];
+    for (const [index, request] of requests.entries()) {
+        const outcome = outcomes[index]!;
+        const reads = requestTargets(request).flatMap((targetId) => outcome.reads.get(targetId) ?? []);
+        if (
+            !measuredRequests.has(index) ||
+            (outcome.failure === null && reads.length !== requestTargets(request).length)
+        ) {
+            continue;
+        }
+        if (outcome.failure !== null) {
+            rawReceipts.push(failedRequestReceipt(outcome.failure));
+            continue;
+        }
+        const read = previewRequestRead(input, envelope, request, reads);
         rawReceipts.push(
             boundReceipt(
                 { ...read.receipt, origin: 'application-verification' },
@@ -289,20 +405,21 @@ async function measurePreviewRequests(
         if (read.commands !== null && read.measuredPreview !== null) {
             compilations.push({
                 kind: 'preview',
-                callId,
+                callId: read.receipt.callId,
                 revision: envelope.baseRevision,
                 commands: read.commands,
                 measuredPreview: read.measuredPreview,
             });
         }
-        receipts = admitTurnReadReceipts({
-            realReceipts: rawReceipts,
-            turn: 0,
-            totalReceiptBytesSoFar: priorBytes,
-            maxReceiptBytesPerTurn: APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerTurn,
-            maxTotalReceiptBytes: APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxTotalReceiptBytes,
-        });
     }
+    const limits = readApplicationVerificationReceiptLimits(rawReceipts.length);
+    const receipts = admitTurnReadReceipts({
+        realReceipts: rawReceipts,
+        turn: 0,
+        totalReceiptBytesSoFar: priorBytes,
+        maxReceiptBytesPerTurn: limits.maxBytesPerCollection,
+        maxTotalReceiptBytes: limits.maxTotalBytes,
+    });
     return { compilations, receipts };
 }
 
@@ -371,13 +488,16 @@ export async function prepareMetricGoalPreview(
     });
     let terminalState: 'completed' | 'failed' | 'cancelled' = 'failed';
     try {
+        input.onBegin?.();
+        const binding = state.binding;
         const { receipts, compilations } = await measurePreviewRequests(
             input,
             state,
             parsed.envelope,
             requests,
             priorBytes,
-            controller.signal
+            controller.signal,
+            readStepProgress(input.onProgress, binding)
         );
         if (previewInvalidated(input, run, snapshot, controller.signal, parsed.envelope.baseRevision)) {
             terminalState = 'cancelled';

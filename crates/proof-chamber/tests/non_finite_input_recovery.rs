@@ -21,6 +21,8 @@
 //! window's final blocks (an engine that recovers and then goes permanently
 //! silent still owns a healthy window aggregate — only its end exposes it).
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::ProofChamberInstance;
 
 const FRAMES: usize = 128;

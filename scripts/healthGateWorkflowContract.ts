@@ -88,6 +88,7 @@ const NATIVE_MACOS_STEPS = [
     'Cache cargo build',
     'Cache the cargo registry index',
     'Test the audio crates',
+    'Lint the native crate',
     'Test the native crate',
 ] as const;
 const STATIC_SUITE_STEPS = [

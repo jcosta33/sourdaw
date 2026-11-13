@@ -1,4 +1,4 @@
-import { type ComponentProps, createContext, useContext, useState } from 'react';
+import { type ComponentProps, createContext, use, useState } from 'react';
 
 import { XIcon } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
@@ -121,7 +121,7 @@ const focusFirstAccepting = (candidates: (HTMLElement | null)[]): boolean => {
 function useFocusReturn({
     onCloseAutoFocus,
 }: Pick<ComponentProps<typeof DialogPrimitive.Content>, 'onCloseAutoFocus'>) {
-    const opener = useContext(FocusOpenerContext);
+    const opener = use(FocusOpenerContext);
 
     return {
         onCloseAutoFocus: (event: Event) => {

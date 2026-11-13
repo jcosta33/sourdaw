@@ -331,6 +331,17 @@ async function executeMacroAction(
         return;
     }
 
+    if (replayAction.type === 'extractGroove') {
+        // The recorded template and note revision belong to the recorded gesture; a replay extracts
+        // again from the clip's notes as they now are.
+        const { clipId, templateId, sourceName, subdivision } = replayAction.payload;
+        await executeAppAction(
+            { type: 'extractGroove', payload: { clipId, templateId, sourceName, subdivision } },
+            options
+        );
+        return;
+    }
+
     if (replayAction.type === 'addAdjustmentRegion') {
         replayAction.payload.layerId = remapLayerId(replayAction.payload.layerId, mappings);
         const recordedRegionId = replayAction.payload.regionId;

@@ -2169,7 +2169,7 @@ pub(crate) mod tests {
         f.stop("sampler", &token);
         f.events.wait(&token, "completed");
         let instances = f.state.instances.lock().unwrap();
-        let sample = instances["sampler"].samples.get(&1).unwrap();
+        let sample = &instances["sampler"].samples[&1];
         assert_eq!(sample.left[0], 0.75);
         assert_eq!(sample.right[0], 0.375);
         assert!(sample.left.len() >= 128);
@@ -2229,7 +2229,7 @@ pub(crate) mod tests {
         assert!(instance_is_attached(&f.state, instance_id));
         f.driver.render(128).unwrap();
         let instances = f.state.instances.lock().unwrap();
-        let sample = instances[instance_id].samples.get(&1).unwrap();
+        let sample = &instances[instance_id].samples[&1];
         assert_eq!(sample.left[0], 0.75);
         assert_eq!(sample.right[0], 0.375);
         assert!(sample.left.len() >= 128);
@@ -2269,7 +2269,7 @@ pub(crate) mod tests {
         f.stop("sampler", &token);
         f.events.wait(&token, "completed");
         let instances = f.state.instances.lock().unwrap();
-        let sample = instances["sampler"].samples.get(&2).unwrap();
+        let sample = &instances["sampler"].samples[&2];
         assert_eq!(
             sample.left[0], 0.25,
             "refill silence cannot trigger a new threshold-zero take"

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use assert_no_alloc::{assert_no_alloc, AllocDisabler};
 use daw_dsp::toaster::{
     engine::ToasterEngine,

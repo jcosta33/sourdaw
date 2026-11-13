@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useEffect, useRef } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useId, useRef } from 'react';
 
 import { MixerStripValue } from '#/components/daw/MixerStripValue';
 import { Row } from '#/components/layout';
@@ -39,7 +39,7 @@ export const MixerLevelReadout = ({
     clusterClassName,
     valueSize = 'md',
 }: MixerLevelReadoutProps): ReactElement => {
-    const id = crypto.randomUUID();
+    const id = useId();
     const peakTextRef = useRef<HTMLDivElement>(null);
     /**
      * Peak-hold latch. The readout is only written when a sample beats it, so the

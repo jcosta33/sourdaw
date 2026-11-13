@@ -197,6 +197,7 @@ export { configureOfflineYeastMidiProcessing } from './configureOfflineYeastMidi
 export { getOfflineYeastRackReader } from './getOfflineYeastRackReader';
 export { projectOfflineYeastTrackNotes } from './offlineRender/projectOfflineYeastTrackNotes';
 export { renderTrackSubgraphOffline } from './offlineRender/renderTrackSubgraphOffline';
+export { readOfflineAdjustmentRenderClass } from './offlineRender/readOfflineAdjustmentRenderClass';
 export { projectOfflineAudioClipPlaybacks } from './offlineRender/projectOfflineAudioClipPlaybacks';
 export { resolveTrackClipsWithComping } from './offlineRender/resolveTrackClipsWithComping';
 // Audio encoders (audioBufferToWav/Mp3/Flac) moved to AudioRendering (ADR 0011 W4).

@@ -1,5 +1,3 @@
-import { type ReactElement } from 'react';
-
 import { DesktopStartupError } from './DesktopStartupError';
 
 /**
@@ -7,7 +5,7 @@ import { DesktopStartupError } from './DesktopStartupError';
  * remounts after display-scale reload must expose `app-shell` within seconds;
  * the App import graph must not occupy that window.
  */
-export function ApplicationFirstPaint({ onReload }: { onReload?: () => void } = {}): ReactElement {
+export function ApplicationFirstPaint({ onReload }: { onReload?: () => void } = {}) {
     if (onReload) {
         return (
             <DesktopStartupError

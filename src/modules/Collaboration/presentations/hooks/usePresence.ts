@@ -6,6 +6,35 @@ import { type PresenceData } from '../../useCases/collaborationQueries';
 
 const PRESENCE_EXPIRY_MS = 5000;
 
+type PeerExpiryTimers = {
+    /** Restart the peer's expiry countdown, replacing any pending one. */
+    restart: (peerId: string, onExpire: () => void) => void;
+    /** Cancel every pending countdown. */
+    clearAll: () => void;
+};
+
+function createPeerExpiryTimers(delayMs: number): PeerExpiryTimers {
+    const timers = new Map<string, ReturnType<typeof setTimeout>>();
+    return {
+        restart: (peerId, onExpire) => {
+            clearTimeout(timers.get(peerId));
+            timers.set(
+                peerId,
+                setTimeout(() => {
+                    timers.delete(peerId);
+                    onExpire();
+                }, delayMs)
+            );
+        },
+        clearAll: () => {
+            for (const timer of timers.values()) {
+                clearTimeout(timer);
+            }
+            timers.clear();
+        },
+    };
+}
+
 /**
  * Seed a complete PresenceData record for a peer we've not seen before, using
  * the identity carried by the first delta. Subsequent deltas merge onto this,
@@ -38,10 +67,10 @@ function seedPresence(delta: PresenceDelta): PresenceData {
  */
 export const usePresence = (): readonly PresenceData[] => {
     const dataRef = useRef<Record<string, PresenceData>>({});
-    const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
     const [version, setVersion] = useState(0);
 
     useEffect(() => {
+        const expiryTimers = createPeerExpiryTimers(PRESENCE_EXPIRY_MS);
         const unsubscribe = onPresence((data) => {
             // Merge the delta onto the existing record so partial updates (e.g.
             // the playhead-only heartbeat or a cursor-only broadcast) preserve
@@ -53,28 +82,15 @@ export const usePresence = (): readonly PresenceData[] => {
             dataRef.current[data.peerId] = existing ? { ...existing, ...data } : seedPresence(data);
             setVersion((value) => value + 1);
 
-            // Reset expiration timer for this peer
-            const timers = timersRef.current;
-            const prevTimer = timers.get(data.peerId);
-            if (prevTimer) {
-                clearTimeout(prevTimer);
-            }
-            timers.set(
-                data.peerId,
-                setTimeout(() => {
-                    delete dataRef.current[data.peerId];
-                    timers.delete(data.peerId);
-                    setVersion((value) => value + 1);
-                }, PRESENCE_EXPIRY_MS)
-            );
+            expiryTimers.restart(data.peerId, () => {
+                delete dataRef.current[data.peerId];
+                setVersion((value) => value + 1);
+            });
         });
 
         return () => {
             unsubscribe();
-            for (const timer of timersRef.current.values()) {
-                clearTimeout(timer);
-            }
-            timersRef.current.clear();
+            expiryTimers.clearAll();
             dataRef.current = {};
         };
     }, []);

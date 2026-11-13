@@ -27,10 +27,8 @@ import {
     renameScratchPadSection,
     setScratchPadSectionColor,
     reorderScratchPadSection,
-    clearScratchPad,
-    captureArrangementToScratchPad,
-    commitScratchPadToArrangement,
 } from '#/modules/Arrangement/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { getScratchPadRenderedHeight, SCRATCH_PAD_COLLAPSED_HEIGHT } from './scratchPadHeight';
@@ -146,7 +144,7 @@ export const ScratchPadView = ({
                             size="bare"
                             type="button"
                             className="h-5 px-1.5 rounded flex items-center gap-1 text-[9px] text-muted-foreground/60 hover:text-muted-foreground hover:bg-white/5 transition-colors"
-                            onClick={() => captureArrangementToScratchPad()}
+                            onClick={() => void executeUserAppAction({ type: 'captureScratchPad' })}
                         >
                             <Copy className="size-2.5" />
                             <span>Capture</span>
@@ -164,7 +162,7 @@ export const ScratchPadView = ({
                                 size="bare"
                                 type="button"
                                 className="h-5 px-1.5 rounded flex items-center gap-1 text-[9px] text-[var(--color-accent-peach)]/70 hover:text-[var(--color-accent-peach)] hover:bg-[var(--color-accent-peach)]/10 transition-colors"
-                                onClick={() => commitScratchPadToArrangement()}
+                                onClick={() => void executeUserAppAction({ type: 'commitScratchPad' })}
                             >
                                 <ArrowUpFromLine className="size-2.5" />
                                 <span>Apply</span>
@@ -184,7 +182,7 @@ export const ScratchPadView = ({
                                 type="button"
                                 className="size-5 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive/70 hover:bg-destructive/5 transition-colors"
                                 aria-label="Clear scratch pad"
-                                onClick={() => clearScratchPad()}
+                                onClick={() => void executeUserAppAction({ type: 'clearScratchPad' })}
                             >
                                 <Trash2 className="size-2.5" />
                             </Button>

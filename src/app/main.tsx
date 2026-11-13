@@ -42,6 +42,17 @@ const composition = resolveAppComposition({
     windowName: window.name,
 });
 
+async function rejectIdentityTransitionAfterBootstrapFailure(error: unknown): Promise<void> {
+    try {
+        const { rejectIdentityTransitionOnBootstrapFailure } =
+            await import('./rejectIdentityTransitionOnBootstrapFailure');
+        rejectIdentityTransitionOnBootstrapFailure(error);
+    } catch {
+        const { failProjectIdentityTransitionDependencies } = await import('#/modules/Project/useCases');
+        failProjectIdentityTransitionDependencies(error);
+    }
+}
+
 async function renderApplication(): Promise<void> {
     if (hasDesktopBridge) {
         const [{ resetDisplayScaleForStartup }, { clearInheritedRetrospectiveCaptureArm }] = await Promise.all([
@@ -60,15 +71,7 @@ async function renderApplication(): Promise<void> {
     // A remounted iframe has a 5s window for AppShell. Bootstrap's import graph
     // includes WASM and must not occupy that window; AppShell effects await init.
     void import('./bootstrap').catch((error: unknown) => {
-        void import('./rejectIdentityTransitionOnBootstrapFailure')
-            .then(({ rejectIdentityTransitionOnBootstrapFailure: reject }) => {
-                reject(error);
-            })
-            .catch(() => {
-                void import('#/modules/Project/useCases').then(({ failProjectIdentityTransitionDependencies }) => {
-                    failProjectIdentityTransitionDependencies(error);
-                });
-            });
+        void rejectIdentityTransitionAfterBootstrapFailure(error);
     });
     const renderingModules = await Promise.all([
         import('#/styles/main.css'),

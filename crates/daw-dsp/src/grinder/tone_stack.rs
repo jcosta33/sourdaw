@@ -203,9 +203,7 @@ impl ToneStack {
         let bp_out = bp_raw * self.mid * self.mid_q;
 
         // Sum with passive network insertion loss
-        let output = (lp_out + bp_out + hp_out) * self.insertion_loss;
-
-        output
+        (lp_out + bp_out + hp_out) * self.insertion_loss
     }
 
     pub fn reset(&mut self) {

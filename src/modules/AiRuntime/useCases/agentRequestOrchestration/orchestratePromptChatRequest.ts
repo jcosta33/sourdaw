@@ -23,7 +23,13 @@ import { type AnswerSuggestion, type PlanningOutcome } from '../../models/Planni
 import { guardReadonlyPlanningResult } from '../../models/PlanningProfile';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
-import { appendChatMessage, setActiveAborter, setChatGenerating, updateChatMessage } from '../../stores/chatStore';
+import {
+    appendChatMessage,
+    removeChatMessage,
+    setActiveAborter,
+    setChatGenerating,
+    updateChatMessage,
+} from '../../stores/chatStore';
 import { describePlanningOutcome } from '../../transformers/describePlanningOutcome';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { unionProposalProtectionFacts } from '../agentReference/proposalGroundingBasis';
@@ -35,12 +41,15 @@ import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoo
 import { agentRunCancellation } from '../cancelAgentRun';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
 import { getAgentExecutionModeFailure } from '../getAgentExecutionModeFailure';
+import { getProjectContext } from '../getProjectContext';
+import { type MeasurementUnitProgress } from '../measureProjectUnit';
 import { planPromptActions } from '../planPromptActions';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 import { settledProjectContentMatches } from '../settledProjectContentMatches';
 
 import { appendAnswerChatMessages } from './appendAnswerChatMessages';
+import { describeInitialMeasurementProgress } from './describeInitialMeasurementProgress';
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
 import { executePromptCommandPreview } from './executePromptCommandPreview';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';
@@ -238,6 +247,36 @@ function appendPlanRetentionWarning(userText: string, warning: string): void {
         error: warning,
         isCommandAction: true,
     });
+}
+
+/**
+ * One chat line that reports a vibe run's initial renders while planning measures them, with Stop
+ * for the run. It is removed once planning returns, so the thread then reads request and card as
+ * it always did.
+ */
+function trackInitialMeasurementProgress(runId: string) {
+    const messageId = `msg-${crypto.randomUUID()}`;
+    let context: ReturnType<typeof getProjectContext> | null = null;
+    return {
+        report(progress: MeasurementUnitProgress): void {
+            if (context !== null) {
+                updateChatMessage(messageId, { content: describeInitialMeasurementProgress(context, progress) });
+                return;
+            }
+            context = getProjectContext();
+            appendChatMessage({
+                id: messageId,
+                role: 'assistant',
+                content: describeInitialMeasurementProgress(context, progress),
+                timestamp: Date.now(),
+                isCommandAction: true,
+                stoppableRunId: runId,
+            });
+        },
+        clear(): void {
+            removeChatMessage(messageId);
+        },
+    };
 }
 
 function settleCompletedPlanning(input: PromptRequestAdmission, userText: string): boolean {
@@ -979,6 +1018,7 @@ export async function orchestratePromptChatRequest(
         setActiveAborter(null);
     };
     const profileOptions = input.interactionMode === 'explain' ? { profile: 'readonly-answer' as const } : {};
+    const initialMeasurement = trackInitialMeasurementProgress(admission.runId);
     const suggestion = input.options?.suggestion;
     const suggestionOptions = suggestion === undefined ? {} : { suggestion };
     try {
@@ -1015,8 +1055,10 @@ export async function orchestratePromptChatRequest(
             providerPlanning: admission.providerPlanning ? 'enabled' : 'disabled',
             // Read before this request joins the thread, so the thread holds only its earlier turns.
             thread: readChatThreadContext(),
+            onVibeRunProgress: initialMeasurement.report,
             ...suggestionOptions,
         });
+        initialMeasurement.clear();
         if (!settleCompletedPlanning(admission, input.userText)) {
             return undefined;
         }
@@ -1032,6 +1074,7 @@ export async function orchestratePromptChatRequest(
             projectRevision,
         });
     } catch (error) {
+        initialMeasurement.clear();
         await mapPromptFailure({ request: input, admission, aborter, state, error });
     } finally {
         releaseStop();
