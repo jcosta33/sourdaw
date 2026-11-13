@@ -1882,7 +1882,8 @@ function countDeviceDataByPath(files: ReadonlyArray<ProductionSource>): CountByP
         includes: includeAllPaths,
     });
     for (const file of files) {
-        if (result[file.path] && file.code.includes('?')) {
+        const lexicalCount = result[file.path];
+        if (lexicalCount !== undefined && file.code.includes('?')) {
             const offsets = conditionalColonOffsets(file);
             let reads = 0;
             for (const match of file.code.matchAll(DEVICE_DATA_COLON_PATTERN)) {
@@ -1891,9 +1892,11 @@ function countDeviceDataByPath(files: ReadonlyArray<ProductionSource>): CountByP
                     reads += 1;
                 }
             }
-            result[file.path] -= reads;
-            if (result[file.path] === 0) {
+            const remaining = lexicalCount - reads;
+            if (remaining === 0) {
                 delete result[file.path];
+            } else {
+                result[file.path] = remaining;
             }
         }
         if (!codeMayContainDeviceDataAstWrites(file.code)) {
