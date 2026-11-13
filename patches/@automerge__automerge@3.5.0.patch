@@ -1,0 +1,424 @@
+diff --git a/dist/cjs/fullfat_base64.cjs b/dist/cjs/fullfat_base64.cjs
+index c378c04b5c7385d4fae81fff8588f5c2af2c0ec9..4f73e4ab5125a8f48e67cb3f6ba3a17484128a6f 100644
+--- a/dist/cjs/fullfat_base64.cjs
++++ b/dist/cjs/fullfat_base64.cjs
+@@ -89,6 +89,7 @@ __export(fullfat_base64_exports, {
+   isWasmInitialized: () => isWasmInitialized,
+   joinBlock: () => joinBlock,
+   load: () => load2,
++  prepareLoad: () => prepareLoad,
+   loadIncremental: () => loadIncremental,
+   mark: () => mark,
+   marks: () => marks,
+@@ -3028,6 +3029,7 @@ __export(implementation_exports, {
+   isWasmInitialized: () => isWasmInitialized,
+   joinBlock: () => joinBlock,
+   load: () => load2,
++  prepareLoad: () => prepareLoad,
+   loadIncremental: () => loadIncremental,
+   mark: () => mark,
+   marks: () => marks,
+@@ -4429,6 +4431,48 @@ function emptyChange(doc, options) {
+   state.handle.emptyChange(options.message, options.time);
+   return progressDocument(doc, "emptyChange", heads);
+ }
++function prepareLoad(data, options) {
++    const opts = importOpts(options);
++    const handle = ApiHandler.load(data, {
++        actor: opts.actor,
++        unchecked: false,
++        allowMissingDeps: false,
++        convertImmutableStringsToText: false,
++    });
++    try {
++        handle.enableFreeze(!!opts.freeze);
++        registerDatatypes(handle);
++    } catch (error) {
++        handle.free();
++        throw error;
++    }
++    let settled = false;
++    return {
++        materialize() {
++            if (settled) {
++                throw new RangeError("Prepared load has already settled");
++            }
++            settled = true;
++            try {
++                return handle.materialize("/", undefined, {
++                    handle,
++                    heads: undefined,
++                    patchCallback: undefined,
++                });
++            } catch (error) {
++                handle.free();
++                throw error;
++            }
++        },
++        discard() {
++            if (!settled) {
++                settled = true;
++                handle.free();
++            }
++        },
++    };
++}
++
+ function load2(data, _opts) {
+   const opts = importOpts(_opts);
+   if (opts.patchCallback) {
+diff --git a/dist/cjs/fullfat_node.cjs b/dist/cjs/fullfat_node.cjs
+index d783a158a0151affdcca6308d1cba2e7dc2206d9..8af39156ee6a09beb93d269a6f467a3c3c40210a 100644
+--- a/dist/cjs/fullfat_node.cjs
++++ b/dist/cjs/fullfat_node.cjs
+@@ -2764,6 +2764,7 @@ __export(fullfat_node_exports, {
+   isWasmInitialized: () => isWasmInitialized,
+   joinBlock: () => joinBlock,
+   load: () => load2,
++  prepareLoad: () => prepareLoad,
+   loadIncremental: () => loadIncremental,
+   mark: () => mark,
+   marks: () => marks,
+@@ -5677,6 +5678,7 @@ __export(implementation_exports, {
+   isWasmInitialized: () => isWasmInitialized,
+   joinBlock: () => joinBlock,
+   load: () => load2,
++  prepareLoad: () => prepareLoad,
+   loadIncremental: () => loadIncremental,
+   mark: () => mark,
+   marks: () => marks,
+@@ -7078,6 +7080,48 @@ function emptyChange(doc, options) {
+   state.handle.emptyChange(options.message, options.time);
+   return progressDocument(doc, "emptyChange", heads);
+ }
++function prepareLoad(data, options) {
++    const opts = importOpts(options);
++    const handle = ApiHandler.load(data, {
++        actor: opts.actor,
++        unchecked: false,
++        allowMissingDeps: false,
++        convertImmutableStringsToText: false,
++    });
++    try {
++        handle.enableFreeze(!!opts.freeze);
++        registerDatatypes(handle);
++    } catch (error) {
++        handle.free();
++        throw error;
++    }
++    let settled = false;
++    return {
++        materialize() {
++            if (settled) {
++                throw new RangeError("Prepared load has already settled");
++            }
++            settled = true;
++            try {
++                return handle.materialize("/", undefined, {
++                    handle,
++                    heads: undefined,
++                    patchCallback: undefined,
++                });
++            } catch (error) {
++                handle.free();
++                throw error;
++            }
++        },
++        discard() {
++            if (!settled) {
++                settled = true;
++                handle.free();
++            }
++        },
++    };
++}
++
+ function load2(data, _opts) {
+   const opts = importOpts(_opts);
+   if (opts.patchCallback) {
+diff --git a/dist/cjs/iife.cjs b/dist/cjs/iife.cjs
+index dc725d17d0ce1cb2c77b94a38e2fb43a9df32204..2c78ba3d1d251dbb4e9f33e365543dd482a86447 100644
+--- a/dist/cjs/iife.cjs
++++ b/dist/cjs/iife.cjs
+@@ -2915,6 +2915,7 @@ __export(index_exports, {
+   isWasmInitialized: () => isWasmInitialized,
+   joinBlock: () => joinBlock,
+   load: () => load2,
++  prepareLoad: () => prepareLoad,
+   loadIncremental: () => loadIncremental,
+   mark: () => mark,
+   marks: () => marks,
+@@ -3015,6 +3016,7 @@ __export(implementation_exports, {
+   isWasmInitialized: () => isWasmInitialized,
+   joinBlock: () => joinBlock,
+   load: () => load2,
++  prepareLoad: () => prepareLoad,
+   loadIncremental: () => loadIncremental,
+   mark: () => mark,
+   marks: () => marks,
+@@ -4416,6 +4418,48 @@ function emptyChange(doc, options) {
+   state.handle.emptyChange(options.message, options.time);
+   return progressDocument(doc, "emptyChange", heads);
+ }
++function prepareLoad(data, options) {
++    const opts = importOpts(options);
++    const handle = ApiHandler.load(data, {
++        actor: opts.actor,
++        unchecked: false,
++        allowMissingDeps: false,
++        convertImmutableStringsToText: false,
++    });
++    try {
++        handle.enableFreeze(!!opts.freeze);
++        registerDatatypes(handle);
++    } catch (error) {
++        handle.free();
++        throw error;
++    }
++    let settled = false;
++    return {
++        materialize() {
++            if (settled) {
++                throw new RangeError("Prepared load has already settled");
++            }
++            settled = true;
++            try {
++                return handle.materialize("/", undefined, {
++                    handle,
++                    heads: undefined,
++                    patchCallback: undefined,
++                });
++            } catch (error) {
++                handle.free();
++                throw error;
++            }
++        },
++        discard() {
++            if (!settled) {
++                settled = true;
++                handle.free();
++            }
++        },
++    };
++}
++
+ function load2(data, _opts) {
+   const opts = importOpts(_opts);
+   if (opts.patchCallback) {
+diff --git a/dist/cjs/slim.cjs b/dist/cjs/slim.cjs
+index 6c6b4718f708c9ae3a1999371f93d3fdf8cc357a..f8fae8de607bc288ec2eb965a593d929c09ce00d 100644
+--- a/dist/cjs/slim.cjs
++++ b/dist/cjs/slim.cjs
+@@ -89,6 +89,7 @@ __export(slim_exports, {
+   isWasmInitialized: () => isWasmInitialized,
+   joinBlock: () => joinBlock,
+   load: () => load2,
++  prepareLoad: () => prepareLoad,
+   loadIncremental: () => loadIncremental,
+   mark: () => mark,
+   marks: () => marks,
+@@ -190,6 +191,7 @@ __export(implementation_exports, {
+   isWasmInitialized: () => isWasmInitialized,
+   joinBlock: () => joinBlock,
+   load: () => load2,
++  prepareLoad: () => prepareLoad,
+   loadIncremental: () => loadIncremental,
+   mark: () => mark,
+   marks: () => marks,
+@@ -4400,6 +4402,48 @@ function emptyChange(doc, options) {
+   state.handle.emptyChange(options.message, options.time);
+   return progressDocument(doc, "emptyChange", heads);
+ }
++function prepareLoad(data, options) {
++    const opts = importOpts(options);
++    const handle = ApiHandler.load(data, {
++        actor: opts.actor,
++        unchecked: false,
++        allowMissingDeps: false,
++        convertImmutableStringsToText: false,
++    });
++    try {
++        handle.enableFreeze(!!opts.freeze);
++        registerDatatypes(handle);
++    } catch (error) {
++        handle.free();
++        throw error;
++    }
++    let settled = false;
++    return {
++        materialize() {
++            if (settled) {
++                throw new RangeError("Prepared load has already settled");
++            }
++            settled = true;
++            try {
++                return handle.materialize("/", undefined, {
++                    handle,
++                    heads: undefined,
++                    patchCallback: undefined,
++                });
++            } catch (error) {
++                handle.free();
++                throw error;
++            }
++        },
++        discard() {
++            if (!settled) {
++                settled = true;
++                handle.free();
++            }
++        },
++    };
++}
++
+ function load2(data, _opts) {
+   const opts = importOpts(_opts);
+   if (opts.patchCallback) {
+diff --git a/dist/iife/iife.js b/dist/iife/iife.js
+index 948bc99a578d2a57842e08387dd988483435d53b..739dad473d60d9d1980fb9aa3c100b0b54edf0dc 100644
+--- a/dist/iife/iife.js
++++ b/dist/iife/iife.js
+@@ -2916,6 +2916,7 @@ ${val.stack}`;
+     isWasmInitialized: () => isWasmInitialized,
+     joinBlock: () => joinBlock,
+     load: () => load2,
++    prepareLoad: () => prepareLoad,
+     loadIncremental: () => loadIncremental,
+     mark: () => mark,
+     marks: () => marks,
+@@ -3016,6 +3017,7 @@ ${val.stack}`;
+     isWasmInitialized: () => isWasmInitialized,
+     joinBlock: () => joinBlock,
+     load: () => load2,
++    prepareLoad: () => prepareLoad,
+     loadIncremental: () => loadIncremental,
+     mark: () => mark,
+     marks: () => marks,
+@@ -4417,6 +4419,48 @@ ${val.stack}`;
+     state.handle.emptyChange(options.message, options.time);
+     return progressDocument(doc, "emptyChange", heads);
+   }
++  function prepareLoad(data, options) {
++      const opts = importOpts(options);
++      const handle = ApiHandler.load(data, {
++          actor: opts.actor,
++          unchecked: false,
++          allowMissingDeps: false,
++          convertImmutableStringsToText: false,
++      });
++      try {
++          handle.enableFreeze(!!opts.freeze);
++          registerDatatypes(handle);
++      } catch (error) {
++          handle.free();
++          throw error;
++      }
++      let settled = false;
++      return {
++          materialize() {
++              if (settled) {
++                  throw new RangeError("Prepared load has already settled");
++              }
++              settled = true;
++              try {
++                  return handle.materialize("/", undefined, {
++                      handle,
++                      heads: undefined,
++                      patchCallback: undefined,
++                  });
++              } catch (error) {
++                  handle.free();
++                  throw error;
++              }
++          },
++          discard() {
++              if (!settled) {
++                  settled = true;
++                  handle.free();
++              }
++          },
++      };
++  }
++
+   function load2(data, _opts) {
+     const opts = importOpts(_opts);
+     if (opts.patchCallback) {
+diff --git a/dist/implementation.d.ts b/dist/implementation.d.ts
+index d2dff03b67994912ca8d94b50821d3fd94083cae..da4ee5ae0bfa0842a55fdfd86fcca31b13cf3fb0 100644
+--- a/dist/implementation.d.ts
++++ b/dist/implementation.d.ts
+@@ -326,6 +326,17 @@ export declare function emptyChange<T>(doc: Doc<T>, options: string | ChangeOpti
+  * {@link init} followed by {@link loadIncremental}.
+  */
+ export declare function load<T>(data: Uint8Array, _opts?: ActorId | InitOptions<T>): Doc<T>;
++/**
++ * Parse a complete document with checked native loading, without materializing its JS value.
++ * The caller may yield between preparation and materialization. Until materialize succeeds,
++ * the caller owns the pending load and must discard it when it is no longer needed.
++ * A successful materialize transfers ownership to the returned document; discard is then a no-op.
++ */
++export declare function prepareLoad<T>(data: Uint8Array, options?: ActorId | Pick<InitOptions<T>, "actor" | "freeze">): {
++    materialize(): Doc<T>;
++    discard(): void;
++};
++
+ /**
+  * Load changes produced by {@link saveIncremental}, or partial changes
+  *
+diff --git a/dist/mjs/implementation.js b/dist/mjs/implementation.js
+index 3af0d6e062ea5919723fc0379860aca3e251733b..f71e13f1bfae0e070bc0268b7e39bc51077723c9 100644
+--- a/dist/mjs/implementation.js
++++ b/dist/mjs/implementation.js
+@@ -493,6 +493,49 @@ export function emptyChange(doc, options) {
+  * have the complete document yet). If you need to handle incomplete content use
+  * {@link init} followed by {@link loadIncremental}.
+  */
++/** Parse a checked complete document before separately materializing its JS value. */
++export function prepareLoad(data, options) {
++    const opts = importOpts(options);
++    const handle = ApiHandler.load(data, {
++        actor: opts.actor,
++        unchecked: false,
++        allowMissingDeps: false,
++        convertImmutableStringsToText: false,
++    });
++    try {
++        handle.enableFreeze(!!opts.freeze);
++        registerDatatypes(handle);
++    } catch (error) {
++        handle.free();
++        throw error;
++    }
++    let settled = false;
++    return {
++        materialize() {
++            if (settled) {
++                throw new RangeError("Prepared load has already settled");
++            }
++            settled = true;
++            try {
++                return handle.materialize("/", undefined, {
++                    handle,
++                    heads: undefined,
++                    patchCallback: undefined,
++                });
++            } catch (error) {
++                handle.free();
++                throw error;
++            }
++        },
++        discard() {
++            if (!settled) {
++                settled = true;
++                handle.free();
++            }
++        },
++    };
++}
++
+ export function load(data, _opts) {
+     const opts = importOpts(_opts);
+     if (opts.patchCallback) {
+diff --git a/dist/mjs/index.d.ts b/dist/mjs/index.d.ts
+deleted file mode 100644
+index b769091eaacc4badfab8ee1b2d298aa031a306b9..0000000000000000000000000000000000000000

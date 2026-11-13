@@ -181,7 +181,11 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    cannot carry it. Worker detection must distinguish pending from committed with a held Worker and exercise real
    Undo/Redo plus divergent refusal. Its author-recorded performance evidence must time a real 120-second source from
    click through PCM copy, cold Worker, atomic commit and UI completion, with frames and main-thread tasks recorded
-   over that same interval; the reviewer checks the recorded interval covers all of it. A mock that always returns
+   over that same interval; the reviewer checks the recorded interval covers all of it. Native document parsing
+   and JS-root materialization are separate costs even when one public load call combines them (#5843).
+   Moving either stage outside an existing named measure must leave it inside the full click-to-completion
+   long-task gate. Hold the parsed handle before adoption and require abort or replaced authority to free it
+   without publication. A mock that always returns
    empty hits proves neither suppression nor completion.
    (#4068, #805, #5199, #4987, #2078, #4897, #5209, #4986, #2055, #5858, #2079, #4128, #5274, #4630, #939)
 

@@ -294,7 +294,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:5e5e833c5f03d0fa417676644777cb403135bf4f1187af613bb07e6d79c7ed67",
+                "sha256:07f1df505c83bfafbadd479d10959d3db7d31de08c8ff7acd54f5a38a7c303a0",
                 "sha256:4ce2f2f1a4fc0959b7f9fce2a16cf95e6c75af942e0b691407c73270720ab968",
                 "sha256:da20539796075e22f2ad7f835eb6f1be13a6b540a503d633a85173c02c2aa5c7:public/legal/MLC-WEB-NOTICES.txt",
                 "sha256:e1855008bd1805f65df7fcda958163d44e913c8c6cffd96e05042987e1773afd:public/legal/THIRD-PARTY-NOTICES.md"
@@ -1900,7 +1900,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "5e5e833c5f03d0fa417676644777cb403135bf4f1187af613bb07e6d79c7ed67"
+            "sha256": "07f1df505c83bfafbadd479d10959d3db7d31de08c8ff7acd54f5a38a7c303a0"
         },
         {
             "path": "Cargo.toml",

@@ -163,6 +163,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@automerge/automerge@3.5.0': 0996ed84c353756b91f7ddb124981f197b8c94eff77a62a2b81384cce52fe0b7
   vite@8.3.8: 98ac90c493c2b8e4d7889f025efd1fd293c239fd37ab70ee5f93a3809491d45d
 
 importers:
@@ -171,7 +172,7 @@ importers:
     dependencies:
       '@automerge/automerge':
         specifier: ^3.5.0
-        version: 3.5.0
+        version: 3.5.0(patch_hash=0996ed84c353756b91f7ddb124981f197b8c94eff77a62a2b81384cce52fe0b7)
       '@breezystack/lamejs':
         specifier: 1.2.7
         version: 1.2.7
@@ -5763,7 +5764,7 @@ snapshots:
       '@ast-grep/cli-win32-ia32-msvc': 0.51.2
       '@ast-grep/cli-win32-x64-msvc': 0.51.2
 
-  '@automerge/automerge@3.5.0': {}
+  '@automerge/automerge@3.5.0(patch_hash=0996ed84c353756b91f7ddb124981f197b8c94eff77a62a2b81384cce52fe0b7)': {}
 
   '@babel/code-frame@7.29.7':
     dependencies:
