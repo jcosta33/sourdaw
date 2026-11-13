@@ -1,0 +1,32 @@
+src/modules/MIDI/useCases/grooveTemplates/getGrooveExtractionActionErrorCode.ts
+  s_35b9801a6d6336::t_72f585ca396ddd 12-15,17-19,21
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_35b9801a6d6336::t_50ad3105b3dd06 1938-1941
+  s_35b9801a6d6336::t_64c32d0f76999f 1909-1912
+src/modules/MIDI/AGENTS.md
+  s_35b9801a6d6336::t_c44998683fe03d 22
+src/modules/Yeast/useCases/commitYeastGrooveExtraction.ts
+  s_35b9801a6d6336::t_0193929dea9821 1
+  s_35b9801a6d6336::t_76c5386a924dc9 36
+src/modules/Yeast/useCases/__tests__/commitYeastGrooveExtraction.spec.ts
+  s_35b9801a6d6336::t_e77d8ada4695f3 6
+  s_35b9801a6d6336::t_83f7a21e15ccf7 62-64,66-71
+  s_35b9801a6d6336::t_8f1cd44d411502 65
+  s_35b9801a6d6336::t_3e72eaebd8c7b8 13,19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "95ad851f9b4d9fdb8b8d69347bc7224a100fd4fb",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
