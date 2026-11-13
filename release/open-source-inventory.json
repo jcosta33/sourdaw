@@ -1223,14 +1223,14 @@
                 "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
             ],
             "digests": [
-                "tracked-set-sha256:42b498c3466fc5f939972bf046c39bbe147c45efeaf1fded4378ce7268a6ff6d:grand-boule-native-rust",
+                "tracked-set-sha256:256ab7b660aa577a416bca50523096298b8093bbc9b3d975131220533a092937:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:20bcf828794365a588f32d7e13808657502a13d0e8427a6543cf78c2cec789ce:grand-boule-discovery-catalog",
                 "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
                 "tracked-set-sha256:eaa809018aea8e96f598f3b55ad0711e475c6a79f06c87491af507ad88d346bd:grand-boule-live-runtime",
                 "tracked-set-sha256:16a3004282547e2c00be2b45e3a21b9b78d53fd615790560b7ffbd4f3eb0a7c7:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:0dc1081cc976553c60bdfca0e2a17ff54d44e5f830825d9c0f0c0d66819ee95e:grand-boule-release-proof"
+                "tracked-set-sha256:346a5fe49409464a9e3418fa70d31f0726b77f70cd27005fa6c111312bb0435c:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
