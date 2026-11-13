@@ -1,0 +1,40 @@
+src/infra/automerge/__tests__/stagedDocumentLoad.integration.spec.ts
+  s_e385c7e8f0ec1b::t_cb9d48b324eaf6 21-24,68-73,113-116
+  s_e385c7e8f0ec1b::t_751774e9d83ce2 1-20,25-49,51-59,61-65,119
+  s_e385c7e8f0ec1b::t_2945d254d5a186 50,60
+  s_e385c7e8f0ec1b::t_7b8ff22c864360 66-67,74-112,117-118,120
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.offThreadMaterialization.spec.ts
+  s_e385c7e8f0ec1b::t_84b8f78efeb58b 395-399,594-630,780-786,788,818,955,957
+  s_e385c7e8f0ec1b::t_2945d254d5a186 67,566,570,572-578,584-585
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_e385c7e8f0ec1b::t_f173764b3381f5 87-92
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_e385c7e8f0ec1b::t_84b8f78efeb58b 620,623-624,642-650,662
+  s_e385c7e8f0ec1b::t_9544bee3708b42 8,619,625-626,663-673,675-680,682-683,686,717,720,722-723
+.agents/skills/review-stances/test-validity.md
+  s_e385c7e8f0ec1b::t_f173764b3381f5 184-188
+release/open-source-inventory.json
+  s_e385c7e8f0ec1b::t_8e01278376355e 297,1903
+patches/@automerge__automerge@3.5.0.patch
+  s_e385c7e8f0ec1b::t_e56ebe6a6a1600 1-424
+pnpm-lock.yaml
+  s_e385c7e8f0ec1b::t_8a219b3be59118 166,175,5767
+pnpm-workspace.yaml
+  s_e385c7e8f0ec1b::t_e6a7aee7c1e7a9 42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ef15f6b429a0a26a4ca46e1cfd47c928198246c9",
+  "prompts": {},
+  "sessions": {
+    "s_e385c7e8f0ec1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d20b-16d6-7491-871b-902fdaef401b",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
