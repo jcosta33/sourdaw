@@ -1110,7 +1110,8 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             const schema = getExecutableAppActionToolSchemas().find(
                 (candidate) => candidate.function.name === 'extractGroove'
             )?.function.parameters;
-            const subdivision: unknown = schema?.properties?.subdivision;
+            const properties: unknown = schema?.properties;
+            const subdivision = isRecord(properties) ? properties.subdivision : undefined;
             return isRecord(subdivision) ? subdivision.enum : undefined;
         }
 
