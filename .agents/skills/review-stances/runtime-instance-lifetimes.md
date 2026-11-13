@@ -90,6 +90,15 @@ wall-clock) prove ordering, ownership and cleanup; they never establish physical
       establish audible output. The shared capture helper was
       introduced by main PR #293 (`6c63c7a65d8869975ceebbfe79bbaee199d4f120`); its old-capture fence remains
       necessary. Historical private reviewer models and stances are unestablished.
+    - Fermenter audition session across equal-value successors (PR #6506, caught before merge): a completed,
+      unedited preset leaves the local echo equal to the next project's patch, so value equality can return before
+      retiring A/B slots. In `fermenterPatchAuditionUndo.integration.spec.tsx`, “retires an unedited preset audition
+      across an equal-value successor project with reused IDs” and “retires an unedited preset audition across an
+      equal-value same-ID device replacement” must disable both old slots after actual raw owner replacement. Keep
+      the edited and continuous local controls: ordinary patch writes preserve A/B and Modified. Compare project
+      identity plus raw track/device incarnation before exempting a local echo, and subscribe to owner publications
+      so an equal projected value cannot suppress the observation. These in-memory cases do not prove browser or
+      audible behavior.
 4. **Shutdown reclamation needs a release inside the poll pass (#2976, #5064).** A whole-cascade wall-clock
    assertion names no cascade step and fails on a loaded runner after every stop and destroy assertion passed. Pin
    the scheduler-release transition itself in `crates/sourdaw-native/src/shutdown.rs`: keep an extra runtime owner

@@ -321,6 +321,18 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         return edited;
     }
 
+    async function uneditedAudition(): Promise<FermenterPatch> {
+        renderPanel();
+        await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(initialPatch));
+        fireEvent.click(screen.getByRole('button', { name: /^Superloaf$/ }));
+        await waitFor(() => expect(depth()).toBe(1));
+        const auditioned = cloneFermenterPatch(getFermenterState(DEVICE_ID).patch);
+        expect(committedPatch()).toEqual(auditioned);
+        expect(screen.getByRole('button', { name: 'Show patch A' })).toBeEnabled();
+        expect(screen.queryByText('Modified')).toBeNull();
+        return auditioned;
+    }
+
     it('retains the pre-session edited patch and its Modified reference when returning to A', async () => {
         const preset = resolveFermenterPresetPatch('fermenter-init', []);
         if (!preset) {
@@ -551,6 +563,56 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         expect(screen.getByRole('button', { name: 'Show patch B' })).toBeDisabled();
         expect(screen.queryByText('Modified')).toBeNull();
         expect(committedPatch()).toEqual(edited);
+    });
+
+    it('retires an unedited preset audition across an equal-value successor project with reused IDs', async () => {
+        const auditioned = await uneditedAudition();
+        const successor = structuredClone(projectedTrack());
+        await act(() => activateProject());
+        act(() => {
+            resetCrdtProjectAuthority('Unedited equal-value successor');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            replaceTrack(successor);
+            flushAutomergeStorageWrites();
+        });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Show patch A' })).toBeDisabled());
+        expect(screen.getByRole('button', { name: 'Show patch B' })).toBeDisabled();
+        expect(screen.queryByText('Modified')).toBeNull();
+        expect(committedPatch()).toEqual(auditioned);
+    });
+
+    it('retires an unedited preset audition across an equal-value same-ID device replacement', async () => {
+        const auditioned = await uneditedAudition();
+        const owner = structuredClone(projectedTrack());
+        act(() => {
+            replaceTrack({ ...owner, devices: owner.devices.filter((device) => device.id !== DEVICE_ID) });
+            flushAutomergeStorageWrites();
+            replaceTrack(owner);
+            flushAutomergeStorageWrites();
+        });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Show patch A' })).toBeDisabled());
+        expect(screen.getByRole('button', { name: 'Show patch B' })).toBeDisabled();
+        expect(screen.queryByText('Modified')).toBeNull();
+        expect(committedPatch()).toEqual(auditioned);
+    });
+
+    it('retires an unedited preset audition when device absence is observed before same-ID recreation', async () => {
+        const auditioned = await uneditedAudition();
+        const owner = structuredClone(projectedTrack());
+        act(() => {
+            replaceTrack({ ...owner, devices: owner.devices.filter((device) => device.id !== DEVICE_ID) });
+            flushAutomergeStorageWrites();
+        });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Show patch A' })).toBeDisabled());
+        act(() => {
+            replaceTrack(owner);
+            flushAutomergeStorageWrites();
+        });
+        await waitFor(() => expect(committedPatch()).toEqual(auditioned));
+        expect(screen.getByRole('button', { name: 'Show patch A' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Show patch B' })).toBeDisabled();
     });
 
     it('makes Reset and Randomize one undo step each', async () => {

@@ -117,6 +117,11 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    persister spy, numeric mirror or unchanged neighbouring scalar is not that oracle. Require the same real owner
    cases to observe pending M → N → Undo M → Redo N and stale queued refusal in project, UI and runtime. These
    in-memory observations do not replace actual save/binary-reopen, browser or audible acceptance when claimed.
+   An edited audition is a weak owner probe for PR #6506: the patch mismatch can clear stale A/B even if a plain
+   preset's equal local echo would retain it. Pair the edited control with the maintained “retires an unedited
+   preset audition” project and same-ID device replacement cases, and assert both rendered slot buttons disabled
+   after raw owner replacement. Reverting owner observation must fail those cases; a value-changing fixture alone
+   is not the owner oracle.
    (#3905, #2648, #1049, #5277, #5339, #4128, #2811, #2083, #5643, #5254, #5247, #5215, #474, #5798, #5565, #5387, #5805)
 
 4. **The oracle is computed by the code under test.**

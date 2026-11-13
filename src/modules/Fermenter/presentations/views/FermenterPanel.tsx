@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
@@ -40,8 +40,10 @@ import { findFermenterPresetId } from '../../useCases/findFermenterPresetId';
 import { hydrateFermenterFromProject } from '../../useCases/hydrateFermenterFromProject';
 import { isLocalFermenterPatchWrite } from '../../useCases/isLocalFermenterPatchWrite';
 import { randomizeFermenterPatch } from '../../useCases/randomizeFermenterPatch';
+import { readFermenterPatchOwner } from '../../useCases/readFermenterPatchOwner';
 import { selectFermenterFilterChoice } from '../../useCases/selectFermenterFilterChoice';
 import { selectFermenterOscillatorEngine } from '../../useCases/selectFermenterOscillatorEngine';
+import { subscribeToFermenterPatchOwner } from '../../useCases/subscribeToFermenterPatchOwner';
 import { loadUserPatches } from '../../useCases/user-patches/load-user-patches';
 import { saveUserPatch } from '../../useCases/user-patches/save-user-patch';
 import { AdditiveSection } from '../components/AdditiveSection';
@@ -436,6 +438,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     );
     const projectParameterValues = projectDevice?.parameterValues;
     const projectDeviceState = projectDevice?.deviceState;
+    const patchOwner = useSyncExternalStore(subscribeToFermenterPatchOwner, () => readFermenterPatchOwner(deviceId));
 
     useEffect(() => {
         hydrateFermenterFromProject(deviceId);
@@ -479,7 +482,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     const [currentPresetId, setCurrentPresetId] = useState<string | null>(null);
     const localCommitRef = useRef<FermenterDeviceStateChunk | null>(null);
     const observedLocalCommitRef = useRef(false);
-    const hydratedDeviceRef = useRef<string | null>(null);
+    const hydratedOwnerRef = useRef<{ deviceId: string; patchOwner: string | null } | null>(null);
     const patchOperationRef = useRef(0);
 
     function updateReference(value: FermenterPatch): void {
@@ -500,8 +503,21 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     }
 
     useEffect(() => {
+        const previousOwner = hydratedOwnerRef.current;
+        const ownerChanged =
+            previousOwner === null || previousOwner.deviceId !== deviceId || previousOwner.patchOwner !== patchOwner;
+        hydratedOwnerRef.current = { deviceId, patchOwner };
+        if (ownerChanged) {
+            patchOperationRef.current += 1;
+            localCommitRef.current = null;
+            observedLocalCommitRef.current = false;
+        }
         const hydrated = hydrateFermenterFromProject(deviceId);
         if (!hydrated) {
+            if (ownerChanged) {
+                updateSession(null);
+                setCurrentPresetId(null);
+            }
             return;
         }
         const currentDevice = (trackStore.value?.tracks ?? [])
@@ -509,11 +525,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             .find((device) => device.id === deviceId);
         const authoritative =
             currentDevice?.type === 'fermenter' ? readFermenterPatchFromProjectDevice(currentDevice) : hydrated;
-        const firstHydration = hydratedDeviceRef.current !== deviceId;
-        hydratedDeviceRef.current = deviceId;
-        if (firstHydration) {
-            localCommitRef.current = null;
-            observedLocalCommitRef.current = false;
+        if (ownerChanged) {
             restoreProjectReference(hydrated);
             return;
         }
@@ -533,7 +545,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             observedLocalCommitRef.current = false;
         }
         restoreProjectReference(authoritative);
-    }, [deviceId, projectDeviceState]);
+    }, [deviceId, projectDeviceState, patchOwner]);
 
     useEffect(() => {
         if (!auditionSessionRef.current) {

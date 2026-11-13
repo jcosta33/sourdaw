@@ -171,7 +171,8 @@ export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInpu
     if (!source) {
         return null;
     }
-    const { admittedOwner, device, projectBefore, patch } = source;
+    const admittedSource: NonNullable<ReturnType<typeof capturePatchWriteSource>> = source;
+    const { admittedOwner, device, projectBefore, patch } = admittedSource;
     supersedePreviousWrite(input);
     const identity = captureProjectIdentity();
     const revision = captureProjectRevision();
@@ -204,7 +205,7 @@ export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInpu
     }
 
     function action(): Extract<AppAction, { type: 'setFermenterPatch' }> {
-        return createPatchAction(input, source);
+        return createPatchAction(input, admittedSource);
     }
 
     function markCommitted(): void {
