@@ -75,6 +75,7 @@ export const ACTION_LABELS: Record<string, string> = {
     createFolder: 'Create folder',
     addSection: 'Add section',
     renameSection: 'Rename section',
+    navigateSection: 'Navigate section',
     addAutomationLane: 'Add automation',
     addAutomationPoint: 'Set automation',
     automateParameterRange: 'Automate range',

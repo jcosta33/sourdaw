@@ -9,6 +9,8 @@ const EXPECTED_KEYS = [
     'restoreTempoEdit',
     'setPlayback',
     'togglePlayback',
+    'navigateSection',
+    'rehearseSection',
     'stopPlayback',
     'toggleRecording',
     'setMasterGain',

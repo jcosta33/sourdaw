@@ -1867,6 +1867,29 @@ fn a_stopped_plugin_passes_the_block_through_untouched() {
     );
 }
 
+/// The processor lookup and its use on the audio thread are one borrow, so a
+/// wrapper that is active and processing yet holds no processor passes the
+/// block through instead of panicking inside the callback. No path reaches
+/// that state today; the field is emptied by hand to pin the release-safe
+/// answer should the invariant ever break.
+#[test]
+fn a_processing_wrapper_without_a_processor_passes_the_block_through() {
+    let state = FakeState::new();
+    let mut wrapper = load(&state, COMBINED_CID);
+    render(&mut wrapper, 1.0, 8);
+    assert!(wrapper.activated);
+    assert!(wrapper.processing_gate().is_processing());
+
+    let processor = wrapper.processor.take();
+    let (left, right) = render_over_stale_output(&mut wrapper, 0.75, 8);
+    wrapper.processor = processor;
+
+    assert!(
+        left.iter().chain(&right).all(|sample| *sample == 0.75),
+        "a wrapper without a processor must pass the block through: {left:?} {right:?}"
+    );
+}
+
 // ── Parameters ──────────────────────────────────────────────────────────
 
 /// VST3 forbids the controller from writing to the processor. The host mediates:

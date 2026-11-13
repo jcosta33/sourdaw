@@ -1,9 +1,26 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 import { ESLint, Linter } from 'eslint';
 import { describe, expect, it } from 'vitest';
+
+const REACT_DEFAULT_IMPORT_SELECTOR =
+    "ImportDeclaration[source.value='react'] :matches(ImportDefaultSpecifier, ImportNamespaceSpecifier)";
+const LOCAL_STORAGE_CALL_SELECTOR = "CallExpression[callee.object.name='localStorage']";
+
+const restrictedSyntaxFor = async (filePath: string) => {
+    const config = await new ESLint().calculateConfigForFile(resolve(filePath));
+    const entry: unknown = config?.rules['no-restricted-syntax'];
+    if (!Array.isArray(entry)) {
+        throw new TypeError(`ESLint resolved no no-restricted-syntax entry for ${filePath}`);
+    }
+    const [severity, ...options]: unknown[] = entry;
+    const selectors = options.map((option) =>
+        typeof option === 'object' && option !== null && 'selector' in option ? option.selector : option
+    );
+    return { severity, selectors };
+};
 
 describe('ESLint configuration', () => {
     it('runs both lint engines on the config', () => {
@@ -74,6 +91,103 @@ describe('ESLint configuration', () => {
             rmdirSync(directory);
         }
     }, 60_000);
+
+    it('bans default React imports and direct storage calls in production TSX', async () => {
+        const selectors = await restrictedSyntaxFor('src/app/App.tsx');
+
+        expect(selectors.severity).toBe(2);
+        expect(selectors.selectors).toContain(REACT_DEFAULT_IMPORT_SELECTOR);
+        expect(selectors.selectors).toContain(LOCAL_STORAGE_CALL_SELECTOR);
+    });
+
+    it('keeps the default React import ban in spec TSX', async () => {
+        const selectors = await restrictedSyntaxFor('src/app/__tests__/App.spec.tsx');
+
+        expect(selectors.severity).toBe(2);
+        expect(selectors.selectors).toContain(REACT_DEFAULT_IMPORT_SELECTOR);
+        expect(selectors.selectors).not.toContain(LOCAL_STORAGE_CALL_SELECTOR);
+    });
+
+    it('keeps the direct storage restriction non-failing in production TypeScript', async () => {
+        const selectors = await restrictedSyntaxFor('src/app/bootstrap.ts');
+
+        expect(selectors.severity).toBe(1);
+        expect(selectors.selectors).toContain(LOCAL_STORAGE_CALL_SELECTOR);
+        expect(selectors.selectors).not.toContain(REACT_DEFAULT_IMPORT_SELECTOR);
+    });
+
+    it('enables no rule or restricted import for the removed Tauri bridge', async () => {
+        const eslint = new ESLint();
+        const config = await eslint.calculateConfigForFile(
+            resolve('src/modules/Example/presentations/components/Example.tsx')
+        );
+        if (!config) {
+            throw new Error('ESLint did not load the presentation configuration');
+        }
+        const sourdawRules = Object.keys(config.plugins.sourdaw?.rules ?? {});
+
+        expect(sourdawRules).toContain('no-type-assertion-escape');
+        expect(sourdawRules.filter((name) => /tauri/i.test(name))).toEqual([]);
+        expect(Object.keys(config.rules).filter((name) => /tauri/i.test(name))).toEqual([]);
+        expect(readFileSync('.oxlintrc.json', 'utf8')).toContain('no-restricted-imports');
+        expect(readFileSync('.oxlintrc.json', 'utf8')).not.toMatch(/tauri/i);
+    });
+
+    it('reports every assertion escape and no ordinary assertion', async () => {
+        const eslint = new ESLint();
+        const config = await eslint.calculateConfigForFile(resolve('src/app/bootstrap.ts'));
+        if (!config) {
+            throw new Error('ESLint did not load the app configuration');
+        }
+        const restoreHandlerConfig = await eslint.calculateConfigForFile(
+            resolve('src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts')
+        );
+        const linter = new Linter();
+        const lint = (code: string, ruleEntry: Linter.RuleEntry) =>
+            linter
+                .verify(
+                    code,
+                    {
+                        files: ['**/*.ts'],
+                        languageOptions: { parser: config.languageOptions.parser },
+                        plugins: { sourdaw: config.plugins.sourdaw },
+                        rules: { 'sourdaw/no-type-assertion-escape': ruleEntry },
+                    },
+                    { filename: resolve('src/modules/Example/useCases/example.ts') }
+                )
+                .map((message) => message.messageId);
+        const production = config.rules['sourdaw/no-type-assertion-escape'];
+        const restoreHandler = restoreHandlerConfig?.rules['sourdaw/no-type-assertion-escape'];
+
+        expect(production).toEqual([2]);
+        expect(lint('const value = input as never;', production)).toEqual(['noAsNever']);
+        expect(lint('const value = input as any;', production)).toEqual(['noAsAny']);
+        expect(lint('const value = input as unknown as Thing;', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = [1, 2] as const;', production)).toEqual([]);
+        expect(lint('const value = input as Thing;', production)).toEqual([]);
+        expect(lint('const value = input as unknown;', production)).toEqual([]);
+
+        expect(lint('const value = <never>input;', production)).toEqual(['noAsNever']);
+        expect(lint('const value = <any>input;', production)).toEqual(['noAsAny']);
+        expect(lint('const value = <Thing>(<unknown>input);', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = <Thing>(input as unknown);', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = (<unknown>input) as Thing;', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = <Thing>input;', production)).toEqual([]);
+        expect(lint('const value = <unknown>input;', production)).toEqual([]);
+
+        expect(lint('const value = (input as unknown)! as Thing;', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = (input as unknown satisfies unknown) as Thing;', production)).toEqual([
+            'noAsUnknownAs',
+        ]);
+        expect(lint('const value = <Thing>(<unknown>input)!;', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = <Thing>(<unknown>input satisfies unknown);', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = input!;', production)).toEqual([]);
+        expect(lint('const value = (input as Thing)!;', production)).toEqual([]);
+        expect(lint('const value = (input as Thing)! as Other;', production)).toEqual([]);
+
+        expect(restoreHandler).toEqual([2]);
+        expect(lint('const value = input as never;', restoreHandler)).toEqual(['noAsNever']);
+    });
 
     it('preserves custom rule diagnostics through the loaded plugin', async () => {
         const eslint = new ESLint();

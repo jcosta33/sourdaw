@@ -4986,9 +4986,14 @@ struct RadixNode {
 /// suffixes into a free list, so churn reuses nodes rather than consuming the
 /// reservation. This makes lookup, insert, and set-slot bounded by one radix
 /// walk and delete by a lookup plus a reverse pruning walk.
+///
+/// An insert whose path the reservation cannot hold is refused before it
+/// touches the trie, so the node storage never grows on the callback and a
+/// refusal leaves every other mapping intact.
 struct IdSlotIndex {
     nodes: Vec<RadixNode>,
     free_head: u32,
+    free_len: usize,
     #[cfg(test)]
     last_delete_steps: usize,
 }
@@ -5001,9 +5006,25 @@ impl IdSlotIndex {
         Self {
             nodes,
             free_head: 0,
+            free_len: 0,
             #[cfg(test)]
             last_delete_steps: 0,
         }
+    }
+
+    /// Whether the reservation can hold the nodes `id`'s path still lacks:
+    /// the free list plus the reserved storage never yet used.
+    fn has_room_for(&self, id: usize) -> bool {
+        let spare_nodes = self.free_len + (self.nodes.capacity() - self.nodes.len());
+        let mut node_index = 0;
+        for depth in 0..usize::BITS {
+            let bit = Self::bit_at(id, depth);
+            match Self::child_index(&self.nodes[node_index], bit) {
+                Some(child) => node_index = child,
+                None => return (usize::BITS - depth) as usize <= spare_nodes,
+            }
+        }
+        true
     }
 
     #[inline]
@@ -5036,7 +5057,13 @@ impl IdSlotIndex {
         }
     }
 
+    /// Map `id` to `slot`, answering `false` when the id is already mapped or
+    /// the reservation cannot hold its path; either refusal leaves the trie
+    /// exactly as it was.
     fn insert(&mut self, id: usize, slot: usize) -> bool {
+        if !self.has_room_for(id) {
+            return false;
+        }
         let mut node_index = 0;
         for depth in 0..usize::BITS {
             let bit = Self::bit_at(id, depth);
@@ -5115,12 +5142,13 @@ impl IdSlotIndex {
         if self.free_head != 0 {
             let node_index = self.free_head as usize - 1;
             self.free_head = self.nodes[node_index].next_free;
+            self.free_len -= 1;
             self.nodes[node_index] = RadixNode::default();
             return node_index;
         }
         debug_assert!(
             self.nodes.len() < self.nodes.capacity(),
-            "radix reservation exhausted"
+            "insert checked the reservation could hold this path before walking it"
         );
         let node_index = self.nodes.len();
         self.nodes.push(RadixNode::default());
@@ -5133,6 +5161,7 @@ impl IdSlotIndex {
             ..RadixNode::default()
         };
         self.free_head = node_index as u32 + 1;
+        self.free_len += 1;
     }
 }
 
@@ -6767,7 +6796,7 @@ impl AudioScheduler {
                     if self.effect_id_exists(id) {
                         self.midi_rt_diagnostics.record_effect_id_collision(1);
                         Some(RetiredGraphObjects::effect(effect))
-                    } else if self.effects.len() == EFFECT_TABLE_CAPACITY {
+                    } else if !self.effect_table_admits(id) {
                         self.timeline.record_capacity_refusal();
                         Some(RetiredGraphObjects::effect(effect))
                     } else {
@@ -6785,7 +6814,7 @@ impl AudioScheduler {
                     if self.effect_id_exists(id) {
                         self.midi_rt_diagnostics.record_effect_id_collision(1);
                         Some(RetiredGraphObjects::effect(effect))
-                    } else if self.effects.len() == EFFECT_TABLE_CAPACITY {
+                    } else if !self.effect_table_admits(id) {
                         self.timeline.record_capacity_refusal();
                         Some(RetiredGraphObjects::effect(effect))
                     } else {
@@ -7340,8 +7369,32 @@ impl AudioScheduler {
         self.effects.get_mut(slot)
     }
 
+    /// Whether a fresh `id` fits both the effect table and its id index.
+    ///
+    /// The index is reserved for every id the table's ceiling admits and
+    /// deletion returns pruned nodes, so the index half refuses only when that
+    /// invariant broke. It still refuses, through the same counted capacity
+    /// refusal as a full table: an effect pushed without a mapping would be
+    /// unreachable by every per-id command, and growing the index would
+    /// allocate on the callback. Debug builds flag the broken invariant; this
+    /// crate's unit tests build an exhausted index on purpose to pin the
+    /// release refusal, so the assertion stays out of them.
+    fn effect_table_admits(&self, id: usize) -> bool {
+        if self.effects.len() == EFFECT_TABLE_CAPACITY {
+            return false;
+        }
+        let index_admits = self.effect_index.has_room_for(id);
+        #[cfg(not(test))]
+        debug_assert!(
+            index_admits,
+            "the id index reservation ran out below the effect table's ceiling"
+        );
+        index_admits
+    }
+
     /// Append an effect and map its id at the slot it took. Callers have
-    /// already refused a colliding id and a full table, so the mapping always
+    /// already refused a colliding id, a full table and an index without room
+    /// for the id, so the mapping always
     /// lands. The insert runs unconditionally and only its *result* is
     /// asserted: burying it inside `debug_assert!` would skip the mapping in
     /// release builds, empty the index there, and silently no-op every
@@ -7408,7 +7461,7 @@ impl AudioScheduler {
             self.midi_rt_diagnostics.record_effect_id_collision(1);
             return Some(RetiredGraphObjects::effect(effect));
         }
-        if self.effects.len() == EFFECT_TABLE_CAPACITY {
+        if !self.effect_table_admits(id) {
             self.timeline.record_capacity_refusal();
             return Some(RetiredGraphObjects::effect(effect));
         }
@@ -9860,6 +9913,52 @@ mod tests {
         );
     }
 
+    /// A reservation sized for one id holds one full path. A second id that
+    /// diverges at the root, or one sharing all but its last bit, needs nodes
+    /// the reservation does not have: the insert is refused without growing
+    /// the storage (which would allocate on the callback) and without leaving
+    /// a partial path behind, and deleting the survivor returns its nodes.
+    #[test]
+    fn radix_insert_past_the_reservation_is_refused_without_growing() {
+        let mut index = IdSlotIndex::reserved(1);
+        assert!(index.insert(0, 7));
+        let capacity = index.nodes.capacity();
+        let len = index.nodes.len();
+
+        let (root_divergent, last_bit_divergent) =
+            assert_no_alloc::assert_no_alloc(|| (index.insert(usize::MAX, 8), index.insert(1, 9)));
+
+        assert!(
+            !root_divergent,
+            "an id needing a fresh root branch must be refused"
+        );
+        assert!(
+            !last_bit_divergent,
+            "an id needing one fresh node must be refused"
+        );
+        assert_eq!(
+            index.nodes.capacity(),
+            capacity,
+            "the reservation must not grow"
+        );
+        assert_eq!(
+            index.nodes.len(),
+            len,
+            "a refusal must leave no partial path"
+        );
+        assert_eq!(index.lookup(usize::MAX), None);
+        assert_eq!(index.lookup(1), None);
+        assert_eq!(index.lookup(0), Some(7));
+
+        assert_eq!(index.delete(0), Some(7));
+        assert!(
+            index.insert(usize::MAX, 8),
+            "the survivor's pruned nodes must make room again"
+        );
+        assert_eq!(index.lookup(usize::MAX), Some(8));
+        assert_eq!(index.nodes.capacity(), capacity);
+    }
+
     #[test]
     fn the_id_index_survives_remove_and_re_register_churn() {
         fn add(
@@ -9997,6 +10096,42 @@ mod tests {
             .expect("the refused plugin must be handed off")
             .effect
             .is_some());
+    }
+
+    /// The id index is reserved for every id the table admits, so it running
+    /// out below the table's ceiling is a broken invariant — and still a
+    /// counted refusal, never an effect pushed where no id lookup can reach it.
+    /// The index is swapped for an exhausted one by hand, the only way to
+    /// stand in for the invariant breaking.
+    #[test]
+    fn an_effect_the_id_index_cannot_map_is_refused_and_retired() {
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        scheduler.effect_index = IdSlotIndex::reserved(0);
+
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                3,
+                Box::new(FakeNativePlugin { value: 0.0 }),
+                None,
+            ))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::AddEffect(4, knead_instance(), None))
+            .unwrap();
+        assert_no_alloc::assert_no_alloc(|| scheduler.update_graph());
+
+        assert!(
+            scheduler.effects.is_empty(),
+            "no unmapped effect may land in the table"
+        );
+        assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 2);
+        for _ in 0..2 {
+            assert!(retired_rx
+                .pop()
+                .expect("each refused registration must hand its effect off")
+                .effect
+                .is_some());
+        }
     }
 
     /// The id-collision refusal retires the carried instance on the same

@@ -5,6 +5,10 @@ packages:
 # reinstalling. Keep each checkout's installed virtual store private.
 enableGlobalVirtualStore: false
 
+# Refuse stale dependencies before scripts; automatic installs would run before
+# the resource guard package script can reserve memory. Install explicitly.
+verifyDepsBeforeRun: error
+
 allowBuilds:
     esbuild: true
     core-js: false
@@ -31,19 +35,16 @@ allowBuilds:
     # a node shim that prints a stderr warning per invocation.
     '@ast-grep/cli': true
 
-minimumReleaseAgeExclude:
-    - '@vitejs/plugin-react@6.1.0'
-    - vite@8.2.2
-
 # HMR-disabled acceptance documents retain CSS and custom/error transport, but
 # must not reload when that editor socket disconnects. Keep the browser control
 # in e2eHmrDisconnectBoundary.spec.ts when updating or removing this patch.
 patchedDependencies:
-    vite@8.3.6: patches/vite@8.3.6.patch
+    '@automerge/automerge@3.5.0': patches/@automerge__automerge@3.5.0.patch
+    vite@8.3.8: patches/vite@8.3.8.patch
 
 # Two coexisting tfjs-core stacks are deliberate (#4466). The app pins
 # tfjs-core/converter/backend-webgpu 4.22.0 exactly for its WebGPU DDSP worker;
-# @spotify/basic-pitch depends on the @tensorflow/tfjs 3.x umbrella, which pins
+# @spotify/basic-pitch owns the @tensorflow/tfjs 3.x umbrella, which pins
 # its own 3.21.0 sub-packages under itself. Neither stack may be repinned
 # tree-wide: forcing tfjs-core 4.22.0 into basic-pitch's chain breaks inference
 # (its backend-webgl 3.21 reads ENGINE_COMPILE_ONLY at kernel paths core 4.22
@@ -52,3 +53,36 @@ patchedDependencies:
 # second tfjs-core identity into a file: src/modules/BrowserAi/workers/
 # tfjsInferenceWorker.ts derives its types from its own single dynamic import,
 # and app code touches only basic-pitch's own exports, never @tensorflow/tfjs.
+
+minimumReleaseAgeExclude:
+    - '@eslint-react/ast@5.30.2'
+    - '@eslint-react/core@5.30.2'
+    - '@eslint-react/eslint-plugin@5.30.2'
+    - '@eslint-react/eslint@5.30.2'
+    - '@eslint-react/jsx@5.30.2'
+    - '@eslint-react/shared@5.30.2'
+    - '@eslint-react/var@5.30.2'
+    - electron@45.3.1
+    - eslint-plugin-react-dom@5.30.2
+    - eslint-plugin-react-jsx@5.30.2
+    - eslint-plugin-react-naming-convention@5.30.2
+    - eslint-plugin-react-rsc@5.30.2
+    - eslint-plugin-react-web-api@5.30.2
+    - eslint-plugin-react-x@5.30.2
+    - prettier@3.10.1
+    - tar@7.5.23
+
+    - '@babel/generator@7.29.14'
+    - '@babel/helper-module-transforms@7.29.14'
+    - '@babel/helper-string-parser@7.29.14'
+    - '@babel/helpers@7.29.14'
+    - '@babel/parser@7.29.14'
+    - '@babel/runtime@7.29.14'
+    - '@babel/traverse@7.29.14'
+    - '@babel/types@7.29.14'
+    - baseline-browser-mapping@2.11.36
+    - electron-to-chromium@1.5.483
+    - enhanced-resolve@5.26.2
+    - graceful-fs@4.2.12
+    - tldts-core@7.4.26
+    - tldts@7.4.26

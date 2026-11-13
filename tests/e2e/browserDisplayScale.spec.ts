@@ -86,14 +86,22 @@ async function setDisplayScale(app: FrameLocator, frame: Frame, scale: number): 
     return dialog;
 }
 
+/**
+ * The workspace dialog's max-height follows the viewport and transitions on
+ * entry and on every scale change, so its box keeps shrinking after the frame
+ * has resized. Scroll and measure only after its final geometry arrives.
+ */
+async function waitForDialogGeometry(dialog: Locator): Promise<void> {
+    await dialog.evaluate(async (element) => {
+        await Promise.all(element.getAnimations().map((animation) => animation.finished));
+    });
+}
+
 async function expectUiScaleDragKeepsGeometryUntilCommit(page: Page, frame: Frame, dialog: Locator): Promise<void> {
     const slider = dialog.getByRole('slider', { name: 'UI Scale' });
     const sliderRoot = dialog.locator('[data-slot="slider"]');
     await expect(sliderRoot).toHaveCount(1);
-    // The workspace dialog transitions max-height on entry; measure only after its final geometry arrives.
-    await dialog.evaluate(async (element) => {
-        await Promise.all(element.getAnimations().map((animation) => animation.finished));
-    });
+    await waitForDialogGeometry(dialog);
     const sliderBox = requireBox(await slider.boundingBox(), 'UI Scale slider thumb');
     const sliderRootBox = requireBox(await sliderRoot.boundingBox(), 'UI Scale slider');
     const dialogBox = requireBox(await dialog.boundingBox(), 'Preferences dialog');
@@ -150,24 +158,25 @@ async function expectScrollableAncestor(locator: Locator, shouldScroll: boolean)
     }
 }
 
+async function expectScrolledIntoDialog(control: Locator, dialogBox: Box, label: string): Promise<void> {
+    await control.scrollIntoViewIfNeeded();
+    await expect(control).toBeVisible();
+    const box = requireBox(await control.boundingBox(), label);
+    expect(box.y).toBeGreaterThanOrEqual(dialogBox.y);
+    expect(box.y + box.height).toBeLessThanOrEqual(dialogBox.y + dialogBox.height);
+}
+
 async function expectPreferencesUsable(app: FrameLocator, dialog: Locator, scale: number): Promise<void> {
     await dialog.getByRole('button', { name: 'General', exact: true }).click();
+    await waitForDialogGeometry(dialog);
+    const dialogBox = requireBox(await dialog.boundingBox(), 'Preferences dialog');
+    expectInsideViewport(dialogBox);
+
     const lastContentControl = dialog.getByRole('button', { name: /Click to change — hold to activate voice input/i });
-    await lastContentControl.scrollIntoViewIfNeeded();
-    await expect(lastContentControl).toBeVisible();
+    await expectScrolledIntoDialog(lastContentControl, dialogBox, 'last Preferences control');
 
     const done = dialog.getByRole('button', { name: 'Done', exact: true });
-    await done.scrollIntoViewIfNeeded();
-    await expect(done).toBeVisible();
-
-    const dialogBox = requireBox(await dialog.boundingBox(), 'Preferences dialog');
-    const lastControlBox = requireBox(await lastContentControl.boundingBox(), 'last Preferences control');
-    const doneBox = requireBox(await done.boundingBox(), 'Preferences footer');
-    expectInsideViewport(dialogBox);
-    expect(lastControlBox.y).toBeGreaterThanOrEqual(dialogBox.y);
-    expect(lastControlBox.y + lastControlBox.height).toBeLessThanOrEqual(dialogBox.y + dialogBox.height);
-    expect(doneBox.y).toBeGreaterThanOrEqual(dialogBox.y);
-    expect(doneBox.y + doneBox.height).toBeLessThanOrEqual(dialogBox.y + dialogBox.height);
+    await expectScrolledIntoDialog(done, dialogBox, 'Preferences footer');
 
     await expectScrollableAncestor(lastContentControl, scale === 2);
     await expectScrollableAncestor(done, scale === 2);

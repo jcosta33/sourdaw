@@ -2,11 +2,18 @@ import { createHash } from 'node:crypto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { logger } from '#/infra/logger/appLogger';
+
+import { LocalModelRefusalError } from '../../errors/LocalModelRefusalError';
 import { DEFAULT_WEBLLM_MODEL_ID, WEBLLM_CONTEXT_WINDOW_TOKENS, WEBLLM_MODELS } from '../../models/ModelInfo';
+import { llmStatusStore } from '../../stores/llmStatusStore';
 import { createWebLlmAppConfig } from '../webLlm/createWebLlmAppConfig';
 import { engineState } from '../webLlm/engineLifecycleState';
 import { getWebLlmArtifactUrl } from '../webLlm/getWebLlmArtifactUrl';
 import { getWebLlmContextWindowSize } from '../webLlm/getWebLlmContextWindowSize';
+import { getWebLlmRequiredFeatures } from '../webLlm/getWebLlmRequiredFeatures';
 import { initWebLlmEngine } from '../webLlm/initWebLlmEngine';
 import { serializeWebLlmArtifactSet } from '../webLlm/serializeWebLlmArtifactSet';
 import { unloadWebLlmEngine } from '../webLlm/unloadWebLlmEngine';
@@ -23,6 +30,7 @@ const { createWebWorkerEngineMock, terminateWorkerMock, workerSpawns } = vi.hois
     workerSpawns: [] as { url: string | URL; options: WorkerOptions | undefined }[],
 }));
 
+const requestAdapterMock = vi.fn<() => Promise<{ features: Set<string> } | null>>();
 const cacheEntries = new Map<string, Map<string, Response>>();
 const exclusiveLockCalls: string[] = [];
 const exclusiveTailByName = new Map<string, Promise<void>>();
@@ -149,6 +157,7 @@ function createAdmissionDependencies(
     const decoder = new TextDecoder();
     return {
         deleteCache: async (cacheName) => cacheEntries.delete(cacheName),
+        estimateStorage: async () => ({ quota: 1_000_000, usage: 0 }),
         fetchArtifact: vi.fn(async (url: string) => {
             const artifact = fixtureModel.artifacts.find(
                 (candidate) => getWebLlmArtifactUrl(fixtureModel, candidate) === url
@@ -212,8 +221,9 @@ vi.mock('@mlc-ai/web-llm', () => ({
     CreateWebWorkerMLCEngine: createWebWorkerEngineMock,
 }));
 
-class MockLlmWorker {
+class MockLlmWorker extends EventTarget {
     constructor(url: string | URL, options?: WorkerOptions) {
+        super();
         workerSpawns.push({ url, options });
     }
 
@@ -229,7 +239,7 @@ describe('WebLLM provider artifact admission', () => {
         vi.stubGlobal('Worker', MockLlmWorker);
         Object.defineProperty(globalThis, 'navigator', {
             value: {
-                gpu: {},
+                gpu: { requestAdapter: requestAdapterMock },
                 locks: {
                     request: vi.fn(
                         async (
@@ -243,6 +253,9 @@ describe('WebLLM provider artifact admission', () => {
             configurable: true,
             writable: true,
         });
+        requestAdapterMock.mockReset();
+        requestAdapterMock.mockResolvedValue({ features: new Set(['shader-f16']) });
+        llmStatusStore.set({ state: 'idle' });
         cacheEntries.clear();
         exclusiveLockCalls.length = 0;
         exclusiveTailByName.clear();
@@ -254,6 +267,7 @@ describe('WebLLM provider artifact admission', () => {
     });
 
     afterEach(() => {
+        Container.clear();
         unloadWebLlmEngine();
         vi.unstubAllGlobals();
         engineState.activeModelId = DEFAULT_WEBLLM_MODEL_ID;
@@ -321,14 +335,29 @@ describe('WebLLM provider artifact admission', () => {
 
     // Admission purges every recorded set of a model whose digest differs from the release's, and a
     // purged model needs consent and a full download again. A digest that moves, its engine block
-    // included, costs every user who downloaded the model that download; these are the digests the
-    // shipped sets were recorded under.
+    // included, costs every user who downloaded the model that download. The newly admitted
+    // runtime-compatible libraries require that existing consent/download route.
     it.each([
-        ['Qwen3-1.7B-q4f16_1-MLC', '932ad158daa0d6814a50c5fb6aa85f88c3d3892a58a0dc20d47ff0b9e6e0b255'],
-        ['Qwen3-4B-q4f16_1-MLC', '2438f2a6b58372e12ca0aa949443a49ca7b6060ad3e7971aed0d56b49a35195f'],
-        ['Qwen3-8B-q4f16_1-MLC', '7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb'],
-    ])('keeps the artifact-set digest %s was downloaded under', (modelId, digest) => {
+        ['Qwen3-1.7B-q4f16_1-MLC', 'a8c02294f8d3c23e7ff2a9174d3a575e7809c7463870b6e23d2d6e6f1dac7991'],
+        ['Qwen3-4B-q4f16_1-MLC', '2e136079f88bb3aea4289642db64fef8d77a0cb4c503ca6ca90a4030e0b75756'],
+        ['Qwen3-8B-q4f16_1-MLC', '5121d9a5818d4693e0b0f2dc55f2982ece120b875c955203e4650a9269ad6d2a'],
+    ])('pins the newly admitted runtime-compatible artifact set for %s', (modelId, digest) => {
         expect(getWebLlmArtifactManifestModel(modelId).artifactSetDigest).toBe(digest);
+    });
+
+    it.each([
+        ['Qwen3-1.7B-q4f16_1-MLC', 'b22fead109509ac456ebe1ff6d632b73b257e6285cd236a2e77d0164a20aba6f'],
+        ['Qwen3-4B-q4f16_1-MLC', '02a08d958dc140b21eb849741c5aad788653ce9787419861dbafd16c3e488ec0'],
+        ['Qwen3-8B-q4f16_1-MLC', '8b9ca82226ec92f177c3b6636b0bc3f9371c9f790e472116a5024ced81b8960d'],
+    ])('preserves every nonlibrary input of %s across the library ABI repair', (modelId, digest) => {
+        const model = getWebLlmArtifactManifestModel(modelId);
+        const preserved = {
+            modelId: model.modelId,
+            modelSource: model.modelSource,
+            engine: model.engine,
+            artifacts: model.artifacts.filter(({ kind }) => kind !== 'model-library'),
+        };
+        expect(createHash('sha256').update(JSON.stringify(preserved)).digest('hex')).toBe(digest);
     });
 
     it('loads the planning window from code, apart from the digested manifest', () => {
@@ -796,5 +825,280 @@ describe('WebLLM provider artifact admission', () => {
             throw new Error('Fixture model library is required');
         }
         expect(modelRecord?.model_lib).toBe(getWebLlmArtifactUrl(fixtureModel, modelLibrary));
+    });
+
+    describe('refusing a model this machine cannot run', () => {
+        const LIGHT = 'Qwen3-1.7B-q4f16_1-MLC';
+        const STANDARD = 'Qwen3-4B-q4f16_1-MLC';
+        const encoder = new TextEncoder();
+
+        // The shipped ids and digests with fixture-sized artifacts at addresses of their own, so two
+        // models can be downloaded, cached and loaded in one test without fetching gigabytes.
+        function modelFor(modelId: string): WebLlmArtifactManifestModel {
+            const shipped = getWebLlmArtifactManifestModel(modelId);
+            return {
+                ...fixtureModel,
+                modelId,
+                artifactSetDigest: shipped.artifactSetDigest,
+                modelSource: { ...fixtureModel.modelSource, repository: `mlc-ai/${modelId}` },
+                wasmSource: { ...fixtureModel.wasmSource, repository: `mlc-ai/${modelId}-libs` },
+                engine: shipped.engine,
+            };
+        }
+
+        const downloadBytes = fixtureModel.artifacts.reduce((total, artifact) => total + artifact.sizeBytes, 0);
+
+        function artifactDependencies(
+            overrides: Partial<WebLlmArtifactAdmissionDependencies> = {}
+        ): WebLlmArtifactAdmissionDependencies {
+            const models = [modelFor(LIGHT), modelFor(STANDARD)];
+            return createAdmissionDependencies({
+                getManifestModel: modelFor,
+                fetchArtifact: vi.fn(async (url: string) => {
+                    for (const model of models) {
+                        const artifact = model.artifacts.find(
+                            (candidate) => getWebLlmArtifactUrl(model, candidate) === url
+                        );
+                        if (artifact) {
+                            return new Response(encoder.encode(fixtureContents.get(artifact.path)), { status: 200 });
+                        }
+                    }
+                    return new Response(null, { status: 404 });
+                }),
+                sha256: vi.fn(async (bytes: ArrayBuffer) => {
+                    const content = new TextDecoder().decode(bytes);
+                    const model = models.find((candidate) => content === serializeWebLlmArtifactSet(candidate));
+                    return model?.artifactSetDigest ?? fixtureDigests.get(content) ?? '0'.repeat(64);
+                }),
+                ...overrides,
+            });
+        }
+
+        function loader(dependencies: WebLlmArtifactAdmissionDependencies): typeof initWebLlmEngine {
+            return injectDependencies(initWebLlmEngine, {
+                logger,
+                admitWebLlmModelArtifacts: (
+                    modelId: string,
+                    options: Parameters<typeof admitWebLlmModelArtifacts>[1]
+                ) => admitWebLlmModelArtifacts(modelId, options, dependencies),
+                readWebGpuAdapterFeatures: async () => {
+                    const adapter = await requestAdapterMock();
+                    return adapter === null ? null : adapter.features;
+                },
+            });
+        }
+
+        function cachedEntryCount(): number {
+            return Array.from(cacheEntries.entries())
+                .filter(([name]) => name.startsWith('webllm/'))
+                .reduce((total, [, entries]) => total + entries.size, 0);
+        }
+
+        it('names shader-f16 for q4f16 models only, from the id', () => {
+            expect(getWebLlmRequiredFeatures(LIGHT)).toEqual(['shader-f16']);
+            expect(getWebLlmRequiredFeatures('Qwen3-8B-q4f32_1-MLC')).toEqual([]);
+            expect(getWebLlmRequiredFeatures('test-model')).toEqual([]);
+        });
+
+        it('sets the same required features on every shipped model record', () => {
+            for (const selectableModel of WEBLLM_MODELS) {
+                const record = createWebLlmAppConfig(getWebLlmArtifactManifestModel(selectableModel.id)).model_list[0];
+                expect(record?.required_features, selectableModel.id).toEqual(['shader-f16']);
+            }
+        });
+
+        it('refuses a model needing shader-f16 on an adapter without it, before any fetch, cache write or worker', async () => {
+            requestAdapterMock.mockResolvedValue({ features: new Set() });
+            const dependencies = artifactDependencies();
+
+            await expect(loader(dependencies)(LIGHT, { downloadConsent: true })).rejects.toMatchObject({
+                name: 'LocalModelRefusalError',
+                refusal: { reason: 'shader-f16-unavailable', modelId: LIGHT },
+            });
+
+            expect(dependencies.fetchArtifact).not.toHaveBeenCalled();
+            expect(workerSpawns).toEqual([]);
+            expect(cacheEntries.size).toBe(0);
+            expect(llmStatusStore.value).toMatchObject({
+                state: 'error',
+                refusal: { reason: 'shader-f16-unavailable', modelId: LIGHT },
+                message: expect.stringContaining('shader-f16'),
+            });
+        });
+
+        it('leaves a machine with no adapter to the existing WebGPU path rather than refusing it here', async () => {
+            requestAdapterMock.mockResolvedValue(null);
+
+            await expect(loader(artifactDependencies())(LIGHT, { downloadConsent: true })).resolves.toBeDefined();
+        });
+
+        it('refuses a download larger than the origin has room for, stating both figures, before any fetch', async () => {
+            const dependencies = artifactDependencies({
+                estimateStorage: async () => ({ quota: downloadBytes, usage: 1 }),
+            });
+
+            await expect(loader(dependencies)(LIGHT, { downloadConsent: true })).rejects.toMatchObject({
+                name: 'LocalModelRefusalError',
+                refusal: {
+                    reason: 'insufficient-storage',
+                    modelId: LIGHT,
+                    requiredBytes: downloadBytes,
+                    availableBytes: downloadBytes - 1,
+                },
+            });
+
+            expect(dependencies.fetchArtifact).not.toHaveBeenCalled();
+            expect(workerSpawns).toEqual([]);
+            expectFixtureCachesEmpty();
+            expect(llmStatusStore.value).toMatchObject({ state: 'error', refusal: { reason: 'insufficient-storage' } });
+        });
+
+        it('reclaims an interrupted download before estimating, so its staging bytes never cause a refusal', async () => {
+            const stagingName = `sourdaw/webllm/staging-v1/${encodeURIComponent(LIGHT)}`;
+            cacheEntries.set(stagingName, new Map([['stale-shard', new Response('stale')]]));
+            const dependencies = artifactDependencies({
+                estimateStorage: async () => ({ quota: downloadBytes, usage: cacheEntries.has(stagingName) ? 1 : 0 }),
+            });
+
+            await expect(loader(dependencies)(LIGHT, { downloadConsent: true })).resolves.toBeDefined();
+            expect(dependencies.fetchArtifact).toHaveBeenCalled();
+        });
+
+        it('states a need above the room left as two different figures, even a byte apart', () => {
+            const refusal = new LocalModelRefusalError({
+                reason: 'insufficient-storage',
+                modelId: LIGHT,
+                requiredBytes: 1_000_000_001,
+                availableBytes: 1_000_000_000,
+            });
+
+            expect(refusal.message).toContain(
+                'needs 1.01 GB to download, but this browser has 1.00 GB of storage left'
+            );
+        });
+
+        it('rounds the room left down, so a byte short of the need never reads as enough', () => {
+            const refusal = new LocalModelRefusalError({
+                reason: 'insufficient-storage',
+                modelId: LIGHT,
+                requiredBytes: 1_000_000_000,
+                availableBytes: 999_999_999,
+            });
+
+            expect(refusal.message).toContain(
+                'needs 1.00 GB to download, but this browser has 0.99 GB of storage left'
+            );
+        });
+
+        it('admits a download that exactly fits the remaining storage', async () => {
+            const dependencies = artifactDependencies({
+                estimateStorage: async () => ({ quota: downloadBytes + 10, usage: 10 }),
+            });
+
+            await expect(loader(dependencies)(LIGHT, { downloadConsent: true })).resolves.toBeDefined();
+        });
+
+        it('asks for consent before it reads storage', async () => {
+            const estimateStorage = vi.fn(async () => ({ quota: 1, usage: 0 }));
+
+            await expect(
+                loader(artifactDependencies({ estimateStorage }))(LIGHT, { downloadConsent: false })
+            ).rejects.toThrow(/explicit.*consent/i);
+
+            expect(estimateStorage).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ['throws', async () => Promise.reject(new Error('no estimate'))],
+            ['reports no figures', async () => ({})],
+        ])('proceeds with the download when the storage estimate %s', async (_label, estimateStorage) => {
+            await expect(
+                loader(artifactDependencies({ estimateStorage }))(LIGHT, { downloadConsent: true })
+            ).resolves.toBeDefined();
+        });
+
+        it('loads an already cached model however little storage is left', async () => {
+            const load = loader(artifactDependencies());
+            await load(LIGHT, { downloadConsent: true });
+            unloadWebLlmEngine();
+            const dependencies = artifactDependencies({ estimateStorage: async () => ({ quota: 1, usage: 1 }) });
+
+            await expect(loader(dependencies)(LIGHT)).resolves.toBeDefined();
+
+            expect(dependencies.fetchArtifact).not.toHaveBeenCalled();
+        });
+
+        it('turns a device loss at load into a gpu-memory refusal, keeps the download and can load another model', async () => {
+            const dependencies = artifactDependencies();
+            const load = loader(dependencies);
+            createWebWorkerEngineMock.mockRejectedValueOnce(
+                'DeviceLostError: The WebGPU device was lost while loading the model. This can happen because of OOM.'
+            );
+
+            await expect(load(STANDARD, { downloadConsent: true })).rejects.toMatchObject({
+                name: 'LocalModelRefusalError',
+                refusal: { reason: 'gpu-memory', modelId: STANDARD },
+                message: expect.stringContaining(
+                    `needs ${WEBLLM_MODELS.find((model) => model.id === STANDARD)?.ramUsage ?? 'unknown'} of GPU memory`
+                ),
+            });
+
+            await vi.waitFor(() => expect(engineState.initPromise).toBeNull());
+            expect(llmStatusStore.value).toMatchObject({ state: 'error', refusal: { reason: 'gpu-memory' } });
+            expect(workerSpawns).toHaveLength(1);
+            expect(terminateWorkerMock).toHaveBeenCalledTimes(1);
+            expect(engineState.engine).toBeNull();
+            expect(engineState.worker).toBeNull();
+            const keptEntries = cachedEntryCount();
+            expect(keptEntries).toBe(fixtureModel.artifacts.length);
+
+            await expect(load(LIGHT, { downloadConsent: true })).resolves.toBeDefined();
+            expect(workerSpawns).toHaveLength(2);
+            expect(cachedEntryCount()).toBe(keptEntries * 2);
+
+            vi.mocked(dependencies.fetchArtifact).mockClear();
+            await expect(load(STANDARD)).resolves.toBeDefined();
+            expect(dependencies.fetchArtifact).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ['an out-of-memory text', 'RuntimeError: Out of memory while allocating the KV cache'],
+            ['an OutOfMemory name', 'OutOfMemoryError: failed to allocate buffer'],
+        ])('turns %s at load into a gpu-memory refusal', async (_label, failure) => {
+            createWebWorkerEngineMock.mockRejectedValueOnce(failure);
+
+            await expect(loader(artifactDependencies())(LIGHT, { downloadConsent: true })).rejects.toMatchObject({
+                refusal: { reason: 'gpu-memory', modelId: LIGHT },
+            });
+        });
+
+        it('classifies a load failure delivered as an Error, as a worker error event delivers it', async () => {
+            createWebWorkerEngineMock.mockRejectedValueOnce(
+                new Error('The WebGPU device was lost while loading the model: out of memory')
+            );
+
+            await expect(loader(artifactDependencies())(LIGHT, { downloadConsent: true })).rejects.toMatchObject({
+                refusal: { reason: 'gpu-memory', modelId: LIGHT },
+            });
+        });
+
+        it("maps web-llm's own missing-feature error to the shader-f16 refusal", async () => {
+            createWebWorkerEngineMock.mockRejectedValueOnce('ShaderF16SupportError: This model requires shader-f16');
+
+            await expect(loader(artifactDependencies())(LIGHT, { downloadConsent: true })).rejects.toMatchObject({
+                refusal: { reason: 'shader-f16-unavailable', modelId: LIGHT },
+            });
+        });
+
+        it('keeps any other load failure a plain error with no refusal', async () => {
+            createWebWorkerEngineMock.mockRejectedValueOnce(new Error('network went away'));
+
+            await expect(loader(artifactDependencies())(LIGHT, { downloadConsent: true })).rejects.toThrow(
+                'network went away'
+            );
+
+            await vi.waitFor(() => expect(llmStatusStore.value).toMatchObject({ state: 'error' }));
+            expect(llmStatusStore.value).not.toHaveProperty('refusal');
+        });
     });
 });

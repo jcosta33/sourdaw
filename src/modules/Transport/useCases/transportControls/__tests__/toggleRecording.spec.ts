@@ -222,6 +222,7 @@ describe('toggleRecording', () => {
         vi.clearAllMocks();
         previewIntents.reset();
         vi.useFakeTimers();
+        mocks.panicYeastRuntime.mockResolvedValue(undefined);
         // resumeEngine returns Promise<void>; default to resolved so the `.catch`
         // chain in the count-in path has a thenable.
         mocks.resumeEngine.mockResolvedValue(undefined);

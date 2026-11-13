@@ -128,6 +128,7 @@ const NATIVE_SECURITY_PATHS = [
     'scripts/electronRuntimeContract.ts',
     'scripts/checkElectronRuntimeProvenance.ts',
     'scripts/installCleanupLanes.ts',
+    'scripts/cleanupLanesCli.ts',
 ] as const;
 /** macOS entitlement files the packaging config signs with, `build/entitlements.mac.plist` and kin. */
 const ENTITLEMENTS_PATTERN = /^build\/entitlements[^/]*\.plist$/u;
@@ -165,6 +166,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/pnpmModulesPreflight.ts',
     'scripts/prContract.ts',
     'scripts/prepareReview.ts',
+    'scripts/processSnapshot.ts',
     'scripts/pruneRemoteBranches.ts',
     'scripts/pruneRemoteBranchesGithub.ts',
     'scripts/publishLane.ts',

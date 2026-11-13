@@ -446,17 +446,26 @@ export function buildDevices({
     // -- Proof — mastering suite -------------------------------------------
     if (wanted('proof')) {
         const instance = new dsp.ProofInstance(SAMPLE_RATE);
-        instance.set_param('limiter_ceiling', -1);
-        instance.set_param('limiter_threshold', -12);
-        devices.push(
-            pointerEffect({
-                id: 'proof',
-                label: 'Proof (limiter engaged)',
-                note: 'effect; no voice pool',
-                instance,
-                module: dsp,
-            })
-        );
+        instance.set_param('input_gain', 6);
+        instance.set_param('lim_ceiling', -1);
+        const recipe = pointerEffect({
+            id: 'proof',
+            label: 'Proof (limiter engaged)',
+            note: 'effect; input gain +6 dB, ceiling -1 dB',
+            instance,
+            module: dsp,
+        });
+        devices.push({
+            ...recipe,
+            verify() {
+                const signal = recipe.verify();
+                const reduction = instance.get_limiter_gr_db();
+                return {
+                    ok: signal.ok && Number.isFinite(reduction) && reduction < -1,
+                    detail: `${signal.detail}, limiter gain reduction ${reduction.toFixed(2)} dB (required below -1 dB)`,
+                };
+            },
+        });
     }
 
     // -- Crust — true-peak mastering limiter -------------------------------

@@ -52,7 +52,6 @@ vi.mock('../../../useCases/resolveGrandBouleEngine', () => ({
  */
 
 type TestBusEvents = {
-    'track.added': import('#/modules/Arrangement/events').TrackAddedPayload;
     'midi.noteOn': import('#/modules/MIDI/events').MidiNoteOnPayload;
     'midi.noteOff': import('#/modules/MIDI/events').MidiNoteOffPayload;
     'midi.pedalCc': import('#/modules/MIDI/events').MidiPedalCcPayload;
@@ -68,7 +67,6 @@ type TestBusHandlerSets = {
 
 function createHandlerSets(): TestBusHandlerSets {
     return {
-        'track.added': new Set<TestBusHandler<'track.added'>>(),
         'midi.noteOn': new Set<TestBusHandler<'midi.noteOn'>>(),
         'midi.noteOff': new Set<TestBusHandler<'midi.noteOff'>>(),
         'midi.pedalCc': new Set<TestBusHandler<'midi.pedalCc'>>(),

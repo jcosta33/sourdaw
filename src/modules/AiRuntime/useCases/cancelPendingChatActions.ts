@@ -7,6 +7,8 @@ import {
 } from '../stores/pendingActionConfirmationStore';
 
 import { describeAppliedBatches } from './agentRequestOrchestration/describeAppliedBatches';
+import { postVibeRunSummary } from './agentRequestOrchestration/postVibeRunSummary';
+import { readSkippedVibeBatchPositions } from './agentRequestOrchestration/readSkippedVibeBatchPositions';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunCancellation } from './cancelAgentRun';
 import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
@@ -65,8 +67,15 @@ export async function cancelPendingChatActions(
     const batchIndex = confirmation.approvalSnapshot.batchPosition?.index ?? 1;
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'cancelled',
-        content: batchIndex > 1 ? `${cancelled}\n\n${describeAppliedBatches(batchIndex)}` : cancelled,
+        content:
+            batchIndex > 1
+                ? `${cancelled}\n\n${describeAppliedBatches(batchIndex, readSkippedVibeBatchPositions(run))}`
+                : cancelled,
     });
+    // Stopping a vibe run at one of its batch cards ends the run there, so it posts the run's summary.
+    if (batchIndex > 1 && agentRunLifecycle.get(confirmation.runId)?.plan?.batchSchedule?.kind === 'vibe-run') {
+        postVibeRunSummary({ runId: confirmation.runId });
+    }
 
     return { status: 'cancelled' };
 }

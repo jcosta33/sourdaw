@@ -1035,7 +1035,7 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
         expect(pkg.scripts['issue:claim']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:claim');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
-        expect(pkg.scripts['lane:cleanup']).toBe('node scripts/cleanupLanes.ts');
+        expect(pkg.scripts['lane:cleanup']).toBe('node scripts/cleanupLanesCli.ts');
         expect(pkg.scripts['lane:cleanup:install']).toBe('node scripts/installCleanupLanes.ts');
         expect(pkg.scripts.deliver).toBe('node scripts/trustedGithubWriteBootstrap.ts deliver');
     });
@@ -1121,7 +1121,7 @@ describe('package scripts and gitignore', () => {
         expect(Object.hasOwn(workflowStep(codeql, 'Checkout'), 'if')).toBe(false);
 
         const analyze = workflowStep(codeql, 'Analyse');
-        expect(analyze.uses).toBe('github/codeql-action/analyze@52cf1852265d99e9bea071b03366fc777a602909');
+        expect(analyze.uses).toBe('github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066');
         expect(Object.hasOwn(analyze, 'with')).toBe(false);
     });
 
@@ -1156,6 +1156,7 @@ describe('package scripts and gitignore', () => {
             'pullRequestMutationLock.ts',
             'removeLane.ts',
             'cleanupLanes.ts',
+            'cleanupLanesCli.ts',
             'installCleanupLanes.ts',
             'laneActivity.ts',
             'resolveThread.ts',
@@ -1198,6 +1199,7 @@ describe('package scripts and gitignore', () => {
             'scripts/laneActivity.ts',
             'scripts/pnpmModulesPreflight.ts',
             'scripts/prContract.ts',
+            'scripts/processSnapshot.ts',
             'scripts/pullRequestMutationLock.ts',
             'scripts/pullRequestReviewState.ts',
             'scripts/reconcileTrackerIssue.ts',
@@ -1351,6 +1353,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/laneActivity.ts',
                     'scripts/pnpmModulesPreflight.ts',
                     'scripts/prContract.ts',
+                    'scripts/processSnapshot.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reconcileTrackerIssue.ts',

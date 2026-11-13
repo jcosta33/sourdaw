@@ -9,10 +9,29 @@ Electron FFmpeg source and build material.
 
 ## FaustWasm
 
-1. Build a compatible `libfaust-wasm.js`, `.data`, and `.wasm` from the sources pinned in
-   [SOURCES.json](./SOURCES.json), or another interface-compatible LGPL version.
-2. Replace the three files under `public/faust/`.
-3. Run `pnpm build` for web or `pnpm desktop:build` for desktop.
+The runtime package is 0.20.2 under LGPL-2.1-or-later. Its npm gitHead is recorded honestly in
+[SOURCES.json](./SOURCES.json); that upstream archive was unavailable. The wrapper's corresponding
+source is shipped as `public/legal/faustwasm-0.20.2-corresponding-source.tar.gz` (SHA-256
+`7a6f0939e8905e40b7733f8e17cf5c806f3c89fb6c5291985dcc6deb883b3682`).
+
+1. Extract the capsule and follow its `README.md`. `node provision.mjs ../faust-build-cache` verifies
+   source inputs and installs the exact locked build tools without lifecycle scripts. Modify the editable
+   wrapper/worklet TypeScript, then rebuild with `node build.mjs ./rebuilt-first`. That verification recipe
+   requires released bytes; after intentional source modifications, retain its build steps and update the
+   expected executable hashes to describe your replacement. Install the rebuilt wrapper as
+   `@grame/faustwasm`, preserving Sourdaw's import name. The three small worklet entrypoints and their
+   build script are explicitly labeled Sourdaw reconstructions, independently verified against released
+   executable bytes; they are not claimed to come from the unavailable upstream commit.
+2. To modify the compiler, obtain its version-matched source from
+   https://github.com/grame-cncm/faust/archive/21884a6d63713ff99dca2fef95c33aecaedfe643.tar.gz and its
+   libraries from https://github.com/grame-cncm/faustlibraries/archive/42fab480c778df7bad5c6b620ca4fd005b2bfe9b.tar.gz.
+   The capsule also includes all 55 exact bundled library source files and maps their original paths to
+   installed paths. Follow the compiler's upstream build instructions to produce interface-compatible
+   `libfaust-wasm.js`, `.data` and `.wasm`; replace the three files under `public/faust/`. A compiler WASM
+   rebuild was not part of the wrapper byte-reproduction proof. Another interface-compatible LGPL
+   compiler version may also be used.
+3. Run `pnpm build` for web or `pnpm desktop:build` for desktop. Preserve the component's license,
+   attribution and corresponding source when distributing your replacement.
 
 ## lamejs
 

@@ -434,8 +434,7 @@ describe('mandatory planning tools', () => {
                 ...WORKFLOW_ACTION_TOOL_NAMES,
             ]);
 
-            expect(WEBLLM_TOOL_BUDGET).toBe(37);
-            expect(WEBLLM_TOOL_BUDGET).toBeGreaterThanOrEqual(mandatory.size + 1);
+            expect(WEBLLM_TOOL_BUDGET).toBe(mandatory.size + 1);
             expect(advertised.filter((name) => !mandatory.has(name))).toHaveLength(1);
             expect(advertised).toHaveLength(mandatory.size + 1);
         });
@@ -474,6 +473,51 @@ describe('mandatory planning tools', () => {
             expect(advertised).not.toContain(ANALYSIS_COMPARE_REFERENCE_TOOL_NAME);
             expect(advertised).toContain(PROJECT_DISCOVERY_TOOL_NAME);
             expectAllMandatory(advertised);
+        });
+
+        // The constraint narrows what the model can emit but is not validation: a call off the full
+        // schema still becomes a retryable receipt, and nothing runs for it.
+        it('answers a local call that violates the full schema with a retryable receipt and runs nothing', async () => {
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockResolvedValue({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'bad-call', name: PROJECT_DISCOVERY_TOOL_NAME, arguments: { type: 'no-such-query' } },
+                ],
+            });
+            const outcome = await generateToolPlanningOutcome(
+                'system',
+                'list the tracks',
+                productionToolSchemas(),
+                undefined,
+                'list the tracks',
+                undefined,
+                undefined,
+                undefined,
+                AUTO_TOOL_CHOICE,
+                { firstUserMessage: 'list the tracks', history: [], budgetNote: '', answersSchemaInvalidCalls: true }
+            );
+            if (outcome.status !== 'complete') {
+                throw new Error(`Expected the call to be admitted as data, got ${JSON.stringify(outcome)}`);
+            }
+            const requestTurn = vi
+                .fn()
+                .mockResolvedValueOnce(outcome)
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'loop-local-invalid-arguments',
+                terminalToolNames: new Set(['setTempo']),
+                requestTurn,
+            });
+
+            expect(outcome.toolCalls[0]?.argumentSchemaViolation).toBeDefined();
+            const receipt = result.receipts.find((entry) => entry.callId === 'bad-call');
+            expect(receipt).toMatchObject({
+                status: 'failure',
+                error: { code: 'invalid-tool-arguments', retryable: true },
+            });
+            expect(receipt?.data ?? null).toBeNull();
         });
 
         describe('the whole local request', () => {
@@ -894,6 +938,36 @@ describe('mandatory planning tools', () => {
                     for (const name of MANDATORY_PLANNING_TOOL_NAMES) {
                         expect(text, `${name} must stay in the prompt`).toContain(`- ${name}:`);
                     }
+                }
+            );
+
+            // Red when the decoding schema is built from a different list than the prompt serializes:
+            // the model would be constrained to tools it was never told about, or told about tools it
+            // cannot emit.
+            it.each(['add an eq device to the vocals', 'the bass is muddy, clean it up'])(
+                'constrains the local reply to exactly the tools its system prompt lists for "%s"',
+                async (prompt) => {
+                    const { text } = await serializeWebLlmPrompt(prompt);
+
+                    const options = mocks.generateWebLlmCompletion.mock.calls[0]?.[2] as
+                        { responseFormatSchema?: string } | undefined;
+                    if (options?.responseFormatSchema === undefined) {
+                        throw new TypeError('Expected the local request to carry a decoding schema.');
+                    }
+                    const schema = JSON.parse(options.responseFormatSchema) as {
+                        items: { anyOf: { properties: { name: { const: string } } }[] };
+                    };
+                    const constrained = schema.items.anyOf.map((branch) => branch.properties.name.const);
+                    const listed = Array.from(
+                        text
+                            .split('Available tools:\n')[1]
+                            ?.split('\n\n')[0]
+                            ?.matchAll(/^- ([^\s:]+)/gm) ?? [],
+                        (match) => match[1]
+                    );
+
+                    expect(constrained.length).toBeGreaterThanOrEqual(MANDATORY_PLANNING_TOOL_NAMES.length);
+                    expect(new Set(constrained)).toEqual(new Set(listed));
                 }
             );
 

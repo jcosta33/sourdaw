@@ -1,90 +1,45 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-vi.mock('../../../stores/fermenterStore', () => ({
-    setFermenterParam: vi.fn(),
-}));
-
-import { clampDeviceParameterValue } from '#/modules/Arrangement/useCases';
-
-import { setFermenterParam } from '../../../stores/fermenterStore';
-import { setFermenterDependencies } from '../../fermenterDependencies';
+import { createPatchWriteHarness } from '../../../__tests__/patchWriteHarness';
+import { getFermenterState } from '../../../stores/fermenterStore';
 import { cancelPendingFermenterParam } from '../cancelPendingFermenterParam';
 import { setFermenterParamWithAudio } from '../setFermenterParamWithAudio';
 
+const harness = createPatchWriteHarness();
 describe('setFermenterParamWithAudio', () => {
-    const updateDeviceParam = vi.fn();
-    const persistDeviceParam = vi.fn();
-    const updateDevicePatch = vi.fn();
-    const persistDevicePatch = vi.fn();
+    beforeEach(() => harness.setup());
+    afterEach(() => harness.teardown());
 
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.clearAllMocks();
-        vi.stubGlobal(
-            'requestAnimationFrame',
-            vi.fn((callback: FrameRequestCallback) => {
-                return window.setTimeout(() => callback(0), 16);
-            })
-        );
-        vi.stubGlobal(
-            'cancelAnimationFrame',
-            vi.fn((id: number) => {
-                window.clearTimeout(id);
-            })
-        );
-        setFermenterDependencies({
-            clampDeviceParameterValue,
-            getAllTracks: () => [],
-            resolveEligibleDeviceWriteTarget: (deviceId) => ({ status: 'eligible', trackId: 't1', deviceId }),
-            updateDeviceParam,
-            persistDeviceParam,
-            updateDevicePatch,
-            persistDevicePatch,
-        });
-    });
-
-    afterEach(() => {
-        vi.useRealTimers();
-        vi.unstubAllGlobals();
-    });
-
-    it('updates the UI store with the TS key and sends the DSP key to the audio engine', () => {
+    it('updates the panel with the TS key and commits its DSP translation through the patch action', async () => {
         setFermenterParamWithAudio('d1', 'filterCutoff', 777);
-        vi.advanceTimersByTime(16);
-
-        expect(setFermenterParam).toHaveBeenCalledWith('d1', 'filterCutoff', 777);
-        expect(updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'cutoff', 777);
-        expect(persistDeviceParam).toHaveBeenCalledWith('d1', 'filterCutoff', 777);
+        expect(getFermenterState('d1').patch.filterCutoff).toBe(777);
+        await harness.frame();
+        expect(harness.patch().filterCutoff).toBe(777);
+        expect(harness.updateDevicePatch.mock.lastCall?.[2]).toHaveProperty('cutoff', 777);
     });
 
-    it('cancels only the selected device and parameter while unrelated frames still flush', () => {
+    it('cancels only the selected device parameter while other pending values and devices still commit', async () => {
         setFermenterParamWithAudio('d1', 'filterModel', 4);
         setFermenterParamWithAudio('d1', 'filterMode', 2);
         setFermenterParamWithAudio('d2', 'filterModel', 3);
         cancelPendingFermenterParam('d1', 'filterModel');
-        vi.advanceTimersByTime(16);
-        expect(persistDeviceParam.mock.calls).toEqual([
-            ['d1', 'filterMode', 2],
-            ['d2', 'filterModel', 3],
-        ]);
-        expect(updateDeviceParam.mock.calls.map((call) => [call[2], call[3]])).toEqual([
-            ['filter_mode', 2],
-            ['filter_model', 3],
+        await harness.frame();
+        expect(harness.patch('d1').filterModel).toBe(0);
+        expect(harness.patch('d1').filterMode).toBe(2);
+        expect(harness.patch('d2').filterModel).toBe(3);
+        expect(
+            harness.updateDevicePatch.mock.calls.map((call) => [call[1], call[2].filter_model, call[2].filter_mode])
+        ).toEqual([
+            ['d1', 0, 2],
+            ['d2', 3, 0],
         ]);
     });
 
-    it('resolves the declared range once on the store key and sends that same value under the DSP key', () => {
-        // `updateDeviceParam` clamps by looking the paramId up on the
-        // descriptor, and FERMENTER_DESCRIPTOR declares camelCase ids. It is
-        // handed `cutoff`, which matches nothing, so the engine write escaped
-        // the range while the store write (camelCase) was held to it — the
-        // divergence inverted. The value is resolved here, on the key the
-        // descriptor actually declares, and the same number goes to both.
+    it('resolves the descriptor range before mapping so panel, raw project and DSP receive the same number', async () => {
         setFermenterParamWithAudio('d1', 'filterCutoff', 99999);
-        vi.advanceTimersByTime(16);
-
-        expect(setFermenterParam).toHaveBeenCalledWith('d1', 'filterCutoff', 20000);
-        expect(updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'cutoff', 20000);
-        expect(persistDeviceParam).toHaveBeenCalledWith('d1', 'filterCutoff', 20000);
+        expect(getFermenterState('d1').patch.filterCutoff).toBe(20000);
+        await harness.frame();
+        expect(harness.patch().filterCutoff).toBe(20000);
+        expect(harness.updateDevicePatch.mock.lastCall?.[2]).toHaveProperty('cutoff', 20000);
     });
 });
