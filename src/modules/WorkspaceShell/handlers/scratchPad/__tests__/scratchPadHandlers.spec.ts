@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { handleRestoreScratchPadState } from '#/modules/Arrangement/handlers/scratchPad/handleRestoreScratchPadState';
 import { markerStore, scratchPadStore } from '#/modules/Arrangement/stores';
-import { captureArrangementToScratchPad } from '#/modules/Arrangement/useCases';
+import { captureArrangementToScratchPad, getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { workspaceStore } from '../../../stores/workspaceStore';
@@ -30,6 +29,8 @@ vi.mock('../../../stores/workspaceStore', () => {
         },
     };
 });
+
+const handleRestoreScratchPadState = getArrangementHandlers().restoreScratchPadState;
 
 type RestoreScratchPadStateAction = Extract<AppAction, { type: 'restoreScratchPadState' }>;
 
