@@ -16,6 +16,7 @@ export function resolveCallRange(range: unknown, context: ProjectContext): Range
     return resolveProjectRange(
         {
             section: typeof range.section === 'string' ? range.section : undefined,
+            barsBefore: readNumber(range.barsBefore),
             startBar: readNumber(range.startBar),
             endBar: readNumber(range.endBar),
             startBeat: readNumber(range.startBeat),

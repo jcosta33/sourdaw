@@ -21,6 +21,7 @@ export function resolveMusicalRange({
     markers,
     tracks,
     barStartBeat,
+    barAtBeat,
 }: ResolveMusicalRangeInput): MusicalRangeResolution {
-    return resolveMusicalRangeReference(range, { sections, markers, tracks, barStartBeat });
+    return resolveMusicalRangeReference(range, { sections, markers, tracks, barStartBeat, barAtBeat });
 }

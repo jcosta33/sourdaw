@@ -3343,6 +3343,7 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             section: 0,
+            barsBefore: 1,
             startBar: 1,
             endBar: 1,
             startBeat: 1,

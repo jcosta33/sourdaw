@@ -13,6 +13,13 @@
  * named position, the way a Reaper marker or an Ableton locator is, so the range it opens runs to
  * the next boundary after it: the nearest later marker or section start, or else the end of the
  * arrangement. Sections take precedence, because a section states its own end and a marker does not.
+ *
+ * A request for "the last N bars before" a section names the N whole bars that end where the
+ * section starts. The law derives their beats through the meter map, so a time-signature change
+ * inside or just before the range is honoured, and never clamps: a section that starts inside a
+ * bar, or has fewer than N bars before it, is refused with the reason. A bar range that opens at
+ * or after the end of a non-empty arrangement is refused; one that starts inside the song and runs
+ * past its end is admitted as stated, and an arrangement with no clips bounds no bar.
  */
 
 import { getArrangementEndBeat } from './ArrangementEnd';
@@ -24,10 +31,15 @@ export type MusicalRangeSection = {
     endBeat: number;
 };
 
-/** A range as a caller states it: exactly one of a section reference, a bar range, or a beat range. */
+/**
+ * A range as a caller states it: exactly one of a section reference, the bars before a section
+ * (`section` with `barsBefore`), a bar range, or a beat range.
+ */
 export type MusicalRangeReference = {
     /** A section name, optionally with an ordinal: "Chorus", "chorus 2", "the second chorus", "the last verse". */
     section?: string;
+    /** With `section`: the N whole bars that end where that section starts. */
+    barsBefore?: number;
     /** First bar of the range, 1-based. */
     startBar?: number;
     /** Last bar of the range, inclusive: the range ends where the next bar opens. */
@@ -59,6 +71,8 @@ export type MusicalRangeSources = {
     tracks: readonly { clips: readonly { endBeat: number }[] }[];
     /** The beat a 1-based bar opens on through the project's meter map, or null for no such bar. */
     barStartBeat: (bar: number) => number | null;
+    /** The 1-based bar a beat falls in through the project meter, and whether the beat is that bar's bar line. */
+    barAtBeat: (beat: number) => { bar: number; opensBar: boolean };
 };
 
 const ORDINAL_WORDS: Readonly<Record<string, number>> = {
@@ -318,11 +332,35 @@ function resolveBeatRange(startBeat: number, endBeat: number): MusicalRangeResol
     return { kind: 'resolved', startBeat, endBeat };
 }
 
+/** The last bar that opens before the arrangement ends: the greatest bar whose line precedes `endBeat`. */
+function findLastBarBefore(endBeat: number, barStartBeat: MusicalRangeSources['barStartBeat']): number {
+    const opensBefore = (bar: number) => {
+        const beat = barStartBeat(bar);
+        return beat !== null && beat < endBeat;
+    };
+    let low = 1;
+    let high = 2;
+    while (opensBefore(high)) {
+        low = high;
+        high *= 2;
+    }
+    while (high - low > 1) {
+        const middle = Math.floor((low + high) / 2);
+        if (opensBefore(middle)) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
 function resolveBarRange(
     startBar: number,
     endBar: number,
-    barStartBeat: MusicalRangeSources['barStartBeat']
+    sources: Pick<MusicalRangeSources, 'barStartBeat' | 'tracks'>
 ): MusicalRangeResolution {
+    const { barStartBeat } = sources;
     if (!Number.isInteger(startBar) || !Number.isInteger(endBar) || startBar < 1) {
         return { kind: 'invalid-range', reason: 'A bar range names whole bars, counted from bar 1.' };
     }
@@ -337,7 +375,57 @@ function resolveBarRange(
     if (startBeat === null || endBeat === null) {
         return { kind: 'invalid-range', reason: 'The project meter cannot place those bars on the timeline.' };
     }
+    const arrangementEndBeat = getArrangementEndBeat(sources.tracks);
+    if (arrangementEndBeat > 0 && startBeat >= arrangementEndBeat) {
+        const lastBar = findLastBarBefore(arrangementEndBeat, barStartBeat);
+        return {
+            kind: 'invalid-range',
+            reason: `Bar ${String(startBar)} opens at beat ${String(startBeat)}, at or after the end of the arrangement at beat ${String(arrangementEndBeat)}; the last bar is bar ${String(lastBar)}.`,
+        };
+    }
     return resolveBeatRange(startBeat, endBeat);
+}
+
+function describeBarCount(count: number): string {
+    return count === 1 ? '1 bar' : `${String(count)} bars`;
+}
+
+/** The N whole bars that end where the referenced section starts, derived through the meter map. */
+function resolveBarsBefore(
+    reference: string,
+    barsBefore: number,
+    sources: MusicalRangeSources
+): MusicalRangeResolution {
+    if (!Number.isInteger(barsBefore) || barsBefore < 1) {
+        return { kind: 'invalid-range', reason: 'The bars before a section are a whole number of bars, at least 1.' };
+    }
+    const resolution = resolveSectionReference(reference, sources);
+    if (resolution.kind !== 'resolved' || resolution.section === undefined) {
+        return resolution;
+    }
+    const { name, startBeat } = resolution.section;
+    const { bar, opensBar } = sources.barAtBeat(startBeat);
+    if (!opensBar) {
+        return {
+            kind: 'invalid-range',
+            reason: `The section "${name}" starts at beat ${String(startBeat)}, inside bar ${String(bar)}, so the bars before it cannot be counted.`,
+        };
+    }
+    const available = bar - 1;
+    if (available === 0) {
+        return {
+            kind: 'invalid-range',
+            reason: `The section "${name}" starts at bar 1, so no bars come before it.`,
+        };
+    }
+    if (available < barsBefore) {
+        return {
+            kind: 'invalid-range',
+            reason: `The section "${name}" cannot have ${describeBarCount(barsBefore)} before it: only ${describeBarCount(available)} ${available === 1 ? 'comes' : 'come'} before it.`,
+        };
+    }
+    const range = resolveBarRange(bar - barsBefore, bar - 1, sources);
+    return range.kind === 'resolved' ? { ...range, section: resolution.section } : range;
 }
 
 function isStated(value: unknown): boolean {
@@ -347,22 +435,28 @@ function isStated(value: unknown): boolean {
 /**
  * The beat interval a stated range covers, or why it covers none.
  *
- * Exactly one form must be stated: a section reference, a bar range with both ends, or a beat
- * range with both ends. Mixing forms, or stating half of one, is refused rather than settled by a
- * precedence the caller cannot see.
+ * Exactly one form must be stated: a section reference, a section with the bars before it, a bar
+ * range with both ends, or a beat range with both ends. Mixing forms, or stating half of one, is
+ * refused rather than settled by a precedence the caller cannot see.
  */
 export function resolveMusicalRangeReference(
     reference: MusicalRangeReference,
     sources: MusicalRangeSources
 ): MusicalRangeResolution {
     const statesSection = isStated(reference.section);
+    if (isStated(reference.barsBefore) && !statesSection) {
+        return { kind: 'invalid-range', reason: 'Bars before a section need that section named.' };
+    }
     const statesBars = isStated(reference.startBar) || isStated(reference.endBar);
     const statesBeats = isStated(reference.startBeat) || isStated(reference.endBeat);
     if ([statesSection, statesBars, statesBeats].filter(Boolean).length !== 1) {
         return {
             kind: 'invalid-range',
-            reason: 'State the range exactly once: a section, a bar range, or a beat range.',
+            reason: 'State the range exactly once: a section, the bars before a section, a bar range, or a beat range.',
         };
+    }
+    if (reference.section !== undefined && reference.barsBefore !== undefined) {
+        return resolveBarsBefore(reference.section, reference.barsBefore, sources);
     }
     if (reference.section !== undefined) {
         return resolveSectionReference(reference.section, sources);
@@ -371,7 +465,7 @@ export function resolveMusicalRangeReference(
         if (reference.startBar === undefined || reference.endBar === undefined) {
             return { kind: 'invalid-range', reason: 'A bar range needs both its first and its last bar.' };
         }
-        return resolveBarRange(reference.startBar, reference.endBar, sources.barStartBeat);
+        return resolveBarRange(reference.startBar, reference.endBar, sources);
     }
     if (reference.startBeat === undefined || reference.endBeat === undefined) {
         return { kind: 'invalid-range', reason: 'A beat range needs both its start and its end.' };
@@ -407,10 +501,11 @@ export function getMusicalRangeInputs(
     sources: MusicalRangeSources
 ): readonly MusicalRangeInput[] {
     if (reference.section !== undefined) {
-        return namedPlaceInputs(reference.section, sources);
+        const inputs = namedPlaceInputs(reference.section, sources);
+        return reference.barsBefore === undefined ? inputs : [...inputs, 'meter'];
     }
     if (isStated(reference.startBar) || isStated(reference.endBar)) {
-        return ['meter'];
+        return ['meter', 'arrangement-end'];
     }
     return [];
 }
