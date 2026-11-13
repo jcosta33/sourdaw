@@ -1,0 +1,20 @@
+src/modules/WorkspaceShell/handlers/scratchPad/__tests__/scratchPadHandlers.spec.ts
+  s_a7596e3428bd82::t_c815ac2260f82f 4,33
+  s_a7596e3428bd82::t_e80c66222c1686 34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "08c78d25621a6787c4187577271ac62a2ee1e3a7",
+  "prompts": {},
+  "sessions": {
+    "s_a7596e3428bd82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aca2e851-00c5-419e-8e0e-44e03217e3c8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
