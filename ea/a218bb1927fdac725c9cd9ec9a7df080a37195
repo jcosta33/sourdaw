@@ -1,0 +1,31 @@
+docs/07-conventions.md
+  s_50cbc34e8b61c3::t_54be722fd6be93 798
+.oxlintrc.json
+  s_e385c7e8f0ec1b::t_b8964c9d29e5a1 181,192,196,229,317-318,330-336,338,437-1569
+scripts/__tests__/oxlintWarnLevels.spec.ts
+  s_e385c7e8f0ec1b::t_1f88a210e53c0b 2,24-33,72-87,102-121,134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eaa218bb1927fdac725c9cd9ec9a7df080a37195",
+  "prompts": {},
+  "sessions": {
+    "s_50cbc34e8b61c3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3ccafa79-c9ba-491d-83f4-7ab63651b7ac",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_e385c7e8f0ec1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d20b-16d6-7491-871b-902fdaef401b",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
