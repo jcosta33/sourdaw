@@ -4,6 +4,7 @@ import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
 import { prepareStripSilence } from '../../useCases/prepareStripSilence';
 import { restoreStripSilenceState } from '../../useCases/restoreStripSilenceState';
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { stripSilence } from '../../useCases/stripSilence';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
@@ -18,6 +19,16 @@ type SuppliedPlanResolution = { status: 'planned'; plan: StripSilencePlan } | { 
 type StripSilencePlanResolution = SuppliedPlanResolution | { status: 'unplannable' };
 
 const STALE_PLAN_REASON = 'The strip silence this command recorded no longer matches the project';
+const LOCKED_CLIP_REASON = 'The clip is locked';
+
+/** A locked clip refuses every strip, planned now or carried, as the other clip edits refuse it. */
+function isClipLocked(clipId: string): boolean {
+    return (
+        getTrackStoreState()
+            ?.tracks.flatMap((track) => track.clips)
+            .some((candidate) => candidate.id === clipId && candidate.locked) ?? false
+    );
+}
 
 function carriesPlan(payload: StripSilenceAction['payload']): boolean {
     return payload.expected !== undefined || payload.replacement !== undefined;
@@ -72,6 +83,9 @@ export const handleStripSilence = createHandler<'stripSilence'>({
         prepareAction(action);
     },
     execute: (action) => {
+        if (isClipLocked(action.payload.clipId)) {
+            return { status: 'conflict', reason: LOCKED_CLIP_REASON };
+        }
         if (!carriesPlan(action.payload)) {
             return toHandlerExecutionResult(
                 stripSilence(action.payload.clipId, action.payload.threshold, action.payload.minDuration)

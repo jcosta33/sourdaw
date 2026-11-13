@@ -1650,6 +1650,103 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(trackStore.value?.tracks[0]?.name).toBe('Lead Vox');
             expect(trackStore.value?.tracks[0]?.clips).toEqual(stripped);
         });
+
+        function seedStripSource(locked: boolean): void {
+            const source: Clip = {
+                ...createClipFixture('clip-a', 0, 8),
+                type: 'audio',
+                audioBufferId: 'source-buffer',
+                audioOffsetSeconds: 0,
+                locked,
+            };
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'audio', name: 'Vox', clips: [source] })],
+                selectedTrackId: TRACK_ID,
+                ghostClips: [],
+            });
+            const channelData = new Float32Array(4 * 48000);
+            channelData.fill(0.5, 0.5 * 48000, 48000);
+            channelData.fill(0.5, 2 * 48000, 3 * 48000);
+            vi.spyOn(audioBufferCache, 'get').mockReturnValue({
+                getChannelData: () => channelData,
+                length: channelData.length,
+                numberOfChannels: 1,
+                sampleRate: 48000,
+                duration: channelData.length / 48000,
+                copyFromChannel: () => undefined,
+                copyToChannel: () => undefined,
+            });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+        }
+
+        it('refuses to strip a locked clip, writing nothing', async () => {
+            seedStripSource(true);
+            const before = structuredClone(trackStore.value?.tracks[0]?.clips);
+
+            await expect(
+                executeAppAction({ type: 'stripSilence', payload: { clipId: 'clip-a', minDuration: 0.1 } })
+            ).rejects.toThrow(/The clip is locked/);
+
+            expect(trackStore.value?.tracks[0]?.clips).toEqual(before);
+            expect(undoStore.value?.past).toEqual([]);
+        });
+
+        it('refuses a lock and a strip of the same clip in one batch, writing nothing', async () => {
+            seedStripSource(false);
+            const before = structuredClone(trackStore.value?.tracks[0]?.clips);
+            const compiled: AppAction = { type: 'stripSilence', payload: { clipId: 'clip-a', minDuration: 0.1 } };
+            getExecutableCommandRegistrations()
+                .find((candidate) => candidate.actionType === 'stripSilence')
+                ?.materializeCommandArguments?.(compiled);
+
+            const result = await executeAppActionBatch(
+                [{ type: 'lockClip', payload: { clipId: 'clip-a', locked: true } }, compiled],
+                { groupId: 'agent-lock-then-strip' }
+            );
+
+            expect(result).toMatchObject({ status: 'rejected' });
+            expect(trackStore.value?.tracks[0]?.clips).toEqual(before);
+            expect(undoStore.value?.past).toEqual([]);
+        });
+
+        it('refuses a compiled strip of a clip locked between proposal and approval, writing nothing', async () => {
+            seedStripSource(false);
+            const registration = getExecutableCommandRegistrations().find(
+                (candidate) => candidate.actionType === 'stripSilence'
+            );
+            const compiled: AppAction = { type: 'stripSilence', payload: { clipId: 'clip-a', minDuration: 0.1 } };
+            registration?.materializeCommandArguments?.(compiled);
+            expect(registration?.materializedArgumentsValidator?.(compiled.payload)).toBe(true);
+            await executeAppAction({ type: 'lockClip', payload: { clipId: 'clip-a', locked: true } });
+            const locked = structuredClone(trackStore.value?.tracks[0]?.clips);
+
+            const result = await executeAppActionBatch([compiled], { groupId: 'agent-strip-after-lock' });
+
+            expect(result).toMatchObject({ status: 'conflicted' });
+            expect(JSON.stringify(result)).toMatch(/The clip is locked/);
+            expect(trackStore.value?.tracks[0]?.clips).toEqual(locked);
+            expect(undoStore.value?.past).toHaveLength(1);
+        });
+
+        it('refuses to redo a strip once its clip was locked, keeping the entry redoable', async () => {
+            seedStripSource(false);
+            await executeAppAction({ type: 'stripSilence', payload: { clipId: 'clip-a', minDuration: 0.1 } });
+            expect((await undo()).headConsumed).toBe(true);
+            // A collaborator locks the clip; that edit is not on this session's undo stack.
+            await executeAppAction(
+                { type: 'lockClip', payload: { clipId: 'clip-a', locked: true } },
+                { skipUndo: true }
+            );
+            const locked = structuredClone(trackStore.value?.tracks[0]?.clips);
+            const future = structuredClone(undoStore.value?.future);
+
+            await redo();
+
+            expect(trackStore.value?.tracks[0]?.clips).toEqual(locked);
+            expect(undoStore.value?.future).toEqual(future);
+        });
     });
 
     describe('groove extraction replay', () => {
