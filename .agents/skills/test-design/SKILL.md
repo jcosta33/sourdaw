@@ -126,7 +126,7 @@ For any recording-admission change, hold worker readiness through the real recor
 
 ### 14. Performance gates bound product work, not runner speed
 
-A main-thread task the product can split, defer or move off-thread keeps an absolute ceiling, such as no task of 50 ms or more. A single third-party operation that cannot be split is bounded against the same operation measured in the same page and run: a robust figure over several standalone samples plus a stated margin for the work that has to share its task. Never gate on a bare wall-clock figure that only a slower runner reaches.
+A main-thread task the product can split, defer or move off-thread keeps an absolute ceiling, such as no task of 50 ms or more. A single third-party operation the product cannot split is bounded against the same operation measured in the same page and run: a robust figure over several standalone samples plus a stated margin for the work that has to share its task. Never gate on a bare wall-clock figure that only a slower runner reaches.
 
 **Why:** a ceiling that an irreducible operation reaches only on a slower runner fails without any product change, and teaches people to retry. A relative bound still fails when the product adds work to that task.
 
