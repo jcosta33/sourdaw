@@ -1,0 +1,27 @@
+tests/e2e/elasticTransientWorkerPerformance.spec.ts
+  s_e385c7e8f0ec1b::t_d18a64c97d199d 8-13,821-822
+tests/e2e/firstPaintDiagnostics.ts
+  s_e385c7e8f0ec1b::t_d18a64c97d199d 192-199,203,223-224
+  s_e385c7e8f0ec1b::t_b7e580d302fb19 191,215-222,225
+scripts/__tests__/firstPaintDiagnostics.spec.ts
+  s_e385c7e8f0ec1b::t_d18a64c97d199d 201-206,231-233
+  s_e385c7e8f0ec1b::t_45c24844359f34 223
+  s_e385c7e8f0ec1b::t_b7e580d302fb19 10,197-200,207-222,224-230,234-235
+  s_e385c7e8f0ec1b::t_b4850e0a51e40c 236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e82866730e0cf604b82237c3031f86b894e70509",
+  "prompts": {},
+  "sessions": {
+    "s_e385c7e8f0ec1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d20b-16d6-7491-871b-902fdaef401b",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
