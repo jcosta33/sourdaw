@@ -29,6 +29,12 @@ release and provenance drift in `release-provenance-drift.md`.
    required entry point unavailable (rename its locator, unmount it, misname the parameter) and
    require the case to fail. Before any negative, assert the subject was admitted: the route selected,
    every input record consumed by the production reader, the valid control accepted, the write run.
+   Admit the documented CLI under the real guard-owned `TMPDIR` on the target platform before
+   crediting its cases. The server's `tsx --test` launcher (#1693) exceeded macOS's Unix socket path
+   limit in guard storage and failed before collecting a case; `node --import tsx --test` retained
+   all 21 server cases. Restoring the CLI under that long guarded path must fail at admission;
+   the Node import route must execute the named spec. The missed probe was launcher admission;
+   historical review draws are unknown.
    A dirty project name admitted only after an incidental autosave cleared its `Unsaved changes` status is the
    same defect (#5749, #5809): assert the real control while the dirty state holds, before waiting for Save or
    autosave, by its stable identity and a separate expected-name assertion, then make that control unavailable
