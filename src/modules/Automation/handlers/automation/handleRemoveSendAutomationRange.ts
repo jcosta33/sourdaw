@@ -6,6 +6,8 @@ import { buildSendAutomationRangeLane } from '../../services/buildSendAutomation
 import { removeSendAutomationRange } from '../../useCases/automation/removeSendAutomationRange';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
+import { isRemoveSendAutomationRangePayload } from './validateRangeWriteSessionEntries';
+
 type RemoveSendAutomationRangeAction = Extract<AppAction, { type: 'removeSendAutomationRange' }>;
 
 function pointsMatch(actual: readonly AutomationPoint[], expected: readonly AutomationPoint[]): boolean {
@@ -93,5 +95,6 @@ export const handleRemoveSendAutomationRange = createHandler<'removeSendAutomati
         label: `Restore sends outside ${action.payload.sectionName}`,
         inverseAction: lanesMatch(action) ? { type: 'automateSendRange', payload: action.payload } : null,
     }),
+    validateSessionActionArguments: isRemoveSendAutomationRangePayload,
     undoable: true,
 });

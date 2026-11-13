@@ -17,3 +17,5 @@ export {
 
 export type { ProjectLoadFailureState } from './projectLoadFailureStore';
 export { projectLoadFailureStore } from './projectLoadFailureStore';
+
+export { projectTransitionEpoch } from './projectTransitionEpoch';

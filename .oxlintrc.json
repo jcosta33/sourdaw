@@ -228,12 +228,12 @@
         "promise/param-names": "error",
         "promise/always-return": "warn",
         "promise/catch-or-return": "warn",
-        "promise/no-callback-in-promise": "warn",
+        "promise/no-callback-in-promise": "error",
         "promise/no-nesting": "warn",
         "promise/no-new-statics": "error",
-        "promise/no-promise-in-callback": "warn",
-        "promise/no-return-in-finally": "warn",
-        "promise/valid-params": "warn",
+        "promise/no-promise-in-callback": "error",
+        "promise/no-return-in-finally": "error",
+        "promise/valid-params": "error",
 
         // ── eslint-plugin-import-x → oxlint import plugin ────────────────────
         "import/no-default-export": "error",

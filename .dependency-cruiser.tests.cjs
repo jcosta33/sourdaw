@@ -75,7 +75,6 @@ module.exports = {
                 pathNot: [
                     '^$1$2/', // same module may import its own internals freely
                     '^src/modules/[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
-                    '^src/helpers/',
                 ],
             },
         },

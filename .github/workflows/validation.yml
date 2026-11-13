@@ -44,7 +44,7 @@ permissions:
   pull-requests: read
 
 env:
-  NODE_VERSION: 24.22.2
+  NODE_VERSION: 26.13.1
 
 jobs:
   decide:
@@ -309,7 +309,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.sha }}
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -413,7 +413,7 @@ jobs:
         timeout-minutes: 10
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -454,7 +454,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -503,7 +503,7 @@ jobs:
           mkdir -m 755 "$tool_root"
           printf 'root=%s\n' "$tool_root" >> "$GITHUB_OUTPUT"
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -535,13 +535,11 @@ jobs:
         timeout-minutes: 2
         run: node scripts/runIsolatedUnitShard.ts browsers --context "${{ steps.unit_isolation.outputs.context }}"
 
-      # The suite is dominated by jsdom construction and module loading rather
-      # than assertions, so worker count is the lever that matters. The local
-      # default of two exists for the agent resource guard, not for CI.
+      # Keep the shard within the repository's two-worker test limit.
       - name: Run shard
         id: run_shard
         env:
-          VITEST_MAX_WORKERS: 4
+          VITEST_MAX_WORKERS: 2
         run: node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4
 
       # The shard failure is already fatal above; this only names which of the
@@ -602,7 +600,7 @@ jobs:
     if: github.event.pull_request != null && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d
+      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
       options: --init --ipc=host
     defaults:
       run:
@@ -612,7 +610,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -652,7 +650,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -684,7 +682,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -766,7 +764,7 @@ jobs:
         env:
           CARGO_HTTP_MULTIPLEXING: 'false'
           CARGO_NET_OFFLINE: ${{ steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}
-        run: pnpm health:server:full
+        run: node --run health:server:full
 
   native-macos:
     name: Native audio backend (macOS)
@@ -780,9 +778,9 @@ jobs:
     # release build turns every real-time allocation guard into a no-op that
     # passes while proving nothing.
     #
-    # `sourdaw-native` is excluded from the Linux Rust leg because its manifest
-    # unconditionally enables whisper-rs's `metal` feature. A macOS runner is
-    # the only place it compiles, and public repositories get those free.
+    # This leg checks the macOS native target, including whisper-rs's
+    # target-scoped `metal` feature. Windows has its own native leg below;
+    # the Linux Rust leg keeps its separate library-crate scope.
     if: (needs.decide.outputs.rust == 'true')
     runs-on: macos-latest
     timeout-minutes: 60
@@ -853,7 +851,7 @@ jobs:
       - name: Set up Node for native mutation proof
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.22.2
+          node-version: 26.13.1
 
       - name: Verify native transport mutation sensitivity
         id: native-mutations
@@ -923,9 +921,9 @@ jobs:
     # proof for #3068, and it — like the two offline-render legs beside it —
     # loads the napi addon from `crates/sourdaw-native/sourdaw-native.node` and
     # skips observably when that artifact is absent. Nothing else here builds
-    # it, so without this job the proof runs on developer machines only. macOS
-    # is the one platform the crate compiles on, for the reason `native-macos`
-    # records above. A TypeScript producer can break parity exactly as a Rust
+    # it, so without this job the proof runs on developer machines only. This
+    # parity leg uses the macOS addon; native-windows separately checks its
+    # target. A TypeScript producer can break parity exactly as a Rust
     # consumer can, so this leg answers to both scopes rather than to `rust`.
     if: (needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')
     runs-on: macos-latest
@@ -953,7 +951,7 @@ jobs:
           restore-keys: |
             cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
 
-      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Verify the selected native pnpm before exposing its executable.
       # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
       # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
@@ -995,10 +993,10 @@ jobs:
 
       # This leg exists to make the parity proof decide a merge, so it must
       # fail hard: a leg that cannot fail decides nothing.
-      # Three spec files, so a fourth worker would idle.
+      # Keep the parity leg within the repository two-worker policy.
       - name: Run the addon parity specs
         env:
-          VITEST_MAX_WORKERS: 3
+          VITEST_MAX_WORKERS: 2
         run: >-
           pnpm run test:run
           src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts

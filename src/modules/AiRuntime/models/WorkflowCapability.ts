@@ -26,7 +26,7 @@ export const WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES = [
     'createBus',
     'addDevice',
     'addSend',
-    'automateSendRanges',
+    'automateParameterRange',
     'renderProjectSections',
     'copyMidiArticulations',
     'addAdjustmentRegion',
@@ -47,8 +47,6 @@ export const WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES = [
  */
 export const WORKFLOW_ACTION_TOOL_NAMES: ReadonlySet<string> = new Set([
     ...WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES,
-    'automateTrackGainRange',
-    'automateSendRange',
     'muteTrack',
     'setTrackPan',
     'removeTrack',

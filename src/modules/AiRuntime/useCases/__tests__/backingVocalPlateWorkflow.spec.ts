@@ -128,7 +128,7 @@ type PendingActionConfirmation = NonNullable<ReturnType<typeof getPendingActionC
 type PendingAction = PendingActionConfirmation['actions'][number];
 type AddDeviceAction = Extract<PendingAction, { type: 'addDevice' }>;
 type AddSendAction = Extract<PendingAction, { type: 'addSend' }>;
-type AutomateSendRangesAction = Extract<PendingAction, { type: 'automateSendRanges' }>;
+type AutomateParameterRangeAction = Extract<PendingAction, { type: 'automateParameterRange' }>;
 type CreateBusAction = Extract<PendingAction, { type: 'createBus' }>;
 type RenderProjectSectionsAction = Extract<PendingAction, { type: 'renderProjectSections' }>;
 type RenderOfflineMock = (options: {
@@ -138,6 +138,12 @@ type RenderOfflineMock = (options: {
     startBeat?: number;
     tailSeconds?: number;
 }) => Promise<AudioBuffer>;
+
+/** The final four bars of each chorus: the ramp EX-01 draws on every backing-vocal send. */
+const CHORUS_TAILS = [
+    { startBeat: 32, endBeat: 48 },
+    { startBeat: 80, endBeat: 96 },
+] as const;
 
 const providerPlan = [
     { name: 'removeDevice', arguments: { deviceId: 'device-bgv-high-reverb' } },
@@ -175,21 +181,23 @@ const providerPlan = [
             preFader: false,
         },
     },
-    {
-        name: 'automateSendRanges',
-        arguments: {
-            trackIds: ['track-bgv-high', 'track-bgv-low'],
-            busId: '$backing-vocal-plate',
-            sectionIds: ['section-chorus-one', 'section-chorus-two'],
-            tailBars: 4,
-            targetLevelDb: -10,
-        },
-    },
+    ...(['track-bgv-high', 'track-bgv-low'] as const).flatMap((trackId) =>
+        CHORUS_TAILS.map((range) => ({
+            name: 'automateParameterRange',
+            arguments: {
+                trackId,
+                parameterId: 'send:$backing-vocal-plate',
+                range,
+                valueDb: -10,
+                rampIn: 16,
+            },
+        }))
+    ),
     {
         name: 'renderProjectSections',
         arguments: { sectionIds: ['section-chorus-one', 'section-chorus-two'] },
     },
-] as const satisfies readonly ProviderPlanCall[];
+] satisfies readonly ProviderPlanCall[];
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -392,8 +400,8 @@ function isAddDeviceAction(action: PendingAction): action is AddDeviceAction {
     return action.type === 'addDevice';
 }
 
-function isAutomateSendRangesAction(action: PendingAction): action is AutomateSendRangesAction {
-    return action.type === 'automateSendRanges';
+function isAutomateParameterRangeAction(action: PendingAction): action is AutomateParameterRangeAction {
+    return action.type === 'automateParameterRange';
 }
 
 function isCreateBusAction(action: PendingAction): action is CreateBusAction {
@@ -501,24 +509,44 @@ const REVERB_DEVICE_TYPES = new Set([
 ]);
 
 /**
- * The batch's two section-bearing calls (`automateSendRanges` and
- * `renderProjectSections`) each get their sections' own beat bounds
- * materialized onto their payload before compilation (ranges and render jobs
- * respectively), so each contributes one application-computed target range
- * spanning every section it names — not the per-section automation tail, the
- * section's full extent. One range per such call, duplicates included.
+ * `renderProjectSections` gets its sections' own beat bounds materialized onto
+ * its payload before compilation, so it contributes one application-computed
+ * target range spanning every section it names.
  */
 function getCallSectionIds(call: ProviderPlanCall): string[] {
-    if (call.name !== 'automateSendRanges' && call.name !== 'renderProjectSections') {
+    if (call.name !== 'renderProjectSections') {
         return [];
     }
     const sectionIds = call.arguments.sectionIds;
     return isUnknownArray(sectionIds) ? sectionIds.filter((id): id is string => typeof id === 'string') : [];
 }
 
+/** Each automation range contributes the beats it states: the tail it ramps across. */
+function getCallRange(call: ProviderPlanCall): { startBeat: number; endBeat: number } | null {
+    const range = call.arguments.range;
+    if (call.name !== 'automateParameterRange' || !isRecord(range)) {
+        return null;
+    }
+    const { startBeat, endBeat } = range;
+    return typeof startBeat === 'number' && typeof endBeat === 'number' ? { startBeat, endBeat } : null;
+}
+
+/** Each span once, in first-touch order: two sends ramping across one chorus tail share its span. */
 function getPlanTargetRanges(plan: readonly ProviderPlanCall[]): Array<{ startBeat: number; endBeat: number }> {
+    const spans = getPlanCallRanges(plan);
+    return spans.filter(
+        (span, index) =>
+            spans.findIndex((other) => other.startBeat === span.startBeat && other.endBeat === span.endBeat) === index
+    );
+}
+
+function getPlanCallRanges(plan: readonly ProviderPlanCall[]): Array<{ startBeat: number; endBeat: number }> {
     const sectionsById = new Map((markerStore.value?.sections ?? []).map((section) => [section.id, section]));
     return plan.flatMap((call) => {
+        const callRange = getCallRange(call);
+        if (callRange !== null) {
+            return [callRange];
+        }
         const sectionIds = getCallSectionIds(call);
         const sections = sectionIds.flatMap((id) => {
             const section = sectionsById.get(id);
@@ -1084,7 +1112,10 @@ describe('backing-vocal plate workflow', () => {
             'addDevice',
             'addSend',
             'addSend',
-            'automateSendRanges',
+            'automateParameterRange',
+            'automateParameterRange',
+            'automateParameterRange',
+            'automateParameterRange',
             'renderProjectSections',
         ]);
         expect(confirmation?.protectedUnchanged).toEqual(
@@ -1318,7 +1349,10 @@ describe('backing-vocal plate workflow', () => {
             'addDevice',
             'addSend',
             'addSend',
-            'automateSendRanges',
+            'automateParameterRange',
+            'automateParameterRange',
+            'automateParameterRange',
+            'automateParameterRange',
             'renderProjectSections',
         ]);
     });
@@ -1467,7 +1501,7 @@ describe('backing-vocal plate workflow', () => {
         expect(partialRenderExecution?.affectedIds).toContain(successfulJob.jobId);
         expect(partialRenderExecution?.affectedIds).not.toContain(failedJob.sectionId);
         expect(partialRenderExecution?.affectedIds).not.toContain(failedJob.jobId);
-        expect(undoStore.value?.past).toHaveLength(11);
+        expect(undoStore.value?.past).toHaveLength(14);
 
         const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
         const committedLanes = structuredClone(automationStore.value?.lanes ?? []);
@@ -1486,7 +1520,7 @@ describe('backing-vocal plate workflow', () => {
         });
         expect(trackStore.value?.tracks).toEqual(committedTracks);
         expect(automationStore.value?.lanes).toEqual(committedLanes);
-        expect(undoStore.value?.past).toHaveLength(11);
+        expect(undoStore.value?.past).toHaveLength(14);
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'executed',
             followUpStatus: 'retryable',
@@ -1504,7 +1538,7 @@ describe('backing-vocal plate workflow', () => {
         );
         expect(trackStore.value?.tracks).toEqual(committedTracks);
         expect(automationStore.value?.lanes).toEqual(committedLanes);
-        expect(undoStore.value?.past).toHaveLength(11);
+        expect(undoStore.value?.past).toHaveLength(14);
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'executed',
             followUpStatus: 'complete',
@@ -1522,7 +1556,7 @@ describe('backing-vocal plate workflow', () => {
         expect(automationStore.value?.lanes).toEqual([]);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
-        expect(undoStore.value?.future).toHaveLength(11);
+        expect(undoStore.value?.future).toHaveLength(14);
     });
 
     // The real 512 MiB policy requires two 384 MiB content-address inputs;
@@ -1600,7 +1634,7 @@ describe('backing-vocal plate workflow', () => {
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeBlockedRetry);
     }, 30_000);
 
-    it('keeps the whole undo and redo group retryable across collaborator lane and freeze conflicts', async () => {
+    it('keeps the whole undo and redo group retryable across collaborator lane and bus-id conflicts', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         if (!confirmation) {
@@ -1635,7 +1669,7 @@ describe('backing-vocal plate workflow', () => {
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual(
             renderAction.payload.jobs.map((job) => job.jobId)
         );
-        expect(undoStore.value?.past).toHaveLength(11);
+        expect(undoStore.value?.past).toHaveLength(14);
         expect(undoStore.value?.future).toEqual([]);
 
         automationStore.set({ lanes: committedLanes });
@@ -1643,37 +1677,39 @@ describe('backing-vocal plate workflow', () => {
         expect(trackStore.value?.tracks.some((track) => track.id === busId)).toBe(false);
         expect(automationStore.value?.lanes).toEqual([]);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
-        expect(undoStore.value?.future).toHaveLength(11);
+        expect(undoStore.value?.future).toHaveLength(14);
         rebuildFixtureRuntimeFromProject();
 
-        const frozenTracks = structuredClone(trackStore.value?.tracks ?? []).map((track) =>
-            track.id === 'track-bgv-high' ? { ...track, frozen: true } : track
-        );
-        trackStore.set({ tracks: frozenTracks, selectedTrackId: null, ghostClips: [] });
+        // A collaborator lands a track under the id the redo creates the plate bus with.
+        const undoneTracks = structuredClone(trackStore.value?.tracks ?? []);
+        const leadVocal = undoneTracks.find((track) => track.id === 'track-lead-vocal');
+        if (!leadVocal) {
+            throw new Error('Expected the lead vocal fixture track');
+        }
+        const collidingTracks = [
+            ...undoneTracks,
+            { ...structuredClone(leadVocal), id: busId, name: 'Collaborator', devices: [], clips: [], sends: [] },
+        ];
+        trackStore.set({ tracks: collidingTracks, selectedTrackId: null, ghostClips: [] });
         rebuildFixtureRuntimeFromProject();
         const renderCallCountBeforeConflict = runtimeMocks.renderOffline.mock.calls.length;
 
         await redo();
 
-        expect(trackStore.value?.tracks).toEqual(frozenTracks);
-        expect(trackStore.value?.tracks.some((track) => track.id === busId)).toBe(false);
+        expect(trackStore.value?.tracks).toEqual(collidingTracks);
         expect(automationStore.value?.lanes).toEqual([]);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallCountBeforeConflict);
         expect(undoStore.value?.past).toEqual([]);
-        expect(undoStore.value?.future).toHaveLength(11);
+        expect(undoStore.value?.future).toHaveLength(14);
 
-        trackStore.set({
-            tracks: frozenTracks.map((track) => (track.id === 'track-bgv-high' ? { ...track, frozen: false } : track)),
-            selectedTrackId: null,
-            ghostClips: [],
-        });
+        trackStore.set({ tracks: undoneTracks, selectedTrackId: null, ghostClips: [] });
         rebuildFixtureRuntimeFromProject();
         await redo();
         expect(trackStore.value?.tracks.filter((track) => track.id === busId)).toHaveLength(1);
         expect(automationStore.value?.lanes).toHaveLength(2);
         expect(getAgentSectionRenderArtifacts()).toHaveLength(2);
-        expect(undoStore.value?.past).toHaveLength(11);
+        expect(undoStore.value?.past).toHaveLength(14);
         expect(undoStore.value?.future).toEqual([]);
     });
 
@@ -1926,7 +1962,7 @@ describe('backing-vocal plate workflow', () => {
             (action): action is AddDeviceAction =>
                 isAddDeviceAction(action) && action.payload.deviceType === 'dutch-oven'
         );
-        const automationAction = confirmation.actions.find(isAutomateSendRangesAction);
+        const automationActions = confirmation.actions.filter(isAutomateParameterRangeAction);
         const renderAction = confirmation.actions.find(isRenderProjectSectionsAction);
         if (
             createBusAction?.type !== 'createBus' ||
@@ -1935,9 +1971,7 @@ describe('backing-vocal plate workflow', () => {
             !filterAction.payload.deviceId ||
             plateAction?.type !== 'addDevice' ||
             !plateAction.payload.deviceId ||
-            automationAction?.type !== 'automateSendRanges' ||
-            !automationAction.payload.expectedTracks ||
-            !automationAction.payload.ranges ||
+            automationActions.length !== 4 ||
             renderAction?.type !== 'renderProjectSections' ||
             !renderAction.payload.jobs
         ) {
@@ -1953,10 +1987,6 @@ describe('backing-vocal plate workflow', () => {
         }
         const renderJobs = [firstRenderJob, secondRenderJob] as const;
         const expectedRenderTailSeconds = getExpectedPlateTailSeconds();
-        const laneIds = [
-            `auto-send-track-bgv-high-${encodeURIComponent(busId)}`,
-            `auto-send-track-bgv-low-${encodeURIComponent(busId)}`,
-        ];
 
         expect(confirmation.risk).toEqual({
             level: 'external-effect',
@@ -1984,7 +2014,6 @@ describe('backing-vocal plate workflow', () => {
                 plateDeviceId,
                 'track-bgv-high',
                 'track-bgv-low',
-                ...laneIds,
                 'section-chorus-one',
                 'section-chorus-two',
                 ...renderJobs.map((job) => job.jobId),
@@ -2000,7 +2029,15 @@ describe('backing-vocal plate workflow', () => {
             `Insert "Dutch Oven" (${plateDeviceId}, dutch-oven) on "Backing Vocal Plate" (${busId}) after "Filter" (${filterDeviceId})`,
             `Create post-fader send from "Backing Vocal High" (track-bgv-high) to "Backing Vocal Plate" (${busId}) at -18 dB`,
             `Create post-fader send from "Backing Vocal Low" (track-bgv-low) to "Backing Vocal Plate" (${busId}) at -18 dB`,
-            `Automate sends to "Backing Vocal Plate" (${busId}) over the final 4 bars: "Backing Vocal High" (track-bgv-high) -18 dB→-10 dB, "Backing Vocal Low" (track-bgv-low) -18 dB→-10 dB; "Chorus One" (section-chorus-one) ramp beats 32–48, "Chorus Two" (section-chorus-two) ramp beats 80–96; restore base levels at each section end`,
+            ...[
+                ['Backing Vocal High', 'track-bgv-high'],
+                ['Backing Vocal Low', 'track-bgv-low'],
+            ].flatMap(([trackName, trackId]) =>
+                CHORUS_TAILS.map(
+                    ({ startBeat, endBeat }) =>
+                        `Automate track "${trackName}" (${trackId}) send:${busId} at -10 dB across beats ${String(startBeat)}–${String(endBeat)}, ramping in over 16 and out over 0 beats; the curve outside the range is unchanged`
+                )
+            ),
             `Render "Chorus One" (section-chorus-one) beats 16–48 as ${renderJobs[0].jobId} at 44100 Hz with ${String(expectedRenderTailSeconds)} s tail, "Chorus Two" (section-chorus-two) beats 64–96 as ${renderJobs[1].jobId} at 44100 Hz with ${String(expectedRenderTailSeconds)} s tail into session-owned artifacts; undo removes them and redo renders fresh artifacts`,
         ]);
 
@@ -2037,27 +2074,35 @@ describe('backing-vocal plate workflow', () => {
             level: baseSendLevel,
             preFader: false,
         });
-        expect(automationStore.value?.lanes).toEqual([
-            expect.objectContaining({
-                id: laneIds[0],
-                trackId: 'track-bgv-high',
+        // Each chorus tail ramps from the send level to -10 dB and steps back at the chorus end;
+        // every beat outside the two tails plays the send level.
+        const targetSendLevel = 10 ** (-10 / 20);
+        const tailPoints = [32, 48, 80, 96].flatMap((beat, index) =>
+            index % 2 === 0
+                ? [{ beat, value: baseSendLevel, curve: 'linear' }]
+                : [
+                      { beat, value: targetSendLevel, curve: 'linear' },
+                      { beat, value: baseSendLevel, curve: 'linear' },
+                  ]
+        );
+        const committedLanes = automationStore.value?.lanes ?? [];
+        // The first range on each send creates its lane; the second chorus writes into that lane.
+        const laneIds = committedLanes.map((lane) => lane.id);
+        expect(
+            committedLanes.map((lane) => ({
+                id: lane.id,
+                trackId: lane.trackId,
+                parameterId: lane.parameterId,
+                points: lane.points.map(({ beat, value, curve }) => ({ beat, value, curve })),
+            }))
+        ).toEqual(
+            ['track-bgv-high', 'track-bgv-low'].map((trackId, index) => ({
+                id: laneIds[index],
+                trackId,
                 parameterId: `send:${busId}`,
-                points: [
-                    { beat: 0, value: baseSendLevel, curve: 'step', tension: 0 },
-                    { beat: 32, value: baseSendLevel, curve: 'linear', tension: 0 },
-                    { beat: 48, value: 10 ** (-10 / 20), curve: 'step', tension: 0 },
-                    { beat: 48, value: baseSendLevel, curve: 'step', tension: 0 },
-                    { beat: 80, value: baseSendLevel, curve: 'linear', tension: 0 },
-                    { beat: 96, value: 10 ** (-10 / 20), curve: 'step', tension: 0 },
-                    { beat: 96, value: baseSendLevel, curve: 'step', tension: 0 },
-                ],
-            }),
-            expect.objectContaining({
-                id: laneIds[1],
-                trackId: 'track-bgv-low',
-                parameterId: `send:${busId}`,
-            }),
-        ]);
+                points: tailPoints,
+            }))
+        );
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(2);
         const firstRenderInput = runtimeMocks.renderOffline.mock.calls[0]?.[0];
         const secondRenderInput = runtimeMocks.renderOffline.mock.calls[1]?.[0];
@@ -2100,7 +2145,7 @@ describe('backing-vocal plate workflow', () => {
             }),
         ]);
         const executed = getPendingActionConfirmation(confirmation.id);
-        expect(executed?.executedActions).toHaveLength(11);
+        expect(executed?.executedActions).toHaveLength(14);
         for (const [index, action] of confirmation.actions.entries()) {
             const execution = executed?.executedActions[index];
             expect(execution).toMatchObject({
@@ -2131,14 +2176,14 @@ describe('backing-vocal plate workflow', () => {
         for (const job of renderJobs) {
             expect(receipt?.content).toContain(job.jobId);
         }
-        expect(undoStore.value?.past).toHaveLength(11);
+        expect(undoStore.value?.past).toHaveLength(14);
 
         await undo();
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(automationStore.value?.lanes).toEqual([]);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
-        expect(undoStore.value?.future).toHaveLength(11);
+        expect(undoStore.value?.future).toHaveLength(14);
         rebuildFixtureRuntimeFromProject();
 
         await redo();
@@ -2152,7 +2197,7 @@ describe('backing-vocal plate workflow', () => {
         expect(automationStore.value?.lanes.map((lane) => lane.id)).toEqual(laneIds);
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(4);
         expect(getAgentSectionRenderArtifacts()).toHaveLength(2);
-        expect(undoStore.value?.past).toHaveLength(11);
+        expect(undoStore.value?.past).toHaveLength(14);
         expect(undoStore.value?.future).toEqual([]);
     });
 });

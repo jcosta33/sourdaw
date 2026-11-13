@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NODE_VERSION: 24.22.2
+  NODE_VERSION: 26.13.1
 
 jobs:
   decide:
@@ -271,13 +271,11 @@ jobs:
         timeout-minutes: 2
         run: node scripts/runIsolatedUnitShard.ts browsers --context "${{ steps.unit_isolation.outputs.context }}"
 
-      # The suite is dominated by jsdom construction and module loading rather
-      # than assertions, so worker count is the lever that matters. The local
-      # default of two exists for the agent resource guard, not for CI.
+      # Keep the shard within the repository's two-worker test limit.
       - name: Run shard
         id: run_shard
         env:
-          VITEST_MAX_WORKERS: 4
+          VITEST_MAX_WORKERS: 2
         run: node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4
 
       - name: Report shard failure
@@ -420,9 +418,9 @@ jobs:
     # release build turns every real-time allocation guard into a no-op that
     # passes while proving nothing.
     #
-    # `sourdaw-native` is excluded from the Linux Rust leg because its manifest
-    # unconditionally enables whisper-rs's `metal` feature. A macOS runner is
-    # the only place it compiles, and public repositories get those free.
+    # This leg checks the macOS native target, including whisper-rs's
+    # target-scoped `metal` feature. Windows has its own native leg below;
+    # the Linux Rust leg keeps its separate library-crate scope.
     if: needs.decide.outputs.rust == 'true'
     runs-on: macos-latest
     timeout-minutes: 60
@@ -600,7 +598,7 @@ jobs:
     if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d
+      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
       options: --init --ipc=host
     defaults:
       run:
@@ -762,7 +760,7 @@ jobs:
     if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d
+      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
       options: --init --ipc=host
     defaults:
       run:
@@ -888,13 +886,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Initialise CodeQL
-        uses: github/codeql-action/init@52cf1852265d99e9bea071b03366fc777a602909 # codeql-bundle-v2.27.4
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           languages: javascript-typescript
           queries: security-extended
 
       - name: Analyse
-        uses: github/codeql-action/analyze@52cf1852265d99e9bea071b03366fc777a602909 # codeql-bundle-v2.27.4
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
 
   secrets:
     name: Secret scan

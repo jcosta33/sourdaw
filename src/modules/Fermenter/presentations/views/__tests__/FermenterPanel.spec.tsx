@@ -19,6 +19,9 @@ const presetBrowserMock = vi.hoisted(() =>
                 <button type="button" onClick={() => onLoadPreset('fermenter-init')}>
                     Load Init
                 </button>
+                <button type="button" onClick={() => onLoadPreset('fermenter-sub-bass')}>
+                    Load Sub Bass
+                </button>
                 <button type="button" onClick={() => onLoadPreset('nonexistent-preset')}>
                     Load Missing
                 </button>
@@ -51,6 +54,7 @@ const selectFermenterFilterChoiceMock = vi.hoisted(() => vi.fn());
 const selectFermenterOscillatorEngineMock = vi.hoisted(() => vi.fn());
 const loadUserPatchesMock = vi.hoisted(() => vi.fn());
 const loadFermenterPatchWithAudioMock = vi.hoisted(() => vi.fn());
+const commitFermenterPatchMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const storeState = vi.hoisted<{ value: unknown }>(() => ({ value: null }));
 
 vi.mock('#/infra/store/useStoreSelector', () => ({
@@ -73,6 +77,10 @@ vi.mock('../../../useCases/user-patches/load-user-patches', async (importOrigina
 
 vi.mock('../../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio', () => ({
     loadFermenterPatchWithAudio: loadFermenterPatchWithAudioMock,
+}));
+
+vi.mock('../../../useCases/commitFermenterPatch', () => ({
+    commitFermenterPatch: commitFermenterPatchMock,
 }));
 
 vi.mock('../../../useCases/fermenterParamBridge/setFermenterParamWithAudio', () => ({
@@ -347,32 +355,28 @@ describe('FermenterPanel', () => {
     });
 
     describe('preset loading', () => {
-        it('loads a factory preset by id and applies its parameterValues to the device', () => {
+        it('loads a non-init factory preset with its overridden values', () => {
             renderPanel();
-            fireEvent.click(screen.getByText('Load Init'));
+            fireEvent.click(screen.getByText('Load Sub Bass'));
 
-            // loadFermenterPatchWithAudio receives (deviceId, patch). The init
-            // preset's name ("Blank Dough") is applied to the loaded patch.
-            const initCall = loadFermenterPatchWithAudioMock.mock.calls.find(
-                ([, patch]) => patch?.name === 'Blank Dough'
+            const call = commitFermenterPatchMock.mock.calls.find(
+                ([input]) => input.patch?.name === 'Sourdough Starter'
             );
-            expect(initCall).toBeTruthy();
-            expect(initCall![0]).toBe('fermenter-1');
+            expect(call).toBeTruthy();
+            expect(call![0].deviceId).toBe('fermenter-1');
+            expect(call![0].patch.filterCutoff).toBe(500);
+            expect(DEFAULT_PATCH.filterCutoff).not.toBe(500);
         });
 
         it('returns without applying when the preset id does not exist', () => {
             renderPanel();
-            // Clear any calls from initial render / other interactions
-            loadFermenterPatchWithAudioMock.mockClear();
+            commitFermenterPatchMock.mockClear();
             fireEvent.click(screen.getByText('Load Missing'));
 
-            // loadPresetPatch returns null → loadFermenterPatchWithAudio not called.
-            expect(loadFermenterPatchWithAudioMock).not.toHaveBeenCalled();
+            expect(commitFermenterPatchMock).not.toHaveBeenCalled();
         });
 
         it('prefers a user patch over a factory preset with the same id', async () => {
-            // Store a user patch with id 'fermenter-init' so loadPresetPatch
-            // finds it in userPatches before checking FERMENTER_PRESETS.
             window.localStorage.setItem(
                 'fermenter-user-patches',
                 JSON.stringify([
@@ -385,18 +389,15 @@ describe('FermenterPanel', () => {
             );
 
             renderPanel();
-            // Wait for the userPatches query to resolve before loading the preset.
             await waitFor(() => {
                 expect(screen.getByTestId('preset-browser').textContent).toContain('My Custom Init');
             });
 
             fireEvent.click(screen.getByText('Load Init'));
 
-            const call = loadFermenterPatchWithAudioMock.mock.calls.find(
-                ([, patch]) => patch?.name === 'My Custom Init'
-            );
+            const call = commitFermenterPatchMock.mock.calls.find(([input]) => input.patch?.name === 'My Custom Init');
             expect(call).toBeTruthy();
-            expect(call![1].oscLevel).toBe(0.3);
+            expect(call![0].patch.oscLevel).toBe(0.3);
         });
     });
 

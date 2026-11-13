@@ -1,4 +1,5 @@
 import("stdfaust.lib");
+cs = library("sourdaw-current-sound.lib");
 freq = hslider("freq", 440, 20, 10000, 0.1);
 gain = hslider("gain", 0.5, 0, 1, 0.01);
 gate = button("gate");
@@ -8,8 +9,8 @@ bell_decay = hslider("bell_decay", 0.15, 0.01, 1, 0.01);
 modIdx = (0.5 + brightness * 3.0) * gain;
 bodyEnv = en.adsr(0.001, body_decay, 0.15, 0.3, gate);
 bellEnv = en.adsr(0.001, bell_decay, 0.0, 0.1, gate);
-bodyMod = os.osc(freq) * modIdx * freq;
-body = os.osc(freq + bodyMod) * bodyEnv * 0.7;
-bellMod = os.osc(freq * 14) * modIdx * 0.5 * freq;
-bell = os.osc(freq * 14 + bellMod) * bellEnv * 0.3;
+bodyMod = cs.osc(freq) * modIdx * freq;
+body = cs.osc(freq + bodyMod) * bodyEnv * 0.7;
+bellMod = cs.osc(freq * 14) * modIdx * 0.5 * freq;
+bell = cs.osc(freq * 14 + bellMod) * bellEnv * 0.3;
 process = (body + bell) * gain <: _, _;

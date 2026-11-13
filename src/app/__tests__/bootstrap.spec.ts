@@ -599,6 +599,7 @@ vi.mock('#/modules/DawInterchange/useCases', () => ({
 vi.mock('#/modules/Fermenter/stores', () => ({ setFermenterTelemetry: noop }));
 
 vi.mock('#/modules/Fermenter/useCases', () => ({
+    getFermenterHandlers: sentinelHandlers('Fermenter'),
     setFermenterMappedParam: noop,
     setFermenterDependencies: noop,
 }));
@@ -960,6 +961,7 @@ describe('bootstrap', () => {
         'DawProject',
         'FinalFeature',
         'CvGate',
+        'Fermenter',
         'GrandBoule',
         'NodeView',
         'WebMidiInput',

@@ -117,7 +117,7 @@ impl MechanicalNoise {
             // -23 dBFS, but we attenuate further so it never dominates.
             NoiseEvent::StringPrecursor => (0.004, 3_500.0, 4_500.0, -32.0),
         };
-        let gain = db_to_gain(level_db) * (0.3 + 0.7 * v);
+        let gain = crate::primitives::db_to_linear(level_db) * (0.3 + 0.7 * v);
         let slot = self.next_slot;
         self.next_slot = (self.next_slot + 1) % MAX_BURSTS;
 
@@ -179,10 +179,6 @@ impl MechanicalNoise {
         }
         output
     }
-}
-
-fn db_to_gain(db: f32) -> f32 {
-    (10.0_f32).powf(db / 20.0)
 }
 
 #[cfg(test)]

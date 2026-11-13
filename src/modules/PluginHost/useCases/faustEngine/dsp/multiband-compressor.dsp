@@ -1,4 +1,5 @@
 import("stdfaust.lib");
+cs = library("sourdaw-current-sound.lib");
 
 // Three-band compressor. This file used to be `process = dm.compressor_demo;`
 // — a single-band stock demo with no `hslider` at all — while builtinDSP.ts
@@ -20,8 +21,8 @@ high_threshold = hslider("high_threshold", -10, -60, 0, 0.5);
 crossover_low = hslider("crossover_low", 200, 50, 500, 10);
 crossover_high = hslider("crossover_high", 3000, 1000, 10000, 100);
 
-lr4_lowpass(fc) = fi.lowpass(2, fc) : fi.lowpass(2, fc);
-lr4_highpass(fc) = fi.highpass(2, fc) : fi.highpass(2, fc);
+lr4_lowpass(fc) = cs.lowpass(2, fc) : cs.lowpass(2, fc);
+lr4_highpass(fc) = cs.highpass(2, fc) : cs.highpass(2, fc);
 lr4_allpass(fc) = _ <: lr4_lowpass(fc) + lr4_highpass(fc);
 
 low_split = lr4_lowpass(crossover_low) : lr4_allpass(crossover_high);

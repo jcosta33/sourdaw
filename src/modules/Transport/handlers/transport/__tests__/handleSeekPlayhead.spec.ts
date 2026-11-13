@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleSeekPlayhead } from '../handleSeekPlayhead';
 
 const mocks = vi.hoisted(() => ({
-    executePlayheadSeek: vi.fn<(beat: number) => Promise<void>>(),
+    executePlayheadSeek: vi.fn<(beat: number) => Promise<boolean>>(),
     transportState: null as { playheadPosition: number } | null,
 }));
 
@@ -43,8 +43,8 @@ describe('handleSeekPlayhead', () => {
     it('exposes seek settlement as a runtime follow-up', async () => {
         let finishSeek: (() => void) | undefined;
         mocks.executePlayheadSeek.mockReturnValueOnce(
-            new Promise<void>((resolve) => {
-                finishSeek = resolve;
+            new Promise<boolean>((resolve) => {
+                finishSeek = () => resolve(true);
             })
         );
 
@@ -60,7 +60,6 @@ describe('handleSeekPlayhead', () => {
             settled = true;
             return undefined;
         });
-        await Promise.resolve();
         expect(settled).toBe(false);
         if (!finishSeek) {
             throw new Error('Expected playhead seek to remain pending');
