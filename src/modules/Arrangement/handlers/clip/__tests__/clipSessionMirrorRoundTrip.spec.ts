@@ -23,6 +23,7 @@ import {
     commitUndoEntry,
     createUndoEntry,
     isAppActionCommittedError,
+    isAppActionConflictError,
     executeAppAction,
     executeAppActionBatch,
     executeUserAppAction,
@@ -65,7 +66,9 @@ import {
     decodeMidiClipDataSnapshots,
     deleteGrooveTemplate,
     getMidiGrooveHandlers,
+    getGrooveExtractionActionErrorCode,
     getMidiNoteTransformHandlers,
+    setNotesForClip,
 } from '#/modules/MIDI/useCases';
 import { getProjectHandlers, productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
@@ -1752,6 +1755,50 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 expect(trackStore.value?.tracks[0]?.name).toBe('Keys');
             }
         );
+
+        it('refuses to redo a pinned extraction once the clip notes changed, keeping both stacks', async () => {
+            await extractGrooveAsAgent();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(extractedTemplates()).toEqual([]);
+            // A collaborator moves the note the extraction read.
+            setNotesForClip('clip-a', [{ id: 'late-note', pitch: 60, startBeat: 0.04, duration: 1, velocity: 96 }]);
+            flushAutomergeStorageWrites();
+            const future = structuredClone(undoStore.value?.future);
+
+            await redo();
+
+            expect(extractedTemplates()).toEqual([]);
+            expect(undoStore.value?.past).toEqual([]);
+            expect(undoStore.value?.future).toEqual(future);
+        });
+
+        it('reports a stale pinned extraction as its divergence code, writing nothing', async () => {
+            midiStore.set({
+                probabilitySeed: 1,
+                notesByClipId: {
+                    'clip-a': [{ id: 'late-note', pitch: 60, startBeat: 0.02, duration: 1, velocity: 96 }],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
+            flushAutomergeStorageWrites();
+            const pinned: AppAction = { type: 'extractGroove', payload: { clipId: 'clip-a' } };
+            getExecutableCommandRegistrations()
+                .find((candidate) => candidate.actionType === 'extractGroove')
+                ?.materializeCommandArguments?.(pinned);
+            setNotesForClip('clip-a', [{ id: 'late-note', pitch: 60, startBeat: 0.04, duration: 1, velocity: 96 }]);
+            flushAutomergeStorageWrites();
+
+            const refusal = await executeAppAction(pinned).then(
+                () => null,
+                (error: unknown) => error
+            );
+
+            expect(isAppActionConflictError(refusal)).toBe(true);
+            expect(getGrooveExtractionActionErrorCode(refusal)).toBe('source-revision-mismatch');
+            expect(extractedTemplates()).toEqual([]);
+            expect(undoStore.value?.past).toEqual([]);
+        });
     });
 
     describe('audio start trim captured source replay', () => {

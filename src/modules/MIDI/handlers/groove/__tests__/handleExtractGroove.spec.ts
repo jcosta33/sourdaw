@@ -113,9 +113,7 @@ describe('handleExtractGroove', () => {
             sourceRevision: extracted.sourceRevision,
         });
         mocks.notes = [{ id: 'note', startBeat: 0.04, velocity: 96 }];
-        expect(() => handleExtractGroove.execute(action)).toThrow(
-            expect.objectContaining({ code: 'source-revision-mismatch', name: 'GrooveExtractionActionError' })
-        );
+        expect(handleExtractGroove.execute(action)).toEqual({ status: 'conflict', reason: 'source-revision-mismatch' });
     });
 
     it('propagates typed extraction failure and marks Straight as a true no-write', () => {
@@ -156,9 +154,7 @@ describe('handleExtractGroove', () => {
         const action = createProposalAction();
         mocks.notes = [{ id: 'note', startBeat: 0.04, velocity: 96 }];
 
-        expect(() => handleExtractGroove.execute(action)).toThrow(
-            expect.objectContaining({ code: 'source-revision-mismatch', name: 'GrooveExtractionActionError' })
-        );
+        expect(handleExtractGroove.execute(action)).toEqual({ status: 'conflict', reason: 'source-revision-mismatch' });
         expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
     });
 
@@ -166,9 +162,7 @@ describe('handleExtractGroove', () => {
         const action = createProposalAction();
         mocks.notes = [];
 
-        expect(() => handleExtractGroove.execute(action)).toThrow(
-            expect.objectContaining({ code: 'source-revision-mismatch', name: 'GrooveExtractionActionError' })
-        );
+        expect(handleExtractGroove.execute(action)).toEqual({ status: 'conflict', reason: 'source-revision-mismatch' });
         expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
     });
 
@@ -242,9 +236,7 @@ describe('handleExtractGroove', () => {
             },
         };
 
-        expect(() => handleExtractGroove.execute(action)).toThrow(
-            expect.objectContaining({ code: 'proposal-mismatch', name: 'GrooveExtractionActionError' })
-        );
+        expect(handleExtractGroove.execute(action)).toEqual({ status: 'conflict', reason: 'proposal-mismatch' });
         expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
     });
 
@@ -252,9 +244,7 @@ describe('handleExtractGroove', () => {
         const action = createProposalAction();
         mocks.notes = [{ id: 'note', startBeat: 0.02, velocity: 95 }];
 
-        expect(() => handleExtractGroove.execute(action)).toThrow(
-            expect.objectContaining({ code: 'source-revision-mismatch', name: 'GrooveExtractionActionError' })
-        );
+        expect(handleExtractGroove.execute(action)).toEqual({ status: 'conflict', reason: 'source-revision-mismatch' });
         expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
     });
 

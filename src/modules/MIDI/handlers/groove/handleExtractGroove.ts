@@ -20,7 +20,10 @@ type ExtractGroovePlan =
     | { outcome: 'straight' }
     | { outcome: 'identical' }
     | { outcome: 'failure'; error: GrooveExtractionActionError }
-    | { outcome: 'conflict'; error: GrooveExtractionActionError };
+    | { outcome: 'conflict'; error: GrooveExtractionActionError }
+    // A pinned extraction whose clip notes changed since it was pinned: a refusal the caller can
+    // retry or report, as every other pinned replay reports its divergence, never a handler failure.
+    | { outcome: 'diverged'; code: 'source-revision-mismatch' | 'proposal-mismatch' };
 
 function templatesEqual(left: ExtractedGrooveTemplate, right: ExtractedGrooveTemplate): boolean {
     return valuesEqual(left, right);
@@ -34,13 +37,7 @@ function planExtractGroove(action: ExtractGrooveAction): ExtractGroovePlan {
         templateId: action.payload.templateId ?? `groove-${action.payload.clipId}-v1`,
     });
     if (action.payload.proposal && action.payload.sourceRevision !== result.sourceRevision) {
-        return {
-            outcome: 'failure',
-            error: new GrooveExtractionActionError(
-                'source-revision-mismatch',
-                `Groove extraction source changed: ${action.payload.clipId}`
-            ),
-        };
+        return { outcome: 'diverged', code: 'source-revision-mismatch' };
     }
     if (result.status === 'empty') {
         return {
@@ -67,13 +64,7 @@ function planExtractGroove(action: ExtractGrooveAction): ExtractGroovePlan {
         return { outcome: 'straight' };
     }
     if (action.payload.proposal && !templatesEqual(result.template, action.payload.proposal)) {
-        return {
-            outcome: 'failure',
-            error: new GrooveExtractionActionError(
-                'proposal-mismatch',
-                `Groove extraction proposal is stale: ${action.payload.clipId}`
-            ),
-        };
+        return { outcome: 'diverged', code: 'proposal-mismatch' };
     }
     const template = action.payload.proposal ?? result.template;
     const existing = getGrooveTemplate(template.id);
@@ -131,6 +122,9 @@ export const handleExtractGroove = createHandler<'extractGroove'>({
     },
     execute: (action) => {
         const plan = planExtractGroove(action);
+        if (plan.outcome === 'diverged') {
+            return { status: 'conflict', reason: plan.code };
+        }
         if (plan.outcome === 'failure' || plan.outcome === 'conflict') {
             throw plan.error;
         }
