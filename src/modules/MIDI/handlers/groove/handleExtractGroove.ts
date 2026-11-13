@@ -19,11 +19,15 @@ type ExtractGroovePlan =
     | { outcome: 'create'; template: ExtractedGrooveTemplate }
     | { outcome: 'straight' }
     | { outcome: 'identical' }
+    // A request no project state could satisfy (no notes, an unsupported grid, an unreadable clip).
     | { outcome: 'failure'; error: GrooveExtractionActionError }
-    | { outcome: 'conflict'; error: GrooveExtractionActionError }
-    // A pinned extraction whose clip notes changed since it was pinned: a refusal the caller can
-    // retry or report, as every other pinned replay reports its divergence, never a handler failure.
-    | { outcome: 'diverged'; code: 'source-revision-mismatch' | 'proposal-mismatch' };
+    // The project moved under the extraction: its clip notes changed since it was pinned, or its
+    // template id now holds other content. A refusal the caller can retry or report, as every other
+    // replay reports its divergence, never a handler failure that would wedge a redo.
+    | {
+          outcome: 'diverged';
+          code: 'source-revision-mismatch' | 'proposal-mismatch' | 'template-identity-conflict';
+      };
 
 function templatesEqual(left: ExtractedGrooveTemplate, right: ExtractedGrooveTemplate): boolean {
     return valuesEqual(left, right);
@@ -74,13 +78,7 @@ function planExtractGroove(action: ExtractGrooveAction): ExtractGroovePlan {
     if (templatesEqual(existing, template)) {
         return { outcome: 'identical' };
     }
-    return {
-        outcome: 'conflict',
-        error: new GrooveExtractionActionError(
-            'template-identity-conflict',
-            `Groove template identity "${template.id}" already has different content`
-        ),
-    };
+    return { outcome: 'diverged', code: 'template-identity-conflict' };
 }
 
 /**
@@ -125,7 +123,7 @@ export const handleExtractGroove = createHandler<'extractGroove'>({
         if (plan.outcome === 'diverged') {
             return { status: 'conflict', reason: plan.code };
         }
-        if (plan.outcome === 'failure' || plan.outcome === 'conflict') {
+        if (plan.outcome === 'failure') {
             throw plan.error;
         }
         if (plan.outcome === 'create') {

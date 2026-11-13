@@ -63,6 +63,7 @@ import {
 import { grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
 import {
     assignGrooveTemplate,
+    createGrooveTemplate,
     decodeMidiClipDataSnapshots,
     deleteGrooveTemplate,
     getMidiGrooveHandlers,
@@ -1867,6 +1868,47 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(extractedTemplates()).toEqual([]);
             expect(undoStore.value?.past).toEqual([]);
             expect(undoStore.value?.future).toEqual(future);
+        });
+
+        it('refuses to redo an extraction whose template id now holds other content, keeping both stacks', async () => {
+            await extractGrooveAsAgent();
+            const [template] = extractedTemplates();
+            if (template === undefined) {
+                throw new Error('Expected the extracted template');
+            }
+            expect((await undo()).headConsumed).toBe(true);
+            expect(extractedTemplates()).toEqual([]);
+            // A collaborator extracts the same unchanged notes under another name, so the id is taken.
+            const collaboratorTemplate = { ...template, name: 'Collaborator groove' };
+            expect(createGrooveTemplate(collaboratorTemplate).status).not.toBe('no-write');
+            flushAutomergeStorageWrites();
+            const future = structuredClone(undoStore.value?.future);
+
+            await redo();
+
+            expect(extractedTemplates()).toEqual([collaboratorTemplate]);
+            expect(undoStore.value?.past).toEqual([]);
+            expect(undoStore.value?.future).toEqual(future);
+        });
+
+        it('reports a template identity conflict as its code, writing nothing', async () => {
+            await extractGrooveAsAgent();
+            const [template] = extractedTemplates();
+            if (template === undefined) {
+                throw new Error('Expected the extracted template');
+            }
+            expect((await undo()).headConsumed).toBe(true);
+            createGrooveTemplate({ ...template, name: 'Collaborator groove' });
+            flushAutomergeStorageWrites();
+
+            const refusal = await executeAppAction({ type: 'extractGroove', payload: { clipId: 'clip-a' } }).then(
+                () => null,
+                (error: unknown) => error
+            );
+
+            expect(isAppActionConflictError(refusal)).toBe(true);
+            expect(getGrooveExtractionActionErrorCode(refusal)).toBe('template-identity-conflict');
+            expect(extractedTemplates()).toEqual([{ ...template, name: 'Collaborator groove' }]);
         });
 
         it('reports a stale pinned extraction as its divergence code, writing nothing', async () => {

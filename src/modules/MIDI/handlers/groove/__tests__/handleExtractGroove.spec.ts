@@ -145,9 +145,10 @@ describe('handleExtractGroove', () => {
 
         const conflicting = createAction('  existing-id  ');
         expect(handleExtractGroove.isNoop?.(conflicting)).toBe(false);
-        expect(() => handleExtractGroove.execute(conflicting)).toThrow(
-            expect.objectContaining({ code: 'template-identity-conflict', name: 'GrooveExtractionActionError' })
-        );
+        expect(handleExtractGroove.execute(conflicting)).toEqual({
+            status: 'conflict',
+            reason: 'template-identity-conflict',
+        });
     });
 
     it('rejects a displayed proposal when the source notes changed before commit', () => {

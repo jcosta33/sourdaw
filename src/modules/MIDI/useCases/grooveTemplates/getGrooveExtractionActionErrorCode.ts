@@ -11,8 +11,9 @@ function isGrooveExtractionActionErrorCode(value: unknown): value is GrooveExtra
 }
 
 /**
- * The extraction's refusal code: thrown for a refused extraction, or carried as the conflict reason
- * when a pinned extraction diverged from the clip's notes.
+ * The extraction's refusal code: thrown for a request no project state could satisfy, or carried as
+ * the conflict reason when the project moved under the extraction (its clip notes changed since it
+ * was pinned, or its template id now holds other content).
  */
 export function getGrooveExtractionActionErrorCode(error: unknown): GrooveExtractionActionErrorCode | null {
     if (isGrooveExtractionActionError(error)) {
