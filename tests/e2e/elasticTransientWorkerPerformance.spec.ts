@@ -399,149 +399,6 @@ async function sourceState(page: Page, last = false) {
     }, last);
 }
 
-/**
- * The change task installs the Worker-built document with one Automerge `load()`, which the
- * library cannot split, so an absolute ceiling would measure the runner rather than the
- * product. That one task is bounded against standalone loads of the same bytes, in the same
- * page and run, instead. The median of the samples resists one preempted or cold sample.
- */
-const CHANGE_TASK_REFERENCE_SAMPLES = 7;
-
-/**
- * Beside the load, the change task checks the missing dependencies and heads, reads the change
- * metadata of both documents (`getChangesMetaSince`), rechecks its authority and arms the commit
- * frame. Those Automerge checks alone took about 1 ms at 4x CPU throttling; the rest of the task
- * outside the load measured up to 16% of the reference on a populated clip. The first change in a
- * page also runs that path for the first time, and it measured up to 54% over its reference, so
- * it gets its own margin. The absolute margin covers timer resolution. A second load in the
- * task still exceeds either bound.
- */
-const FIRST_CHANGE_TASK_RELATIVE_MARGIN = 0.6;
-const CHANGE_TASK_RELATIVE_MARGIN = 0.25;
-const CHANGE_TASK_ABSOLUTE_MARGIN_MS = 2;
-
-/** Long-task entries round their duration to whole milliseconds. */
-const LONG_TASK_CLOCK_SLACK_MS = 1;
-
-type MeasuredEntry = { name: string; duration: number; startTime: number };
-type ReferenceLoad = { byteLength: number; samples: number[]; median: number; bound: number };
-
-/**
- * Keeps each completed prospective-mutation Worker document. The listener is added in the
- * constructor, so it runs before the client's own `onmessage` and records the exact bytes the
- * change task then loads; it holds a reference and copies nothing during Detect.
- */
-async function captureMaterializedDocuments(page: Page): Promise<void> {
-    await page.evaluate(() => {
-        const target = window as Window & {
-            elasticMaterializedDocuments?: { bytes: Uint8Array; receivedAt: number }[];
-        };
-        if (target.elasticMaterializedDocuments) return;
-        const documents: { bytes: Uint8Array; receivedAt: number }[] = [];
-        target.elasticMaterializedDocuments = documents;
-        const NativeWorker = window.Worker;
-        window.Worker = class extends NativeWorker {
-            constructor(url: string | URL, options?: WorkerOptions) {
-                super(url, options);
-                if (!String(url).includes('prospectiveMutationWorker')) return;
-                this.addEventListener('message', (event: MessageEvent<unknown>) => {
-                    const data = event.data;
-                    if (
-                        typeof data === 'object' &&
-                        data !== null &&
-                        'status' in data &&
-                        data.status === 'complete' &&
-                        'bytes' in data &&
-                        data.bytes instanceof Uint8Array
-                    )
-                        documents.push({ bytes: data.bytes, receivedAt: performance.now() });
-                });
-            }
-        };
-    });
-}
-
-/** Times standalone loads of the document the change task loaded, through the app's own Automerge module. */
-async function sampleReferenceLoad(page: Page, change: MeasuredEntry, relativeMargin: number): Promise<ReferenceLoad> {
-    const sampled = await page.evaluate(
-        async ({ changeStart, count }) => {
-            const target = window as Window & {
-                elasticMaterializedDocuments?: { bytes: Uint8Array; receivedAt: number }[];
-            };
-            const document = target.elasticMaterializedDocuments
-                ?.filter((entry) => entry.receivedAt <= changeStart)
-                .at(-1);
-            if (!document || document.bytes.byteLength === 0)
-                throw new Error('The Worker-built document the change task loaded was not captured');
-            // Import exactly the module the repository imports, so the samples share its wasm instance.
-            const repository = await (
-                await fetch('/src/modules/CrdtDocument/repositories/automergeRepository.ts')
-            ).text();
-            const specifier = Array.from(
-                repository.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']([^"']+)["']/g),
-                (match) => ({ names: match[1] ?? '', specifier: match[2] ?? '' })
-            ).find((entry) => /\bload\b/.test(entry.names) && /\bgetActorId\b/.test(entry.names))?.specifier;
-            if (!specifier) throw new Error('The repository Automerge import was not found');
-            const automerge: {
-                load(bytes: Uint8Array, options: { actor: string }): unknown;
-                free(doc: unknown): void;
-                getActorId(doc: unknown): string;
-            } = await import(/* @vite-ignore */ specifier);
-            const { getCrdtDoc } = await import('/src/modules/CrdtDocument/useCases/index.ts');
-            const live = getCrdtDoc('root');
-            if (!live) throw new Error('The live root document is missing');
-            const actor = automerge.getActorId(live);
-            const samples: number[] = [];
-            for (let index = 0; index < count; index++) {
-                // Each sample runs in its own host task, as the change task does.
-                await new Promise<void>((resolve) => {
-                    const channel = new MessageChannel();
-                    channel.port1.onmessage = () => {
-                        channel.port1.close();
-                        resolve();
-                    };
-                    channel.port2.postMessage(undefined);
-                });
-                const start = performance.now();
-                const loaded = automerge.load(document.bytes, { actor });
-                samples.push(performance.now() - start);
-                automerge.free(loaded);
-            }
-            return { byteLength: document.bytes.byteLength, samples };
-        },
-        { changeStart: change.startTime, count: CHANGE_TASK_REFERENCE_SAMPLES }
-    );
-    const sorted = [...sampled.samples].sort((left, right) => left - right);
-    const median = sorted[Math.floor(sorted.length / 2)]!;
-    return {
-        ...sampled,
-        median,
-        bound: median * (1 + relativeMargin) + CHANGE_TASK_ABSOLUTE_MARGIN_MS,
-    };
-}
-
-/** The one change measure of a change, and the long task carrying it, which only the reference bounds. */
-function readChangeTask(measures: readonly MeasuredEntry[], tasks: readonly CapturedLongTask[]) {
-    const changes = measures.filter((entry) => entry.name === 'elastic-transient-change-task');
-    if (changes.length !== 1)
-        throw new Error(`Expected exactly one elastic-transient-change-task per change, found ${changes.length}`);
-    const change = changes[0]!;
-    const end = change.startTime + change.duration;
-    const carrying = tasks.filter(
-        (task) =>
-            task.start <= change.startTime + LONG_TASK_CLOCK_SLACK_MS &&
-            task.start + task.duration >= end - LONG_TASK_CLOCK_SLACK_MS
-    );
-    if (carrying.length > 1)
-        throw new Error(`Expected one long task carrying the change task, found ${carrying.length}`);
-    return {
-        change,
-        carryingTaskMs: carrying[0]?.duration,
-        durationMs: Math.max(change.duration, carrying[0]?.duration ?? 0),
-        otherLongTasks: tasks.filter((task) => !carrying.includes(task)),
-    };
-}
-
 test('120-second stereo Detect includes cold Worker, copy and atomic commit within responsive UI budget', async ({
     page,
 }, info) => {
@@ -597,7 +454,6 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await expect(panel.getByTestId('elastic-detect-button')).toBeEnabled();
     const workers: string[] = [];
     page.on('worker', (worker) => workers.push(worker.url()));
-    await captureMaterializedDocuments(page);
     const coldTrace = await startElasticTaskTrace(page, info, 'cold-detect');
     await page.evaluate(async () => {
         type Metrics = {
@@ -727,8 +583,6 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
             'automerge-storage-materialization-handoff-task',
         ].includes(entry.name)
     );
-    const changeTask = readChangeTask(measured.measures, longTasks);
-    const reference = await sampleReferenceLoad(page, changeTask.change, FIRST_CHANGE_TASK_RELATIVE_MARGIN);
     const preparedPublications = measured.measures.filter(
         (entry) => entry.name === 'automerge-storage-prepared-publication'
     );
@@ -739,7 +593,6 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
             (entry) => entry.name === 'elastic-transient-materialization-worker-wall'
         ),
         preparedPublications,
-        changeTask: { ...changeTask, reference },
         elapsedMs: measured.end - measured.start,
         gaps,
         observedGaps,
@@ -781,19 +634,15 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
         preparationTasks.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')
     ).toHaveLength(1);
     // 60 Hz design budget per task is recorded above; the hard gate is the
-    // jank ceiling — see JANK_TASK_CEILING_MS. Only the atomic load's change task is
-    // bounded by the same-run reference instead — see CHANGE_TASK_REFERENCE_SAMPLES.
-    expect(
-        Math.max(...preparationTasks.filter((entry) => entry !== changeTask.change).map((entry) => entry.duration))
-    ).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
-    expect(changeTask.durationMs).toBeLessThanOrEqual(reference.bound);
+    // jank ceiling — see JANK_TASK_CEILING_MS.
+    expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
     expect(result.elapsedMs).toBeLessThan(DETECT_WALL_HANG_MS); // 1 s is the design budget, recorded above
     expect(Math.max(...copy.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
     expect(commitTasks).toHaveLength(2);
     expect(Math.max(...commitTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
     expect(result.maxGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
     expect(result.maxObservedGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
-    expect(changeTask.otherLongTasks).toEqual([]);
+    expect(longTasks).toEqual([]);
     await page.keyboard.press(`${modifier}+z`);
     await expect.poll(async () => (await sourceState(page)).projected.length).toBe(0);
     await page.keyboard.press(`${modifier}+Shift+z`);
@@ -1176,8 +1025,6 @@ async function assertPopulatedMeasurement(
             'automerge-storage-materialization-handoff-task',
         ].includes(entry.name)
     );
-    const changeTask = readChangeTask(measured.measures, longTasks);
-    const reference = await sampleReferenceLoad(page, changeTask.change, CHANGE_TASK_RELATIVE_MARGIN);
     const preparedPublications = measured.measures.filter(
         (entry) => entry.name === 'automerge-storage-prepared-publication'
     );
@@ -1188,7 +1035,6 @@ async function assertPopulatedMeasurement(
             (entry) => entry.name === 'elastic-transient-materialization-worker-wall'
         ),
         preparedPublications,
-        changeTask: { ...changeTask, reference },
         phase,
         elapsedMs: measured.end - measured.start,
         maxGapMs: Math.max(...gaps),
@@ -1217,12 +1063,8 @@ async function assertPopulatedMeasurement(
         preparationTasks.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')
     ).toHaveLength(1);
     // 60 Hz design budget per task is recorded above; the hard gate is the
-    // jank ceiling — see JANK_TASK_CEILING_MS. Only the atomic load's change task is
-    // bounded by the same-run reference instead — see CHANGE_TASK_REFERENCE_SAMPLES.
-    expect(
-        Math.max(...preparationTasks.filter((entry) => entry !== changeTask.change).map((entry) => entry.duration))
-    ).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
-    expect(changeTask.durationMs).toBeLessThanOrEqual(reference.bound);
+    // jank ceiling — see JANK_TASK_CEILING_MS.
+    expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
     expect(result.elapsedMs).toBeLessThan(DETECT_WALL_HANG_MS); // 1 s is the design budget, recorded above
     expect(copy.length).toBeGreaterThan(1);
     expect(commitTasks).toHaveLength(2);
@@ -1230,5 +1072,5 @@ async function assertPopulatedMeasurement(
     expect(Math.max(...commitTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(JANK_TASK_CEILING_MS);
     expect(result.maxGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
     expect(result.maxObservedGapMs).toBeLessThanOrEqual(FRAME_GAP_FREEZE_MS);
-    expect(changeTask.otherLongTasks).toEqual([]);
+    expect(longTasks).toEqual([]);
 }
