@@ -1,0 +1,34 @@
+src/modules/Fermenter/useCases/subscribeToFermenterPatchOwner.ts
+  s_9307cedd8951f1::t_433768cde05038 1-15
+src/modules/Fermenter/useCases/prepareFermenterPatchWrite.ts
+  s_9307cedd8951f1::t_ea08bba87a01ab 174-175,208
+src/modules/Fermenter/presentations/views/__tests__/fermenterPatchAuditionUndo.integration.spec.tsx
+  s_9307cedd8951f1::t_0a2a49bb14d341 599,601-617
+  s_9307cedd8951f1::t_707ad917d89387 324-335,568-598
+  s_9307cedd8951f1::t_184362522e6798 600
+src/modules/Fermenter/useCases/readFermenterPatchOwner.ts
+  s_9307cedd8951f1::t_30010786c9e3bf 1-37
+.agents/skills/review-stances/runtime-instance-lifetimes.md
+  s_9307cedd8951f1::t_a7f35c352c254e 93-101
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  s_9307cedd8951f1::t_38594e44df001a 43,485,506-514,517-520,528,548
+  s_9307cedd8951f1::t_433768cde05038 1,46,441
+.agents/skills/review-stances/test-validity.md
+  s_9307cedd8951f1::t_a7f35c352c254e 120-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4acc8701f3b33b98e36aaa2af30a40c8201f00de",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
