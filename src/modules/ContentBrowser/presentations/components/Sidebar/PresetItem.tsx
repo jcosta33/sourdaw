@@ -41,10 +41,10 @@ export const PresetItem = ({
     preview,
     hideCategory,
 }: PresetItemProps): ReactElement => {
-    const idBase = useId();
-    const categoryId = `${idBase}-category`;
-    const kindId = `${idBase}-kind`;
-    const chainId = `${idBase}-chain`;
+    const baseId = useId();
+    const categoryId = `${baseId}-category`;
+    const kindId = `${baseId}-kind`;
+    const chainId = `${baseId}-chain`;
     const chain = preset.devices.map((data) => data.name).join(' → ');
 
     // The card's main action is a full-size button (its ::after covers the whole

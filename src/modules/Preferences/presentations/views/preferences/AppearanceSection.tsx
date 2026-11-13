@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useState } from 'react';
 
 import { Sun, Moon, Palette } from 'lucide-react';
 
@@ -19,10 +19,13 @@ type SectionProps = {
 
 export const AppearanceSection = ({ prefs, update }: SectionProps): ReactElement => {
     const [uiScaleDraft, setUiScaleDraft] = useState(prefs.uiScale * 100);
+    const [draftUiScaleSource, setDraftUiScaleSource] = useState(prefs.uiScale);
 
-    useEffect(() => {
+    // A saved scale that changes from elsewhere replaces the draft.
+    if (draftUiScaleSource !== prefs.uiScale) {
+        setDraftUiScaleSource(prefs.uiScale);
         setUiScaleDraft(prefs.uiScale * 100);
-    }, [prefs.uiScale]);
+    }
 
     return (
         <>

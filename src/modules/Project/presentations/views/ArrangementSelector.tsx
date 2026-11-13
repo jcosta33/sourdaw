@@ -55,11 +55,9 @@ export const ArrangementSelector = (): ReactElement | null => {
         inputRef.current.select();
     }, [renderedEditingId]);
 
-    useEffect(() => {
-        if (arrangements.length > 1) {
-            setHasRenderedMultipleArrangements(true);
-        }
-    }, [arrangements.length]);
+    if (arrangements.length > 1 && !hasRenderedMultipleArrangements) {
+        setHasRenderedMultipleArrangements(true);
+    }
 
     useEffect(() => {
         if (editingId && !renderedEditingId) {
