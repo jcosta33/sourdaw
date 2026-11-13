@@ -419,6 +419,3 @@ index 3af0d6e062ea5919723fc0379860aca3e251733b..f71e13f1bfae0e070bc0268b7e39bc51
  export function load(data, _opts) {
      const opts = importOpts(_opts);
      if (opts.patchCallback) {
-diff --git a/dist/mjs/index.d.ts b/dist/mjs/index.d.ts
-deleted file mode 100644
-index b769091eaacc4badfab8ee1b2d298aa031a306b9..0000000000000000000000000000000000000000

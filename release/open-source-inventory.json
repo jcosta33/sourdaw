@@ -169,7 +169,7 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:c0c1a268c557a6a1d946c6ef0fbbc543079d311e8e66c7893ca114a063349039:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:34625023ef1971a807722658a25ff2509638d9b17d65bf1d8e850f5a138dfa96:public/legal/DEPENDENCY-LICENSES.txt",
                 "sha256:a0ecef6506cc429cc95218c3ef86e6608b11bfaf9eea3f01831a6f3b02445407:release/dependency-license-proofs.json"
             ],
             "licenses": [
@@ -294,7 +294,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:07f1df505c83bfafbadd479d10959d3db7d31de08c8ff7acd54f5a38a7c303a0",
+                "sha256:97444a345f9c78a3f15e942ada60dfaffe7612e7f21ca8a95e067f1ff6f02395",
                 "sha256:4ce2f2f1a4fc0959b7f9fce2a16cf95e6c75af942e0b691407c73270720ab968",
                 "sha256:da20539796075e22f2ad7f835eb6f1be13a6b540a503d633a85173c02c2aa5c7:public/legal/MLC-WEB-NOTICES.txt",
                 "sha256:e1855008bd1805f65df7fcda958163d44e913c8c6cffd96e05042987e1773afd:public/legal/THIRD-PARTY-NOTICES.md"
@@ -1900,7 +1900,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "07f1df505c83bfafbadd479d10959d3db7d31de08c8ff7acd54f5a38a7c303a0"
+            "sha256": "97444a345f9c78a3f15e942ada60dfaffe7612e7f21ca8a95e067f1ff6f02395"
         },
         {
             "path": "Cargo.toml",
