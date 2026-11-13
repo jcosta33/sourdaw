@@ -1,0 +1,23 @@
+.agents/skills/review-stances/code-craft.md
+  s_9307cedd8951f1::t_db1ab1f19498c8 48-54
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_9307cedd8951f1::t_bb352f71a89578 2195-2196
+  s_9307cedd8951f1::t_8397498fcd8b23 2182-2194,2197-2202
+  s_9307cedd8951f1::t_a69e26cc629b9f 1850,1858-1878,1881,1885-1898
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d4e7a05bf9357603d7b0edf3e25f45bf89591fe8",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
