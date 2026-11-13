@@ -117,9 +117,8 @@ const PRODUCT_SCOPE_PREFIXES_UNDER_TEST = ['src/modules/', 'src/components/', 'e
 /**
  * Fixture Git runs without the ambient global and system configuration. That configuration can wire
  * Git tracing into a developer's local git-ai daemon, which answers a fixture commit by extending
- * `refs/notes/ai` in the background; the authorship-notes case reads the note its own fixture just
- * created and asserts the push carried it, so a daemon write landing in between ships a note commit
- * the fixture never made. The same configuration can enable `commit.gpgsign`, making fixture commits
+ * `refs/notes/ai` in the background, racing the unchanged-notes assertions and fixture teardown.
+ * The same configuration can enable `commit.gpgsign`, making fixture commits
  * depend on a local signing key. Fixtures own their identity, refs, and objects, so ambient
  * configuration is noise; the production GitHub child is isolated the same way (`githubChildEnv`).
  */
@@ -1125,7 +1124,7 @@ describe('lane publish', () => {
             const headSha = fixtureGit(primary, ['rev-parse', 'HEAD']);
             fixtureGit(root, ['init', '--bare', remote]);
             fixtureGit(primary, ['push', remote, `${headSha}:refs/heads/main`]);
-            fixtureGit(root, ['clone', remote, peer]);
+            fixtureGit(root, ['clone', '--branch', 'main', remote, peer]);
             fixtureGit(peer, ['config', 'user.name', 'Peer']);
             fixtureGit(peer, ['config', 'user.email', 'peer@example.com']);
             fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
@@ -171,12 +171,6 @@ export type DeliveryPort = CheckEvidencePort & {
         expectedCurrent?: DeliveryReceiptAuthorityExpectation
     ) => void;
     clearDeliveryReceiptAuthority: (number: number, expectedCurrent?: DeliveryReceiptAuthorityExpectation) => void;
-    readonly syncAuthorshipNotes?: (input: {
-        readonly mergeCommitSha: string;
-        readonly headSha: string;
-        readonly headRef: string;
-        readonly baseRef: string;
-    }) => void;
     log: (message: string) => void;
 };
 
@@ -3273,14 +3267,6 @@ function deliverPullRequestWithCiAdmission(
         finalDependents.map((dependent) => dependent.number)
     );
     completeIssueAfterMerge(number, finalReceiptPayload.closingIssue, tracker);
-    if (mergedSnapshot.mergeCommit?.oid) {
-        port.syncAuthorshipNotes?.({
-            mergeCommitSha: mergedSnapshot.mergeCommit.oid,
-            headSha: finalSnapshot.headRefOid,
-            headRef: finalSnapshot.headRefName,
-            baseRef: finalSnapshot.baseRefName,
-        });
-    }
     persistTerminalDeliveryReceiptAuthority(
         number,
         finalReceipt,
@@ -3327,8 +3313,7 @@ function capture(command: string, args: string[]): string {
 export function run(command: string, args: string[]): void {
     const result = spawnSync(command, args, {
         cwd: process.cwd(),
-        // stderr is captured rather than inherited so a failing child names its own failure —
-        // the git-ai authorship sync's exit 1 was unattributable without it (#4344).
+        // Capture stderr so a failing child names its own failure.
         stdio: ['inherit', 'inherit', 'pipe'],
         maxBuffer: 64 * 1024 * 1024,
         shell: false,
@@ -4031,51 +4016,11 @@ export function shellPort(
 
     return {
         fetch: () => {
-            const readRef = (ref: string): string | undefined => {
-                const lines = shell.capture('git', [
-                    'for-each-ref',
-                    '--format=%(refname) %(objectname) %(symref)',
-                    ref,
-                ]);
-                const matches = lines.split('\n').filter((line) => line.startsWith(`${ref} `));
-                if (matches.length === 0) {
-                    return undefined;
-                }
-                const match = matches[0]?.trim().match(/^\S+ ([a-f0-9]{40}|[a-f0-9]{64})$/);
-                if (matches.length !== 1 || match === null || match === undefined) {
-                    fail(`cannot inspect direct Git ref ${ref}`);
-                }
-                return match[1];
-            };
-            const preserveLocalNotes = (): string | undefined => {
-                const notes = readRef('refs/notes/ai');
-                if (notes === undefined) {
-                    return undefined;
-                }
-                if (shell.capture('git', ['cat-file', '-t', notes]).trim() !== 'commit') {
-                    fail('local authorship notes ref does not point to a commit');
-                }
-                const recoveryRef = `refs/agents/preserved-ai-notes/${notes}`;
-                const existing = readRef(recoveryRef);
-                if (existing !== undefined && existing !== notes) {
-                    fail(`authorship notes recovery ref ${recoveryRef} points to a different object`);
-                }
-                if (existing === undefined) {
-                    shell.run('git', ['update-ref', '--no-deref', recoveryRef, notes, '0'.repeat(notes.length)]);
-                }
-                return notes;
-            };
-            preserveLocalNotes();
-            const captureRef = `refs/agents/fetched-ai-notes/${randomUUID()}`;
-            if (readRef(captureRef) !== undefined) {
-                fail(`authorship notes capture ref ${captureRef} already exists`);
-            }
             const fetchArgs = [
                 'fetch',
                 '--prune',
                 options.gitToken === undefined ? 'origin' : GITHUB_HTTPS_REMOTE,
                 '+refs/heads/*:refs/remotes/origin/*',
-                `refs/notes/ai:${captureRef}`,
             ];
             if (options.gitToken !== undefined) {
                 const helperDir =
@@ -4083,26 +4028,6 @@ export function shellPort(
                 shell.run('git', gitAuthenticatedArgs(options.gitToken, helperDir, fetchArgs));
             } else {
                 shell.run('git', fetchArgs);
-            }
-            const fetched = readRef(captureRef) ?? fail('fetched authorship notes ref is missing');
-            if (shell.capture('git', ['cat-file', '-t', fetched]).trim() !== 'commit') {
-                fail('fetched authorship notes ref does not point to a commit');
-            }
-            try {
-                // Network I/O can outlast another notes writer; pin its latest history before replacing it.
-                const latest = preserveLocalNotes();
-                if (readRef(captureRef) !== fetched) {
-                    fail(`authorship notes capture ref ${captureRef} changed after fetch`);
-                }
-                shell.run('git', [
-                    'update-ref',
-                    '--no-deref',
-                    'refs/notes/ai',
-                    fetched,
-                    latest ?? '0'.repeat(fetched.length),
-                ]);
-            } finally {
-                shell.run('git', ['update-ref', '--no-deref', '-d', captureRef, fetched]);
             }
         },
         pullRequest: (number) => {
@@ -4277,55 +4202,6 @@ export function shellPort(
             writeDeliveryReceiptAuthority(primaryRoot, number, authority, expectedCurrent),
         clearDeliveryReceiptAuthority: (number, expectedCurrent) =>
             clearDeliveryReceiptAuthority(primaryRoot, number, expectedCurrent),
-        syncAuthorshipNotes: ({ mergeCommitSha, headSha, headRef, baseRef }) => {
-            try {
-                // The squash merge this sync attributes was created through the API moments
-                // earlier, so the local repository has not seen it yet; git-ai's first probe
-                // is a cat-file on it and fails with exit 128 until it is fetched (#4344). Fetch
-                // the base ref, not the bare sha: the merge just advanced it, and a ref fetch
-                // follows the strongly consistent ref update carrying the squash, where a
-                // bare-sha fetch raced GitHub's object-store propagation at merge time (#4360).
-                shell.run('git', ['fetch', '--no-tags', GITHUB_HTTPS_REMOTE, `+${baseRef}`]);
-                const baseSha = landedSquashParent(mergeCommitSha, shell);
-                // The launcher-bounded child PATH carries only resolved executables; git-ai
-                // reaches it through the trusted path the launcher freezes when present.
-                shell.run(process.env.SOURDAW_TRUSTED_GIT_AI_PATH ?? 'git-ai', [
-                    'ci',
-                    'local',
-                    'merge',
-                    '--merge-commit-sha',
-                    mergeCommitSha,
-                    '--base-ref',
-                    baseRef,
-                    '--base-sha',
-                    baseSha,
-                    '--head-ref',
-                    headRef,
-                    '--head-sha',
-                    headSha,
-                    '--skip-fetch',
-                    '--skip-push',
-                ]);
-                if (options.gitToken) {
-                    const helperDir =
-                        options.helperDir ?? fail('authenticated git push requires a credential helper directory');
-                    shell.run(
-                        'git',
-                        gitAuthenticatedArgs(options.gitToken, helperDir, [
-                            'push',
-                            GITHUB_HTTPS_REMOTE,
-                            'refs/notes/ai:refs/notes/ai',
-                        ])
-                    );
-                } else {
-                    shell.run('git', ['push', 'origin', 'refs/notes/ai:refs/notes/ai']);
-                }
-            } catch (error) {
-                console.warn(
-                    `warning: git-ai authorship sync skipped: ${error instanceof Error ? error.message : String(error)}`
-                );
-            }
-        },
         log: (message) => console.log(message),
     };
 }
@@ -4387,29 +4263,6 @@ function trustedDeliveryGitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.
         ...parent,
         GIT_NO_REPLACE_OBJECTS: '1',
     };
-}
-
-function landedSquashParent(mergeCommitSha: string, shell: ShellRunner): string {
-    const squash = deliveryObjectId(mergeCommitSha, 'landed squash object identity is malformed');
-    if (shell.capture('git', ['cat-file', '-t', squash]) !== 'commit') {
-        fail('landed squash is not an available commit');
-    }
-    // Read immutable commit bytes: revision walkers can substitute shallow/grafted topology,
-    // and the PR snapshot's cached base may predate unrelated commits landed before this squash.
-    const commit = shell.capture('git', ['cat-file', 'commit', squash]);
-    const headers = commit.split('\n\n', 1)[0] ?? '';
-    const parents = headers.split('\n').filter((line) => /^parent(?:\s|$)/u.test(line));
-    if (parents.length !== 1) {
-        fail(`landed squash must have exactly one parent; found ${parents.length}`);
-    }
-    const parent = /^parent ([0-9a-f]{40}|[0-9a-f]{64})$/u.exec(parents[0] ?? '')?.[1];
-    if (parent === undefined) {
-        fail('landed squash parent object identity is malformed');
-    }
-    if (shell.capture('git', ['cat-file', '-t', parent]) !== 'commit') {
-        fail('landed squash parent is not an available commit');
-    }
-    return parent;
 }
 
 function deliveryObjectId(value: string, invalidMessage: string): string {
