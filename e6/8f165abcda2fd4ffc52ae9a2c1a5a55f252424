@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_a7596e3428bd82::t_d740764892b706 455-458,469
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e68f165abcda2fd4ffc52ae9a2c1a5a55f252424",
+  "prompts": {},
+  "sessions": {
+    "s_a7596e3428bd82": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aca2e851-00c5-419e-8e0e-44e03217e3c8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
