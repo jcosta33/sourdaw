@@ -1,0 +1,14 @@
+diff --git a/dist/@testing-library/dom.esm.js b/dist/@testing-library/dom.esm.js
+--- a/dist/@testing-library/dom.esm.js
++++ b/dist/@testing-library/dom.esm.js
+@@ -1 +1 @@
+-import _objectWithoutPropertiesLoose from '@babel/runtime/helpers/esm/objectWithoutPropertiesLoose';
++import _objectWithoutPropertiesLoose from '@babel/runtime/helpers/objectWithoutPropertiesLoose';
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -62,2 +62,2 @@
+-    "@babel/code-frame": "^7.10.4",
+-    "@babel/runtime": "^7.12.5",
++    "@babel/code-frame": "^8.0.6",
++    "@babel/runtime": "^8.1.2",

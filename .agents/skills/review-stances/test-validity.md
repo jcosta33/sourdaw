@@ -139,6 +139,11 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    constant, and an untraced anchor prescribed by the orchestrator are self-consistent and cannot
    redden. Mutating the shared expression must fail the case. An exact count or shape must derive from
    the thing observed, not from what the code currently produces.
+   A dependency version and an unchanged bigint literal cannot prove setter preservation. Magicast's
+   setter in the package admitted by #6285 printed `101n` as the number `101`; the earlier bug origin
+   and historical review draws are unknown. Run the real module's parse → setter → print → reparse
+   route, asserting the independently specified bigint value and runtime type. Reverting the native
+   `BigIntLiteral` setter fix must fail the bigint case in `scripts/__tests__/babel8Consumers.spec.ts`.
    (#4491, #4393, #5239, #5437, #5723, #5243, #5323, #5495, #5578)
 
     #1857's batch prefix projector (`064fb88392`, historical review stance unknown) retained -100 where the real

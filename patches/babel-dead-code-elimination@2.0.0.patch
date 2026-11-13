@@ -1,0 +1,16 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -40,4 +40,4 @@
+-    "@babel/core": "^7.23.7",
+-    "@babel/parser": "^7.23.6",
+-    "@babel/traverse": "^7.23.7",
+-    "@babel/types": "^7.23.6"
++    "@babel/core": "^8.1.2",
++    "@babel/parser": "^8.1.2",
++    "@babel/traverse": "^8.1.2",
++    "@babel/types": "^8.1.2"
+@@ -58 +58 @@
+-}
+\ No newline at end of file
++}

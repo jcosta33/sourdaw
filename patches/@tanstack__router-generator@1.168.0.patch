@@ -1,0 +1,10 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -52 +52 @@
+-    "@babel/types": "^7.29.8",
++    "@babel/types": "^8.1.2",
+@@ -100 +100 @@
+-}
+\ No newline at end of file
++}

@@ -1,0 +1,28 @@
+diff --git a/dist/builders-CDdrUKLb.js b/dist/builders-CDdrUKLb.js
+--- a/dist/builders-CDdrUKLb.js
++++ b/dist/builders-CDdrUKLb.js
+@@ -2081 +2081 @@
+-	def("BigIntLiteral").bases("Literal").build("value").field("value", or(String, Number)).field(...makeLiteralExtra(String, (val) => val + "n"));
++	def("BigIntLiteral").bases("Literal").build("value").field("value", BigInt).field(...makeLiteralExtra(BigInt, (val) => val + "n"));
+@@ -7710 +7709,0 @@
+-			"decimal",
+@@ -7719 +7718 @@
+-			"importAssertions",
++			"importAttributes",
+@@ -7726,2 +7724,0 @@
+-			["pipelineOperator", { proposal: "minimal" }],
+-			["recordAndTuple", { syntaxType: "hash" }],
+@@ -7849,0 +7847 @@
++	if (typeof value === "bigint") return b$5.bigIntLiteral(value);
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -25,2 +25,2 @@
+-    "@babel/parser": "^7.29.7",
+-    "@babel/types": "^7.29.7",
++    "@babel/parser": "^8.1.2",
++    "@babel/types": "^8.1.2",
+@@ -75 +75 @@
+-}
+\ No newline at end of file
++}

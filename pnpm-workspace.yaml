@@ -39,6 +39,16 @@ allowBuilds:
 # must not reload when that editor socket disconnects. Keep the browser control
 # in e2eHmrDisconnectBoundary.spec.ts when updating or removing this patch.
 patchedDependencies:
+    '@rolldown/plugin-babel@0.3.1': patches/@rolldown__plugin-babel@0.3.1.patch
+    'babel-plugin-react-compiler@1.0.0': patches/babel-plugin-react-compiler@1.0.0.patch
+    'magicast@0.5.5': patches/magicast@0.5.5.patch
+    'babel-dead-code-elimination@2.0.0': patches/babel-dead-code-elimination@2.0.0.patch
+    '@tanstack/router-utils@1.163.0': patches/@tanstack__router-utils@1.163.0.patch
+    '@testing-library/react@16.3.3': patches/@testing-library__react@16.3.3.patch
+    '@tanstack/router-generator@1.168.0': patches/@tanstack__router-generator@1.168.0.patch
+    '@tanstack/router-plugin@1.169.0': patches/@tanstack__router-plugin@1.169.0.patch
+    '@testing-library/dom@10.4.2': patches/@testing-library__dom@10.4.2.patch
+    'eslint-plugin-react-hooks@7.1.1': patches/eslint-plugin-react-hooks@7.1.1.patch
     '@automerge/automerge@3.5.0': patches/@automerge__automerge@3.5.0.patch
     vite@8.3.8: patches/vite@8.3.8.patch
 
@@ -47,6 +57,29 @@ patchedDependencies:
 # worker. Overriding core alone leaves incompatible backend kernels. Keep the
 # complete cohort together; bundled-model inference checks its actual runtime.
 overrides:
+    '@rolldown/plugin-babel@0.3.1>@babel/core': 8.1.2
+    '@rolldown/plugin-babel@0.3.1>@babel/plugin-transform-runtime': 8.1.2
+    '@rolldown/plugin-babel@0.3.1>@babel/runtime': 8.1.2
+    'babel-plugin-react-compiler@1.0.0>@babel/types': 8.1.2
+    'magicast@0.5.5>@babel/parser': 8.1.2
+    'magicast@0.5.5>@babel/types': 8.1.2
+    'babel-dead-code-elimination@2.0.0>@babel/core': 8.1.2
+    'babel-dead-code-elimination@2.0.0>@babel/parser': 8.1.2
+    'babel-dead-code-elimination@2.0.0>@babel/traverse': 8.1.2
+    'babel-dead-code-elimination@2.0.0>@babel/types': 8.1.2
+    '@tanstack/router-utils@1.163.0>@babel/generator': 8.1.2
+    '@tanstack/router-utils@1.163.0>@babel/parser': 8.1.2
+    '@tanstack/router-utils@1.163.0>@babel/types': 8.1.2
+    '@tanstack/router-utils@1.163.0>babel-dead-code-elimination': 2.0.0
+    '@testing-library/react@16.3.3>@babel/runtime': 8.1.2
+    '@tanstack/router-generator@1.168.0>@babel/types': 8.1.2
+    '@tanstack/router-plugin@1.169.0>@babel/core': 8.1.2
+    '@tanstack/router-plugin@1.169.0>@babel/template': 8.1.2
+    '@tanstack/router-plugin@1.169.0>@babel/types': 8.1.2
+    '@testing-library/dom@10.4.2>@babel/code-frame': 8.0.6
+    '@testing-library/dom@10.4.2>@babel/runtime': 8.1.2
+    'eslint-plugin-react-hooks@7.1.1>@babel/core': 8.1.2
+    'eslint-plugin-react-hooks@7.1.1>@babel/parser': 8.1.2
     '@spotify/basic-pitch@1.0.1>@tensorflow/tfjs': 4.22.0
     # The umbrella's ES5 entry imports core-js/stable; current core-js preserves it.
     '@tensorflow/tfjs@4.22.0>core-js': 3.51.0

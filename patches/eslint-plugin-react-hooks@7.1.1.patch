@@ -1,0 +1,8 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -42,2 +42,2 @@
+-    "@babel/core": "^7.24.4",
+-    "@babel/parser": "^7.24.4",
++    "@babel/core": "^8.1.2",
++    "@babel/parser": "^8.1.2",
