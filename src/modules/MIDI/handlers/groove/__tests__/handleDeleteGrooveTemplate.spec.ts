@@ -77,8 +77,16 @@ describe('handleDeleteGrooveTemplate', () => {
             expect(mockDeleteGrooveTemplate).toHaveBeenCalledWith('groove-1');
         });
 
+        it('treats a template already gone as an extraction already undone, never a conflict', () => {
+            mockSnapshotDeletion.mockReturnValue(null);
+            mockDeleteGrooveTemplate.mockReset();
+            mockDeleteGrooveTemplate.mockReturnValue(null);
+
+            expect(handleDeleteGrooveTemplate.isNoop?.(guarded)).toBe(true);
+            expect(handleDeleteGrooveTemplate.execute(guarded)).toEqual({ status: 'no-write' });
+        });
+
         it.each([
-            ['absent', null, /no longer in the project/],
             [
                 'renamed since',
                 { template: { ...extracted, name: 'Renamed' }, templateIndex: 0, assignments: [] },

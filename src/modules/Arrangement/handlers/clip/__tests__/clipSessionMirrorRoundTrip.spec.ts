@@ -63,6 +63,7 @@ import { grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
 import {
     assignGrooveTemplate,
     decodeMidiClipDataSnapshots,
+    deleteGrooveTemplate,
     getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
 } from '#/modules/MIDI/useCases';
@@ -1721,6 +1722,36 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(grooveTemplateStore.value?.assignments).toEqual(assignments);
             expect(undoStore.value?.past).toHaveLength(1);
         });
+
+        it.each([
+            ['live', false],
+            ['after a binary reload', true],
+        ])(
+            'consumes the undo of an extraction whose template a collaborator already deleted (%s)',
+            async (_case, reload) => {
+                await executeAppAction({ type: 'renameTrack', payload: { trackId: TRACK_ID, name: 'Lead Keys' } });
+                await extractGrooveAsAgent();
+                const [template] = extractedTemplates();
+                if (template === undefined) {
+                    throw new Error('Expected the extracted template');
+                }
+                // A collaborator deletes the new template; that edit is not on this session's undo stack.
+                expect(deleteGrooveTemplate(template.id)).not.toBeNull();
+                flushAutomergeStorageWrites();
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+                );
+                if (reload) {
+                    reloadSavedProject();
+                }
+
+                expect((await undo()).headConsumed).toBe(true);
+                expect(extractedTemplates()).toEqual([]);
+                expect(undoStore.value?.past).toHaveLength(1);
+                expect((await undo()).headConsumed).toBe(true);
+                expect(trackStore.value?.tracks[0]?.name).toBe('Keys');
+            }
+        );
     });
 
     describe('audio start trim captured source replay', () => {

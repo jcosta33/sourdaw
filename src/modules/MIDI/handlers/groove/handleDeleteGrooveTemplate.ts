@@ -18,9 +18,10 @@ function findGuardedDeleteConflict(payload: DeleteGrooveTemplatePayload): string
     if (payload.expectedTemplate === undefined) {
         return null;
     }
+    // A template already gone leaves the extraction undone, so there is nothing to refuse.
     const snapshot = snapshotGrooveTemplateDeletion(payload.templateId);
     if (snapshot === null) {
-        return `Groove template "${payload.templateId}" is no longer in the project`;
+        return null;
     }
     if (!valuesEqual(snapshot.template, payload.expectedTemplate)) {
         return `Groove template "${payload.templateId}" changed after it was extracted`;
@@ -32,9 +33,7 @@ function findGuardedDeleteConflict(payload: DeleteGrooveTemplatePayload): string
 }
 
 export const handleDeleteGrooveTemplate = createHandler<'deleteGrooveTemplate'>({
-    isNoop: (action) =>
-        action.payload.expectedTemplate === undefined &&
-        snapshotGrooveTemplateDeletion(action.payload.templateId) === null,
+    isNoop: (action) => snapshotGrooveTemplateDeletion(action.payload.templateId) === null,
     execute: (action) => {
         const conflict = findGuardedDeleteConflict(action.payload);
         if (conflict !== null) {
