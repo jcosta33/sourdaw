@@ -268,6 +268,7 @@
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
                 "pnpm-workspace.yaml",
+                "patches/@automerge__automerge@3.5.0.patch",
                 "patches/vite@8.3.8.patch",
                 "public/legal/MLC-WEB-NOTICES.txt",
                 "public/legal/THIRD-PARTY-NOTICES.md"
@@ -277,6 +278,7 @@
                 "server/package.json",
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
+                "patches/@automerge__automerge@3.5.0.patch",
                 "patches/vite@8.3.8.patch",
                 "https://raw.githubusercontent.com/mlc-ai/xgrammar/ace2321a29471130f3f64fb1882741a5547c6f36/NOTICE",
                 "https://raw.githubusercontent.com/msgpack/msgpack-c/8c602e8579c7e7d65d6f9c6703c9699db3fb0488/COPYING",
@@ -308,7 +310,7 @@
                 "collaboration server"
             ],
             "evidence": [
-                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs; pnpm applies the pinned Vite patch as part of dependency source.",
+                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs; pnpm applies the pinned Automerge and Vite patches as part of dependency source.",
                 "MLC-WEB-NOTICES.txt preserves separately sourced SDK and bundled third-party notices; assembled dependency records bind installed metadata and canonical terms without authenticating package attribution or proving the SDK build genealogy."
             ],
             "obligations": [
