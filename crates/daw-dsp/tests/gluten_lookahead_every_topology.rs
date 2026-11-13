@@ -9,6 +9,8 @@
 //! Each render here runs one sample per block, so `current_gr_db` reads that
 //! sample's own reduction rather than a block average.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::gluten::engine::GlutenEngine;
 use daw_dsp::gluten::GlutenInstance;
 

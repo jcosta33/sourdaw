@@ -7,6 +7,8 @@
 //! contract is measured separately at the bottom of this file, on a hard-panned
 //! one.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::ProofChamberInstance;
 
 const SAMPLE_RATES: [f32; 2] = [44_100.0, 48_000.0];

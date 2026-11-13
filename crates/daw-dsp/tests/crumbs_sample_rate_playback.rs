@@ -11,6 +11,8 @@
 //! Drum, Slice — because each mode builds its own trigger params and any of
 //! them could have dropped the rate.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::sync::Arc;
 
 use daw_dsp::crumbs::engine::CrumbsEngine;

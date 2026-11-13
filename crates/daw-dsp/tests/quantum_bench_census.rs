@@ -30,6 +30,8 @@
 //! names has moved on. Constructing the type is the one thing a row cannot fake
 //! and still be a measurement of that device.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 

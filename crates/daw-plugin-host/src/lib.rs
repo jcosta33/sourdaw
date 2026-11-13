@@ -1,3 +1,8 @@
+#![cfg_attr(
+    test,
+    allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
+)]
+
 pub mod clap_host;
 pub mod clap_wrapper;
 pub mod parameter_events;

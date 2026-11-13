@@ -24,6 +24,7 @@
 //! that instead, which is the quiet failure this file exists to prevent.
 
 #![cfg(debug_assertions)]
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
 
 use assert_no_alloc::{assert_no_alloc, AllocDisabler};
 use proof_chamber::{ProofChamberInstance, UnexposedEngine};

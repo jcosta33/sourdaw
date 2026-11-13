@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::grinder::engine::GrinderEngine;
 use daw_dsp::grinder::nam::native_admission::NativeNamPlan;
 

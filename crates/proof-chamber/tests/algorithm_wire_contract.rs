@@ -24,6 +24,8 @@
 //!    here instead of engaging an engine that renders its dry input and calls
 //!    it reverb.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::{ProofChamberInstance, UnexposedEngine};
 
 const SAMPLE_RATE: f32 = 48_000.0;

@@ -1,3 +1,8 @@
+#![cfg_attr(
+    test,
+    allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
+)]
+
 // Native consumers retain every runtime API even when they need only primitives in WASM.
 #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-runtime"))]
 pub mod bacteria;

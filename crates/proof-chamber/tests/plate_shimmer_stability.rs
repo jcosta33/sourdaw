@@ -13,6 +13,8 @@
 //! rather than a name; what the *interval* does is measured in
 //! `plate_shimmer_render_contract.rs`.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::ProofChamberInstance;
 
 const SAMPLE_RATE: usize = 48_000;

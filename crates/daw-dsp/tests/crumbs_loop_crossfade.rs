@@ -30,6 +30,8 @@
 //! its 20 kHz default, the envelope is at sustain by the time the first wrap
 //! arrives, and the master gain smoother has settled at unity.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::sync::Arc;
 
 use daw_dsp::crumbs::engine::CrumbsEngine;

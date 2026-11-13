@@ -97,6 +97,8 @@
 //! the glide travels, not merely by how much. No choice of tolerance can let one
 //! pass for the other.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::fermenter::FermenterInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

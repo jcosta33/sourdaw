@@ -1,5 +1,7 @@
 //! Rendered contract for the Dutch Oven's shipped Infinite space.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::collections::BTreeMap;
 
 use proof_chamber::ProofChamberInstance;

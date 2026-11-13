@@ -2,6 +2,8 @@
 //! Converter phase is measured through the unchanged Parallel route; only the
 //! added compensation is compared with an independent ideal delay.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::bacteria::BacteriaInstance;
 
 #[cfg(debug_assertions)]
