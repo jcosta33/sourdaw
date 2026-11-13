@@ -164,6 +164,15 @@ Split out (a stance matching one carries that file, not this one): replay agains
     duplicate controls. A local empty array is not absent linked material; admitting a link must not revive an
     invalid source or suppress the wrong target. A getter value alone is not follower playback evidence; restoring
     the empty-points early return must fail both routes.
+15. **Every undoable entry a new command records reaches the saved session history (#3328, #4953, #6497).**
+    Failure: the session mirror refuses an entry whose inverse has no internal replay contract, and its walk stops
+    there, so on reload that entry and every older one behind it are gone; in-memory Undo still works, so specs
+    that never save and hydrate stay green. #3328 made the mirror refuse uncontracted inverses without registering
+    the three section range removals, and #4953 shipped `automateParameterRange` on `removeAutomationLane` and
+    `restoreAutomationLanePoints` without contracts. Probe: for a command that adds or reuses an inverse, record it
+    behind an older unrelated entry, save, reload, reset projections and hydrate the mirror, then require both
+    entries in order and exact state after each Undo and Redo; removing the new contract must fail the case.
+    Reviewing a new command, list its inverse types and check each against `getInternalUndoSessionReplayContracts`.
 
 ## Retired lessons
 

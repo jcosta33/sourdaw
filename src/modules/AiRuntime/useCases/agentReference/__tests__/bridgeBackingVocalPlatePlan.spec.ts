@@ -109,29 +109,12 @@ describe('bridgeBackingVocalPlatePlan', () => {
         ).toMatchObject({ status: 'rejected' });
     });
 
-    it.each(['automateSendRanges', 'renderProjectSections'])(
-        'keeps %s unavailable outside the selected workflow admission',
-        (name) => {
-            const calls = [
-                {
-                    name,
-                    arguments:
-                        name === 'automateSendRanges'
-                            ? {
-                                  trackIds: ['track-bgv'],
-                                  busId: 'bus-plate',
-                                  sectionIds: ['section-chorus'],
-                                  tailBars: 4,
-                                  targetLevelDb: -10,
-                              }
-                            : { sectionIds: ['section-chorus'] },
-                },
-            ];
+    it('keeps renderProjectSections unavailable outside the selected workflow admission', () => {
+        const calls = [{ name: 'renderProjectSections', arguments: { sectionIds: ['section-chorus'] } }];
 
-            expect(bridgeBackingVocalPlatePlan({ calls, context, selected: false })).toEqual({
-                status: 'rejected',
-                reason: `${name} is available only through the selected backing-vocal plate workflow`,
-            });
-        }
-    );
+        expect(bridgeBackingVocalPlatePlan({ calls, context, selected: false })).toEqual({
+            status: 'rejected',
+            reason: 'renderProjectSections is available only through the selected backing-vocal plate workflow',
+        });
+    });
 });

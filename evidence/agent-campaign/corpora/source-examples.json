@@ -11,7 +11,7 @@
                 "addDevice",
                 "setDeviceParameter",
                 "addSend",
-                "automateSendRanges",
+                "automateParameterRange",
                 "renderProjectSections"
             ],
             "risk": [
@@ -20,7 +20,7 @@
                 "bounded-reversible",
                 "bounded-reversible",
                 "authority-sensitive",
-                "authority-sensitive",
+                "bounded-reversible",
                 "external-effect"
             ]
         },
@@ -28,8 +28,8 @@
             "id": "EX-02",
             "disposition": "recovered",
             "spec": "src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts",
-            "actionTypes": ["addDevice", "setDeviceParameter", "automateTrackGainRange"],
-            "risk": ["bounded-reversible", "bounded-reversible", "authority-sensitive"]
+            "actionTypes": ["addDevice", "setDeviceParameter", "automateParameterRange"],
+            "risk": ["bounded-reversible", "bounded-reversible", "bounded-reversible"]
         },
         {
             "id": "EX-03",
