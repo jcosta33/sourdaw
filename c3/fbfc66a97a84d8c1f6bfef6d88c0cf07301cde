@@ -1,0 +1,23 @@
+release/open-source-inventory.json
+  s_e385c7e8f0ec1b::t_94902a9ccf89ff 172,297,1903
+pnpm-lock.yaml
+  s_e385c7e8f0ec1b::t_b3b5afd4d23376 166,175,5767
+public/legal/DEPENDENCY-LICENSES.txt
+  s_e385c7e8f0ec1b::t_58d824b32029ea 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c3fbfc66a97a84d8c1f6bfef6d88c0cf07301cde",
+  "prompts": {},
+  "sessions": {
+    "s_e385c7e8f0ec1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d20b-16d6-7491-871b-902fdaef401b",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
