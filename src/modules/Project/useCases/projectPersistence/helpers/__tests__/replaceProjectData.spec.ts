@@ -140,14 +140,14 @@ vi.mock('../resetModuleStoresToDefault', () => ({ resetModuleStoresToDefault: mo
 vi.mock('../verifyAudioBufferReferences', () => ({ verifyAudioBufferReferences: mockVerifyAudioBufferReferences }));
 
 import { createDefaultProductionBrief } from '../../../../models/ProductionBrief';
+import { captureProjectTransitionAuthority } from '../../captureProjectTransitionAuthority';
+import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
 import { replaceProjectData } from '../replaceProjectData';
+import { runProjectLoadTransaction } from '../runProjectLoadTransaction';
 import { unsavedClosedTakes } from '../unsavedClosedTakes';
 
 import type { HydratableProjectData, HydratableProjectTrack } from '../isHydratableProjectData';
 import type { ProjectLoadTransaction } from '../runProjectLoadTransaction';
-import { runProjectLoadTransaction } from '../runProjectLoadTransaction';
-import { captureProjectTransitionAuthority } from '../../captureProjectTransitionAuthority';
-import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
 
 function makeData(referencedBufferId?: string): HydratableProjectData {
     const tracks: HydratableProjectTrack[] = [];

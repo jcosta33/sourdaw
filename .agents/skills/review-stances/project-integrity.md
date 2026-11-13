@@ -17,6 +17,8 @@ Split out (a stance matching one carries that file, not this one): replay agains
 
 ## Standing probes
 
+**Raw owner scans must tolerate valid optional fields (#6506).** A correctly admitted current-format project track can omit `devices`; a raw CRDT consumer that iterates the field directly can throw during an unrelated track arrival and unmount a mounted owner. Keep the raw project and track/device object identities as the owner token, and scan `(track.devices ?? [])`. Probe through a mounted consumer and a real CRDT mutation that appends a valid track with no `devices`; the existing owner remains rendered. Preserve duplicate-owner and wrong-device-type refusal, plus equal-value successor and session-reset identity checks. Reverting the optional-field guard must fail the named integration case.
+
 1. **Save certifies the exact snapshot and every asset it references (#964, #1077, #2822, #3877).** Failure: Save
    returns true and clears dirty while the document points at PCM or state that is not durable, was edited after
    capture, or is certified by a receipt belonging to an older candidate. Probe: abort only the referenced asset's

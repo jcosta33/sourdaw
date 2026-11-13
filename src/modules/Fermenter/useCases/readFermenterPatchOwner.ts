@@ -3,7 +3,7 @@ import { getObjectId } from '@automerge/automerge';
 import { captureProjectIdentity, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 type RawDevice = { id: string; type: string };
-type RawTrack = { devices: RawDevice[] };
+type RawTrack = { devices?: RawDevice[] };
 type RawProject = { tracks?: { tracks?: RawTrack[] } };
 
 /** Identify the live raw device incarnation without treating a patch value as its owner. */
@@ -15,7 +15,7 @@ export function readFermenterPatchOwner(deviceId: string): string | null {
     }
     let owner: { track: RawTrack; device: RawDevice } | null = null;
     for (const track of tracks) {
-        for (const device of track.devices) {
+        for (const device of track.devices ?? []) {
             if (device.id !== deviceId) {
                 continue;
             }

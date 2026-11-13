@@ -92,6 +92,7 @@ import { getFermenterHandlers } from '../../../useCases/getFermenterHandlers';
 import { hydrateFermenterFromProject } from '../../../useCases/hydrateFermenterFromProject';
 import { prepareFermenterPatchWrite } from '../../../useCases/prepareFermenterPatchWrite';
 import { applyMorphedPatch } from '../../../useCases/presetMorph/applyMorphedPatch';
+import { readFermenterPatchOwner } from '../../../useCases/readFermenterPatchOwner';
 import { selectFermenterFilterChoice } from '../../../useCases/selectFermenterFilterChoice';
 import { FermenterPanel } from '../FermenterPanel';
 
@@ -520,6 +521,35 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         expect(screen.getByRole('button', { name: 'Show patch A' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'Show patch B' })).toBeDisabled();
         expect(screen.queryByText('Modified')).toBeNull();
+    });
+
+    it('keeps the mounted owner when a current-format partial track arrives', async () => {
+        const auditioned = await uneditedAudition();
+        const ownerToken = readFermenterPatchOwner(DEVICE_ID);
+        expect(ownerToken).not.toBeNull();
+        act(() => {
+            mutateCrdtDoc<{
+                tracks: {
+                    tracks: Array<{
+                        id: string;
+                        name: string;
+                        kind: string;
+                        clips: unknown[];
+                        devices?: unknown[];
+                    }>;
+                };
+            }>({
+                id: 'root',
+                changeFn: (root) => {
+                    root.tracks.tracks.push({ id: 'partial', name: 'Partial', kind: 'audio', clips: [] });
+                },
+            });
+        });
+        await waitFor(() => expect(screen.getByRole('slider', { name: /^Brightness$/ })).toBeInTheDocument());
+        expect(committedPatch()).toEqual(auditioned);
+        expect(readFermenterPatchOwner(DEVICE_ID)).toBe(ownerToken);
+        expect(screen.getByRole('button', { name: 'Show patch A' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Show patch B' })).toBeEnabled();
     });
 
     it('clears A/B and Modified when a foreign project patch replaces a local continuous echo', async () => {
