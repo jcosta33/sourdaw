@@ -59,7 +59,8 @@ src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx`. Fo
    foreground color through a token class and declares its own background gradient, render it in each active
    variant, read the class actually applied to its text, resolve it through the current design tokens, parse
    every declared gradient stop including color mixes, and calculate WCAG sRGB relative-luminance contrast for
-   each pair against the product's 4.5:1 foreground contract. A glow sharing the class is not foreground text. Do
+   each pair against the product's 4.5:1 enabled foreground contract. Inactive or disabled controls are exempt
+   from this contrast floor. A glow sharing the class is not foreground text. Do
    not hardcode token values or treat the class name as proof of legibility. Changing active red `LatchButton`
    text back to `text-state-record` (`--color-state-record` over the `--surface-default` to `--surface-raised`
    gradient) must fail "keeps every active variant above the 4.5:1 foreground contract on every declared gradient
@@ -81,3 +82,10 @@ src/components/daw/__tests__/LatchButton.contrast.spec.tsx`.
    label-only proposal keys or action-type-plus-label history keys must fail the shrink or warning assertions
    under `pnpm guard --profile focused -- pnpm test:run
 src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx` (#4190, #4184).
+9. **Placeholder legibility must preserve the empty-versus-filled hierarchy (#6408).** PR #6403 repaired faint Light
+   placeholders by giving them the same primary foreground as entered values; its contrast-only probe missed the
+   resulting ambiguity. Resolve the value and placeholder classes for enabled controls in both themes, require distinct
+   effective foregrounds, and measure placeholder contrast against every real composited background stop. The enabled
+   placeholder must remain at least 4.5:1 without becoming the entered-value color. Inactive or disabled controls are
+   exempt from this contrast floor. Reverting either route to `placeholder:text-text-primary` must fail the hierarchy
+   assertion even when the contrast assertion still passes.

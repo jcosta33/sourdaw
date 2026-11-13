@@ -102,11 +102,16 @@ const readToken = (source: string, name: string): string => {
     return value.trim();
 };
 
-const readLightColor = (token: string): string => {
-    const value = new RegExp(`${token}:\\s*([^;]+);`, 'u').exec(lightBlock)?.[1] ?? readToken(tokens, token);
+type ThemeColorReader = (token: string) => string;
+
+const readThemeColor = (token: string, overrides = ''): string => {
+    const value = new RegExp(`${token}:\\s*([^;]+);`, 'u').exec(overrides)?.[1] ?? readToken(tokens, token);
     const alias = /^var\((--[a-z-]+)\)$/iu.exec(value.trim())?.[1];
-    return alias === undefined ? value.trim() : readLightColor(alias);
+    return alias === undefined ? value.trim() : readThemeColor(alias, overrides);
 };
+
+const readLightColor: ThemeColorReader = (token) => readThemeColor(token, lightBlock);
+const readDarkColor: ThemeColorReader = (token) => readThemeColor(token);
 
 const luminance = (hex: string): number => {
     const channels = /^#([0-9a-f]{6})$/iu.exec(hex)?.[1];
@@ -164,7 +169,7 @@ type MainWindowStops = {
     windowBottom: string;
 };
 
-const mainWindowStops = (utility: string): MainWindowStops => {
+const mainWindowStops = (utility: string, readColor: ThemeColorReader = readLightColor): MainWindowStops => {
     const windowBlock = utilityBlock(utility);
     const rgbaLayers = Array.from(
         windowBlock.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/gu),
@@ -186,7 +191,7 @@ const mainWindowStops = (utility: string): MainWindowStops => {
     ) {
         throw new Error(`Missing ${utility} gradient layers or accent fade endpoint`);
     }
-    const panelInset = readToken(lightBlock, '--color-bg-panelInset');
+    const panelInset = readColor('--color-bg-panelInset');
     const fadeWhiteAlpha = topWhite.alpha + (bottomWhite.alpha - topWhite.alpha) * (fadeEndpoint / 100);
     const overPanel = (white: { color: string; alpha: number }, accentAlpha: number): string =>
         composite(white.color, composite(topAccent.color, panelInset, accentAlpha), white.alpha);
@@ -197,7 +202,8 @@ const mainWindowStops = (utility: string): MainWindowStops => {
     };
 };
 
-const grinderWindowStops = (): MainWindowStops => mainWindowStops('grinder-window');
+const grinderWindowStops = (readColor: ThemeColorReader = readLightColor): MainWindowStops =>
+    mainWindowStops('grinder-window', readColor);
 const crustWindowStops = (): MainWindowStops => mainWindowStops('crust-window');
 
 const grinderFaceplateStops = (): Record<string, string> => {
@@ -377,13 +383,17 @@ describe('semantic light theme', () => {
         return placeholderClass;
     };
 
-    const placeholderColor = (placeholderClass: string, background: string): string => {
+    const placeholderColor = (
+        placeholderClass: string,
+        background: string,
+        readColor: ThemeColorReader = readLightColor
+    ): string => {
         const match = /^placeholder:text-(muted-foreground|text-primary)(?:\/(\d+))?$/u.exec(placeholderClass);
         if (match === null) {
             throw new Error(`Unsupported search placeholder foreground: ${placeholderClass}`);
         }
         const token = match[1] === 'muted-foreground' ? '--color-muted-foreground' : '--color-text-primary';
-        const foreground = readLightColor(token);
+        const foreground = readColor(token);
         return match[2] === undefined ? foreground : composite(foreground, background, Number(match[2]) / 100);
     };
 
@@ -437,7 +447,7 @@ describe('semantic light theme', () => {
         return (title.getAttribute('class') ?? '').split(/\s+/u).filter(Boolean);
     };
 
-    const dawInsetSurfaceStops = (): Record<string, string> => {
+    const dawInsetSurfaceStops = (readColor: ThemeColorReader = readLightColor): Record<string, string> => {
         const backgroundSource =
             /background:([\s\S]*?);\n {4}border:/u.exec(utilityBlock('daw-inset-surface'))?.[1] ?? '';
         const layers = Array.from(backgroundSource.matchAll(/rgba\([^)]*\)/gu), (match) => parseCssColor(match[0]));
@@ -451,7 +461,7 @@ describe('semantic light theme', () => {
         ) {
             throw new Error('Missing daw-inset-surface gradient layers');
         }
-        const panelInset = readToken(lightBlock, '--color-bg-panelInset');
+        const panelInset = readColor('--color-bg-panelInset');
         const at = (position: number): string => {
             const whiteAlpha = topWhite.alpha + (bottomWhite.alpha - topWhite.alpha) * (position / 100);
             const blackAlpha = topBlack.alpha * Math.max(0, 1 - position / fadeEndpoint);
@@ -501,7 +511,10 @@ describe('semantic light theme', () => {
         expect(foregroundClass).toBe('placeholder:text-muted-foreground');
     });
 
-    it('keeps enabled input placeholders readable on the top, center, and bottom inset stops', () => {
+    it.each([
+        { theme: 'Dark', readColor: readDarkColor },
+        { theme: 'Light', readColor: readLightColor },
+    ])('keeps $theme input placeholders readable and subordinate on every inset stop', ({ readColor }) => {
         const markup = renderToStaticMarkup(createElement(Input, { placeholder: 'Buffer size' }));
         const input = parseActiveHtml(markup).querySelector('input');
         if (input === null) {
@@ -509,17 +522,22 @@ describe('semantic light theme', () => {
         }
         const classes = (input.getAttribute('class') ?? '').split(/\s+/u).filter(Boolean);
         expect(classes).toContain('daw-inset-surface');
+        expect(classes).toContain('text-text-primary');
         const foregroundClass = classes.findLast((name) => name.startsWith('placeholder:text-'));
         if (foregroundClass === undefined) {
             throw new Error('Missing final shared input placeholder foreground');
         }
-        for (const [stop, background] of Object.entries(dawInsetSurfaceStops())) {
+        expect(foregroundClass).toBe('placeholder:text-text-primary/85');
+
+        const enteredForeground = readColor('--color-text-primary');
+        for (const [stop, background] of Object.entries(dawInsetSurfaceStops(readColor))) {
+            const placeholderForeground = placeholderColor(foregroundClass, background, readColor);
+            expect(placeholderForeground).not.toBe(enteredForeground);
             expect(
-                contrast(controlForeground(foregroundClass, background), background),
-                `Shared input placeholder on ${stop}`
+                contrast(placeholderForeground, background),
+                `Shared input placeholder on ${stop}: ${placeholderForeground} over ${background}`
             ).toBeGreaterThanOrEqual(4.5);
         }
-        expect(foregroundClass).toBe('placeholder:text-text-primary');
     });
 
     it('keeps Preferences grid group labels readable on the dialog’s actual composite surface', () => {
@@ -558,7 +576,10 @@ describe('semantic light theme', () => {
         expect(contrast(foreground, background)).toBeGreaterThanOrEqual(4.5);
     });
 
-    it('keeps the Grinder preset search placeholder readable on every real nested window stop', () => {
+    it.each([
+        { theme: 'Dark', readColor: readDarkColor },
+        { theme: 'Light', readColor: readLightColor },
+    ])('keeps the $theme Grinder search placeholder readable and subordinate on every window stop', ({ readColor }) => {
         const grinderSource = readFileSync(
             resolve(process.cwd(), 'src/modules/Grinder/presentations/views/GrinderPanel.tsx'),
             'utf8'
@@ -574,12 +595,17 @@ describe('semantic light theme', () => {
             variant: 'ghost',
             inputClassName: routeInputClass,
         });
-        expect(effectivePlaceholderClass).toMatch(/^placeholder:text-text-primary(?:\/\d+)?$/u);
+        expect(effectivePlaceholderClass).toBe('placeholder:text-text-primary/85');
 
-        for (const [stop, windowBackground] of Object.entries(grinderWindowStops())) {
+        const enteredForeground = readColor('--color-text-primary');
+        for (const [stop, windowBackground] of Object.entries(grinderWindowStops(readColor))) {
             const background = composite('#000000', windowBackground, Number(wellAlphaSource) / 100);
-            const foreground = placeholderColor(effectivePlaceholderClass, background);
-            expect(contrast(foreground, background), `Search presets on ${stop}`).toBeGreaterThanOrEqual(4.5);
+            const placeholderForeground = placeholderColor(effectivePlaceholderClass, background, readColor);
+            expect(placeholderForeground).not.toBe(enteredForeground);
+            expect(
+                contrast(placeholderForeground, background),
+                `Search presets on ${stop}: ${placeholderForeground} over ${background}`
+            ).toBeGreaterThanOrEqual(4.5);
         }
     });
 
