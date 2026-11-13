@@ -62,7 +62,7 @@ jobs:
           key: cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}
 
       # This is the actual Linux dependency graph consumed by the required job;
-      # a whole-workspace fetch would include macOS-only sourdaw-native.
+      # a whole-workspace fetch would also include the separately gated native crate.
       - name: Rust workspace health gates
         run: sh scripts/health-gates-rust.sh
 

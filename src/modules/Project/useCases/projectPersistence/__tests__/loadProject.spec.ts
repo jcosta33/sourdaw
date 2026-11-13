@@ -287,13 +287,14 @@ describe('loadProject', () => {
         let live = true;
         const transaction = runProjectLoadTransaction({ yieldToInFlight: true });
         const activate = vi.spyOn(transaction, 'activate');
+        const abandon = vi.spyOn(transaction, 'abandon');
         const loading = loadProject({ transaction, shouldContinue: () => live });
         await entered.promise;
         live = false;
         release.resolve();
         await expect(loading).resolves.toBe(false);
-        // activate releases the real helper's preparing count even on a refusal.
-        expect(activate).toHaveBeenCalledOnce();
+        expect(activate).not.toHaveBeenCalled();
+        expect(abandon).toHaveBeenCalledOnce();
         expect(loadCrdtProject).not.toHaveBeenCalled();
         expect(projectCrdtToStores).not.toHaveBeenCalled();
         expect(mocks.reconcileSessionUndoForProject).not.toHaveBeenCalled();

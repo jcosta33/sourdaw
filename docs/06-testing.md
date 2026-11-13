@@ -100,7 +100,7 @@ Nested UI folders follow the same pattern (e.g. `presentations/views/Mixer/__tes
 
 Every `it` block describes the behaviour under test concisely, using direct verb phrases or `should`/`should not`:
 
-- `it('adds the track and emits TrackAddedEvent')`
+- `it('removes the track and emits TrackRemovedEvent')`
 - `it('should not emit when the store is empty')`
 - `it('throws InvalidTempoError when bpm is below 20')`
 
@@ -158,33 +158,20 @@ What decides between them is faithfulness, not preference. A hand-listed stub mu
 ### Canonical test shape for an injectable
 
 ```typescript
-// Real pattern for Arrangement/useCases/addTrack.ts:
-// inject only ArrangementEventBus; thin repos are static imports (often vi.mock'd).
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+// Pattern for Arrangement/useCases/publishTrackRemoved.ts:
+// inject only ArrangementEventBus; thin repos stay static imports (often vi.mock'd).
+import { describe, it, expect, vi } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { addTrack } from '../addTrack';
+import { publishTrackRemoved } from '../publishTrackRemoved';
 
-vi.mock('../../repositories/track/getTrackState', () => ({ getTrackState: vi.fn() }));
-vi.mock('../../repositories/track/setTrackState', () => ({ setTrackState: vi.fn() }));
-
-describe('addTrack', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-    });
-
-    it('should append the track and emit track.added', async () => {
-        const { getTrackState } = await import('../../repositories/track/getTrackState');
-        const { setTrackState } = await import('../../repositories/track/setTrackState');
-        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null });
-
+describe('publishTrackRemoved', () => {
+    it('should emit track.removed with the removed track id', async () => {
         const eventBus = { emit: vi.fn().mockResolvedValue(undefined) };
-        injectDependencies(addTrack, { eventBus });
+        injectDependencies(publishTrackRemoved, { eventBus });
 
-        const result = addTrack({ name: 'Drums', kind: 'audio' });
+        await publishTrackRemoved({ trackId: 'track-1' });
 
-        expect(result).not.toBeNull();
-        expect(setTrackState).toHaveBeenCalled();
-        expect(eventBus.emit).toHaveBeenCalledWith('track.added', expect.objectContaining({ name: 'Drums' }));
+        expect(eventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 'track-1' });
     });
 });
 ```
@@ -192,7 +179,6 @@ describe('addTrack', () => {
 Notes on this shape:
 
 - `injectDependencies` mocks **only** the inject map keys (here `eventBus`). Static repo imports are mocked with `vi.mock` when needed.
-- Prefer the real `addTrack.spec.ts` under Arrangement as the source of truth when examples drift.
 
 ---
 
@@ -828,6 +814,12 @@ in a fresh physical `0700` execution root under `/var/tmp`; shared objects and a
 Setup changes ownership only of opened physical directories inside this fresh root, preserving
 source files and external store inodes. The unit pnpm action installs its complete tool closure into
 an independent job directory under `/var/tmp`, without granting access to runner HOME or caches.
+The bootstrap uses `npm ci --ignore-scripts` against its reviewed official-registry lock. Its bundled
+`get-pnpm` downloader verifies the exact selected wrapper and native platform package signatures
+with pinned npm keys and verifies both tarball checksums before extraction. Setup checks the physical
+native executable's platform and architecture, then executes that file directly for its version before
+exporting PATH. Windows uses `pnpm.exe` directly. No lifecycle scripts, shell launchers, user config,
+or global package-manager installation participate in this trust path.
 Install and unit verification run through `setpriv` with cleared groups and capabilities,
 `no_new_privs`, an explicit environment, and private `0700` HOME, store and temporary directories.
 Before importing checkout source, stdlib admission validates all four UID/GID fields, source search/read

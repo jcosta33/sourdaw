@@ -432,4 +432,45 @@ describe('handleRestoreTrackAlternativeState', () => {
             expect(isNoop).toBe(false);
         });
     });
+
+    it.each([
+        [
+            'an alternative holds a clip of another track',
+            {
+                alternatives: [
+                    makeAlternative('alt1', 'Alt 1', [makeClip('c1')]),
+                    makeAlternative('alt2', 'Alt 2', [makeClip('c2', 't2')]),
+                ],
+                clips: [makeClip('c1')],
+            },
+        ],
+        [
+            'the live clips hold a clip of another track',
+            {
+                alternatives: [
+                    makeAlternative('alt1', 'Alt 1', [makeClip('c1')]),
+                    makeAlternative('alt2', 'Alt 2', [makeClip('c2')]),
+                ],
+                clips: [makeClip('c1', 't2')],
+            },
+        ],
+    ])('conflicts and writes nothing when %s', (_label, replacement) => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [makeTrack()] });
+
+        const result = handleRestoreTrackAlternativeState.execute({
+            type: 'restoreTrackAlternativeState',
+            payload: {
+                trackId: 't1',
+                expected: {
+                    alternatives: [{ id: 'alt1' }, { id: 'alt2' }],
+                    activeAlternativeId: 'alt1',
+                    clips: [],
+                },
+                replacement: { ...replacement, activeAlternativeId: 'alt1' },
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
 });

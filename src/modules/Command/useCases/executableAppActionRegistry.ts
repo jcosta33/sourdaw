@@ -2461,6 +2461,9 @@ export const executableAppActionDescriptors = [
         actionType: 'automateSendRange',
         risk: 'authority-sensitive',
         description: 'Lower an exact set of existing sends by a relative dB amount inside one named section.',
+        // Retired from provider offers: `automateParameterRange` draws this range. Kept executable so
+        // stored batches, ledger entries and undo groups that name it still read, replay and undo.
+        discoverability: 'hidden',
         intentPhrases: ['lower every vocal send', 'lower vocal sends', 'lower send', 'automate send'],
         targetRules: [
             {
@@ -2506,6 +2509,9 @@ export const executableAppActionDescriptors = [
         risk: 'authority-sensitive',
         description:
             'Lift each named bus by a bounded relative dB amount as gain automation inside one named arrangement section.',
+        // Retired from provider offers: `automateParameterRange` draws this range. Kept executable so
+        // stored batches, ledger entries and undo groups that name it still read, replay and undo.
+        discoverability: 'hidden',
         intentPhrases: ['lift', 'gain lift'],
         targetRules: [
             {
@@ -2543,6 +2549,9 @@ export const executableAppActionDescriptors = [
         risk: 'authority-sensitive',
         description:
             'Ramp an exact set of sends to one bounded absolute dB level across the tail of exact arrangement sections.',
+        // Retired from provider offers: `automateParameterRange` draws this range. Kept executable so
+        // stored batches, ledger entries and undo groups that name it still read, replay and undo.
+        discoverability: 'hidden',
         intentPhrases: ['automate them to', 'final four bars of every chorus'],
         targetRules: [
             {
@@ -2583,9 +2592,37 @@ export const executableAppActionDescriptors = [
         risk: 'bounded-reversible',
         description:
             "Hold one parameter of an existing track — its gain, its pan, the level of one of its sends, or an automatable parameter of a device on it — at a target across a section, a run of bars, or a span of beats, in either direction. The lane ramps in from the value it already draws at the range start and back out to the value it draws at the range end; outside the range it is unchanged, and the lane is created when the track has none. State the range once and the target exactly once: valueDb or deltaDb for gain and send levels, value in the lane's own units otherwise.",
-        intentPhrases: ['dip', 'duck', 'automate'],
+        // `lift` and `gain lift` read the section gain lift the retired `automateTrackGainRange` drew;
+        // the send phrases read the section send ride the retired `automateSendRange` drew.
+        intentPhrases: [
+            'dip',
+            'duck',
+            'automate',
+            'lift',
+            'gain lift',
+            'lower every vocal send',
+            'lower vocal sends',
+            'lower send',
+            'lower sends',
+            'automate send',
+        ],
         targetRules: existingTrackTargetRules,
-        valueRules: [],
+        // A decibel target is the figure the request states, in the form it states it; a pan or
+        // device target carries neither argument and is read as before.
+        valueRules: [
+            {
+                argument: 'valueDb',
+                kind: 'number-if-present',
+                mayOmitWhenUnmentioned: true,
+                levelForm: 'absolute-decibel',
+            },
+            {
+                argument: 'deltaDb',
+                kind: 'number-if-present',
+                mayOmitWhenUnmentioned: true,
+                levelForm: 'relative-decibel',
+            },
+        ],
         parameters: {
             properties: {
                 trackId: { type: 'string', description: 'Existing track ID' },

@@ -16,6 +16,7 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
 import { cruise } from 'dependency-cruiser';
+import { parseJsonConfigFileContent, readConfigFile, resolveModuleName, sys } from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -231,6 +232,92 @@ function isUnsupportedSymlinkError(error: unknown): boolean {
 }
 
 describe('check-dependency-boundaries', () => {
+    it.each(['tsconfig.json', 'tsconfig.app.json', 'tsconfig.test.json', 'tsconfig.e2e.json'])(
+        'resolves the real Basic Pitch loader import with %s compiler options',
+        (configName) => {
+            const root = resolve(import.meta.dirname, '../..');
+            const config = readConfigFile(join(root, configName), sys.readFile);
+            expect(config.error).toBeUndefined();
+            const parsed = parseJsonConfigFileContent(config.config, sys, root);
+            expect(parsed.errors).toEqual([]);
+            const loader = join(root, 'src/modules/AudioAnalysis/repositories/loadBasicPitchModel.ts');
+            const result = resolveModuleName('virtual:sourdaw-basic-pitch-model', loader, parsed.options, sys);
+            expect(result.resolvedModule?.resolvedFileName).toBe(
+                join(root, 'src/modules/AudioAnalysis/repositories/basicPitchModel.d.ts')
+            );
+            expect(
+                resolveModuleName('virtual:sourdaw-basic-pitch-modell', loader, parsed.options, sys).resolvedModule
+            ).toBeUndefined();
+        }
+    );
+
+    it.each([
+        ['main', mainConfig, 'src/modules/AudioAnalysis/repositories/loadBasicPitchModel.ts', false],
+        ['tests', testConfig, 'src/modules/AudioAnalysis/repositories/__tests__/loadBasicPitchModel.spec.ts', true],
+    ])(
+        'resolves the Basic Pitch virtual module in the %s graph but rejects a misspelling',
+        async (_name, config, realSource, mock) => {
+            const root = resolve(import.meta.dirname, '../..');
+            const fixture = mkdtempSync(join(tmpdir(), 'basic-pitch-resolver-'));
+            try {
+                const misspelled = join(fixture, 'misspelled.ts');
+                writeFileSync(
+                    misspelled,
+                    mock
+                        ? "vi.mock('virtual:sourdaw-basic-pitch-modell', () => ({}));\n"
+                        : "import model from 'virtual:sourdaw-basic-pitch-modell';\nvoid model;\n"
+                );
+                const result = await cruise([resolve(root, realSource), misspelled], {
+                    ...config.options,
+                    baseDir: root,
+                    outputType: 'json',
+                    skipAnalysisNotInRules: false,
+                    doNotFollow: { path: '.' },
+                    tsConfig: { fileName: resolve(root, 'tsconfig.json') },
+                });
+                expect(typeof result.output).toBe('string');
+                if (typeof result.output !== 'string') {
+                    throw new TypeError('Expected dependency-cruiser JSON');
+                }
+                const graph: unknown = JSON.parse(result.output);
+                if (
+                    typeof graph !== 'object' ||
+                    graph === null ||
+                    !('modules' in graph) ||
+                    !Array.isArray(graph.modules)
+                ) {
+                    throw new TypeError('Expected dependency-cruiser modules');
+                }
+                const dependencies: unknown[] = graph.modules.flatMap((module: unknown) => {
+                    if (
+                        typeof module !== 'object' ||
+                        module === null ||
+                        !('dependencies' in module) ||
+                        !Array.isArray(module.dependencies)
+                    ) {
+                        throw new TypeError('Expected dependency-cruiser dependencies');
+                    }
+                    return Array.from(module.dependencies, (dependency: unknown) => dependency);
+                });
+                const edge = (id: string) =>
+                    dependencies.find(
+                        (dependency) =>
+                            typeof dependency === 'object' &&
+                            dependency !== null &&
+                            'module' in dependency &&
+                            dependency.module === id
+                    );
+                expect(edge('virtual:sourdaw-basic-pitch-model')).toMatchObject({
+                    resolved: 'src/modules/AudioAnalysis/repositories/basicPitchModel.d.ts',
+                    couldNotResolve: false,
+                });
+                expect(edge('virtual:sourdaw-basic-pitch-modell')).toMatchObject({ couldNotResolve: true });
+            } finally {
+                rmSync(fixture, { recursive: true, force: true });
+            }
+        }
+    );
+
     it('should collapse endpoint expansion to the first causal use-case edge', () => {
         const cruise = {
             summary: {

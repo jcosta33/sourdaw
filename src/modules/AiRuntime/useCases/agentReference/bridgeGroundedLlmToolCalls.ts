@@ -3,6 +3,8 @@ import {
     getExecutableAppActionEffect,
     getExecutableAppActionGroundingCatalog,
     getExecutableAppActionGroundingRules,
+    getExecutableAppActionProviderSchema,
+    isExecutableAppActionType,
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 import { normalizeDeviceParameterValueUnit, type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
@@ -127,6 +129,7 @@ import { resolveCommandScopeOverride } from './groundingStrategies/commandScopeO
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
 import { REFERENCE_PLACEHOLDER } from './groundingStrategies/findReferencedIntentPhrase';
+import { findTrailingRangePhrase } from './groundingStrategies/findTrailingRangePhrase';
 import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
 import { getCancellationCues } from './groundingStrategies/getCancellationCues';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
@@ -151,6 +154,8 @@ import { groundPostTargetScopeAdmission } from './groundingStrategies/postTarget
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
 import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
 import { readSourceSetLiftShape } from './groundingStrategies/readSourceSetLiftShape';
+import { readStatedRangeBeats } from './groundingStrategies/readStatedRangeBeats';
+import { resolveCallRange } from './groundingStrategies/resolveCallRange';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { type PromptClauseSpan, splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
@@ -1346,6 +1351,71 @@ function getCoordinatedListTargetRule(
     return targetRule;
 }
 
+/**
+ * One clause riding the sends of a set of sources to one bus ("lower every vocal send to the Hall"),
+ * for an action whose one target is a single track and whose calls each move one `send:<busId>`
+ * lane: the set is read once, by the same source-set reading a set target takes with the bus as its
+ * dependency, and the clause then takes one call per member. Null when the calls name more than one
+ * bus, fewer than two calls share the clause, or the set does not resolve to exactly the calls'
+ * tracks; the clause is then read as any other.
+ */
+function getSendSetScope(input: {
+    actionName: string;
+    clause: PromptClauseSpan;
+    context: ProjectContext;
+    groundingRules: GroundingRules;
+    intentPhrase: string;
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
+}): PromptClauseScope | null {
+    const [targetRule, ...otherRules] = input.groundingRules.targetRules;
+    if (
+        targetRule === undefined ||
+        otherRules.length > 0 ||
+        targetRule.capability !== 'track' ||
+        targetRule.cardinality === 'many' ||
+        input.sameActionAssertedArguments.length < 2
+    ) {
+        return null;
+    }
+    const busIds = new Set(input.sameActionAssertedArguments.map((arguments_) => getSendLaneBusId(arguments_)));
+    const [busId] = busIds;
+    if (busIds.size !== 1 || busId === undefined) {
+        return null;
+    }
+    const risk = getAppActionExecutionPolicy(input.actionName).risk;
+    // The bus is grounded once, as the destination the clause names.
+    const bus = resolveAgentReference({
+        prompt: input.clause.text,
+        assertedId: busId,
+        capability: 'bus',
+        context: input.context,
+        excludedIds: [],
+        risk,
+    });
+    if (bus.status !== 'resolved') {
+        return null;
+    }
+    const set = resolveAgentReferenceArray({
+        assertedIds: input.sameActionAssertedArguments.map((arguments_) => arguments_[targetRule.argument]),
+        capability: 'routable-source',
+        context: input.context,
+        dependencyId: busId,
+        prompt: input.clause.text,
+        risk,
+    });
+    if (set.status !== 'resolved') {
+        return null;
+    }
+    return {
+        ...input.clause,
+        directional: false,
+        matchedIntentPhrase: input.intentPhrase,
+        referenceSlots: set.ids.length,
+        coordinatedTargets: { memberIds: set.ids, references: [] },
+        sendSet: true,
+    };
+}
+
 /** The head may contain only the action carrier before the first whole target. */
 function hasCompleteListHead(lead: string, intentPhrase: string): boolean {
     const commandLead = lead
@@ -1394,6 +1464,24 @@ function getCoordinatedListScope(
 
 /** The decibel unit after a list's one figure, then nothing but punctuation to the list's end. */
 const LIST_FIGURE_ENDING_PATTERN = /^\s*d\s?b[\p{P}\s]*$/iu;
+
+/** Whether the action writes across a stated musical range, read from its published parameters. */
+function declaresRange(actionName: string): boolean {
+    return (
+        isExecutableAppActionType(actionName) &&
+        Object.hasOwn(getExecutableAppActionProviderSchema(actionName).properties, 'range')
+    );
+}
+
+/**
+ * The list's masked text without the range phrase it closes on: "Lift Drum Bus and Bass Bus by
+ * 1.5 dB in Chorus Two" states its one figure before the range it holds it across, and the bars or
+ * beats such a phrase counts are not decibel figures. A list closing on anything else is unchanged.
+ */
+function withoutTrailingRangePhrase(clause: PromptClause, context: ProjectContext): string {
+    const rangeStart = findTrailingRangePhrase(clause.text, context);
+    return rangeStart === null ? clause.masked : clause.masked.slice(0, rangeStart);
+}
 
 /** Whether the list's own text states exactly one figure, in decibels, and ends on it. */
 function endsOnItsOneFigure(maskedList: string): boolean {
@@ -1476,7 +1564,10 @@ function getCoordinatedLevelLists(input: {
         if (targetRule.cardinality === 'many') {
             return [{ ...range, scope: getCoordinatedSetScope(list, clause, intent.phrase) }];
         }
-        const scope = endsOnItsOneFigure(clause.masked)
+        const figureText = declaresRange(input.actionName)
+            ? withoutTrailingRangePhrase(clause, input.context)
+            : clause.masked;
+        const scope = endsOnItsOneFigure(figureText)
             ? getCoordinatedListScope(list, list.memberIds, clause, intent.phrase)
             : null;
         return [{ ...range, scope }];
@@ -1707,6 +1798,18 @@ function resolveActionPromptScope({
                     // The clause carries the level verb even though another fader owns its level,
                     // so the next clause may still continue that verb onto this action's fader.
                     takesContinuation = decibelLevelForms.length > 0;
+                    continue;
+                }
+                const sendSetScope = getSendSetScope({
+                    actionName,
+                    clause,
+                    context,
+                    groundingRules,
+                    intentPhrase: intent.phrase,
+                    sameActionAssertedArguments,
+                });
+                if (sendSetScope !== null) {
+                    matchingScopes.push(sendSetScope);
                     continue;
                 }
                 matchingScopes.push({
@@ -2846,11 +2949,24 @@ function getWholeSectionReferenceName(
 }
 
 /**
+ * The bus a `send:<busId>` automation target names. The request names that bus to say whose send
+ * the level moves ("duck the Drums send to the Drum Bus to -12 dB"), so it is the send's
+ * destination, never a second track competing for the figure.
+ */
+function getSendLaneBusId(groundedArguments: Record<string, unknown>): string | undefined {
+    const parameterId = groundedArguments.parameterId;
+    return typeof parameterId === 'string' && parameterId.startsWith('send:')
+        ? parameterId.slice('send:'.length)
+        : undefined;
+}
+
+/**
  * The decibel figures a scope naming several tracks binds to this call's own track, or `undefined`
  * when the scope names fewer than two and every figure it states is this call's. The call's track
  * is its first grounded non-destination target; tracks the call's other targets name, such as the
  * bus a send feeds, are not candidates.
  */
+
 function getReferenceBoundDecibelFigures(
     actionScope: ActionPromptScope,
     targetRules: GroundingRules['targetRules'],
@@ -2865,11 +2981,12 @@ function getReferenceBoundDecibelFigures(
     if (typeof anchorId !== 'string' || !context.tracks.some((track) => track.id === anchorId)) {
         return undefined;
     }
-    const otherTargetIds = new Set(
-        targetRules
+    const otherTargetIds = new Set([
+        ...targetRules
             .filter((targetRule) => targetRule !== anchorRule)
-            .map((targetRule) => groundedArguments[targetRule.argument])
-    );
+            .map((targetRule) => groundedArguments[targetRule.argument]),
+        getSendLaneBusId(groundedArguments),
+    ]);
     const references =
         actionScope.coordinatedTargets?.references ??
         getNamedReferenceSpans(
@@ -4167,6 +4284,68 @@ function groundSourceSetLiftShape(
 }
 
 /**
+ * The request text a range call is read against: from the call's own clause up to the next clause
+ * that states an action of its own or is a protection the protection reader consumes whole. A later
+ * clause that is neither ("but not in the first half") is read with the range it may narrow.
+ */
+function getRangeStatementText(
+    scopeStart: number,
+    prompt: string,
+    catalog: GroundingCatalog,
+    context: ProjectContext
+): string {
+    const clauses = getPromptClauses(prompt, maskProjectReferences(prompt, context));
+    const protections = readExplicitProtections(prompt, context).resolvedTrackClauses;
+    const ownIndex = clauses.findLastIndex((clause) => clause.start <= scopeStart);
+    const nextOther = clauses.findIndex(
+        (clause, index) =>
+            index > ownIndex &&
+            (resolveClauseActionIntent(clause.masked, catalog) !== null ||
+                protections.some((protection) => protection.start < clause.end && clause.start < protection.end))
+    );
+    const end = nextOther > 0 ? clauses[nextOther - 1]!.end : prompt.length;
+    return prompt.slice(scopeStart, end);
+}
+
+/**
+ * The refusal for a range call whose range is not the one the request states, or null when the
+ * range resolves to the same beats as the request's one range phrase. The range is read in the
+ * project the call writes to, so "Chorus 2", "the second chorus" and bars 9 to 12 agree when they
+ * name the same beats; a request stating no range, several, or a qualifier after it is refused, and
+ * so is a range the project does not hold. A section name several sections share ("chorus" beside
+ * two choruses) is left to the range write's own state guard, which asks which one the request means.
+ */
+function groundStatedRange(
+    actionName: string,
+    assertedRange: unknown,
+    scopeStart: number,
+    prompt: string,
+    catalog: GroundingCatalog,
+    context: ProjectContext
+): string | null {
+    const asserted = resolveCallRange(assertedRange, context);
+    if (asserted?.kind === 'ambiguous-section') {
+        return null;
+    }
+    const entry = catalog.find((candidate) => candidate.actionType === actionName);
+    const actionPhrases = [...(entry?.intentPhrases ?? []), ...(entry?.levelIntentPhrases ?? [])];
+    const stated = readStatedRangeBeats(
+        getRangeStatementText(scopeStart, prompt, catalog, context),
+        context,
+        actionPhrases
+    );
+    if (
+        asserted?.kind !== 'resolved' ||
+        stated === null ||
+        stated.startBeat !== asserted.startBeat ||
+        stated.endBeat !== asserted.endBeat
+    ) {
+        return getValueMismatchReason('range');
+    }
+    return null;
+}
+
+/**
  * A grounded source set in the order the request names its members, never the order the provider
  * listed them: the set reading checks membership only, so the provider's order would otherwise
  * become the command's.
@@ -5168,8 +5347,20 @@ function groundToolCall({
             : [];
         // A coordinated list names every member in one scope, so each call resolves against its own
         // member with the others set aside.
+        // A send set was resolved whole as the clause's scope, and every call was matched to one member.
+        if (
+            actionScope.sendSet === true &&
+            targetRule === groundingRules.targetRules[0] &&
+            typeof assertedValue === 'string' &&
+            actionScope.coordinatedTargets?.memberIds.includes(assertedValue)
+        ) {
+            groundedArguments[targetRule.argument] = assertedValue;
+            continue;
+        }
         const coordinatedSiblingIds =
             actionScope.coordinatedTargets?.memberIds.filter((memberId) => memberId !== assertedValue) ?? [];
+        // A send lane's bus is named to say whose send moves, so it never competes for the source track.
+        const sendLaneBusId = getSendLaneBusId(call.arguments);
         const result = resolveAgentReference({
             prompt: targetPrompt,
             assertedId: assertedValue,
@@ -5180,6 +5371,7 @@ function groundToolCall({
                 ...(typeof distinctValue === 'string' ? [distinctValue] : []),
                 ...bulkSiblingTargetIds,
                 ...coordinatedSiblingIds,
+                ...(sendLaneBusId !== undefined && sendLaneBusId !== assertedValue ? [sendLaneBusId] : []),
             ],
             risk: getAppActionExecutionPolicy(call.name).risk,
         });
@@ -5255,6 +5447,19 @@ function groundToolCall({
           );
     if (valueRejection) {
         return rejection(index, call.name, valueRejection);
+    }
+    if (declaresRange(call.name) && !admitsPlanCreatedObject && !admitsCreativeCall) {
+        const rangeRejection = groundStatedRange(
+            call.name,
+            groundedArguments.range,
+            resolvedActionScope?.start ?? 0,
+            prompt,
+            catalog,
+            context
+        );
+        if (rangeRejection !== null) {
+            return rejection(index, call.name, rangeRejection);
+        }
     }
     if (hasOnlySourceSetTarget(groundingRules)) {
         const sourceSetRejection = groundSourceSetLiftShape(call, resolvedActionScope?.start, prompt, context);
@@ -7145,12 +7350,7 @@ function findWorkflowInterpretationConflict(
     grounded: BridgeGroundedLlmToolCallsResult
 ): string | null {
     const authority = input.creativeAuthority;
-    if (
-        authority === undefined ||
-        grounded.actions.length === 0 ||
-        (input.workflowCapabilityId === undefined &&
-            !input.calls.some((call) => call.name === 'automateTrackGainRange'))
-    ) {
+    if (authority === undefined || grounded.actions.length === 0 || input.workflowCapabilityId === undefined) {
         return null;
     }
     if (authority.mode === 'read-only' || authority.mode === 'brief') {

@@ -100,12 +100,12 @@ export async function loadProject({
         return false;
     }
     try {
-        // Activation settles the preparation ticket even if the caller withdrew
-        // during prepare. No document has been committed at this boundary.
-        if (!(await transaction.prepare()) || !transaction.activate() || !canContinue()) {
+        if (!(await transaction.prepare()) || !canContinue() || !transaction.activate()) {
+            transaction.abandon();
             return false;
         }
     } catch (error) {
+        transaction.abandon();
         logger.error(new Error('Failed to end collaboration before loading project', { cause: error }));
         return false;
     }

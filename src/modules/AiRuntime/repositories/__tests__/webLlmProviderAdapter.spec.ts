@@ -335,14 +335,29 @@ describe('WebLLM provider artifact admission', () => {
 
     // Admission purges every recorded set of a model whose digest differs from the release's, and a
     // purged model needs consent and a full download again. A digest that moves, its engine block
-    // included, costs every user who downloaded the model that download; these are the digests the
-    // shipped sets were recorded under.
+    // included, costs every user who downloaded the model that download. The newly admitted
+    // runtime-compatible libraries require that existing consent/download route.
     it.each([
-        ['Qwen3-1.7B-q4f16_1-MLC', '932ad158daa0d6814a50c5fb6aa85f88c3d3892a58a0dc20d47ff0b9e6e0b255'],
-        ['Qwen3-4B-q4f16_1-MLC', '2438f2a6b58372e12ca0aa949443a49ca7b6060ad3e7971aed0d56b49a35195f'],
-        ['Qwen3-8B-q4f16_1-MLC', '7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb'],
-    ])('keeps the artifact-set digest %s was downloaded under', (modelId, digest) => {
+        ['Qwen3-1.7B-q4f16_1-MLC', 'a8c02294f8d3c23e7ff2a9174d3a575e7809c7463870b6e23d2d6e6f1dac7991'],
+        ['Qwen3-4B-q4f16_1-MLC', '2e136079f88bb3aea4289642db64fef8d77a0cb4c503ca6ca90a4030e0b75756'],
+        ['Qwen3-8B-q4f16_1-MLC', '5121d9a5818d4693e0b0f2dc55f2982ece120b875c955203e4650a9269ad6d2a'],
+    ])('pins the newly admitted runtime-compatible artifact set for %s', (modelId, digest) => {
         expect(getWebLlmArtifactManifestModel(modelId).artifactSetDigest).toBe(digest);
+    });
+
+    it.each([
+        ['Qwen3-1.7B-q4f16_1-MLC', 'b22fead109509ac456ebe1ff6d632b73b257e6285cd236a2e77d0164a20aba6f'],
+        ['Qwen3-4B-q4f16_1-MLC', '02a08d958dc140b21eb849741c5aad788653ce9787419861dbafd16c3e488ec0'],
+        ['Qwen3-8B-q4f16_1-MLC', '8b9ca82226ec92f177c3b6636b0bc3f9371c9f790e472116a5024ced81b8960d'],
+    ])('preserves every nonlibrary input of %s across the library ABI repair', (modelId, digest) => {
+        const model = getWebLlmArtifactManifestModel(modelId);
+        const preserved = {
+            modelId: model.modelId,
+            modelSource: model.modelSource,
+            engine: model.engine,
+            artifacts: model.artifacts.filter(({ kind }) => kind !== 'model-library'),
+        };
+        expect(createHash('sha256').update(JSON.stringify(preserved)).digest('hex')).toBe(digest);
     });
 
     it('loads the planning window from code, apart from the digested manifest', () => {

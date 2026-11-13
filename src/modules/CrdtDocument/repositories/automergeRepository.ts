@@ -5,6 +5,7 @@ import {
     type ChangeMetadata,
     init,
     load,
+    prepareLoad,
     save,
     saveIncremental,
     saveSince,
@@ -615,8 +616,14 @@ class AutomergeRepository {
         let cloneConsumed = false;
         let workerRequested = false;
         let workerResult: ProspectiveMutationWorkerResult | undefined;
+        let pendingLoad: ReturnType<typeof prepareLoad<TDoc>> | undefined;
+        let removeMaterializationAbortListener: (() => void) | undefined;
         const controller = new AbortController();
         const releaseClone = (): void => {
+            removeMaterializationAbortListener?.();
+            removeMaterializationAbortListener = undefined;
+            pendingLoad?.discard();
+            pendingLoad = undefined;
             if (candidate) {
                 free(candidate);
                 candidate = undefined;
@@ -632,6 +639,15 @@ class AutomergeRepository {
                 authority.assertCurrent();
                 workerRequested = true;
                 try {
+                    const materializationSignal = AbortSignal.any([signal, controller.signal]);
+                    const abort = (): void => {
+                        cloneConsumed = true;
+                        workerResult = undefined;
+                        releaseClone();
+                    };
+                    materializationSignal.addEventListener('abort', abort, { once: true });
+                    removeMaterializationAbortListener = () =>
+                        materializationSignal.removeEventListener('abort', abort);
                     // Encoding must not consume the retained adoption clone's persistence cursor.
                     const encodingClone = clone(candidate, { actor });
                     let seed: Uint8Array<ArrayBuffer>;
@@ -643,18 +659,31 @@ class AutomergeRepository {
                     authority.assertCurrent();
                     return requestProspectiveMutation(
                         { seed, heads: previousHeads, actor, message, mutation: canonicalMutation },
-                        AbortSignal.any([signal, controller.signal])
-                    ).then(
-                        (result) => {
-                            if (!cloneConsumed) {
-                                workerResult = result;
+                        materializationSignal
+                    )
+                        .then((result) => {
+                            if (cloneConsumed) {
+                                return;
                             }
-                        },
-                        (error: unknown) => {
+                            const started = performance.now();
+                            try {
+                                assertCompleteCanonicalDocument(result.bytes);
+                                // The caller yields a frame after this request. Keep JS-root
+                                // materialization in the later synchronous adoption phase.
+                                pendingLoad = prepareLoad<TDoc>(result.bytes, { actor });
+                                workerResult = result;
+                            } finally {
+                                performance.measure('automerge-prospective-parse-task', {
+                                    start: started,
+                                    end: performance.now(),
+                                });
+                                performance.clearMeasures('automerge-prospective-parse-task');
+                            }
+                        })
+                        .catch((error: unknown) => {
                             releaseClone();
                             throw error;
-                        }
-                    );
+                        });
                 } catch (error) {
                     releaseClone();
                     throw error;
@@ -685,13 +714,13 @@ class AutomergeRepository {
                 if (workerRequested) {
                     let loaded: Doc<TDoc> | undefined;
                     try {
-                        if (!workerResult || !candidate) {
+                        if (!workerResult || !candidate || !pendingLoad) {
                             throw new Error('Prospective mutation Worker has not completed');
                         }
-                        const { bytes, heads } = workerResult;
+                        const { heads } = workerResult;
                         workerResult = undefined;
-                        assertCompleteCanonicalDocument(bytes);
-                        loaded = load<TDoc>(bytes, { actor });
+                        loaded = pendingLoad.materialize();
+                        pendingLoad = undefined;
                         // A checked complete document has an empty change queue; missing heads
                         // therefore detect an absent applied frontier without exporting operations.
                         if (getMissingDeps(loaded, previousHeads).length > 0) {
