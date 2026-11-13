@@ -1,0 +1,74 @@
+src/modules/Transport/useCases/tempoMap/__tests__/tempoMapCommands.integration.spec.ts
+  s_35b9801a6d6336::t_ba5f0e9c911f02 137,220,262
+  s_35b9801a6d6336::t_c66992f16dde93 37
+src/modules/Arrangement/handlers/comping/__tests__/audioCompSourceInterval.integration.spec.ts
+  s_35b9801a6d6336::t_f61a9f335134e1 34
+  s_35b9801a6d6336::t_ba5f0e9c911f02 145,537
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeHeadExciseWithUndo.integration.spec.ts
+  s_35b9801a6d6336::t_ba5f0e9c911f02 87
+  s_35b9801a6d6336::t_891b73141c3740 39
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_35b9801a6d6336::t_ba5f0e9c911f02 102
+  s_35b9801a6d6336::t_bafd855ef8fb1e 24
+src/modules/Arrangement/handlers/clip/__tests__/commandMetadataSourceAdmission.integration.spec.ts
+  s_35b9801a6d6336::t_ba5f0e9c911f02 186
+  s_35b9801a6d6336::t_07f6c6174ad404 51
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitAudioClipWithUndo.integration.spec.ts
+  s_35b9801a6d6336::t_b7cd308379bc9f 33
+  s_35b9801a6d6336::t_ba5f0e9c911f02 99
+src/app/__tests__/splitGainPointHistory.integration.spec.ts
+  s_35b9801a6d6336::t_7f400e3da51094 59
+  s_35b9801a6d6336::t_ba5f0e9c911f02 127
+src/modules/TimelineEditor/presentations/views/__tests__/TempoEditorCommands.integration.spec.tsx
+  s_35b9801a6d6336::t_ba5f0e9c911f02 119
+  s_35b9801a6d6336::t_2766b8e67661b5 25
+src/modules/Transport/handlers/transport/__tests__/tempoSourcePrefix.integration.spec.ts
+  s_35b9801a6d6336::t_527f432f28447f 36
+  s_35b9801a6d6336::t_ba5f0e9c911f02 79
+src/modules/Arrangement/handlers/clip/__tests__/audioClipSlipSession.spec.ts
+  s_35b9801a6d6336::t_ba5f0e9c911f02 70
+  s_35b9801a6d6336::t_4792446b1484a3 32
+src/modules/Transport/handlers/transport/__tests__/tempoMapEditSource.integration.spec.ts
+  s_35b9801a6d6336::t_ba5f0e9c911f02 104
+  s_35b9801a6d6336::t_d490113a804d6b 49
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_35b9801a6d6336::t_ba5f0e9c911f02 110,1010,1040
+  s_35b9801a6d6336::t_2db47203ef16d3 42
+src/modules/AudioEngine/useCases/offlineRender/__tests__/legacyAudioCutSource.integration.spec.ts
+  s_35b9801a6d6336::t_5cbf5db456688e 47
+  s_35b9801a6d6336::t_ba5f0e9c911f02 75
+src/modules/Collaboration/useCases/__tests__/removeClipUndoCommit.integration.spec.ts
+  s_35b9801a6d6336::t_ba5f0e9c911f02 800
+  s_35b9801a6d6336::t_31c48be9d77808 44
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitLoopingMidiClipWithUndo.integration.spec.ts
+  s_35b9801a6d6336::t_9ec2a33ece4c5d 34
+  s_35b9801a6d6336::t_ba5f0e9c911f02 70
+src/modules/ElasticAudio/useCases/__tests__/quantizeTransients.spec.ts
+  s_35b9801a6d6336::t_d3b6e6cc97afb2 41
+  s_35b9801a6d6336::t_ba5f0e9c911f02 146
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  s_35b9801a6d6336::t_dd2cf5e4da69cf 7
+  s_35b9801a6d6336::t_ba5f0e9c911f02 33
+src/modules/Command/useCases/__tests__/retiredRangeToolStoredCommands.spec.ts
+  s_35b9801a6d6336::t_ba5f0e9c911f02 304
+  s_35b9801a6d6336::t_2400a215c523d2 29
+src/modules/Command/useCases/__tests__/processingOnlyParameterPolicy.spec.ts
+  s_35b9801a6d6336::t_9aa2265d0ee74c 23
+  s_35b9801a6d6336::t_ba5f0e9c911f02 208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9e479262b698c7d32ae82fe226ba6cee4bb823a6",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
