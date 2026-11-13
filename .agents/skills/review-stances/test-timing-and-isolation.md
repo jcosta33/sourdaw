@@ -84,7 +84,12 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    retain notification and caller completion inside the original measurement endpoint, and show both full host
    tasks including subsequent renders. A held platform receiver must discriminate the real registered path;
    synchronous delivery, failed scheduling/reconciliation, hidden/pagehide and stale delivery need explicit
-   controls. Separating tasks is a hypothesis until the unchanged whole-task/frame gates pass.
+   controls. #5843 also put checked native document parsing and whole-root JS materialization in one adoption
+   task. A Worker mutation does not bound that later load. Attribute both stages and require a real host-task
+   boundary between them; moving parse outside the old phase measure must remain covered by the unchanged
+   click-to-completion long-task gate. Hold the parsed native handle across that boundary, abort or replace
+   authority, and require no materialization or publication and one release. Separating tasks is a hypothesis
+   until the unchanged whole-task/frame gates pass.
    (#5191, #6011, #5964, #3270, #3356, #5459, #6000, #4775, #5798, #3222, #2976, #5337, #4228, #5115, #5924, #4331, #6250)
 
 3. **Fixture state leaks across cases or depends on chance or the runner's environment.**
