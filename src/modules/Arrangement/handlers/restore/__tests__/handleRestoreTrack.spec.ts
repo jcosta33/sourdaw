@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { sanitize_take_lane_store_state } from '../../../stores/takeLaneStore';
+import { sanitizeTrackSnapshot } from '../../../stores/trackStore';
+import { captureTrackRemovalSnapshot } from '../../../useCases/captureTrackRemovalSnapshot';
 import { handleRestoreTrack } from '../handleRestoreTrack';
 
+import type { TakeLane } from '../../../models/TakeLane';
 import type { TakeLaneStoreState } from '../../../stores/takeLaneStore';
-import type { TrackStoreState } from '../../../stores/trackStore';
+import type { Track, TrackStoreState } from '../../../stores/trackStore';
 import type { getTrackStoreState } from '../../../useCases/getTrackStoreState';
 import type { setTrackState } from '../../../useCases/setTrackState';
 
@@ -44,13 +48,13 @@ const mocks = vi.hoisted(() => {
         // Mimics the shared insert's append placement so index assertions stay
         // honest; its merge/liveness/track-exists rules are pinned by the
         // comping use case's own specs, not here.
-        insertTakeLane: vi.fn((lane: unknown, index: number): void => {
+        insertTakeLane: vi.fn((lane: TakeLaneStoreState['lanes'][number], index: number): void => {
             const state = takeLaneStoreState.value;
             if (!state) {
                 return;
             }
             const lanes = [...state.lanes];
-            lanes.splice(Math.min(index, lanes.length), 0, lane as never);
+            lanes.splice(Math.min(index, lanes.length), 0, lane);
             takeLaneStoreState.value = { lanes };
         }),
     };
@@ -101,17 +105,20 @@ vi.mock('#/modules/Automation/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    replaceFrozenMidiTakeRow: vi.fn(),
     restoreMidiClipData: mocks.restoreMidiClipData,
 }));
 
 vi.mock('#/modules/Routing/useCases', () => ({
     ensureBusStrip: mocks.ensureBusStrip,
+    getAllSidechainRoutes: () => [],
     restoreSidechainRoutes: mocks.restoreSidechainRoutes,
     setBusGain: mocks.setBusGain,
     wireSidechainRoutes: mocks.wireSidechainRoutes,
 }));
 
-vi.mock('../../../stores/takeLaneStore', () => ({
+vi.mock('../../../stores/takeLaneStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../stores/takeLaneStore')>()),
     takeLaneStore: {
         get value(): TakeLaneStoreState | null {
             return mocks.getTakeLaneStoreValue();
@@ -125,15 +132,20 @@ vi.mock('../../../useCases/comping/insertTakeLane', () => ({
 }));
 
 vi.mock('../../../stores/clipSatelliteState', () => ({
+    readClipSatelliteEntry: (clipId: string) => ({ clipId, gainEnvelope: null, warpState: null }),
     writeClipSatelliteEntry: mocks.writeClipSatelliteEntry,
 }));
+
+function takeLane(id: string, trackId: string): TakeLane {
+    return { id, trackId, takes: [], activeCompRegions: [] };
+}
 
 function createRestoreTrackAction(overrides: Partial<RestoreTrackPayload> = {}): RestoreTrackAction {
     return {
         type: 'restoreTrack',
         payload: {
             trackId: 'track-1',
-            trackSnapshot: { id: 'track-1' },
+            trackSnapshot: TrackDummy.create({ id: 'track-1' }),
             trackName: 'Restored',
             trackKind: 'audio',
             trackGain: 0.8,
@@ -182,7 +194,7 @@ describe('handleRestoreTrack', () => {
             midiNotesByClipId: { 'clip-a': [], 'clip-b': [] },
             midiCcByClipId: { 'clip-a': [], 'clip-c': [] },
             midiPitchBendByClipId: { 'clip-b': [], 'clip-d': [] },
-            takeLaneSnapshots: [{ id: 'take-restored', trackId: 'track-1' }],
+            takeLaneSnapshots: [takeLane('take-restored', 'track-1')],
         });
         mocks.getTrackStoreState.mockReturnValue(trackState);
 
@@ -498,6 +510,7 @@ describe('handleRestoreTrack', () => {
         });
         const result = await handleRestoreTrack.execute(
             createRestoreTrackAction({
+                trackId: restored.id,
                 trackSnapshot: restored,
                 trackName: restored.name,
                 trackKind: restored.kind,
@@ -570,7 +583,7 @@ describe('handleRestoreTrack', () => {
 
     it('delegates to the shared insert, which itself no-ops when the take-lane store holds no state', () => {
         const action = createRestoreTrackAction({
-            takeLaneSnapshots: [{ id: 'take-restored', trackId: 'track-1' }],
+            takeLaneSnapshots: [takeLane('take-restored', 'track-1')],
         });
         // Take-lane snapshots are present, but the store itself is absent.
         mocks.takeLaneStoreState.value = null;
@@ -591,10 +604,7 @@ describe('handleRestoreTrack', () => {
         // delegates each snapshot to `insertTakeLane`, whose reconcile enforces
         // one lane per track.
         const action = createRestoreTrackAction({
-            takeLaneSnapshots: [
-                { id: 'lane-a', trackId: 'track-1' },
-                { id: 'lane-b', trackId: 'track-1' },
-            ] as RestoreTrackPayload['takeLaneSnapshots'],
+            takeLaneSnapshots: [takeLane('lane-a', 'track-1'), takeLane('lane-b', 'track-1')],
         });
         mocks.getTrackStoreState.mockReturnValue({ tracks: [], selectedTrackId: null, ghostClips: [] });
 
@@ -604,7 +614,210 @@ describe('handleRestoreTrack', () => {
             throw new Error('expected a written result');
         }
         expect(mocks.insertTakeLane).toHaveBeenCalledTimes(2);
-        expect(mocks.insertTakeLane).toHaveBeenNthCalledWith(1, { id: 'lane-a', trackId: 'track-1' }, 0);
-        expect(mocks.insertTakeLane).toHaveBeenNthCalledWith(2, { id: 'lane-b', trackId: 'track-1' }, 1);
+        expect(mocks.insertTakeLane).toHaveBeenNthCalledWith(1, takeLane('lane-a', 'track-1'), 0);
+        expect(mocks.insertTakeLane).toHaveBeenNthCalledWith(2, takeLane('lane-b', 'track-1'), 1);
+    });
+
+    describe('a captured track row', () => {
+        const removedTrackId = 'track-1';
+        const survivor = TrackDummy.create({ id: 'survivor' });
+        const survivorLane = takeLane('survivor-lane', survivor.id);
+
+        function requireDefined<T>(value: T | undefined, label: string): T {
+            if (value === undefined) {
+                throw new Error(`Expected ${label}`);
+            }
+            return value;
+        }
+
+        // Rows the stores themselves would hold, built through their own projections.
+        function storeTrackRow(): Track {
+            const clip = {
+                trackId: removedTrackId,
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+                gain: 1,
+                color: '',
+                locked: false,
+                muted: false,
+            };
+            const zeroLength = {
+                ...clip,
+                id: 'clip-zero',
+                name: 'Zero',
+                type: 'midi',
+                startBeat: 8,
+                endBeat: 8,
+            } as const;
+            const preRoll = {
+                ...clip,
+                id: 'clip-pre-roll',
+                name: 'Pre-roll',
+                type: 'audio',
+                startBeat: -2,
+                endBeat: 2,
+            } as const;
+            const raw = TrackDummy.create({
+                id: removedTrackId,
+                kind: 'midi',
+                clips: [zeroLength, preRoll],
+                activeAlternativeId: 'alt-1',
+                alternatives: [
+                    { id: 'alt-1', name: 'Alternative 1', clips: [zeroLength] },
+                    { id: 'alt-2', name: 'Alternative 2', clips: [preRoll] },
+                ],
+            });
+            return requireDefined(
+                sanitizeTrackSnapshot({ tracks: [raw], selectedTrackId: null }).tracks[0],
+                'a projected track row'
+            );
+        }
+
+        function storeTakeLane(): TakeLane {
+            const lane = requireDefined(
+                sanitize_take_lane_store_state({
+                    lanes: [
+                        {
+                            id: 'lane-1',
+                            trackId: removedTrackId,
+                            takes: [
+                                {
+                                    id: 'take-1',
+                                    clipId: 'clip-pre-roll',
+                                    name: 'Take 1',
+                                    startBeat: 0,
+                                    endBeat: 2,
+                                    selected: true,
+                                },
+                            ],
+                            activeCompRegions: [{ startBeat: 0, endBeat: 2, takeId: 'take-1' }],
+                        },
+                    ],
+                }).lanes[0],
+                'a projected take lane'
+            );
+            expect(lane.takes).toHaveLength(1);
+            expect(lane.activeCompRegions).toHaveLength(1);
+            return lane;
+        }
+
+        function captureRemoval(row: Track, lane: TakeLane): RestoreTrackPayload {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [survivor, row],
+                selectedTrackId: removedTrackId,
+                ghostClips: [],
+            });
+            mocks.takeLaneStoreState.value = { lanes: [survivorLane, lane] };
+            const snapshot = requireDefined(
+                captureTrackRemovalSnapshot(removedTrackId) ?? undefined,
+                'a removal snapshot'
+            );
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [survivor], selectedTrackId: null, ghostClips: [] });
+            mocks.takeLaneStoreState.value = { lanes: [survivorLane] };
+            return snapshot;
+        }
+
+        // Clip-keyed payload a refused restore must not write either.
+        function withClipData(payload: RestoreTrackPayload): RestoreTrackPayload {
+            const gainEnvelope = { clipId: 'clip-zero', points: [], enabled: true };
+            return {
+                ...payload,
+                midiNotesByClipId: { 'clip-zero': [] },
+                clipSatellites: [{ clipId: 'clip-zero', gainEnvelope, warpState: null }],
+            };
+        }
+
+        function expectNothingWritten(action: RestoreTrackAction): void {
+            expect(handleRestoreTrack.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+            expect(handleRestoreTrack.execute(action)).toEqual({ status: 'conflict' });
+            expect(mocks.setTrackState).not.toHaveBeenCalled();
+            expect(mocks.insertTakeLane).not.toHaveBeenCalled();
+            expect(mocks.restoreAutomationLanes).not.toHaveBeenCalled();
+            expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
+            expect(mocks.writeClipSatelliteEntry).not.toHaveBeenCalled();
+            expect(mocks.takeLaneStoreState.value).toEqual({ lanes: [survivorLane] });
+        }
+
+        function withExtraClip(row: Track, clip: unknown): unknown {
+            return { ...row, clips: [...row.clips, clip] };
+        }
+
+        function withExtraAlternativeClip(row: Track, clip: unknown): unknown {
+            return {
+                ...row,
+                alternatives: row.alternatives.map((alternative) => ({
+                    ...alternative,
+                    clips: [...alternative.clips, clip],
+                })),
+            };
+        }
+
+        function anotherTracksClip(row: Track): unknown {
+            const clip = requireDefined(row.clips[0], 'a stored clip');
+            return { ...clip, id: 'clip-foreign', trackId: survivor.id };
+        }
+
+        it('restores a row holding a zero-length clip and a clip before beat 0, with its take lane, exactly', () => {
+            const row = storeTrackRow();
+            const lane = storeTakeLane();
+            const action: RestoreTrackAction = { type: 'restoreTrack', payload: captureRemoval(row, lane) };
+
+            expect(handleRestoreTrack.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
+            expect(handleRestoreTrack.execute(action)).toMatchObject({ status: 'written' });
+
+            const written = mocks.setTrackState.mock.calls[0]?.[0];
+            expect(written?.tracks).toStrictEqual([survivor, row]);
+            expect(written?.selectedTrackId).toBe(removedTrackId);
+            expect(mocks.insertTakeLane).toHaveBeenCalledOnce();
+            expect(mocks.insertTakeLane.mock.calls[0]?.[0]).toStrictEqual(lane);
+            expect(mocks.takeLaneStoreState.value?.lanes).toStrictEqual([survivorLane, lane]);
+        });
+
+        it.each([
+            ['carries no kind', (row: Track) => ({ ...row, kind: undefined })],
+            ['carries an unknown kind', (row: Track) => ({ ...row, kind: 'video' })],
+            ['is not an object', () => null],
+            ['belongs to another track', (row: Track) => ({ ...row, id: 'track-2' })],
+            ['holds a malformed clip', (row: Track) => withExtraClip(row, { id: 'clip-broken' })],
+            [
+                'holds a malformed clip in an alternative',
+                (row: Track) => withExtraAlternativeClip(row, { id: 'clip-broken' }),
+            ],
+            ['holds a malformed device', (row: Track) => ({ ...row, devices: [{ id: 'device-broken' }] })],
+            ['holds a malformed send', (row: Track) => ({ ...row, sends: [{ level: 1 }] })],
+            ['holds a clip of another track', (row: Track) => withExtraClip(row, anotherTracksClip(row))],
+            [
+                'holds an alternative clip of another track',
+                (row: Track) => withExtraAlternativeClip(row, anotherTracksClip(row)),
+            ],
+        ])('refuses before any write when the track snapshot %s', (_label, corrupt) => {
+            const payload = captureRemoval(storeTrackRow(), storeTakeLane());
+            const trackSnapshot: unknown = corrupt(storeTrackRow());
+
+            expectNothingWritten({
+                type: 'restoreTrack',
+                payload: withClipData({
+                    ...payload,
+                    trackSnapshot: trackSnapshot as RestoreTrackPayload['trackSnapshot'],
+                }),
+            });
+        });
+
+        it.each([
+            ['carries no comp regions', (lane: TakeLane) => ({ ...lane, activeCompRegions: undefined })],
+            ['carries a key the store never writes', (lane: TakeLane) => ({ ...lane, extra: true })],
+            ['belongs to another track', (lane: TakeLane) => ({ ...lane, trackId: survivor.id })],
+        ])('refuses before any write when a take-lane snapshot %s', (_label, corrupt) => {
+            const payload = captureRemoval(storeTrackRow(), storeTakeLane());
+            const corrupted: unknown = corrupt(storeTakeLane());
+
+            expectNothingWritten({
+                type: 'restoreTrack',
+                payload: withClipData({
+                    ...payload,
+                    takeLaneSnapshots: [corrupted as RestoreTrackPayload['takeLaneSnapshots'][number]],
+                }),
+            });
+        });
     });
 });

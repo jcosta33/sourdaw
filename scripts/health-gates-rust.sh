@@ -17,10 +17,8 @@ fi
 # Rust workspace gate.
 #
 # Scope: `--workspace --exclude sourdaw-native` — the library crates under
-# `crates/`. `sourdaw-native` is excluded because it cannot build on the
-# Linux runner this job uses: its manifest enables `whisper-rs`'s `metal`
-# feature unconditionally. Gating it needs a macOS runner; that is left out
-# deliberately rather than silently half-done.
+# `crates/`. `sourdaw-native` is covered by separate platform-specific native
+# jobs; its `whisper-rs` Metal feature is scoped to macOS.
 #
 # `--all-features` exists to compile daw-plugin-host's
 # `engine-owned-command-fixture` feature, which is otherwise only reachable
@@ -51,9 +49,7 @@ fi
 # separately in #1098 (96 files) — a reformat buried inside a CI-config change
 # would not have been a reviewable diff. It covers the whole workspace,
 # `sourdaw-native` included, even though the two build legs exclude it:
-# formatting needs no toolchain features, and `sourdaw-native` cannot build on
-# ubuntu-latest because its manifest unconditionally enables whisper-rs's
-# `metal`.
+# formatting needs no platform-specific build features.
 cargo fmt --all --check
 cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features
 cargo test --workspace --exclude sourdaw-native --all-features

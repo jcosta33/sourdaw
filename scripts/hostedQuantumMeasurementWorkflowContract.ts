@@ -206,13 +206,13 @@ function assertCheckout(named: (name: string) => UnknownRecord): void {
 }
 
 function assertSetup(named: (name: string) => UnknownRecord): void {
-    requireEqual(named('Set up pnpm').uses, './.github/actions/setup-pnpm', 'the verified JavaScript pnpm action');
+    requireEqual(named('Set up pnpm').uses, './.github/actions/setup-pnpm', 'the verified native pnpm action');
     requireEqual(
         named('Set up Node').uses,
         'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1',
         'the pinned Node action'
     );
-    requireEqual(record(named('Set up Node').with, 'Node setup')['node-version'], '24.22.2', 'Node 24.22.2');
+    requireEqual(record(named('Set up Node').with, 'Node setup')['node-version'], '26.13.1', 'Node 26.13.1');
     requireEqual(
         named('Install dependencies').run,
         'pnpm install --frozen-lockfile --ignore-scripts',

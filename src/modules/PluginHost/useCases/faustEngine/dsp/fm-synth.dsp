@@ -1,4 +1,5 @@
 import("stdfaust.lib");
+cs = library("sourdaw-current-sound.lib");
 freq = hslider("freq", 440, 20, 10000, 0.1);
 gain = hslider("gain", 0.5, 0, 1, 0.01);
 gate = button("gate");
@@ -47,28 +48,28 @@ f4 = freq * r4;
 
 // Algorithms
 // 0: 4->3->2->1 (Cascade)
-op4_0 = os.osc(f4) * f4 * l4 * env4;
-op3_0 = os.osc(f3 + op4_0) * f3 * l3 * env3;
-op2_0 = os.osc(f2 + op3_0) * f2 * l2 * env2;
-op1_0 = os.osc(f1 + op2_0) * l1 * env1;
+op4_0 = cs.osc(f4) * f4 * l4 * env4;
+op3_0 = cs.osc(f3 + op4_0) * f3 * l3 * env3;
+op2_0 = cs.osc(f2 + op3_0) * f2 * l2 * env2;
+op1_0 = cs.osc(f1 + op2_0) * l1 * env1;
 
 // 1: (4+3)->2->1
-op4_1 = os.osc(f4) * f4 * l4 * env4;
-op3_1 = os.osc(f3) * f3 * l3 * env3;
-op2_1 = os.osc(f2 + op4_1 + op3_1) * f2 * l2 * env2;
-op1_1 = os.osc(f1 + op2_1) * l1 * env1;
+op4_1 = cs.osc(f4) * f4 * l4 * env4;
+op3_1 = cs.osc(f3) * f3 * l3 * env3;
+op2_1 = cs.osc(f2 + op4_1 + op3_1) * f2 * l2 * env2;
+op1_1 = cs.osc(f1 + op2_1) * l1 * env1;
 
 // 2: (4->3) + 2 -> 1
-op4_2 = os.osc(f4) * f4 * l4 * env4;
-op3_2 = os.osc(f3 + op4_2) * f3 * l3 * env3;
-op2_2 = os.osc(f2) * f2 * l2 * env2;
-op1_2 = os.osc(f1 + op3_2 + op2_2) * l1 * env1;
+op4_2 = cs.osc(f4) * f4 * l4 * env4;
+op3_2 = cs.osc(f3 + op4_2) * f3 * l3 * env3;
+op2_2 = cs.osc(f2) * f2 * l2 * env2;
+op1_2 = cs.osc(f1 + op3_2 + op2_2) * l1 * env1;
 
 // 3: 4->3, 2->1 (Parallel carriers)
-op4_3 = os.osc(f4) * f4 * l4 * env4;
-op3_3 = os.osc(f3 + op4_3) * l3 * env3;
-op2_3 = os.osc(f2) * f2 * l2 * env2;
-op1_3 = os.osc(f1 + op2_3) * l1 * env1;
+op4_3 = cs.osc(f4) * f4 * l4 * env4;
+op3_3 = cs.osc(f3 + op4_3) * l3 * env3;
+op2_3 = cs.osc(f2) * f2 * l2 * env2;
+op1_3 = cs.osc(f1 + op2_3) * l1 * env1;
 
 out = ba.selectn(4, algo, op1_0, op1_1, op1_2, (op1_3 + op3_3) * 0.5);
 process = out * gain <: _, _;

@@ -1,4 +1,5 @@
 import("stdfaust.lib");
+cs = library("sourdaw-current-sound.lib");
 freq = hslider("freq", 440, 20, 6000, 0.01);
 gain = hslider("gain", 0.5, 0, 1, 0.01);
 gate = button("gate");
@@ -18,17 +19,17 @@ leslie_depth = hslider("leslie_depth", 0.25, 0.0, 0.8, 0.01);
 click_level = hslider("click", 0.3, 0, 1, 0.01);
 // Tonewheels with leakage (~-40dB adjacent crosstalk)
 leak = 0.01;
-tw(f, d) = os.osc(f) * d + os.osc(f * 1.0007) * d * leak;
+tw(f, d) = cs.osc(f) * d + cs.osc(f * 1.0007) * d * leak;
 organ = tw(freq*0.5, d1) + tw(freq, d2) + tw(freq*1.5, d3) +
         tw(freq*2, d4) + tw(freq*3, d5) + tw(freq*4, d6) +
         tw(freq*5, d7) + tw(freq*6, d8) + tw(freq*8, d9);
 tonewheel = organ / 72.0;
 // Key click: filtered noise burst
-click = no.noise : fi.resonbp(3000, 2, 1) * en.ar(0.001, 0.004, gate) * click_level;
+click = no.noise : cs.resonbp(3000, 2, 1) * en.ar(0.001, 0.004, gate) * click_level;
 // Percussion: 2nd or 3rd harmonic fast decay, single-trigger
-perc = os.osc(freq * perc_harm) * en.ar(0.001, 0.15, gate) * perc_level;
+perc = cs.osc(freq * perc_harm) * en.ar(0.001, 0.15, gate) * perc_level;
 // Leslie: L/R phase offset for stereo rotation
-leslie_l = (tonewheel + click + perc) * (1.0 + leslie_depth * os.osc(leslie_speed));
-leslie_r = (tonewheel + click + perc) * (1.0 + leslie_depth * os.oscp(leslie_speed, ma.PI * 0.5));
+leslie_l = (tonewheel + click + perc) * (1.0 + leslie_depth * cs.osc(leslie_speed));
+leslie_r = (tonewheel + click + perc) * (1.0 + leslie_depth * cs.oscp(leslie_speed, ma.PI * 0.5));
 env = en.adsr(0.005, 0.0, 1.0, 0.03, gate);
 process = leslie_l * env * gain, leslie_r * env * gain;

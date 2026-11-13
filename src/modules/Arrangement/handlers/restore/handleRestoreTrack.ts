@@ -6,9 +6,10 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
+import { type TakeLane } from '../../models/TakeLane';
 import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
-import { takeLaneStore } from '../../stores/takeLaneStore';
-import { type Track } from '../../stores/trackStore';
+import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
+import { decodeTrackSnapshot, type Track } from '../../stores/trackStore';
 import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { insertTakeLane } from '../../useCases/comping/insertTakeLane';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -29,7 +30,6 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
     validate: (action, context) => restoreStateMatches(action, context),
     execute: (alpha) => {
         const {
-            trackSnapshot,
             trackName,
             trackKind,
             trackGain,
@@ -43,25 +43,19 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
             midiNotesByClipId,
             midiCcByClipId,
             midiPitchBendByClipId,
-            takeLaneSnapshots,
             sidechainRouteSnapshots,
             ownedModulatorSnapshots,
             incomingModulationMappingSnapshots,
         } = alpha.payload;
 
         const state = getTrackStoreState();
-        if (!state || !restoreStateMatches(alpha)) {
+        const restored = decodeRestoredRows(alpha.payload);
+        if (!state || !restored || !restoreStateMatches(alpha)) {
             return { status: 'conflict' };
         }
         const batchRestoreTrackIds = new Set(batchRestoreTracks.map((track) => track.trackId));
-        for (const patch of routingPatches) {
-            if (batchRestoreTrackIds.has(patch.trackId)) {
-                continue;
-            }
-            const current = state.tracks.find((track) => track.id === patch.trackId);
-            if (!current || !hasExpectedRoutingState(current, patch.expected)) {
-                return { status: 'conflict' };
-            }
+        if (!liveRoutingMatches(state.tracks, routingPatches, batchRestoreTrackIds)) {
+            return { status: 'conflict' };
         }
         const routingPatchById = new Map(routingPatches.map((patch) => [patch.trackId, patch]));
         const tracks = state.tracks.map((track) => {
@@ -83,7 +77,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
         ).length;
         const insertionIndex = Math.min(Math.max(trackIndex - missingEarlierSiblingCount, 0), tracks.length);
         const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
-        tracks.splice(insertionIndex, 0, trackSnapshot as never);
+        tracks.splice(insertionIndex, 0, restored.track);
         let selectedTrackId = state.selectedTrackId;
         if (wasSelected && selectedTrackId === null) {
             selectedTrackId = alpha.payload.trackId;
@@ -116,13 +110,13 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
             });
         }
 
-        if (takeLaneSnapshots.length > 0) {
+        if (restored.takeLanes.length > 0) {
             // Merge each captured lane through the shared insert instead of
             // appending: a projection may have given the track a lane while it
             // was absent, and a second lane for one track is dead state that
             // `getTakeLaneForTrack` and the comp resolver never read (#4527).
-            for (const snapshot of takeLaneSnapshots) {
-                insertTakeLane(snapshot as never, takeLaneStore.value?.lanes.length ?? 0);
+            for (const lane of restored.takeLanes) {
+                insertTakeLane(lane, takeLaneStore.value?.lanes.length ?? 0);
             }
         }
 
@@ -221,6 +215,52 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
     undoable: false,
 });
 
+type RestoreTrackPayload = Extract<AppAction, { type: 'restoreTrack' }>['payload'];
+
+/**
+ * The payload's contract types name only identities; the capture writes whole
+ * store rows. Decoding them through the stores' own row laws restores exactly
+ * what the store held, and refuses a payload that is not a row of this track.
+ */
+function decodeRestoredRows(payload: RestoreTrackPayload): { track: Track; takeLanes: TakeLane[] } | null {
+    const track = decodeTrackSnapshot(payload.trackSnapshot);
+    const takeLanes = decodeExactTakeLaneSnapshots(payload.takeLaneSnapshots);
+    if (
+        track?.id !== payload.trackId ||
+        !holdsOnlyOwnClips(track) ||
+        !takeLanes ||
+        takeLanes.some((lane) => lane.trackId !== payload.trackId)
+    ) {
+        return null;
+    }
+    return { track, takeLanes };
+}
+
+// Every clip a track holds, live or in a stored alternative copy, names that
+// track: moves, paste and duplication rewrite `trackId`, and switching or
+// deleting an alternative refuses a clip that names another track.
+function holdsOnlyOwnClips(track: Track): boolean {
+    return [track.clips, ...track.alternatives.map((alternative) => alternative.clips)].every((clips) =>
+        clips.every((clip) => clip.trackId === track.id)
+    );
+}
+
+type RoutingPatch = RestoreTrackPayload['routingPatches'][number];
+
+function liveRoutingMatches(
+    tracks: readonly Track[],
+    routingPatches: readonly RoutingPatch[],
+    batchRestoreTrackIds: ReadonlySet<string>
+): boolean {
+    return routingPatches.every((patch) => {
+        if (batchRestoreTrackIds.has(patch.trackId)) {
+            return true;
+        }
+        const current = tracks.find((track) => track.id === patch.trackId);
+        return current !== undefined && hasExpectedRoutingState(current, patch.expected);
+    });
+}
+
 type RoutingState = {
     readonly outputId: string;
     readonly sends: readonly { readonly busId: string; readonly level: number; readonly preFader: boolean }[];
@@ -264,7 +304,11 @@ function restoreStateMatches(
     context?: HandlerValidationContext
 ): boolean {
     const state = getTrackStoreState();
-    if (!state || state.tracks.some((track) => track.id === action.payload.trackId)) {
+    if (
+        !state ||
+        !decodeRestoredRows(action.payload) ||
+        state.tracks.some((track) => track.id === action.payload.trackId)
+    ) {
         return false;
     }
     const batchRestoreTrackIds = new Set(action.payload.batchRestoreTracks?.map((track) => track.trackId) ?? []);

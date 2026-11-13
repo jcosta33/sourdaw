@@ -74,7 +74,7 @@
             "continue-on-error": true,
             "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.22.2",
+              "node-version": "26.13.1",
               "cache": "pnpm"
             }
           },
@@ -129,7 +129,7 @@
         "if": "${{ github.event.pull_request.draft == false && needs.scope.result == 'success' && fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] != null }}",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -160,7 +160,7 @@
             "continue-on-error": true,
             "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.22.2",
+              "node-version": "26.13.1",
               "cache": "pnpm"
             }
           },
@@ -216,7 +216,7 @@
           },
           {
             "name": "Initialise CodeQL",
-            "uses": "github/codeql-action/init@52cf1852265d99e9bea071b03366fc777a602909",
+            "uses": "github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066",
             "with": {
               "languages": "javascript-typescript",
               "queries": "security-extended"
@@ -224,7 +224,7 @@
           },
           {
             "name": "Analyse",
-            "uses": "github/codeql-action/analyze@52cf1852265d99e9bea071b03366fc777a602909",
+            "uses": "github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066",
             "with": {
               "category": ".github/workflows/nightly.yml:codeql"
             }
@@ -281,7 +281,7 @@
       "pull-requests": "read"
     },
     "env": {
-      "NODE_VERSION": "24.22.2"
+      "NODE_VERSION": "26.13.1"
     },
     "jobs": {
       "e2e": {
@@ -289,7 +289,7 @@
         "if": "fromJSON(inputs.matrix).include[0] != null",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -582,7 +582,7 @@
       "pull-requests": "read"
     },
     "env": {
-      "NODE_VERSION": "24.22.2"
+      "NODE_VERSION": "26.13.1"
     },
     "jobs": {
       "decide": {
@@ -903,7 +903,7 @@
             "name": "Run shard",
             "id": "run_shard",
             "env": {
-              "VITEST_MAX_WORKERS": 4
+              "VITEST_MAX_WORKERS": 2
             },
             "run": "node scripts/runIsolatedUnitShard.ts shard --context \"${{ steps.unit_isolation.outputs.context }}\" --shard=${{ matrix.shard }}/4"
           },
@@ -961,7 +961,7 @@
         "if": "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -1117,7 +1117,7 @@
               "CARGO_HTTP_MULTIPLEXING": "false",
               "CARGO_NET_OFFLINE": "${{ steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}"
             },
-            "run": "pnpm health:server:full"
+            "run": "node --run health:server:full"
           }
         ]
       },
@@ -1176,7 +1176,7 @@
             "name": "Set up Node for native mutation proof",
             "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.22.2"
+              "node-version": "26.13.1"
             }
           },
           {
@@ -1303,7 +1303,7 @@
           {
             "name": "Run the addon parity specs",
             "env": {
-              "VITEST_MAX_WORKERS": 3
+              "VITEST_MAX_WORKERS": 2
             },
             "run": "pnpm run test:run src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineNativeParity.spec.ts src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts"
           }
@@ -1439,7 +1439,7 @@
       "cancel-in-progress": false
     },
     "env": {
-      "NODE_VERSION": "24.22.2"
+      "NODE_VERSION": "26.13.1"
     },
     "jobs": {
       "decide": {
@@ -1717,7 +1717,7 @@
             "name": "Run shard",
             "id": "run_shard",
             "env": {
-              "VITEST_MAX_WORKERS": 4
+              "VITEST_MAX_WORKERS": 2
             },
             "run": "node scripts/runIsolatedUnitShard.ts shard --context \"${{ steps.unit_isolation.outputs.context }}\" --shard=${{ matrix.shard }}/4"
           },
@@ -1996,7 +1996,7 @@
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -2193,7 +2193,7 @@
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -2353,7 +2353,7 @@
           },
           {
             "name": "Initialise CodeQL",
-            "uses": "github/codeql-action/init@52cf1852265d99e9bea071b03366fc777a602909",
+            "uses": "github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066",
             "with": {
               "languages": "javascript-typescript",
               "queries": "security-extended"
@@ -2361,7 +2361,7 @@
           },
           {
             "name": "Analyse",
-            "uses": "github/codeql-action/analyze@52cf1852265d99e9bea071b03366fc777a602909"
+            "uses": "github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066"
           }
         ]
       },
@@ -2652,7 +2652,7 @@
             "name": "Set up Node",
             "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.22.2"
+              "node-version": "26.13.1"
             }
           },
           {
@@ -2791,7 +2791,7 @@
             "name": "Set up Node",
             "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.22.2"
+              "node-version": "26.13.1"
             }
           },
           {
@@ -2947,7 +2947,7 @@
             "name": "Set up Node",
             "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.22.2"
+              "node-version": "26.13.1"
             }
           },
           {
