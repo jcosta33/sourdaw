@@ -1,0 +1,21 @@
+release/dependency-license-proofs.json
+  s_72d11c8b9829ac::t_0a35f6ce79fb2b 12,16,20,24,28,32,36,40,44,48,52,56
+release/open-source-inventory.json
+  s_72d11c8b9829ac::t_0a35f6ce79fb2b 173,1233,1909
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ce8d2e9d17c6a060ee0e6b257b91fbe896dccc52",
+  "prompts": {},
+  "sessions": {
+    "s_72d11c8b9829ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19ed595a-e044-4bc4-a50d-610b24c75b56",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
