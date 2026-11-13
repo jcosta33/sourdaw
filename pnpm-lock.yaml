@@ -162,6 +162,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@spotify/basic-pitch@1.0.1>@tensorflow/tfjs': 4.22.0
+
 patchedDependencies:
   '@automerge/automerge@3.5.0': ed63cb3f6d8bc6e6211baea077a9d05374fd1c8e87ea57223f85366ae1c4b63c
   vite@8.3.8: 98ac90c493c2b8e4d7889f025efd1fd293c239fd37ab70ee5f93a3809491d45d
@@ -2473,60 +2476,45 @@ packages:
     resolution: {integrity: sha512-uhOeFyxLcU41HzvrxsGpiWdcMbScY1EDgbZ5K7DVRMYInbLYWAC0EA/kx9wXAoSM8q82bUG2hRl8+EAjE6XAbA==}
     engines: {node: '>=20.19'}
 
-  '@tensorflow/tfjs-backend-cpu@3.21.0':
-    resolution: {integrity: sha512-88S21UAdzyK0CsLUrH17GPTD+26E85OP9CqmLZslaWjWUmBkeTQ5Zqyp6iK+gELnLxPx6q7JsNEeFuPv4254lQ==}
-    engines: {yarn: '>= 1.3.2'}
-    peerDependencies:
-      '@tensorflow/tfjs-core': 3.21.0
-
   '@tensorflow/tfjs-backend-cpu@4.22.0':
     resolution: {integrity: sha512-1u0FmuLGuRAi8D2c3cocHTASGXOmHc/4OvoVDENJayjYkS119fcTcQf4iHrtLthWyDIPy3JiPhRrZQC9EwnhLw==}
     engines: {yarn: '>= 1.3.2'}
     peerDependencies:
       '@tensorflow/tfjs-core': 4.22.0
 
-  '@tensorflow/tfjs-backend-webgl@3.21.0':
-    resolution: {integrity: sha512-N4zitIAT9IX8B8oe489qM3f3VcESxGZIZvHmVP8varOQakTvTX859aaPo1s8hK1qCy4BjSGbweooZe4U8D4kTQ==}
+  '@tensorflow/tfjs-backend-webgl@4.22.0':
+    resolution: {integrity: sha512-H535XtZWnWgNwSzv538czjVlbJebDl5QTMOth4RXr2p/kJ1qSIXE0vZvEtO+5EC9b00SvhplECny2yDewQb/Yg==}
     engines: {yarn: '>= 1.3.2'}
     peerDependencies:
-      '@tensorflow/tfjs-core': 3.21.0
+      '@tensorflow/tfjs-core': 4.22.0
 
   '@tensorflow/tfjs-backend-webgpu@4.22.0':
     resolution: {integrity: sha512-lvIc7Af4Tl2BCdYp43iQmSCRq3asaKT0q2xaErphXiUZ+jqeB0bQa0ZvQys1Xatvto0U4/c90DVsHPfvkn5ftg==}
     peerDependencies:
       '@tensorflow/tfjs-core': 4.22.0
 
-  '@tensorflow/tfjs-converter@3.21.0':
-    resolution: {integrity: sha512-12Y4zVDq3yW+wSjSDpSv4HnpL2sDZrNiGSg8XNiDE4HQBdjdA+a+Q3sZF/8NV9y2yoBhL5L7V4mMLDdbZBd9/Q==}
-    peerDependencies:
-      '@tensorflow/tfjs-core': 3.21.0
-
   '@tensorflow/tfjs-converter@4.22.0':
     resolution: {integrity: sha512-PT43MGlnzIo+YfbsjM79Lxk9lOq6uUwZuCc8rrp0hfpLjF6Jv8jS84u2jFb+WpUeuF4K33ZDNx8CjiYrGQ2trQ==}
     peerDependencies:
       '@tensorflow/tfjs-core': 4.22.0
 
-  '@tensorflow/tfjs-core@3.21.0':
-    resolution: {integrity: sha512-YSfsswOqWfd+M4bXIhT3hwtAb+IV8+ODwIxwdFR/7jTAPZP1wMVnSlpKnXHAN64HFOiP+Tm3HmKusEZ0+09A0w==}
-    engines: {yarn: '>= 1.3.2'}
-
   '@tensorflow/tfjs-core@4.22.0':
     resolution: {integrity: sha512-LEkOyzbknKFoWUwfkr59vSB68DMJ4cjwwHgicXN0DUi3a0Vh1Er3JQqCI1Hl86GGZQvY8ezVrtDIvqR1ZFW55A==}
     engines: {yarn: '>= 1.3.2'}
 
-  '@tensorflow/tfjs-data@3.21.0':
-    resolution: {integrity: sha512-eFLfw2wIcFNxnP2Iv/SnVlihehzKMumk1b5Prcx1ixk/SbkCo5u0Lt7OVOWaEOKVqvB2sT+dJcTjAh6lrCC/QA==}
+  '@tensorflow/tfjs-data@4.22.0':
+    resolution: {integrity: sha512-dYmF3LihQIGvtgJrt382hSRH4S0QuAp2w1hXJI2+kOaEqo5HnUPG0k5KA6va+S1yUhx7UBToUKCBHeLHFQRV4w==}
     peerDependencies:
-      '@tensorflow/tfjs-core': 3.21.0
+      '@tensorflow/tfjs-core': 4.22.0
       seedrandom: ^3.0.5
 
-  '@tensorflow/tfjs-layers@3.21.0':
-    resolution: {integrity: sha512-CMVXsraakXgnXEnqD9QbtResA7nvV7Jz20pGmjFIodcQkClgmFFhdCG5N+zlVRHEz7VKG2OyfhltZ0dBq/OAhA==}
+  '@tensorflow/tfjs-layers@4.22.0':
+    resolution: {integrity: sha512-lybPj4ZNj9iIAPUj7a8ZW1hg8KQGfqWLlCZDi9eM/oNKCCAgchiyzx8OrYoWmRrB+AM6VNEeIT+2gZKg5ReihA==}
     peerDependencies:
-      '@tensorflow/tfjs-core': 3.21.0
+      '@tensorflow/tfjs-core': 4.22.0
 
-  '@tensorflow/tfjs@3.21.0':
-    resolution: {integrity: sha512-khcARd3/872llL/oF4ouR40qlT71mylU66PGT8kHP/GJ5YKj44sv8lDRjU7lOVlJK7jsJFWEsNVHI3eMc/GWNQ==}
+  '@tensorflow/tfjs@4.22.0':
+    resolution: {integrity: sha512-0TrIrXs6/b7FLhLVNmfh8Sah6JgjBPH4mZ8JGb7NU6WW+cx00qK5BcAZxw7NCzxj6N8MRAIfHq+oNbPUNG5VAg==}
     hasBin: true
 
   '@testing-library/dom@10.4.2':
@@ -2670,12 +2658,6 @@ packages:
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
-
-  '@types/webgl-ext@0.0.30':
-    resolution: {integrity: sha512-LKVgNmBxN0BbljJrVUwkxwRYqzsAEPcZOe6S2T6ZaBDIrFp0qu4FNlpc5sM1tGbXUYFgdVQIoeLk1Y1UoblyEg==}
-
-  '@types/webgl2@0.0.6':
-    resolution: {integrity: sha512-50GQhDVTq/herLMiqSQkdtRu+d5q/cWHn4VvKJtrj4DJAjo1MNkWYa2MA41BaBO1q1HgsUjuQvEOk0QHvlnAaQ==}
 
   '@typescript-eslint/eslint-plugin@8.72.2':
     resolution: {integrity: sha512-222PKFXKihmFpi/pS5njoBgdAqsPhj2/GBmFbrNw8Tq8gEG9Sv+kSlKFy4u2q+mJv9ZzJgM2Gkv/bUzRZwZw5g==}
@@ -3025,9 +3007,6 @@ packages:
   '@vitest/spy@5.1.0':
     resolution: {integrity: sha512-2DPO5OMHWKrBngC+fCmTQqemNF0gidRhp3lxbBmRhW+M1XJrfgPpqNqWVevXtn2f2ufD5ZaR1B6B641aAlcX5A==}
 
-  '@webgpu/types@0.1.16':
-    resolution: {integrity: sha512-9E61voMP4+Rze02jlTXud++Htpjyyk8vw5Hyw9FGRrmhHQg2GqbuOfwf5Klrb8vTxc2XWI3EfO7RUHMpxTj26A==}
-
   '@webgpu/types@0.1.38':
     resolution: {integrity: sha512-7LrhVKz2PRh+DD7+S+PVaFd5HxaWQvoMqBbsV9fNJO1pjUs1P8bM2vQVNfk+3URTqbuTI7gkXi0rfsN0IadoBA==}
 
@@ -3372,8 +3351,8 @@ packages:
     resolution: {integrity: sha512-vePst2VLTSqPglW7Q98VwFpGiGpOHTyXIo81MO5VyLecA5zMbZw/P/V1vmwD1jksa2iJpn/YkDrJ3XhTfzUyhQ==}
     engines: {node: '>=18'}
 
-  core-js@3.51.0:
-    resolution: {integrity: sha512-7bDKx/5jm5MxzsXxc93g6Z2+4ZsuT/MddrfRmTDJNAkWsYWHU8EVNEsBiIEWnMAMCHMmRfUEjkuo3jeNBOIHRw==}
+  core-js@3.29.1:
+    resolution: {integrity: sha512-+jwgnhg6cQxKYIIjGtAHq2nwUOolo9eoFZ4sHfUH09BLXBgxnH4gA0zEd+t+BO2cNB8idaBtZFcFTRjQJRJmAw==}
 
   core-util-is@1.0.3:
     resolution: {integrity: sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ==}
@@ -7425,7 +7404,7 @@ snapshots:
 
   '@spotify/basic-pitch@1.0.1(seedrandom@3.0.5)':
     dependencies:
-      '@tensorflow/tfjs': 3.21.0(seedrandom@3.0.5)
+      '@tensorflow/tfjs': 4.22.0(seedrandom@3.0.5)
       '@tonejs/midi': 2.0.28
     transitivePeerDependencies:
       - encoding
@@ -7610,26 +7589,18 @@ snapshots:
 
   '@tanstack/virtual-file-routes@1.162.0': {}
 
-  '@tensorflow/tfjs-backend-cpu@3.21.0(@tensorflow/tfjs-core@3.21.0)':
-    dependencies:
-      '@tensorflow/tfjs-core': 3.21.0
-      '@types/seedrandom': 2.4.34
-      seedrandom: 3.0.5
-
   '@tensorflow/tfjs-backend-cpu@4.22.0(@tensorflow/tfjs-core@4.22.0)':
     dependencies:
       '@tensorflow/tfjs-core': 4.22.0
       '@types/seedrandom': 2.4.34
       seedrandom: 3.0.5
 
-  '@tensorflow/tfjs-backend-webgl@3.21.0(@tensorflow/tfjs-core@3.21.0)':
+  '@tensorflow/tfjs-backend-webgl@4.22.0(@tensorflow/tfjs-core@4.22.0)':
     dependencies:
-      '@tensorflow/tfjs-backend-cpu': 3.21.0(@tensorflow/tfjs-core@3.21.0)
-      '@tensorflow/tfjs-core': 3.21.0
+      '@tensorflow/tfjs-backend-cpu': 4.22.0(@tensorflow/tfjs-core@4.22.0)
+      '@tensorflow/tfjs-core': 4.22.0
       '@types/offscreencanvas': 2019.3.0
       '@types/seedrandom': 2.4.34
-      '@types/webgl-ext': 0.0.30
-      '@types/webgl2': 0.0.6
       seedrandom: 3.0.5
 
   '@tensorflow/tfjs-backend-webgpu@4.22.0(@tensorflow/tfjs-core@4.22.0)':
@@ -7637,26 +7608,9 @@ snapshots:
       '@tensorflow/tfjs-backend-cpu': 4.22.0(@tensorflow/tfjs-core@4.22.0)
       '@tensorflow/tfjs-core': 4.22.0
 
-  '@tensorflow/tfjs-converter@3.21.0(@tensorflow/tfjs-core@3.21.0)':
-    dependencies:
-      '@tensorflow/tfjs-core': 3.21.0
-
   '@tensorflow/tfjs-converter@4.22.0(@tensorflow/tfjs-core@4.22.0)':
     dependencies:
       '@tensorflow/tfjs-core': 4.22.0
-
-  '@tensorflow/tfjs-core@3.21.0':
-    dependencies:
-      '@types/long': 4.0.2
-      '@types/offscreencanvas': 2019.3.0
-      '@types/seedrandom': 2.4.34
-      '@types/webgl-ext': 0.0.30
-      '@webgpu/types': 0.1.16
-      long: 4.0.0
-      node-fetch: 2.6.13
-      seedrandom: 3.0.5
-    transitivePeerDependencies:
-      - encoding
 
   '@tensorflow/tfjs-core@4.22.0':
     dependencies:
@@ -7670,9 +7624,9 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
-  '@tensorflow/tfjs-data@3.21.0(@tensorflow/tfjs-core@3.21.0)(seedrandom@3.0.5)':
+  '@tensorflow/tfjs-data@4.22.0(@tensorflow/tfjs-core@4.22.0)(seedrandom@3.0.5)':
     dependencies:
-      '@tensorflow/tfjs-core': 3.21.0
+      '@tensorflow/tfjs-core': 4.22.0
       '@types/node-fetch': 2.6.13
       node-fetch: 2.6.13
       seedrandom: 3.0.5
@@ -7680,21 +7634,21 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
-  '@tensorflow/tfjs-layers@3.21.0(@tensorflow/tfjs-core@3.21.0)':
+  '@tensorflow/tfjs-layers@4.22.0(@tensorflow/tfjs-core@4.22.0)':
     dependencies:
-      '@tensorflow/tfjs-core': 3.21.0
+      '@tensorflow/tfjs-core': 4.22.0
 
-  '@tensorflow/tfjs@3.21.0(seedrandom@3.0.5)':
+  '@tensorflow/tfjs@4.22.0(seedrandom@3.0.5)':
     dependencies:
-      '@tensorflow/tfjs-backend-cpu': 3.21.0(@tensorflow/tfjs-core@3.21.0)
-      '@tensorflow/tfjs-backend-webgl': 3.21.0(@tensorflow/tfjs-core@3.21.0)
-      '@tensorflow/tfjs-converter': 3.21.0(@tensorflow/tfjs-core@3.21.0)
-      '@tensorflow/tfjs-core': 3.21.0
-      '@tensorflow/tfjs-data': 3.21.0(@tensorflow/tfjs-core@3.21.0)(seedrandom@3.0.5)
-      '@tensorflow/tfjs-layers': 3.21.0(@tensorflow/tfjs-core@3.21.0)
+      '@tensorflow/tfjs-backend-cpu': 4.22.0(@tensorflow/tfjs-core@4.22.0)
+      '@tensorflow/tfjs-backend-webgl': 4.22.0(@tensorflow/tfjs-core@4.22.0)
+      '@tensorflow/tfjs-converter': 4.22.0(@tensorflow/tfjs-core@4.22.0)
+      '@tensorflow/tfjs-core': 4.22.0
+      '@tensorflow/tfjs-data': 4.22.0(@tensorflow/tfjs-core@4.22.0)(seedrandom@3.0.5)
+      '@tensorflow/tfjs-layers': 4.22.0(@tensorflow/tfjs-core@4.22.0)
       argparse: 1.0.10
       chalk: 4.1.2
-      core-js: 3.51.0
+      core-js: 3.29.1
       regenerator-runtime: 0.13.11
       yargs: 16.2.2
     transitivePeerDependencies:
@@ -7853,10 +7807,6 @@ snapshots:
   '@types/unist@2.0.11': {}
 
   '@types/unist@3.0.3': {}
-
-  '@types/webgl-ext@0.0.30': {}
-
-  '@types/webgl2@0.0.6': {}
 
   '@typescript-eslint/eslint-plugin@8.72.2(@typescript-eslint/parser@8.72.2(@typescript/typescript6@6.0.2)(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0))(@typescript/typescript6@6.0.2)(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)':
     dependencies:
@@ -8114,8 +8064,6 @@ snapshots:
       vite: 8.3.8(patch_hash=98ac90c493c2b8e4d7889f025efd1fd293c239fd37ab70ee5f93a3809491d45d)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
 
   '@vitest/spy@5.1.0': {}
-
-  '@webgpu/types@0.1.16': {}
 
   '@webgpu/types@0.1.38': {}
 
@@ -8482,7 +8430,7 @@ snapshots:
 
   copy-anything@4.1.5: {}
 
-  core-js@3.51.0: {}
+  core-js@3.29.1: {}
 
   core-util-is@1.0.3: {}
 

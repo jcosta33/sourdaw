@@ -58,9 +58,8 @@ async function initializeTfjs(): Promise<TfjsWorkerRuntime> {
 
     // This file's only tfjs-core type route is the dynamic import above (#4466):
     // every tfjs-core type here derives from that import's value, so the file
-    // holds one tfjs-core type identity even while @spotify/basic-pitch's own
-    // internally consistent 3.21 stack coexists in the tree. Module edges carry
-    // only the structural TfjsWorker* types.
+    // holds one tfjs-core type identity within the shared TensorFlow.js cohort.
+    // Module edges carry only the structural TfjsWorker* types.
     type TfjsTensor = InstanceType<(typeof tf)['Tensor']>;
     type TfjsNamedTensorMap = Record<string, TfjsTensor>;
 

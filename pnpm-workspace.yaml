@@ -42,17 +42,12 @@ patchedDependencies:
     '@automerge/automerge@3.5.0': patches/@automerge__automerge@3.5.0.patch
     vite@8.3.8: patches/vite@8.3.8.patch
 
-# Two coexisting tfjs-core stacks are deliberate (#4466). The app pins
-# tfjs-core/converter/backend-webgpu 4.22.0 exactly for its WebGPU DDSP worker;
-# @spotify/basic-pitch owns the @tensorflow/tfjs 3.x umbrella, which pins
-# its own 3.21.0 sub-packages under itself. Neither stack may be repinned
-# tree-wide: forcing tfjs-core 4.22.0 into basic-pitch's chain breaks inference
-# (its backend-webgl 3.21 reads ENGINE_COMPILE_ONLY at kernel paths core 4.22
-# no longer registers, so evaluateModel rejects and polyphonic audio-to-MIDI
-# returns null). Keep the stacks internally consistent and never import a
-# second tfjs-core identity into a file: src/modules/BrowserAi/workers/
-# tfjsInferenceWorker.ts derives its types from its own single dynamic import,
-# and app code touches only basic-pitch's own exports, never @tensorflow/tfjs.
+# Upgrade Basic Pitch's whole TensorFlow.js umbrella, which pins its core,
+# converter, CPU and WebGL backends to the same release as the app's WebGPU
+# worker. Overriding core alone leaves incompatible backend kernels. Keep the
+# complete cohort together; bundled-model inference checks its actual runtime.
+overrides:
+    '@spotify/basic-pitch@1.0.1>@tensorflow/tfjs': 4.22.0
 
 minimumReleaseAgeExclude:
     - '@eslint-react/ast@5.30.2'
