@@ -14,9 +14,8 @@ import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 
 import { artifactOf } from './artifactOf';
 import { beginMeasurementRun } from './beginMeasurementRun';
-import { compilePreviewMeasurementProposal } from './compilePreviewMeasurementProposal';
+import { compilePreviewPrefix, type CompiledPrefix } from './compilePreviewPrefix';
 import { countMeasurementUnitWork } from './countMeasurementUnitWork';
-import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { type ExecutePreviewMeasurementInput } from './executePreviewMeasurement';
 import { measurePreviewTarget, type RenderedPreviewTarget } from './measurePreviewTarget';
 import { type MeasurementUnitProgress } from './measureProjectUnit';
@@ -33,9 +32,6 @@ type WindowsRender = Awaited<ReturnType<typeof renderAgentPreviewMeasurementWind
 type RenderedWindows = Extract<WindowsRender, { status: 'rendered' }>;
 type WindowedSubject = RenderedWindows['baseline'];
 type Workspace = Extract<ReturnType<typeof previewVersionedCommandBatchEnvelope>, { status: 'previewed' }>;
-
-/** One prefix document of the unit, compiled as the preview measurement compiles a prepared batch. */
-type CompiledPrefix = { commands: readonly RetainedCommand[]; envelope: PreparedBatch; batchContentHash: string };
 
 /** One (prefix, range) read of the unit's target, ready to report in the receipt it belongs to. */
 export type PreviewUnitRead = {
@@ -70,27 +66,16 @@ type PreviewUnitInput = {
 function compilePrefixes(input: PreviewUnitInput): Map<string, CompiledPrefix> | MeasurementFailure {
     const compiled = new Map<string, CompiledPrefix>();
     for (const prefix of input.unit.prefixes) {
-        const preparedBatch = input.envelopes.get(prefix);
-        if (preparedBatch === undefined) {
-            return { code: 'preview-unavailable', safeMessage: 'The preview prefix is unavailable.', retryable: false };
-        }
-        const result = compilePreviewMeasurementProposal({
-            callId: `goal-measure-${prefix}`,
-            source: { preparedBatch },
-            context: input.preview.context,
-            prompt: input.preview.prompt,
-            revision: input.projectRevision,
-            runId: input.preview.runId,
-            creativeAuthority: input.preview.readCreativeAuthority(),
+        const result = compilePreviewPrefix({
+            prefix,
+            preparedBatch: input.envelopes.get(prefix),
+            projectRevision: input.projectRevision,
+            preview: input.preview,
         });
-        if (result.status === 'rejected') {
-            return { code: 'preview-proposal-rejected', safeMessage: result.reason, retryable: true };
+        if ('code' in result) {
+            return result;
         }
-        compiled.set(prefix, {
-            commands: result.commands,
-            envelope: result.envelope,
-            batchContentHash: digestCommandBatchContent(result.envelope),
-        });
+        compiled.set(prefix, result);
     }
     return compiled;
 }

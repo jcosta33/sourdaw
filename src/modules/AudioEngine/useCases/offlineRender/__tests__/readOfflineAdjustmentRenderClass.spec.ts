@@ -86,11 +86,12 @@ describe('adjustment-layer constancy thresholds', () => {
 });
 
 describe('the adjustment render class of a render end', () => {
+    /** The document the renders read: the live project's tempo and tempo map below. */
+    const TIMELINE = { tempo: 97, changes: [{ id: 'slower', beat: 6, tempo: 71, curve: 'instant' as const }] };
+
     beforeEach(() => {
-        restoreTransportSnapshot({ tempo: 97 });
-        restoreTimelineMapSnapshot({
-            tempoMap: { changes: [{ id: 'slower', beat: 6, tempo: 71, curve: 'instant' }] },
-        });
+        restoreTransportSnapshot({ tempo: TIMELINE.tempo });
+        restoreTimelineMapSnapshot({ tempoMap: { changes: TIMELINE.changes } });
         configureOfflinePpqEndpointProjection({
             project: projectPpqEndpoints,
             resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
@@ -112,7 +113,10 @@ describe('the adjustment render class of a render end', () => {
 
     it('counts the layers an isolated subgraph render classifies as moving over its own end', () => {
         for (const endBeat of END_BEATS) {
-            expect({ endBeat, renderClass: readOfflineAdjustmentRenderClass({ endBeat, route: 'subgraph' }) }).toEqual({
+            expect({
+                endBeat,
+                renderClass: readOfflineAdjustmentRenderClass({ endBeat, route: 'subgraph', timeline: TIMELINE }),
+            }).toEqual({
                 endBeat,
                 renderClass: movingLayers(endBeat),
             });
@@ -126,15 +130,50 @@ describe('the adjustment render class of a render end', () => {
                 sampleRate: 48_000,
             });
             const spanEndBeat = conservativeSpanEndBeat(durationSeconds, defaultTempo, changes);
-            expect({ endBeat, renderClass: readOfflineAdjustmentRenderClass({ endBeat, route: 'mixdown' }) }).toEqual({
+            expect({
+                endBeat,
+                renderClass: readOfflineAdjustmentRenderClass({ endBeat, route: 'mixdown', timeline: TIMELINE }),
+            }).toEqual({
                 endBeat,
                 renderClass: movingLayers(spanEndBeat),
             });
         }
     });
 
+    it('walks the mixdown span through the tempo map of the document it renders, not the live one', () => {
+        // A preview document the live project does not match: its tempo halves at beat 10.
+        const preview = {
+            tempo: 120,
+            changes: [
+                { id: 'start', beat: 0, tempo: 120, curve: 'instant' as const },
+                { id: 'halved', beat: 10, tempo: 60, curve: 'instant' as const },
+            ],
+        };
+        restoreTransportSnapshot({ tempo: 120 });
+        restoreTimelineMapSnapshot({ tempoMap: { changes: [] } });
+        adjustmentLayerStore.set({ layers: [layer('late', [region(16, 24)])] });
+        const read = (endBeat: number, timeline: { tempo: number; changes: typeof preview.changes }) =>
+            readOfflineAdjustmentRenderClass({ endBeat, route: 'mixdown', timeline });
+        const live = { tempo: 120, changes: [] };
+
+        // The live project reads both ends alike; the preview's slower tail carries a render to 16 past the layer.
+        expect([read(8, live), read(16, live)]).toEqual([0, 0]);
+        expect([read(8, preview), read(16, preview)]).toEqual([0, 1]);
+        for (const endBeat of [8, 16]) {
+            const { durationSeconds } = projectPpqEndpoints({
+                startPpq: 0,
+                endPpq: endBeat,
+                defaultTempo: preview.tempo,
+                sampleRate: 48_000,
+                changes: preview.changes,
+            });
+            const spanEndBeat = conservativeSpanEndBeat(durationSeconds, preview.tempo, preview.changes);
+            expect(read(endBeat, preview)).toBe(spanEndBeat > 16 ? 1 : 0);
+        }
+    });
+
     it('reads zero for every end with no layer that can move', () => {
         adjustmentLayerStore.set({ layers: [LAYERS[0]!] });
-        expect(readOfflineAdjustmentRenderClass({ endBeat: 64, route: 'mixdown' })).toBe(0);
+        expect(readOfflineAdjustmentRenderClass({ endBeat: 64, route: 'mixdown', timeline: TIMELINE })).toBe(0);
     });
 });

@@ -33,6 +33,7 @@ import { planMetricMeasurementRequests } from './planMetricMeasurementRequests';
 import { planMetricMeasurementUnits } from './planMetricMeasurementUnits';
 import { readApplicationVerificationReceiptLimits } from './readApplicationVerificationReceiptLimits';
 import { readGoalPrefix } from './readGoalPrefix';
+import { readPreviewPrefixTimeline } from './readPreviewPrefixTimeline';
 
 type PreviewInput = {
     state: MetricGoalState;
@@ -42,6 +43,8 @@ type PreviewInput = {
     runId: string;
     /** Called as each render begins, naming its target, document and prefix step. */
     onProgress?: (progress: MetricGoalPreviewProgress) => void;
+    /** Called once this preview holds the run's one metric-goal preview, before anything renders. */
+    onBegin?: () => void;
 };
 
 /** Which target renders now, in which document, and for a prefix document how many of the batch's steps it holds. */
@@ -297,6 +300,29 @@ function failedRequestReceipt(failure: MeasurementFailure): ApplicationToolRecei
     );
 }
 
+/** Reads each prefix document's timeline at most once, however many units plan on it. */
+function readEachPrefixTimelineOnce(
+    envelopes: ReadonlyMap<string, PreviewEnvelope>,
+    projectRevision: string,
+    preview: Parameters<typeof readPreviewPrefixTimeline>[0]['preview']
+) {
+    const timelines = new Map<string, ReturnType<typeof readPreviewPrefixTimeline>>();
+    return (prefix: string) => {
+        const known = timelines.get(prefix);
+        if (known !== undefined) {
+            return known;
+        }
+        const timeline = readPreviewPrefixTimeline({
+            prefix,
+            preparedBatch: envelopes.get(prefix),
+            projectRevision,
+            preview,
+        });
+        timelines.set(prefix, timeline);
+        return timeline;
+    };
+}
+
 /**
  * Renders the requests one target at a time (`planMetricMeasurementUnits`), each target's live render
  * shared by every prefix and range it is read at, then reports each request as the one
@@ -313,11 +339,19 @@ async function measurePreviewRequests(
     onProgress: ((progress: MeasurementUnitProgress) => void) | undefined
 ) {
     const outcomes: RequestOutcome[] = requests.map(() => ({ failure: null, reads: new Map() }));
+    const envelopes = new Map(requests.map((request) => [request.hash, request.envelope]));
+    const preview = {
+        context: input.context,
+        prompt: input.prompt,
+        runId: input.runId,
+        readCreativeAuthority: () =>
+            state.authorities.find((authority) => authority.creativeAuthority !== null)?.creativeAuthority ?? undefined,
+    };
     const units = planMetricMeasurementUnits({
         requests: requests.map(({ hash, scope, range, metrics }) => ({ prefix: hash, scope, range, metrics })),
         subject: 'preview',
+        readPrefixTimeline: readEachPrefixTimelineOnce(envelopes, envelope.baseRevision, preview),
     });
-    const envelopes = new Map(requests.map((request) => [request.hash, request.envelope]));
     const measuredRequests = new Set<number>();
     for (const unit of units) {
         if (signal.aborted || !projectRevisionMatchesLiveIgnoringSaveWrites(envelope.baseRevision)) {
@@ -330,14 +364,7 @@ async function measurePreviewRequests(
             sections: input.context.sections ?? [],
             signal,
             admit: agentWorkBudget.admitMeasurement(input.runId),
-            preview: {
-                context: input.context,
-                prompt: input.prompt,
-                runId: input.runId,
-                readCreativeAuthority: () =>
-                    state.authorities.find((authority) => authority.creativeAuthority !== null)?.creativeAuthority ??
-                    undefined,
-            },
+            preview,
             onProgress,
         });
         for (const read of unit.reads) {
@@ -461,6 +488,7 @@ export async function prepareMetricGoalPreview(
     });
     let terminalState: 'completed' | 'failed' | 'cancelled' = 'failed';
     try {
+        input.onBegin?.();
         const binding = state.binding;
         const { receipts, compilations } = await measurePreviewRequests(
             input,

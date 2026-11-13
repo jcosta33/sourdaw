@@ -740,6 +740,44 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
         expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
     });
 
+    it('leaves the first re-preview its progress line and Stop when a second one cannot begin', async () => {
+        const brief = await confirmBrief();
+        const drums = requireOnlyProposedCard();
+        const cardMessage = () => chatStore.value?.messages.find((message) => message.id === drums.assistantMessageId);
+        let admitted!: () => void;
+        const admission = new Promise<void>((resolve) => {
+            admitted = resolve;
+        });
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        let renders = 0;
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
+            renders += 1;
+            if (renders === 1) {
+                admitted();
+                await held;
+            }
+            return renderTrack(input);
+        });
+
+        const first = reproposePendingChatActions({ confirmationId: drums.id });
+        await admission;
+        const firstLine = cardMessage()?.content;
+        expect(firstLine).toBe('Preparing batch 2 of 4: rendering Drums as it is now...');
+
+        await expect(reproposePendingChatActions({ confirmationId: drums.id })).resolves.toEqual({
+            status: 'rejected',
+            reason: 'This run cannot begin another metric goal preview.',
+        });
+        expect(cardMessage()).toMatchObject({ content: firstLine, stoppableRunId: brief.runId });
+
+        release();
+        await expect(first).resolves.toMatchObject({ status: 'reproposed' });
+        expect((chatStore.value?.messages ?? []).filter((message) => message.stoppableRunId !== undefined)).toEqual([]);
+    });
+
     it('takes the progress line and Stop off a batch card whose re-preview finished', async () => {
         await confirmBrief();
         const drums = requireOnlyProposedCard();

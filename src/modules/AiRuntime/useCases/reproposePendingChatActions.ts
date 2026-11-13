@@ -440,6 +440,7 @@ function persistReproposalConfirmation(
 }
 
 type RePreviewWatch = {
+    onBegin: Parameters<typeof prepareMetricGoalPreview>[0]['onBegin'];
     onProgress: Parameters<typeof prepareMetricGoalPreview>[0]['onProgress'];
     settle: () => Promise<void>;
 };
@@ -459,7 +460,9 @@ function restoreRePreviewedCard(messageId: string, cardContent: string | undefin
  * measurement. Every exit takes both off again. A run still live gets the card's own text back. A run
  * Stop or anything else ended meanwhile keeps no proposed card: a cancelled run's card is cancelled
  * as its own Cancel would, releasing what it held, and the message ends on the line a stopped batch
- * preparation ends on.
+ * preparation ends on. The watch takes the card only once this re-preview holds the run's one preview
+ * (`onBegin`): a re-preview refused beside another that is still rendering leaves that one's line and
+ * Stop as they are, and returns its refusal.
  */
 function watchVibeBatchRePreview(
     confirmation: PendingAppActionConfirmation,
@@ -468,12 +471,17 @@ function watchVibeBatchRePreview(
     const run = agentRunLifecycle.get(confirmation.runId);
     const position = confirmation.approvalSnapshot.batchPosition;
     if (run?.plan?.batchSchedule?.kind !== 'vibe-run' || !position) {
-        return { onProgress: undefined, settle: async () => undefined };
+        return { onBegin: undefined, onProgress: undefined, settle: async () => undefined };
     }
     const messageId = confirmation.assistantMessageId;
-    const cardContent = chatStore.value?.messages.find((message) => message.id === messageId)?.content;
-    updateChatMessage(messageId, { stoppableRunId: run.runId });
+    let begun = false;
+    let cardContent: string | undefined;
     return {
+        onBegin: () => {
+            begun = true;
+            cardContent = chatStore.value?.messages.find((message) => message.id === messageId)?.content;
+            updateChatMessage(messageId, { stoppableRunId: run.runId });
+        },
         onProgress: (progress) =>
             updateChatMessage(messageId, {
                 content: describeBatchPreviewProgress({
@@ -484,6 +492,9 @@ function watchVibeBatchRePreview(
                 }),
             }),
         settle: async () => {
+            if (!begun) {
+                return;
+            }
             const current = agentRunLifecycle.get(run.runId);
             if (current !== null && !TERMINAL_RUN_PHASES.has(current.phase)) {
                 restoreRePreviewedCard(messageId, cardContent);
@@ -529,6 +540,7 @@ export async function reproposePendingChatActions(
                 context,
                 prompt: confirmation.prompt,
                 runId: confirmation.runId,
+                onBegin: watch.onBegin,
                 onProgress: watch.onProgress,
             });
         } catch (error) {

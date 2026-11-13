@@ -1,5 +1,5 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
-import { readSecondsAtBeat } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, readSecondsAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { type AgentRunBudgets } from '../../models/AgentRun';
 import { type PerceptualConstraintReading } from '../../models/PerceptualConstraint';
@@ -25,6 +25,15 @@ import { readVibeBatchRecipeGoals } from './readVibeBatchRecipeGoals';
 
 const BRIEF_POSITION = 1;
 const BRIEF_COMMAND_COUNT = 1;
+
+/**
+ * The timeline of a batch's prefix document. A vibe batch is recipe expansions alone, which add
+ * devices and set their parameters and never write the tempo or the tempo map, so every prefix
+ * renders on the live project's timeline, exactly as its preview reads it when it runs.
+ */
+function readRecipePrefixTimeline() {
+    return { tempo: transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM, changes: tempoMapStore.value?.changes ?? [] };
+}
 
 /** Prefix reads shared with execution, including exact range identity and reference subjects. */
 function previewRequests(pairs: readonly VibeBatchPair[], goals: readonly MetricGoal[], context: ProjectContext) {
@@ -96,7 +105,9 @@ function readRunWork(input: {
             continue;
         }
         const requests = previewRequests(planned.pairs, planned.goals, input.context);
-        const work = countMeasurementWork(planMetricMeasurementUnits({ requests, subject: 'preview' }));
+        const work = countMeasurementWork(
+            planMetricMeasurementUnits({ requests, subject: 'preview', readPrefixTimeline: readRecipePrefixTimeline })
+        );
         renders += work.renderJobs;
         analyses += work.analyses;
         receipts += requests.length;
