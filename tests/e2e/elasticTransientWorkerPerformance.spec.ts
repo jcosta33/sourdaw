@@ -431,6 +431,14 @@ async function sourceState(page: Page, last = false) {
     }, last);
 }
 
+async function projectScalePreservedState(page: Page, targetClipId: string) {
+    return page.evaluate(async (targetClipId) => {
+        const entryPath = '/tests/e2e/elasticProjectScaleFixture.ts';
+        const fixture: typeof import('./elasticProjectScaleFixture') = await import(entryPath);
+        return fixture.captureElasticProjectScalePreservedState(targetClipId);
+    }, targetClipId);
+}
+
 for (const projectScale of [false, true]) {
     test(
         projectScale
@@ -482,6 +490,7 @@ for (const projectScale of [false, true]) {
             expect(before.frames).toBe(RATE * SECONDS);
             expect(before.channels).toBe(2);
             expect(before.projected).toEqual([]);
+            if (!before.clipId) throw new Error('Imported Detect source is missing');
             if (projectScale) {
                 const fixture = await page.evaluate(async () => {
                     const entryPath = '/tests/e2e/elasticProjectScaleFixture.ts';
@@ -502,6 +511,19 @@ for (const projectScale of [false, true]) {
                 expect(fixture.rootBytes).toBeGreaterThan(0);
                 expect(fixture.targetClipId).toBe(before.clipId);
             }
+            const targetClipId = before.clipId;
+            const preserved = projectScale ? await projectScalePreservedState(page, targetClipId) : undefined;
+            if (projectScale) {
+                await info.attach('elastic-project-scale-preserved-state-before-detect.json', {
+                    body: JSON.stringify(preserved),
+                    contentType: 'application/json',
+                });
+            }
+            const assertPreserved = async (): Promise<void> => {
+                if (projectScale) {
+                    expect(await projectScalePreservedState(page, targetClipId)).toEqual(preserved);
+                }
+            };
             await page.getByLabel('Timeline editor surface').click({ position: { x: 30, y: 20 } });
             const dock = page.getByTestId('toggle-bottom-dock');
             if ((await dock.getAttribute('aria-pressed')) !== 'true') await dock.click();
@@ -625,6 +647,7 @@ for (const projectScale of [false, true]) {
                 return { ...measurement, inputMarkStart: inputMark.startTime };
             });
             await coldTrace.stop();
+            await assertPreserved();
             const after = await sourceState(page);
             const gaps = measured.frames.slice(1).flatMap((time, index) => {
                 const previous = measured.frames[index]!;
@@ -722,8 +745,10 @@ for (const projectScale of [false, true]) {
             );
             await page.keyboard.press(`${modifier}+z`);
             await expect.poll(async () => (await sourceState(page)).projected.length).toBe(0);
+            await assertPreserved();
             await page.keyboard.press(`${modifier}+Shift+z`);
             await expect.poll(async () => (await sourceState(page)).projected.length).toBe(ATTACKS.length);
+            await assertPreserved();
             expect((await sourceState(page)).pcm).toEqual(before.pcm);
 
             const canvas = panel.getByTestId('elastic-waveform-canvas');
@@ -746,12 +771,15 @@ for (const projectScale of [false, true]) {
             await armPopulatedMeasurement(page, 'click');
             await panel.getByTestId('elastic-detect-button').click();
             await assertPopulatedMeasurement(page, info, 're-detect-populated', populated, retained, repeatedTrace);
+            await assertPreserved();
             expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(2);
             const redetected = await sourceState(page);
             await page.keyboard.press(`${modifier}+z`);
             await expect.poll(async () => (await sourceState(page)).projected).toEqual(populated.projected);
+            await assertPreserved();
             await page.keyboard.press(`${modifier}+Shift+z`);
             await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
+            await assertPreserved();
 
             const sensitivityTrace = await startElasticTaskTrace(page, info, 'sensitivity-populated');
             await armPopulatedMeasurement(page, 'sensitivity');
@@ -766,10 +794,13 @@ for (const projectScale of [false, true]) {
             );
             expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(3);
             const sensitive = await sourceState(page);
+            await assertPreserved();
             await page.keyboard.press(`${modifier}+z`);
             await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
+            await assertPreserved();
             await page.keyboard.press(`${modifier}+Shift+z`);
             await expect.poll(async () => (await sourceState(page)).projected).toEqual(sensitive.projected);
+            await assertPreserved();
             expect((await sourceState(page)).pcm).toEqual(before.pcm);
         }
     );

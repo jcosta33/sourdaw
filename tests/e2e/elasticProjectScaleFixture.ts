@@ -16,6 +16,37 @@ export const elasticProjectScale = {
     historyEdits: 2048,
 } as const;
 
+/** Plain caller-read truth, captured outside Detect's measured interval. */
+export function captureElasticProjectScalePreservedState(targetClipId: string): unknown {
+    const document = getCrdtDoc<{
+        tracks?: unknown;
+        midi?: unknown;
+        warpStates?: { states: Record<string, unknown> };
+    }>('root');
+    if (!document) throw new Error('Project-scale preservation requires the actual root document');
+    const companionIds = (trackStore.value?.tracks ?? [])
+        .flatMap((track) => track.clips)
+        .filter((clip) => clip.id !== targetClipId && getWarpState(clip.id).markers.length > 0)
+        .map((clip) => clip.id);
+    const snapshot: unknown = JSON.parse(
+        JSON.stringify({
+            raw: {
+                tracks: document.tracks,
+                midi: document.midi,
+                warpStates: Object.fromEntries(
+                    Object.entries(document.warpStates?.states ?? {}).filter(([clipId]) => clipId !== targetClipId)
+                ),
+            },
+            projected: {
+                tracks: trackStore.value?.tracks,
+                midi: midiStore.value,
+                warpStates: Object.fromEntries(companionIds.map((clipId) => [clipId, getWarpState(clipId)])),
+            },
+        })
+    );
+    return snapshot;
+}
+
 export async function inspectElasticProjectScale() {
     const { rootBytes, projectRevision } = await captureCheckpointRoot();
     const document = getCrdtDoc<Record<string, unknown>>('root');
