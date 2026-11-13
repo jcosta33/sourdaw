@@ -1,11 +1,11 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "9310e8f1debd75adf4b82f062948457313b89b0a18b02763ba531707344c4010",
+        "cargoLockSha256": "87cdca75040bd33b6807332dd8bb82dbf525e5396ed4aed895015b1703f0ef60",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
-                "sha256": "cf292f45bb33cce3c2ddfe8db3fc1dacebbe021e7846c617636fa141eca8fcaf"
+                "sha256": "87a73e86e8a585112d5f4723573bafebd99681cda7d358c25d733c07239b1c3b"
             },
             {
                 "path": "Cargo.toml",
@@ -61,11 +61,11 @@
             },
             {
                 "path": "package.json",
-                "sha256": "3911c478b8388f4e76d0be86f8b0771b7e29864e72bd6af6d3b9b48c80453cb6"
+                "sha256": "ad4b9b7d3c5c959be946b7127fed7c03a1089930f2c44f1cd743e41ce05bf144"
             },
             {
                 "path": "rust-toolchain.toml",
-                "sha256": "bae4e26ab3ac14ac537b8d09c3577c55b94cd39c781fb9ac3d291e5e12f72a82"
+                "sha256": "d13306be0ecda81ce779baa290ffb417380d525928477f16200884b5169cca33"
             },
             {
                 "path": "scripts/buildNativeAddon.ts",
@@ -728,7 +728,7 @@
             },
             {
                 "name": "const-oid",
-                "version": "0.10.2",
+                "version": "0.10.3",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "Apache-2.0 OR MIT",
                 "legalFiles": [
@@ -2366,7 +2366,7 @@
             },
             {
                 "name": "itoa",
-                "version": "1.0.18",
+                "version": "1.0.19",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -3034,58 +3034,58 @@
             },
             {
                 "name": "napi",
-                "version": "3.16.1",
+                "version": "3.16.2",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT",
                 "legalFiles": [],
                 "metadataFiles": [
                     {
                         "label": "Cargo.toml",
-                        "sha256": "28a9614efaa726071023caec6f8555f009313c9f1585f1ce6c9c6dcc177278ed"
+                        "sha256": "9d2172fe8feecb9c887d2152ad154d5612f38a7ba6792bf74107789bcb970cb5"
                     }
                 ],
                 "reportedLegalFiles": [
                     {
                         "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
-                        "sha256": "3104b29d59a35b49a969c0943060025a41423074aa8574e1bf0419296c49cc56"
+                        "sha256": "70cd467c1ca01889c11d2fbab2787e0393041127fedabba395980e0ad50c9d6e"
                     }
                 ]
             },
             {
                 "name": "napi-derive",
-                "version": "3.7.0",
+                "version": "3.7.1",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT",
                 "legalFiles": [],
                 "metadataFiles": [
                     {
                         "label": "Cargo.toml",
-                        "sha256": "19f2fe5259393a366ddb82b8e78e7bc693b4bc86447990c4cdde82624c59b8f3"
+                        "sha256": "7a0695d425fd843ce749cb30cbfd9545df743942ad9021077855864b090b922d"
                     }
                 ],
                 "reportedLegalFiles": [
                     {
                         "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
-                        "sha256": "79ba7d1d02ee101cd65333bd67f7ef30fa5621f03d5db33a9325f0227041c0af"
+                        "sha256": "4eea4d16eb48c5df35182679b20bb0c4c86a98f14e3e913a4be2be7ddc12ad9c"
                     }
                 ]
             },
             {
                 "name": "napi-derive-backend",
-                "version": "7.0.0",
+                "version": "7.0.1",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT",
                 "legalFiles": [],
                 "metadataFiles": [
                     {
                         "label": "Cargo.toml",
-                        "sha256": "429b1569bf0db4521d2f6bd8c857386b050023c2f8ea86618bf5c517b5ce7c56"
+                        "sha256": "9eda554f2a7d87fa6d362cf81729941b3c65e74f9a7cf39776707cc9633bf40c"
                     }
                 ],
                 "reportedLegalFiles": [
                     {
                         "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
-                        "sha256": "0529ba94d2b9509a161622f3a5b51cd29b92a05256de6956fd4282a2ff67680b"
+                        "sha256": "f96172966da56040b81806bfc3cf9203b7e2d68835ed3a04580ff0aceda27c69"
                     }
                 ]
             },
@@ -4446,7 +4446,7 @@
             },
             {
                 "name": "rustls-pki-types",
-                "version": "1.15.1",
+                "version": "1.16.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -4935,7 +4935,7 @@
             },
             {
                 "name": "socket-pktinfo",
-                "version": "0.4.1",
+                "version": "0.4.2",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT",
                 "legalFiles": [
@@ -5381,7 +5381,7 @@
             },
             {
                 "name": "syn",
-                "version": "3.0.9",
+                "version": "3.0.10",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -6219,7 +6219,7 @@
             },
             {
                 "name": "uuid",
-                "version": "1.29.1",
+                "version": "1.29.2",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "Apache-2.0 OR MIT",
                 "legalFiles": [
@@ -6573,7 +6573,7 @@
             },
             {
                 "name": "webpki-root-certs",
-                "version": "1.0.11",
+                "version": "1.0.12",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "CDLA-Permissive-2.0",
                 "legalFiles": [
@@ -7776,14 +7776,14 @@
         ]
     },
     "packages": {
-        "cargo:napi@3.16.1": {
-            "source": "https://crates.io/api/v1/crates/napi/3.16.1/download",
-            "revision": "sha256:907ff7366fb7182e28edd0f08ef8ac5d6b13b8d65a3c0b3a10bf3ac092437d6b",
+        "cargo:napi@3.16.2": {
+            "source": "https://crates.io/api/v1/crates/napi/3.16.2/download",
+            "revision": "sha256:567c62b9c2d0fae123713f766686ad66a2c75b45ba3ee01ed8b06a7e99bc435b",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "Cargo.toml",
-                        "sha256": "28a9614efaa726071023caec6f8555f009313c9f1585f1ce6c9c6dcc177278ed"
+                        "sha256": "9d2172fe8feecb9c887d2152ad154d5612f38a7ba6792bf74107789bcb970cb5"
                     }
                 ],
                 "licenses": [
@@ -7791,14 +7791,14 @@
                 ]
             }
         },
-        "cargo:napi-derive@3.7.0": {
-            "source": "https://crates.io/api/v1/crates/napi-derive/3.7.0/download",
-            "revision": "sha256:d32eb00f92f84cf462fc328f49082b29c2a7d2eebeb1d447d19c1f9fdd9f89ee",
+        "cargo:napi-derive@3.7.1": {
+            "source": "https://crates.io/api/v1/crates/napi-derive/3.7.1/download",
+            "revision": "sha256:94c8098ed9d61a1bbd019519c637817531b0e24023ef4b5678f2f0cbe24bed9c",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "Cargo.toml",
-                        "sha256": "19f2fe5259393a366ddb82b8e78e7bc693b4bc86447990c4cdde82624c59b8f3"
+                        "sha256": "7a0695d425fd843ce749cb30cbfd9545df743942ad9021077855864b090b922d"
                     }
                 ],
                 "licenses": [
@@ -7806,14 +7806,14 @@
                 ]
             }
         },
-        "cargo:napi-derive-backend@7.0.0": {
-            "source": "https://crates.io/api/v1/crates/napi-derive-backend/7.0.0/download",
-            "revision": "sha256:d1fe28c64d8fc12e69f9b817d0febdbe7914555760f1e353106281b8ff99cc90",
+        "cargo:napi-derive-backend@7.0.1": {
+            "source": "https://crates.io/api/v1/crates/napi-derive-backend/7.0.1/download",
+            "revision": "sha256:314cd6ca42bd978fd8bae84b4137e1322bbf3e83552fca8dbd7d18034188ff3a",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "Cargo.toml",
-                        "sha256": "429b1569bf0db4521d2f6bd8c857386b050023c2f8ea86618bf5c517b5ce7c56"
+                        "sha256": "9eda554f2a7d87fa6d362cf81729941b3c65e74f9a7cf39776707cc9633bf40c"
                     }
                 ],
                 "licenses": [
@@ -7889,21 +7889,6 @@
                     {
                         "sourcePath": "package.json",
                         "sha256": "cd7e0d13df9e60b931dd7b307c2e1c06af9c44667dda281d5c77d7d226034f9e"
-                    }
-                ],
-                "licenses": [
-                    "LGPL-3.0"
-                ]
-            }
-        },
-        "npm:@grame/faustwasm@0.18.5": {
-            "source": "https://registry.npmjs.org/@grame/faustwasm/-/faustwasm-0.18.5.tgz",
-            "revision": "sha512-mJhyTMv1b6V+ICm/XKcNgOFtxJVX4nAIrTDLqJdB5PW6xTIMeJtNHkUBIg+RlWMrbs0QhGYYBVsq22Y6e87v3w==",
-            "assembled": {
-                "metadata": [
-                    {
-                        "sourcePath": "package.json",
-                        "sha256": "0041a3b18dfb797eece149643114769779b6e9b89e4310b77930be8fc3c3a8ed"
                     }
                 ],
                 "licenses": [
@@ -8576,12 +8561,12 @@
                 ]
             }
         },
-        "npm:ws@8.22.1": {
-            "source": "https://registry.npmjs.org/ws/-/ws-8.22.1.tgz",
-            "revision": "sha512-oyL6OPYme/CmiFvNuGzeoxCJ4nOrZE2O1FwM9MWM1AsGri6nLXB2pg+lNA8aLeXMSav0J6eIVS1j6vUPzUtK9g==",
+        "npm:ws@8.22.2": {
+            "source": "https://registry.npmjs.org/ws/-/ws-8.22.2.tgz",
+            "revision": "sha512-/rEZ2ejown2N5gxVTHUu9bVVC7ttu0/Tgzf5hbTOixR3Fs7mbbXgn2DbdbcKgJOmpQMtrIUWivtYuVMnp/W/yA==",
             "files": [
                 {
-                    "archivePath": "release/dependency-license-proofs/ws-8.22.1.tgz",
+                    "archivePath": "release/dependency-license-proofs/ws-8.22.2.tgz",
                     "sourcePath": "LICENSE",
                     "sha256": "2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef"
                 }
@@ -8599,6 +8584,51 @@
                 ],
                 "licenses": [
                     "MIT"
+                ]
+            }
+        },
+        "npm:@mlc-ai/web-runtime@0.28.0-dev2": {
+            "source": "https://registry.npmjs.org/@mlc-ai/web-runtime/-/web-runtime-0.28.0-dev2.tgz",
+            "revision": "sha512-79SdrcL6WKwlK10gYUHhyB134cTN3fL8kFnrsr6bVt9gKFKmFvJeSPjueJcvx0br71X/L+NtD3dmCAD8WGTcrw==",
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "0826d09f11df6078a565dfa41f5c0f3fc570db86cb65bffa031f854a11f0486a"
+                    }
+                ],
+                "licenses": [
+                    "Apache-2.0"
+                ]
+            }
+        },
+        "npm:@mlc-ai/web-tokenizers@0.1.6": {
+            "source": "https://registry.npmjs.org/@mlc-ai/web-tokenizers/-/web-tokenizers-0.1.6.tgz",
+            "revision": "sha512-A5GSqUSnMjDkPoXBFFtbbW3F/qygCixuwbi7/EUMzcpgwFOAhD9vSZZBchK3IpC0c6TKlcDqAYDYp8vpb8/4vA==",
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "b85f3ad224427a8f75998db2bfc21737d5da87a9c8cc5341406292bb9bd4d67a"
+                    }
+                ],
+                "licenses": [
+                    "Apache-2.0"
+                ]
+            }
+        },
+        "npm:@mlc-ai/web-xgrammar@0.1.27": {
+            "source": "https://registry.npmjs.org/@mlc-ai/web-xgrammar/-/web-xgrammar-0.1.27.tgz",
+            "revision": "sha512-0WJvW3mjotHA2NeAfaWFE2pQkOgXH9xC2U4IQOJNcioLac0k6VjSbj14jBRprt89frnPzxLo280riaEb+ZQqbg==",
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "d0f6a4ef808277eeb533282662570fab6dceef08d39908942753683b434d0eaf"
+                    }
+                ],
+                "licenses": [
+                    "Apache-2.0"
                 ]
             }
         }

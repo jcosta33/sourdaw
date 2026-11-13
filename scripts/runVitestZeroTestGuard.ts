@@ -11,6 +11,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+    createVitestProgress,
+    recordVitestProgressAt,
+    removeVitestProgress,
+    summarizeVitestProgress,
+    VITEST_PROGRESS_ENV,
+} from './vitestProgressDiagnostics.ts';
 import { appendUnitShardExclusions } from './vitestUnitShardExclusions.ts';
 import {
     formatSilentZeroCollectionFailure,
@@ -36,16 +43,32 @@ export function runZeroTestGuard(options: ZeroTestGuardOptions): number {
     const directory = mkdtempSync(join(tmpdir(), 'sourdaw-vitest-json-'));
     const jsonPath = join(directory, 'report.json');
     const args = appendUnitShardExclusions(options.args);
+    const env = { ...process.env, ...options.env };
+    delete env[VITEST_PROGRESS_ENV];
+    const progress = createVitestProgress(env);
+    if (progress !== undefined) {
+        env[VITEST_PROGRESS_ENV] = progress;
+        recordVitestProgressAt(progress, 'wrapper-entry');
+        console.error(`vitest progress: ${progress}`);
+    }
+    let succeeded = false;
     try {
         const result = spawnSync(
             options.vitestBin,
-            ['run', ...args, '--reporter=default', '--reporter=json', `--outputFile=${jsonPath}`],
+            [
+                'run',
+                ...args,
+                '--reporter=default',
+                '--reporter=json',
+                `--reporter=${join(repoRoot, 'scripts/vitestProgressReporter.ts')}`,
+                `--outputFile=${jsonPath}`,
+            ],
             {
                 cwd: options.cwd,
                 encoding: 'utf8',
                 stdio: options.stdio ?? 'inherit',
                 shell: false,
-                env: options.env === undefined ? undefined : { ...process.env, ...options.env },
+                env,
             }
         );
         const vitestStatus = result.status ?? 1;
@@ -67,8 +90,16 @@ export function runZeroTestGuard(options: ZeroTestGuardOptions): number {
             console.error(formatZeroExecutedAssertionsFailure(report));
             return 1;
         }
+        succeeded = vitestStatus === 0;
         return vitestStatus;
     } finally {
+        if (progress !== undefined) {
+            if (succeeded) {
+                removeVitestProgress(progress);
+            } else {
+                console.error(`vitest progress retained at ${progress}:\n${summarizeVitestProgress(progress)}`);
+            }
+        }
         rmSync(directory, { recursive: true, force: true });
     }
 }

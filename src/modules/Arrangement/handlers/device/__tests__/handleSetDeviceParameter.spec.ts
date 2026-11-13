@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
                 devices: {
                     id: string;
                     name?: string;
+                    bypassed?: boolean;
                     type?: string;
                     parameterValues: Record<string, number>;
                 }[];
@@ -123,6 +124,8 @@ describe('handleSetDeviceParameter', () => {
                     devices: [
                         {
                             id: 'd1',
+                            name: 'EQ',
+                            bypassed: false,
                             type: 'builtin-eq',
                             parameterValues: { 'eq-mid-freq': 1_000 },
                         },
@@ -175,6 +178,8 @@ describe('handleSetDeviceParameter', () => {
                     devices: [
                         {
                             id: 'd1',
+                            name: 'EQ',
+                            bypassed: false,
                             type: 'builtin-eq',
                             parameterValues: { 'eq-mid-freq': 1_000 },
                         },
@@ -212,7 +217,13 @@ describe('handleSetDeviceParameter', () => {
                     ...beforePrefix.tracks[0]!,
                     devices: [
                         beforePrefix.tracks[0]!.devices[0]!,
-                        { id: 'd2', type: 'builtin-compressor', parameterValues: {} },
+                        {
+                            id: 'd2',
+                            name: 'Compressor',
+                            bypassed: false,
+                            type: 'builtin-compressor',
+                            parameterValues: {},
+                        },
                     ],
                 },
             ],
@@ -554,6 +565,8 @@ describe('handleSetDeviceParameter', () => {
                     devices: [
                         {
                             id: 'd1',
+                            name: 'EQ',
+                            bypassed: false,
                             type: 'builtin-eq',
                             parameterValues: { 'eq-mid-freq': 1_000 },
                         },

@@ -200,7 +200,6 @@ mod tests {
         );
     }
 
-    #[test]
     /// Moving the macro off centre while a note sounds must not click.
     ///
     /// The section carries one sample of history. While bypassed it must keep

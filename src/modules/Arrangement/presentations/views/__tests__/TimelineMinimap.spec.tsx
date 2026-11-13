@@ -19,6 +19,11 @@ const storeOverrides = vi.hoisted(() => ({
 }));
 
 const meterMapStoreMock = vi.hoisted(() => ({ value: { changes: [] } }));
+const markerStoreMock = vi.hoisted(() => ({
+    value: { markers: [], sections: [] },
+    subscribe: () => () => undefined,
+    set: () => undefined,
+}));
 const timelineViewStoreMock = vi.hoisted(() => ({
     value: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true },
     subscribe: () => () => undefined,
@@ -46,6 +51,11 @@ const trackStoreMock = vi.hoisted(() => ({
 
 vi.mock('../../../stores/trackStore', () => ({
     trackStore: trackStoreMock,
+}));
+
+vi.mock('../../../stores/markerStore', () => ({
+    markerStore: markerStoreMock,
+    defaultMarkerStoreState: { markers: [], sections: [] },
 }));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
@@ -117,6 +127,69 @@ describe('TimelineMinimap', () => {
         expect(slider).toHaveAttribute('aria-valuemax', '64');
         expect(slider).toHaveAttribute('aria-valuenow', '0');
         expect(slider).toHaveAttribute('aria-valuetext', 'Bars 1 to 1');
+    });
+
+    it('describes every valid section in musical order, including offscreen and dense labels', () => {
+        storeOverrides.values.set(markerStoreMock, {
+            markers: [],
+            sections: [
+                { id: 'outro', name: 'Outro', startBeat: 160, endBeat: 240, color: '#778899' },
+                { id: 'tiny', name: 'Tiny', startBeat: 16, endBeat: 16.25, color: '#778899' },
+                { id: 'intro', name: 'Intro', startBeat: 0, endBeat: 16, color: '#778899' },
+                { id: 'empty', name: 'Empty', startBeat: 8, endBeat: 8, color: '#778899' },
+            ],
+        });
+        storeOverrides.values.set(timelineViewStoreMock, {
+            scrollX: 2000,
+            scrollY: 0,
+            pixelsPerBeat: 12,
+            autoScrollEnabled: true,
+        });
+        const { container } = renderWithTooltip(<TimelineMinimap height={18} />);
+        const slider = screen.getByRole('slider');
+
+        expect(slider).toHaveAccessibleDescription(
+            'Sections: Intro, start 1.1.1, end 5.1.1. Tiny, start 5.1.1, end 5.1.2. Outro, start 41.1.1, end 61.1.1.'
+        );
+        const description = document.getElementById(slider.getAttribute('aria-describedby') ?? '');
+        expect(description).toHaveClass('sr-only');
+        expect(slider).not.toContainElement(description);
+        expect(container.firstElementChild).toBe(slider);
+    });
+
+    it('describes an empty section set without inventing landmarks', () => {
+        renderWithTooltip(<TimelineMinimap />);
+
+        expect(screen.getByRole('slider')).toHaveAccessibleDescription('No sections.');
+    });
+
+    it('formats section bounds through the current meter map and transport defaults', () => {
+        storeOverrides.values.set(markerStoreMock, {
+            markers: [],
+            sections: [{ id: 'bridge', name: 'Bridge', startBeat: 11, endBeat: 14, color: '#778899' }],
+        });
+        const view = renderWithTooltip(<TimelineMinimap />);
+        const slider = screen.getByRole('slider');
+        expect(slider).toHaveAccessibleDescription('Sections: Bridge, start 3.4.1, end 4.3.1.');
+
+        storeOverrides.values.set(meterMapStoreMock, {
+            changes: [{ id: 'three-four', beat: 8, numerator: 3, denominator: 4 }],
+        });
+        view.rerender(
+            <TooltipProvider>
+                <TimelineMinimap />
+            </TooltipProvider>
+        );
+        expect(slider).toHaveAccessibleDescription('Sections: Bridge, start 4.1.1, end 5.1.1.');
+
+        storeOverrides.values.set(meterMapStoreMock, { changes: [] });
+        storeOverrides.values.set(transportStoreMock, { timeSignatureNumerator: 3, timeSignatureDenominator: 4 });
+        view.rerender(
+            <TooltipProvider>
+                <TimelineMinimap />
+            </TooltipProvider>
+        );
+        expect(slider).toHaveAccessibleDescription('Sections: Bridge, start 4.3.1, end 5.3.1.');
     });
 
     describe('scrolled far past the minimum project span', () => {
@@ -197,6 +270,16 @@ describe('TimelineMinimap', () => {
             const slider = screen.getByRole('slider');
             expect(slider).toHaveAttribute('aria-valuemax', String(Math.round(200 * 1.1)));
             expect(slider).toHaveAttribute('aria-valuenow', '220');
+        });
+
+        it('extends the minimap span to include sections beyond the last clip', () => {
+            storeOverrides.values.set(markerStoreMock, {
+                markers: [],
+                sections: [{ id: 'outro', name: 'Outro', startBeat: 160, endBeat: 240, color: '#778899' }],
+            });
+            renderWithTooltip(<TimelineMinimap />);
+
+            expect(screen.getByRole('slider')).toHaveAttribute('aria-valuemax', '264');
         });
     });
 

@@ -4,7 +4,7 @@
  */
 import { type ReactElement, useState } from 'react';
 
-import { Search, Star, ChevronRight } from 'lucide-react';
+import { Search, Star, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -19,10 +19,11 @@ type SoundPreset = {
 };
 
 type PresetBrowserProps = {
-    currentName: string;
+    currentPresetId?: string | null;
     userPatches: Array<{ id: string; name: string }>;
     presets: SoundPreset[];
     onLoadPreset: (presetId: string) => void;
+    onStepPreset?: (presetId: string) => void;
 };
 
 const CATEGORIES = [
@@ -56,14 +57,32 @@ const TAGS = [
 ];
 
 export const PresetBrowser = ({
-    currentName,
+    currentPresetId = null,
     userPatches,
     presets,
     onLoadPreset,
+    onStepPreset,
 }: PresetBrowserProps): ReactElement => {
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('all');
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
+
+    function stepPreset(direction: -1 | 1): void {
+        if (!onStepPreset || filtered.length === 0) {
+            return;
+        }
+        const currentIndex = filtered.findIndex((preset) => preset.id === currentPresetId);
+        let nextIndex: number;
+        if (currentIndex < 0) {
+            nextIndex = direction === 1 ? 0 : filtered.length - 1;
+        } else {
+            nextIndex = (currentIndex + direction + filtered.length) % filtered.length;
+        }
+        const nextPreset = filtered[nextIndex];
+        if (nextPreset) {
+            onStepPreset(nextPreset.id);
+        }
+    }
 
     // React Compiler handles memoization automatically — no useMemo needed
     let filtered =
@@ -186,7 +205,7 @@ export const PresetBrowser = ({
                             key={preset.id}
                             type="button"
                             className={`flex min-h-6 w-full items-center justify-between rounded px-2 text-left text-[length:var(--text-nano)] transition-all ${
-                                preset.name === currentName || preset.name === currentName.replace('Fermenter — ', '')
+                                preset.id === currentPresetId
                                     ? 'bg-[var(--color-accent-lavender)]/15 text-foreground'
                                     : 'text-text-secondary hover:bg-surface-raised hover:text-foreground'
                             }`}
@@ -198,9 +217,33 @@ export const PresetBrowser = ({
                     ))
                 )}
             </div>
-            <div className="px-2 py-0.5 border-t border-border/20 shrink-0">
+            <Row justify="between" align="center" gap={1} className="px-2 py-1 border-t border-border/20 shrink-0">
                 <span className="text-[7px] text-muted-foreground/40">{filtered.length} presets</span>
-            </div>
+                {onStepPreset ? (
+                    <Row align="center" gap={0.5} shrink={false}>
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            type="button"
+                            aria-label="Previous preset"
+                            disabled={filtered.length === 0}
+                            onClick={() => stepPreset(-1)}
+                        >
+                            <ChevronLeft className="size-3" />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            type="button"
+                            aria-label="Next preset"
+                            disabled={filtered.length === 0}
+                            onClick={() => stepPreset(1)}
+                        >
+                            <ChevronRight className="size-3" />
+                        </Button>
+                    </Row>
+                ) : null}
+            </Row>
         </Stack>
     );
 };

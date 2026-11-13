@@ -28,6 +28,7 @@ import {
 } from '../healthGateWorkflowContract';
 import { assertHostedQuantumMeasurementWorkflow } from '../hostedQuantumMeasurementWorkflowContract';
 import { assertHostedWasmWorkflow } from '../hostedWasmWorkflowContract';
+import { parsePnpmLock } from '../pnpmLock';
 import { assertPullRequestGateWorkflows } from '../pullRequestGateWorkflowContract';
 import { assertJobLevelPermissions, assertWorkflowSecuritySurface } from '../workflowSecuritySurfaceContract';
 
@@ -61,7 +62,7 @@ const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const INSTALL_DRAIN_SECONDS = 15;
 // Every remaining root apt route must retain the signed-source filter.
 const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
-const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d';
+const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe';
 const BROWSER_RUNTIME_STEP = 'Verify preinstalled browser runtime';
 // The ALSA headers are one small apt install, but `apt-get update` is the slow
 // part on a slow mirror, so the single transaction carries the same 8 minute
@@ -411,10 +412,7 @@ const DEVICE_WRITE_BOUNDARY_CENSUS_RUN =
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const parsedPackageManifest: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
 const packageManifest = asRecord(parsedPackageManifest, 'package manifest');
-const lockfile = asRecord(
-    parseDocument(readFileSync(join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8')).toJS(),
-    'lockfile'
-);
+const lockfile = parsePnpmLock(readFileSync(join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8')).application;
 const browserAiWebGpuConfig = asRecord(browserAiWebGpuAdmissionConfig, 'Browser AI WebGPU config');
 function loadWorkflow(fileName: string): { document: ReturnType<typeof parseDocument>; parsed: UnknownRecord } {
     const document = parseDocument(readFileSync(join(repositoryRoot, '.github/workflows', fileName), 'utf8'));
@@ -523,7 +521,7 @@ function assertRequiredScopePlan(candidate: UnknownRecord): void {
         throw new Error('required scope must install the repository package manager');
     }
     const node = recordAt(stepNamed(scope, 'Set up Node'), 'with');
-    if (node['node-version'] !== '24.22.2' || node.cache !== 'pnpm') {
+    if (node['node-version'] !== '26.13.1' || node.cache !== 'pnpm') {
         throw new Error('required scope must use the pinned Node version');
     }
     if (stepNamed(scope, 'Install dependencies').run !== 'pnpm install --frozen-lockfile --ignore-scripts') {
@@ -939,7 +937,7 @@ function assertVerifiedPnpmCallers(candidate: UnknownRecord, control: boolean): 
             const nodeVersion = recordAt(node, 'with')['node-version'];
             const selectedVersion =
                 nodeVersion === '${{ env.NODE_VERSION }}' ? recordAt(candidate, 'env').NODE_VERSION : nodeVersion;
-            if (selectedVersion !== '24.22.2') {
+            if (selectedVersion !== '26.13.1') {
                 throw new Error(`${jobName} later Node must match the verified bootstrap runtime`);
             }
             const checkout = steps
@@ -1389,7 +1387,7 @@ function addonLoadingSpecs(directory: string): string[] {
 function assertNativeParityJob(candidate: UnknownRecord): void {
     const job = jobAt(candidate, NATIVE_PARITY_JOB);
     if (job.name !== NATIVE_PARITY_JOB_NAME || job['runs-on'] !== NATIVE_PARITY_RUNNER) {
-        throw new Error('native parity must run on the one platform the native crate compiles on');
+        throw new Error('native parity must retain its macOS runner');
     }
     if (job.needs !== 'decide' || job.if !== NATIVE_PARITY_CONDITION) {
         throw new Error('native parity must answer to both the Rust and the web scopes');
@@ -1522,7 +1520,7 @@ function assertNativeTransportMutationProof(candidate: UnknownRecord): void {
     expect(recordAt(stepNamed(job, 'Cache cargo build'), 'with')).toEqual({ 'save-if': 'false' });
     const setup = stepNamed(job, 'Set up Node for native mutation proof');
     expect(setup.uses).toBe('actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1');
-    expect(recordAt(setup, 'with')).toEqual({ 'node-version': '24.22.2' });
+    expect(recordAt(setup, 'with')).toEqual({ 'node-version': '26.13.1' });
     const probe = stepNamed(job, 'Verify native transport mutation sensitivity');
     expect(probe.run).toBe('node scripts/verifyNativeTransportMutations.ts');
     expect(probe.id).toBe('native-mutations');
@@ -1624,7 +1622,7 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
         linuxConsumerNames.indexOf('Server and Rust workspace health gates')
     );
     const linuxHealth = stepNamed(linuxConsumer, 'Server and Rust workspace health gates');
-    expect(linuxHealth.run).toBe('pnpm health:server:full');
+    expect(linuxHealth.run).toBe('node --run health:server:full');
     expect(recordAt(linuxHealth, 'env')).toEqual({
         CARGO_HTTP_MULTIPLEXING: 'false',
         CARGO_NET_OFFLINE: CARGO_OFFLINE_EXACT,
@@ -2954,7 +2952,7 @@ describe('health gates workflow contract', () => {
 
     it('uses HTTP/1.1 for the Rust and server health gate step', () => {
         const rustHealthStep = stepNamed(jobAt(validationWorkflow, 'rust'), 'Server and Rust workspace health gates');
-        expect(stringAt(rustHealthStep, 'run')).toBe('pnpm health:server:full');
+        expect(stringAt(rustHealthStep, 'run')).toBe('node --run health:server:full');
         expect(recordAt(rustHealthStep, 'env').CARGO_HTTP_MULTIPLEXING).toBe('false');
     });
 
@@ -4481,6 +4479,11 @@ describe('health gates workflow contract', () => {
         );
     });
 
+    it('limits the native parity job to two Vitest workers', () => {
+        const run = stepNamed(jobAt(validationWorkflow, NATIVE_PARITY_JOB), NATIVE_PARITY_RUN_STEP);
+        expect(recordAt(run, 'env').VITEST_MAX_WORKERS).toBe(2);
+    });
+
     // Measured budget, not the 5 s default: discovering addon-loading specs
     // reads every spec under src once per process — 7.2 s on a cold external-SSD
     // file cache under load (#5106), 19 s on a loaded lane — and no narrower
@@ -4669,7 +4672,7 @@ describe('health gates workflow contract', () => {
             expect(scopeFilterPatterns(validationWorkflow, 'rust')).toContain(path);
         }
         expect(stepNamed(jobAt(validationWorkflow, 'rust'), 'Server and Rust workspace health gates').run).toBe(
-            'pnpm health:server:full'
+            'node --run health:server:full'
         );
         expect(stepNamed(jobAt(seed, 'rust'), 'Rust workspace health gates').run).toBe(
             'sh scripts/health-gates-rust.sh'
@@ -4737,7 +4740,7 @@ describe('health gates workflow contract', () => {
             'fetch-depth': 0,
             'persist-credentials': false,
         });
-        expect(recordAt(shard, 'env').VITEST_MAX_WORKERS).toBe(4);
+        expect(recordAt(shard, 'env').VITEST_MAX_WORKERS).toBe(2);
         // One shard's failure must not cancel the others' evidence.
         expect(recordAt(unit, 'strategy')['fail-fast']).toBe(false);
     });

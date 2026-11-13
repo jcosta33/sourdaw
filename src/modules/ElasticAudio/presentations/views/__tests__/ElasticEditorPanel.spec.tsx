@@ -7,7 +7,6 @@ import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useC
 type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
 
 const mocks = vi.hoisted(() => {
-    const callOrder: string[] = [];
     const waveformPeaks = new Map<string, Float32Array>();
     const trackStoreValue: {
         tracks: { id: string; clips: { id: string; type: string; audioBufferId: string | undefined }[] }[];
@@ -41,16 +40,10 @@ const mocks = vi.hoisted(() => {
         detected: true,
     };
     return {
-        callOrder,
         setElasticTool: vi.fn(),
         setElasticSensitivity: vi.fn().mockResolvedValue(undefined),
-        execute: vi.fn(async (..._args: unknown[]) => {
-            callOrder.push('detect');
-        }),
+        detect: vi.fn<(clipId: string, sensitivity: number) => Promise<boolean>>().mockResolvedValue(true),
         cancel: vi.fn(),
-        markElasticDetectionComplete: vi.fn((..._args: unknown[]) => {
-            callOrder.push('mark');
-        }),
         selectElasticMarkers: vi.fn(),
         quantizeTransients: vi.fn(),
         addManualMarker: vi.fn(),
@@ -225,15 +218,10 @@ vi.mock('../../../useCases/elasticAudio/addManualMarker', () => ({
     addManualMarker: (...args: unknown[]) => mocks.addManualMarker(...args),
 }));
 
-vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
-    executeAppAction: (...args: unknown[]) => mocks.execute(...args),
+vi.mock('../../../useCases/elasticAudio/detectElasticEditorTransients', () => ({
+    detectElasticEditorTransients: mocks.detect,
 }));
 vi.mock('../../../useCases/elasticAudio/cancelTransientDetection', () => ({ cancelTransientDetection: mocks.cancel }));
-
-vi.mock('../../../useCases/elasticAudio/markElasticDetectionComplete', () => ({
-    markElasticDetectionComplete: (...args: unknown[]) => mocks.markElasticDetectionComplete(...args),
-}));
 
 vi.mock('../../../useCases/quantizeTransients', () => ({
     quantizeTransients: (...args: unknown[]) => mocks.quantizeTransients(...args),
@@ -267,7 +255,6 @@ describe('ElasticEditorPanel', () => {
         mocks.waveformPeaks.clear();
         mocks.background = '#151515';
         preferencesStore.trySet(defaultPreferences);
-        mocks.callOrder.length = 0;
         mocks.trackStoreValue = {
             tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' }] }],
             selectedTrackId: 't1',
@@ -642,10 +629,7 @@ describe('ElasticEditorPanel', () => {
         render(<ElasticEditorPanel />);
         expect(screen.getByRole('slider', { name: 'Transient detection sensitivity' })).toBeVisible();
         fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
-        expect(mocks.execute).toHaveBeenCalledWith({
-            type: 'detectTransients',
-            payload: { clipId: 'c1', sensitivity: 0.5 },
-        });
+        expect(mocks.detect).toHaveBeenCalledWith('c1', 0.5);
         expect(mocks.elasticStoreValue.openClipId).toBeNull();
     });
 
@@ -657,7 +641,7 @@ describe('ElasticEditorPanel', () => {
         render(<ElasticEditorPanel />);
         expect(screen.getByText(/Select an audio clip/i)).toBeInTheDocument();
         expect(screen.queryByRole('slider', { name: 'Transient detection sensitivity' })).not.toBeInTheDocument();
-        expect(mocks.execute).not.toHaveBeenCalled();
+        expect(mocks.detect).not.toHaveBeenCalled();
     });
 
     it('hides the warp algorithm selector and surfaces no third-party engine while only repitch is available', () => {
@@ -699,43 +683,36 @@ describe('ElasticEditorPanel', () => {
         expect(mocks.setElasticTool).toHaveBeenCalledWith('lock-marker');
     });
 
-    it('awaits the typed Detect before marking completion', async () => {
+    it('shows completion only for the owning Detect receipt', async () => {
         render(<ElasticEditorPanel />);
         fireEvent.click(screen.getByTestId('elastic-detect-button'));
-        expect(mocks.execute).toHaveBeenCalledWith({
-            type: 'detectTransients',
-            payload: { clipId: 'c1', sensitivity: 0.5 },
-        });
-        await waitFor(() => expect(mocks.markElasticDetectionComplete).toHaveBeenCalledTimes(1));
-        expect(mocks.callOrder).toEqual(['detect', 'mark']);
+        expect(mocks.detect).toHaveBeenCalledWith('c1', 0.5);
+        await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Detection complete'));
     });
 
     it('keeps pending Detect incomplete, reports failure and permits a successful retry', async () => {
         let fail: ((error: Error) => void) | undefined;
-        mocks.execute.mockImplementationOnce(
+        mocks.detect.mockImplementationOnce(
             () =>
-                new Promise<void>((_resolve, reject) => {
+                new Promise<boolean>((_resolve, reject) => {
                     fail = reject;
                 })
         );
         render(<ElasticEditorPanel />);
         fireEvent.click(screen.getByTestId('elastic-detect-button'));
         expect(screen.getByRole('status')).toHaveTextContent('Detecting');
-        expect(mocks.markElasticDetectionComplete).not.toHaveBeenCalled();
         await act(async () => fail?.(new Error('Worker failed')));
         expect(screen.getByRole('status')).toHaveTextContent('failed');
-        expect(mocks.markElasticDetectionComplete).not.toHaveBeenCalled();
         fireEvent.click(screen.getByTestId('elastic-detect-button'));
         await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Detection complete'));
-        expect(mocks.markElasticDetectionComplete).toHaveBeenCalledOnce();
     });
 
-    it('revokes a pending request on unmount and never marks it complete', async () => {
+    it('revokes a pending request on unmount', async () => {
         let complete: (() => void) | undefined;
-        mocks.execute.mockImplementationOnce(
+        mocks.detect.mockImplementationOnce(
             () =>
-                new Promise<void>((resolve) => {
-                    complete = resolve;
+                new Promise<boolean>((resolve) => {
+                    complete = () => resolve(false);
                 })
         );
         const view = render(<ElasticEditorPanel />);
@@ -743,7 +720,19 @@ describe('ElasticEditorPanel', () => {
         view.unmount();
         expect(mocks.cancel).toHaveBeenCalledWith('c1');
         await act(async () => complete?.());
-        expect(mocks.markElasticDetectionComplete).not.toHaveBeenCalled();
+    });
+
+    it('clears a retired receipt while retaining a successor request status', async () => {
+        const retired = Promise.withResolvers<boolean>();
+        const successor = Promise.withResolvers<boolean>();
+        mocks.detect.mockReturnValueOnce(retired.promise).mockReturnValueOnce(successor.promise);
+        render(<ElasticEditorPanel />);
+        fireEvent.click(screen.getByTestId('elastic-detect-button'));
+        fireEvent.click(screen.getByTestId('elastic-detect-button'));
+        await act(async () => retired.resolve(false));
+        expect(screen.getByRole('status')).toHaveTextContent('Detecting');
+        await act(async () => successor.resolve(false));
+        expect(screen.getByRole('status')).toBeEmptyDOMElement();
     });
 
     it('uses the saved sensitivity for the first Detect on a newly opened clip', () => {
@@ -754,12 +743,9 @@ describe('ElasticEditorPanel', () => {
         render(<ElasticEditorPanel />);
 
         expect(screen.getByText('82')).toBeInTheDocument();
-        expect(mocks.execute).not.toHaveBeenCalled();
+        expect(mocks.detect).not.toHaveBeenCalled();
         fireEvent.click(screen.getByTestId('elastic-detect-button'));
-        expect(mocks.execute).toHaveBeenCalledWith({
-            type: 'detectTransients',
-            payload: { clipId: 'c2', sensitivity: 0.82 },
-        });
+        expect(mocks.detect).toHaveBeenCalledWith('c2', 0.82);
     });
 
     it('reacts to Reset Preferences while the editor stays open', async () => {
@@ -773,10 +759,7 @@ describe('ElasticEditorPanel', () => {
 
         expect(screen.getByText('50')).toBeInTheDocument();
         fireEvent.click(screen.getByTestId('elastic-detect-button'));
-        expect(mocks.execute).toHaveBeenCalledWith({
-            type: 'detectTransients',
-            payload: { clipId: 'c1', sensitivity: 0.5 },
-        });
+        expect(mocks.detect).toHaveBeenCalledWith('c1', 0.5);
     });
 
     it('selects an existing marker through the elastic selection use case', () => {

@@ -8,6 +8,8 @@ import { getAutomationLaneCeiling } from '../../useCases/automation/getAutomatio
 import { removeTrackGainAutomationRange } from '../../useCases/automation/removeTrackGainAutomationRange';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
+import { isRemoveTrackGainAutomationRangePayload } from './validateRangeWriteSessionEntries';
+
 type RemoveTrackGainAutomationRangeAction = Extract<AppAction, { type: 'removeTrackGainAutomationRange' }>;
 
 function pointsMatch(actual: readonly AutomationPoint[], expected: readonly AutomationPoint[]): boolean {
@@ -129,5 +131,6 @@ export const handleRemoveTrackGainAutomationRange = createHandler<'removeTrackGa
         label: `Restore bus gains outside ${action.payload.sectionName}`,
         inverseAction: currentStateMatches(action) ? { type: 'automateTrackGainRange', payload: action.payload } : null,
     }),
+    validateSessionActionArguments: isRemoveTrackGainAutomationRangePayload,
     undoable: true,
 });

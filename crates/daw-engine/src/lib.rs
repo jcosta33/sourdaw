@@ -97,7 +97,7 @@ pub enum GraphBatchError {
 static NEXT_ENGINE_INSTANCE: AtomicU64 = AtomicU64::new(1);
 
 fn reserve_engine_instance_id(next: &AtomicU64) -> Result<u64, String> {
-    next.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+    next.try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
         .map_err(|_| "Native engine instance identity exhausted".to_string())
 }
 

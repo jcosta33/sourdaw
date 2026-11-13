@@ -587,10 +587,10 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 void eventBus.emit('zoom.scrollToPlayhead', undefined);
                 return false;
             case 'Home':
-                seekPlayhead(0);
+                void seekPlayhead(0);
                 return true;
             case 'End':
-                seekPlayhead(getLastClipEndBeat());
+                void seekPlayhead(getLastClipEndBeat());
                 return true;
             case ']':
                 goToNextMarker();
