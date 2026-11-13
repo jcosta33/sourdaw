@@ -1058,10 +1058,12 @@ function compileTimeContractFixtures(
     void invalidActionType;
 }
 
-if (false) {
+function compileTimeValidatorContracts(): void {
     // @ts-expect-error The public validator has no unknown-input overload.
     validateControllerMappingSchema(null);
     // @ts-expect-error The resolver is required and callable.
     validateControllerMappingSchema({ value: makeDocument(), resolveActionTemplate: 'resolver' });
-    void compileTimeContractFixtures;
 }
+
+void compileTimeContractFixtures;
+void compileTimeValidatorContracts;
