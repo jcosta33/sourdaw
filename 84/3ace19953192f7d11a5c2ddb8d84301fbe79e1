@@ -1,0 +1,56 @@
+src/modules/AiRuntime/useCases/__tests__/readApplicationVerificationReceiptLimits.spec.ts
+  s_3c91dcbb840566::t_f555747158b474 1-76
+  s_ff124a0cf68412::t_469010595fa092 77-79
+src/modules/AiRuntime/useCases/__tests__/planMetricMeasurementUnits.spec.ts
+  s_3c91dcbb840566::t_0f060110235d03 1-120
+src/modules/AiRuntime/AGENTS.md
+  s_ff124a0cf68412::t_5929ddbb75005d 33,42
+src/modules/AiRuntime/services/applicationToolReceiptBudget.ts
+  s_ff124a0cf68412::t_b8bdf83c701651 2,69-84
+src/modules/AiRuntime/useCases/__tests__/multiBatchRun.spec.ts
+  s_ff124a0cf68412::t_a985e8a9647d6a 743-780
+src/modules/AiRuntime/useCases/compilePreviewPrefix.ts
+  s_ff124a0cf68412::t_af365f9cb3c5b2 1-48
+src/modules/AiRuntime/useCases/measurePreviewUnit.ts
+  s_ff124a0cf68412::t_35be739a97d152 17,69-73,75-76,78
+src/modules/AiRuntime/useCases/planMetricMeasurementUnits.ts
+  s_ff124a0cf68412::t_220a2179fb4636 2,23-29,31-33,37-43,45-49,52-53,57,77-92,108-117,141-152
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  s_ff124a0cf68412::t_8d5c8b8644867b 36,46-47,303-325,342-349,353,367,491
+src/modules/AiRuntime/useCases/readApplicationVerificationReceiptLimits.ts
+  s_ff124a0cf68412::t_13f04f5c8ee794 1,11-20,27-28
+src/modules/AiRuntime/useCases/readPreviewPrefixTimeline.ts
+  s_ff124a0cf68412::t_7b079ae886686b 1-34
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_ff124a0cf68412::t_be5fa90bb25637 443,463-465,474,477-478,480-484,495-497,543
+src/modules/AiRuntime/useCases/vibeRun/readVibeRunFitRefusals.ts
+  s_ff124a0cf68412::t_afc4c587e27fec 2,29-37,108-110
+src/modules/AudioEngine/useCases/offlineRender/__tests__/readOfflineAdjustmentRenderClass.spec.ts
+  s_ff124a0cf68412::t_def2a0ad1db89d 89-91,93-94,116-119,133-136,143-174,177
+src/modules/AudioEngine/useCases/offlineRender/readOfflineAdjustmentRenderClass.ts
+  s_ff124a0cf68412::t_7f77af43e30058 3-6,14-21,26,35-41,46,52-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "843ace19953192f7d11a5c2ddb8d84301fbe79e1",
+  "prompts": {},
+  "sessions": {
+    "s_3c91dcbb840566": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1058f26-f2e9-46cf-af40-6e3b7eafe1df",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ff124a0cf68412": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5859629c-45b4-4907-85a7-756af720dd80",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
