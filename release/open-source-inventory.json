@@ -1378,13 +1378,13 @@
                 "wasm-pack 0.15.1",
                 "wasm-bindgen 0.2.130",
                 "wasm-opt bundled-by-wasm-pack@0.15.1",
-                "daw-dsp sha256:196b1e386d9e94200056eb00c40e079974dde2382d995e789448c1ef97a6bf4d",
-                "daw-wasm-decoder sha256:e6fb1f3b2796b0dd2b66fbffc9ce1e14769859e07dd1fd145ea2fbb23cea83b1",
-                "proof-chamber sha256:929525974036b4805e38589140a67bbb067dc4ea0dbcbb1cb72c0931f3e905de",
-                "scoring sha256:ede94eb496e4a8249390a79d61bc4bea0c8bacafbd81247c69c0ba57d7c35a0b"
+                "daw-dsp sha256:927840a5161dc1b38caa5b1afb7ac938ab8ffc71fa552770d7ebd11414d91c05",
+                "daw-wasm-decoder sha256:5d2caa4f7fe69567038fedd20e423825260d3c8a146305f683511a7b989fc996",
+                "proof-chamber sha256:10a96efa87684cfc3999799f8d959e6b085dc587477e75e56360d8243fa027d9",
+                "scoring sha256:db8ed1766d0fadde4f9ae8006c0ade9188611227a7f6523262a0bf379d58f2c9"
             ],
             "digests": [
-                "sha256:5adf6b82644e9c7f2d735401ef6c81f62c6aeab94693bc3d71940021e1f99618:public/wasm/manifest.json"
+                "sha256:5949d93eb97f2c47b5cdd9475454a135c0cb4778ceef8c3d779842123fdd232b:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1918,7 +1918,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "5adf6b82644e9c7f2d735401ef6c81f62c6aeab94693bc3d71940021e1f99618"
+            "sha256": "5949d93eb97f2c47b5cdd9475454a135c0cb4778ceef8c3d779842123fdd232b"
         }
     ],
     "externalReferences": [
