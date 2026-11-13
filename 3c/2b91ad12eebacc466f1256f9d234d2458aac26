@@ -1,0 +1,21 @@
+Cargo.toml
+  s_72d11c8b9829ac::t_74617d083b21bd 30-34
+scripts/health-gates-rust.sh
+  s_72d11c8b9829ac::t_f3b5e0e67aa5a0 45-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c2b91ad12eebacc466f1256f9d234d2458aac26",
+  "prompts": {},
+  "sessions": {
+    "s_72d11c8b9829ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19ed595a-e044-4bc4-a50d-610b24c75b56",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
