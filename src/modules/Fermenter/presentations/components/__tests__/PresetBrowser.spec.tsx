@@ -16,10 +16,11 @@ const FIXTURE_PRESETS: Preset[] = [
 
 function defaultProps(overrides: Partial<ComponentProps<typeof PresetBrowser>> = {}) {
     return {
-        currentName: 'Init',
         userPatches: [{ id: 'u1', name: 'My Patch' }],
         presets: FIXTURE_PRESETS,
         onLoadPreset: vi.fn(),
+        onStepPreset: vi.fn(),
+        currentPresetId: 'p1',
         ...overrides,
     };
 }
@@ -159,29 +160,40 @@ describe('PresetBrowser', () => {
             render(<PresetBrowser {...defaultProps()} />);
             const fmTag = screen.getByText('#fm');
             expect(fmTag.className).not.toContain('bg-muted');
+            expect(fmTag).toHaveAttribute('aria-pressed', 'false');
             fireEvent.click(fmTag);
             expect(fmTag.className).toContain('bg-muted');
+            expect(fmTag).toHaveAttribute('aria-pressed', 'true');
         });
     });
 
     describe('current-preset highlight', () => {
-        it('highlights the preset whose stripped name equals currentName', () => {
-            render(<PresetBrowser {...defaultProps({ currentName: 'Bass Acid' })} />);
-            const bassButton = screen.getByText('Bass Acid').closest('button')!;
-            expect(bassButton.className).toContain('bg-[var(--color-accent-lavender)]/15');
+        it('highlights the same preset identity that filtered stepping uses', () => {
+            render(<PresetBrowser {...defaultProps({ currentPresetId: 'p2' })} />);
+            expect(screen.getByRole('button', { name: 'Bass Acid' }).className).toContain(
+                'bg-[var(--color-accent-lavender)]/15'
+            );
+            expect(screen.getByRole('button', { name: 'Lead One' }).className).not.toContain(
+                'bg-[var(--color-accent-lavender)]/15'
+            );
         });
 
-        it('also highlights when currentName still carries the "Fermenter — " prefix', () => {
-            render(<PresetBrowser {...defaultProps({ currentName: 'Fermenter — Lead One' })} />);
-            const leadButton = screen.getByText('Lead One').closest('button')!;
-            expect(leadButton.className).toContain('bg-[var(--color-accent-lavender)]/15');
+        it('does not highlight a same-name successor with a different preset identity', () => {
+            const presets = [
+                ...FIXTURE_PRESETS,
+                { id: 'replacement', name: 'Fermenter — Lead One', category: 'lead', tags: [] },
+            ];
+            render(<PresetBrowser {...defaultProps({ presets })} />);
+            const matches = screen.getAllByRole('button', { name: 'Lead One' });
+            expect(matches[0]!.className).toContain('bg-[var(--color-accent-lavender)]/15');
+            expect(matches[1]!.className).not.toContain('bg-[var(--color-accent-lavender)]/15');
         });
 
-        it('does not highlight a non-current preset', () => {
-            render(<PresetBrowser {...defaultProps({ currentName: 'Bass Acid' })} />);
-            const leadButton = screen.getByText('Lead One').closest('button')!;
-            expect(leadButton.className).not.toContain('bg-[var(--color-accent-lavender)]/15');
-            expect(leadButton.className).toContain('hover:bg-surface-raised');
+        it('leaves every preset unhighlighted when the actual patch has no registry identity', () => {
+            render(<PresetBrowser {...defaultProps({ currentPresetId: null })} />);
+            expect(screen.getByRole('button', { name: 'Lead One' }).className).not.toContain(
+                'bg-[var(--color-accent-lavender)]/15'
+            );
         });
     });
 
@@ -191,6 +203,58 @@ describe('PresetBrowser', () => {
             render(<PresetBrowser {...defaultProps({ onLoadPreset })} />);
             fireEvent.click(screen.getByText('Pad Drift'));
             expect(onLoadPreset).toHaveBeenCalledWith('p3');
+        });
+    });
+
+    describe('filtered preset stepping', () => {
+        it('steps through search results rather than registry neighbours and wraps at both ends', () => {
+            const onStepPreset = vi.fn();
+            render(<PresetBrowser {...defaultProps({ onStepPreset })} />);
+            fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'warm' } });
+
+            fireEvent.click(screen.getByRole('button', { name: 'Next preset' }));
+            expect(onStepPreset).toHaveBeenLastCalledWith('p3');
+            fireEvent.click(screen.getByRole('button', { name: 'Previous preset' }));
+            expect(onStepPreset).toHaveBeenLastCalledWith('p3');
+        });
+
+        it('steps through user patches and wraps from the first patch to the last', () => {
+            const onStepPreset = vi.fn();
+            render(
+                <PresetBrowser
+                    {...defaultProps({
+                        currentPresetId: 'u1',
+                        onStepPreset,
+                        userPatches: [
+                            { id: 'u1', name: 'My Patch' },
+                            { id: 'u2', name: 'Second Patch' },
+                        ],
+                    })}
+                />
+            );
+            fireEvent.click(screen.getByText('My Patches'));
+
+            fireEvent.click(screen.getByRole('button', { name: 'Previous preset' }));
+            expect(onStepPreset).toHaveBeenLastCalledWith('u2');
+            fireEvent.click(screen.getByRole('button', { name: 'Next preset' }));
+            expect(onStepPreset).toHaveBeenLastCalledWith('u2');
+        });
+
+        it('starts at the first filtered result when the current patch is outside the result set', () => {
+            const onStepPreset = vi.fn();
+            render(<PresetBrowser {...defaultProps({ currentPresetId: 'p2', onStepPreset })} />);
+            fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'lead' } });
+
+            fireEvent.click(screen.getByRole('button', { name: 'Next preset' }));
+            expect(onStepPreset).toHaveBeenLastCalledWith('p1');
+        });
+
+        it('disables both explicitly named stepping controls when no preset matches', () => {
+            render(<PresetBrowser {...defaultProps()} />);
+            fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'zzzz' } });
+
+            expect(screen.getByRole('button', { name: 'Previous preset' })).toBeDisabled();
+            expect(screen.getByRole('button', { name: 'Next preset' })).toBeDisabled();
         });
     });
 

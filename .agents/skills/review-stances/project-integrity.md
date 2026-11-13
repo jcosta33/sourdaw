@@ -79,6 +79,11 @@ Split out (a stance matching one carries that file, not this one): replay agains
    edit. For coordinate captures hydrate both history directions (`moving-coordinate-inverses.md` probes 4 and 5)
    and inject a pre-commit storage failure: document, projections, both captures, history, tree and mirror
    unchanged. A retained handle refuses once clip geometry changed.
+   For grouped device writes, raw admission, the planned prefix and the executed midpoint are different states.
+   #1857 (`064fb88392`, historical review stance unknown) projected an unclamped value while its real writer
+   clamped it. Require shared scalar law and precise leaf absence through mixed patch/parameter group Undo/Redo,
+   including restoration before a patch and terminal owner removal. Authenticate raw incarnation/presence again
+   before mutation and the prospective owned intent; an early projected guard alone cannot protect publication.
 6. **Identity namespaces are declared, scoped by path, and fail closed across reload and replay (#5157, #4036,
    #1857, #5570).** Failure: the ID walk marks a valid project repair-required (blocking Save, Undo), copied
    subtrees collide, or a replayed entry remints IDs. Probe: load each shipped demo and template, save, reload:
@@ -134,6 +139,15 @@ Split out (a stance matching one carries that file, not this one): replay agains
     rehydration, initialized live state, stale-owner refusal and live meters, with no engine or project write;
     unconditional UI admission and a genuine saved snapshot prevent a vacuous pass. UI evidence does not establish
     audible behavior or engine acceptance.
+    Full Fermenter patches include macro and mapping arrays (#6321; introducing source and unknown review
+    provenance in `command-entry-and-state-oracles.md` probe 2). After real continuous macro/morph and scalar edits,
+    compare the complete raw device chunk with fresh hydration, engine projection and declared history behavior;
+    numeric mirrors and persister calls cannot prove those arrays survived. For saved-patch claims, save
+    through the real owner, clear warm state and binary-reopen the actual saved snapshot before asserting the patch
+    and first visible controls. Restore preset highlight and filtered Next from the actual patch/registry identity,
+    without persisting an A/B UI session. Keep pending M → N → Undo M → Redo N and stale queued refusal coherent
+    under current owner fences. Raw-CRDT and fresh-hydration evidence alone establishes neither saved binary reopen,
+    browser behavior nor audible output; run the corresponding acceptance route before making that claim.
 12. **A cold reopen reopens the project's own original before any library or peer (#5778).** Failure: resolving a
     missing asset reads an authorized mapped library or asks a peer although the project already durably owns the
     verified original, so revoking the grant or ending the session takes the source with it. Probe: save a mapped

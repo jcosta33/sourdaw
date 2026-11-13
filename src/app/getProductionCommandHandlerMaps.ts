@@ -13,6 +13,7 @@ import { getControlSurfaceHandlers } from '#/modules/ControlSurface/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getCvGateHandlers } from '#/modules/CvGate/useCases';
 import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
+import { getFermenterHandlers } from '#/modules/Fermenter/useCases';
 import { getGrandBouleHandlers } from '#/modules/GrandBoule/useCases';
 import { getPitchHandlers } from '#/modules/Knead/useCases';
 import {
@@ -66,6 +67,7 @@ export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata
         getDawProjectHandlers(),
         getFinalFeatureHandlers(),
         getCvGateHandlers(),
+        getFermenterHandlers(),
         getGrandBouleHandlers(),
         getNodeViewHandlers(),
         getWebMidiInputHandlers(),
