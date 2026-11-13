@@ -1,5 +1,5 @@
 import { mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { ESLint } from 'eslint';
@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 
 import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
 
-const TRACKED_IN_6486 = 'existing violations remain; promotion or baselining tracked in #6486';
 const SIZE_BASELINE =
     'scoped to eslint.size-baseline.mjs files that already exceed the size limits; the list only shrinks';
 
@@ -23,24 +22,8 @@ function sizeBaselineEntries(): AllowedWarnRule[] {
     return SIZE_RULES.map((rule) => [`${sizeBaselineFiles.join(',')}:${rule}`, SIZE_BASELINE]);
 }
 
-const ALLOWED_WARN_RULES: readonly AllowedWarnRule[] = [
-    ['**/*.{js,jsx,ts,tsx,mts,cts}:no-void', TRACKED_IN_6486],
-    [
-        '**/*.{ts,mts,cts} !**/*.spec.ts,src/infra/store/storage/createLocalStorage.ts,src/infra/store/storage/createPlainJsonLocalStorage.ts,src/modules/Command/stores/undoSessionMirror.ts:no-restricted-syntax',
-        TRACKED_IN_6486,
-    ],
-    ['**/*.{tsx,jsx}:@eslint-react/set-state-in-effect', TRACKED_IN_6486],
-    ['**/*.{tsx,jsx}:react-hooks/refs', TRACKED_IN_6486],
-    ['**/*.{tsx,jsx}:react-hooks/set-state-in-effect', TRACKED_IN_6486],
-    ['global:@eslint-react/exhaustive-deps', TRACKED_IN_6486],
-    ['global:@eslint-react/naming-convention-context-name', TRACKED_IN_6486],
-    ['global:@eslint-react/naming-convention-ref-name', TRACKED_IN_6486],
-    ['global:@eslint-react/no-array-index-key', TRACKED_IN_6486],
-    ['global:@eslint-react/set-state-in-effect', TRACKED_IN_6486],
-    ['global:@eslint-react/use-state', TRACKED_IN_6486],
-    ['global:react-hooks/exhaustive-deps', TRACKED_IN_6486],
-    ...sizeBaselineEntries(),
-];
+// Every other rule is at error; its existing violations live in eslint-suppressions.json.
+const ALLOWED_WARN_RULES: readonly AllowedWarnRule[] = sizeBaselineEntries();
 
 type ScopedSetting = { scope: string; rule: string; setting: unknown };
 
@@ -173,6 +156,40 @@ describe('eslint.config.mjs warn levels', () => {
             expect(commentMessages.map((message) => message.severity)).toEqual([2]);
         } finally {
             unlinkSync(fixture);
+            rmdirSync(directory);
+        }
+    }, 60_000);
+
+    it('fails a suppressed file on one extra violation and a new file on its first', async () => {
+        const directory = mkdtempSync(resolve('src/app/eslint-suppressions-'));
+        const suppressed = join(directory, 'suppressed.ts');
+        const fresh = join(directory, 'fresh.ts');
+        const suppressionsFile = join(directory, 'eslint-suppressions.json');
+        const oneVoid = 'export const first = (value: unknown) => void value;\n';
+        const twoVoids = `${oneVoid}export const second = (value: unknown) => void value;\n`;
+        const voidSeverities = async (eslint: ESLint, text: string, filePath: string) => {
+            const [result] = await eslint.lintText(text, { filePath });
+            if (!result) {
+                throw new Error(`ESLint returned no result for ${filePath}`);
+            }
+            return result.messages.filter((message) => message.ruleId === 'no-void').map((message) => message.severity);
+        };
+        try {
+            writeFileSync(
+                suppressionsFile,
+                JSON.stringify({ [relative(process.cwd(), suppressed)]: { 'no-void': { count: 1 } } })
+            );
+            writeFileSync(suppressed, twoVoids);
+            writeFileSync(fresh, oneVoid);
+            const eslint = new ESLint({ applySuppressions: true, suppressionsLocation: suppressionsFile });
+
+            expect(await voidSeverities(eslint, oneVoid, suppressed)).toEqual([]);
+            expect(await voidSeverities(eslint, twoVoids, suppressed)).toEqual([2, 2]);
+            expect(await voidSeverities(eslint, oneVoid, fresh)).toEqual([2]);
+        } finally {
+            unlinkSync(suppressed);
+            unlinkSync(fresh);
+            unlinkSync(suppressionsFile);
             rmdirSync(directory);
         }
     }, 60_000);

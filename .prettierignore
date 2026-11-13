@@ -33,6 +33,11 @@ release/*.json
 # only `--write` may produce it and the formatter must never rewrite it.
 scripts/ui-restatement-census.json
 
+# ESLint bulk suppressions. ESLint writes this file with its own stable
+# serialisation on every `--suppress-*` or `--prune-suppressions` run, so a
+# formatter pass would only churn it between those runs.
+eslint-suppressions.json
+
 # Recorded health-gate workflow pin. The record script's serialisation is
 # canonical — the pin is reviewed as a structural diff and both harnesses parse
 # it — so the formatter must never rewrite it between records.

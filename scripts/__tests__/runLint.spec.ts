@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     buildEslintArgv,
     ensureServerDependencies,
+    ESLINT_SUPPRESSIONS_FILE,
     eslintEnvironment,
     FULL_ESLINT_TARGETS,
     FULL_OXLINT_TARGETS,
@@ -58,6 +59,19 @@ describe('eslint cache argv', () => {
 
         expect(argv).toContain('--cache');
         expect(cacheStrategy(argv)).toBe('content');
+    });
+
+    it.each([
+        [{ fix: false, full: false }, ['src/a.ts']],
+        [{ fix: false, full: true }, [...FULL_ESLINT_TARGETS]],
+        [{ fix: true, full: false }, ['src/a.ts']],
+    ])('names the committed suppressions file for %j', (options, targets) => {
+        const argv = buildEslintArgv(options, targets);
+        const index = argv.indexOf('--suppressions-location');
+
+        expect(argv[index + 1]).toBe(ESLINT_SUPPRESSIONS_FILE);
+        expect(existsSync(resolve(ESLINT_SUPPRESSIONS_FILE))).toBe(true);
+        expect(argv).not.toContain('--pass-on-unpruned-suppressions');
     });
 
     it('passes fix and targets through unchanged', () => {
