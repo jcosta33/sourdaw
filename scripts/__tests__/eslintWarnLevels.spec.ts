@@ -1,10 +1,10 @@
 import { mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
-import eslintConfig from '../../eslint.config.mjs';
 import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
 
 const TRACKED_IN_6486 = 'existing violations remain; promotion or baselining tracked in #6486';
@@ -101,9 +101,19 @@ function survivingWarnEntries(configs: readonly unknown[]): string[] {
     return settings.filter((entry) => isWarn(entry.setting)).map((entry) => `${entry.scope}:${entry.rule}`);
 }
 
+async function loadEslintConfig(): Promise<readonly unknown[]> {
+    const loaded: unknown = await import(pathToFileURL(resolve('eslint.config.mjs')).href);
+    if (!isRecord(loaded) || !Array.isArray(loaded.default)) {
+        throw new Error('eslint.config.mjs must default-export a flat config array');
+    }
+    return loaded.default;
+}
+
+const eslintConfig = await loadEslintConfig();
+
 describe('eslint.config.mjs warn levels', () => {
     it('exports an already flattened array with no extends left to resolve', () => {
-        expect(eslintConfig.filter((config) => 'extends' in config)).toEqual([]);
+        expect(eslintConfig.filter((config) => isRecord(config) && 'extends' in config)).toEqual([]);
     });
 
     it('configures exactly the tracked rules at warn', () => {
