@@ -434,7 +434,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     watchPluginStateDirty: vi.fn(),
 }));
 /**
- * The remove/restore handlers publish `track.removed` / `track.added` through
+ * The remove handlers publish `track.removed` through
  * the DI event bus, which only `bootstrap.ts` wires. The bus contract is a
  * use-case-private type, so it is reached through `Parameters<>` rather than a
  * re-export.

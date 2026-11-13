@@ -14,7 +14,6 @@ import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrack
 import { insertTakeLane } from '../../useCases/comping/insertTakeLane';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
-import { publishTrackAdded } from '../../useCases/publishTrackAdded';
 import { refreshToasterPadBindings } from '../../useCases/refreshToasterPadBindings';
 import { setTrackState } from '../../useCases/setTrackState';
 import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
@@ -30,7 +29,6 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
     validate: (action, context) => restoreStateMatches(action, context),
     execute: (alpha) => {
         const {
-            trackName,
             trackKind,
             trackGain,
             trackParentId,
@@ -150,13 +148,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
                     }),
                     () => rearmCommittedTrackInputMonitoring(alpha.payload.trackId),
                     () => refreshToasterPadBindings(tracks, trackParentId),
-                    finalizeSidechainRestore,
-                    () =>
-                        publishTrackAdded({
-                            trackId: alpha.payload.trackId,
-                            name: trackName,
-                            kind: trackKind,
-                        })
+                    finalizeSidechainRestore
                 );
                 return runAllAsyncEffects(effects.map(runtimeAuthority.guard));
             },
@@ -197,13 +189,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
                 effects.push(
                     () => rearmCommittedTrackInputMonitoring(committedTrack.id),
                     () => refreshToasterPadBindings(committedState.tracks, committedTrack.parentId),
-                    () => wireSidechainRoutes(),
-                    () =>
-                        publishTrackAdded({
-                            trackId: committedTrack.id,
-                            name: committedTrack.name,
-                            kind: committedTrack.kind,
-                        })
+                    () => wireSidechainRoutes()
                 );
                 await runAllAsyncEffects(effects.map(runtimeAuthority.guard));
             },

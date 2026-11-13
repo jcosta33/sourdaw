@@ -14,7 +14,6 @@ import {
     type PromptPayload,
 } from '#/utils/Notification/notificationEventBus';
 
-import { type TrackAddedPayload } from '../../../events/TrackAddedEvent';
 import { type TrackRemovedPayload } from '../../../events/TrackRemovedEvent';
 import { type TrackSelectionChangedPayload } from '../../../events/TrackSelectionChangedEvent';
 
@@ -28,7 +27,6 @@ let crdtStores: typeof import('#/modules/CrdtDocument/stores');
 let midiStores: typeof import('#/modules/MIDI/stores');
 
 type ArrangementEvents = {
-    'track.added': TrackAddedPayload;
     'track.removed': TrackRemovedPayload;
     'track.selectionChanged': TrackSelectionChangedPayload;
 };

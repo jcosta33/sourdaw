@@ -178,7 +178,7 @@ describe('handleGenerateMidiPrompt', () => {
             ]);
             return Promise.resolve({
                 status: 'ambiguous' as const,
-                reason: 'runtime reconciliation failed: track.added event unavailable',
+                reason: 'runtime reconciliation failed: live strip projection unavailable',
                 actions: [],
             });
         });
@@ -186,12 +186,12 @@ describe('handleGenerateMidiPrompt', () => {
         await handleGenerateMidiPrompt('ambiguous melody');
 
         expect(mocks.notifyUser).toHaveBeenCalledWith(
-            'MIDI generation committed with a warning: runtime reconciliation failed: track.added event unavailable',
+            'MIDI generation committed with a warning: runtime reconciliation failed: live strip projection unavailable',
             'warning'
         );
         const taskUpdate = mocks.updateTask.mock.calls.find(([taskId]) => taskId === 'task-1')?.[1];
         expect(taskUpdate?.status).toBe('success');
-        expect(taskUpdate?.data?.warning).toBe('runtime reconciliation failed: track.added event unavailable');
+        expect(taskUpdate?.data?.warning).toBe('runtime reconciliation failed: live strip projection unavailable');
     });
 
     it('reports stale project authority without applying any actions', async () => {
