@@ -212,7 +212,6 @@ export function runProjectLoadTransaction({
         },
         canActivate: () =>
             !ticket.abandoned &&
-            !revocation.signal.aborted &&
             transitionId >= projectTransitionState.active &&
             transitionId >= projectTransitionState.latestPrepared,
         isCurrent: () =>

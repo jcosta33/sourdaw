@@ -297,7 +297,11 @@ describe('runProjectLoadTransaction', () => {
         const transaction = runProjectLoadTransaction();
 
         await expect(transaction.prepare()).rejects.toBe(failure);
+        expect(transaction.signal.aborted).toBe(true);
+        expect(transaction.canActivate()).toBe(true);
         expect(transaction.activate()).toBe(false);
+        transaction.abandon();
+        expect(transaction.canActivate()).toBe(false);
     });
 
     it('does not activate until an entered collaboration shutdown completes', async () => {

@@ -58,7 +58,7 @@ const {
     mockNotifyUser: vi.fn(),
     mockProjectStore: {
         value: null as Record<string, unknown> | null,
-        set: vi.fn(),
+        set: vi.fn<(state: Record<string, unknown>) => void>(),
     },
     mockProjectLoadFailureStore: {
         value: null as Record<string, unknown> | null,
@@ -205,6 +205,7 @@ function makeTransaction(overrides: Partial<ProjectLoadTransaction> = {}): Proje
 describe('replaceProjectData', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockProjectStore.set.mockReset();
         mockProjectStore.value = null;
         mockImportCachedAudioBuffers.mockResolvedValue({ publish: vi.fn(), persist: () => Promise.resolve(true) });
         mockPrepareCachedAudioBuffersFromIdb.mockResolvedValue({
@@ -272,6 +273,34 @@ describe('replaceProjectData', () => {
         expect(result.status).toBe('aborted');
         expect(mockResetCrdtProject).not.toHaveBeenCalled();
         expect(mockProjectStore.value).toBe(retainedProject);
+        expect(oldAuthority.isCurrent()).toBe(false);
+        expect(captureProjectTransitionAuthority().isCurrent()).toBe(true);
+    });
+
+    it('restores retained loading flags after a real replacement preparation rejects', async () => {
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
+        const active = runProjectLoadTransaction();
+        expect(await active.prepare()).toBe(true);
+        expect(active.activate()).toBe(true);
+        const oldAuthority = captureProjectTransitionAuthority();
+        mockProjectStore.value = { name: 'Retained', initialized: true, loading: false };
+        mockProjectStore.set.mockImplementation((state) => {
+            mockProjectStore.value = state;
+        });
+        const failure = new Error('collaboration shutdown rejected');
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: async () => {
+                throw failure;
+            },
+        });
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: runProjectLoadTransaction(),
+        });
+        expect(result.status).toBe('aborted');
+        expect(mockResetCrdtProject).not.toHaveBeenCalled();
+        expect(mockProjectStore.value).toMatchObject({ name: 'Retained', initialized: true, loading: false });
         expect(oldAuthority.isCurrent()).toBe(false);
         expect(captureProjectTransitionAuthority().isCurrent()).toBe(true);
     });

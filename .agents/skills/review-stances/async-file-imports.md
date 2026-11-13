@@ -39,7 +39,11 @@ that must fail the case.
    preset after a public New project is withdrawn during successful preparation” requires the retained root to
    admit a fresh write and Undo/Redo while an old capture remains invalid. The real `replaceProjectData.spec.ts`
    case “settles a real prepared replacement withdrawn before activation” covers the Recent helper's terminal;
-   owner tests keep held abandonment closed until I/O settles. Removing the caller's abandonment must fail these
+   owner tests keep held abandonment closed until I/O settles. When preparation rejects, the public New case
+   “restores an opened project after public New preparation rejects and admits a fresh preset” and the real
+   `replaceProjectData.spec.ts` case “restores retained loading flags after a real replacement preparation rejects”
+   require old `loading`/`initialized` flags to be restored before the ticket is abandoned. Removing the caller's
+   abandonment or its still-latest cleanup right must fail these
    cases. The shared capture helper came from main PR #293 (`6c63c7a65d8869975ceebbfe79bbaee199d4f120`);
    its old-capture retirement remains required, and historical private reviewer stance is unknown.
 4. **A completed import never reaches storage or autosave admission (#4883, #5397, #5761).** An import that writes

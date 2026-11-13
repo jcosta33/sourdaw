@@ -82,7 +82,12 @@ wall-clock) prove ordering, ownership and cleanup; they never establish physical
       real `replaceProjectData.spec.ts` case “settles a real prepared replacement withdrawn before activation” guards
       the Recent helper route. A merely prepared but withdrawn ticket must never strand its pending owner; a held
       abandonment must keep fresh edits denied until its I/O continuation settles, and a late older owner must not
-      clear a newer pending owner. These checks do not establish audible output. The shared capture helper was
+      clear a newer pending owner. On a rejected preparation, the still-latest ticket retains only its transient
+      cleanup right: `fermenterPatchAuditionUndo.integration.spec.tsx` case “restores an opened project after public
+      New preparation rejects and admits a fresh preset” and `replaceProjectData.spec.ts` case “restores retained
+      loading flags after a real replacement preparation rejects” require the old project to regain
+      `initialized: true, loading: false`; actual activation and old edit captures still refuse. These checks do not
+      establish audible output. The shared capture helper was
       introduced by main PR #293 (`6c63c7a65d8869975ceebbfe79bbaee199d4f120`); its old-capture fence remains
       necessary. Historical private reviewer models and stances are unestablished.
 4. **Shutdown reclamation needs a release inside the poll pass (#2976, #5064).** A whole-cascade wall-clock

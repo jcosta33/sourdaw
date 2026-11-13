@@ -819,6 +819,41 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         expect(committedPatch()).toEqual(next);
     });
 
+    it('restores an opened project after public New preparation rejects and admits a fresh preset', async () => {
+        const opened = projectStore.value;
+        if (!opened) {
+            throw new Error('The test project was not opened');
+        }
+        projectStore.set({ ...opened, initialized: true, loading: false });
+        const root = getCrdtDoc('root');
+        const stale = prepareFermenterPatchWrite({
+            deviceId: DEVICE_ID,
+            patch: patchNamed('Queued before rejected New', 1200),
+            label: 'Queued patch',
+        });
+        expect(stale?.isCurrent()).toBe(true);
+        const failure = new Error('collaboration shutdown rejected');
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: async () => {
+                throw failure;
+            },
+        });
+        await expect(newProject('Rejected')).resolves.toBe(false);
+        expect(getCrdtDoc('root')).toBe(root);
+        expect(committedPatch()).toEqual(initialPatch);
+        expect(projectStore.value).toMatchObject({ initialized: true, loading: false });
+        expect(stale?.isCurrent()).toBe(false);
+
+        const next = patchNamed('Fresh after rejected New', 1800);
+        expect(await commit(next)).toBe(true);
+        expect(committedPatch()).toEqual(next);
+        expect(depth()).toBe(1);
+        await act(() => undo());
+        expect(committedPatch()).toEqual(initialPatch);
+        await act(() => redo());
+        expect(committedPatch()).toEqual(next);
+    });
+
     it('reconciles a pending parameter edit when a queued patch is refused by a revision change', async () => {
         const callbacks = new Map<number, FrameRequestCallback>();
         let nextId = 0;
