@@ -1,0 +1,19 @@
+src/infra/automerge/__tests__/stagedDocumentLoad.integration.spec.ts
+  s_e385c7e8f0ec1b::t_ebffe1f07b7267 115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "787043f2a754cd0555aff62bdb579e18448c30e8",
+  "prompts": {},
+  "sessions": {
+    "s_e385c7e8f0ec1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d20b-16d6-7491-871b-902fdaef401b",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
