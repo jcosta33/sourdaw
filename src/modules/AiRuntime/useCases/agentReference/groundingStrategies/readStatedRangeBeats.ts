@@ -69,7 +69,7 @@ function getDeviceNameWords(context: ProjectContext): string[] {
  * alone — "everywhere but in Chorus Two", "aside from Chorus Two", "outside Chorus Two" — reads as
  * no range at all, whichever words it uses.
  */
-function compileActionClausePattern(actionPhrases: readonly string[], context: ProjectContext): RegExp {
+function actionClausePattern(actionPhrases: readonly string[], context: ProjectContext): RegExp {
     const verbs = alternation([...actionPhrases, ...QUIETER_SCOPE_PHRASES, ...LOUDER_SCOPE_PHRASES]);
     const item = getTargetItemPattern(alternation(getDeviceNameWords(context)));
     const targets = String.raw`(?:${DETERMINER}\s+)?${item}(?:(?:\s*,\s*(?:and\s+)?|\s+and\s+)(?:${DETERMINER}\s+)?${item})*`;
@@ -103,7 +103,7 @@ export function readStatedRangeBeats(
     }
     const [phrase] = phrases;
     const actionClause = maskProjectReferences(text, context).slice(0, phrase!.start);
-    if (!compileActionClausePattern(actionPhrases, context).test(actionClause)) {
+    if (!actionClausePattern(actionPhrases, context).test(actionClause)) {
         return null;
     }
     return RANGE_TAIL_PATTERN.test(text.slice(phrase!.end)) ? phrase! : null;
