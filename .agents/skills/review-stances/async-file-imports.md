@@ -34,7 +34,14 @@ that must fail the case.
    `fermenterPatchAuditionUndo.integration.spec.tsx` case “admits fresh whole-patch edits after a public load fails
    before replacing the retained project”. Restoring the old load-ticket check must fail the fresh import; omitting
    capture-time admission or generation must fail the old import's non-effect. The Scala spec uses a mocked picker,
-   parser and project store, so the public-load case owns real CRDT/history evidence.
+   parser and project store, so the public-load case owns real CRDT/history evidence. Also withdraw a successfully
+   prepared public New replacement before activation: the maintained Fermenter integration case “admits a fresh
+   preset after a public New project is withdrawn during successful preparation” requires the retained root to
+   admit a fresh write and Undo/Redo while an old capture remains invalid. The real `replaceProjectData.spec.ts`
+   case “settles a real prepared replacement withdrawn before activation” covers the Recent helper's terminal;
+   owner tests keep held abandonment closed until I/O settles. Removing the caller's abandonment must fail these
+   cases. The shared capture helper came from main PR #293 (`6c63c7a65d8869975ceebbfe79bbaee199d4f120`);
+   its old-capture retirement remains required, and historical private reviewer stance is unknown.
 4. **A completed import never reaches storage or autosave admission (#4883, #5397, #5761).** An import that writes
    project tuning without calling `markDirty` reaches the real store and CRDT while leaving `dirty: false`; the
    installed tracker watches tracks and tempo, so their positive controls do not prove import bookkeeping, and

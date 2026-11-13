@@ -145,6 +145,9 @@ import { unsavedClosedTakes } from '../unsavedClosedTakes';
 
 import type { HydratableProjectData, HydratableProjectTrack } from '../isHydratableProjectData';
 import type { ProjectLoadTransaction } from '../runProjectLoadTransaction';
+import { runProjectLoadTransaction } from '../runProjectLoadTransaction';
+import { captureProjectTransitionAuthority } from '../../captureProjectTransitionAuthority';
+import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
 
 function makeData(referencedBufferId?: string): HydratableProjectData {
     const tracks: HydratableProjectTrack[] = [];
@@ -191,6 +194,7 @@ function makeTransaction(overrides: Partial<ProjectLoadTransaction> = {}): Proje
     return {
         prepare: () => Promise.resolve(true),
         activate: () => true,
+        abandon: vi.fn(),
         canActivate: () => true,
         isCurrent: () => true,
         signal,
@@ -243,6 +247,33 @@ describe('replaceProjectData', () => {
             transaction: makeTransaction({ activate: () => false }),
         });
         expect(result.status).toBe('aborted');
+    });
+
+    it('settles a real prepared replacement withdrawn before activation', async () => {
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
+        const active = runProjectLoadTransaction();
+        expect(await active.prepare()).toBe(true);
+        expect(active.activate()).toBe(true);
+        const oldAuthority = captureProjectTransitionAuthority();
+        const retainedProject = { name: 'Retained', initialized: true, loading: false };
+        mockProjectStore.value = retainedProject;
+        let proceed = true;
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: async () => {
+                proceed = false;
+            },
+        });
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: runProjectLoadTransaction(),
+            shouldProceed: () => proceed,
+        });
+        expect(result.status).toBe('aborted');
+        expect(mockResetCrdtProject).not.toHaveBeenCalled();
+        expect(mockProjectStore.value).toBe(retainedProject);
+        expect(oldAuthority.isCurrent()).toBe(false);
+        expect(captureProjectTransitionAuthority().isCurrent()).toBe(true);
     });
 
     it('does not switch project authority after an external discard authority is revoked during preparation', async () => {

@@ -135,6 +135,29 @@ function supersedePreviousWrite(input: PrepareFermenterPatchWriteInput): void {
     }
 }
 
+function createPatchAction(
+    input: PrepareFermenterPatchWriteInput,
+    source: NonNullable<ReturnType<typeof capturePatchWriteSource>>
+): Extract<AppAction, { type: 'setFermenterPatch' }> {
+    const { admittedOwner, projectBefore, before, patch, clamp, expectedProject, beforeProject } = source;
+    return {
+        type: 'setFermenterPatch',
+        payload: {
+            deviceId: input.deviceId,
+            before: toFermenterDeviceState(before),
+            after: toFermenterDeviceState(patch),
+            expectedCurrent: toFermenterDeviceState(projectBefore),
+            beforeProject,
+            afterProject: projectFermenterPatchState(expectedProject, projectBefore, patch, clamp),
+            expectedProject,
+            expectedTrackId: admittedOwner.id,
+            expectedDeviceIds: admittedOwner.devices.map((candidate) => candidate.id),
+            expectedTrackFrozen: admittedOwner.frozen ?? false,
+            label: input.label,
+        },
+    };
+}
+
 /** Capture an edit before a frame or Command transaction can yield to another owner. */
 export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInput): PreparedFermenterPatchWrite | null {
     const authority = captureProjectTransitionAuthority();
@@ -148,7 +171,7 @@ export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInpu
     if (!source) {
         return null;
     }
-    const { admittedOwner, device, projectBefore, before, patch, clamp, expectedProject, beforeProject } = source;
+    const { admittedOwner, device, projectBefore, patch } = source;
     supersedePreviousWrite(input);
     const identity = captureProjectIdentity();
     const revision = captureProjectRevision();
@@ -181,22 +204,7 @@ export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInpu
     }
 
     function action(): Extract<AppAction, { type: 'setFermenterPatch' }> {
-        return {
-            type: 'setFermenterPatch',
-            payload: {
-                deviceId: input.deviceId,
-                before: toFermenterDeviceState(before),
-                after: toFermenterDeviceState(patch),
-                expectedCurrent: toFermenterDeviceState(projectBefore),
-                beforeProject,
-                afterProject: projectFermenterPatchState(expectedProject, projectBefore, patch, clamp),
-                expectedProject,
-                expectedTrackId: admittedOwner.id,
-                expectedDeviceIds: admittedOwner.devices.map((candidate) => candidate.id),
-                expectedTrackFrozen: admittedOwner.frozen ?? false,
-                label: input.label,
-            },
-        };
+        return createPatchAction(input, source);
     }
 
     function markCommitted(): void {

@@ -341,4 +341,114 @@ describe('runProjectLoadTransaction', () => {
         await rejected;
         expect(transaction.activate()).toBe(false);
     });
+
+    it('abandons before preparation without revoking the active edit owner', async () => {
+        const active = runProjectLoadTransaction();
+        expect(await active.prepare()).toBe(true);
+        expect(active.activate()).toBe(true);
+        const edit = captureProjectTransitionAuthority();
+        const abandoned = runProjectLoadTransaction();
+        abandoned.abandon();
+        abandoned.abandon();
+        expect(await abandoned.prepare()).toBe(false);
+        expect(abandoned.activate()).toBe(false);
+        expect(edit.isCurrent()).toBe(true);
+    });
+
+    it('settles a prepared withdrawn successor without reviving captured edits or its ticket', async () => {
+        const active = runProjectLoadTransaction();
+        expect(await active.prepare()).toBe(true);
+        expect(active.activate()).toBe(true);
+        const old = captureProjectTransitionAuthority();
+        const successor = runProjectLoadTransaction();
+        expect(await successor.prepare()).toBe(true);
+        const denied = captureProjectTransitionAuthority();
+        expect(denied.isCurrent()).toBe(false);
+        successor.abandon();
+        successor.abandon();
+        expect(successor.activate()).toBe(false);
+        expect(successor.canActivate()).toBe(false);
+        expect(successor.isCurrent()).toBe(false);
+        expect(successor.signal.aborted).toBe(true);
+        expect(old.isCurrent()).toBe(false);
+        expect(denied.isCurrent()).toBe(false);
+        expect(captureProjectTransitionAuthority().isCurrent()).toBe(true);
+        active.abandon();
+        expect(captureProjectTransitionAuthority().isCurrent()).toBe(true);
+    });
+
+    it.each(['resolve', 'reject'] as const)(
+        'keeps edit admission closed until an abandoned held preparation settles by %s',
+        async (outcome) => {
+            const active = runProjectLoadTransaction();
+            expect(await active.prepare()).toBe(true);
+            expect(active.activate()).toBe(true);
+            const old = captureProjectTransitionAuthority();
+            const entered = Promise.withResolvers<void>();
+            const shutdown = Promise.withResolvers<void>();
+            setProjectIdentityTransitionDependencies({
+                leaveCollaborationSession: () => {
+                    entered.resolve();
+                    return shutdown.promise;
+                },
+            });
+            const successor = runProjectLoadTransaction();
+            const preparing = successor.prepare();
+            await entered.promise;
+            expect(successor.activate()).toBe(false);
+            const denied = captureProjectTransitionAuthority();
+            successor.abandon();
+            expect(captureProjectTransitionAuthority().isCurrent()).toBe(false);
+            if (outcome === 'resolve') {
+                shutdown.resolve();
+                await expect(preparing).resolves.toBe(false);
+            } else {
+                const failure = new Error('late abandoned shutdown rejection');
+                const rejected = expect(preparing).rejects.toBe(failure);
+                shutdown.reject(failure);
+                await rejected;
+            }
+            expect(successor.activate()).toBe(false);
+            expect(old.isCurrent()).toBe(false);
+            expect(denied.isCurrent()).toBe(false);
+            expect(captureProjectTransitionAuthority().isCurrent()).toBe(true);
+        }
+    );
+
+    it('does not let an older abandoned preparation clear a newer pending owner', async () => {
+        const active = runProjectLoadTransaction();
+        expect(await active.prepare()).toBe(true);
+        expect(active.activate()).toBe(true);
+        const olderEntered = Promise.withResolvers<void>();
+        const olderShutdown = Promise.withResolvers<void>();
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: () => {
+                olderEntered.resolve();
+                return olderShutdown.promise;
+            },
+        });
+        const older = runProjectLoadTransaction();
+        const olderPreparation = older.prepare();
+        await olderEntered.promise;
+        older.abandon();
+        const currentEntered = Promise.withResolvers<void>();
+        const currentShutdown = Promise.withResolvers<void>();
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: () => {
+                currentEntered.resolve();
+                return currentShutdown.promise;
+            },
+        });
+        const current = runProjectLoadTransaction();
+        const currentPreparation = current.prepare();
+        await currentEntered.promise;
+        olderShutdown.resolve();
+        await expect(olderPreparation).resolves.toBe(false);
+        expect(captureProjectTransitionAuthority().isCurrent()).toBe(false);
+        current.abandon();
+        expect(captureProjectTransitionAuthority().isCurrent()).toBe(false);
+        currentShutdown.resolve();
+        await expect(currentPreparation).resolves.toBe(false);
+        expect(captureProjectTransitionAuthority().isCurrent()).toBe(true);
+    });
 });

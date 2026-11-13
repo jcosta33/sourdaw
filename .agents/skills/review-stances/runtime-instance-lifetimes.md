@@ -73,7 +73,18 @@ wall-clock) prove ordering, ownership and cleanup; they never establish physical
       false) and “settles only the newest failed preparation while an older revoked preparation remains held” pin
       the two capture orders. Replacing fresh-edit
       admission with the retired load-ticket check must fail the fresh write; dropping captured admission or its
-      monotonic revocation must fail old/held-token refusal. These checks do not establish audible output.
+      monotonic revocation must fail old/held-token refusal. Also withdraw a successfully prepared public New or
+      Recent replacement before activation while keeping the original root: `fermenterPatchAuditionUndo.integration.spec.tsx`
+      case “admits a fresh preset after a public New project is withdrawn during successful preparation” must commit
+      a new preset and Undo/Redo while the pre-switch token stays retired. `runProjectLoadTransaction.spec.ts` cases
+      “settles a prepared withdrawn successor without reviving captured edits or its ticket” and “keeps edit admission
+      closed until an abandoned held preparation settles” pin the owner terminal, including a late rejection. The
+      real `replaceProjectData.spec.ts` case “settles a real prepared replacement withdrawn before activation” guards
+      the Recent helper route. A merely prepared but withdrawn ticket must never strand its pending owner; a held
+      abandonment must keep fresh edits denied until its I/O continuation settles, and a late older owner must not
+      clear a newer pending owner. These checks do not establish audible output. The shared capture helper was
+      introduced by main PR #293 (`6c63c7a65d8869975ceebbfe79bbaee199d4f120`); its old-capture fence remains
+      necessary. Historical private reviewer models and stances are unestablished.
 4. **Shutdown reclamation needs a release inside the poll pass (#2976, #5064).** A whole-cascade wall-clock
    assertion names no cascade step and fails on a loaded runner after every stop and destroy assertion passed. Pin
    the scheduler-release transition itself in `crates/sourdaw-native/src/shutdown.rs`: keep an extra runtime owner

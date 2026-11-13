@@ -20,9 +20,46 @@ let preparingProjectTransitionCount = 0;
 let runtimeTransitionTail = Promise.resolve();
 const projectTransitionRevocations = new Map<number, AbortController>();
 
+type ProjectTransitionTicketState = {
+    activated: boolean;
+    abandoned: boolean;
+    prepared: boolean;
+    countedAsPreparing: boolean;
+    preparation: Promise<boolean> | null;
+};
+
+function revokeProjectTransition(transitionId: number, revocation: AbortController): void {
+    projectTransitionRevocations.delete(transitionId);
+    revocation.abort();
+}
+
+function claimProjectTransition(transitionId: number, revocation: AbortController): void {
+    for (const [otherTransitionId, controller] of projectTransitionRevocations) {
+        if (otherTransitionId !== transitionId) {
+            controller.abort();
+            projectTransitionRevocations.delete(otherTransitionId);
+        }
+    }
+    projectTransitionRevocations.set(transitionId, revocation);
+}
+
+function releasePreparingCount(ticket: ProjectTransitionTicketState): void {
+    if (ticket.countedAsPreparing) {
+        ticket.countedAsPreparing = false;
+        preparingProjectTransitionCount -= 1;
+    }
+}
+
+function settleEditReplacement(transitionId: number): void {
+    if (projectTransitionState.pendingEditReplacement === transitionId) {
+        projectTransitionState.pendingEditReplacement = null;
+    }
+}
+
 export type ProjectLoadTransaction = {
     prepare: () => Promise<boolean>;
     activate: () => boolean;
+    abandon: () => void;
     canActivate: () => boolean;
     isCurrent: () => boolean;
     signal: AbortSignal;
@@ -67,130 +104,119 @@ type RunProjectLoadTransactionInput = {
 
 type RunProjectLoadTransactionOutput = ProjectLoadTransaction;
 
+async function prepareProjectTransition(
+    transitionId: number,
+    yieldToInFlight: boolean,
+    ticket: ProjectTransitionTicketState,
+    revocation: AbortController
+): Promise<boolean> {
+    if (ticket.abandoned) {
+        return false;
+    }
+    if (yieldToInFlight && (preparingProjectTransitionCount > 0 || activeProjectTransitionHasExplicitAuthority)) {
+        revokeProjectTransition(transitionId, revocation);
+        return false;
+    }
+    if (transitionId < projectTransitionState.latestPrepared) {
+        revokeProjectTransition(transitionId, revocation);
+        return false;
+    }
+    projectTransitionState.latestPrepared = transitionId;
+    projectTransitionState.editRevocation += 1;
+    projectTransitionState.pendingEditReplacement = transitionId;
+    claimProjectTransition(transitionId, revocation);
+    ticket.countedAsPreparing = true;
+    preparingProjectTransitionCount += 1;
+    try {
+        await whenProjectIdentityTransitionDependenciesConfigured();
+        if (ticket.abandoned) {
+            releasePreparingCount(ticket);
+            settleEditReplacement(transitionId);
+            return false;
+        }
+        resetActionReplayAuthority();
+        await projectIdentityTransitionDependencies.leaveCollaborationSession();
+        if (ticket.abandoned || transitionId !== projectTransitionState.latestPrepared) {
+            releasePreparingCount(ticket);
+            settleEditReplacement(transitionId);
+            revokeProjectTransition(transitionId, revocation);
+            return false;
+        }
+        ticket.prepared = true;
+        return true;
+    } catch (error) {
+        releasePreparingCount(ticket);
+        settleEditReplacement(transitionId);
+        revokeProjectTransition(transitionId, revocation);
+        throw error;
+    }
+}
+
 export function runProjectLoadTransaction({
     yieldToInFlight = false,
 }: RunProjectLoadTransactionInput = {}): RunProjectLoadTransactionOutput {
     const transitionId = ++nextProjectTransitionId;
     const revocation = new AbortController();
-    let activated = false;
-    let prepared = false;
-    let countedAsPreparing = false;
-    let preparation: Promise<boolean> | null = null;
-
-    function revoke(): void {
-        projectTransitionRevocations.delete(transitionId);
-        revocation.abort();
-    }
-
-    function claimRevocableAuthority(): void {
-        for (const [otherTransitionId, controller] of projectTransitionRevocations) {
-            if (otherTransitionId !== transitionId) {
-                controller.abort();
-                projectTransitionRevocations.delete(otherTransitionId);
-            }
-        }
-        projectTransitionRevocations.set(transitionId, revocation);
-    }
-
-    // Settle this transition exactly once: drop it from the in-flight count. Safe
-    // to call repeatedly and before prepare ever ran.
-    function releasePreparingCount(): void {
-        if (countedAsPreparing) {
-            countedAsPreparing = false;
-            preparingProjectTransitionCount -= 1;
-        }
-    }
-
-    function settleEditReplacement(): void {
-        if (projectTransitionState.pendingEditReplacement === transitionId) {
-            projectTransitionState.pendingEditReplacement = null;
-        }
-    }
+    const ticket: ProjectTransitionTicketState = {
+        activated: false,
+        abandoned: false,
+        prepared: false,
+        countedAsPreparing: false,
+        preparation: null,
+    };
 
     return {
         prepare: () => {
-            preparation ??= (async () => {
-                // A yielding (boot restore) transition defers to any explicit
-                // transition that is either preparing or already authoritative.
-                // Standing down before any side effect leaves that user choice
-                // untouched so startup restoration cannot replace it.
-                if (
-                    yieldToInFlight &&
-                    (preparingProjectTransitionCount > 0 || activeProjectTransitionHasExplicitAuthority)
-                ) {
-                    revoke();
-                    return false;
-                }
-                if (transitionId < projectTransitionState.latestPrepared) {
-                    revoke();
-                    return false;
-                }
-                // Commit to preparing: claim the latest-prepared slot and join the
-                // in-flight count. Everything from here — the replay-authority
-                // reset and the collaboration teardown — runs inside one guarded
-                // region so that a throw anywhere (not just the awaited teardown)
-                // releases the count. The idempotent guard makes the release safe
-                // even though the success path deliberately keeps this transition
-                // counted until it activates.
-                projectTransitionState.latestPrepared = transitionId;
-                projectTransitionState.editRevocation += 1;
-                projectTransitionState.pendingEditReplacement = transitionId;
-                claimRevocableAuthority();
-                countedAsPreparing = true;
-                preparingProjectTransitionCount += 1;
-                try {
-                    await whenProjectIdentityTransitionDependenciesConfigured();
-                    resetActionReplayAuthority();
-                    await projectIdentityTransitionDependencies.leaveCollaborationSession();
-                    if (transitionId !== projectTransitionState.latestPrepared) {
-                        releasePreparingCount();
-                        settleEditReplacement();
-                        revoke();
-                        return false;
-                    }
-                    prepared = true;
-                    return true;
-                } catch (error) {
-                    releasePreparingCount();
-                    settleEditReplacement();
-                    revoke();
-                    throw error;
-                }
-            })();
-            return preparation;
+            ticket.preparation ??= prepareProjectTransition(transitionId, yieldToInFlight, ticket, revocation);
+            return ticket.preparation;
         },
         activate: () => {
             // Activation is the terminal event for a prepared transition, whether
             // it wins or is superseded: settle it out of the in-flight count.
-            releasePreparingCount();
-            if (activated) {
+            if (ticket.activated) {
                 return projectTransitionEpoch.isCurrent(transitionId);
             }
-            if (!prepared) {
+            if (!ticket.prepared || ticket.abandoned) {
                 return false;
             }
+            releasePreparingCount(ticket);
             if (
                 revocation.signal.aborted ||
                 transitionId < projectTransitionState.active ||
                 transitionId !== projectTransitionState.latestPrepared
             ) {
-                settleEditReplacement();
-                revoke();
+                settleEditReplacement(transitionId);
+                revokeProjectTransition(transitionId, revocation);
                 return false;
             }
             projectTransitionState.active = transitionId;
-            activated = true;
-            settleEditReplacement();
+            ticket.activated = true;
+            settleEditReplacement(transitionId);
 
             activeProjectTransitionHasExplicitAuthority = !yieldToInFlight;
             cancelPendingAudioBufferImport();
             return true;
         },
+        abandon: () => {
+            if (ticket.activated || ticket.abandoned) {
+                return;
+            }
+            ticket.abandoned = true;
+            revokeProjectTransition(transitionId, revocation);
+            // A held preparation can still resume after its I/O settles. Its
+            // pending owner stays closed until that continuation observes abandonment.
+            if (ticket.prepared) {
+                releasePreparingCount(ticket);
+                settleEditReplacement(transitionId);
+            }
+        },
         canActivate: () =>
+            !ticket.abandoned &&
             !revocation.signal.aborted &&
             transitionId >= projectTransitionState.active &&
             transitionId >= projectTransitionState.latestPrepared,
-        isCurrent: () => !revocation.signal.aborted && activated && projectTransitionEpoch.isCurrent(transitionId),
+        isCurrent: () =>
+            !revocation.signal.aborted && ticket.activated && projectTransitionEpoch.isCurrent(transitionId),
         signal: revocation.signal,
     };
 }

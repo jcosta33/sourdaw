@@ -61,6 +61,7 @@ import {
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import {
     loadProject,
+    newProject,
     runProjectLoadTransaction,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
@@ -788,6 +789,34 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         expect(audio.updateDevicePatch.mock.calls.at(-1)?.[2]?.cutoff).toBe(continuous.filterCutoff);
         expect(depth()).toBe(1);
         raf.mockRestore();
+    });
+
+    it('admits a fresh preset after a public New project is withdrawn during successful preparation', async () => {
+        const root = getCrdtDoc('root');
+        const stale = prepareFermenterPatchWrite({
+            deviceId: DEVICE_ID,
+            patch: patchNamed('Queued before withdrawn New', 1200),
+            label: 'Queued patch',
+        });
+        expect(stale?.isCurrent()).toBe(true);
+        let proceed = true;
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: async () => {
+                proceed = false;
+            },
+        });
+        await expect(newProject('Withdrawn', { shouldProceed: () => proceed })).resolves.toBe(false);
+        expect(getCrdtDoc('root')).toBe(root);
+        expect(stale?.isCurrent()).toBe(false);
+
+        const next = patchNamed('Fresh after withdrawn New', 1800);
+        expect(await commit(next)).toBe(true);
+        expect(committedPatch()).toEqual(next);
+        expect(depth()).toBe(1);
+        await act(() => undo());
+        expect(committedPatch()).toEqual(initialPatch);
+        await act(() => redo());
+        expect(committedPatch()).toEqual(next);
     });
 
     it('reconciles a pending parameter edit when a queued patch is refused by a revision change', async () => {
