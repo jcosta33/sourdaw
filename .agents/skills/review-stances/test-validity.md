@@ -32,7 +32,7 @@ release and provenance drift in `release-provenance-drift.md`.
    Admit the documented CLI under the real guard-owned `TMPDIR` on the target platform before
    crediting its cases. The server's `tsx --test` launcher (#1693) exceeded macOS's Unix socket path
    limit in guard storage and failed before collecting a case; `node --import tsx --test` retained
-   all 21 server cases. Restoring the CLI under that long guarded path must fail at admission;
+   the collaboration relay cases. Restoring the CLI under that long guarded path must fail at admission;
    the Node import route must execute the named spec. The missed probe was launcher admission;
    historical review draws are unknown.
    A dirty project name admitted only after an incidental autosave cleared its `Unsaved changes` status is the
