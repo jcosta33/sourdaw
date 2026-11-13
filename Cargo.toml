@@ -27,9 +27,11 @@ repository = "https://github.com/jcosta33/sourdaw"
 windows = "0.62.2"
 
 # Workspace lint policy. Every crate opts in with `[lints] workspace = true`.
-# A lint with zero violations is denied, so the PR clippy run fails on any new
-# one. The `warn` entries are the pending cleanup tracked in a follow-up
-# issue: shrink that list as sites are fixed, never grow it.
+# A lint with zero violations is denied. PR clippy enforces it on host-target
+# code only: Linux for every crate but sourdaw-native (health-gates-rust.sh),
+# macOS for sourdaw-native (native-macos). Windows-only and wasm32-only code is
+# not clippy-linted yet (#6528). The `warn` entries are pending cleanup tracked
+# in #6525: shrink that list as sites are fixed, never grow it.
 [workspace.lints.rust]
 unused = { level = "deny", priority = -1 }
 nonstandard_style = { level = "deny", priority = -1 }

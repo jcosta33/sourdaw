@@ -42,8 +42,10 @@ fi
 # `Cargo.toml`, which every crate opts into: a lint at `deny` there is an error
 # here, and a lint at `warn` is pending cleanup that reports without failing.
 # `-D warnings` is not set, so that table stays the single source of the
-# policy. `sourdaw-native` is excluded from this leg and linted by the
-# `native-macos` job in `validation.yml` under the same table.
+# policy. This leg lints Linux host-target code only; code behind
+# `cfg(windows)` or `cfg(target_arch = "wasm32")` is not clippy-linted here or
+# anywhere yet (#6528). `sourdaw-native` is excluded from this leg and linted
+# on its macOS host target by the `native-macos` job in `validation.yml`.
 #
 # `cargo fmt --check` runs first because it is the cheapest of the three and
 # needs no build at all. It was held back until the tree-wide reformat landed
