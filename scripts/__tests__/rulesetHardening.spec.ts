@@ -58,9 +58,8 @@ function statusChecks(overrides: FixtureOptions): JsonValue[] {
         return overrides.checks;
     }
     const pin = overrides.gateIntegrationId;
-    return (overrides.contexts ?? ['Gate']).map(
-        (context): JsonValue =>
-            context === 'Gate' && pin !== undefined ? { context, integration_id: pin } : { context }
+    return (overrides.contexts ?? ['Gate']).map((context): JsonValue =>
+        context === 'Gate' && pin !== undefined ? { context, integration_id: pin } : { context }
     );
 }
 
