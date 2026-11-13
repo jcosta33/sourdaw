@@ -1,0 +1,40 @@
+src/modules/Project/useCases/projectPersistence/__tests__/newProjectNativeHostAbsent.spec.ts
+  s_9307cedd8951f1::t_29603a63b936f5 89-120
+src/modules/Fermenter/useCases/readFermenterPatchOwner.ts
+  s_9307cedd8951f1::t_871c795a63fa06 4,8-9,12-20
+.agents/skills/review-stances/project-integrity.md
+  s_9307cedd8951f1::t_dbea77593ae10a 89-92
+  s_9307cedd8951f1::t_531a8ac4e6633f 87-88,93-95
+src/modules/Arrangement/useCases/device/__tests__/captureDevicePatchCommitValidation.spec.ts
+  s_9307cedd8951f1::t_86dec3984e1a16 10,51-57,63-73
+  s_9307cedd8951f1::t_8cd5ad4c47d3d5 58-62
+  s_9307cedd8951f1::t_62325d18658a0e 74-75
+src/modules/Arrangement/useCases/device/captureDevicePatchCommitValidation.ts
+  s_9307cedd8951f1::t_871c795a63fa06 35,38-42,53
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_9307cedd8951f1::t_29603a63b936f5 250-281
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_9307cedd8951f1::t_29603a63b936f5 350,352,355-357,359,362,371-376
+  s_9307cedd8951f1::t_ca14328a8e55c1 377
+src/modules/Fermenter/presentations/views/__tests__/fermenterPatchAuditionUndo.integration.spec.tsx
+  s_9307cedd8951f1::t_df2c935feaa350 1,541,544-547,553-556,577,580-588,591,593,606,611-613,617-619
+  s_9307cedd8951f1::t_8cd5ad4c47d3d5 532-540
+  s_9307cedd8951f1::t_923660bbaad56a 16,549-552,578-579,589-590,592
+  s_9307cedd8951f1::t_3235fbf0a42fba 542-543,548,571,576,598-605,607-610,614-616,620-644
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6b58b97887e3e315c85a0f139726f1b44269f209",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
