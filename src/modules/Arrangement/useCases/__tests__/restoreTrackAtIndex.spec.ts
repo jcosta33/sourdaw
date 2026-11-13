@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createTrack, type Track } from '../../models/Track';
+import { createTrack } from '../../models/Track';
 import { restoreTrackAtIndex } from '../restoreTrackAtIndex';
 
 const mocks = vi.hoisted(() => ({
