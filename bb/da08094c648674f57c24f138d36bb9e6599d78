@@ -1,0 +1,153 @@
+src/modules/AiRuntime/useCases/__tests__/briefFromRequest.spec.ts
+  s_ff124a0cf68412::t_8881d1d1cac77c 65-69,368,717,739-741,750-751
+src/modules/AiRuntime/useCases/__tests__/metricGoalWorkflowFixture.ts
+  s_ff124a0cf68412::t_a654d1d126410b 206-207,222,224,241,262-266
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_c2f4449c5891e9::t_b61c34cb9252ae 157,234
+src/modules/AiRuntime/useCases/__tests__/vibeRunInitialBaselines.spec.ts
+  s_ff124a0cf68412::t_aba40c8372519b 23,159-160,646-651
+src/modules/AiRuntime/useCases/__tests__/vibeRunProjectFixture.ts
+  s_e385c7e8f0ec1b::t_d8dba5cad6b3cf 41-49,196-197,201
+src/modules/AiRuntime/useCases/__tests__/vibeRunRealProject.spec.ts
+  s_ff124a0cf68412::t_9867d1b660293c 16,19,21,38,90-93,199,336
+src/modules/AiRuntime/useCases/__tests__/vibeRunRenderBudget.spec.ts
+  s_ff124a0cf68412::t_d6b60ac666d70c 19,22,26-27,43,122-126,129,203,208,227,315,370,511,580,592,607
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_c2f4449c5891e9::t_7cf8b708a47222 42,102
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeBatchPreviewProgress.ts
+  s_ff124a0cf68412::t_88fb15ef51f899 5,21,27
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeInitialMeasurementProgress.ts
+  s_ff124a0cf68412::t_5c39b5c651ea56 1-13
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeMeasurementRangeGroup.ts
+  s_ff124a0cf68412::t_ab9b034bcd095f 1-10
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_ff124a0cf68412::t_7903af2900ee98 43,52
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_ff124a0cf68412::t_2dc5dd2145d2ce 28,37,211-238,308
+src/modules/AiRuntime/useCases/artifactOf.ts
+  s_ff124a0cf68412::t_fb1acde27702d0 1-5
+src/modules/AiRuntime/useCases/boundedMeasurementWarnings.ts
+  s_ff124a0cf68412::t_8f8c75cb21c4de 1-8
+src/modules/AiRuntime/useCases/countMeasurementUnitWork.ts
+  s_ff124a0cf68412::t_b31f973eb57ee6 1-32
+src/modules/AiRuntime/useCases/countMeasurementWork.ts
+  s_ff124a0cf68412::t_ee6d0b972eb065 1-15
+src/modules/AiRuntime/useCases/executeAnalysisMeasure.ts
+  s_ff124a0cf68412::t_475bf3248d64d4 2,8-9,11
+src/modules/AiRuntime/useCases/executePreviewMeasurement.ts
+  s_ff124a0cf68412::t_fa79da85ac27d9 24,28-29,31-32,68
+src/modules/AiRuntime/useCases/measurePreviewTarget.ts
+  s_ff124a0cf68412::t_b729c538746370 1-55
+src/modules/AiRuntime/useCases/measurePreviewUnit.ts
+  s_ff124a0cf68412::t_5c7d29536e7f5f 15,18,20-27,164-250,260-262,317-319,324,330-334
+src/modules/AiRuntime/useCases/measureProjectScope.ts
+  s_ff124a0cf68412::t_e036c762572b7e 14,16,18
+src/modules/AiRuntime/useCases/measureProjectUnit.ts
+  s_ff124a0cf68412::t_8364007fccee42 7-12,14,33-37,39,58-79,90-92,134-137,152
+src/modules/AiRuntime/useCases/measuredPreviewRead.ts
+  s_ff124a0cf68412::t_0f50768055c2b8 1-129
+src/modules/AiRuntime/useCases/measurementFailureReceipt.ts
+  s_ff124a0cf68412::t_b01726ea4a9b94 1-23
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_ff124a0cf68412::t_c8ede8f7a2b76e 122
+src/modules/AiRuntime/useCases/planMetricMeasurementRequests.ts
+  s_ff124a0cf68412::t_2cec6cc1f652f5 6-19
+src/modules/AiRuntime/useCases/planMetricMeasurementUnits.ts
+  s_ff124a0cf68412::t_088ae0d7eb9440 1-111
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  s_ff124a0cf68412::t_d99e6100ca5397 22,27-28,32-34,271-299,368,472
+src/modules/AiRuntime/useCases/previewFailure.ts
+  s_ff124a0cf68412::t_b52a07d8b95664 1-19
+src/modules/AiRuntime/useCases/previewRefusalFailure.ts
+  s_ff124a0cf68412::t_b10f174daf739f 1-47
+src/modules/AiRuntime/useCases/projectMeasurementReceipt.ts
+  s_ff124a0cf68412::t_7f8229b2c21db5 1-40
+src/modules/AiRuntime/useCases/projectRefusalFailure.ts
+  s_ff124a0cf68412::t_7a2069ad509364 1-36
+src/modules/AiRuntime/useCases/readApplicationVerificationReceiptLimits.ts
+  s_9307cedd8951f1::t_7ff5137ee9982d 1-26
+src/modules/AiRuntime/useCases/readGroupPrefixes.ts
+  s_ff124a0cf68412::t_24b1941a61cd73 1-20
+src/modules/AiRuntime/useCases/readMeasurementUnitCall.ts
+  s_ff124a0cf68412::t_71a63f3344d97e 1-34
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_ff124a0cf68412::t_b074083835eeb0 17,447-455,489
+src/modules/AiRuntime/useCases/resolveMeasuredRange.ts
+  s_ff124a0cf68412::t_b6628f108b495b 1-46
+src/modules/AiRuntime/useCases/vibeRun/collectVibeRunInitialBaselines.ts
+  s_ff124a0cf68412::t_564d71c56bd21b 14,16,18-21
+src/modules/AiRuntime/useCases/vibeRun/readVibeRunFitRefusals.ts
+  s_ff124a0cf68412::t_ef70bdd4b335ac 14,18-19
+src/modules/AiRuntime/validators/readScheduledVibeRunPlan.ts
+  s_ff124a0cf68412::t_51e311d7dffe3b 270-272,367,373-374,402,531-548,555-561
+src/modules/AudioEngine/useCases/offlineRender/__tests__/readOfflineAdjustmentRenderClass.spec.ts
+  s_ff124a0cf68412::t_8245dc9e5ebc4b 12-14
+src/modules/AudioEngine/useCases/offlineRender/buildOfflineWebAudioGraph.ts
+  s_ff124a0cf68412::t_3fa02bd86c29c0 14,17
+src/modules/AudioEngine/useCases/offlineRender/conservativeSpanEndBeat.ts
+  s_ff124a0cf68412::t_af21d3fdfd419b 1-16
+src/modules/AudioEngine/useCases/offlineRender/readAdjustmentLayerConstancyThresholds.ts
+  s_ff124a0cf68412::t_eef092e9c7795b 1-35
+src/modules/AudioEngine/useCases/offlineRender/readOfflineAdjustmentRenderClass.ts
+  s_ff124a0cf68412::t_3146ff5afc57c5 6-7
+src/modules/AudioRendering/useCases/__tests__/cutAgentMeasurementWindow.spec.ts
+  s_ff124a0cf68412::t_cdf1e3d0219f8a 12-13
+src/modules/AudioRendering/useCases/cutAgentMeasurementWindow.ts
+  s_ff124a0cf68412::t_63e6bb47fb0639 1,28-32
+src/modules/AudioRendering/useCases/index.ts
+  s_ff124a0cf68412::t_559408be160fa1 16-19
+src/modules/AudioRendering/useCases/readAgentMeasurementSpan.ts
+  s_ff124a0cf68412::t_44a97062213d47 1-9
+src/modules/AudioRendering/useCases/readAgentMeasurementTimeline.ts
+  s_ff124a0cf68412::t_8c16ce211407ca 1-8
+src/modules/AudioRendering/useCases/renderAgentMeasurementScope.ts
+  s_ff124a0cf68412::t_d908a01357054d 1-6,24
+src/modules/AudioRendering/useCases/renderAgentMeasurementTargets.ts
+  s_ff124a0cf68412::t_c528d16b115a37 17
+src/modules/AudioRendering/useCases/renderAgentMeasurementWindows.ts
+  s_ff124a0cf68412::t_ed3583390cfc96 1-85
+src/modules/AudioRendering/useCases/renderAgentPreviewMeasurementScope.ts
+  s_ff124a0cf68412::t_cd91a07633ccd2 2-9
+src/modules/AudioRendering/useCases/renderAgentPreviewMeasurementWindows.ts
+  s_ff124a0cf68412::t_f779da3fd61784 1-434
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bbda08094c648674f57c24f138d36bb9e6599d78",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_c2f4449c5891e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7817afe8-15e0-436f-b304-529241ac1a61",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_e385c7e8f0ec1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d20b-16d6-7491-871b-902fdaef401b",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ff124a0cf68412": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5859629c-45b4-4907-85a7-756af720dd80",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
