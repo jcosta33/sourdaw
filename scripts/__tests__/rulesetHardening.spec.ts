@@ -155,6 +155,8 @@ type FakePort = {
     writes: { rulesetId: number; ruleset: RulesetDocument }[];
     reads: number[];
     logs: string[];
+    /** Every log line and every write (as `write:<id>`) in the order the port saw them. */
+    trail: string[];
 };
 
 /**
@@ -169,6 +171,7 @@ function fakePort(
     const writes: { rulesetId: number; ruleset: RulesetDocument }[] = [];
     const reads: number[] = [];
     const logs: string[] = [];
+    const trail: string[] = [];
     const answers = [live, beforeWrite];
     return {
         port: {
@@ -179,14 +182,17 @@ function fakePort(
             },
             writeRuleset: (rulesetId, ruleset) => {
                 writes.push({ rulesetId, ruleset });
+                trail.push(`write:${String(rulesetId)}`);
             },
             log: (message) => {
                 logs.push(message);
+                trail.push(message);
             },
         },
         writes,
         reads,
         logs,
+        trail,
     };
 }
 
@@ -630,7 +636,7 @@ describe('writableRuleset', () => {
 describe('hardenRuleset', () => {
     it('should write once with only the Gate pin changed, then read back', () => {
         const live = liveShape();
-        const { port, writes, reads, logs } = fakePort(live, hardenedShape());
+        const { port, writes, reads, trail } = fakePort(live, hardenedShape());
         const receipt = hardenRuleset(true, port);
         expect(receipt).toEqual({
             rulesetId: RULESET_ID,
@@ -642,19 +648,21 @@ describe('hardenRuleset', () => {
         expect(writes[0]).toEqual({ rulesetId: RULESET_ID, ruleset: hardenedShape() });
         expect(rulesetDifferences(live, writes[0]?.ruleset ?? {})).toEqual([GATE_PIN_PATH]);
         expect(reads).toEqual([RULESET_ID, RULESET_ID, RULESET_ID]);
-        expect(logs).toEqual([
+        expect(trail).toEqual([
             `ruleset-rollback:${String(RULESET_ID)}:${captureRollback(live)}`,
+            `write:${String(RULESET_ID)}`,
             `ruleset-hardening:${String(RULESET_ID)}:applied:gate_integration_id`,
         ]);
     });
 
     it('should write once with the review count at 1 when only the count is short', () => {
         const live = countUnsatisfiedShape();
-        const { port, writes, logs } = fakePort(live, hardenedShape());
+        const { port, writes, trail } = fakePort(live, hardenedShape());
         expect(hardenRuleset(true, port).changed).toEqual(['required_approving_review_count']);
         expect(writes[0]?.ruleset).toEqual(hardenedShape());
-        expect(logs).toEqual([
+        expect(trail).toEqual([
             `ruleset-rollback:${String(RULESET_ID)}:${captureRollback(live)}`,
+            `write:${String(RULESET_ID)}`,
             `ruleset-hardening:${String(RULESET_ID)}:applied:required_approving_review_count`,
         ]);
     });
