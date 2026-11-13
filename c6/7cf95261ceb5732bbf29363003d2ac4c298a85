@@ -1,0 +1,121 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_72d11c8b9829ac::t_6163ea52d3e549 1609
+  s_72d11c8b9829ac::t_224353a74210f2 1608,1610
+  s_72d11c8b9829ac::t_e68d48e1ffb5c9 1645
+  s_72d11c8b9829ac::t_9e604020c9052d 1601
+crates/sourdaw-native/src/commands/speech.rs
+  s_72d11c8b9829ac::t_c454cc82f7ca03 1076,1079
+  s_72d11c8b9829ac::t_8feb16cf3fdaed 1099,1102
+.github/workflows/validation.yml
+  s_72d11c8b9829ac::t_c1d10c57bd7767 844-848
+crates/daw-dsp/src/crumbs/modes/slice.rs
+  s_72d11c8b9829ac::t_8e2e7032f98f2e 178
+crates/sourdaw-native/src/commands/provider_gateway.rs
+  s_72d11c8b9829ac::t_a95b99727b0756 382
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_72d11c8b9829ac::t_fafdad1fa9eb70 1525
+crates/daw-dsp/src/grinder/nam/mod.rs
+  s_72d11c8b9829ac::t_d8f7d507520f2d 355-356
+crates/sourdaw-native/Cargo.toml
+  s_72d11c8b9829ac::t_900b7d9a6709a8 80-82
+crates/sourdaw-harness-tone/Cargo.toml
+  s_72d11c8b9829ac::t_900b7d9a6709a8 25-27
+crates/daw-engine/Cargo.toml
+  s_72d11c8b9829ac::t_900b7d9a6709a8 60-62
+crates/daw-plugin-host/Cargo.toml
+  s_72d11c8b9829ac::t_900b7d9a6709a8 45-47
+crates/proof-chamber/Cargo.toml
+  s_72d11c8b9829ac::t_900b7d9a6709a8 27-29
+crates/daw-engine/src/midi/midi_clock.rs
+  s_72d11c8b9829ac::t_dc829688cd62dc 290
+crates/proof-chamber/tests/algorithm_wire_contract.rs
+  s_72d11c8b9829ac::t_e845d2de92f5bf 16
+crates/daw-dsp/src/toaster/engines/clap_909.rs
+  s_72d11c8b9829ac::t_d79d267f3a5f12 136
+  s_72d11c8b9829ac::t_711f7e4aaabf9a 156-157
+crates/daw-dsp/tests/bacteria_mid_side_alignment.rs
+  s_72d11c8b9829ac::t_19d1762fd01d78 488,513
+crates/daw-dsp/tests/quantum_bench_census.rs
+  s_72d11c8b9829ac::t_36dbc1c4cd03be 376-380
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_72d11c8b9829ac::t_2c09ed162637a6 2232
+  s_72d11c8b9829ac::t_c9d378c17ac1e0 2172
+  s_72d11c8b9829ac::t_db5b25506510f8 2272
+crates/proof-chamber/src/convolution.rs
+  s_72d11c8b9829ac::t_a65d2084f74ddd 593
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_72d11c8b9829ac::t_d2cc797a0e71cc 3062-3116
+crates/daw-collab/Cargo.toml
+  s_72d11c8b9829ac::t_900b7d9a6709a8 21-23
+crates/sourdaw-native/src/commands/plugins.rs
+  s_72d11c8b9829ac::t_c1c87682e40cda 1402
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_72d11c8b9829ac::t_58deed1b298d75 1168-1174,3105-3108
+crates/daw-wasm-decoder/Cargo.toml
+  s_72d11c8b9829ac::t_900b7d9a6709a8 23-25
+crates/daw-dsp/Cargo.toml
+  s_72d11c8b9829ac::t_900b7d9a6709a8 41-43
+crates/scoring/Cargo.toml
+  s_72d11c8b9829ac::t_900b7d9a6709a8 29-31
+clippy.toml
+  s_72d11c8b9829ac::t_900b7d9a6709a8 1-3
+crates/daw-dsp/src/grinder/tone_stack.rs
+  s_72d11c8b9829ac::t_15059d62195e80 206
+crates/daw-engine/src/scheduler.rs
+  s_72d11c8b9829ac::t_f6c4365d3fb6e1 21308
+  s_72d11c8b9829ac::t_b5879e335492f2 6645
+  s_72d11c8b9829ac::t_626f1267320a94 5121-5124,5135-5138
+crates/sourdaw-native/src/host/plugin_host_requests.rs
+  s_72d11c8b9829ac::t_9d8189cba0f3e0 341-342
+crates/daw-io/src/audio_decode.rs
+  s_72d11c8b9829ac::t_d86fda35e4b4e9 1012
+crates/daw-core/Cargo.toml
+  s_72d11c8b9829ac::t_900b7d9a6709a8 15-17
+.github/workflows/cargo-dependency-seed.yml
+  s_72d11c8b9829ac::t_069d3f9a9f6e94 100-102
+scripts/healthGateWorkflowContract.ts
+  s_72d11c8b9829ac::t_d6669f68e8facb 91
+crates/daw-dsp/src/crumbs/analysis/onset.rs
+  s_72d11c8b9829ac::t_2de0c32d79f942 296
+crates/daw-plugin-host/src/scanner.rs
+  s_72d11c8b9829ac::t_6163ea52d3e549 664-665
+  s_72d11c8b9829ac::t_2dce625ec0adf4 666-667
+  s_72d11c8b9829ac::t_9375d61a9ca287 1585,1590
+Cargo.toml
+  s_72d11c8b9829ac::t_3e8a5aa6bff9a5 58
+  s_72d11c8b9829ac::t_20b8ebe38c8140 29-37,39-57,59-72,74-82
+  s_72d11c8b9829ac::t_c6fcd356d974f1 38
+  s_72d11c8b9829ac::t_69fe371af55b41 73
+crates/daw-dsp/src/crumbs/analysis/peaks.rs
+  s_72d11c8b9829ac::t_9d90f3bc87954e 52
+crates/daw-io/Cargo.toml
+  s_72d11c8b9829ac::t_900b7d9a6709a8 16-18
+crates/daw-plugin-host/src/vst3_module.rs
+  s_72d11c8b9829ac::t_8806c6d917f863 253
+crates/daw-collab/src/document_store.rs
+  s_72d11c8b9829ac::t_4e4eaab47a7fd6 152-155
+crates/daw-dsp/src/toaster/engines/perc.rs
+  s_72d11c8b9829ac::t_8988562e3d2046 146
+crates/daw-dsp/src/toaster/engines/clap.rs
+  s_72d11c8b9829ac::t_6163ea52d3e549 86-97
+crates/daw-dsp/src/bacteria/engine.rs
+  s_72d11c8b9829ac::t_725c4713447fe0 1436-1437
+scripts/health-gates-rust.sh
+  s_72d11c8b9829ac::t_09dbf5bf532b58 41-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c67cf95261ceb5732bbf29363003d2ac4c298a85",
+  "prompts": {},
+  "sessions": {
+    "s_72d11c8b9829ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19ed595a-e044-4bc4-a50d-610b24c75b56",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
