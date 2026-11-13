@@ -1,7 +1,10 @@
+import { type AdoptedRecipe } from '../../models/AdoptedRecipe';
 import { type MetricGoalEvaluation } from '../../models/MetricGoalAdmission';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ScheduledVibeRunBatch, type VibeRunExpectedDelta } from '../../models/VibeRunPlan';
 
+import { type VibeBatchValueChoice } from './chooseVibeBatchValues';
+import { describeCatalogueDefaultsReason, describeRecipeValueSource } from './describeRecipeValueSource';
 import { describeVibeRunObjective } from './describeVibeRunObjective';
 import { formatVibeFigure } from './formatVibeFigure';
 import { readVibeMetricLabel } from './readVibeMetricLabel';
@@ -23,8 +26,18 @@ export function describeVibeBatchCard(input: {
     batch: ScheduledVibeRunBatch;
     context: Pick<ProjectContext, 'tracks'>;
     criteria: readonly Criterion[];
+    adoptedRecipes: readonly AdoptedRecipe[];
+    valueChoice: VibeBatchValueChoice;
 }): string[] {
     const lines = [`Objective: ${describeVibeRunObjective(input.batch)}.`];
+    for (const recipe of input.adoptedRecipes) {
+        const source = describeRecipeValueSource(recipe);
+        const line = `Recipe: ${recipe.title} on ${readVibeTargetName(input.context, recipe.targetId)}`;
+        lines.push(source === null ? `${line}.` : `${line} — ${source}.`);
+    }
+    if (input.valueChoice.source === 'catalogue-defaults') {
+        lines.push(describeCatalogueDefaultsReason(input.valueChoice.reason, input.valueChoice.detail));
+    }
     for (const target of input.batch.targets) {
         const expected = target.expectedDeltas
             .map((delta) => `${readVibeMetricLabel(delta.metric, delta.band)} ${DIRECTION_WORDS[delta.direction]}`)

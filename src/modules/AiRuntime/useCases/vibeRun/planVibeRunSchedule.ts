@@ -35,12 +35,14 @@ import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
 import { readArrangementRange } from '../readArrangementRange';
 import { type readBriefMixIntent } from '../readBriefMixIntent';
 
+import { isHostedValueChoiceChain } from './chooseVibeBatchValues';
 import { collectVibeRunInitialBaselines } from './collectVibeRunInitialBaselines';
 import { describeVibeRunObjective } from './describeVibeRunObjective';
 import { formatVibeFigure } from './formatVibeFigure';
 import { readVibeBatchRecipeGoals } from './readVibeBatchRecipeGoals';
 import { readVibeMetricLabel } from './readVibeMetricLabel';
 import { readVibeRunFitRefusals } from './readVibeRunFitRefusals';
+import { describeVibeRunValueChoiceCalls, readVibeRunValueChoiceFit } from './readVibeRunValueChoiceFit';
 
 type VibeRunSchedule = Extract<NonNullable<IntentResult['batchSchedule']>, { kind: 'vibe-run' }>;
 
@@ -483,6 +485,14 @@ function completeMeasuredSchedule(input: {
             receipts: input.collected.receipts,
         };
     }
+    const valueChoice = readValueChoiceFit(input.source, plan, input.catalog);
+    if (valueChoice.status === 'refused') {
+        return {
+            status: 'unscheduled',
+            lines: [`No batches were scheduled after the brief: ${valueChoice.reason}.`],
+            receipts: input.collected.receipts,
+        };
+    }
     const schedule = buildSchedule(plan, input.reading);
     return {
         status: 'scheduled',
@@ -495,11 +505,36 @@ function completeMeasuredSchedule(input: {
                 context: input.source.context,
                 total: schedule.total,
             }),
+            ...valueChoice.lines,
             ...evidence.lines,
             ...input.collected.receipts.flatMap((receipt) => receipt.warnings),
             'Initial figures are historical and do not authorize a batch.',
         ],
     };
+}
+
+/**
+ * On a hosted chain every batch asks the provider for its recipe values, so the run must afford a
+ * request and its one correction for every batch before it is scheduled, and the card says how many
+ * calls that is. A local chain asks nothing and counts nothing.
+ */
+function readValueChoiceFit(
+    input: ScheduleInput,
+    plan: MeasuredScheduledVibeRunPlan,
+    catalog: Catalog
+): { status: 'fits'; lines: string[] } | { status: 'refused'; reason: string } {
+    if (!isHostedValueChoiceChain()) {
+        return { status: 'fits', lines: [] };
+    }
+    const run = agentRunLifecycle.get(input.runId);
+    if (run === null) {
+        return { status: 'refused', reason: 'this run no longer exists' };
+    }
+    const fit = readVibeRunValueChoiceFit({ plan, catalog, context: input.context, budgets: run.budgets });
+    if (fit.refusal !== null) {
+        return { status: 'refused', reason: fit.refusal };
+    }
+    return { status: 'fits', lines: [describeVibeRunValueChoiceCalls(fit.calls)] };
 }
 
 function readWholeRunFit(

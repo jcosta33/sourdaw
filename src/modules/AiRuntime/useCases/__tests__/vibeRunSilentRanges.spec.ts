@@ -63,6 +63,9 @@ const CHORUS_START = 2;
 
 const COMPLETE_RUN_TIMEOUT_MS = 15_000;
 
+/** A batch grounded straight from its plan, as a local backend grounds it: every recipe at its defaults. */
+const LOCAL_DEFAULTS = { source: 'catalogue-defaults', reason: 'local-backend', detail: '' } as const;
+
 const runtimeMocks = vi.hoisted(() => ({ backend: { value: 'cloud' } }));
 
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
@@ -681,14 +684,14 @@ describe('a vibe run around silent verification ranges', () => {
         });
         const { run, schedule } = requireSchedule(brief);
         const plan = measuredPlan(brief);
-        expect(groundVibeRunBatch(run, schedule, 2)).toMatchObject({ status: 'grounded' });
+        expect(groundVibeRunBatch(run, schedule, 2, LOCAL_DEFAULTS)).toMatchObject({ status: 'grounded' });
         const stale = {
             ...plan,
             batches: plan.batches.map((batch) =>
                 withSilentRanges(batch, (record) => ({ ...record, receiptDigest: 'stale' }))
             ),
         };
-        expect(groundVibeRunBatch(run, { ...schedule, serializedPlan: resealed(stale) }, 2)).toEqual({
+        expect(groundVibeRunBatch(run, { ...schedule, serializedPlan: resealed(stale) }, 2, LOCAL_DEFAULTS)).toEqual({
             status: 'rejected',
             reason: 'its stored plan could not be read back',
         });
@@ -708,7 +711,9 @@ describe('a vibe run around silent verification ranges', () => {
             ...plan,
             initial: { ...plan.initial, catalogVersion: plan.initial.catalogVersion + 1 },
         };
-        expect(groundVibeRunBatch(run, { ...schedule, serializedPlan: resealed(newerCatalogue) }, 2)).toEqual({
+        expect(
+            groundVibeRunBatch(run, { ...schedule, serializedPlan: resealed(newerCatalogue) }, 2, LOCAL_DEFAULTS)
+        ).toEqual({
             status: 'rejected',
             reason: 'its recipe catalog changed since initial measurement',
         });
@@ -719,7 +724,7 @@ describe('a vibe run around silent verification ranges', () => {
         landProjectEdit(() =>
             trackStore.set({ ...tracks, tracks: tracks.tracks.filter((track) => track.id !== DRUMS_ID) })
         );
-        expect(groundVibeRunBatch(run, schedule, 2)).toEqual({
+        expect(groundVibeRunBatch(run, schedule, 2, LOCAL_DEFAULTS)).toEqual({
             status: 'rejected',
             // The plan's frozen role table sees the removal before the live target check does.
             reason: `target ${DRUMS_ID} changed role since initial measurement`,

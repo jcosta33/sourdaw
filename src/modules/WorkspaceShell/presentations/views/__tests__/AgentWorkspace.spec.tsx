@@ -868,8 +868,15 @@ describe('AgentWorkspace', () => {
                         title: 'Chest-register lift with a softened upper shelf',
                         targetId: 'track-lead',
                         targetName: 'Lead Vocal',
+                        valueSourceLabel: null,
                     },
-                    { recipeId: 'drums-punchy', title: 'Transient lift', targetId: 'track-gone', targetName: null },
+                    {
+                        recipeId: 'drums-punchy',
+                        title: 'Transient lift',
+                        targetId: 'track-gone',
+                        targetName: null,
+                        valueSourceLabel: null,
+                    },
                 ],
             })
         );
@@ -878,8 +885,48 @@ describe('AgentWorkspace', () => {
 
         const recipes = within(screen.getByRole('list', { name: 'Adopted recipes' })).getAllByRole('listitem');
         expect(recipes).toHaveLength(2);
-        expect(recipes[0]).toHaveTextContent('Recipe: Chest-register lift with a softened upper shelf on Lead Vocal');
-        expect(recipes[1]).toHaveTextContent('Recipe: Transient lift on a track no longer in the project');
+        expect(recipes[0]).toHaveTextContent(
+            /^Recipe: Chest-register lift with a softened upper shelf on Lead Vocal$/u
+        );
+        expect(recipes[1]).toHaveTextContent(/^Recipe: Transient lift on a track no longer in the project$/u);
+    });
+
+    // Red when a vibe batch's recipe line stops saying whether its values came from measurements or defaults.
+    it('says on each vibe batch recipe line whether its values were chosen from measurements or kept at defaults', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                recipes: [
+                    {
+                        recipeId: 'vocal-warm',
+                        title: 'Chest-register lift',
+                        targetId: 'track-lead',
+                        targetName: 'Lead Vocal',
+                        valueSource: 'measurements',
+                        valueSourceLabel: 'values chosen from measurements',
+                    },
+                    {
+                        recipeId: 'bass-warm',
+                        title: 'Low shelf lift',
+                        targetId: 'track-bass',
+                        targetName: 'Bass',
+                        valueSource: 'catalogue-defaults',
+                        valueSourceLabel: 'catalogue defaults',
+                    },
+                ],
+            })
+        );
+
+        render(<AgentWorkspace />);
+
+        const recipes = within(screen.getByRole('list', { name: 'Adopted recipes' })).getAllByRole('listitem');
+        expect(recipes.map((recipe) => recipe.textContent)).toEqual([
+            'Recipe: Chest-register lift on Lead Vocal — values chosen from measurements',
+            'Recipe: Low shelf lift on Bass — catalogue defaults',
+        ]);
     });
 
     it('says which batch of a larger request a proposal is, and says nothing for a single batch', () => {

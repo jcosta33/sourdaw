@@ -57,6 +57,9 @@ import { generateAnthropicToolCalls } from '../../repositories/cloudLlm/cloudInf
 import { generateOpenAiCompatibleToolCalls } from '../../repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
 import { generateOpenAiResponsesToolCalls } from '../../repositories/cloudLlm/cloudInference/generateOpenAiResponsesToolCalls';
 import { AUTO_TOOL_CHOICE } from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
+import { requestAnthropicStream } from '../../repositories/cloudLlm/cloudInference/requestAnthropicStream';
+import { streamOpenAiCompatibleChatCompletion } from '../../repositories/cloudLlm/cloudInference/streamOpenAiCompatibleChatCompletion';
+import { streamOpenAiResponses } from '../../repositories/cloudLlm/cloudInference/streamOpenAiResponses';
 import {
     type AnthropicCloudRuntime,
     type OpenAiCloudRuntime,
@@ -81,6 +84,8 @@ import { getProviderRouteView } from '../getProviderRouteView';
 import { generateToolPlanningOutcome, type ProviderAttemptAdmission } from '../llmOrchestration/inference';
 import { planPromptActions } from '../planPromptActions';
 import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
+import { VIBE_BATCH_VALUE_TOOLS, type VibeBatchValueRequest } from '../vibeRun/buildVibeBatchValueRequest';
+import { buildVibeBatchCorrectionMessage } from '../vibeRun/chooseVibeBatchValues';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -1529,5 +1534,175 @@ describe('no sample data reaches a hosted provider', () => {
         const [poisonedOnWire] = receiptsOn(JSON.stringify(poisoned));
         expect(cleanOnWire && measurementEntriesAreScalarsOrBandRecords(cleanOnWire)).toBe(true);
         expect(poisonedOnWire && measurementEntriesAreScalarsOrBandRecords(poisonedOnWire)).toBe(false);
+    });
+});
+
+/** A vibe batch's value request as its builder shapes it: baseline figures and windows, one pair per target. */
+function valueRequest(figure: unknown): VibeBatchValueRequest {
+    const parameters = [
+        { step: 0, deviceType: 'builtin-eq', paramId: 'eq-low-gain', minimum: 2, maximum: 4, catalogueDefault: 3 },
+    ];
+    return {
+        pairs: [{ targetId: 'drums', recipeId: 'drums-warm', parameters }],
+        systemPrompt: 'Choose recipe parameter values inside their windows.',
+        userMessage: JSON.stringify({
+            batch: { id: 'batch-1', descriptors: ['warm'], role: 'drums' },
+            ranges: [{ range: 'arrangement', startBeat: 0, endBeat: 8 }],
+            pairs: [
+                {
+                    targetId: 'drums',
+                    targetName: 'Drums',
+                    role: 'drums',
+                    recipeId: 'drums-warm',
+                    recipeTitle: 'Shell weight lifted',
+                    descriptor: 'warm',
+                    baselines: [
+                        {
+                            metric: 'frequencyBandEnergy',
+                            band: 'bass',
+                            expected: 'increase',
+                            unit: 'ratio',
+                            figures: { arrangement: figure },
+                        },
+                    ],
+                    parameters,
+                },
+            ],
+        }),
+        tools: VIBE_BATCH_VALUE_TOOLS,
+        maxOutputTokens: 1_200,
+    };
+}
+
+/** What each hosted dialect puts on the wire for a value request and for its correction. */
+async function buildValueWireBodies(request: VibeBatchValueRequest): Promise<WireBodies[]> {
+    const correction = buildVibeBatchCorrectionMessage(
+        request,
+        [{ name: 'recipeValues.choose', arguments: { choices: [] } }],
+        'choices is missing drums-warm on drums'
+    );
+    const bodies: WireBodies[] = [];
+    for (const userMessage of [request.userMessage, correction]) {
+        const sent: string[] = [];
+        const reply = (wire: { body: string; onBodyChunk: (chunk: Uint8Array) => void }) => {
+            sent.push(wire.body);
+            wire.onBodyChunk(new TextEncoder().encode('{}'));
+            return Promise.resolve({ status: 200, contentType: 'application/json' });
+        };
+        requestAnthropic.mockImplementation(reply);
+        requestOpenAiResponses.mockImplementation(reply);
+        const turn = {
+            systemPrompt: request.systemPrompt,
+            userMessage,
+            toolSchemas: [...request.tools],
+            maxOutputTokens: request.maxOutputTokens,
+            directive: {
+                mode: 'required' as const,
+                toolNames: request.tools.map((tool) => tool.function.name),
+                parallelToolCalls: false,
+            },
+            history: [],
+            budgetNote: '',
+        };
+        await generateAnthropicToolCalls({
+            ...turn,
+            runtime: anthropicRuntime,
+            signal: new AbortController().signal,
+        }).catch(() => undefined);
+        await generateOpenAiResponsesToolCalls({ ...turn, runtime: openAiRuntime }).catch(() => undefined);
+        await generateOpenAiCompatibleToolCalls({ ...turn, runtime: compatibleRuntime }).catch(() => undefined);
+        const [anthropic, openAiResponses, openAiCompatible] = sent.map((body) => JSON.parse(body) as unknown);
+        bodies.push({ anthropic, openAiResponses, openAiCompatible });
+    }
+    return bodies;
+}
+
+describe('no sample data reaches a hosted provider through a vibe batch value request', () => {
+    const DIALECTS = ['anthropic', 'openAiResponses', 'openAiCompatible'] as const;
+
+    // Red when a value request or its correction starts carrying samples, a buffer or a blob to the wire.
+    it.each(DIALECTS)('sends the %s value request and its correction holding figures only', async (dialect) => {
+        const bodies = await buildValueWireBodies(valueRequest(0.42));
+
+        expect(bodies).toHaveLength(2);
+        for (const body of bodies) {
+            expect(JSON.stringify(body[dialect])).toContain('frequencyBandEnergy');
+            expect(containsSampleData(body[dialect])).toBe(false);
+        }
+    });
+
+    // Red when the detector stops flagging a baseline that carries a sample series in place of its figure.
+    it.each(DIALECTS)('flags the %s value request whose baseline carries a 1024-sample array', async (dialect) => {
+        const samples = Array.from({ length: 1_024 }, (_unused, index) => Math.sin(index));
+
+        const bodies = await buildValueWireBodies(valueRequest(samples));
+
+        expect(bodies.map((body) => containsSampleData(body[dialect]))).toEqual([true, true]);
+    });
+});
+
+type StreamBodies = { anthropic: unknown; openAiResponses: unknown; openAiCompatible: unknown };
+
+/** What each streaming chat adapter puts on the wire for one system and one user message. */
+async function buildStreamBodies(userContent: string): Promise<StreamBodies> {
+    const sent: string[] = [];
+    const reply = (wire: { body: string; onBodyChunk: (chunk: Uint8Array) => void }) => {
+        sent.push(wire.body);
+        wire.onBodyChunk(new TextEncoder().encode(''));
+        return Promise.resolve({ status: 200, contentType: 'text/event-stream' });
+    };
+    requestAnthropic.mockImplementation(reply);
+    requestOpenAiResponses.mockImplementation(reply);
+    const messages = [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: userContent },
+    ];
+    const signal = new AbortController().signal;
+    await requestAnthropicStream({
+        sessionId: anthropicRuntime.session_id,
+        model: anthropicRuntime.model,
+        system: 'system',
+        messages: [{ role: 'user', content: userContent }],
+        maxTokens: 1_024,
+        thinking: null,
+        signal,
+        onEvent: () => undefined,
+    }).catch(() => undefined);
+    await streamOpenAiResponses({ runtime: openAiRuntime, messages, onToken: () => undefined, signal }).catch(
+        () => undefined
+    );
+    await streamOpenAiCompatibleChatCompletion({
+        runtime: compatibleRuntime,
+        messages,
+        onToken: () => undefined,
+        signal,
+    }).catch(() => undefined);
+    const [anthropic, openAiResponses, openAiCompatible] = sent.map((body) => JSON.parse(body) as unknown);
+    return { anthropic, openAiResponses, openAiCompatible };
+}
+
+describe('no sample data reaches a hosted provider through a streaming chat request', () => {
+    const DIALECTS = ['anthropic', 'openAiResponses', 'openAiCompatible'] as const;
+
+    // Red when a streaming body starts carrying samples beside a chat turn that holds measured figures.
+    it.each(DIALECTS)('sends the %s stream holding the chat text and figures only', async (dialect) => {
+        const receipt = await measurementReceipt('project', 'measure-1');
+
+        const bodies = await buildStreamBodies(JSON.stringify({ question: 'how loud is it', receipt }));
+
+        expect(bodies[dialect]).toBeDefined();
+        expect(containsSampleData(bodies[dialect])).toBe(false);
+    });
+
+    // Red when the detector stops flagging a streaming body whose chat turn carries a sample series.
+    it.each(DIALECTS)('flags the %s stream whose chat turn carries a 1024-sample array', async (dialect) => {
+        const receipt = await measurementReceipt('project', 'measure-1');
+        const samples = Array.from({ length: 1_024 }, (_unused, index) => Math.sin(index));
+
+        const bodies = await buildStreamBodies(
+            JSON.stringify({ question: 'how loud is it', receipt: withTargetField(receipt, { levels: samples }) })
+        );
+
+        expect(containsSampleData(bodies[dialect])).toBe(true);
     });
 });

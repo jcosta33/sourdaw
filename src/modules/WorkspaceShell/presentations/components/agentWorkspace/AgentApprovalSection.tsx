@@ -203,7 +203,7 @@ function renderRecipes(recipes: AgentApprovalView['recipes']): ReactElement | nu
         <ul aria-label="Adopted recipes" className="flex flex-col gap-0.5 text-foreground">
             {recipes.map((recipe, index) => (
                 <li key={`${recipe.recipeId}-${recipe.targetId}-${index}`}>
-                    {`Recipe: ${recipe.title} on ${recipe.targetName ?? 'a track no longer in the project'}`}
+                    {`Recipe: ${recipe.title} on ${recipe.targetName ?? 'a track no longer in the project'}${recipe.valueSourceLabel === null ? '' : ` — ${recipe.valueSourceLabel}`}`}
                 </li>
             ))}
         </ul>

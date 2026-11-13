@@ -9,9 +9,19 @@ import { expandMixRecipe } from './expandMixRecipe';
 import { getCompiledTransformTargetIds } from './getCompiledTransformTargetIds';
 import { groundCompiledCommandBatch } from './groundCompiledCommandBatch';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
+import { type RecipeExpansionInput } from './parseRecipeExpansionInput';
 
-/** One recipe the application chose to expand on one track; `role` is a role argued for that track, if any. */
-type ApplicationRecipePair = { recipeId: string; targetId: string; role: string | null };
+/**
+ * One recipe the application chose to expand on one track; `role` is a role argued for that track, if
+ * any. `values` are the parameter values to expand with, each already held to its window; a parameter
+ * they leave out, or every parameter when they are absent, takes the middle of its window.
+ */
+type ApplicationRecipePair = {
+    recipeId: string;
+    targetId: string;
+    role: string | null;
+    values?: RecipeExpansionInput['values'];
+};
 
 type RecipeCompilation = Extract<RetainedCompilation, { kind: 'recipe' }>;
 
@@ -86,8 +96,9 @@ function applicationRecipeAuthority(input: {
 }
 
 /**
- * Expands recipes the application itself chose, each on its own track with no values (the middle of
- * each authored window, exactly as `recipe.expand` lowers it), and grounds the expansions as one batch
+ * Expands recipes the application itself chose, each on its own track with the values its pair
+ * carries or, for every value it leaves out, the middle of the authored window (exactly as
+ * `recipe.expand` lowers it), and grounds the expansions as one batch
  * adopting them: through the bridge's compilation proof, runtime validation, state guards and the
  * production brief, asking no provider. Each pair expands under its own ordinal, so the device
  * bindings two expansions mint never collide. A pair that does not expand refuses the whole batch with
@@ -107,7 +118,7 @@ export function groundApplicationRecipeBatch(input: {
     const expansions: ExpandedPair[] = [];
     for (const [ordinal, pair] of input.pairs.entries()) {
         const expanded = expandMixRecipe(
-            { recipeId: pair.recipeId, targetId: pair.targetId, role: pair.role, values: [] },
+            { recipeId: pair.recipeId, targetId: pair.targetId, role: pair.role, values: pair.values ?? [] },
             context,
             ordinal
         );

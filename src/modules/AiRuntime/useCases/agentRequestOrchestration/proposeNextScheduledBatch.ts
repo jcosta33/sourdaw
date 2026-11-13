@@ -8,10 +8,11 @@ import {
     type AgentRunBatchSchedule,
     type AgentRunBulkSetBatchSchedule,
     type AgentRunProviderProposal,
+    type AgentRunVibeRunBatchSchedule,
 } from '../../models/AgentRun';
 import { type IntentResult } from '../../models/IntentResult';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
-import { appendChatMessage, updateChatMessage } from '../../stores/chatStore';
+import { appendChatMessage, removeChatMessage, updateChatMessage } from '../../stores/chatStore';
 import { normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
@@ -22,12 +23,14 @@ import { getProjectContext } from '../getProjectContext';
 import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
+import { buildVibeBatchValueRequest } from '../vibeRun/buildVibeBatchValueRequest';
+import { chooseVibeBatchValues, type VibeBatchValueChoice } from '../vibeRun/chooseVibeBatchValues';
 import { describeVibeBatchCard } from '../vibeRun/describeVibeBatchCard';
 
 import { describeAppliedBatches } from './describeAppliedBatches';
 import { describeBatchPreviewProgress } from './describeBatchPreviewProgress';
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
-import { groundVibeRunBatch } from './groundVibeRunBatch';
+import { groundVibeRunBatch, preflightVibeRunBatch } from './groundVibeRunBatch';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';
 import { persistPromptActionConfirmation } from './persistPromptActionConfirmation';
 import { postVibeRunSummary } from './postVibeRunSummary';
@@ -48,8 +51,11 @@ type GroundedScheduledBatch =
           result: IntentResult;
           context: ReturnType<typeof getProjectContext>;
           revision: string;
-          /** Set only on a vibe-run batch: the planned batch its card describes and its preview measures. */
-          vibeBatch?: ScheduledVibeRunBatch;
+          /**
+           * Set only on a vibe-run batch: the planned batch its card describes and its preview
+           * measures, and where its recipe values came from.
+           */
+          vibe?: { batch: ScheduledVibeRunBatch; valueChoice: VibeBatchValueChoice };
       }
     | { status: 'rejected'; reason: string };
 
@@ -186,26 +192,6 @@ function groundBulkSetSlice(
     };
 }
 
-/** Grounds the slice at `position` by what the schedule's slices hold. */
-function groundScheduledSlice(
-    run: AgentRun,
-    schedule: AgentRunBatchSchedule,
-    position: number
-): GroundedScheduledBatch {
-    switch (schedule.kind) {
-        case 'bulk-set':
-            return groundBulkSetSlice(run, schedule, position);
-        case 'vibe-run': {
-            const grounded = groundVibeRunBatch(run, schedule, position);
-            return grounded.status === 'grounded' ? { ...grounded, vibeBatch: grounded.batch } : grounded;
-        }
-        default: {
-            const exhaustive: never = schedule;
-            throw new Error(`Unsupported batch schedule kind: ${String(exhaustive)}`);
-        }
-    }
-}
-
 type MaterializedBatch = Extract<ReturnType<typeof materializePromptCommandPlan>, { status: 'prepared' }>;
 
 /** The run keeps the batch's measured goal state and every receipt its preview read, after those of earlier batches. */
@@ -248,6 +234,7 @@ async function proposeMeasuredVibeBatch(input: {
     position: number;
     grounded: GroundedBatch;
     batch: ScheduledVibeRunBatch;
+    valueChoice: VibeBatchValueChoice;
     assistantMessageId: string;
     description: ReturnType<typeof describePendingActionConfirmation>;
     materialized: MaterializedBatch;
@@ -311,6 +298,8 @@ async function proposeMeasuredVibeBatch(input: {
         batch: input.batch,
         context: grounded.context,
         criteria: evaluation.criteria,
+        adoptedRecipes: grounded.result.adoptedRecipes ?? [],
+        valueChoice: input.valueChoice,
     });
     persistPromptActionConfirmation({
         runId: run.runId,
@@ -344,18 +333,17 @@ async function dispatchScheduledBatch(
     run: AgentRun,
     schedule: AgentRunBatchSchedule,
     position: number,
-    grounded: GroundedBatch
+    grounded: GroundedBatch,
+    /** The batch's message when an earlier step already showed one, which this one continues. */
+    existingMessageId: string | undefined
 ): Promise<ScheduledBatchOutcome> {
-    const assistantMessageId = `msg-${crypto.randomUUID()}`;
-    appendChatMessage({
-        id: assistantMessageId,
-        role: 'assistant',
-        content: `Preparing batch ${String(position)} of ${String(schedule.total)}...`,
-        timestamp: Date.now(),
-        isCommandAction: true,
-        agentRunId: run.runId,
-        projectId: captureProjectIdentity(),
-    });
+    const preparing = `Preparing batch ${String(position)} of ${String(schedule.total)}...`;
+    let assistantMessageId = existingMessageId;
+    if (assistantMessageId === undefined) {
+        assistantMessageId = appendBatchMessage(run, preparing);
+    } else {
+        updateChatMessage(assistantMessageId, { content: preparing });
+    }
     const description = describePendingActionConfirmation({
         actions: grounded.result.actions,
         context: grounded.context,
@@ -383,13 +371,14 @@ async function dispatchScheduledBatch(
     }
     const { commandGroup, compiledActionExecution, parsedCommandBatch } = materialized;
     const { commandEnvelopes, commandBatch } = compiledActionExecution;
-    if (grounded.vibeBatch !== undefined) {
+    if (grounded.vibe !== undefined) {
         return proposeMeasuredVibeBatch({
             run,
             schedule,
             position,
             grounded,
-            batch: grounded.vibeBatch,
+            batch: grounded.vibe.batch,
+            valueChoice: grounded.vibe.valueChoice,
             assistantMessageId,
             description,
             materialized,
@@ -436,17 +425,97 @@ async function dispatchScheduledBatch(
     return { status: 'executed' };
 }
 
+function appendBatchMessage(run: AgentRun, content: string): string {
+    const id = `msg-${crypto.randomUUID()}`;
+    appendChatMessage({
+        id,
+        role: 'assistant',
+        content,
+        timestamp: Date.now(),
+        isCommandAction: true,
+        agentRunId: run.runId,
+        projectId: captureProjectIdentity(),
+    });
+    return id;
+}
+
+/**
+ * A vibe-run batch passes every guard before anything is asked for it, then lets the value choice
+ * pick its recipe values — showing which batch it chooses for, with the run's Stop, only while a
+ * hosted request is outstanding — and grounds at the live revision with what it chose. A refusal
+ * before the request asks nothing; a stop during it settles as a stopped batch preparation.
+ */
+async function proposeVibeRunBatch(
+    run: AgentRun,
+    schedule: AgentRunVibeRunBatchSchedule,
+    position: number
+): Promise<ScheduledBatchOutcome> {
+    const preflight = preflightVibeRunBatch(run, schedule, position);
+    if (preflight.status === 'rejected') {
+        return preflight;
+    }
+    const built = buildVibeBatchValueRequest(preflight);
+    if (built.status === 'refused') {
+        return { status: 'rejected', reason: built.reason };
+    }
+    // Filled by `onBegin`, which runs only once a hosted request is about to be made.
+    const shown: { messageId: string | undefined } = { messageId: undefined };
+    const choice = await chooseVibeBatchValues({
+        runId: run.runId,
+        request: built.request,
+        onBegin: () => {
+            shown.messageId = appendBatchMessage(
+                run,
+                `Choosing values for batch ${String(position)} of ${String(schedule.total)}...`
+            );
+            updateChatMessage(shown.messageId, { stoppableRunId: run.runId });
+        },
+    });
+    const { messageId } = shown;
+    if (messageId !== undefined) {
+        updateChatMessage(messageId, { stoppableRunId: undefined });
+    }
+    const liveRun = agentRunLifecycle.get(run.runId);
+    if (liveRun === null || AGENT_RUN_TERMINAL_PHASES.has(liveRun.phase)) {
+        settleStoppedBatchPreparation(messageId ?? appendBatchMessage(run, ''), position, schedule.total, liveRun);
+        return { status: 'stopped' };
+    }
+    if (choice.source === 'stopped') {
+        // The run goes on to refuse this batch in a message of its own; this one keeps no progress line.
+        settleStoppedBatchPreparation(messageId ?? appendBatchMessage(run, ''), position, schedule.total, liveRun);
+        return { status: 'rejected', reason: 'its value request was stopped' };
+    }
+    const grounded = groundVibeRunBatch(liveRun, schedule, position, choice);
+    if (grounded.status === 'rejected') {
+        // The refusal is told in a message of its own, exactly as a batch refused before any request.
+        if (messageId !== undefined) {
+            removeChatMessage(messageId);
+        }
+        return grounded;
+    }
+    return dispatchScheduledBatch(
+        liveRun,
+        schedule,
+        position,
+        { ...grounded, vibe: { batch: grounded.batch, valueChoice: grounded.valueChoice } },
+        messageId
+    );
+}
+
 async function proposeScheduledBatch(
     run: AgentRun,
     schedule: AgentRunBatchSchedule,
     position: number
 ): Promise<ScheduledBatchOutcome> {
     try {
-        const grounded = groundScheduledSlice(run, schedule, position);
+        if (schedule.kind === 'vibe-run') {
+            return await proposeVibeRunBatch(run, schedule, position);
+        }
+        const grounded = groundBulkSetSlice(run, schedule, position);
         if (grounded.status === 'rejected') {
             return grounded;
         }
-        return await dispatchScheduledBatch(run, schedule, position, grounded);
+        return await dispatchScheduledBatch(run, schedule, position, grounded, undefined);
     } catch (error) {
         return { status: 'rejected', reason: error instanceof Error ? error.message : String(error) };
     }
