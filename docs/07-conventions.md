@@ -795,6 +795,7 @@ file in the same change.
 - **Nesting depth**: Control-flow blocks nest at most 4 deep; deeper nesting buries the happy path and calls for the guard clauses and early returns covered under _Prefer explicit control flow_. ([`max-depth`](https://eslint.org/docs/latest/rules/max-depth))
 - **Cyclomatic complexity**: A function's cyclomatic complexity stays at most 20; past that, its branching cannot be reasoned about or tested exhaustively and should be split. ([`complexity`](https://eslint.org/docs/latest/rules/complexity))
 - **Burn-down baseline**: Files that already exceed one of the four limits above are listed in `eslint.size-baseline.mjs`, which holds those files to `warn` instead of `error` so they keep reporting without failing the build. A file leaves the list only once it complies with all four rules; no file is ever added.
+- **oxlint burn-down baselines**: Some oxlint rules run at `error` while files that already violated them at promotion are exempt. Each such rule has one override at the end of `.oxlintrc.json` that turns it `off` for an exact, sorted list of file paths, so every other file, new ones included, is held to the rule. A path leaves once its file complies, and none is ever added; `scripts/__tests__/oxlintWarnLevels.spec.ts` fails when a listed path is a glob, unsorted, or no longer exists.
 
 ### Parameter patterns
 
