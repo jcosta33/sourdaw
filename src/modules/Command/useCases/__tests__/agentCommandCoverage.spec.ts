@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
 
+import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { getRuntimeActionTypes } from '#/modules/AiRuntime/useCases';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getMidiGrooveHandlers, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
+import { isRecord } from '#/utils/structuralEquality';
 
 import {
     AGENT_COMMAND_LEDGER_CATEGORIES,
@@ -17,6 +20,7 @@ import {
     type AgentCommandLedgerClosure,
     type AgentCommandLedgerEntry,
     type AgentCommandLedgerOwner,
+    type AgentRuntimeActionAccountingRecord,
 } from '../../models/AgentCommandLedger';
 import { clearHandlerRegistry } from '../../stores/handlerRegistry';
 import { executableAppActionDescriptors, isExecutableAppActionType } from '../executableAppActionRegistry';
@@ -25,37 +29,190 @@ import { getAppActionPreviewExecution } from '../getAppActionPreviewExecution';
 import { getExecutableAppActionOperationVersion } from '../getExecutableAppActionOperationVersion';
 import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
 
-/** The registering handler factory name for each owning module, mirroring the ledger's `packet`. */
-const OWNER_FACTORY_NAMES: Record<AgentCommandLedgerOwner, string> = {
-    Arrangement: 'getArrangementHandlers',
-    AudioRendering: 'getAudioRenderingHandlers',
-    Automation: 'getAutomationHandlers',
-    CrdtDocument: 'getDrumPreviewBranchHandlers',
-    MIDI: 'getMidiNoteTransformHandlers',
-    Project: 'getProjectHandlers',
-    Transport: 'getTransportHandlers',
-    Yeast: 'getYeastHandlers',
-};
+type RegisteringFactory = { owner: AgentCommandLedgerOwner; factory: string };
 
-function buildActionTypeOwnerMap(): Map<string, AgentCommandLedgerOwner> {
-    const ownerMaps: readonly [AgentCommandLedgerOwner, Record<string, unknown>][] = [
-        ['Arrangement', getArrangementHandlers()],
-        ['AudioRendering', getAudioRenderingHandlers()],
-        ['Automation', getAutomationHandlers()],
-        ['CrdtDocument', getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true })],
-        ['MIDI', getMidiNoteTransformHandlers()],
-        ['Project', getProjectHandlers()],
-        ['Transport', getTransportHandlers()],
-        ['Yeast', getYeastHandlers()],
+/**
+ * The owning module and the registering handler factory name, mirroring the ledger's `owner` and
+ * `packet`, for every action type a production handler factory registers.
+ */
+function buildActionTypeOwnerMap(): Map<string, RegisteringFactory> {
+    const ownerMaps: readonly [AgentCommandLedgerOwner, string, Record<string, unknown>][] = [
+        ['Arrangement', 'getArrangementHandlers', getArrangementHandlers()],
+        ['AudioRendering', 'getAudioRenderingHandlers', getAudioRenderingHandlers()],
+        ['Automation', 'getAutomationHandlers', getAutomationHandlers()],
+        [
+            'CrdtDocument',
+            'getDrumPreviewBranchHandlers',
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+        ],
+        ['MIDI', 'getMidiNoteTransformHandlers', getMidiNoteTransformHandlers()],
+        ['MIDI', 'getMidiGrooveHandlers', getMidiGrooveHandlers()],
+        ['Project', 'getProjectHandlers', getProjectHandlers()],
+        ['Transport', 'getTransportHandlers', getTransportHandlers()],
+        ['Yeast', 'getYeastHandlers', getYeastHandlers()],
     ];
-    const actionTypeToOwner = new Map<string, AgentCommandLedgerOwner>();
-    for (const [owner, handlerMap] of ownerMaps) {
+    const actionTypeToOwner = new Map<string, RegisteringFactory>();
+    for (const [owner, factory, handlerMap] of ownerMaps) {
         for (const actionType of Object.keys(handlerMap)) {
-            actionTypeToOwner.set(actionType, owner);
+            actionTypeToOwner.set(actionType, { owner, factory });
         }
     }
     return actionTypeToOwner;
 }
+
+/**
+ * Every runtime action type is covered exactly once, by an executable descriptor or by one
+ * accounting record, and no record names a type the runtime vocabulary no longer holds. Nothing
+ * outside agent scope may be an undoable project edit: an edit the user can undo is one an agent
+ * could be asked to make, so it is interim work, never out of scope. Throws an error naming every
+ * type that breaks a rule.
+ */
+function assertRuntimeActionCensus(
+    runtimeActionTypes: readonly string[],
+    registeredActionTypes: readonly string[],
+    records: readonly AgentRuntimeActionAccountingRecord[],
+    undoableHandlerTypes: ReadonlySet<string>
+): void {
+    const runtime = new Set(runtimeActionTypes);
+    const registered = new Set(registeredActionTypes);
+    const recordedTypes = records.flatMap((record) => record.actionTypes);
+    const recorded = new Set(recordedTypes);
+    const unaccounted = runtimeActionTypes.filter((type) => !registered.has(type) && !recorded.has(type));
+    const distinctRecorded = recordedTypes.filter((type, index) => recordedTypes.indexOf(type) === index);
+    const registeredAndRecorded = distinctRecorded.filter((type) => registered.has(type));
+    const recordedTwice = distinctRecorded.filter(
+        (type) => recordedTypes.indexOf(type) !== recordedTypes.lastIndexOf(type)
+    );
+    const stale = distinctRecorded.filter((type) => !runtime.has(type));
+    const outsideScopeTypes = records
+        .filter((record) => record.kind === 'outside-agent-scope')
+        .flatMap((record) => record.actionTypes);
+    const undoableOutsideScope = outsideScopeTypes.filter((type) => undoableHandlerTypes.has(type));
+    const problems = [
+        ...undoableOutsideScope.map((type) => `${type}: outside agent scope but its handler is undoable`),
+        ...unaccounted.map((type) => `${type}: no executable descriptor and no accounting record`),
+        ...registeredAndRecorded.map((type) => `${type}: registered and also recorded`),
+        ...recordedTwice.map((type) => `${type}: recorded more than once`),
+        ...stale.map((type) => `${type}: recorded but not a runtime action type`),
+    ];
+    if (problems.length > 0) {
+        throw new Error(`Runtime action census failed:\n${problems.join('\n')}`);
+    }
+}
+
+function getRegisteredActionTypes(): string[] {
+    return executableAppActionDescriptors.map((descriptor) => descriptor.actionType);
+}
+
+/** Every action type a production handler registers undoable, read from the real handler maps. */
+function getUndoableHandlerTypes(): ReadonlySet<string> {
+    const handlerMaps: readonly Record<string, unknown>[] = getProductionCommandHandlerMaps({
+        canMutateBranchMetadata: () => true,
+    });
+    return new Set(
+        handlerMaps.flatMap((handlerMap) =>
+            Object.entries(handlerMap)
+                .filter(([, handler]) => isRecord(handler) && handler.undoable === true)
+                .map(([actionType]) => actionType)
+        )
+    );
+}
+
+function getLiveAccounting(): readonly AgentRuntimeActionAccountingRecord[] {
+    const records = getAgentCommandLedger().runtimeActionAccounting;
+    if (records === undefined) {
+        throw new Error('The live ledger must publish its runtime action accounting');
+    }
+    return records;
+}
+
+describe('runtime action census', () => {
+    it('covers every live runtime action type exactly once by a descriptor or an accounting record', () => {
+        expect(() =>
+            assertRuntimeActionCensus(
+                getRuntimeActionTypes(),
+                getRegisteredActionTypes(),
+                getLiveAccounting(),
+                getUndoableHandlerTypes()
+            )
+        ).not.toThrow();
+    });
+
+    it('fails, naming the type, when a record puts a type whose handler is undoable outside agent scope', () => {
+        const undoableOutsideScope: AgentRuntimeActionAccountingRecord = {
+            kind: 'outside-agent-scope',
+            category: 'view',
+            reason: 'undoable fixture',
+            actionTypes: ['hideTrack'],
+        };
+        expect(() =>
+            assertRuntimeActionCensus(['hideTrack'], [], [undoableOutsideScope], new Set(['hideTrack']))
+        ).toThrowError(/hideTrack: outside agent scope but its handler is undoable/);
+        expect(() => assertRuntimeActionCensus(['hideTrack'], [], [undoableOutsideScope], new Set())).not.toThrow();
+    });
+
+    it('reads every undoable handler type from the production handler maps', () => {
+        const undoable = getUndoableHandlerTypes();
+        expect(undoable.has('addTrack')).toBe(true);
+        expect(undoable.has('selectTrack')).toBe(false);
+    });
+
+    it('fails, naming the type, when a runtime action type has neither a descriptor nor a record', () => {
+        expect(() =>
+            assertRuntimeActionCensus(
+                [...getRuntimeActionTypes(), 'fabricatedRuntimeAction'],
+                getRegisteredActionTypes(),
+                getLiveAccounting(),
+                getUndoableHandlerTypes()
+            )
+        ).toThrowError(/fabricatedRuntimeAction: no executable descriptor and no accounting record/);
+    });
+
+    it('fails, naming the type, when a record names a type the runtime vocabulary does not hold', () => {
+        const staleRecord: AgentRuntimeActionAccountingRecord = {
+            kind: 'outside-agent-scope',
+            category: 'view',
+            reason: 'stale fixture',
+            actionTypes: ['retiredRuntimeAction'],
+        };
+        expect(() =>
+            assertRuntimeActionCensus(
+                getRuntimeActionTypes(),
+                getRegisteredActionTypes(),
+                [...getLiveAccounting(), staleRecord],
+                getUndoableHandlerTypes()
+            )
+        ).toThrowError(/retiredRuntimeAction: recorded but not a runtime action type/);
+    });
+
+    it('fails, naming the type, when a registered command is also recorded or a type is recorded twice', () => {
+        const doubleRecord: AgentRuntimeActionAccountingRecord = {
+            kind: 'outside-agent-scope',
+            category: 'view',
+            reason: 'double fixture',
+            actionTypes: ['addTrack', 'selectTrack'],
+        };
+        const run = () =>
+            assertRuntimeActionCensus(
+                getRuntimeActionTypes(),
+                getRegisteredActionTypes(),
+                [...getLiveAccounting(), doubleRecord],
+                getUndoableHandlerTypes()
+            );
+        expect(run).toThrowError(/addTrack: registered and also recorded/);
+        expect(run).toThrowError(/selectTrack: recorded more than once/);
+    });
+
+    it('gives every interim record the runtime-action packet and every record a reason', () => {
+        for (const record of getLiveAccounting()) {
+            expect(record.reason.length).toBeGreaterThan(0);
+            expect(record.actionTypes.length).toBeGreaterThan(0);
+            if (record.kind === 'interim-unsupported') {
+                expect(record.packet).toBe('#6473');
+            }
+        }
+    });
+});
 
 describe('agent command ledger coverage', () => {
     beforeEach(() => {
@@ -66,6 +223,7 @@ describe('agent command ledger coverage', () => {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getMidiGrooveHandlers(),
             getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),
@@ -104,24 +262,28 @@ describe('agent command ledger coverage', () => {
         const actionTypeToOwner = buildActionTypeOwnerMap();
 
         for (const entry of getAgentCommandLedger().entries) {
-            expect(entry.owner).toBe(actionTypeToOwner.get(entry.operationId));
+            expect(entry.owner).toBe(actionTypeToOwner.get(entry.operationId)?.owner);
         }
     });
 
-    it("names the owner's registering handler factory as packet for every supported entry", () => {
+    it('names the registering handler factory as packet for every supported entry', () => {
+        const actionTypeToOwner = buildActionTypeOwnerMap();
+
         for (const entry of getAgentCommandLedger().entries) {
             if (entry.closure !== 'supported') {
                 continue;
             }
-            expect(entry.packet).toBe(OWNER_FACTORY_NAMES[entry.owner]);
+            expect(entry.packet).toBe(actionTypeToOwner.get(entry.operationId)?.factory);
         }
     });
 
-    it('has every live entry supported, each packet naming its owner registering factory', () => {
+    it('has every live entry supported, each packet naming its registering factory', () => {
         expectTypeOf<AgentCommandLedgerClosure>().toEqualTypeOf<'supported' | 'interim-unsupported'>();
+        const actionTypeToOwner = buildActionTypeOwnerMap();
+
         for (const entry of getAgentCommandLedger().entries) {
             expect(entry.closure).toBe('supported');
-            expect(entry.packet).toBe(OWNER_FACTORY_NAMES[entry.owner]);
+            expect(entry.packet).toBe(actionTypeToOwner.get(entry.operationId)?.factory);
         }
     });
 
@@ -188,6 +350,8 @@ describe('agent command ledger coverage', () => {
             transposeNotes: 'midi',
             setClipFade: 'audio-editing',
             quantizeTransients: 'audio-editing',
+            stripSilence: 'audio-editing',
+            extractGroove: 'midi',
             addDevice: 'device',
             setDeviceParameter: 'parameter',
             addAdjustmentRegion: 'automation',

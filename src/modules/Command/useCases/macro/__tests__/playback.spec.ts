@@ -168,6 +168,34 @@ describe('playMacro', () => {
         });
     });
 
+    it('clears the recorded groove template and note revision so replay extracts from the notes as they now are', async () => {
+        const proposal = {
+            id: 'groove-c1-v1',
+            name: 'Lead groove',
+            schemaVersion: 1 as const,
+            subdivision: '1/16' as const,
+            slots: [{ index: 0, timingOffset: 0.08, dynamicsOffset: 0 }],
+            provenance: { type: 'midi-clip' as const, sourceId: 'c1', analyzerVersion: 1 },
+        };
+        const recorded = {
+            type: 'extractGroove' as const,
+            payload: { clipId: 'c1', sourceName: 'Lead', subdivision: '1/16', proposal, sourceRevision: '[]' },
+        };
+        macroStore.set({
+            macros: [{ id: 'groove-1', name: 'Groove', actions: [recorded], createdAt: 0 }],
+            recording: false,
+            currentRecording: [],
+        });
+
+        await playMacro('groove-1');
+
+        expect(executeAppActionMock.mock.calls[0]![0]).toStrictEqual({
+            type: 'extractGroove',
+            payload: { clipId: 'c1', templateId: undefined, sourceName: 'Lead', subdivision: '1/16' },
+        });
+        expect(macroStore.value?.macros[0]?.actions[0]).toEqual(recorded);
+    });
+
     it('replays recorded row counteractions using only their public request fields', async () => {
         const rowMacro: Macro = {
             id: 'row-counteractions',

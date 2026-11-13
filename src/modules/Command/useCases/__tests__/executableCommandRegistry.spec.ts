@@ -4,7 +4,7 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getMidiGrooveHandlers, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import {
@@ -415,6 +415,30 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'stripSilence',
+        'Replace one unlocked audio clip with one clip per passage that rises above a peak threshold, removing the silence between them, as one reversible edit; the segments keep their source position, gain envelope and clip automation.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked audio clip ID' },
+            threshold: {
+                type: 'number',
+                minimum: -96,
+                maximum: 0,
+                description:
+                    'Peak level in dBFS below which audio counts as silence, from -96 through 0; defaults to -40',
+            },
+            minDuration: {
+                type: 'number',
+                exclusiveMinimum: 0,
+                maximum: 16,
+                description:
+                    'Shortest silence in beats that separates two segments, above 0 through 16; shorter gaps stay inside one segment; defaults to 0.5',
+            },
+        },
+        ['clipId'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
         'crossfadeClips',
         'Create a crossfade between two distinct unlocked clips.',
         {
@@ -637,6 +661,21 @@ const EXPECTED_COMMANDS = [
         ['sourceClipId', 'targetClipId'],
         'broad-reversible',
         true
+    ),
+    expectedCommand(
+        'extractGroove',
+        "Extract the timing and velocity feel of one MIDI clip into a new groove template in the project's groove pool, named after the clip; the clip itself does not change.",
+        {
+            clipId: { type: 'string', description: 'Existing MIDI clip ID whose notes carry the groove' },
+            subdivision: {
+                type: 'string',
+                enum: ['1/8', '1/16', '1/32', '1/16T'],
+                description: 'Grid the groove is measured against; defaults to 1/16',
+            },
+        },
+        ['clipId'],
+        'bounded-reversible',
+        false
     ),
     expectedCommand(
         'transposeNotes',
@@ -1881,6 +1920,20 @@ const EXPECTED_GROUNDING = [
         valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
     },
     {
+        actionType: 'stripSilence',
+        intentPhrases: [
+            'strip silence',
+            'strip the silence',
+            'strip silence from',
+            'remove silence',
+            'remove the silence',
+            'cut out the silence',
+            'cut the silence',
+        ],
+        targetRules: [{ argument: 'clipId', capability: 'editable-audio-clip' }],
+        valueRules: [],
+    },
+    {
         actionType: 'crossfadeClips',
         intentPhrases: ['crossfade clips', 'crossfade clip', 'crossfade'],
         targetRules: [
@@ -2088,6 +2141,19 @@ const EXPECTED_GROUNDING = [
                 promptRole: 'destination',
             },
         ],
+        valueRules: [],
+    },
+    {
+        actionType: 'extractGroove',
+        intentPhrases: [
+            'extract groove',
+            'extract the groove',
+            'extract a groove',
+            'capture the groove',
+            'make a groove template',
+            'create a groove template',
+        ],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
         valueRules: [],
     },
     {
@@ -2997,6 +3063,7 @@ describe('executable command registry', () => {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getMidiGrooveHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),
         ];

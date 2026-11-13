@@ -1,4 +1,4 @@
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, isAppActionConflictError } from '#/modules/Command/useCases';
 import { getGrooveExtractionActionErrorCode } from '#/modules/MIDI/useCases';
 import { type GrooveTemplateActionSnapshot } from '#/utils/handlerContract';
 
@@ -33,7 +33,7 @@ export async function commitYeastGrooveExtraction({
         });
         return { status: 'committed' as const };
     } catch (error) {
-        const reason = getGrooveExtractionActionErrorCode(error);
+        const reason = getGrooveExtractionActionErrorCode(isAppActionConflictError(error) ? error.reason : error);
         if (!reason) {
             throw error;
         }

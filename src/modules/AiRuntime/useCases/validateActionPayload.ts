@@ -1037,7 +1037,13 @@ const validators = {
         isOptional(param.durationBeats, isNonNegativeNumber),
     consolidateSelection: 'unchecked',
     bounceSelection: 'unchecked',
-    stripSilence: 'unchecked',
+    // A provider names the clip and the detection settings; the plan is application-materialized.
+    stripSilence: (param): param is PayloadOf<'stripSilence'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['clipId', 'threshold', 'minDuration']) &&
+        isNonEmptyString(param.clipId) &&
+        isOptionalOwn(param, 'threshold', (value): value is number => isInRange(value, -96, 0)) &&
+        isOptionalOwn(param, 'minDuration', (value): value is number => isPositiveNumber(value) && value <= 16),
     duplicateTimeRange: 'unchecked',
 
     // Bus / folder / send
@@ -1282,7 +1288,14 @@ const validators = {
         isOptionalOwn(param, 'deltaDb', isLevelDelta),
 
     // Groove
-    extractGroove: 'unchecked',
+    // A provider names the clip and the grid; the template and its source revision are application-materialized.
+    extractGroove: (param): param is PayloadOf<'extractGroove'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['clipId', 'subdivision']) &&
+        isNonEmptyString(param.clipId) &&
+        isOptionalOwn(param, 'subdivision', (value): value is string =>
+            ['1/8', '1/16', '1/32', '1/16T'].includes(String(value))
+        ),
     applyGroove: 'unchecked',
 
     // Pattern instance
