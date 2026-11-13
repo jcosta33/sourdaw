@@ -1,0 +1,27 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_35b9801a6d6336::t_e1356e9b7b53e0 1727
+  s_35b9801a6d6336::t_9dcb362cb987e7 1653-1695,1697-1699,1703,1710-1711,1731-1736,1738-1739,1741-1749
+  s_35b9801a6d6336::t_95bd2e3ef8129e 1737,1740
+  s_35b9801a6d6336::t_c6e76279b14754 1704-1709
+  s_35b9801a6d6336::t_ab4250f153afde 1696,1700-1702,1712-1726,1728-1730
+src/modules/Arrangement/handlers/clip/handleStripSilence.ts
+  s_35b9801a6d6336::t_2a437b3f3fa77c 7
+  s_35b9801a6d6336::t_891dded4dac1cf 22-31
+  s_35b9801a6d6336::t_8106b3c0195d58 86-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "342b7c335438d61b0131e7e9028e59c30c54a0b4",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
