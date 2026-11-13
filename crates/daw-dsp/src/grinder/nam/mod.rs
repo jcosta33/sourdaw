@@ -352,9 +352,8 @@ pub(crate) fn relative_rms(actual: &[f32], expected: &[f32]) -> f64 {
 #[cfg(test)]
 pub(crate) fn read_fixture(name: &str) -> String {
     let path = format!(
-        "{}/{}",
-        env!("CARGO_MANIFEST_DIR"),
-        format!("src/grinder/nam/fixtures/{name}")
+        "{}/src/grinder/nam/fixtures/{name}",
+        env!("CARGO_MANIFEST_DIR")
     );
     std::fs::read_to_string(path).expect("fixture must be readable")
 }

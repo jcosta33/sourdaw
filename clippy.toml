@@ -1,0 +1,3 @@
+# Tests assert by panicking, so unwrap and panic stay allowed in test code.
+allow-unwrap-in-tests = true
+allow-panic-in-tests = true

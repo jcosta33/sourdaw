@@ -345,7 +345,6 @@ impl RetrospectiveWriter {
             active.write_mono_upmix(block);
             self.retained_samples
                 .store(active.filled, Ordering::Relaxed);
-            return;
         }
     }
 

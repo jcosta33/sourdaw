@@ -485,7 +485,7 @@ fn real_compensation_histories_clear_at_source_and_inactive_boundaries() {
             }
             "routing" => {
                 instance.set_param("globalRouting", 1.0);
-                render(&mut instance, &vec![(0.0, 0.0); 8], 8);
+                render(&mut instance, &[(0.0, 0.0); 8], 8);
                 instance.set_param("globalRouting", 2.0);
             }
             "one-to-two" => {
@@ -510,7 +510,7 @@ fn real_compensation_histories_clear_at_source_and_inactive_boundaries() {
         let inactive = if control == "mute" { 1.0 } else { 0.0 };
         instance.set_param(&parameter, inactive);
         // Suppression is immediate, before any delay has had time to drain.
-        let suppressed = render(&mut instance, &vec![(0.0, 0.0); 8], 8);
+        let suppressed = render(&mut instance, &[(0.0, 0.0); 8], 8);
         assert!(
             suppressed.iter().all(|&(l, r)| l == 0.0 && r == 0.0),
             "mute/disable must suppress immediately"

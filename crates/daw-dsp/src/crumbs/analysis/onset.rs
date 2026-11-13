@@ -293,11 +293,7 @@ fn snap_to_zero_crossing(samples: &[f32], position: usize, window: usize) -> usi
         }
         // Zero crossing: sign change between adjacent samples.
         if (samples[idx] >= 0.0) != (samples[idx + 1] >= 0.0) {
-            let dist = if idx >= position {
-                idx - position
-            } else {
-                position - idx
-            };
+            let dist = idx.abs_diff(position);
             if dist < best_dist {
                 best_dist = dist;
                 best_pos = idx;

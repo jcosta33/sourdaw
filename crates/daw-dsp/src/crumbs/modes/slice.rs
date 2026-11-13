@@ -175,11 +175,7 @@ impl SliceMode {
         let mut closest_dist = u32::MAX;
 
         for (idx, marker) in self.markers.iter().enumerate() {
-            let dist = if frame >= marker.start_frame {
-                frame - marker.start_frame
-            } else {
-                marker.start_frame - frame
-            };
+            let dist = frame.abs_diff(marker.start_frame);
             if dist < closest_dist {
                 closest_dist = dist;
                 closest_idx = idx;

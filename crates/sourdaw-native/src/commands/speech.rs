@@ -989,7 +989,6 @@ fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
             .0
             .process_all_into_buffer(&adapter, output.buffer_mut(), frames, None)
             .map(|(_input, output_len)| output.copy_f32(output_len));
-        drop(adapter);
         result.map_err(|error| format!("Resample error: {error}"))
     })?;
 
@@ -1074,10 +1073,10 @@ mod tests {
         assert!(success_reset.get());
 
         let error_reset = Rc::new(Cell::new(false));
-        let error = (|| {
+        let error = {
             let _resampler = SensitiveResampler(ResetProbe(Rc::clone(&error_reset)));
             Err::<(), _>("forced resampler error")
-        })();
+        };
         assert_eq!(error, Err("forced resampler error"));
         assert!(error_reset.get());
 
@@ -1097,10 +1096,10 @@ mod tests {
         assert!(success_output.get());
 
         let error_output = Rc::new(Cell::new(false));
-        let error = (|| {
+        let error = {
             let _output = SensitiveResamplerOutput::new(EraseOutputProbe(Rc::clone(&error_output)));
             Err::<(), _>("forced output error")
-        })();
+        };
         assert_eq!(error, Err("forced output error"));
         assert!(error_output.get());
 

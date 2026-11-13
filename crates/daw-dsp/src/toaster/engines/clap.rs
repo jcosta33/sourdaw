@@ -83,19 +83,18 @@ impl ClapEngine {
 
         // Check if a new burst should fire
         self.sample_counter += 1;
-        if self.burst_index < self.count.saturating_sub(1) {
-            if self.sample_counter >= spacing_samples {
-                self.sample_counter = 0;
-                self.burst_index += 1;
-                if self.burst_index < self.count && self.burst_index < MAX_BURSTS {
-                    // Each subsequent burst is slightly quieter
-                    let atten = 1.0 - (self.burst_index as f32 * 0.15);
-                    self.burst_envs[self.burst_index] = self.velocity * atten.max(0.3);
-                }
-                // Start tail after last burst
-                if self.burst_index >= self.count - 1 {
-                    self.tail_env = self.velocity * 0.5;
-                }
+        if self.burst_index < self.count.saturating_sub(1) && self.sample_counter >= spacing_samples
+        {
+            self.sample_counter = 0;
+            self.burst_index += 1;
+            if self.burst_index < self.count && self.burst_index < MAX_BURSTS {
+                // Each subsequent burst is slightly quieter
+                let atten = 1.0 - (self.burst_index as f32 * 0.15);
+                self.burst_envs[self.burst_index] = self.velocity * atten.max(0.3);
+            }
+            // Start tail after last burst
+            if self.burst_index >= self.count - 1 {
+                self.tail_env = self.velocity * 0.5;
             }
         }
 

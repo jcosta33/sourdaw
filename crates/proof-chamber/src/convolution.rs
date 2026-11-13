@@ -590,7 +590,7 @@ fn build_stages(tail: &[f32]) -> Vec<ConvStage> {
 
     // Any remaining tail goes into the largest stage size
     if offset < tail.len() {
-        let largest = *STAGE_SIZES.last().unwrap();
+        let largest = STAGE_SIZES[STAGE_SIZES.len() - 1];
         let delay = (HEAD_SIZE + offset + GLOBAL_LATENCY).saturating_sub(largest);
         stages.push(ConvStage::new(largest, &tail[offset..], delay));
     }

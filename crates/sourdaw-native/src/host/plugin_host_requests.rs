@@ -338,7 +338,8 @@ fn cache_parameters(
 /// still waits.
 fn carry_main_thread_callback(runtime: &SharedHostedPlugin) -> Result<(), String> {
     runtime.with_control(CONTROL_TIMEOUT, |plugin| {
-        Ok(plugin.service_main_thread_callback())
+        plugin.service_main_thread_callback();
+        Ok(())
     })
 }
 
