@@ -1,0 +1,488 @@
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_3c91dcbb840566::t_af55ae8ea5518e 128
+src/modules/AiRuntime/useCases/__tests__/vibeRunInitialBaselines.spec.ts
+  s_3c91dcbb840566::t_ddb762fcb31b3b 565,569-570,599,601,617-619
+  s_3c91dcbb840566::t_adfb14be8b16ee 1197-1198,1289-1290,1331-1332,1334-1335,1360-1362
+  s_3c91dcbb840566::t_8383c689ab9350 158,169-170,1086,1130-1131
+  s_3c91dcbb840566::t_55e212238ea656 753,758-759
+  s_3c91dcbb840566::t_f5238d7980db22 438-458,831-832,1039-1040,1044,1050-1051,1059,1078-1079,1082
+  s_3c91dcbb840566::t_4afdcaa8a755ef 27
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1244-1245
+  s_3c91dcbb840566::t_9d591a574e6725 155-157,161-168,399,1088
+  s_ff124a0cf68412::t_aba40c8372519b 23,159-160,646-651
+src/modules/AiRuntime/useCases/__tests__/vibeRunRealProject.spec.ts
+  s_3c91dcbb840566::t_e81514dd2b33c7 228,245-248,250-261,264-265
+  s_3c91dcbb840566::t_c9407e3967a839 17,183-184,226,238,240-244,249,262-263
+  s_3c91dcbb840566::t_d999fef4d20b33 239
+  s_3c91dcbb840566::t_72b4e3c22a07f1 237
+  s_3c91dcbb840566::t_9ce1e19d2fa93a 227,229-236,266-278,280-281,285-287
+  s_3c91dcbb840566::t_645adf9f7fae11 5,26-29,31,185,204,219
+  s_3c91dcbb840566::t_2efcc0256b8909 77,82,86-87,95,317
+  s_3c91dcbb840566::t_6cdd4a9b780449 313-314
+  s_3c91dcbb840566::t_226461e4c7692d 10,288-289,291,293-295,301,303-307,309-312,315-316,323-327,344,346-349
+  s_3c91dcbb840566::t_01cbcdc222c13d 296-300,345
+  s_3c91dcbb840566::t_c006b9604e81ff 98-113,134-135,150-171,176
+  s_3c91dcbb840566::t_a2e1c891b38c72 78,83,88-89,94,218,292,318-322
+  s_3c91dcbb840566::t_def95750035264 20,84-85,96
+  s_3c91dcbb840566::t_bf2fdf9f454185 18
+  s_3c91dcbb840566::t_9ba3aec4091c66 79-81,136-149
+  s_3c91dcbb840566::t_5717323dbe9405 114,118-119,121-133
+  s_87ae37da66d2f0::t_49979196e28986 97,350
+  s_3c91dcbb840566::t_0b56ee0621232f 328,334-335
+  s_3c91dcbb840566::t_3e5a62c13df49e 12,329-333
+  s_3c91dcbb840566::t_69fab4dddc7351 13
+  s_3c91dcbb840566::t_2ce9815fe900d4 337-339
+  s_35b9801a6d6336::t_0b1befdf71538e 30,115-117,120,290,302,308,340-343
+  s_3c91dcbb840566::t_2b036e9e7b101e 279,282-284
+  s_ff124a0cf68412::t_9867d1b660293c 16,19,21,38,90-93,199,336
+src/modules/AiRuntime/useCases/__tests__/multiBatchRun.spec.ts
+  s_3c91dcbb840566::t_28126d34eff967 561-562,584,600-648,796-829,832-833,1025
+  s_3c91dcbb840566::t_c360e62f9d61fe 830-831,834-836
+  s_3c91dcbb840566::t_3c54755c7d8dd9 6-8,10,13-14,16-38,55-56,158,162,902,1059-1228
+  s_3c91dcbb840566::t_688c26e0f2fe3f 15
+  s_3c91dcbb840566::t_33addb7e9ffbb9 1229
+  s_3c91dcbb840566::t_1b70c4eedf4c65 649-742,781-795
+  s_ff124a0cf68412::t_a985e8a9647d6a 743-780
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  s_3c91dcbb840566::t_a57d385bb93fbf 50-57
+  s_3c91dcbb840566::t_1fde492e8820cd 256
+  s_3c91dcbb840566::t_a5ef94c84908e6 257
+  s_3c91dcbb840566::t_6135db6f6a87ca 415,420-421
+  s_ff124a0cf68412::t_d99e6100ca5397 22,27-28,32-34,274-302,395,500
+  s_ff124a0cf68412::t_8d5c8b8644867b 36,46-47,303-325,342-349,353,367,491
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_3c91dcbb840566::t_310961620a3269 26-32,44-45,252-261,264-265,267-269,271-281,1021,1058,1061,1077
+  s_3c91dcbb840566::t_7bbc684ced209f 262-263,266,270
+  s_ff124a0cf68412::t_7903af2900ee98 43,52
+src/modules/AiRuntime/useCases/__tests__/vibeRunRenderBudget.spec.ts
+  s_3c91dcbb840566::t_493be9d289278c 1-4,7-15,17-18,20-21,23-25,28-42,44-47,49-86,99-121,127-128,130-182,184-202,204-207,209-226,228-262,264-265,268-270,465-492,497-502,505-510,512-529,531-550,552-569,571-577,605-606,608-617
+  s_3c91dcbb840566::t_a897158563089f 263,266-267,493-496,503-504,530,551,570
+  s_3c91dcbb840566::t_90917a5efa30a6 618-620
+  s_3c91dcbb840566::t_07ebbee2ecc44d 5-6,16,48,87-98,183,271-314,316-369,371-464,578-579,581-591,593-604
+  s_ff124a0cf68412::t_d6b60ac666d70c 19,22,26-27,43,122-126,129,203,208,227,315,370,511,580,592,607
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_3c91dcbb840566::t_7b626761367ddb 121,156-157,655,1674,2219,2256
+  s_ff124a0cf68412::t_c8ede8f7a2b76e 122
+src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts
+  s_3c91dcbb840566::t_bb7121d2ffdc21 29
+  s_3c91dcbb840566::t_d258a2cd0349d9 179-180,596
+  s_3c91dcbb840566::t_f2d805eeac07c1 521
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_3c91dcbb840566::t_d6705ca63ed582 274-282,296-297
+  s_3c91dcbb840566::t_805724718f0ec9 265-266,285
+  s_3c91dcbb840566::t_3c54755c7d8dd9 7,33,35,58-66,69-71,78,478,483-484,489-490,497-498,501
+  s_c2f4449c5891e9::t_47848112425407 291-292
+  s_ff124a0cf68412::t_2dc5dd2145d2ce 28,37,211-238,308
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetryAfterSave.spec.ts
+  s_3c91dcbb840566::t_970c87b49859fa 65-66
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_3c91dcbb840566::t_bb7121d2ffdc21 31,48-49,218,304
+src/modules/AiRuntime/useCases/vibeRun/readVibeRunFitRefusals.ts
+  s_3c91dcbb840566::t_315399da232a4a 186-187
+  s_3c91dcbb840566::t_c5d1028ce93fdc 13,74-79,88-89,97-98,101,107,113,118,192-194,204-205,248-252,261-262
+  s_ff124a0cf68412::t_ef70bdd4b335ac 14,18-19
+  s_ff124a0cf68412::t_afc4c587e27fec 2,29-37,108-110
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_3c91dcbb840566::t_b7f6ca3095ab3b 122,131,214-217,219-226,448-451,511
+  s_3c91dcbb840566::t_e71d041b5a2ba3 43
+  s_3c91dcbb840566::t_d496f439a9cbbd 166,213,218
+  s_3c91dcbb840566::t_14974587f6af89 14
+  s_3c91dcbb840566::t_3c54755c7d8dd9 3-13,15-16,51,54,167-169,251-264,269,273,288-309
+src/modules/AiRuntime/useCases/__tests__/vibeRunProjectFixture.ts
+  s_3c91dcbb840566::t_645adf9f7fae11 6-12,14,18,224-293
+  s_e385c7e8f0ec1b::t_d8dba5cad6b3cf 41-49,196-197,201
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeBatchPreviewProgress.ts
+  s_3c91dcbb840566::t_6e6003e572085c 1,2-4,6-18,19-20,22-26,28
+  s_ff124a0cf68412::t_88fb15ef51f899 5,21,27
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_3c91dcbb840566::t_314a33edbdff64 171
+  s_3c91dcbb840566::t_cb66a02c318b92 54-57,810-845
+  s_3c91dcbb840566::t_d113dac72ab41d 846-847
+  s_3c91dcbb840566::t_3c54755c7d8dd9 62-63,172-173,317,538-634,661,679
+src/modules/AiRuntime/stores/chatStore.ts
+  s_3c91dcbb840566::t_a57d385bb93fbf 51-59
+src/modules/AiRuntime/models/Chat.ts
+  s_3c91dcbb840566::t_a57d385bb93fbf 46-47
+  s_3c91dcbb840566::t_3c54755c7d8dd9 37-41
+src/modules/AudioRendering/AGENTS.md
+  s_3c91dcbb840566::t_ea2f3255916b80 26
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  s_3c91dcbb840566::t_4d66c73e297fae 5-11
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_3c91dcbb840566::t_70afb3bfe92c88 571
+  s_3c91dcbb840566::t_1b8fc6f2c63ca1 562-570,572-577
+src/modules/AiRuntime/useCases/__tests__/metricGoalPreviewRenders.spec.ts
+  s_3c91dcbb840566::t_9c1e70cee0d4b7 217,221-229,231-232,234-237,295-296
+  s_87ae37da66d2f0::t_7868179efc1157 297
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_3c91dcbb840566::t_0b56ee0621232f 57
+  s_35b9801a6d6336::t_a3158d8a621ab0 58,64-71,917-922,1469-1473,1543-1560
+  s_3c91dcbb840566::t_3c54755c7d8dd9 375
+  s_3c91dcbb840566::t_41b470a4cf5449 59-63
+src/modules/AiRuntime/stores/__tests__/agentRunStore.spec.ts
+  s_35b9801a6d6336::t_5c73a747eac334 11-17,166-219
+crates/daw-plugin-host/src/vst3_wrapper/tests.rs
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1870-1892
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readSkippedVibeBatchPositions.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-16
+src/modules/AiRuntime/AGENTS.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 46,49-52
+  s_ff124a0cf68412::t_5929ddbb75005d 33,42
+src/modules/AiRuntime/errors/LocalModelRefusalError.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-39
+scripts/__tests__/vitestProgressDiagnostics.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-186
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readVibeRunCards.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-53
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 478-522,944-970,972
+  s_3c91dcbb840566::t_8a12910efe9007 971,973
+.agents/skills/delivery-orchestration/references/lane-publication.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 38-40,78-81,84-85
+scripts/vitestProgressDiagnostics.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-107
+src/modules/AiRuntime/__tests__/vibeRunWorkflowFixture.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-284
+src/modules/AiRuntime/useCases/agentRequestOrchestration/postVibeRunSummary.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-46
+scripts/gitCheckpointMount.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-13
+scripts/__tests__/eslintConfig.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 2,8-24,95-141,145-159,161-169,190
+  s_3c91dcbb840566::t_3f2714cfaa1871 191
+.agents/skills/delivery-orchestration/SKILL.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 39,75-76,122-124,179-181,477-478,536-543,611-612
+.agents/skills/review-stances/test-validity.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 204-211
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-5,21
+scripts/gitCheckpointArguments.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-42
+src/modules/AiRuntime/useCases/cancelPendingChatActions.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 10-11,70-73,75-78
+src/modules/Command/useCases/index.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 111
+scripts/resourceGuard.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 42,134,2301-2322
+src/modules/AiRuntime/repositories/webLlm/toolCalling.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 7,16-17,44
+src/modules/AiRuntime/transformers/buildWebLlmDecodingSchema.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-80
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readConfirmationBatchId.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-16
+src/modules/AiRuntime/useCases/__tests__/vibeBatchSkip.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-343
+scripts/nativeCommandDiagnostics.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-70
+scripts/gitCheckpointDaemon.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-149
+scripts/gitCheckpointProcess.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-155
+scripts/__tests__/vitestZeroTestReport.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1,206,210,217,228,318,351,384,393-448
+  s_3c91dcbb840566::t_f56d444a827d0d 449
+src/modules/WorkspaceShell/presentations/views/Prompt/__tests__/LlmStatusBadge.spec.tsx
+  s_3c91dcbb840566::t_3c54755c7d8dd9 124-196
+scripts/__tests__/processSnapshot.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-75
+src/modules/AiRuntime/useCases/readVibeBatchSkipAvailability.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-36
+src/modules/AiRuntime/stores/llmStatusStore.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 9,16-17
+scripts/gitCheckpoint.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-588
+scripts/__tests__/checkBarrelMockCoverage.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 45-47,51,58,461-478,622-835,869-936
+crates/daw-plugin-host/src/vst3_wrapper.rs
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1489-1493,1496
+scripts/vitestProgressReporter.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-52
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readVibeRunBatchSummaries.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-53
+scripts/__tests__/gitCheckpoint.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-629
+src/modules/AiRuntime/transformers/__tests__/buildWebLlmDecodingSchema.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-212
+scripts/processSnapshot.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-92
+scripts/gitCheckpointDiscovery.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-117
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1202,1356
+scripts/gitCheckpointSocket.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-18
+scripts/checkBarrelMockCoverage.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 62-69,859,885,889-903,949,1007,1097-1098,1101-1102,1104,1137-1140,1301-1318
+scripts/trustedGithubWriteBootstrap.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 193
+src/modules/AiRuntime/repositories/webLlm/createWebLlmAppConfig.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 2,36
+scripts/nativeCommand.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 3-10,17,24,26-32,34-37,42,59-60,90-94,111,117,120,137,144,169,174-175,188,191-213,238-242,263,266,277-281,296
+src/modules/AiRuntime/repositories/webLlm/getWebLlmRequiredFeatures.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-8
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 220-223
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 62,1889-1906
+  s_3c91dcbb840566::t_322d6a7ccf9196 1907-1908
+src/modules/AiRuntime/repositories/webLlm/generateWebLlmCompletion.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 19-24,53-55,57-60
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeAppliedBatches.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-20
+scripts/reviewRiskPolicy.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 169
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readAppliedVibeRunBatches.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-40
+crates/daw-engine/src/scheduler.rs
+  s_3c91dcbb840566::t_3c54755c7d8dd9 4989-4992,4996,5009,5015-5029,5060-5062,5064-5066,5145,5151,5164,6799,6817,7372-7394,7396-7397,7464,9916-9961,10101-10134
+  s_3c91dcbb840566::t_b5670d92763c6a 10135-10136
+src/modules/AiRuntime/useCases/readChatThreadContext.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 8,11-12,28
+scripts/runVitestZeroTestGuard.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 14-20,46-54,58-65,71,93,96-102
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 62-68,2276
+src/modules/AiRuntime/models/AgentRun.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 242,244-252
+src/modules/Command/useCases/__tests__/revertActionGroupsAtomically.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-138
+src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx
+  s_3c91dcbb840566::t_3c54755c7d8dd9 42-47,161-172,255-293,309-403,405
+  s_3c91dcbb840566::t_ee0fbcec2ef7cb 404,406
+src/modules/AiRuntime/useCases/vibeRun/describeVibeRunSummary.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 12-25,28,31-72,74-76,79,82-83,85
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 47-53
+scripts/__tests__/resourceGuard.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 463-479
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 5-9,11,16,33,160,224,226,242,256-258,270,829-1102
+  s_3c91dcbb840566::t_0b9969ca5766b9 1103
+src/modules/AiRuntime/repositories/webLlm/readWebGpuAdapterFeatures.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-8
+src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-4,39-40,97,450-480,523-527
+  s_3c91dcbb840566::t_1ec54b5688eecc 528
+eslint.config.mjs
+  s_3c91dcbb840566::t_3c54755c7d8dd9 2661,2709-2732,3122,3157-3160,3162,3164-3169,3172-3179
+src/components/ui/dropdown-menu.tsx
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1,21,23,44-45,65-66,89,91,110-111,137-138,163,165,183-184,198
+.agents/skills/delivery-orchestration/references/review-records.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 37-40,47-53,61-62,69-70,78-82,111-114,150-152,160-161,168-170
+src/modules/AiRuntime/repositories/webLlm/__tests__/toolCalling.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 3,81,97,114
+AGENTS.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 180-181,195-196,216-219,227,313-315,389-405,471-474,476-481,694-697
+src/modules/AiRuntime/repositories/webLlm/__tests__/generateWebLlmCompletion.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 4,94-105,212-305
+src/modules/AiRuntime/useCases/skipPendingVibeBatch.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-73
+scripts/__tests__/verifyNativeTransportMutations.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 419-422,435-436,444-457,567,985-990,1042-1044,1070-1072,1074-1086
+src/modules/AiRuntime/useCases/revertVibeRun.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-123
+src/modules/Command/useCases/revertActionGroupsAtomically.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-124
+vite.config.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 215-218
+src/components/ui/popover.tsx
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1,11-12
+scripts/verifyNativeTransportMutations.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 51-60,71,131,190,201,263-272,463
+scripts/vitestProgressSetup.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-3
+src/modules/AiRuntime/models/LocalModelRefusal.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-8
+src/modules/AiRuntime/repositories/webLlm/initWebLlmEngine.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 5-6,10-11,22-23,108-113,160-161,218,238-283
+  s_3c91dcbb840566::t_7c42b76a087904 284
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 19,150-151,562
+src/modules/AudioRendering/useCases/__tests__/cutAgentMeasurementWindow.spec.ts
+  s_3c91dcbb840566::t_6858fa56f9f376 1-11,14-95
+  s_3c91dcbb840566::t_2c1316d0a436e1 96-98
+  s_3c91dcbb840566::t_a5f374681fa473 99-129
+  s_ff124a0cf68412::t_cdf1e3d0219f8a 12-13
+src/modules/AudioEngine/useCases/offlineRender/readOfflineAdjustmentRenderClass.ts
+  s_3c91dcbb840566::t_797d0b82a65838 1,2,7,10-13,22-25,27-34,42-45,47-51,54-55
+  s_ff124a0cf68412::t_3146ff5afc57c5 8-9
+  s_ff124a0cf68412::t_7f77af43e30058 3-6,14-21,26,35-41,46,52-53
+src/modules/AudioEngine/useCases/offlineRender/__tests__/readOfflineAdjustmentRenderClass.spec.ts
+  s_3c91dcbb840566::t_8326f910c270aa 1-11,15-88,92,95-115,120-132,137-141
+  s_3c91dcbb840566::t_8d3ad2a64d0334 142,175-176
+  s_3c91dcbb840566::t_d93cd0afb1a57e 178-179
+  s_ff124a0cf68412::t_8245dc9e5ebc4b 12-14
+  s_ff124a0cf68412::t_def2a0ad1db89d 89-91,93-94,116-119,133-136,143-174,177
+src/modules/AiRuntime/useCases/agentRequestOrchestration/settleStoppedBatchPreparation.ts
+  s_9307cedd8951f1::t_64e659cd761970 1-24
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_c2f4449c5891e9::t_463d7d922321b4 11,22,25,442,444-447,457-462,466-473,475-476,479,485-494,498-499,501-510,534-535,540,544,548-549
+  s_ff124a0cf68412::t_b074083835eeb0 17,448-456,500
+  s_ff124a0cf68412::t_be5fa90bb25637 443,463-465,474,477-478,480-484,495-497,543
+src/modules/AudioEngine/useCases/index.ts
+  s_c2f4449c5891e9::t_7bb89010a2d8ef 200
+src/modules/AiRuntime/useCases/vibeRun/collectVibeRunInitialBaselines.ts
+  s_3c91dcbb840566::t_7329528afb8a5f 119,124-125
+  s_ff124a0cf68412::t_564d71c56bd21b 14,16,18-21
+src/modules/AiRuntime/useCases/__tests__/briefFromRequest.spec.ts
+  s_ff124a0cf68412::t_8881d1d1cac77c 65-69,368,717,739-741,750-751
+src/modules/AiRuntime/useCases/__tests__/metricGoalWorkflowFixture.ts
+  s_ff124a0cf68412::t_a654d1d126410b 206-207,222,224,241,262-266
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_c2f4449c5891e9::t_b61c34cb9252ae 157,234
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_c2f4449c5891e9::t_7cf8b708a47222 42,102
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeInitialMeasurementProgress.ts
+  s_ff124a0cf68412::t_5c39b5c651ea56 1-13
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeMeasurementRangeGroup.ts
+  s_ff124a0cf68412::t_ab9b034bcd095f 1-10
+src/modules/AiRuntime/useCases/artifactOf.ts
+  s_ff124a0cf68412::t_fb1acde27702d0 1-5
+src/modules/AiRuntime/useCases/boundedMeasurementWarnings.ts
+  s_ff124a0cf68412::t_8f8c75cb21c4de 1-8
+src/modules/AiRuntime/useCases/countMeasurementUnitWork.ts
+  s_ff124a0cf68412::t_b31f973eb57ee6 1-32
+src/modules/AiRuntime/useCases/countMeasurementWork.ts
+  s_ff124a0cf68412::t_ee6d0b972eb065 1-15
+src/modules/AiRuntime/useCases/executeAnalysisMeasure.ts
+  s_ff124a0cf68412::t_475bf3248d64d4 2,8-9,11
+src/modules/AiRuntime/useCases/executePreviewMeasurement.ts
+  s_ff124a0cf68412::t_fa79da85ac27d9 24,28-29,31-32,68
+src/modules/AiRuntime/useCases/measurePreviewTarget.ts
+  s_ff124a0cf68412::t_b729c538746370 1-55
+src/modules/AiRuntime/useCases/measurePreviewUnit.ts
+  s_ff124a0cf68412::t_5c7d29536e7f5f 15,18,19-26,149-235,245-247,302-304,309,315-319
+  s_ff124a0cf68412::t_35be739a97d152 17,69-73,75-76,78
+src/modules/AiRuntime/useCases/measureProjectScope.ts
+  s_ff124a0cf68412::t_e036c762572b7e 14,16,18
+src/modules/AiRuntime/useCases/measureProjectUnit.ts
+  s_ff124a0cf68412::t_8364007fccee42 7-12,14,33-37,39,58-79,90-92,134-137,152
+src/modules/AiRuntime/useCases/measuredPreviewRead.ts
+  s_ff124a0cf68412::t_0f50768055c2b8 1-129
+src/modules/AiRuntime/useCases/measurementFailureReceipt.ts
+  s_ff124a0cf68412::t_b01726ea4a9b94 1-23
+src/modules/AiRuntime/useCases/planMetricMeasurementRequests.ts
+  s_ff124a0cf68412::t_2cec6cc1f652f5 6-19
+src/modules/AiRuntime/useCases/planMetricMeasurementUnits.ts
+  s_ff124a0cf68412::t_088ae0d7eb9440 1,3-22,30,34-36,44,50-51,54-56,58-76,93-107,118-140,153
+  s_ff124a0cf68412::t_220a2179fb4636 2,23-29,31-33,37-43,45-49,52-53,57,77-92,108-117,141-152
+src/modules/AiRuntime/useCases/previewFailure.ts
+  s_ff124a0cf68412::t_b52a07d8b95664 1-19
+src/modules/AiRuntime/useCases/previewRefusalFailure.ts
+  s_ff124a0cf68412::t_b10f174daf739f 1-47
+src/modules/AiRuntime/useCases/projectMeasurementReceipt.ts
+  s_ff124a0cf68412::t_7f8229b2c21db5 1-40
+src/modules/AiRuntime/useCases/projectRefusalFailure.ts
+  s_ff124a0cf68412::t_7a2069ad509364 1-36
+src/modules/AiRuntime/useCases/readApplicationVerificationReceiptLimits.ts
+  s_9307cedd8951f1::t_7ff5137ee9982d 2-10,21-26,29-30
+  s_ff124a0cf68412::t_13f04f5c8ee794 1,11-20,27-28
+src/modules/AiRuntime/useCases/readGroupPrefixes.ts
+  s_ff124a0cf68412::t_24b1941a61cd73 1-20
+src/modules/AiRuntime/useCases/readMeasurementUnitCall.ts
+  s_ff124a0cf68412::t_71a63f3344d97e 1-34
+src/modules/AiRuntime/useCases/resolveMeasuredRange.ts
+  s_ff124a0cf68412::t_b6628f108b495b 1-46
+src/modules/AiRuntime/validators/readScheduledVibeRunPlan.ts
+  s_ff124a0cf68412::t_51e311d7dffe3b 270-272,367,373-374,402,531-548,555-561
+src/modules/AudioEngine/useCases/offlineRender/buildOfflineWebAudioGraph.ts
+  s_ff124a0cf68412::t_3fa02bd86c29c0 14,17
+src/modules/AudioEngine/useCases/offlineRender/conservativeSpanEndBeat.ts
+  s_ff124a0cf68412::t_af21d3fdfd419b 1-16
+src/modules/AudioEngine/useCases/offlineRender/readAdjustmentLayerConstancyThresholds.ts
+  s_ff124a0cf68412::t_eef092e9c7795b 1-35
+src/modules/AudioRendering/useCases/cutAgentMeasurementWindow.ts
+  s_ff124a0cf68412::t_63e6bb47fb0639 1,28-32
+src/modules/AudioRendering/useCases/index.ts
+  s_ff124a0cf68412::t_559408be160fa1 16-19
+src/modules/AudioRendering/useCases/readAgentMeasurementSpan.ts
+  s_ff124a0cf68412::t_44a97062213d47 1-9
+src/modules/AudioRendering/useCases/readAgentMeasurementTimeline.ts
+  s_ff124a0cf68412::t_8c16ce211407ca 1-8
+src/modules/AudioRendering/useCases/renderAgentMeasurementScope.ts
+  s_ff124a0cf68412::t_d908a01357054d 1-6,24
+src/modules/AudioRendering/useCases/renderAgentMeasurementTargets.ts
+  s_ff124a0cf68412::t_c528d16b115a37 17
+src/modules/AudioRendering/useCases/renderAgentMeasurementWindows.ts
+  s_ff124a0cf68412::t_ed3583390cfc96 1-85
+src/modules/AudioRendering/useCases/renderAgentPreviewMeasurementScope.ts
+  s_ff124a0cf68412::t_cd91a07633ccd2 2-9
+src/modules/AudioRendering/useCases/renderAgentPreviewMeasurementWindows.ts
+  s_ff124a0cf68412::t_f779da3fd61784 1-434
+src/modules/AiRuntime/useCases/__tests__/readApplicationVerificationReceiptLimits.spec.ts
+  s_3c91dcbb840566::t_f555747158b474 1-76
+  s_ff124a0cf68412::t_469010595fa092 77-79
+src/modules/AiRuntime/useCases/__tests__/planMetricMeasurementUnits.spec.ts
+  s_3c91dcbb840566::t_0f060110235d03 1-120
+src/modules/AiRuntime/services/applicationToolReceiptBudget.ts
+  s_ff124a0cf68412::t_b8bdf83c701651 2,69-84
+src/modules/AiRuntime/useCases/compilePreviewPrefix.ts
+  s_ff124a0cf68412::t_af365f9cb3c5b2 1-48
+src/modules/AiRuntime/useCases/readPreviewPrefixTimeline.ts
+  s_ff124a0cf68412::t_7b079ae886686b 1-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d7cb93f2d2ecf81da33a7ff6c11b04e24cd30e26",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3c91dcbb840566": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1058f26-f2e9-46cf-af40-6e3b7eafe1df",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_87ae37da66d2f0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e83ca346-1b25-4729-84f5-4e1a6a613aae",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_c2f4449c5891e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7817afe8-15e0-436f-b304-529241ac1a61",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_e385c7e8f0ec1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d20b-16d6-7491-871b-902fdaef401b",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ff124a0cf68412": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5859629c-45b4-4907-85a7-756af720dd80",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
