@@ -1,0 +1,20 @@
+scripts/__tests__/eslintWarnLevels.spec.ts
+  s_50cbc34e8b61c3::t_7b214cc297b71b 3
+  s_50cbc34e8b61c3::t_7311e79f70e9fa 104-113,116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4131f710a79e335fc708578f8ac840b0b9a2542e",
+  "prompts": {},
+  "sessions": {
+    "s_50cbc34e8b61c3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3ccafa79-c9ba-491d-83f4-7ab63651b7ac",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
