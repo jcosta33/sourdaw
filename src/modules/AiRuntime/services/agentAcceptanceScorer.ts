@@ -45,6 +45,9 @@ export function classifyPlanningOutcome(
         // so it is executed exactly as a batch is, and it carries no batch to count.
         case 'revert':
             return 'execute-exact';
+        // Only the Prompt Bar asks for a hand-off, and the scorer reads chat planning, which never does.
+        case 'chat-hand-off':
+            throw new Error('A Prompt Bar hand-off has no acceptance class.');
         default: {
             const exhaustive: never = outcome;
             throw new Error(`Planning outcome is not supported: ${JSON.stringify(exhaustive)}`);

@@ -6,6 +6,7 @@ import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases'
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
+import { isNoAiBackendError } from '../errors/NoAiBackendError';
 import { AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS } from '../models/AgentContext';
 import { REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
 import { ANSWER_INTERPRETATION_TOOL_NAME, createAnswerInterpretationToolSchema } from '../models/AnswerInterpretation';
@@ -23,7 +24,7 @@ import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MeasurementAdmitter } from '../models/MeasurementBudget';
 import { type MetricNativeLiteralUse } from '../models/MetricGoalAdmission';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
-import { type AnswerSuggestion, type PlanningOutcome } from '../models/PlanningOutcome';
+import { type AnswerSuggestion, type ChatHandOffReason, type PlanningOutcome } from '../models/PlanningOutcome';
 import {
     type PlanningProfile,
     READONLY_ANSWER_MAX_OUTPUT_TOKENS,
@@ -99,6 +100,7 @@ import { collectMetricGoalProof } from './collectMetricGoalProof';
 import { type ArbitraryCommandListCompilation, compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { compilePreviewMeasurementProposal } from './compilePreviewMeasurementProposal';
 import { createPlanningInterpretationToolSchema } from './createPlanningInterpretationToolSchema';
+import { describeNoAiBackendRemedy } from './describeNoAiBackendRemedy';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { executeBriefCompile } from './executeBriefCompile';
@@ -156,6 +158,12 @@ type ParsePromptToActionsInput = {
     thread?: ThreadContext | null;
     /** A suggestion an earlier answer offered, which the user asked to see proposed; the prompt is not read. */
     suggestion?: AnswerSuggestion;
+    /**
+     * Set only by the Prompt Bar's provider route: a request that plans a production brief or a list
+     * needing more than one batch ends in a `chat-hand-off` outcome, materializing nothing, so the
+     * Prompt Bar can run it in the agent chat instead.
+     */
+    chatHandOff?: true;
 };
 
 type CreateFastPathResultInput = {
@@ -652,6 +660,7 @@ const planPromptIntent = inject({ logger })(
             thread,
             profile,
             suggestion,
+            chatHandOff,
         }: ParsePromptToActionsInput): Promise<IntentResult> {
             const readonly = profile === 'readonly-answer';
             const normalized = prompt.toLowerCase().trim();
@@ -827,7 +836,14 @@ const planPromptIntent = inject({ logger })(
                 const syncopatedArpeggioCapability =
                     syncopatedArpeggioScope?.status === 'request' ? syncopatedArpeggioScope.capability : undefined;
                 const workflowMetricScopes = prepareWorkflowMetricScopes({ sidechain: sidechainRoutingScope });
-                const offersBrief = !readonly && isBriefWritingRequest(thread, streamIdentity?.runId, projectRevision);
+                const offersBrief =
+                    !readonly &&
+                    isBriefWritingRequest({
+                        thread,
+                        runId: streamIdentity?.runId,
+                        projectRevision,
+                        chatHandOff: chatHandOff === true,
+                    });
                 const creativeCatalog = readonly
                     ? undefined
                     : prepareCreativeInterpretationCatalog({
@@ -1617,6 +1633,10 @@ const planPromptIntent = inject({ logger })(
                     creativeAuthority?.mode === 'brief' ||
                     selectedCompilations.some((compiled) => compiled.kind === 'brief')
                 ) {
+                    // Nothing is admitted or measured here: the chat plans the request again in its thread.
+                    if (chatHandOff === true) {
+                        return createChatHandOffResult(prompt, 'brief');
+                    }
                     const brief = admitBriefProposal({
                         authorityMode: creativeAuthority?.mode,
                         terminalCalls: planningOutcome.toolCalls,
@@ -1739,6 +1759,10 @@ const planPromptIntent = inject({ logger })(
                     };
                 }
                 const { firstBatch, batchSchedule } = scheduled;
+                // Handed off before the first slice is grounded, so no slice work runs twice.
+                if (batchSchedule !== undefined && chatHandOff === true) {
+                    return createChatHandOffResult(prompt, 'scheduled-batches');
+                }
                 const transformCommands = materializeTransformToolCalls(selectedCompilations);
                 const transformTargetIds = getCompiledTransformTargetIds(transformCommands, context);
                 const combinedProposalCalls = firstBatch.calls.map((call) => {
@@ -2178,6 +2202,15 @@ const planPromptIntent = inject({ logger })(
                         ...applicationToolReceiptFields,
                     };
                 }
+                if (isNoAiBackendError(error)) {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        planningOutcome: { kind: 'denied', reason: describeNoAiBackendRemedy() },
+                    };
+                }
                 const reason = error instanceof Error ? error.message : String(error);
                 logger.warn(`[AI] Provider tool planning failed: ${reason}`);
                 return {
@@ -2191,11 +2224,6 @@ const planPromptIntent = inject({ logger })(
         }
 );
 
-/**
- * Only a hosted chat request may write the production brief. WebLLM, Explain, the Prompt Bar (which
- * passes no thread) and a decision resume keep the tools and interpretation modes they had, so no
- * profile is offered a mode its tools cannot complete.
- */
 /**
  * The vibe run a brief carries: planned from the brief the user is about to confirm, with no provider
  * call, and scheduled behind it only when it fits the run. A request that plans no batch adds nothing,
@@ -2265,12 +2293,20 @@ async function planBriefVibeRun(input: {
     };
 }
 
-function isBriefWritingRequest(
-    thread: ThreadContext | null | undefined,
-    runId: string | undefined,
-    projectRevision: string | undefined
-): boolean {
-    if (thread === undefined || projectRevision === undefined || projectRevision === '') {
+/**
+ * Only a hosted request from the chat, or from the Prompt Bar asking to hand it to the chat, may write
+ * the production brief. WebLLM, Explain and a decision resume keep the tools and interpretation modes
+ * they had, so no profile is offered a mode its tools cannot complete. Automatic never yields an
+ * all-hosted chain, so it never offers the brief.
+ */
+function isBriefWritingRequest(input: {
+    thread: ThreadContext | null | undefined;
+    runId: string | undefined;
+    projectRevision: string | undefined;
+    chatHandOff: boolean;
+}): boolean {
+    const { thread, runId, projectRevision, chatHandOff } = input;
+    if ((thread === undefined && !chatHandOff) || projectRevision === undefined || projectRevision === '') {
         return false;
     }
     if (runId !== undefined && (agentRunLifecycle.get(runId)?.resume ?? null) !== null) {
@@ -2278,6 +2314,16 @@ function isBriefWritingRequest(
     }
     const chain = getBackendChain();
     return chain.length > 0 && chain.every((backend) => backend === 'cloud');
+}
+
+/** A request the Prompt Bar runs in the agent chat instead; it carries no batch. */
+function createChatHandOffResult(prompt: string, reason: ChatHandOffReason): IntentResult {
+    return {
+        actions: [],
+        rawText: prompt,
+        requiresConfirmation: false,
+        planningOutcome: { kind: 'chat-hand-off', reason },
+    };
 }
 
 /**

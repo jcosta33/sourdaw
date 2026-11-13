@@ -50,7 +50,9 @@ import { getBriefMixIntentCatalog } from '../getBriefMixIntentCatalog';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import { planPromptActions } from '../planPromptActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
+import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -804,6 +806,93 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         expect(countCards()).toBe(1);
         expect(agentRunLifecycle.get(confirmation.runId)?.phase).toBe('completed');
     });
+
+    describe('from the Prompt Bar', () => {
+        const STEM_ID = 'track-stem';
+        const warmStemRoute = (): ScriptedPlanningTurn[] => [
+            briefIntake,
+            compileBrief({ vision: 'A warmer low end', trackRoles: [{ trackId: STEM_ID, role: 'bass' }] }, ['warm']),
+            proposeCompiled(),
+        ];
+
+        function seedStemProject(): void {
+            landProjectEdit(() => {
+                trackStore.set({
+                    tracks: [{ ...createTrack(STEM_ID, 'Stem 7'), clips: [audioClip(STEM_ID)] }],
+                    selectedTrackId: null,
+                    ghostClips: [],
+                });
+                markerStore.set({
+                    markers: [],
+                    sections: [
+                        { id: 'section-verse', name: 'Verse', startBeat: 0, endBeat: 2, color: '#ffffff' },
+                        { id: CHORUS_ID, name: 'Chorus', startBeat: 2, endBeat: 4, color: '#ffffff' },
+                    ],
+                });
+            });
+            audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => renderShelvedTone(input));
+        }
+
+        it('hands a brief request to the chat, which plans it again and ends with its brief card pending', async () => {
+            seedStemProject();
+            const requests = scriptPlanningTurns([...warmStemRoute(), ...warmStemRoute()]);
+            flushAutomergeStorageWrites();
+
+            const submitted = await submitAdmittedPromptRequest({ prompt: 'make it warmer', source: 'prompt-bar' });
+
+            expect(submitted.status).toBe('handed-off');
+            await vi.waitFor(() => {
+                expect(chatStore.value?.isGenerating).toBe(false);
+                getPendingProposal();
+            });
+            const { message, confirmation } = getPendingProposal();
+            expect(confirmation.runId).not.toBe(submitted.runId);
+            expect(confirmation.actions.map((action) => action.type)).toEqual(['setProductionBrief']);
+            expect(message.content).toContain('- Batch 2 of 2: warm bass — Stem 7');
+            expect(countCards()).toBe(1);
+            // The Prompt Bar planned once with the brief offered, then stopped before the vibe run measured anything:
+            // every render here is the chat's own plan, the three the chat route alone renders.
+            expect(requests).toHaveLength(6);
+            expect(requests[0]?.schemas.map((schema) => schema.function.name)).toContain('brief.compile');
+            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
+            expect(agentRunLifecycle.get(submitted.runId)).toMatchObject({ phase: 'completed', batches: [] });
+        }, 15_000);
+
+        it('stops a brief at the hand-off, materializing nothing and measuring nothing', async () => {
+            seedStemProject();
+            scriptPlanningTurns(warmStemRoute());
+
+            const planned = await planPromptActions({ prompt: 'make it warmer', chatHandOff: true });
+
+            expect(planned.result).toMatchObject({
+                actions: [],
+                planningOutcome: { kind: 'chat-hand-off', reason: 'brief' },
+            });
+            expect(planned.result.batchSchedule).toBeUndefined();
+            expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+            expect(countCards()).toBe(0);
+        });
+
+        it.each([
+            {
+                name: 'a hand-off planned on a local model',
+                backend: 'webllm',
+                input: { prompt: VIBE_PROMPT, chatHandOff: true as const },
+            },
+            {
+                name: 'a hosted request that asks for no hand-off and has no thread',
+                backend: 'cloud',
+                input: { prompt: VIBE_PROMPT },
+            },
+        ])('never offers the brief to $name', async ({ backend, input }) => {
+            runtimeMocks.backend.value = backend;
+            const requests = scriptPlanningTurns([decline]);
+
+            await planPromptActions(input);
+
+            expect(requests[0]?.schemas.map((schema) => schema.function.name)).not.toContain('brief.compile');
+        });
+    });
 });
 
 describe('brief.compile refusals', () => {
@@ -903,7 +992,7 @@ describe('brief.compile refusals', () => {
         });
     });
 
-    it('refuses a request the brief was not offered to, as the Prompt Bar is', () => {
+    it('refuses a request the brief was not offered to, as a local or Explain request is', () => {
         const result = executeBriefCompile({
             call: {
                 id: 'brief-compile',

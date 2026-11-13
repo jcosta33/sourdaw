@@ -602,6 +602,10 @@ async function dispatchPromptPlan(input: {
         });
         return undefined;
     }
+    // Only the Prompt Bar asks the planner for a hand-off; reaching here means a planner defect, never no match.
+    if (result.planningOutcome?.kind === 'chat-hand-off') {
+        throw new Error('The chat planned its own request as a hand-off to the chat.');
+    }
     if (request.options?.resume && result.actions.length === 0) {
         throw new Error('The replacement provider returned no plan for the selected decision interpretation.');
     }
