@@ -14,6 +14,12 @@ import type { setTrackState } from '../../../useCases/setTrackState';
 
 type RestoreTrackAction = Parameters<typeof handleRestoreTrack.execute>[0];
 type RestoreTrackPayload = RestoreTrackAction['payload'];
+type CapturedMidiState = {
+    notesByClipId: Record<string, readonly { readonly id: string }[]>;
+    ccByClipId: Record<string, readonly { readonly id: string }[]>;
+    pitchBendByClipId: Record<string, readonly { readonly id: string }[]>;
+};
+type SatelliteEntry = RestoreTrackPayload['clipSatellites'][number];
 type RestoreMidiClipDataInput = {
     clipId: string;
     notesSnapshot: RestoreTrackPayload['midiNotesByClipId'][string] | null;
@@ -23,9 +29,19 @@ type RestoreMidiClipDataInput = {
 
 const mocks = vi.hoisted(() => {
     const takeLaneStoreState: { value: TakeLaneStoreState | null } = { value: null };
+    const capturedStores: {
+        midi: CapturedMidiState | null;
+        automationLanes: RestoreTrackPayload['automationLaneSnapshots'] | null;
+    } = { midi: null, automationLanes: null };
 
     return {
         takeLaneStoreState,
+        capturedStores,
+        readClipSatelliteEntry: vi.fn((clipId: string): SatelliteEntry => ({
+            clipId,
+            gainEnvelope: null,
+            warpState: null,
+        })),
         getTrackStoreState: vi.fn<typeof getTrackStoreState>(),
         setTrackState: vi.fn<typeof setTrackState>(),
         finalizeSidechainRestore: vi.fn(),
@@ -126,13 +142,51 @@ vi.mock('../../../useCases/comping/insertTakeLane', () => ({
     insertTakeLane: mocks.insertTakeLane,
 }));
 
+// The removal capture reads these owners' stores; the restore writes them only
+// through the mocked use cases above.
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
+    midiStore: {
+        get value(): CapturedMidiState | null {
+            return mocks.capturedStores.midi;
+        },
+    },
+}));
+
+vi.mock('#/modules/Automation/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/stores')>()),
+    automationStore: {
+        get value(): { lanes: RestoreTrackPayload['automationLaneSnapshots'] } | null {
+            const lanes = mocks.capturedStores.automationLanes;
+            return lanes ? { lanes } : null;
+        },
+    },
+}));
+
 vi.mock('../../../stores/clipSatelliteState', () => ({
-    readClipSatelliteEntry: (clipId: string) => ({ clipId, gainEnvelope: null, warpState: null }),
+    readClipSatelliteEntry: mocks.readClipSatelliteEntry,
     writeClipSatelliteEntry: mocks.writeClipSatelliteEntry,
 }));
 
 function takeLane(id: string, trackId: string): TakeLane {
     return { id, trackId, takes: [], activeCompRegions: [] };
+}
+
+function clipOf(trackId: string, id: string): Track['clips'][number] {
+    return {
+        id,
+        trackId,
+        name: id,
+        type: 'midi',
+        startBeat: 0,
+        endBeat: 4,
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '',
+        locked: false,
+        muted: false,
+    };
 }
 
 function createRestoreTrackAction(overrides: Partial<RestoreTrackPayload> = {}): RestoreTrackAction {
@@ -176,6 +230,9 @@ describe('handleRestoreTrack', () => {
         vi.clearAllMocks();
         mocks.getTrackStoreState.mockReturnValue(null);
         mocks.takeLaneStoreState.value = { lanes: [] };
+        mocks.capturedStores.midi = null;
+        mocks.capturedStores.automationLanes = null;
+        mocks.readClipSatelliteEntry.mockImplementation((clipId) => ({ clipId, gainEnvelope: null, warpState: null }));
         mocks.restoreSidechainRoutes.mockReturnValue(mocks.finalizeSidechainRestore);
     });
 
@@ -185,6 +242,10 @@ describe('handleRestoreTrack', () => {
             { id: 'lane-restored', trackId: 'track-1' },
         ] satisfies RestoreTrackPayload['automationLaneSnapshots'];
         const action = createRestoreTrackAction({
+            trackSnapshot: TrackDummy.create({
+                id: 'track-1',
+                clips: ['clip-a', 'clip-b', 'clip-c', 'clip-d'].map((clipId) => clipOf('track-1', clipId)),
+            }),
             automationLaneSnapshots,
             midiNotesByClipId: { 'clip-a': [], 'clip-b': [] },
             midiCcByClipId: { 'clip-a': [], 'clip-c': [] },
@@ -269,7 +330,10 @@ describe('handleRestoreTrack', () => {
         const trackState: TrackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
         const gainEnvelope = { clipId: 'c1', points: [{ id: 'p1', beatOffset: 0, gainDb: -6 }], enabled: true };
         const clipSatellites = [{ clipId: 'c1', gainEnvelope, warpState: null }];
-        const action = createRestoreTrackAction({ clipSatellites });
+        const action = createRestoreTrackAction({
+            trackSnapshot: TrackDummy.create({ id: 'track-1', clips: [clipOf('track-1', 'c1')] }),
+            clipSatellites,
+        });
         mocks.getTrackStoreState.mockReturnValue(trackState);
 
         await handleRestoreTrack.execute(action);
@@ -598,7 +662,8 @@ describe('handleRestoreTrack', () => {
 
     describe('a captured track row', () => {
         const removedTrackId = 'track-1';
-        const survivor = TrackDummy.create({ id: 'survivor' });
+        const survivorClipId = 'clip-survivor';
+        const survivor = TrackDummy.create({ id: 'survivor', clips: [clipOf('survivor', survivorClipId)] });
         const survivorLane = takeLane('survivor-lane', survivor.id);
 
         function requireDefined<T>(value: T | undefined, label: string): T {
@@ -609,7 +674,7 @@ describe('handleRestoreTrack', () => {
         }
 
         // Rows the stores themselves would hold, built through their own projections.
-        function storeTrackRow(): Track {
+        function storeTrackRow(overrides: Partial<Track> = {}): Track {
             const clip = {
                 trackId: removedTrackId,
                 fadeInBeats: 0,
@@ -644,6 +709,7 @@ describe('handleRestoreTrack', () => {
                     { id: 'alt-1', name: 'Alternative 1', clips: [zeroLength] },
                     { id: 'alt-2', name: 'Alternative 2', clips: [preRoll] },
                 ],
+                ...overrides,
             });
             return requireDefined(
                 sanitizeTrackSnapshot({ tracks: [raw], selectedTrackId: null }).tracks[0],
@@ -796,6 +862,179 @@ describe('handleRestoreTrack', () => {
                     takeLaneSnapshots: [corrupted as RestoreTrackPayload['takeLaneSnapshots'][number]],
                 }),
             });
+        });
+
+        // Every member a removal of this row captures: MIDI and a satellite on its
+        // zero-length clip and on a clip only an inactive alternative holds, and an
+        // automation lane of the track.
+        function rowWithAlternativeOnlyClip(overrides: Partial<Track> = {}): Track {
+            const base = storeTrackRow(overrides);
+            return {
+                ...base,
+                alternatives: [
+                    ...base.alternatives,
+                    { id: 'alt-3', name: 'Alternative 3', clips: [clipOf(removedTrackId, 'clip-alt-only')] },
+                ],
+            };
+        }
+
+        function seedCapturedMembers(): void {
+            const rows = { notes: [{ id: 'note-1' }], cc: [{ id: 'cc-1' }], bend: [{ id: 'bend-1' }] };
+            mocks.capturedStores.midi = {
+                notesByClipId: { 'clip-zero': rows.notes, 'clip-alt-only': rows.notes, [survivorClipId]: rows.notes },
+                ccByClipId: { 'clip-alt-only': rows.cc, [survivorClipId]: rows.cc },
+                pitchBendByClipId: { 'clip-zero': rows.bend, [survivorClipId]: rows.bend },
+            };
+            mocks.capturedStores.automationLanes = [
+                { id: 'lane-own', trackId: removedTrackId },
+                { id: 'lane-survivor', trackId: survivor.id },
+            ];
+            mocks.readClipSatelliteEntry.mockImplementation((clipId) => ({
+                clipId,
+                gainEnvelope: { clipId, points: [], enabled: true },
+                warpState: null,
+            }));
+        }
+
+        function captureWithMembers(row: Track): RestoreTrackPayload {
+            seedCapturedMembers();
+            const payload = captureRemoval(row, storeTakeLane());
+            vi.clearAllMocks();
+            return payload;
+        }
+
+        function expectRestored(action: RestoreTrackAction, row: Track): void {
+            expect(handleRestoreTrack.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
+            expect(handleRestoreTrack.execute(action)).toMatchObject({ status: 'written' });
+            expect(mocks.setTrackState.mock.calls[0]?.[0].tracks).toStrictEqual([survivor, row]);
+        }
+
+        it('captures the members of a row holding a zero-length clip and an alternative-only clip, and restores them', () => {
+            const row = rowWithAlternativeOnlyClip();
+            const payload = captureWithMembers(row);
+
+            expect(Object.keys(payload.midiNotesByClipId).sort()).toEqual(['clip-alt-only', 'clip-zero']);
+            expect(Object.keys(payload.midiCcByClipId)).toEqual(['clip-alt-only']);
+            expect(Object.keys(payload.midiPitchBendByClipId)).toEqual(['clip-zero']);
+            expect(payload.clipSatellites.map((entry) => entry.clipId).sort()).toEqual([
+                'clip-alt-only',
+                'clip-pre-roll',
+                'clip-zero',
+            ]);
+            expect(payload.automationLaneSnapshots).toEqual([{ id: 'lane-own', trackId: removedTrackId }]);
+
+            expectRestored({ type: 'restoreTrack', payload }, row);
+            expect(mocks.restoreMidiClipData.mock.calls.map(([input]) => input.clipId).sort()).toEqual([
+                'clip-alt-only',
+                'clip-zero',
+            ]);
+            expect(mocks.writeClipSatelliteEntry).toHaveBeenCalledTimes(3);
+            expect(mocks.restoreAutomationLanes).toHaveBeenCalledWith(payload.automationLaneSnapshots);
+        });
+
+        it.each([
+            ['a folder child', { parentId: 'folder-1' }],
+            ['a top-level track', { parentId: null }],
+            ['a bus', { kind: 'bus' as const, clips: [], alternatives: [] }],
+            ['an empty track', { clips: [], alternatives: [] }],
+        ])('restores the captured removal of %s', (_label, overrides: Partial<Track>) => {
+            const row = storeTrackRow(overrides);
+            const payload = captureWithMembers(row);
+
+            expect(payload.trackKind).toBe(row.kind);
+            expect(payload.trackParentId).toBe(row.parentId);
+            expectRestored({ type: 'restoreTrack', payload }, row);
+        });
+
+        it('restores a payload whose parent id was dropped by serialization of a top-level track', () => {
+            const row = storeTrackRow();
+            const { trackParentId: _dropped, ...payload } = captureWithMembers(row);
+
+            expectRestored({ type: 'restoreTrack', payload: payload as RestoreTrackPayload }, row);
+        });
+
+        it('does not create a bus strip for a bus payload refused for its row kind', async () => {
+            const payload = captureWithMembers(storeTrackRow());
+            const result = handleRestoreTrack.execute({
+                type: 'restoreTrack',
+                payload: { ...payload, trackKind: 'bus' },
+            });
+
+            await result?.afterCommit?.();
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.ensureBusStrip).not.toHaveBeenCalled();
+            expect(mocks.setBusGain).not.toHaveBeenCalled();
+        });
+
+        const foreignRows = [{ id: 'foreign-row' }];
+        it.each([
+            [
+                "MIDI notes for another track's clip",
+                (payload: RestoreTrackPayload) => ({
+                    ...payload,
+                    midiNotesByClipId: { ...payload.midiNotesByClipId, [survivorClipId]: foreignRows },
+                }),
+            ],
+            [
+                "MIDI CC for another track's clip",
+                (payload: RestoreTrackPayload) => ({
+                    ...payload,
+                    midiCcByClipId: { ...payload.midiCcByClipId, [survivorClipId]: foreignRows },
+                }),
+            ],
+            [
+                "MIDI pitch bend for another track's clip",
+                (payload: RestoreTrackPayload) => ({
+                    ...payload,
+                    midiPitchBendByClipId: { ...payload.midiPitchBendByClipId, [survivorClipId]: foreignRows },
+                }),
+            ],
+            [
+                "a satellite of another track's clip",
+                (payload: RestoreTrackPayload) => ({
+                    ...payload,
+                    clipSatellites: [
+                        ...payload.clipSatellites,
+                        {
+                            clipId: survivorClipId,
+                            gainEnvelope: { clipId: survivorClipId, points: [], enabled: true },
+                            warpState: null,
+                        },
+                    ],
+                }),
+            ],
+            [
+                'an automation lane of another track',
+                (payload: RestoreTrackPayload) => ({
+                    ...payload,
+                    automationLaneSnapshots: [
+                        ...payload.automationLaneSnapshots,
+                        { id: 'lane-survivor', trackId: survivor.id },
+                    ],
+                }),
+            ],
+            [
+                'a kind its row does not have',
+                (payload: RestoreTrackPayload) => ({ ...payload, trackKind: 'bus' as const }),
+            ],
+            [
+                'a parent its row does not have',
+                (payload: RestoreTrackPayload) => ({ ...payload, trackParentId: survivor.id }),
+            ],
+            [
+                'no parent while its row has one',
+                (payload: RestoreTrackPayload) => ({
+                    ...payload,
+                    trackSnapshot: { ...payload.trackSnapshot, parentId: survivor.id },
+                    trackParentId: null,
+                }),
+            ],
+        ])('refuses before any write when the payload carries %s', (_label, corrupt) => {
+            const payload = captureWithMembers(rowWithAlternativeOnlyClip());
+
+            expectNothingWritten({ type: 'restoreTrack', payload: corrupt(payload) });
+            expect(mocks.ensureBusStrip).not.toHaveBeenCalled();
         });
     });
 });

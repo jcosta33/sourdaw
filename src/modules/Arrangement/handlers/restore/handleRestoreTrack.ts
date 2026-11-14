@@ -7,6 +7,7 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { type TakeLane } from '../../models/TakeLane';
+import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
 import { decodeTrackSnapshot, type Track } from '../../stores/trackStore';
@@ -214,12 +215,34 @@ function decodeRestoredRows(payload: RestoreTrackPayload): { track: Track; takeL
     if (
         track?.id !== payload.trackId ||
         !holdsOnlyOwnClips(track) ||
+        !describesRow(payload, track) ||
+        !keysOnlyOwnClips(payload, track) ||
+        payload.automationLaneSnapshots.some((lane) => lane.trackId !== payload.trackId) ||
         !takeLanes ||
         takeLanes.some((lane) => lane.trackId !== payload.trackId)
     ) {
         return null;
     }
     return { track, takeLanes };
+}
+
+// The capture copies kind and parent from the row it snapshots; a decoded row
+// holds `parentId: null` where the payload may carry it absent.
+function describesRow(payload: RestoreTrackPayload, track: Track): boolean {
+    return payload.trackKind === track.kind && (payload.trackParentId ?? null) === track.parentId;
+}
+
+// The capture keys MIDI data and satellites by the clips the row holds, live
+// or in a stored alternative; a key naming any other clip would overwrite
+// another track's clip data.
+function keysOnlyOwnClips(payload: RestoreTrackPayload, track: Track): boolean {
+    const ownClipIds = new Set(collectTrackClipIds(track));
+    return [
+        ...Object.keys(payload.midiNotesByClipId),
+        ...Object.keys(payload.midiCcByClipId),
+        ...Object.keys(payload.midiPitchBendByClipId),
+        ...payload.clipSatellites.map((entry) => entry.clipId),
+    ].every((clipId) => ownClipIds.has(clipId));
 }
 
 // Every clip a track holds, live or in a stored alternative copy, names that
