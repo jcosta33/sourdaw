@@ -59,13 +59,16 @@ export type ClaimBoardItem = {
 };
 
 /**
- * The label swap runs before the board move: the labels are the claim another agent's survey
- * reads. The claim reads the labels back after the edit and moves no board until the swap is
- * observed. The read-back proves the write landed, not exclusivity: two operators claiming at
- * once both add an already-present label without error, so exclusivity comes from the claim
- * token below. A rerun cannot repair boards a partial claim left behind — once status:active is
- * on the issue the refusal below fires first — so the operator completes a stranded board move by
- * hand under the manual-gh exception for an issue's own project membership.
+ * The claim reads and validates every board it will move before its first write, so a board the
+ * claim cannot move (too many to read, no readable Status field, no In progress option) refuses
+ * with the issue untouched and a rerun can claim it once the board is fixed. The label swap then
+ * runs before the board move: the labels are the claim another agent's survey reads. The claim
+ * reads the labels back after the edit and moves no board until the swap is observed. The
+ * read-back proves the write landed, not exclusivity: two operators claiming at once both add an
+ * already-present label without error, so exclusivity comes from the claim token below. A board
+ * write that fails after the claim has won leaves the claim standing, so a rerun refuses on
+ * status:active; the operator completes that board move by hand under the manual-gh exception for
+ * an issue's own project membership.
  */
 export function labelSwapPlan(labels: string[]): { add: string; remove: string[] } {
     return {
@@ -430,6 +433,7 @@ export function claimTrackerIssue(
                 'read the board before choosing work'
         );
     }
+    const moves = planBoardMoves(issue, gh);
     const plan = labelSwapPlan(labels);
     gh(issueEditLabelsArgs(issue, plan));
     const edited = readIssueClaimRow(issue, gh);
@@ -440,25 +444,57 @@ export function claimTrackerIssue(
     decideClaim(issue, token, gh);
     const removed = plan.remove.length > 0 ? `, removed ${plan.remove.join(', ')}` : '';
     log(`issue #${issue}: added ${ACTIVE_STATUS_LABEL}${removed}`);
+    moveBoards(issue, moves, gh, log);
+}
+
+type BoardMove = { board: ClaimBoardItem; ids: { fieldId: string; optionId: string } | undefined };
+
+/** Every board the issue sits on, with the live Status ids for each one not already In progress. */
+function planBoardMoves(issue: number, gh: Gh): BoardMove[] {
     const boards = boardsFromGraphql(
         parseGraphqlResponse(gh(issueBoardsArgs(issue)), `issue #${issue} board membership`),
         issue
     );
-    if (boards.length === 0) {
+    return boards.map((board) => ({
+        board,
+        ids:
+            board.statusName === IN_PROGRESS_OPTION_NAME
+                ? undefined
+                : statusFieldIds(
+                      parseJson<unknown>(gh(fieldListArgs(board)), `board "${board.projectTitle}" fields`),
+                      board
+                  ),
+    }));
+}
+
+/**
+ * Runs only after the claim has won, so a failed board write cannot undo the claim: every board is
+ * attempted, and the refusal names the ones left for the operator to move by hand.
+ */
+function moveBoards(issue: number, moves: BoardMove[], gh: Gh, log: (message: string) => void): void {
+    if (moves.length === 0) {
         log(`issue #${issue} sits on no project board; nothing to move`);
         return;
     }
-    for (const board of boards) {
-        if (board.statusName === IN_PROGRESS_OPTION_NAME) {
+    const failures: string[] = [];
+    for (const { board, ids } of moves) {
+        if (ids === undefined) {
             log(`board "${board.projectTitle}": already ${IN_PROGRESS_OPTION_NAME}`);
             continue;
         }
-        const ids = statusFieldIds(
-            parseJson<unknown>(gh(fieldListArgs(board)), `board "${board.projectTitle}" fields`),
-            board
+        try {
+            gh(itemEditArgs(board, ids));
+            log(`board "${board.projectTitle}": moved to ${IN_PROGRESS_OPTION_NAME}`);
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            failures.push(`board "${board.projectTitle}" was not moved to ${IN_PROGRESS_OPTION_NAME} (${reason})`);
+        }
+    }
+    if (failures.length > 0) {
+        fail(
+            `issue #${issue} is claimed: ${ACTIVE_STATUS_LABEL} and this claim comment stay on the issue; ` +
+                `${failures.join('; ')}; move ${failures.length === 1 ? 'it' : 'them'} by hand`
         );
-        gh(itemEditArgs(board, ids));
-        log(`board "${board.projectTitle}": moved to ${IN_PROGRESS_OPTION_NAME}`);
     }
 }
 
