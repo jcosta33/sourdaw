@@ -7,6 +7,7 @@ import { type AnswerInterpretationCatalog } from '../models/AnswerInterpretation
 
 import { expandMixRecipe } from './expandMixRecipe';
 import { type MetricGoal } from './metricGoalContractTypes';
+import { readRecipeExpectationTolerance } from './metricHoldTolerances';
 import { readRequestMetricNumbers } from './readRequestMetricNumbers';
 
 type Objective = {
@@ -106,6 +107,23 @@ function policyObjectives(scopes: AnswerScopes, allScopeIds: string[]): Objectiv
     return objectives;
 }
 
+/**
+ * The metric and tolerance a recipe expectation compiles with. A metric the application cannot measure,
+ * or a hold on one with no versioned tolerance, compiles unsupported with no metric: admission blocks it
+ * as incomparable, and no hold is ever compiled at a zero that rounding would break.
+ */
+function readRecipeGoalMetric(
+    expectation: { metric: string; direction: MetricGoal['relation'] },
+    metricIds: MetricIds
+): Pick<Objective['goals'][number], 'metricName' | 'metricId' | 'tolerance'> {
+    const metricId = metricIds.find((metric) => metric === expectation.metric) ?? null;
+    const tolerance = metricId === null ? null : readRecipeExpectationTolerance(metricId, expectation.direction);
+    if (metricId === null || tolerance?.status !== 'read') {
+        return { metricName: expectation.metric, metricId: null, tolerance: 0 };
+    }
+    return { metricName: expectation.metric, metricId, tolerance: tolerance.tolerance };
+}
+
 function recipeObjectives(
     answer: AnswerInterpretationCatalog,
     catalog: RecipeCatalog,
@@ -159,12 +177,10 @@ function recipeObjectives(
             defaultScopeIds,
             roles: [...recipe.roles],
             goals: recipe.metrics.map((expectation, expectationIndex) => ({
-                metricName: expectation.metric,
-                metricId: metricIds.find((metric) => metric === expectation.metric) ?? null,
+                ...readRecipeGoalMetric(expectation, metricIds),
                 band: expectation.band ?? null,
                 relation: expectation.direction,
                 targetValue: null,
-                tolerance: 0,
                 source: {
                     kind: 'recipe',
                     recipeId: recipe.id,

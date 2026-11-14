@@ -4,6 +4,7 @@ import { digest } from '#/utils/canonicalDigest';
 
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { type MetricGoal } from '../metricGoalContractTypes';
+import { readRecipeExpectationTolerance } from '../metricHoldTolerances';
 
 import { type VibeBatchPair, readVibeBatchPairs } from './readVibeBatchPairs';
 
@@ -45,6 +46,13 @@ export function readVibeBatchRecipeGoals(input: {
             if (metricId === undefined) {
                 continue;
             }
+            const tolerance = readRecipeExpectationTolerance(metricId, expectation.direction);
+            if (tolerance.status === 'missing') {
+                return {
+                    status: 'refused',
+                    reason: `recipe ${recipe.id} holds ${metricId}, which has no versioned hold tolerance`,
+                };
+            }
             for (const range of input.batch.verificationRanges ?? [input.range]) {
                 if (isSilentRange(input.batch, pair.targetId, range)) {
                     continue;
@@ -59,7 +67,7 @@ export function readVibeBatchRecipeGoals(input: {
                     range,
                     relation: expectation.direction,
                     targetValue: null,
-                    tolerance: 0,
+                    tolerance: tolerance.tolerance,
                     source: {
                         kind: 'recipe',
                         recipeId: recipe.id,
