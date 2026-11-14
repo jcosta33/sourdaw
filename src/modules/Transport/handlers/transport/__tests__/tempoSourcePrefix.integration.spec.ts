@@ -33,7 +33,7 @@ import {
     replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getMidiGrooveHandlers, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -76,6 +76,7 @@ function registerHandlers(): void {
         getAutomationHandlers(),
         getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
         getMidiNoteTransformHandlers(),
+        getMidiGrooveHandlers(),
         getProjectHandlers(),
         getTransportHandlers(),
         getYeastHandlers(),

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::grinder::engine::GrinderEngine;
 
 fn lstm_capture(num_layers: usize, hidden_size: usize) -> String {

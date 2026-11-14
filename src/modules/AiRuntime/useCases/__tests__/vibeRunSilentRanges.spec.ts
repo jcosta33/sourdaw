@@ -240,8 +240,17 @@ function sourceTrack(id: string, name: string) {
     return { ...createTrack({ id, name, kind: 'audio' }), clips: [clip(id)] };
 }
 
+/**
+ * A render as the song it holds: its first frame is the song at its start beat (two beats a second),
+ * so every range read out of a wider render holds that range's own samples.
+ */
+function renderSong(input: RenderInput, sample: (songSeconds: number) => number): AudioBuffer {
+    const startSeconds = input.startBeat / 2;
+    return metricGoalAudioBuffer((time) => sample(startSeconds + time), (input.endBeat - input.startBeat) / 2);
+}
+
 /** A 100 or 220 Hz body beside a 3 kHz top, each scaled by the shelf gains of the EQs the track carries. */
-function soundingTrack(input: RenderInput): AudioBuffer {
+function soundingSample(input: RenderInput): (songSeconds: number) => number {
     const track = input.renderTracks.find((candidate) => candidate.id === input.targetTrackId);
     if (track === undefined) {
         throw new Error('The render target is absent.');
@@ -250,19 +259,18 @@ function soundingTrack(input: RenderInput): AudioBuffer {
         track.devices.reduce((total, device) => total + (device.parameterValues[id] ?? 0), 0);
     const low = 10 ** (parameter('eq-low-gain') / 20);
     const high = 10 ** (parameter('eq-high-gain') / 20);
-    const seconds = (input.endBeat - input.startBeat) / 2;
     const frequency = input.targetTrackId === DRUMS_ID ? 100 : 220;
-    const brightness = input.startBeat === CHORUS_START ? 0.35 : 0.15;
-    return metricGoalAudioBuffer(
-        (time) =>
-            0.4 * low * Math.sin(2 * Math.PI * frequency * time) +
-            brightness * high * Math.sin(2 * Math.PI * 3000 * time),
-        seconds
-    );
+    return (song) => {
+        const brightness = song >= CHORUS_START / 2 ? 0.35 : 0.15;
+        return (
+            0.4 * low * Math.sin(2 * Math.PI * frequency * song) +
+            brightness * high * Math.sin(2 * Math.PI * 3000 * song)
+        );
+    };
 }
 
 function silence(input: RenderInput): AudioBuffer {
-    return metricGoalAudioBuffer(() => 0, (input.endBeat - input.startBeat) / 2);
+    return renderSong(input, () => 0);
 }
 
 /** Drums rest through the chorus; Bass is silent in every range; Vocal sounds throughout. */
@@ -270,10 +278,11 @@ function renderWithSilences(input: RenderInput): AudioBuffer {
     if (input.targetTrackId === BASS_ID) {
         return silence(input);
     }
-    if (input.targetTrackId === DRUMS_ID && input.startBeat === CHORUS_START) {
-        return silence(input);
+    const sounding = soundingSample(input);
+    if (input.targetTrackId === DRUMS_ID) {
+        return renderSong(input, (song) => (song >= CHORUS_START / 2 ? 0 : sounding(song)));
     }
-    return soundingTrack(input);
+    return renderSong(input, sounding);
 }
 
 async function sendChatMessage(prompt: string) {

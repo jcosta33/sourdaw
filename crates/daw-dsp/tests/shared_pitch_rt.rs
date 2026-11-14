@@ -1,5 +1,6 @@
 //! Debug allocation and frozen-consumer parity contract for active 128-frame processing.
 #![cfg(debug_assertions)]
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
 #[path = "support/pitch_baseline/mod.rs"]
 mod baseline;
 

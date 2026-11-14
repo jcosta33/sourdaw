@@ -514,8 +514,9 @@ clarify code, not threads. Full eligibility, ancestry, and crash-recovery mechan
 `Gate` already ran on this head. A later push starts it again and needs a fresh review. The merge
 is your decision: confirm the whole `Health gates` workflow succeeded on this head (step e), then run
 `pnpm deliver <pr>` from the protected primary checkout. The script squash-merges as the immutable
-author App once the reviewer APPROVE binds the current head. GitHub's live ruleset requires the
-`Gate` context by name; what `deliver` checks itself is under [CI admission](#ci-admission).
+author App once the reviewer APPROVE binds the current head. GitHub's live ruleset requires a
+`Gate` check from GitHub Actions (`integration_id` 15368), so a check or status named `Gate` from any
+other identity does not satisfy it; what `deliver` checks itself is under [CI admission](#ci-admission).
 
 #### Validation order
 
@@ -524,6 +525,17 @@ confirm the immutable reviewer Bot `APPROVED` the current head, with its recorde
 authorization binding that live reviewer approval, and all threads resolved. Approval counts or
 matching logins cannot substitute for that actor identity. Merge executes as the immutable author
 App; receipt and tracker writes retain their author App identities.
+
+At both validation points `deliver` also holds the live pull-request title to the subject contract
+`lane:publish` enforces (`assertConventionalSubject` in `scripts/prContract.ts`): it refuses a title
+that is not conventional or that carries an issue-closing reference, because the title becomes the
+squash commit subject and GitHub closes every issue a closing keyword names in a commit on `main`.
+A title edited after publication is caught here. On a conforming lane, replace it with
+`lane:publish --title` and keep the relationship in the body; typed and legacy `agent/` branches
+are both conforming. `lane:publish` refuses `--title` on an off-convention legacy lane, one whose
+branch matches neither form, which stays push-only, so such a pull request cannot be retitled
+through the scripts: respin it as a conforming lane and close it with `pr:supersede` once the
+replacement merges.
 
 Head, head branch, base branch, body, canonical closing target, and stacked dependents must stay
 stable between reads. `deliver` remains main-only and refuses any other base; reconcile a landed
@@ -609,10 +621,15 @@ sources when its HEAD/index or previous verified installation proves the current
 refuses. It preserves other primary dirt and never depends on the author lane surviving. Install
 then verifies the job's first launchd launch and, when launchd cannot initialize it, boots the job
 out, restores and re-bootstraps the previous plist when one existed (otherwise removes it), and fails
-with the remediation; after a verified launch it prunes superseded runtimes. On macOS a primary on an external volume needs
-the pinned Node binary granted Full Disk Access (or Removable Volumes access). Consult
-`lane:cleanup --status` from a current checkout, `.agents/lane-cleanup/worker*.log`, and
-`launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` for retained work and scheduler status.
+with the remediation; after a verified launch it prunes superseded runtimes. Launchd starts from the
+canonical home and opens `~/Library/Logs/Sourdaw/lane-cleanup/worker.log` and `worker-error.log`
+before Node reaches an external primary checkout. Consult `lane:cleanup --status` from a current
+checkout for retained work, those home logs for worker output, and
+`launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` plus the macOS system log for launchd
+initialization failures. Existing `.agents/lane-cleanup/worker*.log` files in the primary remain
+historical and untouched. Grant the pinned Node binary Removable Volumes access for an external
+primary only when the macOS privacy log identifies its denial; use Full Disk Access only when that
+denial requires it.
 
 ## Briefs
 

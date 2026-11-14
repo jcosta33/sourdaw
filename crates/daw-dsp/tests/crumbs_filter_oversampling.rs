@@ -13,6 +13,8 @@
 //! has no bearing on the answer, so the two sides of the threshold have to
 //! agree.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::crumbs::filter::{normalized_resonance_from_q, TptSvf};
 use daw_dsp::crumbs::types::FilterType;
 

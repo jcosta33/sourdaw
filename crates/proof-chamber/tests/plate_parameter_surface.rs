@@ -30,6 +30,8 @@
 //!   which is the hole #1411's M8 found. The untouched Plate also keeps an
 //!   absolute cross-platform level, energy and start-shape guard below.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::ProofChamberInstance;
 
 #[path = "support/plate_fine_structure.rs"]

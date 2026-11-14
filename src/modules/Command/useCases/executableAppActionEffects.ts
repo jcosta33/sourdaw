@@ -1,66 +1,6 @@
+import { type ExecutableAppActionEffect } from '../models/ExecutableAppActionEffect';
+
 import { type ExecutableAppActionType, isExecutableAppActionType } from './executableAppActionRegistry';
-
-// Command-owned effect metadata: `dimensions` names what the production handler and its writer
-// actually mutate, traced through that handler, not what the request implies. `scope` names how far
-// the write or audible change reaches beyond the named target. `conditional` entries name writes that
-// depend on live runtime state at execution time and therefore need an execution-time policy, not a request-time check.
-
-export type ExecutableAppActionEffectDimension =
-    | 'processing'
-    | 'midi-content'
-    | 'clip-audio'
-    | 'arrangement'
-    | 'routing'
-    | 'project-timing'
-    | 'transport'
-    | 'master'
-    | 'monitoring'
-    | 'automation'
-    | 'external'
-    | 'branching'
-    | 'cosmetic'
-    | 'protection';
-
-export type ExecutableAppActionEffectCondition =
-    | 'transport-playing-in-recording-mode'
-    | 'folder-strip-activation'
-    | 'midi-clip'
-    | 'midi-track-kind'
-    | 'recording-in-progress'
-    | 'repitch-stretch-mode';
-
-export type ExecutableAppActionEffectScope = 'target' | 'descendants' | 'siblings' | 'dependents' | 'project';
-
-export type ExecutableAppActionEffectObject =
-    | 'track'
-    | 'bus'
-    | 'clip'
-    | 'notes'
-    | 'device'
-    | 'send'
-    | 'sidechain-route'
-    | 'automation-lane'
-    | 'automation-point'
-    | 'adjustment-region'
-    | 'marker'
-    | 'section'
-    | 'vca-group'
-    | 'branch'
-    | 'render-artifact';
-
-export type ExecutableAppActionNoteField = 'pitch' | 'startBeat' | 'duration' | 'velocity' | 'articulation';
-
-export type ExecutableAppActionEffect = {
-    dimensions: readonly ExecutableAppActionEffectDimension[];
-    conditional?: readonly {
-        dimension: ExecutableAppActionEffectDimension;
-        when: ExecutableAppActionEffectCondition;
-    }[];
-    scope: ExecutableAppActionEffectScope;
-    creates?: readonly ExecutableAppActionEffectObject[];
-    removes?: readonly ExecutableAppActionEffectObject[];
-    noteFields?: readonly ExecutableAppActionNoteField[];
-};
 
 export const executableAppActionEffectsByType = {
     importStemSet: {
@@ -182,6 +122,12 @@ export const executableAppActionEffectsByType = {
         scope: 'target',
         creates: ['clip', 'automation-lane'],
     },
+    stripSilence: {
+        dimensions: ['clip-audio', 'arrangement', 'automation'],
+        scope: 'target',
+        creates: ['clip', 'automation-lane'],
+        removes: ['clip', 'automation-lane'],
+    },
     crossfadeClips: {
         dimensions: ['clip-audio', 'arrangement'],
         scope: 'target',
@@ -246,6 +192,12 @@ export const executableAppActionEffectsByType = {
         dimensions: ['midi-content'],
         scope: 'target',
         noteFields: ['articulation'],
+    },
+    // Writes only a new template into the groove pool: nothing plays differently until one is applied.
+    extractGroove: {
+        dimensions: ['cosmetic'],
+        scope: 'target',
+        creates: ['groove-template'],
     },
     transposeNotes: {
         dimensions: ['midi-content'],

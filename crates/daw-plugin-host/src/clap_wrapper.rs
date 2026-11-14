@@ -3059,6 +3059,61 @@ impl HostedPluginRuntime for ClapWrapper {
     }
 }
 
+impl Drop for ClapWrapper {
+    fn drop(&mut self) {
+        // First, so the observer sees what the dropping thread holds before any
+        // of the teardown below has run.
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(observe) = self
+            .command_fixture
+            .as_ref()
+            .and_then(|fixture| fixture.teardown_observer.as_ref())
+        {
+            observe();
+        }
+
+        // Close GUI if it's still open
+        if self.gui_open {
+            self.close_gui();
+        }
+
+        // Last resort: a dropped instance is already out of the graph, so no
+        // block is coming to perform the stop that `deactivate` requires. If the
+        // audio thread already stopped it — the normal case once the runtime
+        // owner requests the stop first — this does nothing and counts nothing.
+        self.force_stop_processing_off_audio_thread();
+
+        if !self.plugin.is_null() {
+            unsafe {
+                let plugin_ref = &*self.plugin;
+
+                if self.activated {
+                    if let Some(deactivate) = plugin_ref.deactivate {
+                        deactivate(self.plugin);
+                    }
+                }
+
+                if let Some(destroy) = plugin_ref.destroy {
+                    destroy(self.plugin);
+                }
+            }
+            eprintln!("[CLAP] Unloaded plugin: {}", self.name);
+        }
+
+        // The CLAP spec pairs `clap_entry.init`/`deinit` per entry, and places
+        // `deinit` after every plugin instance is destroyed. A bundle may
+        // register global resources in `init` and release them only in
+        // `deinit`, so a dropped wrapper that skips this leaks them per
+        // load/unload cycle — and one whose library unloads while still
+        // registered faults when the registration is next touched. This Drop
+        // body runs before any field drops, so `_library` still has the DSO
+        // mapped and `deinit`'s code is callable. Null for fixture wrappers.
+        if !self.entry.is_null() {
+            unsafe { deinit_entry(self.entry) };
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6729,60 +6784,5 @@ mod tests {
             HostedPluginRuntime::is_tail_active(&wrapper),
             "the portless process path reads the status too"
         );
-    }
-}
-
-impl Drop for ClapWrapper {
-    fn drop(&mut self) {
-        // First, so the observer sees what the dropping thread holds before any
-        // of the teardown below has run.
-        #[cfg(feature = "engine-owned-command-fixture")]
-        if let Some(observe) = self
-            .command_fixture
-            .as_ref()
-            .and_then(|fixture| fixture.teardown_observer.as_ref())
-        {
-            observe();
-        }
-
-        // Close GUI if it's still open
-        if self.gui_open {
-            self.close_gui();
-        }
-
-        // Last resort: a dropped instance is already out of the graph, so no
-        // block is coming to perform the stop that `deactivate` requires. If the
-        // audio thread already stopped it — the normal case once the runtime
-        // owner requests the stop first — this does nothing and counts nothing.
-        self.force_stop_processing_off_audio_thread();
-
-        if !self.plugin.is_null() {
-            unsafe {
-                let plugin_ref = &*self.plugin;
-
-                if self.activated {
-                    if let Some(deactivate) = plugin_ref.deactivate {
-                        deactivate(self.plugin);
-                    }
-                }
-
-                if let Some(destroy) = plugin_ref.destroy {
-                    destroy(self.plugin);
-                }
-            }
-            eprintln!("[CLAP] Unloaded plugin: {}", self.name);
-        }
-
-        // The CLAP spec pairs `clap_entry.init`/`deinit` per entry, and places
-        // `deinit` after every plugin instance is destroyed. A bundle may
-        // register global resources in `init` and release them only in
-        // `deinit`, so a dropped wrapper that skips this leaks them per
-        // load/unload cycle — and one whose library unloads while still
-        // registered faults when the registration is next touched. This Drop
-        // body runs before any field drops, so `_library` still has the DSO
-        // mapped and `deinit`'s code is callable. Null for fixture wrappers.
-        if !self.entry.is_null() {
-            unsafe { deinit_entry(self.entry) };
-        }
     }
 }

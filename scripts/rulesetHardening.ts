@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 /**
- * Canonicalise and harden the live `main` branch ruleset, inside one approved triple (#3002, #4584).
+ * Canonicalise and harden the live `main` branch ruleset, inside one closed approved set (#3002, #4584).
  *
  * The ruleset is repository configuration: it decides which status contexts are required and how a
  * pull request may merge. This command therefore treats it as a security boundary rather than as an
- * editable document. It names exactly the three approved head-discipline fields — stale-review
- * dismissal, last-push approval, and the approving-review count — and walks the decoded JSON to
- * refuse any difference outside that set, so a bug in the copy, a widened allowlist, or a server
- * that answers with something else cannot smuggle a change through underneath the set. In
- * particular a status context becoming required is a distinct refusal that names the added context,
- * because a required shadow status would turn the reviewer's non-authoritative shadow into merge
- * authority (AC-018).
+ * editable document. It names exactly four approved changes — stale-review dismissal, last-push
+ * approval, the approving-review count, and the required `Gate` check pinned to GitHub Actions —
+ * and walks the decoded JSON to refuse any difference outside that set, so a bug in the copy, a
+ * widened allowlist, or a server that answers with something else cannot smuggle a change through
+ * underneath the set. In particular a status context becoming required is a distinct refusal that
+ * names the added context, because a required shadow status would turn the reviewer's
+ * non-authoritative shadow into merge authority (AC-018).
  *
  * The approving-review count targets 1 for the single-approval review policy: the reviewer App's
  * approval of the current head is the one independent approval GitHub requires before merge.
+ *
+ * Without an `integration_id`, any identity able to write a check run or commit status named `Gate`
+ * satisfies the requirement; pinning it to GitHub Actions admits only the workflow that mints it.
  *
  * The write happens only through the verified orchestrator User, only after the rollback bytes are
  * captured, and only after every guard passes. When every approved field already holds, nothing is
@@ -37,18 +40,28 @@ import { fail } from './prContract.ts';
 
 export const RULESET_HARDENING_USAGE = 'usage: pnpm ruleset:harden [--apply]';
 
-/**
- * The approved target set, and nothing else. A ruleset change touching any other path — including
- * any `required_status_checks` entry — is refused by name, so widening this list is the one edit
- * that would open the boundary. `required_approving_review_count` targets 1 for the single-approval
- * review policy: the reviewer App's approval of the current head is the one independent approval
- * GitHub requires before merge.
- */
-export const HARDENING_TARGETS = [
+export const GATE_CONTEXT = 'Gate';
+
+/** GitHub Actions' app id, the only source the required `Gate` check may originate from. */
+export const GITHUB_ACTIONS_INTEGRATION_ID = 15368;
+
+/** The approved `pull_request` rule parameters and their targets. */
+export const PULL_REQUEST_TARGETS = [
     { field: 'dismiss_stale_reviews_on_push', to: true },
     { field: 'require_last_push_approval', to: true },
     { field: 'required_approving_review_count', to: 1 },
 ] as const;
+
+/** The `integration_id` of the one existing `Gate` check entry; no other check entry may change. */
+export const GATE_PIN_TARGET = { field: 'gate_integration_id', to: GITHUB_ACTIONS_INTEGRATION_ID } as const;
+
+/**
+ * The approved target set, and nothing else. A ruleset change touching any other path — including
+ * any other `required_status_checks` entry or key — is refused by name, so widening this list is the
+ * one edit that would open the boundary. The Gate pin is a constant context and a constant id rather
+ * than a general pinning mechanism, because a general one would itself widen the set.
+ */
+export const HARDENING_TARGETS = [...PULL_REQUEST_TARGETS, GATE_PIN_TARGET] as const;
 
 export type HardeningTarget = (typeof HARDENING_TARGETS)[number];
 export type HardeningField = HardeningTarget['field'];
@@ -135,11 +148,81 @@ export type HardeningPlan = {
     changes: HardeningFieldPlan[];
 };
 
+export type RequiredStatusCheck = {
+    ruleIndex: number;
+    checkIndex: number;
+    check: RulesetDocument;
+    context: string;
+};
+
+/**
+ * Every `required_status_checks` entry the ruleset applies, with its rule and check index. A
+ * malformed rule refuses rather than reading as an empty requirement, because an unreadable check
+ * list has not said that nothing is required.
+ */
+export function requiredStatusChecks(ruleset: RulesetDocument): RequiredStatusCheck[] {
+    const checks: RequiredStatusCheck[] = [];
+    for (const [ruleIndex, entry] of readRules(ruleset).entries()) {
+        if (!isJsonObject(entry) || entry.type !== 'required_status_checks') {
+            continue;
+        }
+        const parameters = asRulesetObject(
+            entry.parameters,
+            `rules[${String(ruleIndex)}] required_status_checks parameters`
+        );
+        const list = parameters.required_status_checks;
+        if (!Array.isArray(list)) {
+            fail(`rules[${String(ruleIndex)}] required_status_checks rule carries no readable check list`);
+        }
+        for (const [checkIndex, value] of list.entries()) {
+            const label = `rules[${String(ruleIndex)}].parameters.required_status_checks[${String(checkIndex)}]`;
+            const check = asRulesetObject(value, label);
+            if (typeof check.context !== 'string') {
+                fail(`${label} has no readable context`);
+            }
+            checks.push({ ruleIndex, checkIndex, check, context: check.context });
+        }
+    }
+    return checks;
+}
+
+/**
+ * The single existing `Gate` check. Zero is a refusal because requiring `Gate` would be an added
+ * required context, not the approved pin; two would make "the Gate check" ambiguous.
+ */
+export function findGateCheck(ruleset: RulesetDocument): RequiredStatusCheck {
+    const matches = requiredStatusChecks(ruleset).filter((check) => check.context === GATE_CONTEXT);
+    const [match] = matches;
+    if (match === undefined) {
+        fail(`ruleset requires no ${GATE_CONTEXT} status check to pin`);
+    }
+    if (matches.length > 1) {
+        fail(`ruleset requires ${String(matches.length)} ${GATE_CONTEXT} status checks; pinning needs exactly one`);
+    }
+    return match;
+}
+
+function gatePinPath(gate: RequiredStatusCheck): string {
+    return `rules[${String(gate.ruleIndex)}].parameters.required_status_checks[${String(gate.checkIndex)}].integration_id`;
+}
+
+function gatePinPlan(ruleset: RulesetDocument): HardeningFieldPlan {
+    const gate = findGateCheck(ruleset);
+    const from = gate.check.integration_id;
+    return {
+        field: GATE_PIN_TARGET.field,
+        path: gatePinPath(gate),
+        satisfied: from === GATE_PIN_TARGET.to,
+        from,
+        to: GATE_PIN_TARGET.to,
+    };
+}
+
 /** What the approved controls are and what would change. Pure: it reads and returns only. */
 export function planHardening(ruleset: RulesetDocument): HardeningPlan {
     const { index, rule } = findPullRequestRule(ruleset);
     const parameters = pullRequestParameters(rule, index);
-    const changes = HARDENING_TARGETS.map((target) => {
+    const pullRequestChanges: HardeningFieldPlan[] = PULL_REQUEST_TARGETS.map((target) => {
         const from = parameters[target.field];
         return {
             field: target.field,
@@ -149,6 +232,7 @@ export function planHardening(ruleset: RulesetDocument): HardeningPlan {
             to: target.to,
         };
     });
+    const changes = [...pullRequestChanges, gatePinPlan(ruleset)];
     return { ruleIndex: index, satisfied: changes.every((change) => change.satisfied), changes };
 }
 
@@ -170,29 +254,54 @@ function cloneRuleset(ruleset: RulesetDocument): RulesetDocument {
     return clone;
 }
 
-/** The approved fields set to their targets, as a fresh object so no caller shares it. */
-function approvedTargetsApplied(): RulesetDocument {
+/** The approved pull_request fields set to their targets, as a fresh object so no caller shares it. */
+function pullRequestTargetsApplied(): RulesetDocument {
     const applied: RulesetDocument = {};
-    for (const target of HARDENING_TARGETS) {
+    for (const target of PULL_REQUEST_TARGETS) {
         applied[target.field] = target.to;
     }
     return applied;
 }
 
+function hardenPullRequestRule(entry: JsonValue, index: number): JsonValue {
+    const rule = asRulesetObject(entry, `rules[${String(index)}]`);
+    const parameters = pullRequestParameters(rule, index);
+    return { ...rule, parameters: { ...parameters, ...pullRequestTargetsApplied() } };
+}
+
+function pinGateCheck(entry: JsonValue, gate: RequiredStatusCheck): JsonValue {
+    const rule = asRulesetObject(entry, `rules[${String(gate.ruleIndex)}]`);
+    const parameters = asRulesetObject(
+        rule.parameters,
+        `rules[${String(gate.ruleIndex)}] required_status_checks parameters`
+    );
+    const checks = parameters.required_status_checks;
+    if (!Array.isArray(checks)) {
+        fail(`rules[${String(gate.ruleIndex)}] required_status_checks rule carries no readable check list`);
+    }
+    const pinned = checks.map((check, checkIndex) =>
+        checkIndex === gate.checkIndex ? { ...gate.check, integration_id: GATE_PIN_TARGET.to } : check
+    );
+    return { ...rule, parameters: { ...parameters, required_status_checks: pinned } };
+}
+
 /**
  * A deep copy with every approved field at its target and nothing else altered: same rule order,
- * same other parameters, same conditions, same bypass actors. The input is never mutated.
+ * same other parameters, same other checks, same conditions, same bypass actors. The input is
+ * never mutated.
  */
 export function buildHardenedRuleset(ruleset: RulesetDocument): RulesetDocument {
-    const { index } = findPullRequestRule(ruleset);
     const cloned = cloneRuleset(ruleset);
+    const { index } = findPullRequestRule(cloned);
+    const gate = findGateCheck(cloned);
     const rules = readRules(cloned).map((entry, entryIndex) => {
-        if (entryIndex !== index) {
-            return entry;
+        if (entryIndex === index) {
+            return hardenPullRequestRule(entry, entryIndex);
         }
-        const rule = asRulesetObject(entry, `rules[${String(entryIndex)}]`);
-        const parameters = pullRequestParameters(rule, entryIndex);
-        return { ...rule, parameters: { ...parameters, ...approvedTargetsApplied() } };
+        if (entryIndex === gate.ruleIndex) {
+            return pinGateCheck(entry, gate);
+        }
+        return entry;
     });
     return { ...cloned, rules };
 }
@@ -244,16 +353,13 @@ export function rulesetDifferences(before: RulesetDocument, after: RulesetDocume
 }
 
 /**
- * Refuses any before/after pair differing anywhere outside the approved paths of the `before`
- * ruleset's `pull_request` rule, naming the first disallowed JSON path. Every difference is filtered
- * rather than the first returned, because a pair that changes an approved field *and* something else
- * would otherwise pass on the approved difference alone.
+ * Refuses any before/after pair differing anywhere outside the approved paths planned from the
+ * `before` ruleset, naming the first disallowed JSON path. Every difference is filtered rather than
+ * the first returned, because a pair that changes an approved field *and* something else would
+ * otherwise pass on the approved difference alone.
  */
 export function assertOnlyApprovedFieldsChanged(before: RulesetDocument, after: RulesetDocument): void {
-    const { index } = findPullRequestRule(before);
-    const approved = new Set<string>(
-        HARDENING_TARGETS.map((target) => `rules[${String(index)}].parameters.${target.field}`)
-    );
+    const approved = new Set<string>(planHardening(before).changes.map((change) => change.path));
     const disallowed = rulesetDifferences(before, after).filter((path) => !approved.has(path));
     if (disallowed.length > 0) {
         fail(
@@ -281,35 +387,9 @@ export function assertTargetsSatisfied(ruleset: RulesetDocument): void {
     );
 }
 
-/**
- * The union of every `required_status_checks` context the ruleset applies. A malformed rule refuses
- * rather than reading as an empty requirement, because an unreadable context list has not said that
- * nothing is required.
- */
+/** The union of every `required_status_checks` context the ruleset applies. */
 export function requiredStatusContexts(ruleset: RulesetDocument): string[] {
-    const contexts: string[] = [];
-    for (const [index, entry] of readRules(ruleset).entries()) {
-        if (!isJsonObject(entry) || entry.type !== 'required_status_checks') {
-            continue;
-        }
-        const parameters = asRulesetObject(
-            entry.parameters,
-            `rules[${String(index)}] required_status_checks parameters`
-        );
-        const checks = parameters.required_status_checks;
-        if (!Array.isArray(checks)) {
-            fail(`rules[${String(index)}] required_status_checks rule carries no readable check list`);
-        }
-        for (const [checkIndex, check] of checks.entries()) {
-            const label = `rules[${String(index)}].parameters.required_status_checks[${String(checkIndex)}]`;
-            const record = asRulesetObject(check, label);
-            if (typeof record.context !== 'string') {
-                fail(`${label} has no readable context`);
-            }
-            contexts.push(record.context);
-        }
-    }
-    return contexts;
+    return requiredStatusChecks(ruleset).map((check) => check.context);
 }
 
 /**

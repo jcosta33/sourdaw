@@ -1,5 +1,8 @@
 //! Frozen-source preservation contracts for shared pitch and its consumers.
 //! The pre-extraction oracle and provenance are pinned in support/.
+
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 #[path = "support/pitch_baseline/mod.rs"]
 mod baseline;
 

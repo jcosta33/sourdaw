@@ -177,6 +177,9 @@ export function reconcileCrumbsDeviceStateFromProject(deviceId: string): void {
                 }
                 convergeReleasedPairedSample(deviceId, prePairSample, playback.activeSample);
                 replayCrumbsDeviceStateCommit(deviceId);
+            })
+            .catch((error: unknown) => {
+                logger.error(new Error(`[Crumbs] paired reconcile release failed for ${deviceId}`, { cause: error }));
             });
     }
 }

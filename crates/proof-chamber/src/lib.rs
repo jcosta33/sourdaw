@@ -4,6 +4,11 @@
 //! Features: shimmer, freeze, gravity, saturation, decay rate EQ, vintage modes.
 //! Compiles to both native (Rust library) and WASM (AudioWorklet).
 
+#![cfg_attr(
+    test,
+    allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
+)]
+
 pub mod convolution;
 pub mod decay_curve;
 pub mod decay_eq;

@@ -11,6 +11,7 @@ import {
     Check,
     RotateCw,
     SkipForward,
+    Square,
     Undo2,
 } from 'lucide-react';
 
@@ -39,6 +40,7 @@ import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentR
 import { selectPreparedStemImportManualRepairs } from '../../stores/selectPreparedStemImportManualRepairs';
 import { proposeAnswerSuggestion } from '../../useCases/aiPanelActions/proposeAnswerSuggestion';
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
+import { agentRunCancellation } from '../../useCases/cancelAgentRun';
 import { cancelPendingChatActions } from '../../useCases/cancelPendingChatActions';
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
 import { getAgentApprovalView } from '../../useCases/getAgentApprovalView';
@@ -117,6 +119,7 @@ type ChatMessageItemProps = {
     onConfirmPendingActions: (confirmationId: string) => void;
     onCancelPendingActions: (confirmationId: string) => void;
     onProposeSuggestion: (messageId: string) => void;
+    onStopRun: (runId: string) => void;
 };
 
 const ChatMessageItem = ({
@@ -125,6 +128,7 @@ const ChatMessageItem = ({
     onConfirmPendingActions,
     onCancelPendingActions,
     onProposeSuggestion,
+    onStopRun,
 }: ChatMessageItemProps): ReactElement => {
     let msgIcon = <User className="size-3" />;
     if (msg.isCommandAction) {
@@ -159,6 +163,7 @@ const ChatMessageItem = ({
     }
     const retryableFollowUpId =
         msg.pendingActionFollowUpStatus === 'retryable' ? msg.pendingActionConfirmationId : undefined;
+    const { stoppableRunId } = msg;
     // A vibe-run batch card offers Skip, and its Cancel stops the whole run, so it says so.
     const skipAvailable = approval?.skip.available === true;
     const revertRunId = msg.vibeRunRevert?.runId;
@@ -205,6 +210,20 @@ const ChatMessageItem = ({
                         </Button>
                     </Row>
                 ) : null}
+                {stoppableRunId === undefined ? null : (
+                    <Row gap={2} className="mt-2">
+                        <Button
+                            size="xs"
+                            variant="ghost"
+                            onClick={() => onStopRun(stoppableRunId)}
+                            aria-label="Stop measuring"
+                            className="h-7 gap-1.5 text-[11px]"
+                        >
+                            <Square className="size-3 fill-current" />
+                            Stop
+                        </Button>
+                    </Row>
+                )}
                 {approval === null ? null : (
                     <div aria-label="Metric goal verification">
                         <p>{`Objective verification: ${approval.metricGoals.status}`}</p>
@@ -426,6 +445,10 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         void cancelPendingChatActions({ confirmationId });
     };
 
+    const handleStopRun = (runId: string): void => {
+        void agentRunCancellation.cancel({ runId, reason: 'Cancelled by user' });
+    };
+
     const handleResumeDecision = async (runId: string, alternativeId: string): Promise<void> => {
         const decisionRun = decisionRuns.find((run) => run.runId === runId);
         if (decisionRun === undefined || !decisionRun.allowedActions.resume) {
@@ -485,6 +508,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         onConfirmPendingActions={handleConfirmPendingActions}
                         onCancelPendingActions={handleCancelPendingActions}
                         onProposeSuggestion={handleProposeSuggestion}
+                        onStopRun={handleStopRun}
                     />
                 ))}
                 {pendingEffectContinuations.map((continuation) => {

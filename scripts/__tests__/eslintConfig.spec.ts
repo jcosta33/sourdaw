@@ -221,6 +221,13 @@ describe('ESLint configuration', () => {
                 valid: 'React.useLayoutEffect(() => { if (ready) { setValue(fetch(url)); } }, [value]);',
             },
             {
+                rule: 'no-useeffect-derived-state',
+                messageId: 'noDerivedStateEffect',
+                filename: 'src/modules/Example/presentations/hooks/useExample.ts',
+                invalid: 'useEffect(() => { setActiveDevice(id); }, [id]);',
+                valid: 'useEffect(() => { setActiveDevice(id); return () => setActiveDevice(null); }, [id]);',
+            },
+            {
                 rule: 'no-multiple-function-exports',
                 messageId: 'noMultipleFunctionExports',
                 filename: 'src/modules/Example/useCases/example.ts',

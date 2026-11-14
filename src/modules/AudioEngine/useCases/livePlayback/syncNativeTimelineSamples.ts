@@ -73,6 +73,9 @@ export function syncNativeTimelineSamples(): () => void {
                 // The project moved while this pass was in the air, so what it
                 // primed may no longer be what a session would play.
                 pass();
+            })
+            .catch((error: unknown) => {
+                logger.error(new Error('Native timeline sample re-prime failed', { cause: error }));
             });
     }
 

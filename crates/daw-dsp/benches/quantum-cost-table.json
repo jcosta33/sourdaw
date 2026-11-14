@@ -1,1471 +1,1511 @@
 {
-    "machine": {
-        "cpu": "Apple M4 Pro",
-        "logicalCores": 12,
-        "arch": "arm64",
-        "platform": "darwin 27.2.0",
-        "memoryGb": 24,
-        "hardwareModel": "Mac16,11",
-        "performanceCores": "8",
-        "efficiencyCores": "4",
-        "os": "macOS 27.2 (26B123)",
-        "gitSha": "4c6c00d41edb957b5cb7c828041ed324b23bd7c8",
-        "gitBase": "ae83d67cdacbbce7649d065b6e8a72a85a88c190",
-        "workingTree": "clean",
-        "takenAt": "2026-11-13T00:16:38.389Z"
+  "machine": {
+    "cpu": "Apple M4 Pro",
+    "logicalCores": 12,
+    "arch": "arm64",
+    "platform": "darwin 27.2.0",
+    "memoryGb": 24,
+    "hardwareModel": "Mac16,11",
+    "performanceCores": "8",
+    "efficiencyCores": "4",
+    "os": "macOS 27.2 (26B123)",
+    "gitSha": "a00f7a3291c83188aeeb0987288d2ea333ea967b",
+    "gitBase": "8f5c012e60239ddf39238cce491b7ab93f7dd0d7",
+    "workingTree": "clean",
+    "takenAt": "2026-11-13T19:49:22.057Z"
+  },
+  "sourceRevision": "a00f7a3291c83188aeeb0987288d2ea333ea967b",
+  "sourceDigests": {
+    "crates/daw-dsp/Cargo.toml": "30ea4878106741e1b371229b8efb23c99c8fcd91c2123c2125e84536ca4e56cb",
+    "crates/daw-dsp/benches/quantum.rs": "3ed60d7bdf492f2bf7f1a9eb6b5207b889353495487e091b9870c949f7341ff9",
+    "crates/daw-dsp/benches/wasm/deviceRecipes.js": "0dc6c36d99ec511d69cee086d049f45d70fc235e46af556f12a6639d7a4405de",
+    "crates/daw-dsp/benches/wasm/quantumCostProcessor.js": "e40d5159e7bfad103b6b6bd93351632a86f3a7951962308acea8a9f8f1f50713",
+    "crates/daw-dsp/src/grand_boule/coupled_strings.rs": "3d8fae55224250d0d80932fe0449416a6868a48023c7f6fdaa501050fe5f4c52",
+    "crates/daw-dsp/src/grand_boule/duplex.rs": "4d59df85c4535bc7b68d405f143c11c023361ba4ef0c3bda3fd1b11ef145dbb6",
+    "crates/daw-dsp/src/grand_boule/engine.rs": "2d472bcbda1a02b7823cead44bff2e53495940c0ebc64c326ca92c354b4cdc69",
+    "crates/daw-dsp/src/grand_boule/hammer.rs": "402a1fb17d538118dced171267a9f3b251535a3faa6bab49f2b134bd3b64da15",
+    "crates/daw-dsp/src/grand_boule/longitudinal.rs": "bb43dba551a417d60568ac61ef86c0fac334724ca35a601902dd6b3a6080b5d0",
+    "crates/daw-dsp/src/grand_boule/mechanical_noise.rs": "44b06829b6d1f8290593a1f55c3fd8ee375a4063756c14110780128ad0ec3347",
+    "crates/daw-dsp/src/grand_boule/midi2.rs": "b8aba64b0e1c4c0bc8ca01b288ce9965bf0680b43e643cc07a131d23079d6b49",
+    "crates/daw-dsp/src/grand_boule/mod.rs": "3c3f7491a09643573559e7a9f8efe3229df358572a8b04ed17d27519d75c14e6",
+    "crates/daw-dsp/src/grand_boule/parameters.rs": "32e886dfe2a81eb93228bf12e6916c4ef0bf302fbc3195c5ec6ae386ab8cbd97",
+    "crates/daw-dsp/src/grand_boule/pedals.rs": "636d35fabdd69e030f2aef7883d2db6a1dc56f6e6bdf081fffc9afffb0b428c0",
+    "crates/daw-dsp/src/grand_boule/radiation.rs": "459a804db95e5a11362f38a95950963a816323f488128afcbf2104d1a7fb0e2b",
+    "crates/daw-dsp/src/grand_boule/soundboard.rs": "fc4051f5820449070caf9f9f44e0736b1b2ec0e5203e9861bd7e7ac3c94e3f1a",
+    "crates/daw-dsp/src/grand_boule/string.rs": "7eecbe505cc90778dfec94c10c685f3b95abfffc831a7a660c29c4d169c1217b",
+    "crates/daw-dsp/src/grand_boule/sympathetic.rs": "4ccc3bec11654bde1ae712a00b6ce98cd33a4d7956f9051201a4716585a53e22",
+    "crates/daw-dsp/src/grand_boule/voice.rs": "d8ee938de8d7acc064ea393a137130c6f27e5f58d3730f6d1d9daa49fadbbb44",
+    "crates/daw-dsp/src/lib.rs": "9956e3f8472313cace894f28f4d34b64f303b54eea076e54fb64589de33838b4",
+    "crates/daw-dsp/src/primitives/alias_probe.rs": "6759a28cd2abba94c5f4c83ceb63e7c9222ee6d5f5d6ad4846495ac9fbf36d67",
+    "crates/daw-dsp/src/primitives/cutoff.rs": "66270d6cac0ead74da7c3fd2a865aa352d8e82b8989963f16b007a89ea69e5e3",
+    "crates/daw-dsp/src/primitives/db.rs": "9430f173e7778c0f33ba2d29f6f1533a76d46a1137f87692522b4cc54b802e76",
+    "crates/daw-dsp/src/primitives/denormal.rs": "230692410860a25f76ba5ece1f6c57c2541884de1c89e1e126151a1cde9f4b8a",
+    "crates/daw-dsp/src/primitives/lifecycle.rs": "45bb2e4a2a1f7c5de824fd001650f2c3f68d4ee664a2a551bcdaa4e343404f6c",
+    "crates/daw-dsp/src/primitives/mod.rs": "feefbacaaee1d13b89ba2b872c260a3212665c31de910323adadf950cfa0f771",
+    "crates/daw-dsp/src/primitives/one_pole.rs": "cfccdbb26796971d9056cf9497ae1a04b09c8a475e3069c1efc21a7c2eb319a7",
+    "crates/daw-dsp/src/primitives/oversample.rs": "2a6e47ac259fe196b90cfa646c8bd45a478769215a8532b473574446b2d136bd",
+    "crates/daw-dsp/src/primitives/pitch/mod.rs": "d4de97ed5eff367d21fa5f29a727de58a28d1e046cb397ca21ad4f96062adbea",
+    "crates/daw-dsp/src/primitives/pitch/mpm.rs": "8b0f4be12781a0d433a1ae92d13b1bfcf10a6cbac5f652f2a5b0e213a290da69",
+    "crates/daw-dsp/src/primitives/pitch/overlap.rs": "a49586dfe65ae3125119533b7243d2e446357a9bac17f16254a29d2565027b9e",
+    "crates/daw-dsp/src/primitives/pitch/pipeline.rs": "836e0766bb1343aaa842aa4df0e6ab4532714390f86b49700267becf161736e2",
+    "crates/daw-dsp/src/primitives/pitch/pipeline_tests.rs": "3eccbbdd4496dd033f0699582c42d86ab405d10d5dfd7021bb2902604a5fa4d8",
+    "crates/daw-dsp/src/primitives/pitch/scoring.rs": "25f1fc5778ac24ec6e8294af9f630f7fd4ccdf507888bfa4ff9ccb13a3eeb7df",
+    "crates/daw-dsp/src/primitives/resonance.rs": "e7b5b8a65eef506f77b1b7a91a50a923158bf9f22b10bc89b9f23c3ebd5bc572",
+    "crates/daw-dsp/src/primitives/sanitize.rs": "1839c77063e1becadb5b21114bc74e21710f82f45baaf9b24bfc31a61c8996eb",
+    "crates/daw-dsp/src/primitives/time_stretch/contract.rs": "a46de7085f640a8fbb4aa7a835986d5bbf529029f88e12ffaf9be52b962e242e",
+    "crates/daw-dsp/src/primitives/time_stretch/mod.rs": "4f3c10e72ee4c7e3d9e8b17153d20dce1a28c89c49978b4a7fce635cd4b530a0",
+    "crates/daw-dsp/src/primitives/time_stretch/ratio.rs": "4796871f652824d6df239ac9ca5e34c1a1488968274e963aa4fe8f63a137c1fa",
+    "rust-toolchain.toml": "d13306be0ecda81ce779baa290ffb417380d525928477f16200884b5169cca33",
+    "scripts/quantumMeasurementCalibration.ts": "05b231d8fac89843d3ea93a4ed3db0e6feea0d85cc3bcc90d729bf5a6dc28ff1",
+    "scripts/wasmToolchainPins.ts": "c54eec5a9e399a15e8288bf6b94bc72473354d2102fa2a99baed199d71cb3d13"
+  },
+  "browser": "157.0.8103.78",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "budgetMs": 2.6666666666666665,
+  "options": {
+    "warmupQuanta": 4000,
+    "measureQuanta": 20000,
+    "segmentTargetMs": 1000,
+    "json": "crates/daw-dsp/benches/quantum-cost-table.json",
+    "headed": false,
+    "deviceIds": []
+  },
+  "load": {
+    "before": 3.5869140625,
+    "after": 4.99267578125,
+    "ceiling": 6
+  },
+  "referenceProject": {
+    "audioThread": [
+      [
+        "grand_boule_ring_consumer",
+        1
+      ],
+      [
+        "fermenter",
+        1
+      ],
+      [
+        "levain",
+        1
+      ],
+      [
+        "toaster",
+        1
+      ],
+      [
+        "crumbs",
+        1
+      ],
+      [
+        "grinder",
+        1
+      ],
+      [
+        "knead",
+        1
+      ],
+      [
+        "bacteria",
+        1
+      ],
+      [
+        "proof",
+        1
+      ],
+      [
+        "gluten",
+        3
+      ],
+      [
+        "proof_chamber_plate",
+        1
+      ]
+    ],
+    "worker": [
+      [
+        "grand_boule",
+        1
+      ]
+    ],
+    "audioFloorMs": 0.8890214974894822,
+    "audioFloorPartialFrom": [
+      "knead"
+    ],
+    "audioUpperBoundMs": 1.0992444948034943,
+    "audioWorstQuantumUpperMs": 2.117158087821553,
+    "audioMedianMs": 1.0356366591457795,
+    "meanLoad": 4.496103367660985,
+    "workerFloorMs": 1.739699908382981,
+    "workerMedianMs": 2.198456004096631
+  },
+  "rows": [
+    {
+      "id": "bacteria",
+      "label": "Bacteria (3 bands, mix 1.0, all stages off)",
+      "note": "effect; no voice pool; engine.rs:220 ships every stage disabled",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "output RMS 2.908e-1"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "output RMS 2.795e-1"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.010750558706342986,
+        "floor": 0.007409315619877291,
+        "median": 0.010907190243383583,
+        "p95": 0.011061654792284858,
+        "p99": 0.01113639570304354,
+        "p999": 0.016443000366909925,
+        "max": 0.056264957619135414,
+        "min": 0.0004932900110072978,
+        "firstFiveHundredMean": 0.010573108337747049,
+        "lastFiveHundredMean": 0.010879077695483543
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 3.662304627175392e-7,
+        "floor": 0,
+        "median": 0,
+        "p95": 0,
+        "p99": 0.000024913636919560492,
+        "p999": 0.00004484454645520889,
+        "max": 0.00006975818337476938,
+        "min": 0,
+        "firstFiveHundredMean": 8.968909291041778e-7,
+        "lastFiveHundredMean": 4.982727383912098e-8
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 1,
+        "medianTicksPerMs": 200693.29966329967,
+        "minTicksPerMs": 200693.29966329967,
+        "maxTicksPerMs": 200693.29966329967,
+        "spreadPct": 0,
+        "attempts": 1
+      },
+      "timedTotalMs": 215.01117412685971,
+      "warmupTotalMs": 42.96053238680527,
+      "mainThreadWallMs": 366.8550000190735,
+      "wallRatio": 0.7031980114766121,
+      "driftPct": 2.893844912608645,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 0,
+      "zeroFraction": 0,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 1,
+        "mean": 4.99267578125,
+        "min": 4.99267578125,
+        "max": 4.99267578125
+      },
+      "sampleCount": 20000
     },
-    "sourceRevision": "4c6c00d41edb957b5cb7c828041ed324b23bd7c8",
-    "sourceDigests": {
-        "crates/daw-dsp/Cargo.toml": "f69e67dd0cc510bffade481440d0448cc9fc1eb3ddde3a4f6446e9df4d226dda",
-        "crates/daw-dsp/benches/quantum.rs": "b9f653f04e670f602fa2e2a7642ed41bf4077ed8684e16d3333c2ebf55f71ee5",
-        "crates/daw-dsp/benches/wasm/deviceRecipes.js": "0dc6c36d99ec511d69cee086d049f45d70fc235e46af556f12a6639d7a4405de",
-        "crates/daw-dsp/benches/wasm/quantumCostProcessor.js": "e40d5159e7bfad103b6b6bd93351632a86f3a7951962308acea8a9f8f1f50713",
-        "crates/daw-dsp/src/grand_boule/coupled_strings.rs": "3d8fae55224250d0d80932fe0449416a6868a48023c7f6fdaa501050fe5f4c52",
-        "crates/daw-dsp/src/grand_boule/duplex.rs": "4d59df85c4535bc7b68d405f143c11c023361ba4ef0c3bda3fd1b11ef145dbb6",
-        "crates/daw-dsp/src/grand_boule/engine.rs": "0a2c940a7f6d4e08f99e8b1bbe01a69d46d7d66e3a2cedb9212ff1aa5e5cd997",
-        "crates/daw-dsp/src/grand_boule/hammer.rs": "402a1fb17d538118dced171267a9f3b251535a3faa6bab49f2b134bd3b64da15",
-        "crates/daw-dsp/src/grand_boule/longitudinal.rs": "bb43dba551a417d60568ac61ef86c0fac334724ca35a601902dd6b3a6080b5d0",
-        "crates/daw-dsp/src/grand_boule/mechanical_noise.rs": "44b06829b6d1f8290593a1f55c3fd8ee375a4063756c14110780128ad0ec3347",
-        "crates/daw-dsp/src/grand_boule/midi2.rs": "b8aba64b0e1c4c0bc8ca01b288ce9965bf0680b43e643cc07a131d23079d6b49",
-        "crates/daw-dsp/src/grand_boule/mod.rs": "3c3f7491a09643573559e7a9f8efe3229df358572a8b04ed17d27519d75c14e6",
-        "crates/daw-dsp/src/grand_boule/parameters.rs": "32e886dfe2a81eb93228bf12e6916c4ef0bf302fbc3195c5ec6ae386ab8cbd97",
-        "crates/daw-dsp/src/grand_boule/pedals.rs": "636d35fabdd69e030f2aef7883d2db6a1dc56f6e6bdf081fffc9afffb0b428c0",
-        "crates/daw-dsp/src/grand_boule/radiation.rs": "459a804db95e5a11362f38a95950963a816323f488128afcbf2104d1a7fb0e2b",
-        "crates/daw-dsp/src/grand_boule/soundboard.rs": "fc4051f5820449070caf9f9f44e0736b1b2ec0e5203e9861bd7e7ac3c94e3f1a",
-        "crates/daw-dsp/src/grand_boule/string.rs": "7eecbe505cc90778dfec94c10c685f3b95abfffc831a7a660c29c4d169c1217b",
-        "crates/daw-dsp/src/grand_boule/sympathetic.rs": "4ccc3bec11654bde1ae712a00b6ce98cd33a4d7956f9051201a4716585a53e22",
-        "crates/daw-dsp/src/grand_boule/voice.rs": "d8ee938de8d7acc064ea393a137130c6f27e5f58d3730f6d1d9daa49fadbbb44",
-        "crates/daw-dsp/src/lib.rs": "f1a4ae2082dc4370cbfdd7d60d14d351068e1ba152b5ea882345f070c231f6cf",
-        "crates/daw-dsp/src/primitives/alias_probe.rs": "6759a28cd2abba94c5f4c83ceb63e7c9222ee6d5f5d6ad4846495ac9fbf36d67",
-        "crates/daw-dsp/src/primitives/cutoff.rs": "66270d6cac0ead74da7c3fd2a865aa352d8e82b8989963f16b007a89ea69e5e3",
-        "crates/daw-dsp/src/primitives/db.rs": "9430f173e7778c0f33ba2d29f6f1533a76d46a1137f87692522b4cc54b802e76",
-        "crates/daw-dsp/src/primitives/denormal.rs": "230692410860a25f76ba5ece1f6c57c2541884de1c89e1e126151a1cde9f4b8a",
-        "crates/daw-dsp/src/primitives/lifecycle.rs": "45bb2e4a2a1f7c5de824fd001650f2c3f68d4ee664a2a551bcdaa4e343404f6c",
-        "crates/daw-dsp/src/primitives/mod.rs": "feefbacaaee1d13b89ba2b872c260a3212665c31de910323adadf950cfa0f771",
-        "crates/daw-dsp/src/primitives/one_pole.rs": "cfccdbb26796971d9056cf9497ae1a04b09c8a475e3069c1efc21a7c2eb319a7",
-        "crates/daw-dsp/src/primitives/oversample.rs": "2a6e47ac259fe196b90cfa646c8bd45a478769215a8532b473574446b2d136bd",
-        "crates/daw-dsp/src/primitives/pitch/mod.rs": "d4de97ed5eff367d21fa5f29a727de58a28d1e046cb397ca21ad4f96062adbea",
-        "crates/daw-dsp/src/primitives/pitch/mpm.rs": "8b0f4be12781a0d433a1ae92d13b1bfcf10a6cbac5f652f2a5b0e213a290da69",
-        "crates/daw-dsp/src/primitives/pitch/overlap.rs": "a49586dfe65ae3125119533b7243d2e446357a9bac17f16254a29d2565027b9e",
-        "crates/daw-dsp/src/primitives/pitch/pipeline.rs": "836e0766bb1343aaa842aa4df0e6ab4532714390f86b49700267becf161736e2",
-        "crates/daw-dsp/src/primitives/pitch/pipeline_tests.rs": "3eccbbdd4496dd033f0699582c42d86ab405d10d5dfd7021bb2902604a5fa4d8",
-        "crates/daw-dsp/src/primitives/pitch/scoring.rs": "25f1fc5778ac24ec6e8294af9f630f7fd4ccdf507888bfa4ff9ccb13a3eeb7df",
-        "crates/daw-dsp/src/primitives/resonance.rs": "e7b5b8a65eef506f77b1b7a91a50a923158bf9f22b10bc89b9f23c3ebd5bc572",
-        "crates/daw-dsp/src/primitives/sanitize.rs": "1839c77063e1becadb5b21114bc74e21710f82f45baaf9b24bfc31a61c8996eb",
-        "crates/daw-dsp/src/primitives/time_stretch/contract.rs": "a46de7085f640a8fbb4aa7a835986d5bbf529029f88e12ffaf9be52b962e242e",
-        "crates/daw-dsp/src/primitives/time_stretch/mod.rs": "4f3c10e72ee4c7e3d9e8b17153d20dce1a28c89c49978b4a7fce635cd4b530a0",
-        "crates/daw-dsp/src/primitives/time_stretch/ratio.rs": "4796871f652824d6df239ac9ca5e34c1a1488968274e963aa4fe8f63a137c1fa",
-        "rust-toolchain.toml": "d13306be0ecda81ce779baa290ffb417380d525928477f16200884b5169cca33",
-        "scripts/quantumMeasurementCalibration.ts": "05b231d8fac89843d3ea93a4ed3db0e6feea0d85cc3bcc90d729bf5a6dc28ff1",
-        "scripts/wasmToolchainPins.ts": "c54eec5a9e399a15e8288bf6b94bc72473354d2102fa2a99baed199d71cb3d13"
+    {
+      "id": "bacteria_smudge",
+      "label": "Bacteria (3 bands, distortion on, Smudge/STFT)",
+      "note": "effect; no voice pool; distortionMode 7 = Smudge, distortion.rs:41",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "output RMS 2.545e-1"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "output RMS 2.662e-1"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.2762862372428667,
+        "floor": 0.013095426113892993,
+        "median": 0.020861519801411273,
+        "p95": 1.0701063966405906,
+        "p99": 1.1164125260964246,
+        "p999": 1.4382020212104583,
+        "max": 1.4848824034407224,
+        "min": 0,
+        "firstFiveHundredMean": 0.2734126662073401,
+        "lastFiveHundredMean": 0.27648188844523447
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 0.000011481201810797929,
+        "floor": 0,
+        "median": 0,
+        "p95": 0.000033610075558541986,
+        "p99": 0.000033610075558541986,
+        "p999": 0.00004033209067025038,
+        "max": 0.0006520354658357145,
+        "min": 0,
+        "firstFiveHundredMean": 0.00001224751153353269,
+        "lastFiveHundredMean": 0.000011171989115659348
+      },
+      "dutyCycle": {
+        "periodQuanta": 4,
+        "dutyPct": 25,
+        "tickFloorMs": 0.46628980726556896,
+        "tickCostMs": 1.0438259600798507,
+        "idleFloorMs": 0,
+        "idleCostMs": 0.020439662963864416,
+        "amortisedMeanMs": 0.27628623724286105,
+        "amortisedFloorMs": 0.11657245181639224
+      },
+      "dutyCycleSource": "stft.rs:11-12,164 — fft 2048, hop = fft/4 = 512 frames / 128 = 4 quanta",
+      "calibration": {
+        "segments": 6,
+        "medianTicksPerMs": 148764.914,
+        "minTicksPerMs": 136612.584,
+        "maxTicksPerMs": 200911.533,
+        "spreadPct": 43.22185068449675,
+        "attempts": 1
+      },
+      "timedTotalMs": 5525.724744857334,
+      "warmupTotalMs": 1483.0542301123503,
+      "mainThreadWallMs": 6747.810000061989,
+      "wallRatio": 1.038674618121331,
+      "driftPct": 1.1225603701793485,
+      "stationary": true,
+      "medianTrustworthy": false,
+      "zeroTickSamples": 3,
+      "zeroFraction": 0.00015,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 5,
+        "mean": 3.69580078125,
+        "min": 3.61962890625,
+        "max": 3.81005859375
+      },
+      "sampleCount": 20000
     },
-    "browser": "157.0.8103.78",
-    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
-    "budgetMs": 2.6666666666666665,
-    "options": {
-        "warmupQuanta": 4000,
-        "measureQuanta": 20000,
-        "segmentTargetMs": 1000,
-        "json": "crates/daw-dsp/benches/quantum-cost-table.json",
-        "headed": false,
-        "deviceIds": []
+    {
+      "id": "crust",
+      "label": "Crust (true-peak limiting, 4x OS)",
+      "note": "effect; no voice pool; CrustPatch.ts:78 ships ceiling -0.3, truePeak, OS 4",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "output RMS 4.844e-1"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "output RMS 2.506e-1"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.01730912495621433,
+        "floor": 0.009695042381169312,
+        "median": 0.017642288215964495,
+        "p95": 0.01846390197708054,
+        "p99": 0.02139183465305771,
+        "p999": 0.02305000060731009,
+        "max": 0.04601783983850857,
+        "min": 0.0018000810584451496,
+        "firstFiveHundredMean": 0.016937179286174695,
+        "lastFiveHundredMean": 0.017515251790063937
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 1.4191510419277114e-7,
+        "floor": 0,
+        "median": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0.00003734608005072924,
+        "max": 0.00005228451207102094,
+        "min": 0,
+        "firstFiveHundredMean": 3.1370707242612564e-7,
+        "lastFiveHundredMean": 5.975372808116679e-8
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 1,
+        "medianTicksPerMs": 133882.8598130841,
+        "minTicksPerMs": 133882.8598130841,
+        "maxTicksPerMs": 133882.8598130841,
+        "spreadPct": 0,
+        "attempts": 1
+      },
+      "timedTotalMs": 346.18249912428655,
+      "warmupTotalMs": 69.84896358694371,
+      "mainThreadWallMs": 517.0049999952316,
+      "wallRatio": 0.8046952403072839,
+      "driftPct": 3.4130388190500183,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 0,
+      "zeroFraction": 0,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 1,
+        "mean": 3.81005859375,
+        "min": 3.81005859375,
+        "max": 3.81005859375
+      },
+      "sampleCount": 20000
     },
-    "load": {
-        "before": 2.92236328125,
-        "after": 3.16259765625,
-        "ceiling": 6
+    {
+      "id": "gluten",
+      "label": "Gluten (4:1, -24 dB, compressing)",
+      "note": "effect; no voice pool",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "output RMS 2.200e-1"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "output RMS 2.133e-1"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.0071559349730257096,
+        "floor": 0.001330764722452516,
+        "median": 0.007341634592406577,
+        "p95": 0.007491158718524837,
+        "p99": 0.007543492162666228,
+        "p999": 0.015266413276674369,
+        "max": 0.023415478150119552,
+        "min": 0,
+        "firstFiveHundredMean": 0.0071919459897495765,
+        "lastFiveHundredMean": 0.007224258153403736
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 0.000006534204311367983,
+        "floor": 0,
+        "median": 0,
+        "p95": 0.000022428618917739033,
+        "p99": 0.00003738103152956506,
+        "p999": 0.00003738103152956506,
+        "max": 0.0000672858567532171,
+        "min": 0,
+        "firstFiveHundredMean": 0.0000067734429131572054,
+        "lastFiveHundredMean": 0.000006534204311367987
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 1,
+        "medianTicksPerMs": 133757.67857142858,
+        "minTicksPerMs": 133757.67857142858,
+        "maxTicksPerMs": 133757.67857142858,
+        "spreadPct": 0,
+        "attempts": 1
+      },
+      "timedTotalMs": 143.1186994605142,
+      "warmupTotalMs": 29.63237731345196,
+      "mainThreadWallMs": 271.52499997615814,
+      "wallRatio": 0.6362253081268205,
+      "driftPct": 0.44928262392700535,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 42,
+      "zeroFraction": 0.0021,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 1,
+        "mean": 4.99267578125,
+        "min": 4.99267578125,
+        "max": 4.99267578125
+      },
+      "sampleCount": 20000
     },
-    "referenceProject": {
-        "audioThread": [
-            ["grand_boule_ring_consumer", 1],
-            ["fermenter", 1],
-            ["levain", 1],
-            ["toaster", 1],
-            ["crumbs", 1],
-            ["grinder", 1],
-            ["knead", 1],
-            ["bacteria", 1],
-            ["proof", 1],
-            ["gluten", 3],
-            ["proof_chamber_plate", 1]
-        ],
-        "worker": [["grand_boule", 1]],
-        "audioFloorMs": 0.8265666931161905,
-        "audioFloorPartialFrom": ["knead"],
-        "audioUpperBoundMs": 1.0828790008450062,
-        "audioWorstQuantumUpperMs": 2.098311307421731,
-        "audioMedianMs": 1.0194253106664666,
-        "meanLoad": 3.233025241284575,
-        "workerFloorMs": 1.6361475175973044,
-        "workerMedianMs": 2.120738818935398
+    {
+      "id": "proof",
+      "label": "Proof (limiter engaged)",
+      "note": "effect; input gain +6 dB, ceiling -1 dB",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "output RMS 2.082e-1, limiter gain reduction -1.57 dB (required below -1 dB)"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "output RMS 4.474e-1, limiter gain reduction -1.14 dB (required below -1 dB)"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.060688357207320506,
+        "floor": 0.05141611440519999,
+        "median": 0.06152872794462319,
+        "p95": 0.06472253354485778,
+        "p99": 0.0672521609860415,
+        "p999": 0.07430984657087326,
+        "max": 0.08163729906338972,
+        "min": 0.019043753116418084,
+        "firstFiveHundredMean": 0.06055510271980174,
+        "lastFiveHundredMean": 0.06218019978910791
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 0.000007097786071109163,
+        "floor": 0,
+        "median": 0,
+        "p95": 0.00002187299251497447,
+        "p99": 0.00002187299251497447,
+        "p999": 0.000029163990019965962,
+        "max": 0.0003645498752495745,
+        "min": 0,
+        "firstFiveHundredMean": 0.000006766045684632089,
+        "lastFiveHundredMean": 0.00000702852159481178
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 2,
+        "medianTicksPerMs": 137155.444,
+        "minTicksPerMs": 137155.444,
+        "maxTicksPerMs": 137262.8590604027,
+        "spreadPct": 0.0783162937394662,
+        "attempts": 1
+      },
+      "timedTotalMs": 1213.7671441464101,
+      "warmupTotalMs": 244.57738622464015,
+      "mainThreadWallMs": 1567.8250000476837,
+      "wallRatio": 0.9301704784186349,
+      "driftPct": 2.6836666049858016,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 0,
+      "zeroFraction": 0,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 2,
+        "mean": 3.81005859375,
+        "min": 3.81005859375,
+        "max": 3.81005859375
+      },
+      "sampleCount": 20000
     },
-    "rows": [
-        {
-            "id": "bacteria",
-            "label": "Bacteria (3 bands, mix 1.0, all stages off)",
-            "note": "effect; no voice pool; engine.rs:220 ships every stage disabled",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "output RMS 2.908e-1"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "output RMS 2.795e-1"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.010490107057838673,
-                "floor": 0.009964191842521133,
-                "median": 0.010588477968729018,
-                "p95": 0.010822585266056974,
-                "p99": 0.010915252737915956,
-                "p999": 0.018226228544053587,
-                "max": 0.029195130870940535,
-                "min": 0.00046333735929491324,
-                "firstFiveHundredMean": 0.01070041052026396,
-                "lastFiveHundredMean": 0.010069198719843443
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 0.000012673496085556139,
-                "floor": 0,
-                "median": 0,
-                "p95": 0.00003901788288799269,
-                "p99": 0.00003901788288799269,
-                "p999": 0.00003901788288799269,
-                "max": 0.000048772353609990864,
-                "min": 0,
-                "firstFiveHundredMean": 0.000014153737017619406,
-                "lastFiveHundredMean": 0.000012193088402497731
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 1,
-                "medianTicksPerMs": 205034.1896551724,
-                "minTicksPerMs": 205034.1896551724,
-                "maxTicksPerMs": 205034.1896551724,
-                "spreadPct": 0,
-                "attempts": 1
-            },
-            "timedTotalMs": 209.80214115677347,
-            "warmupTotalMs": 44.84083369443095,
-            "mainThreadWallMs": 358.875,
-            "wallRatio": 0.7095589685857316,
-            "driftPct": -5.898949383532126,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 0,
-            "zeroFraction": 0,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 1,
-                "mean": 2.92236328125,
-                "min": 2.92236328125,
-                "max": 2.92236328125
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "bacteria_smudge",
-            "label": "Bacteria (3 bands, distortion on, Smudge/STFT)",
-            "note": "effect; no voice pool; distortionMode 7 = Smudge, distortion.rs:41",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "output RMS 2.545e-1"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "output RMS 2.662e-1"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.2728092152927655,
-                "floor": 0.012867054747044743,
-                "median": 0.02050213266200455,
-                "p95": 1.0548024155325324,
-                "p99": 1.085050173081442,
-                "p999": 1.454451785643905,
-                "max": 1.4860354911720715,
-                "min": 0.007093324915071405,
-                "firstFiveHundredMean": 0.2670077924860836,
-                "lastFiveHundredMean": 0.27239618000426946
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 0.00001166246213839414,
-                "floor": 0,
-                "median": 0,
-                "p95": 0.00003407087974990993,
-                "p99": 0.00003407087974990993,
-                "p999": 0.000040885055699891916,
-                "max": 0.0007427451785480364,
-                "min": 0,
-                "firstFiveHundredMean": 0.000012565340451766753,
-                "lastFiveHundredMean": 0.000011311532076970071
-            },
-            "dutyCycle": {
-                "periodQuanta": 4,
-                "dutyPct": 25,
-                "tickFloorMs": 0.6973695808971064,
-                "tickCostMs": 1.0308072665349792,
-                "idleFloorMs": 0.007093324915071405,
-                "idleCostMs": 0.02014319821202347,
-                "amortisedMeanMs": 0.27280921529276286,
-                "amortisedFloorMs": 0.17966238891058015
-            },
-            "dutyCycleSource": "stft.rs:11-12,164 — fft 2048, hop = fft/4 = 512 frames / 128 = 4 quanta",
-            "calibration": {
-                "segments": 6,
-                "medianTicksPerMs": 146752.888,
-                "minTicksPerMs": 138570.95,
-                "maxTicksPerMs": 204470.897,
-                "spreadPct": 44.90538339524874,
-                "attempts": 1
-            },
-            "timedTotalMs": 5456.1843058553095,
-            "warmupTotalMs": 1519.8344784874012,
-            "mainThreadWallMs": 6653.715000033379,
-            "wallRatio": 1.048439673822476,
-            "driftPct": 2.018063768107714,
-            "stationary": true,
-            "medianTrustworthy": false,
-            "zeroTickSamples": 0,
-            "zeroFraction": 0,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 5,
-                "mean": 3.05517578125,
-                "min": 2.92236328125,
-                "max": 3.08837890625
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "crust",
-            "label": "Crust (true-peak limiting, 4x OS)",
-            "note": "effect; no voice pool; CrustPatch.ts:78 ships ceiling -0.3, truePeak, OS 4",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "output RMS 4.844e-1"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "output RMS 2.506e-1"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.017050978897045245,
-                "floor": 0.009460146781007005,
-                "median": 0.017354679887093254,
-                "p95": 0.018351650859330527,
-                "p99": 0.02085515574517079,
-                "p999": 0.02541906730696808,
-                "max": 0.05974440863258912,
-                "min": 0,
-                "firstFiveHundredMean": 0.01764420025743097,
-                "lastFiveHundredMean": 0.017262013281466336
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 5.649502176011208e-7,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0.000029539880658882135,
-                "p999": 0.0000443098209883232,
-                "max": 0.0000443098209883232,
-                "min": 0,
-                "firstFiveHundredMean": 0.000002141641347768955,
-                "lastFiveHundredMean": 0
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 1,
-                "medianTicksPerMs": 135410.16113744077,
-                "minTicksPerMs": 135410.16113744077,
-                "maxTicksPerMs": 135410.16113744077,
-                "spreadPct": 0,
-                "attempts": 1
-            },
-            "timedTotalMs": 341.0195779409049,
-            "warmupTotalMs": 71.3518241086306,
-            "mainThreadWallMs": 508.7150000333786,
-            "wallRatio": 0.8106138054165463,
-            "driftPct": -2.166077070020078,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 2,
-            "zeroFraction": 0.0001,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 1,
-                "mean": 3.08837890625,
-                "min": 3.08837890625,
-                "max": 3.08837890625
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "gluten",
-            "label": "Gluten (4:1, -24 dB, compressing)",
-            "note": "effect; no voice pool",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "output RMS 2.200e-1"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "output RMS 2.133e-1"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.007083301382530398,
-                "floor": 0.0012283027184247007,
-                "median": 0.007273623928984824,
-                "p95": 0.00739941396641386,
-                "p99": 0.0074438104502123435,
-                "p999": 0.015457375775838554,
-                "max": 0.023182363956774622,
-                "min": 0,
-                "firstFiveHundredMean": 0.007003930088736992,
-                "lastFiveHundredMean": 0.006968960458331721
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 0.000007136734770606118,
-                "floor": 0,
-                "median": 0,
-                "p95": 0.00002219824189924158,
-                "p99": 0.00002219824189924158,
-                "p999": 0.00005179589776489702,
-                "max": 0.00006659472569772474,
-                "min": 0,
-                "firstFiveHundredMean": 0.000007251425687085593,
-                "lastFiveHundredMean": 0.000007044242096026003
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 1,
-                "medianTicksPerMs": 135145.83783783784,
-                "minTicksPerMs": 135145.83783783784,
-                "maxTicksPerMs": 135145.83783783784,
-                "spreadPct": 0,
-                "attempts": 1
-            },
-            "timedTotalMs": 141.66602765060796,
-            "warmupTotalMs": 28.801612112320704,
-            "mainThreadWallMs": 268.3550000190735,
-            "wallRatio": 0.6352318374944107,
-            "driftPct": -0.4992858289877167,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 38,
-            "zeroFraction": 0.0019,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 1,
-                "mean": 3.16259765625,
-                "min": 3.16259765625,
-                "max": 3.16259765625
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "proof",
-            "label": "Proof (limiter engaged)",
-            "note": "effect; input gain +6 dB, ceiling -1 dB",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "output RMS 2.082e-1, limiter gain reduction -1.57 dB (required below -1 dB)"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "output RMS 4.474e-1, limiter gain reduction -1.14 dB (required below -1 dB)"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.0600144423337156,
-                "floor": 0.05072498738980873,
-                "median": 0.061024664940394026,
-                "p95": 0.06392102470390992,
-                "p99": 0.06634271506814607,
-                "p999": 0.07402831921811709,
-                "max": 0.09508397436105656,
-                "min": 0.018177178871676743,
-                "firstFiveHundredMean": 0.05897586047444018,
-                "lastFiveHundredMean": 0.059981508775721955
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 0.000006520825044657264,
-                "floor": 0,
-                "median": 0,
-                "p95": 0.000021980309139294282,
-                "p99": 0.000021980309139294282,
-                "p999": 0.00003663384856549047,
-                "max": 0.0002637637096715314,
-                "min": 0,
-                "firstFiveHundredMean": 0.000006139833019576215,
-                "lastFiveHundredMean": 0.00000647686442637873
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 2,
-                "medianTicksPerMs": 136485.79649122807,
-                "minTicksPerMs": 136485.79649122807,
-                "maxTicksPerMs": 137920.192,
-                "spreadPct": 1.0509485570274157,
-                "attempts": 1
-            },
-            "timedTotalMs": 1200.288846674312,
-            "warmupTotalMs": 242.0813216423111,
-            "mainThreadWallMs": 1545.5650000572205,
-            "wallRatio": 0.9332316455556533,
-            "driftPct": 1.7051863138438206,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 0,
-            "zeroFraction": 0,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 2,
-                "mean": 3.4013671875,
-                "min": 3.4013671875,
-                "max": 3.4013671875
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "knead",
-            "label": "Knead (+4 semitones, PSOLA engaged)",
-            "note": "effect; no voice pool",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "output RMS 2.233e-1"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "output RMS 1.413e-1"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.06394991046497027,
-                "floor": 0,
-                "median": 0.0004962202864295872,
-                "p95": 0.9863910637790255,
-                "p99": 1.045781888986914,
-                "p999": 1.055810822379094,
-                "max": 1.0735025672622385,
-                "min": 0,
-                "firstFiveHundredMean": 0.06352177184385235,
-                "lastFiveHundredMean": 0.06546699214900437
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 0.000006863164402750325,
-                "floor": 0,
-                "median": 0,
-                "p95": 0.00002189207146012885,
-                "p99": 0.00002189207146012885,
-                "p999": 0.000036486785766881414,
-                "max": 0.000058378857227010265,
-                "min": 0,
-                "firstFiveHundredMean": 0.000006626000295265664,
-                "lastFiveHundredMean": 0.000006830326295560204
-            },
-            "dutyCycle": {
-                "periodQuanta": 16,
-                "dutyPct": 6.25,
-                "tickFloorMs": 0.939505544068583,
-                "tickCostMs": 1.0159176978806486,
-                "idleFloorMs": 0,
-                "idleCostMs": 0.00048539130392376647,
-                "amortisedMeanMs": 0.06394991046496908,
-                "amortisedFloorMs": 0.05871909650428644
-            },
-            "dutyCycleSource": "yin_cfg.frame_size = 2048 frames / 128 = 16 quanta",
-            "calibration": {
-                "segments": 2,
-                "medianTicksPerMs": 137035.913,
-                "minTicksPerMs": 137035.913,
-                "maxTicksPerMs": 137298.22777777776,
-                "spreadPct": 0.19142046200528695,
-                "attempts": 1
-            },
-            "timedTotalMs": 1278.9982092994053,
-            "warmupTotalMs": 263.08646551652487,
-            "mainThreadWallMs": 1638.0950000286102,
-            "wallRatio": 0.9413890371370384,
-            "driftPct": 3.0622891155078324,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 451,
-            "zeroFraction": 0.02255,
-            "floorMeasurable": false,
-            "load": {
-                "samples": 1,
-                "mean": 3.4013671875,
-                "min": 3.4013671875,
-                "max": 3.4013671875
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "grinder",
-            "label": "Grinder (Crunch JCM, ch 1, gain 5 — shipped patch)",
-            "note": "effect; the shipped patch, GrinderPatch.ts:299-301 (ampModel 'crunch-jcm', channel 1, gain 5)",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "engine output -4.77 dBFS"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "engine output -4.93 dBFS"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.12413685303757202,
-                "floor": 0.09765117110485481,
-                "median": 0.12633198407601534,
-                "p95": 0.13833370369252357,
-                "p99": 0.14123194105087067,
-                "p999": 0.1495644975983631,
-                "max": 0.16857158722706062,
-                "min": 0.08060170217561209,
-                "firstFiveHundredMean": 0.1245086347922132,
-                "lastFiveHundredMean": 0.12593557893903873
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 1.3092894449812939e-7,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0,
-                "p999": 0.00003636915124948038,
-                "max": 0.00007273830249896076,
-                "min": 0,
-                "firstFiveHundredMean": 2.1821490749688226e-7,
-                "lastFiveHundredMean": 2.473102284964666e-7
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 3,
-                "medianTicksPerMs": 137479.15,
-                "minTicksPerMs": 136157.127,
-                "maxTicksPerMs": 138297.32746478874,
-                "spreadPct": 1.5567454881621956,
-                "attempts": 1
-            },
-            "timedTotalMs": 2482.7370607514404,
-            "warmupTotalMs": 495.9548047831253,
-            "mainThreadWallMs": 3085.5,
-            "wallRatio": 0.9653838488201477,
-            "driftPct": 1.1460603910780076,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 0,
-            "zeroFraction": 0,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 2,
-                "mean": 3.34521484375,
-                "min": 3.2890625,
-                "max": 3.4013671875
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "fermenter",
-            "label": "Fermenter (32 sounding voices, 1 layer)",
-            "note": "fermenterProcessor.ts constructs an instance-wide ceiling of 32 voices",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "active_voices() = 32, expected 32 from 32 note-ons, output RMS 5.749e-1"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "active_voices() = 32, expected 32 from 32 note-ons, output RMS 5.208e-1"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.09259238411487263,
-                "floor": 0.08278499617599855,
-                "median": 0.09444140244744616,
-                "p95": 0.09660190813010032,
-                "p99": 0.10047096647893262,
-                "p999": 0.10692136650780322,
-                "max": 0.11814607836906621,
-                "min": 0.03583079064177496,
-                "firstFiveHundredMean": 0.09101860902905211,
-                "lastFiveHundredMean": 0.09111975843167937
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 8.116889793900668e-7,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0,
-                "p999": 0.00010191610503552407,
-                "max": 0.0007206924570369202,
-                "min": 0,
-                "firstFiveHundredMean": 0.0000013685876961913233,
-                "lastFiveHundredMean": 7.279721788251719e-8
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 2,
-                "medianTicksPerMs": 137367.887,
-                "minTicksPerMs": 137367.887,
-                "maxTicksPerMs": 137820.90971428572,
-                "spreadPct": 0.32978793237587833,
-                "attempts": 1
-            },
-            "timedTotalMs": 1851.8476822974526,
-            "warmupTotalMs": 372.145012320092,
-            "mainThreadWallMs": 2375.2599999904633,
-            "wallRatio": 0.9363154747802237,
-            "driftPct": 0.11113046409549909,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 0,
-            "zeroFraction": 0,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 2,
-                "mean": 3.2890625,
-                "min": 3.2890625,
-                "max": 3.2890625
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "fermenter_automation_16",
-            "label": "Fermenter + 16 automated params (16 sounding voices, 1 layer)",
-            "note": "_applyParamAutomation over 16 schedules then process(128); ordinals cycle paramId % 16 so the set of parameters moved matches the other automation rows",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 5.917e-1, 64000/64000 schedule visits wrote through set_param_by_id (100.0%), 0/16 schedules exhausted their segments, timeline covers 25000 quanta"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 5.462e-1, 384000/384000 schedule visits wrote through set_param_by_id (100.0%), 0/16 schedules exhausted their segments, timeline covers 25000 quanta"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.07024456191413893,
-                "floor": 0.058554307105564,
-                "median": 0.0712836763559398,
-                "p95": 0.07537000175214016,
-                "p99": 0.08073055764823098,
-                "p999": 0.08562243106160346,
-                "max": 0.34128140222065567,
-                "min": 0.016001112886555213,
-                "firstFiveHundredMean": 0.06692372826779742,
-                "lastFiveHundredMean": 0.0700908707656392
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 1.955499859228035e-7,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0,
-                "p999": 0.00003689622375901953,
-                "max": 0.00006641320276623516,
-                "min": 0,
-                "firstFiveHundredMean": 4.2799619560462655e-7,
-                "lastFiveHundredMean": 1.4758489503607812e-7
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 2,
-                "medianTicksPerMs": 135515.22325581397,
-                "minTicksPerMs": 135515.22325581397,
-                "maxTicksPerMs": 136553.002,
-                "spreadPct": 0.7658023351568499,
-                "attempts": 1
-            },
-            "timedTotalMs": 1404.8912382827787,
-            "warmupTotalMs": 276.7678722647928,
-            "mainThreadWallMs": 1835.1949999928474,
-            "wallRatio": 0.9163381060618221,
-            "driftPct": 4.732465718539114,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 0,
-            "zeroFraction": 0,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 1,
-                "mean": 3.2890625,
-                "min": 3.2890625,
-                "max": 3.2890625
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "fermenter_automation_90",
-            "label": "Fermenter + 90 automated params (16 sounding voices, 1 layer)",
-            "note": "_applyParamAutomation over 90 schedules then process(128); ordinals cycle paramId % 16 so the set of parameters moved matches the other automation rows",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 9.209e-1, 360000/360000 schedule visits wrote through set_param_by_id (100.0%), 0/90 schedules exhausted their segments, timeline covers 25000 quanta"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 5.157e-1, 2160000/2160000 schedule visits wrote through set_param_by_id (100.0%), 0/90 schedules exhausted their segments, timeline covers 25000 quanta"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.07256526380545839,
-                "floor": 0.061994785575011854,
-                "median": 0.07343556797874463,
-                "p95": 0.079005325886278,
-                "p99": 0.08382559130493485,
-                "p999": 0.08976274749132925,
-                "max": 0.25385751476182405,
-                "min": 0.02428576858033071,
-                "firstFiveHundredMean": 0.07303407513960525,
-                "lastFiveHundredMean": 0.06996925146528962
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 2.2043896731662387e-7,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0,
-                "p999": 0.000029391862308883183,
-                "max": 0.00029391862308883183,
-                "min": 0,
-                "firstFiveHundredMean": 2.3513489847106546e-7,
-                "lastFiveHundredMean": 5.8783724617766364e-8
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 2,
-                "medianTicksPerMs": 136092.091,
-                "minTicksPerMs": 136092.091,
-                "maxTicksPerMs": 137282.04602510462,
-                "spreadPct": 0.8743748562909739,
-                "attempts": 1
-            },
-            "timedTotalMs": 1451.3052761091676,
-            "warmupTotalMs": 288.8864276469968,
-            "mainThreadWallMs": 1898.8199999928474,
-            "wallRatio": 0.9164595400104903,
-            "driftPct": -4.19642977398863,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 0,
-            "zeroFraction": 0,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 1,
-                "mean": 3.345703125,
-                "min": 3.345703125,
-                "max": 3.345703125
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "fermenter_automation_105",
-            "label": "Fermenter + 105 automated params (16 sounding voices, 1 layer)",
-            "note": "_applyParamAutomation over 105 schedules then process(128); ordinals cycle paramId % 16 so the set of parameters moved matches the other automation rows",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 6.279e-1, 420000/420000 schedule visits wrote through set_param_by_id (100.0%), 0/105 schedules exhausted their segments, timeline covers 25000 quanta"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 5.028e-1, 2520000/2520000 schedule visits wrote through set_param_by_id (100.0%), 0/105 schedules exhausted their segments, timeline covers 25000 quanta"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.0719723871075901,
-                "floor": 0.06253972680430735,
-                "median": 0.07182036136869147,
-                "p95": 0.0755395856281308,
-                "p99": 0.07800647507994549,
-                "p999": 0.08626409574169484,
-                "max": 0.7853985944170262,
-                "min": 0.0504609610032366,
-                "firstFiveHundredMean": 0.07383282515137606,
-                "lastFiveHundredMean": 0.06977554676724304
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 4.978881204068732e-8,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0,
-                "p999": 0.00001991552481627493,
-                "max": 0.00001991552481627493,
-                "min": 0,
-                "firstFiveHundredMean": 1.5932419853019943e-7,
-                "lastFiveHundredMean": 0
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 2,
-                "medianTicksPerMs": 200848.335,
-                "minTicksPerMs": 200848.335,
-                "maxTicksPerMs": 208803.17926565875,
-                "spreadPct": 3.9606224595582322,
-                "attempts": 1
-            },
-            "timedTotalMs": 1439.447742151802,
-            "warmupTotalMs": 282.70217923389805,
-            "mainThreadWallMs": 1882.1100000143051,
-            "wallRatio": 0.9150102392382011,
-            "driftPct": -5.495222993044846,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 0,
-            "zeroFraction": 0,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 1,
-                "mean": 3.345703125,
-                "min": 3.345703125,
-                "max": 3.345703125
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "fermenter_automation_1050",
-            "label": "Fermenter + 1050 automated params (16 sounding voices, 1 layer)",
-            "note": "_applyParamAutomation over 1050 schedules then process(128); ordinals cycle paramId % 16 so the set of parameters moved matches the other automation rows",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 8.936e-1, 4200000/4200000 schedule visits wrote through set_param_by_id (100.0%), 0/1050 schedules exhausted their segments, timeline covers 25000 quanta"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 9.861e-1, 25200000/25200000 schedule visits wrote through set_param_by_id (100.0%), 0/1050 schedules exhausted their segments, timeline covers 25000 quanta"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.09620255182848189,
-                "floor": 0.08689528153730336,
-                "median": 0.09564952787786289,
-                "p95": 0.10070841515367156,
-                "p99": 0.10628109566842954,
-                "p999": 0.14296769923568103,
-                "max": 0.3463518708034159,
-                "min": 0.07597102116503074,
-                "firstFiveHundredMean": 0.09469795315741113,
-                "lastFiveHundredMean": 0.09805956741684164
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 0,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0,
-                "p999": 0,
-                "max": 0,
-                "min": 0,
-                "firstFiveHundredMean": 0,
-                "lastFiveHundredMean": 0
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 2,
-                "medianTicksPerMs": 202416.054,
-                "minTicksPerMs": 202416.054,
-                "maxTicksPerMs": 204248.93284365162,
-                "spreadPct": 0.9055007285398512,
-                "attempts": 1
-            },
-            "timedTotalMs": 1924.0510365696377,
-            "warmupTotalMs": 380.7667053918559,
-            "mainThreadWallMs": 2486.2950000166893,
-            "wallRatio": 0.927008959896562,
-            "driftPct": 3.5498277917820342,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 0,
-            "zeroFraction": 0,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 2,
-                "mean": 3.47802734375,
-                "min": 3.47802734375,
-                "max": 3.47802734375
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "grand_boule",
-            "label": "Grand Boule (64 voices, re-struck 1/s) — production Worker cost site",
-            "note": "the harness times the production DSP kernel; the ring consumer carries the separate audio-thread cost",
-            "costSite": "worker",
-            "warmVerify": {
-                "ok": true,
-                "detail": "active_voices() = 64, expected 64 from 64 note-ons, output RMS 2.401e-1"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "active_voices() = 64, expected 64 from 64 note-ons, output RMS 5.704e-2"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 2.1211564824491185,
-                "floor": 1.6361475175973044,
-                "median": 2.120738818935398,
-                "p95": 2.1900116419848907,
-                "p99": 2.3926611837234417,
-                "p999": 4.179850651885059,
-                "max": 4.648213047466674,
-                "min": 0.747224330415838,
-                "firstFiveHundredMean": 2.1201416059452423,
-                "lastFiveHundredMean": 2.1182976276369367
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 0,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0,
-                "p999": 0,
-                "max": 0,
-                "min": 0,
-                "firstFiveHundredMean": 0,
-                "lastFiveHundredMean": 0
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 43,
-                "medianTicksPerMs": 140006.85114885116,
-                "minTicksPerMs": 136266.231,
-                "maxTicksPerMs": 208380.2097902098,
-                "spreadPct": 51.50746424083229,
-                "attempts": 1
-            },
-            "timedTotalMs": 42423.129648982365,
-            "warmupTotalMs": 11341.308842892502,
-            "mainThreadWallMs": 50978.200000047684,
-            "wallRatio": 1.054655489833391,
-            "driftPct": -0.08697429941163515,
-            "stationary": true,
-            "medianTrustworthy": false,
-            "zeroTickSamples": 0,
-            "zeroFraction": 0,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 43,
-                "mean": 3.267941497093023,
-                "min": 3.1904296875,
-                "max": 3.40380859375
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "grand_boule_ring_consumer",
-            "label": "Grand Boule ring consumer",
-            "note": "live audio-thread transport; reproduces the successful consumer branch from grandBouleProcessor.ts",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "4000 quanta consumed, 0 underruns (must be 0 — an underrun takes the cheap silence branch), 4000 render requests, output RMS 3.767e-1"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "24000 quanta consumed, 0 underruns (must be 0 — an underrun takes the cheap silence branch), 24000 render requests, output RMS 3.278e-1"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.0002321405757976092,
-                "floor": 0.00015657403308159707,
-                "median": 0.00024008018405844884,
-                "p95": 0.0002818332595468747,
-                "p99": 0.00030270979729108766,
-                "p999": 0.0004905986369890042,
-                "max": 0.015286844763199928,
-                "min": 0,
-                "firstFiveHundredMean": 0.0002305187297715989,
-                "lastFiveHundredMean": 0.00017544642320236606
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 1.2264965924725105e-7,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0,
-                "p999": 0.00003653394105237265,
-                "max": 0.00009394441984895825,
-                "min": 0,
-                "firstFiveHundredMean": 7.30678821047453e-8,
-                "lastFiveHundredMean": 4.1753075488425887e-7
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 1,
-                "medianTicksPerMs": 191602.65217391305,
-                "minTicksPerMs": 191602.65217391305,
-                "maxTicksPerMs": 191602.65217391305,
-                "spreadPct": 0,
-                "attempts": 1
-            },
-            "timedTotalMs": 4.642811515952184,
-            "warmupTotalMs": 2.7831712867730567,
-            "mainThreadWallMs": 31.164999961853027,
-            "wallRatio": 0.23827957040959039,
-            "driftPct": -23.890599529070478,
-            "stationary": false,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 60,
-            "zeroFraction": 0.003,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 1,
-                "mean": 3.16259765625,
-                "min": 3.16259765625,
-                "max": 3.16259765625
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "toaster",
-            "label": "Toaster (16 pads, re-struck 1/s)",
-            "note": "toasterProcessor.ts:215 constructs TOASTER_PAD_COUNT = 16",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "16 notes, no active-voice export: output RMS 8.213e-2 is 2.3x one identically-driven voice (3.562e-2), band 1.8-8.8x around sqrt(16) = 4.0x"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "16 notes, no active-voice export: output RMS 4.944e-2 is 3.4x one identically-driven voice (1.471e-2), band 1.8-8.8x around sqrt(16) = 4.0x"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.11549437954075513,
-                "floor": 0.09377658910871145,
-                "median": 0.11839106762596176,
-                "p95": 0.1239760025504308,
-                "p99": 0.13610662422581746,
-                "p999": 0.14160059563466026,
-                "max": 0.14882011079693044,
-                "min": 0.07319851890971066,
-                "firstFiveHundredMean": 0.11506448789515947,
-                "lastFiveHundredMean": 0.1135863538862428
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 0.000008082173442010282,
-                "floor": 0,
-                "median": 0,
-                "p95": 0.00002435123061768669,
-                "p99": 0.00002435123061768669,
-                "p999": 0.00002922147674122403,
-                "max": 0.00002922147674122403,
-                "min": 0,
-                "firstFiveHundredMean": 0.000007996944134848294,
-                "lastFiveHundredMean": 0.000008084608565071968
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 3,
-                "medianTicksPerMs": 205328.432,
-                "minTicksPerMs": 203692.646,
-                "maxTicksPerMs": 208799.5361111111,
-                "spreadPct": 2.4871811766970024,
-                "attempts": 1
-            },
-            "timedTotalMs": 2309.8875908151026,
-            "warmupTotalMs": 463.22105065313116,
-            "mainThreadWallMs": 3272.425000011921,
-            "wallRatio": 0.8474170199341869,
-            "driftPct": -1.2846135553685856,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 0,
-            "zeroFraction": 0,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 3,
-                "mean": 3.2218424479166665,
-                "min": 3.20947265625,
-                "max": 3.22802734375
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "levain",
-            "label": "Levain (32 sounding voices, looped zone)",
-            "note": "levainProcessor.ts:155 constructs 64 = MAX_VOICES_WASM; shipped legato collapses 64 note-ons to 32 voices",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "active_voices() = 32, expected 32 from 64 note-ons, output RMS 1.427e+0"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "active_voices() = 32, expected 32 from 64 note-ons, output RMS 8.047e-1"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.04786339576022524,
-                "floor": 0.04558898122252318,
-                "median": 0.047079010695380535,
-                "p95": 0.04969396308152094,
-                "p99": 0.05392722562361237,
-                "p999": 0.06069649859301733,
-                "max": 0.11666634740127522,
-                "min": 0.0032316864394753985,
-                "firstFiveHundredMean": 0.04937475140325958,
-                "lastFiveHundredMean": 0.04674188906021037
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 0,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0,
-                "p999": 0,
-                "max": 0,
-                "min": 0,
-                "firstFiveHundredMean": 0,
-                "lastFiveHundredMean": 0
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 1,
-                "medianTicksPerMs": 202680.55464759958,
-                "minTicksPerMs": 202680.55464759958,
-                "maxTicksPerMs": 202680.55464759958,
-                "spreadPct": 0,
-                "attempts": 1
-            },
-            "timedTotalMs": 957.2679152045048,
-            "warmupTotalMs": 199.24457514049078,
-            "mainThreadWallMs": 1181.824999988079,
-            "wallRatio": 0.9785818461757545,
-            "driftPct": -5.332406276936497,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 0,
-            "zeroFraction": 0,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 1,
-                "mean": 3.20947265625,
-                "min": 3.20947265625,
-                "max": 3.20947265625
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "crumbs",
-            "label": "Crumbs (32 sounding voices, in-memory pool)",
-            "note": "crumbsProcessor.ts:106 takes no voice count; crate MAX_VOICES = 128",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "active_voices() = 32, expected 32 from 32 note-ons, output RMS 1.072e+0"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "active_voices() = 32, expected 32 from 32 note-ons, output RMS 1.734e+0"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.5355293054666901,
-                "floor": 0.44053241438118357,
-                "median": 0.5307431709000409,
-                "p95": 0.5852171259700014,
-                "p99": 0.6478049853745386,
-                "p999": 0.6727557109116448,
-                "max": 0.6770429668483304,
-                "min": 0.41074242570524333,
-                "firstFiveHundredMean": 0.6434229682014838,
-                "lastFiveHundredMean": 0.5253596577481787
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 0,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0,
-                "p999": 0,
-                "max": 0,
-                "min": 0,
-                "firstFiveHundredMean": 0,
-                "lastFiveHundredMean": 0
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 11,
-                "medianTicksPerMs": 139806.692,
-                "minTicksPerMs": 136516.123,
-                "maxTicksPerMs": 163041.351,
-                "spreadPct": 18.972788512870327,
-                "attempts": 1
-            },
-            "timedTotalMs": 10710.586109333803,
-            "warmupTotalMs": 3113.340633222335,
-            "mainThreadWallMs": 12893.060000002384,
-            "wallRatio": 1.072199054573048,
-            "driftPct": -18.349253335378968,
-            "stationary": false,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 0,
-            "zeroFraction": 0,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 11,
-                "mean": 3.1868341619318183,
-                "min": 3.1767578125,
-                "max": 3.20947265625
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "proof_chamber_plate",
-            "label": "ProofChamber (Plate — shipped default)",
-            "note": "effect; worklet input copy is outside the measured numeric wasm process call",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "output RMS 2.435e-1"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "output RMS 1.919e-1"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.008045931382179213,
-                "floor": 0.001701879702233335,
-                "median": 0.008268359755056374,
-                "p95": 0.00854591953481975,
-                "p99": 0.008648178401048362,
-                "p999": 0.016660890990533205,
-                "max": 0.05842633364019076,
-                "min": 0,
-                "firstFiveHundredMean": 0.007733019981940126,
-                "lastFiveHundredMean": 0.008206493140988072
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 5.91640583179829e-7,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0.000029216818922460686,
-                "p999": 0.00004382522838369103,
-                "max": 0.00004382522838369103,
-                "min": 0,
-                "firstFiveHundredMean": 0.0000022350866475682426,
-                "lastFiveHundredMean": 0
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 1,
-                "medianTicksPerMs": 136907.44398340248,
-                "minTicksPerMs": 136907.44398340248,
-                "maxTicksPerMs": 136907.44398340248,
-                "spreadPct": 0,
-                "attempts": 1
-            },
-            "timedTotalMs": 160.91862764358427,
-            "warmupTotalMs": 32.635267082640624,
-            "mainThreadWallMs": 293.4350000023842,
-            "wallRatio": 0.6596142066374231,
-            "driftPct": 6.122745837379262,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 12,
-            "zeroFraction": 0.0006,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 1,
-                "mean": 3.16259765625,
-                "min": 3.16259765625,
-                "max": 3.16259765625
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "proof_chamber_fdn16",
-            "label": "ProofChamber (FDN-16 — heaviest selectable)",
-            "note": "effect; worklet input copy is outside the measured numeric wasm process call",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "output RMS 2.451e-1"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "output RMS 1.937e-1"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.031207787912391996,
-                "floor": 0.022824982701376242,
-                "median": 0.03203175928450833,
-                "p95": 0.03303863729005936,
-                "p99": 0.033697816415995646,
-                "p999": 0.04173835300708661,
-                "max": 0.05443660583968342,
-                "min": 0,
-                "firstFiveHundredMean": 0.03074714231141169,
-                "lastFiveHundredMean": 0.030476922332137814
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 4.744640961409534e-7,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0.000028974906634562033,
-                "p999": 0.00004346235995184305,
-                "max": 0.000057949813269124066,
-                "min": 0,
-                "firstFiveHundredMean": 0.0000018254191179774084,
-                "lastFiveHundredMean": 0
-            },
-            "dutyCycle": null,
-            "dutyCycleSource": null,
-            "calibration": {
-                "segments": 1,
-                "medianTicksPerMs": 138050.48797736916,
-                "minTicksPerMs": 138050.48797736916,
-                "maxTicksPerMs": 138050.48797736916,
-                "spreadPct": 0,
-                "attempts": 1
-            },
-            "timedTotalMs": 624.1557582478399,
-            "warmupTotalMs": 124.53064999537149,
-            "mainThreadWallMs": 851.0049999952316,
-            "wallRatio": 0.8797673436083295,
-            "driftPct": -0.8788458339869298,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 3,
-            "zeroFraction": 0.00015,
-            "floorMeasurable": true,
-            "load": {
-                "samples": 1,
-                "mean": 3.16259765625,
-                "min": 3.16259765625,
-                "max": 3.16259765625
-            },
-            "sampleCount": 20000
-        },
-        {
-            "id": "scoring",
-            "label": "Scoring / Tuner (pitch detection running)",
-            "note": "analysis; runs only while the tuner is open, so not in the reference project",
-            "costSite": "audio-thread",
-            "warmVerify": {
-                "ok": true,
-                "detail": "output RMS 2.908e-1, detected 110.1 Hz (stimulus fundamental 110 Hz)"
-            },
-            "lateVerify": {
-                "ok": true,
-                "detail": "output RMS 2.795e-1, detected 110.1 Hz (stimulus fundamental 110 Hz)"
-            },
-            "stats": {
-                "n": 20000,
-                "mean": 0.0174600048253757,
-                "floor": 0,
-                "median": 0.0008932650100064472,
-                "p95": 0.20620395255785193,
-                "p99": 0.21538022038791815,
-                "p999": 0.22126395768523335,
-                "max": 0.2328394910380442,
-                "min": 0,
-                "firstFiveHundredMean": 0.01782660189283592,
-                "lastFiveHundredMean": 0.017570301276163165
-            },
-            "harnessFloor": {
-                "n": 2000,
-                "mean": 3.063677513658476e-7,
-                "floor": 0,
-                "median": 0,
-                "p95": 0,
-                "p99": 0,
-                "p999": 0.000044294132727592426,
-                "max": 0.0000590588436367899,
-                "min": 0,
-                "firstFiveHundredMean": 7.382355454598738e-7,
-                "lastFiveHundredMean": 2.510000854563571e-7
-            },
-            "dutyCycle": {
-                "periodQuanta": 12.5,
-                "dutyPct": 8,
-                "tickFloorMs": 0.17856441373583426,
-                "tickCostMs": 0.20823745005165473,
-                "idleFloorMs": 0,
-                "idleCostMs": 0.0008706617622212839,
-                "amortisedMeanMs": 0.01746000482537596,
-                "amortisedFloorMs": 0.014285153098866741
-            },
-            "dutyCycleSource": "hop = sample_rate / 30 = 1600 frames / 128 = 12.5 quanta",
-            "calibration": {
-                "segments": 1,
-                "medianTicksPerMs": 135458.12121212122,
-                "minTicksPerMs": 135458.12121212122,
-                "maxTicksPerMs": 135458.12121212122,
-                "spreadPct": 0,
-                "attempts": 1
-            },
-            "timedTotalMs": 349.200096507514,
-            "warmupTotalMs": 72.20557846571388,
-            "mainThreadWallMs": 517.5799999833107,
-            "wallRatio": 0.8141846187774181,
-            "driftPct": -1.4377424155960772,
-            "stationary": true,
-            "medianTrustworthy": true,
-            "zeroTickSamples": 400,
-            "zeroFraction": 0.02,
-            "floorMeasurable": false,
-            "load": {
-                "samples": 1,
-                "mean": 3.16259765625,
-                "min": 3.16259765625,
-                "max": 3.16259765625
-            },
-            "sampleCount": 20000
-        }
-    ]
+    {
+      "id": "knead",
+      "label": "Knead (+4 semitones, PSOLA engaged)",
+      "note": "effect; no voice pool",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "output RMS 2.233e-1"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "output RMS 1.413e-1"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.06413276944828974,
+        "floor": 0,
+        "median": 0.0005249337905684024,
+        "p95": 1.0103968746103669,
+        "p99": 1.0331128450816762,
+        "p999": 1.0447492292440597,
+        "max": 1.077617163298496,
+        "min": 0,
+        "firstFiveHundredMean": 0.06411768549615907,
+        "lastFiveHundredMean": 0.06594148972743168
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 0.000007555145315448812,
+        "floor": 0,
+        "median": 0,
+        "p95": 0.000022676774333513092,
+        "p99": 0.000030235699111350792,
+        "p999": 0.000030235699111350792,
+        "max": 0.00008314817255621468,
+        "min": 0,
+        "firstFiveHundredMean": 0.0000075135712291706865,
+        "lastFiveHundredMean": 0.000007664749724727441
+      },
+      "dutyCycle": {
+        "periodQuanta": 16,
+        "dutyPct": 6.25,
+        "tickFloorMs": 0.9536608799859191,
+        "tickCostMs": 1.0184267629027133,
+        "idleFloorMs": 0,
+        "idleCostMs": 0.0005131698846544486,
+        "amortisedMeanMs": 0.06413276944828315,
+        "amortisedFloorMs": 0.05960380499911994
+      },
+      "dutyCycleSource": "yin_cfg.frame_size = 2048 frames / 128 = 16 quanta",
+      "calibration": {
+        "segments": 2,
+        "medianTicksPerMs": 132293.9478021978,
+        "minTicksPerMs": 132293.9478021978,
+        "maxTicksPerMs": 139065.157,
+        "spreadPct": 5.118306098118962,
+        "attempts": 1
+      },
+      "timedTotalMs": 1282.6553889657948,
+      "warmupTotalMs": 275.8349085973362,
+      "mainThreadWallMs": 1642.375,
+      "wallRatio": 0.9489247568692478,
+      "driftPct": 2.844463609625869,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 472,
+      "zeroFraction": 0.0236,
+      "floorMeasurable": false,
+      "load": {
+        "samples": 1,
+        "mean": 3.8251953125,
+        "min": 3.8251953125,
+        "max": 3.8251953125
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "grinder",
+      "label": "Grinder (Crunch JCM, ch 1, gain 5 — shipped patch)",
+      "note": "effect; the shipped patch, GrinderPatch.ts:299-301 (ampModel 'crunch-jcm', channel 1, gain 5)",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "engine output -4.77 dBFS"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "engine output -4.93 dBFS"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.12630272363080636,
+        "floor": 0.09888232271081611,
+        "median": 0.12876139434182898,
+        "p95": 0.14009181946675803,
+        "p99": 0.14320610820509957,
+        "p999": 0.19139716774300433,
+        "max": 1.8458520941815304,
+        "min": 0.01606786038681269,
+        "firstFiveHundredMean": 0.12772306352612442,
+        "lastFiveHundredMean": 0.12431540983170707
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 1.2757423909470746e-7,
+        "floor": 0,
+        "median": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0.00002915982607879028,
+        "max": 0.00008018952171667327,
+        "min": 0,
+        "firstFiveHundredMean": 3.353379999060882e-7,
+        "lastFiveHundredMean": 5.831965215758056e-8
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 3,
+        "medianTicksPerMs": 137175.0294117647,
+        "minTicksPerMs": 136788.858,
+        "maxTicksPerMs": 137292.704,
+        "spreadPct": 0.3673015432623472,
+        "attempts": 1
+      },
+      "timedTotalMs": 2526.054472616127,
+      "warmupTotalMs": 508.71329351444734,
+      "mainThreadWallMs": 3136.860000014305,
+      "wallRatio": 0.9674540037224277,
+      "driftPct": -2.6680018473878464,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 0,
+      "zeroFraction": 0,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 2,
+        "mean": 3.8251953125,
+        "min": 3.8251953125,
+        "max": 3.8251953125
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "fermenter",
+      "label": "Fermenter (32 sounding voices, 1 layer)",
+      "note": "fermenterProcessor.ts constructs an instance-wide ceiling of 32 voices",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "active_voices() = 32, expected 32 from 32 note-ons, output RMS 5.749e-1"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "active_voices() = 32, expected 32 from 32 note-ons, output RMS 5.208e-1"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.09296073447646924,
+        "floor": 0.08100267924553516,
+        "median": 0.09371650107904778,
+        "p95": 0.09868698594899412,
+        "p99": 0.10234655533141386,
+        "p999": 0.11212351923243959,
+        "max": 0.493575047270978,
+        "min": 0.0324443849960067,
+        "firstFiveHundredMean": 0.08895932728569413,
+        "lastFiveHundredMean": 0.09252327497678205
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 6.637145968771088e-8,
+        "floor": 0,
+        "median": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0.000029498426527871505,
+        "max": 0.00006637145968771089,
+        "min": 0,
+        "firstFiveHundredMean": 2.0648898569510053e-7,
+        "lastFiveHundredMean": 0
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 2,
+        "medianTicksPerMs": 135600.4530011325,
+        "minTicksPerMs": 135600.4530011325,
+        "maxTicksPerMs": 136633.812,
+        "spreadPct": 0.7620616126252013,
+        "attempts": 1
+      },
+      "timedTotalMs": 1859.214689529385,
+      "warmupTotalMs": 376.3240009203643,
+      "mainThreadWallMs": 2384.064999938011,
+      "wallRatio": 0.9377003942878555,
+      "driftPct": 4.006266458875363,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 0,
+      "zeroFraction": 0,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 2,
+        "mean": 3.9990234375,
+        "min": 3.9990234375,
+        "max": 3.9990234375
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "fermenter_automation_16",
+      "label": "Fermenter + 16 automated params (16 sounding voices, 1 layer)",
+      "note": "_applyParamAutomation over 16 schedules then process(128); ordinals cycle paramId % 16 so the set of parameters moved matches the other automation rows",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 5.917e-1, 64000/64000 schedule visits wrote through set_param_by_id (100.0%), 0/16 schedules exhausted their segments, timeline covers 25000 quanta"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 5.462e-1, 384000/384000 schedule visits wrote through set_param_by_id (100.0%), 0/16 schedules exhausted their segments, timeline covers 25000 quanta"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.07021194816632051,
+        "floor": 0.06001928955174133,
+        "median": 0.07136703597382212,
+        "p95": 0.07464026179546113,
+        "p99": 0.07691416037462902,
+        "p999": 0.08680209358960975,
+        "max": 0.30683513951951547,
+        "min": 0.026028240972065714,
+        "firstFiveHundredMean": 0.0705733105573466,
+        "lastFiveHundredMean": 0.06987405428226945
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 0.000007280600776059158,
+        "floor": 0,
+        "median": 0,
+        "p95": 0.000022367437100027825,
+        "p99": 0.000022367437100027825,
+        "p999": 0.000022367437100027825,
+        "max": 0.000022367437100027825,
+        "min": 0,
+        "firstFiveHundredMean": 0.000007112844997808831,
+        "lastFiveHundredMean": 0.000007381254243009164
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 2,
+        "medianTicksPerMs": 134123.54694835682,
+        "minTicksPerMs": 134123.54694835682,
+        "maxTicksPerMs": 138383.759,
+        "spreadPct": 3.176334169930307,
+        "attempts": 1
+      },
+      "timedTotalMs": 1404.2389633264102,
+      "warmupTotalMs": 289.78042919611414,
+      "mainThreadWallMs": 1831.3600000143051,
+      "wallRatio": 0.9250062207918116,
+      "driftPct": -0.9908225497072931,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 0,
+      "zeroFraction": 0,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 2,
+        "mean": 3.9990234375,
+        "min": 3.9990234375,
+        "max": 3.9990234375
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "fermenter_automation_90",
+      "label": "Fermenter + 90 automated params (16 sounding voices, 1 layer)",
+      "note": "_applyParamAutomation over 90 schedules then process(128); ordinals cycle paramId % 16 so the set of parameters moved matches the other automation rows",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 9.209e-1, 360000/360000 schedule visits wrote through set_param_by_id (100.0%), 0/90 schedules exhausted their segments, timeline covers 25000 quanta"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 5.157e-1, 2160000/2160000 schedule visits wrote through set_param_by_id (100.0%), 0/90 schedules exhausted their segments, timeline covers 25000 quanta"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.07400133397831639,
+        "floor": 0.03834558858143542,
+        "median": 0.07440143861862483,
+        "p95": 0.08382401400958452,
+        "p99": 0.10629207347499835,
+        "p999": 0.22916215529172512,
+        "max": 0.3387683240281322,
+        "min": 0,
+        "firstFiveHundredMean": 0.0756754973496653,
+        "lastFiveHundredMean": 0.09116057316195608
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 1.0921450293278599e-7,
+        "floor": 0,
+        "median": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0.000030128138740078898,
+        "max": 0.0001280445896453353,
+        "min": 0,
+        "firstFiveHundredMean": 3.766017342509862e-7,
+        "lastFiveHundredMean": 0
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 2,
+        "medianTicksPerMs": 132766.25,
+        "minTicksPerMs": 132766.25,
+        "maxTicksPerMs": 139774.1321499014,
+        "spreadPct": 5.278361142158785,
+        "attempts": 1
+      },
+      "timedTotalMs": 1480.0266795663279,
+      "warmupTotalMs": 304.1327295152194,
+      "mainThreadWallMs": 1925.2450000047684,
+      "wallRatio": 0.9267181107220787,
+      "driftPct": 20.462469827902964,
+      "stationary": false,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 6,
+      "zeroFraction": 0.0003,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 1,
+        "mean": 3.9990234375,
+        "min": 3.9990234375,
+        "max": 3.9990234375
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "fermenter_automation_105",
+      "label": "Fermenter + 105 automated params (16 sounding voices, 1 layer)",
+      "note": "_applyParamAutomation over 105 schedules then process(128); ordinals cycle paramId % 16 so the set of parameters moved matches the other automation rows",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 6.279e-1, 420000/420000 schedule visits wrote through set_param_by_id (100.0%), 0/105 schedules exhausted their segments, timeline covers 25000 quanta"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 5.028e-1, 2520000/2520000 schedule visits wrote through set_param_by_id (100.0%), 0/105 schedules exhausted their segments, timeline covers 25000 quanta"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.07325739515032188,
+        "floor": 0.06308809439250948,
+        "median": 0.07333273948607698,
+        "p95": 0.07829404599995593,
+        "p99": 0.08418598670643712,
+        "p999": 0.09434533178015256,
+        "max": 0.7447192791887839,
+        "min": 0,
+        "firstFiveHundredMean": 0.07280706239265099,
+        "lastFiveHundredMean": 0.07326693649464379
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 0.000007809277595882451,
+        "floor": 0,
+        "median": 0,
+        "p95": 0.000025158755141374014,
+        "p99": 0.000025158755141374014,
+        "p999": 0.00003019050616964882,
+        "max": 0.00005534926131102283,
+        "min": 0,
+        "firstFiveHundredMean": 0.000007497309032129441,
+        "lastFiveHundredMean": 0.00000794010312261762
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 2,
+        "medianTicksPerMs": 198737.973,
+        "minTicksPerMs": 198737.973,
+        "maxTicksPerMs": 200413.40204081632,
+        "spreadPct": 0.8430341798928992,
+        "attempts": 1
+      },
+      "timedTotalMs": 1465.1479030064377,
+      "warmupTotalMs": 294.5674201879879,
+      "mainThreadWallMs": 1909.4449999332428,
+      "wallRatio": 0.9215847134931605,
+      "driftPct": 0.6316339196775766,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 27,
+      "zeroFraction": 0.00135,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 1,
+        "mean": 4.1591796875,
+        "min": 4.1591796875,
+        "max": 4.1591796875
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "fermenter_automation_1050",
+      "label": "Fermenter + 1050 automated params (16 sounding voices, 1 layer)",
+      "note": "_applyParamAutomation over 1050 schedules then process(128); ordinals cycle paramId % 16 so the set of parameters moved matches the other automation rows",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 8.936e-1, 4200000/4200000 schedule visits wrote through set_param_by_id (100.0%), 0/1050 schedules exhausted their segments, timeline covers 25000 quanta"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "active_voices() = 16, expected 16 from 16 note-ons, output RMS 9.861e-1, 25200000/25200000 schedule visits wrote through set_param_by_id (100.0%), 0/1050 schedules exhausted their segments, timeline covers 25000 quanta"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.09943428149491566,
+        "floor": 0.08779866675115715,
+        "median": 0.09878977394397054,
+        "p95": 0.10692121570476036,
+        "p99": 0.12369627379684243,
+        "p999": 0.19129126100083216,
+        "max": 0.30957867981580306,
+        "min": 0.032107828285576366,
+        "firstFiveHundredMean": 0.09730993283111251,
+        "lastFiveHundredMean": 0.10014879276385077
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 4.494796306893565e-8,
+        "floor": 0,
+        "median": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0.000029965308712623765,
+        "max": 0.000029965308712623765,
+        "min": 0,
+        "firstFiveHundredMean": 5.993061742524753e-8,
+        "lastFiveHundredMean": 5.993061742524753e-8
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 3,
+        "medianTicksPerMs": 200231.543,
+        "minTicksPerMs": 199706.905,
+        "maxTicksPerMs": 205278.58823529413,
+        "spreadPct": 2.7826201365756478,
+        "attempts": 1
+      },
+      "timedTotalMs": 1988.6856298983132,
+      "warmupTotalMs": 395.46064927442524,
+      "mainThreadWallMs": 2566.320000052452,
+      "wallRatio": 0.9290136378643388,
+      "driftPct": 2.917338292346039,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 0,
+      "zeroFraction": 0,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 2,
+        "mean": 4.1591796875,
+        "min": 4.1591796875,
+        "max": 4.1591796875
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "grand_boule",
+      "label": "Grand Boule (64 voices, re-struck 1/s) — production Worker cost site",
+      "note": "the harness times the production DSP kernel; the ring consumer carries the separate audio-thread cost",
+      "costSite": "worker",
+      "warmVerify": {
+        "ok": true,
+        "detail": "active_voices() = 64, expected 64 from 64 note-ons, output RMS 2.401e-1"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "active_voices() = 64, expected 64 from 64 note-ons, output RMS 5.704e-2"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 2.207734094937607,
+        "floor": 1.739699908382981,
+        "median": 2.198456004096631,
+        "p95": 2.3527157533972938,
+        "p99": 2.6396710586442427,
+        "p999": 4.344363724412649,
+        "max": 5.920813205638525,
+        "min": 0,
+        "firstFiveHundredMean": 2.1826200998443053,
+        "lastFiveHundredMean": 2.164056430789811
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 0.000012057055822910132,
+        "floor": 0,
+        "median": 0,
+        "p95": 0.000036415148966807635,
+        "p99": 0.000036415148966807635,
+        "p999": 0.000043698178760169164,
+        "max": 0.00010196241710706138,
+        "min": 0,
+        "firstFiveHundredMean": 0.000012191791874087174,
+        "lastFiveHundredMean": 0.00001197330098028633
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 45,
+        "medianTicksPerMs": 137305.4935064935,
+        "minTicksPerMs": 123981.759,
+        "maxTicksPerMs": 207198.96954314722,
+        "spreadPct": 60.60734237061802,
+        "attempts": 1
+      },
+      "timedTotalMs": 44154.68189875214,
+      "warmupTotalMs": 11543.64067687533,
+      "mainThreadWallMs": 52935.61500000954,
+      "wallRatio": 1.0521899589835206,
+      "driftPct": -0.8505222258247569,
+      "stationary": true,
+      "medianTrustworthy": false,
+      "zeroTickSamples": 1,
+      "zeroFraction": 0.00005,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 44,
+        "mean": 5.2307350852272725,
+        "min": 4.361328125,
+        "max": 5.646484375
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "grand_boule_ring_consumer",
+      "label": "Grand Boule ring consumer",
+      "note": "live audio-thread transport; reproduces the successful consumer branch from grandBouleProcessor.ts",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "4000 quanta consumed, 0 underruns (must be 0 — an underrun takes the cheap silence branch), 4000 render requests, output RMS 3.767e-1"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "24000 quanta consumed, 0 underruns (must be 0 — an underrun takes the cheap silence branch), 24000 render requests, output RMS 3.278e-1"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.0002051220893262583,
+        "floor": 0.0001602829375473753,
+        "median": 0.00021538019732928558,
+        "p95": 0.00022539788092599652,
+        "p99": 0.0002354155645227075,
+        "p999": 0.00025044208991777394,
+        "max": 0.006035654367018351,
+        "min": 0,
+        "firstFiveHundredMean": 0.00022690053346550483,
+        "lastFiveHundredMean": 0.00018200127558504499
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 1.7530946294244174e-8,
+        "floor": 0,
+        "median": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0,
+        "max": 0.000035061892588488346,
+        "min": 0,
+        "firstFiveHundredMean": 0,
+        "lastFiveHundredMean": 0
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 1,
+        "medianTicksPerMs": 199646.95238095237,
+        "minTicksPerMs": 199646.95238095237,
+        "maxTicksPerMs": 199646.95238095237,
+        "spreadPct": 0,
+        "attempts": 1
+      },
+      "timedTotalMs": 4.102441786525166,
+      "warmupTotalMs": 1.9946860958844972,
+      "mainThreadWallMs": 28.924999952316284,
+      "wallRatio": 0.21079093837375829,
+      "driftPct": -19.788079470199115,
+      "stationary": false,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 11,
+      "zeroFraction": 0.00055,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 1,
+        "mean": 4.99267578125,
+        "min": 4.99267578125,
+        "max": 4.99267578125
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "toaster",
+      "label": "Toaster (16 pads, re-struck 1/s)",
+      "note": "toasterProcessor.ts:215 constructs TOASTER_PAD_COUNT = 16",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "16 notes, no active-voice export: output RMS 8.213e-2 is 2.3x one identically-driven voice (3.562e-2), band 1.8-8.8x around sqrt(16) = 4.0x"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "16 notes, no active-voice export: output RMS 4.944e-2 is 3.4x one identically-driven voice (1.471e-2), band 1.8-8.8x around sqrt(16) = 4.0x"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.11623220429675814,
+        "floor": 0.0943817516355451,
+        "median": 0.1188725359904621,
+        "p95": 0.1269191897385808,
+        "p99": 0.13806586400155801,
+        "p999": 0.15121992606322182,
+        "max": 0.166345020924148,
+        "min": 0.08281091189176434,
+        "firstFiveHundredMean": 0.11297265832270031,
+        "lastFiveHundredMean": 0.11397024434325945
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 1.1866910324204713e-7,
+        "floor": 0,
+        "median": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0.00003390545806915633,
+        "max": 0.00003390545806915633,
+        "min": 0,
+        "firstFiveHundredMean": 0,
+        "lastFiveHundredMean": 0
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 3,
+        "medianTicksPerMs": 206456.435,
+        "minTicksPerMs": 202751.058,
+        "maxTicksPerMs": 207605.73197278913,
+        "spreadPct": 2.351427783197525,
+        "attempts": 1
+      },
+      "timedTotalMs": 2324.644085935163,
+      "warmupTotalMs": 469.5393340488515,
+      "mainThreadWallMs": 3285.9800000190735,
+      "wallRatio": 0.8503348833431108,
+      "driftPct": 0.8830331474626307,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 0,
+      "zeroFraction": 0,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 3,
+        "mean": 5.175130208333333,
+        "min": 5.1103515625,
+        "max": 5.20751953125
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "levain",
+      "label": "Levain (32 sounding voices, looped zone)",
+      "note": "levainProcessor.ts:155 constructs 64 = MAX_VOICES_WASM; shipped legato collapses 64 note-ons to 32 voices",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "active_voices() = 32, expected 32 from 64 note-ons, output RMS 1.427e+0"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "active_voices() = 32, expected 32 from 64 note-ons, output RMS 8.047e-1"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.04822300760054333,
+        "floor": 0.044075387038089005,
+        "median": 0.04855920442370334,
+        "p95": 0.049072618628163,
+        "p99": 0.056367989990580215,
+        "p999": 0.060749124535302616,
+        "max": 0.09821858214267737,
+        "min": 0.007882130453228253,
+        "firstFiveHundredMean": 0.04685255693217032,
+        "lastFiveHundredMean": 0.048608697553013266
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 0,
+        "floor": 0,
+        "median": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0,
+        "max": 0,
+        "min": 0,
+        "firstFiveHundredMean": 0,
+        "lastFiveHundredMean": 0
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 1,
+        "medianTicksPerMs": 204513.23529411765,
+        "minTicksPerMs": 204513.23529411765,
+        "maxTicksPerMs": 204513.23529411765,
+        "spreadPct": 0,
+        "attempts": 1
+      },
+      "timedTotalMs": 964.4601520108666,
+      "warmupTotalMs": 198.8271318554099,
+      "mainThreadWallMs": 1189.5650000572205,
+      "wallRatio": 0.977909810569679,
+      "driftPct": 3.7482279214459124,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 0,
+      "zeroFraction": 0,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 1,
+        "mean": 5.1103515625,
+        "min": 5.1103515625,
+        "max": 5.1103515625
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "crumbs",
+      "label": "Crumbs (32 sounding voices, in-memory pool)",
+      "note": "crumbsProcessor.ts:106 takes no voice count; crate MAX_VOICES = 128",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "active_voices() = 32, expected 32 from 32 note-ons, output RMS 1.072e+0"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "active_voices() = 32, expected 32 from 32 note-ons, output RMS 1.734e+0"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.5478719093821472,
+        "floor": 0.5062213278608353,
+        "median": 0.5421464600613092,
+        "p95": 0.5881821497386228,
+        "p99": 0.600920521837797,
+        "p999": 0.7900026947582374,
+        "max": 0.8181175387960964,
+        "min": 0.4364622952087701,
+        "firstFiveHundredMean": 0.5491308300275587,
+        "lastFiveHundredMean": 0.5701634358431439
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 0.000012034086577606147,
+        "floor": 0,
+        "median": 0,
+        "p95": 0.00003650011094208721,
+        "p99": 0.00003650011094208721,
+        "p999": 0.00003650011094208721,
+        "max": 0.00004380013313050465,
+        "min": 0,
+        "firstFiveHundredMean": 0.00001185523603398992,
+        "lastFiveHundredMean": 0.000011972036389004599
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 11,
+        "medianTicksPerMs": 136985.885,
+        "minTicksPerMs": 134438.74366767984,
+        "maxTicksPerMs": 139214.715,
+        "spreadPct": 3.4864696697182755,
+        "attempts": 1
+      },
+      "timedTotalMs": 10957.438187642945,
+      "warmupTotalMs": 3271.951916797851,
+      "mainThreadWallMs": 13171.350000023842,
+      "wallRatio": 1.080328903598723,
+      "driftPct": 3.8301629894882616,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 0,
+      "zeroFraction": 0,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 11,
+        "mean": 5.168057528409091,
+        "min": 5.1103515625,
+        "max": 5.18115234375
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "proof_chamber_plate",
+      "label": "ProofChamber (Plate — shipped default)",
+      "note": "effect; worklet input copy is outside the measured numeric wasm process call",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "output RMS 2.435e-1"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "output RMS 1.919e-1"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.008142483158420965,
+        "floor": 0.0014800218686793082,
+        "median": 0.008379427296303745,
+        "p95": 0.008578236204036787,
+        "p99": 0.008666595718584805,
+        "p999": 0.009130483169961902,
+        "max": 0.028738932106742984,
+        "min": 0,
+        "firstFiveHundredMean": 0.00814520094982271,
+        "lastFiveHundredMean": 0.008158057259189447
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 3.31348179555069e-8,
+        "floor": 0,
+        "median": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0,
+        "max": 0.000036816464395007666,
+        "min": 0,
+        "firstFiveHundredMean": 0,
+        "lastFiveHundredMean": 0
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 1,
+        "medianTicksPerMs": 135808.80408163264,
+        "minTicksPerMs": 135808.80408163264,
+        "maxTicksPerMs": 135808.80408163264,
+        "spreadPct": 0,
+        "attempts": 1
+      },
+      "timedTotalMs": 162.84966316841928,
+      "warmupTotalMs": 34.315315796454186,
+      "mainThreadWallMs": 296.5700000524521,
+      "wallRatio": 0.6648176785581899,
+      "driftPct": 0.157839069237653,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 16,
+      "zeroFraction": 0.0008,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 1,
+        "mean": 4.99267578125,
+        "min": 4.99267578125,
+        "max": 4.99267578125
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "proof_chamber_fdn16",
+      "label": "ProofChamber (FDN-16 — heaviest selectable)",
+      "note": "effect; worklet input copy is outside the measured numeric wasm process call",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "output RMS 2.451e-1"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "output RMS 1.937e-1"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.03156777452758455,
+        "floor": 0.023564896543697627,
+        "median": 0.03234730396211297,
+        "p95": 0.03318864383244855,
+        "p99": 0.03437685189494004,
+        "p999": 0.04334376367088511,
+        "max": 0.0735286765627496,
+        "min": 0,
+        "firstFiveHundredMean": 0.0321215591905882,
+        "lastFiveHundredMean": 0.03114210673838013
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 4.649509809749297e-7,
+        "floor": 0,
+        "median": 0,
+        "p95": 0,
+        "p99": 0.0000369008715059468,
+        "p999": 0.00004428104580713616,
+        "max": 0.00005166122010832552,
+        "min": 0,
+        "firstFiveHundredMean": 0.0000014465141630331146,
+        "lastFiveHundredMean": 1.6236383462616592e-7
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 1,
+        "medianTicksPerMs": 135498.15481171547,
+        "minTicksPerMs": 135498.15481171547,
+        "maxTicksPerMs": 135498.15481171547,
+        "spreadPct": 0,
+        "attempts": 1
+      },
+      "timedTotalMs": 631.355490551691,
+      "warmupTotalMs": 128.20027714870457,
+      "mainThreadWallMs": 859.8600000143051,
+      "wallRatio": 0.8833481818990989,
+      "driftPct": -3.0492058196697203,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 1,
+      "zeroFraction": 0.00005,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 1,
+        "mean": 4.99267578125,
+        "min": 4.99267578125,
+        "max": 4.99267578125
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "scoring",
+      "label": "Scoring / Tuner (pitch detection running)",
+      "note": "analysis; runs only while the tuner is open, so not in the reference project",
+      "costSite": "audio-thread",
+      "warmVerify": {
+        "ok": true,
+        "detail": "output RMS 2.908e-1, detected 110.1 Hz (stimulus fundamental 110 Hz)"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "output RMS 2.795e-1, detected 110.1 Hz (stimulus fundamental 110 Hz)"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 0.017464667220208865,
+        "floor": 0,
+        "median": 0.0009164774590186866,
+        "p95": 0.20555280152276256,
+        "p99": 0.21615775497712167,
+        "p999": 0.22203484852384467,
+        "max": 0.23743312456148402,
+        "min": 0,
+        "firstFiveHundredMean": 0.017897553710167057,
+        "lastFiveHundredMean": 0.017681919656595133
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 0.000007077242600199881,
+        "floor": 0,
+        "median": 0,
+        "p95": 0.0000218208918813973,
+        "p99": 0.0000218208918813973,
+        "p999": 0.0000218208918813973,
+        "max": 0.0000218208918813973,
+        "min": 0,
+        "firstFiveHundredMean": 0.0000069390436182843596,
+        "lastFiveHundredMean": 0.000007055421708318477
+      },
+      "dutyCycle": {
+        "periodQuanta": 12.5,
+        "dutyPct": 8,
+        "tickFloorMs": 0.17625461735667314,
+        "tickCostMs": 0.20811573346451964,
+        "idleFloorMs": 0,
+        "idleCostMs": 0.000886313633746737,
+        "amortisedMeanMs": 0.017464667220208577,
+        "amortisedFloorMs": 0.01410036938853385
+      },
+      "dutyCycleSource": "hop = sample_rate / 30 = 1600 frames / 128 = 12.5 quanta",
+      "calibration": {
+        "segments": 1,
+        "medianTicksPerMs": 137482.92307692306,
+        "minTicksPerMs": 137482.92307692306,
+        "maxTicksPerMs": 137482.92307692306,
+        "spreadPct": 0,
+        "attempts": 1
+      },
+      "timedTotalMs": 349.2933444041773,
+      "warmupTotalMs": 72.2454453084523,
+      "mainThreadWallMs": 517.3949999809265,
+      "wallRatio": 0.8147330177681836,
+      "driftPct": -1.2048241735373555,
+      "stationary": true,
+      "medianTrustworthy": true,
+      "zeroTickSamples": 456,
+      "zeroFraction": 0.0228,
+      "floorMeasurable": false,
+      "load": {
+        "samples": 1,
+        "mean": 4.99267578125,
+        "min": 4.99267578125,
+        "max": 4.99267578125
+      },
+      "sampleCount": 20000
+    }
+  ]
 }

@@ -1,4 +1,4 @@
-import { act, render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -8,7 +8,6 @@ import { executeUserAppAction } from '#/modules/Command/useCases';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { toggleFolderCollapse } from '../../../useCases/folder/toggleFolderCollapse';
 import { setInputMonitoring } from '../../../useCases/setTrackGainPan/setInputMonitoring';
-import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { TrackHeader } from '../TrackHeader';
 
 vi.unmock('#/components/ui/tooltip');
@@ -20,10 +19,6 @@ vi.mock('../../../useCases/toggleTrackState/soloTrack', () => ({
 
 vi.mock('../../../useCases/toggleTrackState/soloTrackExclusive', () => ({
     soloTrackExclusive: vi.fn<(...args: unknown[]) => void>(),
-}));
-
-vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({
-    selectTrack: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -145,13 +140,6 @@ describe('TrackHeader', () => {
         expect(row).toHaveAttribute('aria-selected', 'true');
     });
 
-    it('should call selectTrack when clicked', () => {
-        renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
-        const row = screen.getByRole('row');
-        fireEvent.click(row);
-        expect(selectTrack).toHaveBeenCalledWith('track1');
-    });
-
     it('should render Mute button', () => {
         renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
         expect(screen.getByLabelText(/Mute/)).toBeInTheDocument();
@@ -259,33 +247,6 @@ describe('TrackHeader', () => {
         }
         expect(await screen.findByRole('tooltip')).toHaveTextContent('Render failed');
     });
-
-    it.each(['audio', 'folder'] as const)(
-        'keeps the current selection when the %s freeze error is activated',
-        (kind) => {
-            const baseTrack = kind === 'folder' ? mockFolderTrack : mockTrack;
-            const track = {
-                ...baseTrack,
-                freezeState: { status: 'error' as const, errorMessage: 'Render failed' },
-            };
-            renderWithTooltip(<TrackHeader track={track} isSelected={false} />);
-            fireEvent.click(screen.getByRole('row'));
-            expect(selectTrack).toHaveBeenCalledWith(track.id);
-            vi.mocked(selectTrack).mockClear();
-
-            const badge = screen.getByRole('button', { name: 'Freeze error: Render failed' });
-            fireEvent.click(badge, { detail: 1 });
-            expect(selectTrack).not.toHaveBeenCalled();
-
-            act(() => badge.focus());
-            expect(badge).toHaveFocus();
-            fireEvent.keyDown(badge, { key: 'Enter' });
-            // jsdom does not synthesize the native click for a keyboard-activated button.
-            fireEvent.click(badge, { detail: 0 });
-            fireEvent.keyUp(badge, { key: 'Enter' });
-            expect(selectTrack).not.toHaveBeenCalled();
-        }
-    );
 
     it('should render InputSelector for selected audio track', () => {
         renderWithTooltip(<TrackHeader track={mockTrack} isSelected={true} />);
@@ -418,12 +379,6 @@ describe('TrackHeader', () => {
         const collapsedFolder = { ...mockFolderTrack, collapsed: true };
         renderWithTooltip(<TrackHeader track={collapsedFolder} isSelected={false} />);
         expect(screen.getByLabelText('Expand folder Folder Track')).toBeInTheDocument();
-    });
-
-    it('selects the folder track on row click', () => {
-        renderWithTooltip(<TrackHeader track={mockFolderTrack} isSelected={false} />);
-        fireEvent.click(screen.getByRole('row'));
-        expect(selectTrack).toHaveBeenCalledWith('folder1');
     });
 
     it('omits the InputSelector for a midi track even when selected', () => {

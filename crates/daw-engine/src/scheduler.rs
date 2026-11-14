@@ -5118,7 +5118,10 @@ impl IdSlotIndex {
         }
         self.nodes[node_index].slot_plus_one = 0;
 
-        let mut steps = usize::BITS as usize;
+        #[cfg(test)]
+        {
+            self.last_delete_steps = usize::BITS as usize;
+        }
         for depth in (0..usize::BITS).rev() {
             let child = node_index;
             if self.nodes[child].slot_plus_one != 0 || self.nodes[child].children != [0, 0] {
@@ -5129,11 +5132,10 @@ impl IdSlotIndex {
             self.nodes[parent].children[bit] = 0;
             self.release_node(child);
             node_index = parent;
-            steps += 1;
-        }
-        #[cfg(test)]
-        {
-            self.last_delete_steps = steps;
+            #[cfg(test)]
+            {
+                self.last_delete_steps += 1;
+            }
         }
         Some(slot_plus_one as usize - 1)
     }
@@ -6640,7 +6642,7 @@ impl AudioScheduler {
                         && request
                             .model
                             .as_ref()
-                            .map_or(true, |model| model.lease.is_current())
+                            .is_none_or(|model| model.lease.is_current())
                     {
                         if let Some(slot) = self.effect_index.lookup(effect_id) {
                             if let PluginCore::Grinder(body) = &mut self.effects[slot].instance {
@@ -21303,7 +21305,7 @@ mod timeline_tests {
     /// unit spec below — a plain function pointer rather than a closure,
     /// because the signature it takes is `fn(&T) -> &str`.
     fn plain_str_name<'a>(name: &'a &'a str) -> &'a str {
-        *name
+        name
     }
 
     /// [`precedence_first`] yields every entry naming a law key, in law

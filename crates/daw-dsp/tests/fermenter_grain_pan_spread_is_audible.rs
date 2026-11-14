@@ -63,6 +63,8 @@
 //! the output stage inferring it from a comparison — and
 //! `every_mono_engine_stays_centred` drives that exact hazard.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::fermenter::FermenterInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

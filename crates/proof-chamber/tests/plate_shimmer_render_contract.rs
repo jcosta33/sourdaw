@@ -42,6 +42,8 @@
 //! each of those defects leaves behind, so a change that lands under it has
 //! stopped Shimmer being audible and the number is not the thing to move.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::ProofChamberInstance;
 
 const SAMPLE_RATES: [f32; 2] = [44_100.0, 48_000.0];

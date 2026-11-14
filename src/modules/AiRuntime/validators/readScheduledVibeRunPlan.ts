@@ -267,7 +267,9 @@ function readInitialTables(
     ) {
         return null;
     }
-    return { sections, arrangement, receipts, targetIds, ranges, sourceRevision };
+    // Every witness binds one of these receipts by digest; each is digested once, not once per witness.
+    const receiptDigests = new Map(receipts.map((receipt) => [receipt.callId, digest(receipt)]));
+    return { sections, arrangement, receipts, receiptDigests, targetIds, ranges, sourceRevision };
 }
 
 function readSilentTarget(value: unknown): VibeRunSilentTarget | null {
@@ -362,12 +364,14 @@ function readWitness(
     }
     const range = readRange(value.range);
     const receipt = tables.receipts.find((receipt) => receipt.callId === value.receiptCallId);
+    const receiptDigest = receipt === undefined ? undefined : tables.receiptDigests.get(receipt.callId);
     const target = receipt?.data.targets.find((target) => target.targetId === identity.targetId);
     const entry = target?.measurements[identity.metric];
     if (
         range === null ||
         receipt === undefined ||
-        value.receiptDigest !== digest(receipt) ||
+        receiptDigest === undefined ||
+        value.receiptDigest !== receiptDigest ||
         !sameRange(receipt.data.range, range) ||
         entry?.status !== 'measured' ||
         entry.metricVersion !== 1 ||
@@ -395,7 +399,7 @@ function readWitness(
         band: identity.band,
         range,
         receiptCallId: receipt.callId,
-        receiptDigest: digest(receipt),
+        receiptDigest,
     };
 }
 
@@ -524,12 +528,37 @@ function sameRange(left: VibeRunVerificationRange | null, right: VibeRunVerifica
     );
 }
 
+function deepFreeze<Value>(value: Value): Value {
+    if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
+        for (const child of Object.values(value)) {
+            deepFreeze(child);
+        }
+        Object.freeze(value);
+    }
+    return value;
+}
+
+/**
+ * The last plan text read and what it read as. The run store re-reads its stored plan on every run
+ * update, and validating a whole run's initial evidence digests every receipt it holds, so one run
+ * of a few dozen targets would otherwise re-digest the same text hundreds of times. The verdict is
+ * a pure function of the text, and the plan it returns is frozen, so every caller can share it.
+ */
+let lastRead: { serialized: string; plan: ScheduledVibeRunPlan | null } | null = null;
+
 /**
  * The plan a `vibe-run` schedule stored, read whole or not at all: its batches must run 1..N in order
  * and each must state its own targets, recipes and the commands they expand to, or a later batch could
  * be grounded from a plan nobody made.
  */
 export function readScheduledVibeRunPlan(serialized: string): ScheduledVibeRunPlan | null {
+    if (lastRead?.serialized !== serialized) {
+        lastRead = { serialized, plan: deepFreeze(parseScheduledVibeRunPlan(serialized)) };
+    }
+    return lastRead.plan;
+}
+
+function parseScheduledVibeRunPlan(serialized: string): ScheduledVibeRunPlan | null {
     if (
         serialized.length === 0 ||
         new TextEncoder().encode(serialized).byteLength > SCHEDULED_VIBE_RUN_PLAN_MAX_BYTES

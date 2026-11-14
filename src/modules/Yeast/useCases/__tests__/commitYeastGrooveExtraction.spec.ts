@@ -3,18 +3,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
+    isAppActionConflictError: vi.fn(() => false),
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     getGrooveExtractionActionErrorCode: vi.fn(),
 }));
 
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, isAppActionConflictError } from '#/modules/Command/useCases';
 import { getGrooveExtractionActionErrorCode } from '#/modules/MIDI/useCases';
 
 import { commitYeastGrooveExtraction } from '../commitYeastGrooveExtraction';
 
 const mockedExecute = vi.mocked(executeAppAction);
+const mockedIsConflict = vi.mocked(isAppActionConflictError);
 const mockedGetErrorCode = vi.mocked(getGrooveExtractionActionErrorCode);
 
 const baseInput = {
@@ -55,6 +57,16 @@ describe('commitYeastGrooveExtraction — rejection', () => {
         mockedGetErrorCode.mockReturnValue('empty-source');
         const result = await commitYeastGrooveExtraction(baseInput);
         expect(result).toEqual({ status: 'rejected', reason: 'empty-source' });
+    });
+
+    it('reads the code of a conflict from the reason the conflict carries', async () => {
+        const conflict = Object.assign(new Error('conflict'), { reason: 'template-identity-conflict' });
+        mockedExecute.mockRejectedValue(conflict);
+        mockedIsConflict.mockReturnValueOnce(true);
+        mockedGetErrorCode.mockReturnValue('template-identity-conflict');
+        const result = await commitYeastGrooveExtraction(baseInput);
+        expect(mockedGetErrorCode).toHaveBeenCalledWith('template-identity-conflict');
+        expect(result).toEqual({ status: 'rejected', reason: 'template-identity-conflict' });
     });
 
     it('rethrows unknown errors without a recognized code', async () => {

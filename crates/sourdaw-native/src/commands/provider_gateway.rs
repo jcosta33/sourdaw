@@ -379,7 +379,7 @@ pub async fn cancel_provider_gateway_request(
     state: &ProviderGatewayState,
 ) -> Result<(), String> {
     validate_request_id(&request_id)?;
-    request_cancellation(&state, &request_id).await
+    request_cancellation(state, &request_id).await
 }
 
 pub async fn open_provider_gateway_session(

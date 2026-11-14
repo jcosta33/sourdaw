@@ -43,7 +43,11 @@ function printed(fields: { state?: string; pid?: string; runs: string; exit: str
 }
 
 function fixture() {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-install-')));
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-install-')));
+    const root = join(parent, 'primary');
+    const home = join(parent, 'home');
+    mkdirSync(root);
+    mkdirSync(home);
     const env = githubAuthorizationGitEnv();
     const gitPath = realpathSync(execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim());
     const git = (args: string[]) => execFileSync(gitPath, ['-C', root, ...args], { env, encoding: 'utf8' });
@@ -87,7 +91,7 @@ function fixture() {
     const launch = { prints: [printed({ state: 'running', pid: '123', runs: '1', exit: '(never exited)' })] };
     const port: CleanupInstallationPort = {
         primaryRoot: root,
-        home: root,
+        home,
         platform: 'darwin',
         uid: 501,
         node: process.execPath,
@@ -114,21 +118,23 @@ function fixture() {
     };
     return {
         root,
+        home,
         git,
         port,
         events,
         waits,
         launch,
         commit,
-        dispose: () => rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }),
+        dispose: () => rmSync(parent, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }),
     };
 }
 
 function runtimeBinding(runtime: string): CleanupRuntimeBinding {
     return JSON.parse(readFileSync(join(runtime, 'manifest.json'), 'utf8')) as CleanupRuntimeBinding;
 }
-function runRuntime(runtime: string, binding = runtimeBinding(runtime)) {
+function runRuntime(runtime: string, binding = runtimeBinding(runtime), cwd?: string) {
     return spawnSync(process.execPath, ['-e', cleanupRuntimeProgram(binding, runtime)], {
+        cwd,
         encoding: 'utf8',
         env: { ...githubAuthorizationGitEnv(), NODE_OPTIONS: '', NODE_PATH: '' },
     });
@@ -139,7 +145,7 @@ describe('cleanup installation', () => {
         const f = fixture();
         const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-launchagents-alias-')));
         try {
-            const parent = name === 'Library' ? f.root : join(f.root, 'Library');
+            const parent = name === 'Library' ? f.home : join(f.home, 'Library');
             mkdirSync(parent, { recursive: true });
             symlinkSync(foreign, join(parent, name), 'dir');
             const agents = name === 'Library' ? join(foreign, 'LaunchAgents') : foreign;
@@ -159,7 +165,7 @@ describe('cleanup installation', () => {
         const f = fixture();
         const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-library-alias-')));
         try {
-            symlinkSync(foreign, join(f.root, 'Library'), 'dir');
+            symlinkSync(foreign, join(f.home, 'Library'), 'dir');
             expect(() => installCleanupLanes(f.port)).toThrow('canonical');
             expect(existsSync(join(foreign, 'LaunchAgents'))).toBe(false);
             expect(f.events).toHaveLength(0);
@@ -169,14 +175,40 @@ describe('cleanup installation', () => {
         }
     });
 
+    it.each(['Logs', 'Sourdaw', 'lane-cleanup'])(
+        'refuses an aliased %s log component before creating children or scheduling',
+        (name) => {
+            const f = fixture();
+            const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-logs-alias-')));
+            try {
+                const components = ['Library', 'Logs', 'Sourdaw', 'lane-cleanup'];
+                const index = components.indexOf(name);
+                const parent = join(f.home, ...components.slice(0, index));
+                mkdirSync(parent, { recursive: true });
+                symlinkSync(foreign, join(parent, name), 'dir');
+                const sentinel = join(foreign, 'unrelated');
+                writeFileSync(sentinel, 'foreign bytes\n');
+
+                expect(() => installCleanupLanes(f.port)).toThrow('canonical');
+                expect(readFileSync(sentinel, 'utf8')).toBe('foreign bytes\n');
+                expect(readdirSync(foreign)).toEqual(['unrelated']);
+                expect(existsSync(join(f.root, '.agents/lane-cleanup'))).toBe(false);
+                expect(f.events).toHaveLength(0);
+            } finally {
+                f.dispose();
+                rmSync(foreign, { recursive: true });
+            }
+        }
+    );
+
     it('requires an existing canonical home anchor before creating managed directories', () => {
         const f = fixture();
         const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-home-alias-')));
         try {
             const alias = join(foreign, 'home');
-            symlinkSync(f.root, alias, 'dir');
+            symlinkSync(f.home, alias, 'dir');
             expect(() => installCleanupLanes({ ...f.port, home: alias })).toThrow('canonical');
-            expect(existsSync(join(f.root, 'Library'))).toBe(false);
+            expect(existsSync(join(f.home, 'Library'))).toBe(false);
             expect(f.events).toHaveLength(0);
         } finally {
             f.dispose();
@@ -189,11 +221,11 @@ describe('cleanup installation', () => {
         const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-home-ancestor-alias-')));
         try {
             const ancestor = join(foreign, 'ancestor');
-            symlinkSync(dirname(f.root), ancestor, 'dir');
-            const home = join(ancestor, basename(f.root));
+            symlinkSync(dirname(f.home), ancestor, 'dir');
+            const home = join(ancestor, basename(f.home));
             expect(lstatSync(home).isSymbolicLink()).toBe(false);
             expect(() => installCleanupLanes({ ...f.port, home })).toThrow('canonical');
-            expect(existsSync(join(f.root, 'Library'))).toBe(false);
+            expect(existsSync(join(f.home, 'Library'))).toBe(false);
             expect(f.events).toHaveLength(0);
         } finally {
             f.dispose();
@@ -266,6 +298,13 @@ describe('cleanup installation', () => {
                 'new approved launcher\n'
             );
             const plist = readFileSync(installed.plist, 'utf8');
+            expect(plist).toContain(`<key>WorkingDirectory</key><string>${f.home}</string>`);
+            expect(plist).toContain(
+                `<key>StandardOutPath</key><string>${join(f.home, 'Library/Logs/Sourdaw/lane-cleanup/worker.log')}</string>`
+            );
+            expect(plist).toContain(
+                `<key>StandardErrorPath</key><string>${join(f.home, 'Library/Logs/Sourdaw/lane-cleanup/worker-error.log')}</string>`
+            );
             expect(plist).toContain('<key>StartInterval</key><integer>300</integer>');
             expect(plist).toContain('<key>RunAtLoad</key><true/>');
             expect(plist).toContain(process.execPath);
@@ -290,45 +329,80 @@ describe('cleanup installation', () => {
         }
     });
 
-    it.each(['worker.log', 'worker-error.log'])(
-        'refuses a preexisting hardlinked %s before scheduler activation',
-        (name) => {
-            const f = fixture();
-            const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-log-alias-')));
-            try {
-                const directory = join(f.root, '.agents/lane-cleanup');
-                mkdirSync(directory, { recursive: true });
-                const target = join(foreign, 'unrelated-data');
-                const bytes = 'unrelated private fixture bytes\n';
-                writeFileSync(target, bytes);
+    it.each([
+        ['worker.log', 'hardlink'],
+        ['worker-error.log', 'symlink'],
+    ])('leaves obsolete primary %s %s untouched while installing', (name, alias) => {
+        const f = fixture();
+        const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-log-alias-')));
+        try {
+            const directory = join(f.root, '.agents/lane-cleanup');
+            mkdirSync(directory, { recursive: true });
+            const target = join(foreign, 'unrelated-data');
+            const bytes = 'unrelated private fixture bytes\n';
+            writeFileSync(target, bytes);
+            if (alias === 'hardlink') {
                 linkSync(target, join(directory, name));
-                expect(() => installCleanupLanes(f.port)).toThrow('exclusive regular file');
-                expect(f.events).toHaveLength(0);
-                expect(readFileSync(target, 'utf8')).toBe(bytes);
-                expect(readFileSync(join(directory, name), 'utf8')).toBe(bytes);
-                expect(readFileSync(join(f.root, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8')).toBe(
-                    'old approved launcher\n'
-                );
-            } finally {
-                f.dispose();
-                rmSync(foreign, { recursive: true });
+            } else {
+                symlinkSync(target, join(directory, name));
             }
+
+            const installed = installCleanupLanes(f.port);
+            expect(f.events).toContainEqual(['bootstrap', 'gui/501', installed.plist]);
+            expect(readFileSync(target, 'utf8')).toBe(bytes);
+            expect(readFileSync(join(directory, name), 'utf8')).toBe(bytes);
+        } finally {
+            f.dispose();
+            rmSync(foreign, { recursive: true });
         }
-    );
+    });
+
+    it.each([
+        ['worker.log', 'hardlink'],
+        ['worker.log', 'symlink'],
+        ['worker-error.log', 'hardlink'],
+        ['worker-error.log', 'symlink'],
+    ])('refuses a current %s %s without changing its external target', (name, alias) => {
+        const f = fixture();
+        const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-internal-log-alias-')));
+        try {
+            const logs = join(f.home, 'Library/Logs/Sourdaw/lane-cleanup');
+            mkdirSync(logs, { recursive: true });
+            const target = join(foreign, 'unrelated-data');
+            writeFileSync(target, 'foreign bytes\n');
+            if (alias === 'hardlink') {
+                linkSync(target, join(logs, name));
+            } else {
+                symlinkSync(target, join(logs, name));
+            }
+
+            expect(() => installCleanupLanes(f.port)).toThrow('exclusive regular file');
+            expect(readFileSync(target, 'utf8')).toBe('foreign bytes\n');
+            expect(existsSync(join(f.root, '.agents/lane-cleanup'))).toBe(false);
+            expect(f.events).toHaveLength(0);
+        } finally {
+            f.dispose();
+            rmSync(foreign, { recursive: true });
+        }
+    });
 
     it('preserves ordinary existing one-link logs through installation and reinstallation', () => {
         const f = fixture();
         try {
             const directory = join(f.root, '.agents/lane-cleanup');
+            const logs = join(f.home, 'Library/Logs/Sourdaw/lane-cleanup');
             mkdirSync(directory, { recursive: true });
+            mkdirSync(logs, { recursive: true });
             for (const name of ['worker.log', 'worker-error.log']) {
                 writeFileSync(join(directory, name), `existing ${name} bytes\n`);
+                writeFileSync(join(logs, name), `internal ${name} bytes\n`);
             }
             const installed = installCleanupLanes(f.port);
             installCleanupLanes(f.port);
             expect(f.events).toContainEqual(['bootstrap', 'gui/501', installed.plist]);
             for (const name of ['worker.log', 'worker-error.log']) {
                 expect(readFileSync(join(directory, name), 'utf8')).toBe(`existing ${name} bytes\n`);
+                expect(readFileSync(join(logs, name), 'utf8')).toBe(`internal ${name} bytes\n`);
             }
         } finally {
             f.dispose();
@@ -507,8 +581,9 @@ describe('cleanup installation', () => {
             const disposable = join(f.root, '.agents/worktrees/author');
             mkdirSync(disposable, { recursive: true });
             rmSync(disposable, { recursive: true });
-            expect(runRuntime(installed.runtime).status).toBe(0);
+            expect(runRuntime(installed.runtime, runtimeBinding(installed.runtime), f.home).status).toBe(0);
             expect(readFileSync(join(f.root, 'observed'), 'utf8')).toBe('ran');
+            expect(existsSync(join(f.home, 'observed'))).toBe(false);
             writeFileSync(join(installed.runtime, 'scripts/cleanupLanes.ts'), "throw Error('tampered executed');\n");
             const result = runRuntime(installed.runtime);
             expect(result.status).not.toBe(0);
@@ -572,12 +647,15 @@ describe('cleanup installation', () => {
             }
             expect(message).toContain(realpathSync(process.execPath));
             expect(message).toContain(f.root);
-            expect(message).toContain('Full Disk Access');
+            expect(message).toContain('Inspect launchctl print and the macOS system log');
+            expect(message).toContain(join(f.home, 'Library/Logs/Sourdaw/lane-cleanup/worker-error.log'));
+            expect(message).toContain('Only if the macOS privacy log identifies a denial');
+            expect(message).toContain('Removable Volumes access');
             expect(message).toContain('pnpm lane:cleanup:install');
             expect(f.events.findIndex((args) => args[0] === 'bootstrap')).toBeGreaterThanOrEqual(0);
             expect(f.events.at(-2)?.[0]).toBe('print');
             expect(f.events.at(-1)).toEqual(['bootout', `gui/501/${CLEANUP_LABEL}`]);
-            expect(existsSync(join(f.root, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
+            expect(existsSync(join(f.home, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
             expect(readdirSync(join(f.root, '.agents/lane-cleanup/runtimes'))).toEqual([]);
             expect(f.waits).toHaveLength(0);
         } finally {
@@ -676,7 +754,7 @@ describe('cleanup installation', () => {
                 /^Bootstrap failed: 5: Input\/output error$/
             );
 
-            expect(existsSync(join(f.root, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
+            expect(existsSync(join(f.home, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
             expect(readdirSync(join(f.root, '.agents/lane-cleanup/runtimes'))).toEqual([]);
         } finally {
             f.dispose();
@@ -768,7 +846,7 @@ describe('cleanup installation', () => {
             expect(() => installCleanupLanes(f.port)).toThrow(/could not initialize.*Full Disk Access/);
             expect(f.waits).toHaveLength(2);
             expect(f.events.at(-1)).toEqual(['bootout', `gui/501/${CLEANUP_LABEL}`]);
-            expect(existsSync(join(f.root, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
+            expect(existsSync(join(f.home, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
         } finally {
             f.dispose();
         }
@@ -787,7 +865,7 @@ describe('cleanup installation', () => {
             expect(f.waits.length).toBeGreaterThan(0);
             expect(f.waits.reduce((total, milliseconds) => total + milliseconds, 0)).toBe(CLEANUP_LAUNCH_WAIT_MS);
             expect(f.events.at(-1)).toEqual(['bootout', `gui/501/${CLEANUP_LABEL}`]);
-            expect(existsSync(join(f.root, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
+            expect(existsSync(join(f.home, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
         } finally {
             f.dispose();
         }

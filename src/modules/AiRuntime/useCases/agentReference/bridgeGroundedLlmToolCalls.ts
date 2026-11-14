@@ -4334,6 +4334,9 @@ function groundStatedRange(
         context,
         actionPhrases
     );
+    if (stated !== null && 'refusal' in stated) {
+        return stated.refusal;
+    }
     if (
         asserted?.kind !== 'resolved' ||
         stated === null ||

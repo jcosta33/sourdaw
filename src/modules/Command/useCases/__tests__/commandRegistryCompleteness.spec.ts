@@ -4,7 +4,7 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getMidiGrooveHandlers, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
@@ -30,6 +30,7 @@ describe('command registry completeness', () => {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getMidiGrooveHandlers(),
             getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),

@@ -32,6 +32,8 @@
 //!   its own ratio, while Amount and direct threshold/ratio writes stay
 //!   equivalent on the topologies that implement both controls.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::gluten::GlutenInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

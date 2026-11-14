@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Observe. Prove. No fixes, target states, or requirements. Secrets stay in `~/.agents/artifacts`.
+        Observe. Prove. No fixes, target states, or requirements. Secrets stay in the artifact workspace (`AGENTS.md`, Artifacts).
 
         File a Bug for every Blocker and Major (Task if a Spec already owns it). Attach those as sub-issues.
 

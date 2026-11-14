@@ -6,6 +6,8 @@
 //! equivalent gap for FDN-8, FDN-16, Spring, and Reverse at both product sample
 //! rates.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::ProofChamberInstance;
 
 const SAMPLE_RATES: [f32; 2] = [44_100.0, 48_000.0];

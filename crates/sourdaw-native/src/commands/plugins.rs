@@ -1399,7 +1399,7 @@ async fn load_plugin_under_runtime_gate(
     let entry = resolve_plugin_registry_entry(&plugin_id.0, state).await?;
     let _runtime_guard = observe_gate_release(PLUGIN_RUNTIME_GATE.read().await);
     let _lifecycle_guard = lock_plugin_lifecycle(&instance_id.0).await;
-    ensure_plugin_instance_id_available(&state, &instance_id.0)?;
+    ensure_plugin_instance_id_available(state, &instance_id.0)?;
 
     // The session limit on engine-owned hosted instances comes before any
     // engine dependency and before the plugin library is even constructed:

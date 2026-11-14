@@ -87,8 +87,12 @@ function actionClausePattern(actionPhrases: readonly string[], context: ProjectC
     );
 }
 
+/** The reason the musical range law refuses the one range the request states in a form that asks for it. */
+export type StatedRangeRefusal = { refusal: string };
+
 /**
- * The beats the one range phrase `text` states, or null when it states none, several, anything
+ * The beats the one range phrase `text` states, or the law's refusal of it when it is a single bar or
+ * the bars before a section, or null when it states none, several, anything
  * after it but a figure, a ramp and closing punctuation, or anything before it but the action clause
  * `actionPhrases` opens.
  */
@@ -96,15 +100,18 @@ export function readStatedRangeBeats(
     text: string,
     context: ProjectContext,
     actionPhrases: readonly string[]
-): RangeBeats | null {
+): RangeBeats | StatedRangeRefusal | null {
     const phrases = findRangePhrases(text, context);
     if (phrases.length !== 1) {
         return null;
     }
-    const [phrase] = phrases;
-    const actionClause = maskProjectReferences(text, context).slice(0, phrase!.start);
+    const phrase = phrases[0]!;
+    const actionClause = maskProjectReferences(text, context).slice(0, phrase.start);
     if (!actionClausePattern(actionPhrases, context).test(actionClause)) {
         return null;
     }
-    return RANGE_TAIL_PATTERN.test(text.slice(phrase!.end)) ? phrase! : null;
+    if (!RANGE_TAIL_PATTERN.test(text.slice(phrase.end))) {
+        return null;
+    }
+    return 'refusal' in phrase ? { refusal: phrase.refusal } : phrase;
 }

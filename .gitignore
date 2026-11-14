@@ -46,7 +46,7 @@ target/
 .agents/guard-storage/
 .agents/guard-storage-fixtures/
 
-# Agent campaign artifacts live in the global workspace (~/.agents/artifacts/<project>/),
+# Agent artifacts live in the workspace on the checkout's drive (AGENTS.md, Artifacts),
 # never in the repo. Promotion to repo-owned docs happens deliberately via the promote flow.
 .agents/artifacts/
 

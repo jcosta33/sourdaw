@@ -29,7 +29,7 @@ import {
     resetCrdtProjectAuthority,
     setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getMidiGrooveHandlers, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
@@ -67,6 +67,7 @@ function register() {
         getAutomationHandlers(),
         getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
         getMidiNoteTransformHandlers(),
+        getMidiGrooveHandlers(),
         getProjectHandlers(),
         getTransportHandlers(),
         getYeastHandlers(),

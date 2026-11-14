@@ -285,9 +285,24 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         setEnteredTarget(null);
     }, [trackId, device.id, param.id]);
 
-    useEffect(() => {
+    // An entered target belongs to the drag that entered it; a different, disabled or re-owned source drops it.
+    const [enteredDragSource, setEnteredDragSource] = useState({
+        modulatorId: draggedModulatorId,
+        enabled: draggedSourceEnabled,
+        authority: draggedSourceAuthority,
+    });
+    if (
+        enteredDragSource.modulatorId !== draggedModulatorId ||
+        enteredDragSource.enabled !== draggedSourceEnabled ||
+        enteredDragSource.authority !== draggedSourceAuthority
+    ) {
+        setEnteredDragSource({
+            modulatorId: draggedModulatorId,
+            enabled: draggedSourceEnabled,
+            authority: draggedSourceAuthority,
+        });
         setEnteredTarget(null);
-    }, [draggedModulatorId, draggedSourceEnabled, draggedSourceAuthority]);
+    }
 
     useEffect(() => {
         mountedRef.current = true;

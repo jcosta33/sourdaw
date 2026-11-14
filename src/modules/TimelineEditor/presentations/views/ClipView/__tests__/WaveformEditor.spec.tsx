@@ -101,12 +101,13 @@ vi.mock('#/components/ui/disabled-feature-wrapper', () => ({
         disabled,
         reason,
     }: {
-        children: React.ReactNode;
+        children: (disabled: boolean) => React.ReactNode;
         disabled: boolean;
         reason: string;
     }) => (
+        // jsdom is the web runtime, so the real wrapper would disable AI Denoise; keep it clickable here.
         <div data-disabled={disabled} data-reason={reason}>
-            {children}
+            {children(false)}
         </div>
     ),
 }));

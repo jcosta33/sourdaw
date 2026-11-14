@@ -12,6 +12,8 @@
 //! asserting against a sample count, because the allocation and the length now
 //! derive from the same rate and only a render proves they agree.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::reverse::ReverseReverb;
 use proof_chamber::{ProofChamberInstance, PROOF_CHAMBER_BLOCK_FRAMES};
 

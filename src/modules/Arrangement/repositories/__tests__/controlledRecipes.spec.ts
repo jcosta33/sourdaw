@@ -144,7 +144,7 @@ describe('controlled authored recipes', () => {
     });
 
     it('keeps the schema and all previous term and effect meanings', () => {
-        expect(MIX_RECIPE_CATALOG_VERSION).toBe(2);
+        expect(MIX_RECIPE_CATALOG_VERSION).toBe(3);
         expect(MIX_RECIPE_DESCRIPTOR_TERMS).toMatchObject({
             warm: ['warm', 'warmer', 'warmth'],
             bright: ['bright', 'brighter', 'brightness', 'crisp', 'crisper', 'less dark'],

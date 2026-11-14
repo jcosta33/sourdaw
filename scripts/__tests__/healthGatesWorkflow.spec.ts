@@ -1598,12 +1598,16 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
         'Cache cargo build',
         'Cache the cargo registry index',
         'Test the audio crates',
+        'Lint the native crate',
         'Test the native crate',
     ]);
     expect(stepNamed(linuxSeed, 'Rust workspace health gates').run).toBe('sh scripts/health-gates-rust.sh');
     expect(stepNamed(nativeSeed, 'Test the audio crates').run).toBe(
         'cargo test --package daw-core --package daw-dsp --package daw-engine --all-features'
     );
+    for (const job of [nativeSeed, nativeConsumer]) {
+        expect(stepNamed(job, 'Lint the native crate').run).toBe('cargo clippy --package sourdaw-native --all-targets');
+    }
     expect(stepNamed(nativeSeed, 'Test the native crate').run).toBe('cargo test --package sourdaw-native');
 
     for (const job of [linuxSeed, linuxConsumer]) {
@@ -1638,7 +1642,7 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
             'restore-keys': CARGO_INDEX_RESTORE,
         });
     }
-    for (const name of ['Test the audio crates', 'Test the native crate']) {
+    for (const name of ['Test the audio crates', 'Lint the native crate', 'Test the native crate']) {
         expect(recordAt(stepNamed(nativeConsumer, name), 'env').CARGO_NET_OFFLINE).toBe(NATIVE_OFFLINE_EXACT);
     }
 }

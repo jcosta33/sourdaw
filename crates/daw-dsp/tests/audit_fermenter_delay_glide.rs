@@ -11,6 +11,8 @@
 //! of the contract: no step at the change, and the tap genuinely arriving at
 //! the new length.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::fermenter::effects::StereoDelay;
 
 const SAMPLE_RATE: f32 = 48_000.0;

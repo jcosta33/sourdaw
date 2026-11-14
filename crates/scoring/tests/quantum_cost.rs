@@ -47,6 +47,8 @@
 //!
 //! Compute per quantum. Not a dropout: nothing here has a deadline.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::time::Instant;
 
 use scoring::ScoringInstance;

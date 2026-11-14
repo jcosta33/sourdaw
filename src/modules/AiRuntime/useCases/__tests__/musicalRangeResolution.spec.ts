@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { resolveMusicalRange } from '#/modules/Arrangement/useCases';
 import { timeSignatureMapStore } from '#/modules/Transport/stores';
-import { getBarStartBeat } from '#/modules/Transport/useCases';
+import { getBarAtBeat, getBarStartBeat } from '#/modules/Transport/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
@@ -55,7 +55,14 @@ function resolveIn(
     markers: RangeInput['markers'] = [],
     tracks: RangeInput['tracks'] = []
 ) {
-    return resolveMusicalRange({ range, sections, markers, tracks, barStartBeat: getBarStartBeat });
+    return resolveMusicalRange({
+        range,
+        sections,
+        markers,
+        tracks,
+        barStartBeat: getBarStartBeat,
+        barAtBeat: getBarAtBeat,
+    });
 }
 
 /** An arrangement whose last clip ends on beat 96. */
@@ -93,6 +100,10 @@ const leadVocalSelector = {
 };
 
 function scriptDip(section: string): void {
+    scriptDipRange({ section });
+}
+
+function scriptDipRange(range: Record<string, unknown>): void {
     scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
         literalMetricIntakeTurn,
         () => searchCalls(['dip a track level across a section']),
@@ -104,7 +115,7 @@ function scriptDip(section: string): void {
                     name: 'automateParameterRange',
                     arguments: {
                         parameterId: 'gain',
-                        range: { section },
+                        range,
                         deltaDb: -6,
                         rampIn: 0.5,
                         rampOut: 0.5,
@@ -361,6 +372,273 @@ describe('musical range resolution', () => {
             expect(guarded.status).toBe('rejected');
             expect(guarded).not.toHaveProperty('questions');
         }
+    });
+
+    describe('the bars before a section and single bars', () => {
+        // 4/4 bars of 4 beats to beat 8, a 3/4 bar of 3 beats (bar 3, beats 8–11), then 7/8 bars of
+        // 3.5 beats from beat 11: bar 4 at 11, bar 5 at 14.5, bar 6 at 18, bar 7 at 21.5.
+        const MIXED_METER_CHANGES = [
+            { id: 'three-four', beat: 8, numerator: 3, denominator: 4 },
+            { id: 'seven-eight', beat: 11, numerator: 7, denominator: 8 },
+        ];
+        const chorusAtBar7 = [{ id: 'section-chorus', name: 'Chorus', startBeat: 21.5, endBeat: 40 }];
+
+        it('derives the bars across a meter change inside the range and one just before it', () => {
+            timeSignatureMapStore.set({ changes: MIXED_METER_CHANGES });
+
+            // Bars 4–6 run 11 to 21.5: the 7/8 change opens bar 4, the 3/4 change opens the bar before it.
+            expect(resolveIn(chorusAtBar7, { section: 'Chorus', barsBefore: 3 })).toMatchObject({
+                kind: 'resolved',
+                startBeat: 11,
+                endBeat: 21.5,
+                section: { id: 'section-chorus' },
+            });
+            // Bar 6 alone is one 7/8 bar, 18 to 21.5.
+            expect(resolveIn(chorusAtBar7, { section: 'Chorus', barsBefore: 1 })).toMatchObject({
+                startBeat: 18,
+                endBeat: 21.5,
+            });
+            // All six bars before the section are the whole of what comes before it: 0 to 21.5.
+            expect(resolveIn(chorusAtBar7, { section: 'Chorus', barsBefore: 6 })).toMatchObject({
+                startBeat: 0,
+                endBeat: 21.5,
+            });
+        });
+
+        it('refuses more bars than come before the section, naming how many do, and never clamps', () => {
+            timeSignatureMapStore.set({ changes: MIXED_METER_CHANGES });
+
+            const resolution = resolveIn(chorusAtBar7, { section: 'Chorus', barsBefore: 7 });
+
+            expect(resolution).toMatchObject({ kind: 'invalid-range' });
+            expect(resolution).toMatchObject({
+                reason: expect.stringMatching(/"Chorus".*7 bars.*only 6 bars come before it/u) as unknown,
+            });
+        });
+
+        it('refuses a section at bar 1, which has no bars before it', () => {
+            const verseFirst = [{ id: 'section-verse', name: 'Verse', startBeat: 0, endBeat: 16 }];
+
+            expect(resolveIn(verseFirst, { section: 'Verse', barsBefore: 1 })).toMatchObject({
+                kind: 'invalid-range',
+                reason: expect.stringMatching(/"Verse".*no bars come before it/u) as unknown,
+            });
+        });
+
+        it('refuses a section that starts inside a bar, naming the bar', () => {
+            // In 4/4, beat 18 is the third beat of bar 5 (16–20).
+            const midBar = [{ id: 'section-pickup', name: 'Pickup', startBeat: 18, endBeat: 32 }];
+
+            expect(resolveIn(midBar, { section: 'Pickup', barsBefore: 2 })).toMatchObject({
+                kind: 'invalid-range',
+                reason: expect.stringMatching(/"Pickup".*inside bar 5/u) as unknown,
+            });
+        });
+
+        it('refuses a section that starts where a meter change cuts a bar short', () => {
+            // 4/4 to beat 6, where a 3/4 change cuts bar 2 (4–8) short: the section opens no bar line.
+            timeSignatureMapStore.set({ changes: [{ id: 'three-four', beat: 6, numerator: 3, denominator: 4 }] });
+            const atChange = [{ id: 'section-at-change', name: 'Shift', startBeat: 6, endBeat: 12 }];
+
+            expect(resolveIn(atChange, { section: 'Shift', barsBefore: 1 })).toMatchObject({
+                kind: 'invalid-range',
+                reason: expect.stringMatching(/"Shift".*inside bar 2/u) as unknown,
+            });
+        });
+
+        it('reads a section whose own name carries a number whole', () => {
+            // "Verse 2" starts at beat 64, bar 17 in 4/4: the four bars before it are bars 13–16, beats 48–64.
+            expect(resolveIn(SECTIONS, { section: 'Verse 2', barsBefore: 4 })).toMatchObject({
+                kind: 'resolved',
+                startBeat: 48,
+                endBeat: 64,
+                section: { id: 'section-last-verse' },
+            });
+        });
+
+        it('keeps the section reference refusals when the bars before are asked', () => {
+            expect(resolveIn(SECTIONS, { section: 'Chorus', barsBefore: 2 })).toMatchObject({
+                kind: 'ambiguous-section',
+            });
+            expect(resolveIn(SECTIONS, { section: 'Drop', barsBefore: 2 })).toMatchObject({ kind: 'unknown-section' });
+        });
+
+        it('refuses bars before that are not a whole count, or that no section anchors', () => {
+            for (const barsBefore of [0, -1, 2.5, Number.NaN]) {
+                expect(resolveIn(SECTIONS, { section: 'Verse 2', barsBefore })).toMatchObject({
+                    kind: 'invalid-range',
+                    reason: expect.stringContaining('whole number') as unknown,
+                });
+            }
+            expect(resolveIn(SECTIONS, { barsBefore: 4 })).toMatchObject({ kind: 'invalid-range' });
+            expect(resolveIn(SECTIONS, { startBar: 1, endBar: 2, barsBefore: 4 })).toMatchObject({
+                kind: 'invalid-range',
+            });
+        });
+
+        it('refuses a bar that opens at or after the end of the arrangement, naming the bar and the last one', () => {
+            // The last clip ends on beat 96, where bar 25 would open: bar 24 is the last bar.
+            const resolution = resolveIn(SECTIONS, { startBar: 25, endBar: 25 }, [], TRACKS_ENDING_AT_96);
+
+            expect(resolution).toMatchObject({ kind: 'invalid-range' });
+            expect(resolution).toMatchObject({
+                reason: expect.stringMatching(/Bar 25.*last bar is bar 24/u) as unknown,
+            });
+            expect(resolveIn(SECTIONS, { startBar: 30, endBar: 31 }, [], TRACKS_ENDING_AT_96)).toMatchObject({
+                kind: 'invalid-range',
+            });
+        });
+
+        it('ends the last bar where the arrangement ends mid-bar', () => {
+            // An end on beat 94 falls inside bar 24 (92–96), so bar 24 is the last bar and bar 25 is refused.
+            const tracks = [{ clips: [{ endBeat: 94 }] }];
+
+            expect(resolveIn(SECTIONS, { startBar: 24, endBar: 24 }, [], tracks)).toMatchObject({
+                kind: 'resolved',
+                startBeat: 92,
+                endBeat: 96,
+            });
+            expect(resolveIn(SECTIONS, { startBar: 25, endBar: 25 }, [], tracks)).toMatchObject({
+                kind: 'invalid-range',
+                reason: expect.stringContaining('last bar is bar 24') as unknown,
+            });
+        });
+
+        it('bounds no bar when the arrangement holds no clips, and admits a range that runs past the end as stated', () => {
+            expect(resolveIn(SECTIONS, { startBar: 25, endBar: 25 }, [], [])).toEqual({
+                kind: 'resolved',
+                startBeat: 96,
+                endBeat: 100,
+            });
+            // Bar 20 opens at beat 76, inside the song; the range runs on to beat 120, past its end at 96.
+            expect(resolveIn(SECTIONS, { startBar: 20, endBar: 29 }, [], TRACKS_ENDING_AT_96)).toEqual({
+                kind: 'resolved',
+                startBeat: 76,
+                endBeat: 116,
+            });
+        });
+
+        it('reads a section that starts within the grid tolerance of a bar line as opening that bar', () => {
+            // In 4/4 beat 8 opens bar 3; 1e-12 later is the same bar line to the meter's grid tolerance.
+            const nearBarLine = [{ id: 'section-near', name: 'Near', startBeat: 8 + 1e-12, endBeat: 20 }];
+
+            expect(resolveIn(nearBarLine, { section: 'Near', barsBefore: 2 })).toMatchObject({
+                kind: 'resolved',
+                startBeat: 0,
+                endBeat: 8,
+            });
+        });
+
+        it('refuses a section that starts 1e-7 past a bar line as inside that bar', () => {
+            const pastBarLine = [{ id: 'section-past', name: 'Past', startBeat: 8 + 1e-7, endBeat: 20 }];
+
+            expect(resolveIn(pastBarLine, { section: 'Past', barsBefore: 2 })).toMatchObject({
+                kind: 'invalid-range',
+                reason: expect.stringMatching(/"Past".*inside bar 3/u) as unknown,
+            });
+        });
+
+        it.each([
+            ['Bar 9 Drop', 'in Bar 9 Drop', 100, 116],
+            ['Bar 9', 'in Bar 9', 100, 116],
+        ])('reads a section named "%s" as the section, not as bar 9', async (name, phrase, startBeat, endBeat) => {
+            const context = {
+                ...projectWithTwoChoruses(),
+                sections: [
+                    { id: 'section-intro', name: 'Intro', startBeat: 0, endBeat: 100 },
+                    { id: 'section-bar-named', name, startBeat, endBeat },
+                ],
+            };
+            scriptDip(name);
+            const result = await parsePromptToActions({
+                prompt: `Dip the Lead Vocal by 6 dB ${phrase} with 0.5 beat ramps in and out.`,
+                context,
+                projectRevision: `revision-${name}`,
+            });
+
+            expect(result.planningOutcome, JSON.stringify(result)).toEqual({ kind: 'proposal' });
+            expect(result.actions).toMatchObject([{ payload: { startBeat, endBeat } }]);
+        });
+
+        it('proposes the bars before the second chorus with the beats the application derives', async () => {
+            // The second chorus opens at beat 112, bar 29 in 4/4: the last four bars before it are bars 25–28.
+            scriptDipRange({ section: 'second chorus', barsBefore: 4 });
+            const result = await parsePromptToActions({
+                prompt: 'Dip the Lead Vocal by 6 dB over the last 4 bars before the second chorus with 0.5 beat ramps in and out.',
+                context: projectWithTwoChoruses(),
+                projectRevision: 'revision-bars-before',
+            });
+
+            expect(result.planningOutcome, JSON.stringify(result)).toEqual({ kind: 'proposal' });
+            expect(result.actions).toEqual([
+                {
+                    type: 'automateParameterRange',
+                    payload: expect.objectContaining({
+                        range: { section: 'second chorus', barsBefore: 4 },
+                        startBeat: 96,
+                        endBeat: 112,
+                    }) as unknown,
+                },
+            ]);
+        });
+
+        it('grounds the same request when the provider states the bars itself, and reads a number word', async () => {
+            scriptDipRange({ startBar: 25, endBar: 28 });
+            const result = await parsePromptToActions({
+                prompt: 'Dip the Lead Vocal by 6 dB during the final four bars before the second chorus with 0.5 beat ramps in and out.',
+                context: projectWithTwoChoruses(),
+                projectRevision: 'revision-bars-before-stated',
+            });
+
+            expect(result.planningOutcome, JSON.stringify(result)).toEqual({ kind: 'proposal' });
+            expect(result.actions).toMatchObject([{ payload: { startBeat: 96, endBeat: 112 } }]);
+        });
+
+        it('reads the count from the prompt and the section whole when its name carries a number', async () => {
+            // "Verse 2" opens on beat 16, bar 5: three bars before it are bars 2–4, beats 4–16.
+            const context = {
+                ...projectWithTwoChoruses(),
+                sections: [
+                    { id: 'section-intro', name: 'Intro', startBeat: 0, endBeat: 16 },
+                    { id: 'section-verse-two', name: 'Verse 2', startBeat: 16, endBeat: 48 },
+                ],
+            };
+            scriptDipRange({ section: 'Verse 2', barsBefore: 3 });
+            const result = await parsePromptToActions({
+                prompt: 'Dip the Lead Vocal by 6 dB across the last 3 bars before Verse 2 with 0.5 beat ramps in and out.',
+                context,
+                projectRevision: 'revision-bars-before-numbered',
+            });
+
+            expect(result.planningOutcome, JSON.stringify(result)).toEqual({ kind: 'proposal' });
+            expect(result.actions).toMatchObject([{ payload: { startBeat: 4, endBeat: 16 } }]);
+        });
+
+        it('proposes a single bar as the bar line to the next', async () => {
+            scriptDipRange({ startBar: 9, endBar: 9 });
+            const result = await parsePromptToActions({
+                prompt: 'Dip the Lead Vocal by 6 dB in bar 9 with 0.5 beat ramps in and out.',
+                context: projectWithTwoChoruses(),
+                projectRevision: 'revision-bar-nine',
+            });
+
+            expect(result.planningOutcome, JSON.stringify(result)).toEqual({ kind: 'proposal' });
+            expect(result.actions).toMatchObject([{ payload: { startBeat: 32, endBeat: 36 } }]);
+        });
+
+        it("refuses a request for more bars than come before the section, carrying the law's reason", async () => {
+            // Bars 1–28 come before the second chorus; 40 bars cannot be clamped to them.
+            scriptDipRange({ section: 'second chorus', barsBefore: 40 });
+            const result = await parsePromptToActions({
+                prompt: 'Dip the Lead Vocal by 6 dB over the last 40 bars before the second chorus with 0.5 beat ramps in and out.',
+                context: projectWithTwoChoruses(),
+                projectRevision: 'revision-too-many-bars',
+            });
+
+            expect(result.actions).toEqual([]);
+            expect(JSON.stringify(result)).toContain('only 28 bars come before it');
+            expect(JSON.stringify(result)).not.toContain('does not match the user request');
+        });
     });
 
     describe('markers', () => {

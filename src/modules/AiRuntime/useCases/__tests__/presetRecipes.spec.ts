@@ -31,9 +31,21 @@ vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     querySemanticProject: vi.fn(),
 }));
 
+/**
+ * Presets a census case adds to the factory preset source the Arrangement use-case barrel publishes,
+ * the one source this module reads presets from; each case that injects clears it again. Tests may
+ * mock only a foreign module's contract barrel, and the catalogue reads presets inside Arrangement,
+ * so a case that needs the catalogue to publish an injected preset offers that recipe itself.
+ */
+const injectedPresetSource = vi.hoisted(() => ({ presets: [] as SoundPreset[] }));
+
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const original = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
-    return { ...original, getMixRecipeCatalog: vi.fn(original.getMixRecipeCatalog) };
+    return {
+        ...original,
+        getFactoryPresets: () => [...original.getFactoryPresets(), ...injectedPresetSource.presets],
+        getMixRecipeCatalog: vi.fn(original.getMixRecipeCatalog),
+    };
 });
 
 type SoundPreset = ReturnType<typeof getFactoryPresets>[number];
@@ -555,19 +567,48 @@ describe('preset recipes', () => {
     });
 
     describe('every chain preset in the library', () => {
-        // Red when a chain preset is neither offered by discovery nor excluded with a reason that holds.
-        it('is discovered under each descriptor it publishes, or excluded for a reason that holds', () => {
-            const chains = getFactoryPresets().filter(isChainPreset);
-            const undiscovered = chains.filter((preset) => {
+        /**
+         * The chain presets of a list that discovery does not offer under every descriptor they
+         * publish, with the ones `CHAIN_PRESET_EXCLUSIONS` does not account for, and the listed ids
+         * that are no undiscovered chain preset of the list. Discoverability is read through the
+         * catalogue and discovery, so a preset counts as offered only when the live catalogue
+         * publishes it.
+         */
+        function censusChainPresets(presets: readonly SoundPreset[]) {
+            const undiscovered = presets.filter(isChainPreset).filter((preset) => {
                 const published = publishedFrom(preset.id);
                 return (
                     published.length === 0 ||
                     published.some((recipe) => !discoveredIds([recipe.descriptor], null).includes(recipe.id))
                 );
             });
+            const undiscoveredIds = new Set(undiscovered.map((preset) => preset.id));
+            return {
+                undiscovered,
+                unaccounted: Array.from(undiscoveredIds)
+                    .filter((id) => !Object.hasOwn(CHAIN_PRESET_EXCLUSIONS, id))
+                    .sort(),
+                staleExclusions: Object.keys(CHAIN_PRESET_EXCLUSIONS)
+                    .filter((id) => !undiscoveredIds.has(id))
+                    .sort(),
+            };
+        }
+
+        /** A chain preset of the library's own shape, under a new id and the given tags. */
+        function chainPresetLike(id: string, tags: string[]): SoundPreset {
+            return { ...structuredClone(factoryPreset('fx-eq-vocal-presence')), id, name: id, tags };
+        }
+
+        afterEach(() => {
+            injectedPresetSource.presets = [];
+        });
+
+        // Red when a chain preset is neither offered by discovery nor excluded with a reason that holds.
+        it('is discovered under each descriptor it publishes, or excluded for a reason that holds', () => {
+            const { undiscovered, unaccounted, staleExclusions } = censusChainPresets(getFactoryPresets());
 
             // Compared as id sets: an undiscovered preset the table does not list must fail here.
-            expect(undiscovered.map((preset) => preset.id).sort()).toEqual(Object.keys(CHAIN_PRESET_EXCLUSIONS).sort());
+            expect({ unaccounted, staleExclusions }).toEqual({ unaccounted: [], staleExclusions: [] });
             for (const preset of undiscovered) {
                 const reason = CHAIN_PRESET_EXCLUSIONS[preset.id];
                 const published = publishedFrom(preset.id);
@@ -592,6 +633,28 @@ describe('preset recipes', () => {
                     ).toBe(true);
                 }
             }
+        });
+
+        // Red when the census stops reading the live preset source: a new chain preset no table lists
+        // and discovery cannot offer must be reported, and one the catalogue publishes must not be.
+        it('reports a chain preset added to the live source that is neither discoverable nor listed', () => {
+            const warm = chainPresetLike('injected-warm-chain', ['warm']);
+            injectedPresetSource.presets = [chainPresetLike('injected-unlisted-chain', ['eq']), warm];
+            const warmRecipe = presetRecipeOf('preset:injected-warm-chain:warm', chainOf(warm));
+            offerRecipes({
+                ...warmRecipe,
+                origin: { kind: 'preset', presetId: warm.id, presetVersion: 'preset-v1:00000000', tags: warm.tags },
+                descriptor: 'warm',
+            });
+
+            const census = censusChainPresets(getFactoryPresets());
+
+            expect(getFactoryPresets().map((preset) => preset.id)).toContain('injected-unlisted-chain');
+            expect(discoveredIds(['warm'], null)).toContain('preset:injected-warm-chain:warm');
+            expect({ unaccounted: census.unaccounted, staleExclusions: census.staleExclusions }).toEqual({
+                unaccounted: ['injected-unlisted-chain'],
+                staleExclusions: [],
+            });
         });
     });
 

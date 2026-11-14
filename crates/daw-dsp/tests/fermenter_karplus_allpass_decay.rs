@@ -22,6 +22,8 @@
 //! below first-differences the render, which removes that inaudible residue
 //! while leaving the oscillation's decay rate untouched.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::fermenter::physical::KarplusStrong;
 
 const SAMPLE_RATE: f32 = 48_000.0;

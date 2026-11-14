@@ -183,6 +183,8 @@
 //!   collapses any note within 12 semitones of a held one onto the held voice,
 //!   so 64 notes spread over 88 keys become 32 sounding voices.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::hint::black_box;
 use std::time::Duration;
 

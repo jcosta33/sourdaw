@@ -29,6 +29,8 @@
 //! dominate the reference block, so the ratio below is a claim about the stolen
 //! voice and not about the pool average.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::fermenter::FermenterInstance;
 use daw_dsp::primitives::ProcessLifecycle;
 

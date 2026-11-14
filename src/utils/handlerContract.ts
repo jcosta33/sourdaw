@@ -2253,10 +2253,12 @@ export type AppAction =
               trackId: string;
               /** `gain`, `pan`, `send:<busId>`, or `<deviceId>:<paramId>`. */
               parameterId: string;
-              /** Exactly one form: `section`, `startBar` with `endBar`, or `startBeat` with `endBeat`. */
+              /** Exactly one form: `section`, `section` with `barsBefore`, `startBar` with `endBar`, or `startBeat` with `endBeat`. */
               range: {
                   /** A section name, optionally with an ordinal: "Chorus 2", "the second chorus". */
                   section?: string;
+                  /** With `section`: the N whole bars that end where that section starts. */
+                  barsBefore?: number;
                   /** First bar, 1-based. */
                   startBar?: number;
                   /** Last bar, inclusive. */
@@ -2931,7 +2933,15 @@ export type AppAction =
           type: 'restoreGrooveTemplateName';
           payload: { templateId: string; name: string; expectedName: string };
       }
-    | { type: 'deleteGrooveTemplate'; payload: { templateId: string } }
+    | {
+          type: 'deleteGrooveTemplate';
+          payload: {
+              templateId: string;
+              /** Set only by the inverse of `extractGroove`: delete the template only while it still
+               *  equals this snapshot and nothing is assigned to it, and refuse otherwise. */
+              expectedTemplate?: GrooveTemplateActionSnapshot;
+          };
+      }
     | { type: 'restoreDeletedGrooveTemplate'; payload: DeletedGrooveTemplateActionSnapshot }
     | { type: 'assignGrooveTemplate'; payload: GrooveAssignmentActionSnapshot }
     | {
@@ -2945,15 +2955,25 @@ export type AppAction =
       }
     | {
           type: 'extractGroove';
-          payload: {
-              clipId: string;
-              templateId?: string;
-              sourceName?: string;
-              subdivision?: string;
-          } & (
-              | { proposal: GrooveTemplateActionSnapshot; sourceRevision: string }
-              | { proposal?: undefined; sourceRevision?: undefined }
-          );
+          // Two whole object shapes rather than an intersection: the generated argument schema
+          // closes every object, so an intersection of objects would admit no payload at all.
+          payload:
+              | {
+                    clipId: string;
+                    templateId?: string;
+                    sourceName?: string;
+                    subdivision?: string;
+                    proposal: GrooveTemplateActionSnapshot;
+                    sourceRevision: string;
+                }
+              | {
+                    clipId: string;
+                    templateId?: string;
+                    sourceName?: string;
+                    subdivision?: string;
+                    proposal?: undefined;
+                    sourceRevision?: undefined;
+                };
       }
     | { type: 'applyGroove'; payload: { clipId: string; grooveId: string; amount?: number } }
     | { type: 'setClipStretchMode'; payload: { clipId: string; mode: 'off' | 'repitch' | 'timestretch' } }

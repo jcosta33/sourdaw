@@ -28,6 +28,7 @@ import { agentWorkBudget } from './agentWorkBudget';
 import { agentRunCancellation } from './cancelAgentRun';
 import { getProjectContext } from './getProjectContext';
 import { type ProviderAttemptAdmission, type ProviderAttemptAdmissionResult } from './llmOrchestration/inference';
+import { type MeasurementUnitProgress } from './measureProjectUnit';
 import { parsePromptToActions } from './parsePromptToActions';
 import { settledProjectContentMatches } from './settledProjectContentMatches';
 
@@ -46,6 +47,8 @@ type PlanPromptActionsInput = {
     suggestion?: AnswerSuggestion;
     /** The Prompt Bar's provider route: a brief or a multi-batch list hands off to the agent chat. */
     chatHandOff?: true;
+    /** Called as each initial render of a vibe run begins, naming its target and range group. */
+    onVibeRunProgress?: (progress: MeasurementUnitProgress) => void;
 };
 
 /**
@@ -215,6 +218,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             onProviderAttempt,
             providerPlanning: input.providerPlanning,
             onMeasurementAttempt,
+            onVibeRunProgress: input.onVibeRunProgress,
             thread: input.thread,
             ...profileOptions,
             ...suggestionOptions,
@@ -301,6 +305,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 },
                 providerPlanning: input.providerPlanning,
                 onMeasurementAttempt,
+                onVibeRunProgress: input.onVibeRunProgress,
                 thread: input.thread,
                 ...profileOptions,
                 ...chatHandOffOptions,

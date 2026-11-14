@@ -174,7 +174,9 @@ export const ElasticEditorPanel = (): ReactElement => {
             clipAudioBufferId: clip?.audioBufferId ?? null,
             viewScrollLeft,
         };
-        drawWaveform(args);
+        // Paint in the next frame, so a marker commit's task never also pays for the canvas;
+        // a newer change cancels this frame and the latest arguments win.
+        const frame = requestAnimationFrame(() => drawWaveform(args));
         const canvas = canvasRef.current;
         const invalidate = (): void => {
             previousDrawingRef.current = null;
@@ -186,6 +188,7 @@ export const ElasticEditorPanel = (): ReactElement => {
         canvas?.addEventListener('contextlost', invalidate);
         canvas?.addEventListener('contextrestored', restore);
         return () => {
+            cancelAnimationFrame(frame);
             canvas?.removeEventListener('contextlost', invalidate);
             canvas?.removeEventListener('contextrestored', restore);
         };

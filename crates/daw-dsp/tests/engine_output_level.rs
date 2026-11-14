@@ -40,6 +40,8 @@
 //! band width is the claim, and a band wide enough to admit any value asserts
 //! nothing.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 128;
 /// Blocks rendered before measurement starts, so DC blockers, parameter

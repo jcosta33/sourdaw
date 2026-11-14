@@ -25,6 +25,7 @@ import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { describeVibeBatchCard } from '../vibeRun/describeVibeBatchCard';
 
 import { describeAppliedBatches } from './describeAppliedBatches';
+import { describeBatchPreviewProgress } from './describeBatchPreviewProgress';
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
 import { groundVibeRunBatch } from './groundVibeRunBatch';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';
@@ -33,6 +34,7 @@ import { postVibeRunSummary } from './postVibeRunSummary';
 import { readBulkSetSliceEvidence } from './readBulkSetSliceEvidence';
 import { readSkippedVibeBatchPositions } from './readSkippedVibeBatchPositions';
 import { rebaseBulkSetSliceEvidence } from './rebaseBulkSetSliceEvidence';
+import { settleStoppedBatchPreparation } from './settleStoppedBatchPreparation';
 
 type ScheduledBatchOutcome =
     | { status: 'awaiting-approval' }
@@ -206,16 +208,31 @@ function groundScheduledSlice(
 
 type MaterializedBatch = Extract<ReturnType<typeof materializePromptCommandPlan>, { status: 'prepared' }>;
 
-function settleStoppedBatchPreparation(
-    assistantMessageId: string,
-    position: number,
-    total: number,
-    current: AgentRun | null
+/** The run keeps the batch's measured goal state and every receipt its preview read, after those of earlier batches. */
+function recordBatchPreviewEvidence(
+    liveRun: AgentRun,
+    revision: GroundedBatch['revision'],
+    metricGoalState: string | undefined,
+    receipts: Awaited<ReturnType<typeof prepareMetricGoalPreview>>['receipts']
 ): void {
-    const cancelled = current !== null && current.cancellation.requestedAt !== null;
-    updateChatMessage(assistantMessageId, {
-        pendingActionConfirmationStatus: cancelled ? 'cancelled' : undefined,
-        content: `${cancelled ? 'Cancelled' : 'Stopped'} preparation of batch ${String(position)} of ${String(total)}. ${describeAppliedBatches(position, readSkippedVibeBatchPositions(current))}`,
+    if (!liveRun.plan) {
+        return;
+    }
+    const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
+    agentRunLifecycle.recordPlan({
+        runId: liveRun.runId,
+        summary: liveRun.plan.summary,
+        commandIds: liveRun.plan.commandIds,
+        serializedBatchIdentity: liveRun.plan.serializedBatchIdentity,
+        revision,
+        scope: liveRun.scope,
+        grants: liveRun.grants,
+        budgets: liveRun.budgets,
+        plan: {
+            ...liveRun.plan,
+            metricGoalState,
+            applicationToolReceipts: [...priorReceipts, ...receipts],
+        },
     });
 }
 
@@ -245,6 +262,8 @@ async function proposeMeasuredVibeBatch(input: {
         return { status: 'rejected', reason: 'its measured preview could not be prepared' };
     }
     let proof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
+    // Stop is offered only while the preview renders: it cancels the run, which ends this batch's measurement.
+    updateChatMessage(input.assistantMessageId, { stoppableRunId: run.runId });
     try {
         proof = await prepareMetricGoalPreview({
             state,
@@ -252,16 +271,30 @@ async function proposeMeasuredVibeBatch(input: {
             context: grounded.context,
             prompt: run.request,
             runId: run.runId,
+            onProgress: (progress) =>
+                updateChatMessage(input.assistantMessageId, {
+                    content: describeBatchPreviewProgress({
+                        context: grounded.context,
+                        position,
+                        total: schedule.total,
+                        progress,
+                    }),
+                }),
         });
     } catch (error) {
+        updateChatMessage(input.assistantMessageId, { stoppableRunId: undefined });
         const current = agentRunLifecycle.get(run.runId);
         if (current === null || AGENT_RUN_TERMINAL_PHASES.has(current.phase)) {
             settleStoppedBatchPreparation(input.assistantMessageId, position, schedule.total, current);
             return { status: 'stopped' };
         }
+        // The run goes on to refuse this batch in a message of its own; this one keeps no progress line.
+        settleStoppedBatchPreparation(input.assistantMessageId, position, schedule.total, current);
         agentRunLifecycle.updateBatchStatus({ runId: run.runId, batchId, status: 'failed' });
         return { status: 'rejected', reason: error instanceof Error ? error.message : String(error) };
     }
+    // Nothing renders past here, so there is no measurement left to stop.
+    updateChatMessage(input.assistantMessageId, { stoppableRunId: undefined });
     const liveRun = agentRunLifecycle.get(run.runId);
     if (liveRun === null || AGENT_RUN_TERMINAL_PHASES.has(liveRun.phase)) {
         settleStoppedBatchPreparation(input.assistantMessageId, position, schedule.total, liveRun);
@@ -272,24 +305,7 @@ async function proposeMeasuredVibeBatch(input: {
         requireExplicitApproval: true,
         metricGoalState: JSON.stringify(proof.state),
     });
-    if (liveRun?.plan) {
-        const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
-        agentRunLifecycle.recordPlan({
-            runId: liveRun.runId,
-            summary: liveRun.plan.summary,
-            commandIds: liveRun.plan.commandIds,
-            serializedBatchIdentity: liveRun.plan.serializedBatchIdentity,
-            revision: grounded.revision,
-            scope: liveRun.scope,
-            grants: liveRun.grants,
-            budgets: liveRun.budgets,
-            plan: {
-                ...liveRun.plan,
-                metricGoalState: approval.metricGoalState ?? undefined,
-                applicationToolReceipts: [...priorReceipts, ...proof.receipts],
-            },
-        });
-    }
+    recordBatchPreviewEvidence(liveRun, grounded.revision, approval.metricGoalState ?? undefined, proof.receipts);
     const evaluation = evaluateMetricGoalAdmission({ state: proof.state, commandBatch });
     const cardLines = describeVibeBatchCard({
         batch: input.batch,

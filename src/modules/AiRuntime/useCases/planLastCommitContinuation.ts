@@ -1,51 +1,40 @@
+import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
 import { undoHistoryStore } from '#/modules/Command/stores';
 import {
-    getExecutableAppActionEffect,
     getExecutableAppActionGroundingCatalog,
     getExecutableAppActionGroundingRules,
-    getExecutableAppActionProviderSchema,
-    isExecutableAppActionType,
 } from '#/modules/Command/useCases';
-import { createPunchRegionPatch } from '#/modules/Transport/useCases';
-import { roundToThousandths } from '#/utils/Math/roundToThousandths';
 
-import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
+import { type AdoptedRecipe } from '../models/AdoptedRecipe';
+import { clarify, denied } from '../models/LastCommitRefusal';
 import { type ProjectContext } from '../models/ProjectContext';
-import { type ProposalGroundingValue } from '../models/ProposalGroundingBasis';
-import { type RuntimeAction } from '../models/RuntimeAction';
 import { type ThreadContext } from '../models/ThreadContext';
 import { agentRunStore } from '../stores/agentRunStore';
-import { bridgeLlmToolCalls } from '../transformers/llmActionBridge';
+import { pendingActionConfirmationStore } from '../stores/pendingActionConfirmationStore';
 import { type LastCommitRequest, readLastCommitRequest } from '../transformers/readLastCommitRequest';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
-import { getBestAgentReferenceNameRanges } from './agentReference/getBestAgentReferenceNameRanges';
 import { normalizePromptText } from './agentReference/groundingStrategies/normalizePromptText';
 import { resolveClauseActionIntent } from './agentReference/groundingStrategies/resolveClauseActionIntent';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
-import { proposalCommandShape } from './agentReference/proposalCommandShape';
-
-/**
- * What the planner makes of a chat request that continues, undoes or re-targets the thread's last
- * commit: `none` when the request is no such thing (or a pending card owns it), and it is planned as
- * any request; otherwise the application compiles the outcome itself from the committed batch.
- */
-export type LastCommitContinuation =
-    | { status: 'none' }
-    | { status: 'actions'; actions: RuntimeAction[] }
-    | { status: 'revert'; runId: string; revertGroupId: string }
-    | { status: 'clarify'; reason: string; questions: string[] }
-    | { status: 'denied'; reason: string };
+import { readConfirmationBatchId } from './agentRequestOrchestration/readConfirmationBatchId';
+import { continueCommittedChange } from './lastCommitContinuation/continueCommittedChange';
+import { createsObjects } from './lastCommitContinuation/createsObjects';
+import { groundContinuedCalls } from './lastCommitContinuation/groundContinuedCalls';
+import {
+    type CommittedBatch,
+    type CommittedCommand,
+    type LastCommitContinuation,
+    type RetargetRequest,
+} from './lastCommitContinuation/lastCommitOutcome';
+import { readNamedTracks } from './lastCommitContinuation/readNamedTracks';
+import { readRetargetTracks } from './lastCommitContinuation/readRetargetTracks';
+import { readStatedArguments } from './lastCommitContinuation/readStatedArguments';
+import { retargetCommittedRecipe } from './lastCommitContinuation/retargetCommittedRecipe';
+import { trackName } from './lastCommitContinuation/trackName';
 
 type FollowUpRequest = Exclude<LastCommitRequest, { kind: 'none' }>;
-type ContinueRequest = Extract<LastCommitRequest, { kind: 'continue' }>;
-type RetargetRequest = Extract<LastCommitRequest, { kind: 'retarget' }>;
 type ThreadCommit = NonNullable<ThreadContext['lastCommit']>;
-
-/** One command of the committed batch, as the undo history holds it applied. */
-type CommittedCommand = { type: string; payload: Record<string, unknown>; label: string };
-
-type CommittedBatch = { runId: string; revertGroupId: string; commands: CommittedCommand[] };
 
 const NONE: LastCommitContinuation = { status: 'none' };
 
@@ -55,18 +44,18 @@ const REQUESTED_ACT: Readonly<Record<FollowUpRequest['kind'], string>> = {
     retarget: 'repeat',
 };
 
-/** Words a list of track names may hold besides the names themselves. */
-const TARGET_LIST_WORDS: ReadonlySet<string> = new Set(['the', 'and', '&', 'both', 'track', 'tracks']);
-
-/** Words that join two names of a list; a comma joins them too. */
-const LIST_JOINERS: ReadonlySet<string> = new Set(['and', '&']);
-
-function denied(reason: string): LastCommitContinuation {
-    return { status: 'denied', reason };
-}
-
-function clarify(reason: string, question: string): LastCommitContinuation {
-    return { status: 'clarify', reason, questions: [question] };
+/**
+ * Every unit a built-in device parameter declares, as its descriptor spells it: the closed list a
+ * continuation figure outside decibels and percent may be stated in.
+ */
+function readDeclaredParameterUnits(): string[] {
+    return [
+        ...new Set(
+            getBuiltinPlugins().flatMap((plugin) =>
+                plugin.parameters.map((parameter) => parameter.unit).filter((unit) => unit.trim().length > 0)
+            )
+        ),
+    ];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -110,192 +99,22 @@ function readCommittedBatch(commit: ThreadCommit): CommittedBatch | null {
         const payload = 'payload' in entry.action && isRecord(entry.action.payload) ? entry.action.payload : {};
         commands.push({ type: entry.action.type, payload, label: entry.label });
     }
-    return commands.length === 0 ? null : { runId: commit.runId, revertGroupId, commands };
-}
-
-/** The arguments a provider may state for the command, as committed: never a guard the application added. */
-function readStatedArguments(command: CommittedCommand): Record<string, unknown> {
-    if (!isExecutableAppActionType(command.type)) {
-        return {};
+    if (commands.length === 0 || receipt === undefined) {
+        return null;
     }
-    const declared = getExecutableAppActionProviderSchema(command.type).properties;
-    return Object.fromEntries(
-        Object.entries(command.payload).filter(([argument]) => Object.hasOwn(declared, argument))
-    );
-}
-
-function createsObjects(actionType: string): boolean {
-    return (getExecutableAppActionEffect(actionType)?.creates ?? []).length > 0;
-}
-
-/** Whether every object the committed command acted on is still in the project, as its target rule reads it. */
-function targetsStand(command: CommittedCommand, context: ProjectContext): boolean {
-    return proposalCommandShape
-        .targetObjects(command.type, command.payload)
-        .every((target) =>
-            isAgentReferenceCapabilityCandidate({ capability: target.capability, context, id: target.id })
-        );
-}
-
-function formatDecibels(value: number): string {
-    return `${String(roundToThousandths(value))} dB`;
+    return { runId: commit.runId, workId: receipt.workId, revertGroupId, commands };
 }
 
 /**
- * The value a continuation states for one committed level. A committed move continues as a move:
- * "more" (and "another") moves further the same way, "less" makes the committed move smaller by the
- * figure, from wherever the level is now. A committed level continues from that committed level,
- * never from where the fader is now: "more" lands higher, "less" lower, and "another" has no way
- * to go.
+ * The recipes the committed batch adopted, as its confirmation's approval snapshot recorded them: the
+ * confirmation of the commit's run whose command batch is the receipt's work. A direct commit has no
+ * confirmation and adopted none.
  */
-function continuedValue(
-    request: ContinueRequest & { figure: number },
-    committed: ProposalGroundingValue
-): { status: 'value'; value: number } | { status: 'refused'; outcome: LastCommitContinuation } {
-    const figure = request.figure;
-    const stated = formatDecibels(figure);
-    if (committed.form === 'absolute') {
-        if (request.phrasing === 'another') {
-            return {
-                status: 'refused',
-                outcome: clarify(
-                    `"Another ${stated}" does not say which way the committed level of ${formatDecibels(committed.value)} should move.`,
-                    `Should it go up or down? Say "${stated} more" or "${stated} less".`
-                ),
-            };
-        }
-        const value = request.comparative === 'more' ? committed.value + figure : committed.value - figure;
-        return { status: 'value', value: roundToThousandths(value) };
-    }
-    const direction = Math.sign(committed.value);
-    const size = Math.abs(committed.value);
-    if (request.comparative === 'more') {
-        return { status: 'value', value: direction * figure };
-    }
-    if (figure >= size) {
-        return {
-            status: 'refused',
-            outcome: denied(
-                figure === size
-                    ? `"${stated} less" would take back the whole committed change of ${formatDecibels(size)}; say "undo that" to undo it.`
-                    : `"${stated} less" is more than the committed change of ${formatDecibels(size)}, so it would reverse it rather than make it smaller.`
-            ),
-        };
-    }
-    return { status: 'value', value: -direction * figure };
-}
-
-function groundContinuedCalls(calls: readonly ToolCallResult[], context: ProjectContext): LastCommitContinuation {
-    if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
-        return denied(
-            `Repeating the last committed change there takes ${String(calls.length)} commands, more than one batch of ${String(MAX_LLM_ACTIONS_PER_BATCH)} holds.`
-        );
-    }
-    const converted = bridgeLlmToolCalls({ calls, context, projectPunchRegion: createPunchRegionPatch });
-    const [rejection] = converted.rejections;
-    if (rejection !== undefined) {
-        return denied(`The continued ${rejection.name} could not be compiled: ${rejection.reason}.`);
-    }
-    return { status: 'actions', actions: converted.actions };
-}
-
-/** A further level change on the committed targets, bound to the committed values. */
-function continueCommittedLevels(
-    request: ContinueRequest,
-    committed: CommittedBatch,
-    context: ProjectContext
-): LastCommitContinuation {
-    const { figure } = request;
-    if (figure === null) {
-        return clarify(
-            `The request asks for ${request.comparative} without saying how much.`,
-            `How many decibels ${request.comparative}? Say it as in "1 dB ${request.comparative}".`
-        );
-    }
-    if (figure === 0) {
-        return denied('A 0 dB change leaves every committed level where it is.');
-    }
-    const levels = committed.commands.flatMap((command) => {
-        const value = proposalCommandShape.value(command.type, command.payload);
-        return value?.unit === 'dB' && !createsObjects(command.type) ? [{ command, value }] : [];
-    });
-    if (levels.length === 0) {
-        return denied('The last committed change sets no level in decibels, so there is no level to continue.');
-    }
-    if (new Set(levels.map((level) => level.value.form)).size > 1) {
-        return clarify(
-            'The last committed change moved some levels and set others, so a further change has no one reading.',
-            'Which level should change, and by how much? Name it, as in "turn Vocals down 1 dB".'
-        );
-    }
-    const calls: ToolCallResult[] = [];
-    for (const { command, value } of levels) {
-        if (!targetsStand(command, context)) {
-            return denied(
-                `What the committed "${command.label}" acted on is no longer in the project, so it cannot be continued.`
-            );
-        }
-        const continued = continuedValue({ ...request, figure }, value);
-        if (continued.status === 'refused') {
-            return continued.outcome;
-        }
-        calls.push({
-            name: command.type,
-            arguments: { ...readStatedArguments(command), [value.argument]: continued.value },
-        });
-    }
-    return groundContinuedCalls(calls, context);
-}
-
-type NamedTracks =
-    { status: 'named'; ids: string[] } | { status: 'ambiguous'; text: string; names: string[] } | { status: 'unread' };
-
-/** Whether a joiner stands between every two names, as a list of names needs: "Bass and Keys", never "Bass Keys". */
-function joinsEveryName(text: string, ranges: ReadonlyArray<{ start: number; end: number }>): boolean {
-    return ranges.slice(1).every((range, index) => {
-        const between = text.slice(ranges[index]!.end, range.start).toLowerCase();
-        return between.includes(',') || between.split(/\s+/u).some((word) => LIST_JOINERS.has(word));
-    });
-}
-
-/**
- * The tracks the text names by whole name, in either grammatical number, through the shared
- * resolver's own reading, and nothing else: any word besides the names and the list's own joiners,
- * or two names with no joiner between them, leaves it unread, and a stretch two tracks' names read
- * equally well is ambiguous.
- */
-function readNamedTracks(text: string, context: ProjectContext): NamedTracks {
-    const tracks = context.tracks.map((track) => ({ id: track.id, name: track.name }));
-    const ranges = getBestAgentReferenceNameRanges(text, tracks, 'with-number-forms').toSorted(
-        (left, right) => left.start - right.start || left.end - right.end
+function readCommittedRecipes(committed: CommittedBatch): readonly AdoptedRecipe[] {
+    const confirmation = (pendingActionConfirmationStore.value?.confirmations ?? []).find(
+        (candidate) => candidate.runId === committed.runId && readConfirmationBatchId(candidate) === committed.workId
     );
-    for (const [index, range] of ranges.entries()) {
-        const next = ranges[index + 1];
-        if (next !== undefined && next.start < range.end) {
-            const shared = ranges.filter((candidate) => candidate.start < range.end && candidate.end > range.start);
-            return {
-                status: 'ambiguous',
-                text: text.slice(range.start, Math.max(range.end, next.end)),
-                names: [
-                    ...new Set(
-                        shared.map((candidate) => tracks.find((track) => track.id === candidate.id)?.name ?? '')
-                    ),
-                ],
-            };
-        }
-    }
-    let rest = text;
-    for (const range of ranges) {
-        rest = `${rest.slice(0, range.start)}${' '.repeat(range.end - range.start)}${rest.slice(range.end)}`;
-    }
-    const words = rest
-        .toLowerCase()
-        .split(/[\s,]+/u)
-        .filter((word) => word.length > 0);
-    if (ranges.length === 0 || words.some((word) => !TARGET_LIST_WORDS.has(word)) || !joinsEveryName(text, ranges)) {
-        return { status: 'unread' };
-    }
-    return { status: 'named', ids: [...new Set(ranges.map((range) => range.id))] };
+    return confirmation?.approvalSnapshot.adoptedRecipes ?? [];
 }
 
 /**
@@ -326,8 +145,33 @@ function readTrackTargetRule(command: CommittedCommand) {
     return trackRule;
 }
 
-function trackName(id: string, context: ProjectContext): string {
-    return context.tracks.find((track) => track.id === id)?.name ?? id;
+/**
+ * A re-target of the committed change: the committed recipe re-expanded when the commit adopted
+ * exactly one, a question when it adopted several, and otherwise the committed batch command for
+ * command — except that a request naming the recipe, when the commit adopted none, is refused.
+ */
+function retargetLastCommit(input: {
+    request: RetargetRequest;
+    committed: CommittedBatch;
+    context: ProjectContext;
+    projectRevision: string;
+    prompt: string;
+}): LastCommitContinuation {
+    const recipes = readCommittedRecipes(input.committed);
+    const [only] = recipes;
+    if (recipes.length > 1) {
+        return clarify(
+            `The last committed change applied ${String(recipes.length)} recipes, so repeating "the recipe" has no one reading.`,
+            `Which recipe should be repeated: ${recipes.map((recipe) => `"${recipe.title}"`).join(' or ')}? Name it and the track it goes on.`
+        );
+    }
+    if (only !== undefined) {
+        return retargetCommittedRecipe({ ...input, adopted: only });
+    }
+    if (input.request.form === 'recipe') {
+        return denied('The last committed change applied no recipe, so there is no recipe to repeat.');
+    }
+    return retargetCommittedChange(input.request, input.committed, input.context);
 }
 
 /** The committed batch, command for command, on the tracks the request names instead of the committed ones. */
@@ -336,18 +180,9 @@ function retargetCommittedChange(
     committed: CommittedBatch,
     context: ProjectContext
 ): LastCommitContinuation {
-    const named = readNamedTracks(request.targetText, context);
-    if (named.status === 'ambiguous') {
-        return clarify(
-            `"${named.text}" names more than one track.`,
-            `Which track should take the last change: ${named.names.join(' or ')}?`
-        );
-    }
-    if (named.status === 'unread') {
-        return clarify(
-            `"${request.targetText}" is not a list of this project's tracks.`,
-            'Which tracks should take the last change? Name them, as in "do the same to Bass and Keys".'
-        );
+    const named = readRetargetTracks(request, context);
+    if (named.status === 'refused') {
+        return named.outcome;
     }
     const movable: Array<{ command: CommittedCommand; rule: NonNullable<ReturnType<typeof readTrackTargetRule>> }> = [];
     for (const command of committed.commands) {
@@ -386,8 +221,10 @@ export function planLastCommitContinuation(input: {
     prompt: string;
     context: ProjectContext;
     thread: ThreadContext | null;
+    /** The revision the planning context was read at, which a re-expanded recipe is grounded against. */
+    projectRevision?: string;
 }): LastCommitContinuation {
-    const request = readLastCommitRequest(input.prompt);
+    const request = readLastCommitRequest(input.prompt, readDeclaredParameterUnits());
     if (request.kind === 'none' || (input.thread?.pendingProposal ?? null) !== null) {
         return NONE;
     }
@@ -414,7 +251,13 @@ export function planLastCommitContinuation(input: {
         return { status: 'revert', runId: committed.runId, revertGroupId: committed.revertGroupId };
     }
     if (request.kind === 'continue') {
-        return continueCommittedLevels(request, committed, input.context);
+        return continueCommittedChange(request, committed, input.context);
     }
-    return retargetCommittedChange(request, committed, input.context);
+    return retargetLastCommit({
+        request,
+        committed,
+        context: input.context,
+        projectRevision: input.projectRevision ?? '',
+        prompt: input.prompt,
+    });
 }

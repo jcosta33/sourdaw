@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::ProofChamberInstance;
 
 const FRAMES: usize = 128;

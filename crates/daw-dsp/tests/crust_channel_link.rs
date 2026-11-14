@@ -29,6 +29,8 @@
 //! keeps the recovery observable inside a short render; nothing else about
 //! the envelope is negotiated.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::crust::limiter::TruePeakLimiter;
 
 const SAMPLE_RATE: f32 = 48_000.0;

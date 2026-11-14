@@ -235,20 +235,52 @@ function expectCanonicalWarpAbsence(): void {
     expect(warpStateStore.value?.states[CLIP_ID]).toBeUndefined();
 }
 
+/** The editor's waveform paint frames are requested from `ElasticEditorPanel.tsx`; no other frame is. */
+function requestedByEditorPaint(): boolean {
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = Infinity;
+    try {
+        return new Error('animation frame requester').stack?.includes('/ElasticEditorPanel.tsx') === true;
+    } finally {
+        Error.stackTraceLimit = limit;
+    }
+}
+
+/**
+ * Holds Detect's frames (and the storage flush frames that share them) for the case to release.
+ * The editor's waveform paint frames keep the environment's real frame clock, so they neither
+ * consume a held frame nor count as a cancellation of one.
+ */
 function holdAnimationFrames() {
     const callbacks: FrameRequestCallback[] = [];
     const waiters: ((callback: FrameRequestCallback) => void)[] = [];
-    let handle = 0;
+    const heldHandles = new Set<number>();
+    // Far above the environment's own handles, so the two ranges never meet.
+    let handle = 1_000_000;
+    const paint = globalThis.requestAnimationFrame.bind(globalThis);
+    const cancelPaint = globalThis.cancelAnimationFrame.bind(globalThis);
+    const cancelled = vi.fn<(handle: number) => void>();
     vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+        if (requestedByEditorPaint()) {
+            return paint(callback);
+        }
         const waiter = waiters.shift();
         if (waiter) {
             waiter(callback);
         } else {
             callbacks.push(callback);
         }
-        return ++handle;
+        handle += 1;
+        heldHandles.add(handle);
+        return handle;
     });
-    const cancelled = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => undefined);
+    vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation((frame) => {
+        if (heldHandles.has(frame)) {
+            cancelled(frame);
+            return;
+        }
+        cancelPaint(frame);
+    });
     return {
         cancelled,
         complete: async (execution: Promise<void>): Promise<void> => {

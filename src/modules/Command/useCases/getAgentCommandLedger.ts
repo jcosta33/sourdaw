@@ -4,6 +4,7 @@ import {
     AGENT_COMMAND_LEDGER_UNCOVERED_CATEGORIES,
     AGENT_COMMAND_MINIMUM_WRITE_SET_RULE,
     AGENT_COMMAND_READ_ONLY_LEDGER,
+    AGENT_RUNTIME_ACTION_ACCOUNTING,
     assertPacketMatchesClosure,
     type AgentCommandLedgerCategory,
     type AgentCommandLedgerClosure,
@@ -33,6 +34,8 @@ type AgentCommandLedgerDto = {
         previewExecution: 'not-applicable';
     })[];
     uncoveredCategories: readonly { category: AgentCommandLedgerCategory; packet: string; reason: string }[];
+    /** Schema-1 values can predate the runtime-action census; the live publisher below always includes it. */
+    runtimeActionAccounting?: typeof AGENT_RUNTIME_ACTION_ACCOUNTING;
 };
 
 function isMinimumWriteSet(operationId: string): boolean {
@@ -64,6 +67,8 @@ function readPreviewExecution(operationId: string): AgentCommandLedgerEntryDto['
  * if the caller registers or clears handler maps in between.
  * The additive `readOnlyEntries` collection describes application reads separately, preserving
  * the version-1 executable-command census and granting neither write nor preview authority.
+ * The additive `runtimeActionAccounting` collection says why each AI runtime action type with no
+ * executable descriptor has none.
  */
 export function getAgentCommandLedger(): AgentCommandLedgerDto {
     return {
@@ -79,5 +84,6 @@ export function getAgentCommandLedger(): AgentCommandLedgerDto {
             previewExecution: 'not-applicable',
         })),
         uncoveredCategories: AGENT_COMMAND_LEDGER_UNCOVERED_CATEGORIES,
+        runtimeActionAccounting: AGENT_RUNTIME_ACTION_ACCOUNTING,
     };
 }

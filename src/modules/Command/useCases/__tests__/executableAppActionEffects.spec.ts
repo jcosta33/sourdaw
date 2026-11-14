@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    executableAppActionEffectsByType,
-    getExecutableAppActionEffect,
-    type ExecutableAppActionEffect,
-} from '../executableAppActionEffects';
+import { type ExecutableAppActionEffect } from '../../models/ExecutableAppActionEffect';
+import { executableAppActionEffectsByType, getExecutableAppActionEffect } from '../executableAppActionEffects';
 import { executableAppActionDescriptors, isExecutableAppActionType } from '../executableAppActionRegistry';
 import {
     CREATE_OPERATIONS,

@@ -13,3 +13,6 @@ crate-type = ["rlib"]
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 symphonia = { version = "0.6", features = ["all"] }
+
+[lints]
+workspace = true

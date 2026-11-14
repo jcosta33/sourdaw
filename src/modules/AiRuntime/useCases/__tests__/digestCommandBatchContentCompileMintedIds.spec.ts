@@ -360,9 +360,8 @@ describe('digestCommandBatchContent over ids a command draws while it compiles',
             });
         });
 
-        // stripSilence is not an executable registry command, so no batch compiles it and its envelope
-        // is the whole compiled surface. Red when a segment's clip id or a migrated lane's id leaves
-        // the assigned-id record: a hash over the envelope would then carry them verbatim.
+        // Red when a segment's clip id or a migrated lane's id leaves the assigned-id record: a hash
+        // over the envelope would then carry them verbatim.
         it('records every id its handler draws for a segment and a migrated lane, fresh per compilation', () => {
             const compile = () =>
                 migrateLegacyAppActionToVersionedCommandEnvelope({

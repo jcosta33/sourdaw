@@ -13,6 +13,7 @@ export const AGENT_MEASUREMENT_METRIC_IDS = [
     'crestFactor',
     'dynamicRangeEstimate',
     'spectralCentroid',
+    'spectralRolloff',
     'frequencyBandEnergy',
     'stereoCorrelation',
     'sideEnergyFraction',

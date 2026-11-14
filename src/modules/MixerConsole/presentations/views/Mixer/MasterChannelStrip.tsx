@@ -235,7 +235,7 @@ function enqueueDiscreteMasterGain(
     });
 }
 
-function useMasterGainCommitHandlers(state: MasterGainInteractionState) {
+function createMasterGainCommitHandlers(state: MasterGainInteractionState) {
     const [, setGestureGain] = state.gestureGain;
     const { gestureToken, displayedValue, commitQueue, lastGrooveSettleTime } = state;
 
@@ -299,9 +299,9 @@ function useMasterGainCommitHandlers(state: MasterGainInteractionState) {
     return { settleMasterGain, commitPastedGain };
 }
 
-function useMasterGainControlHandlers(
+function createMasterGainControlHandlers(
     state: MasterGainInteractionState,
-    commits: ReturnType<typeof useMasterGainCommitHandlers>
+    commits: ReturnType<typeof createMasterGainCommitHandlers>
 ) {
     const [, setGestureGain] = state.gestureGain;
     const { gestureToken, gestureOpen, displayedValue, commitQueue, lastGrooveSettleTime } = state;
@@ -475,8 +475,8 @@ const MasterChannelSurface = ({
 export const MasterChannelStrip = ({ widthClass, track, isSelected }: MasterChannelStripProps): ReactElement => {
     const masterGain = useStore(transportStore, defaultTransportState).masterGain;
     const state = useMasterGainInteractionState();
-    const commits = useMasterGainCommitHandlers(state);
-    const handlers = useMasterGainControlHandlers(state, commits);
+    const commits = createMasterGainCommitHandlers(state);
+    const handlers = createMasterGainControlHandlers(state, commits);
     const clipboard = createMasterGainClipboardActions(state.commitQueue, commits.commitPastedGain);
     const displayGain = state.gestureGain[0] ?? masterGain / 100;
 

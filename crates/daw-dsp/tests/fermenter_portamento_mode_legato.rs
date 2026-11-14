@@ -67,6 +67,8 @@
 //! only covers ~10% of its interval inside the analysis window. A short glide
 //! would be over before the window ended and would read as a snap.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::fermenter::FermenterInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

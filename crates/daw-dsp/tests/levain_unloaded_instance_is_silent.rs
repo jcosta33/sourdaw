@@ -16,6 +16,8 @@
 //! substitutes a sine tone for orchestral samples, which is audible garbage that
 //! merely *looks* fixed. The load is the fix; this file guards the reason.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::levain::LevainInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

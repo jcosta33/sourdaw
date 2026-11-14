@@ -1,3 +1,8 @@
+#![cfg_attr(
+    test,
+    allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
+)]
+
 pub mod audio_thread;
 pub mod capture;
 mod capture_clock;

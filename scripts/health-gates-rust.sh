@@ -38,11 +38,14 @@ fi
 # `benches/quantum.rs` was broken for an extended period with nothing to catch
 # it (repaired in #1084).
 #
-# `-D warnings` is deliberately NOT set yet: the tree has 239 pre-existing
-# clippy warning sites (188 daw-dsp, 17 scoring, 13 proof-chamber, 11
-# daw-plugin-host, 9 daw-engine, 1 daw-core). Turning it on now would land a
-# permanently red gate, and silencing them with `#[allow]` would be evasion.
-# Add `-D warnings` once that cleanup lands on its own.
+# What fails this run is decided by the `[workspace.lints]` tables in the root
+# `Cargo.toml`, which every crate opts into: a lint at `deny` there is an error
+# here, and a lint at `warn` is pending cleanup that reports without failing.
+# `-D warnings` is not set, so that table stays the single source of the
+# policy. This leg lints Linux host-target code only; code behind
+# `cfg(windows)` or `cfg(target_arch = "wasm32")` is not clippy-linted here or
+# anywhere yet (#6528). `sourdaw-native` is excluded from this leg and linted
+# on its macOS host target by the `native-macos` job in `validation.yml`.
 #
 # `cargo fmt --check` runs first because it is the cheapest of the three and
 # needs no build at all. It was held back until the tree-wide reformat landed

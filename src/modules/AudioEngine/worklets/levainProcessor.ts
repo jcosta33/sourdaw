@@ -917,6 +917,9 @@ class LevainProcessor extends AudioWorkletProcessor {
             case 'dispose':
                 this._dispose();
                 break;
+            case 'releaseDisposedBanks':
+                // Answered by the port handler before dispatch.
+                break;
         }
     }
 

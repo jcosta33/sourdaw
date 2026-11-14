@@ -1,9 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 
-import { checkpointDaemonLog } from './gitCheckpointDaemon.ts';
 import { checkpointSocketRows } from './gitCheckpointSocket.ts';
 
 const unavailable = 'unavailable';
@@ -102,7 +99,6 @@ export function runCheckpointSample(
         socket,
         queueSnapshots: [first],
         sample: 'observation pending',
-        daemonLog: { status: 'unavailable', reason: 'observation pending' },
         socketHolderIdentities: unavailable,
     };
     writeObservation(partialPath, observation);
@@ -113,13 +109,6 @@ export function runCheckpointSample(
     observation.queueSnapshots = [first, second];
     observation.queue = second.rows;
     writeObservation(partialPath, observation);
-    let peer: string | undefined;
-    if (Array.isArray(first.rows)) {
-        peer = first.rows[1];
-    } else if (Array.isArray(second.rows)) {
-        peer = second.rows[1];
-    }
-    const daemonRoot = join(homedir(), '.git-ai', 'internal', 'daemon');
     let holders: string | null = null;
     if (socket) {
         holders = command('/usr/sbin/lsof', ['-t', '-n', '-a', '-U', socket], diagnosticEnv, 1000);
@@ -132,24 +121,6 @@ export function runCheckpointSample(
     observation.socketHolderIdentities = holderPids.map(
         (value) => command('ps', ['-p', value, '-o', 'pid=,ppid=,pgid=,state=,lstart='])?.slice(0, 1024) ?? null
     );
-    writeObservation(partialPath, observation);
-    const daemonLog = checkpointDaemonLog({
-        socket,
-        expectedSocket: join(daemonRoot, 'trace2.sock'),
-        peerRow: peer,
-        pidFile: join(daemonRoot, 'daemon.pid.json'),
-        logDirectory: join(daemonRoot, 'logs'),
-        uid: process.getuid?.(),
-        identity: (daemonPid) => command('ps', ['-p', String(daemonPid), '-o', 'uid=,lstart='])?.slice(0, 1024) ?? null,
-    });
-    observation.daemonLog = daemonLog;
-    if (daemonLog.status === 'available') {
-        observation.receiver = { status: 'matched', pid: daemonLog.pid, identity: daemonLog.identity };
-    } else if (daemonLog.pid !== undefined && daemonLog.identity !== undefined) {
-        observation.receiver = { status: 'matched', pid: daemonLog.pid, identity: daemonLog.identity };
-    } else {
-        observation.receiver = { status: 'unavailable', reason: daemonLog.reason };
-    }
     writeObservation(partialPath, observation);
     return observation;
 }

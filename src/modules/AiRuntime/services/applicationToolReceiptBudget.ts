@@ -1,5 +1,5 @@
 import { PROJECT_QUERY_TOOL_NAME } from '../models/AgentToolCatalogNames';
-import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 
 export function byteLength(value: string): number {
     return new TextEncoder().encode(value).byteLength;
@@ -64,6 +64,22 @@ export function serializeReceiptContext(receipts: readonly ApplicationToolReceip
         ...RECEIPT_STANDING_INSTRUCTIONS,
         JSON.stringify({ receipts }),
     ].join('\n');
+}
+
+/**
+ * The most `serializeReceiptContext` can measure for `receiptCount` receipts at `turn`, each at the
+ * per-receipt bound `boundReceipt` keeps: the wrapper it writes around an empty list, each receipt's
+ * own JSON, and the comma between two receipts. Exact, since the context's JSON is the list's.
+ */
+export function maximalReceiptContextBytes(receiptCount: number, turn: number): number {
+    if (receiptCount === 0) {
+        return byteLength(serializeReceiptContext([], turn));
+    }
+    return (
+        byteLength(serializeReceiptContext([], turn)) +
+        receiptCount * APPLICATION_TOOL_RECEIPT_MAX_BYTES +
+        (receiptCount - 1)
+    );
 }
 
 /**

@@ -17,7 +17,11 @@ describe('DisabledFeatureWrapper', () => {
     it('should render children directly when not disabled', () => {
         render(
             <DisabledFeatureWrapper disabled={false} reason="n/a">
-                <button type="button">Click me</button>
+                {(disabled) => (
+                    <button type="button" disabled={disabled}>
+                        Click me
+                    </button>
+                )}
             </DisabledFeatureWrapper>
         );
         expect(screen.getByRole('button', { name: 'Click me' })).not.toBeDisabled();
@@ -26,7 +30,11 @@ describe('DisabledFeatureWrapper', () => {
     it('should wrap disabled children and pass reason into tooltip content', () => {
         render(
             <DisabledFeatureWrapper disabled reason="Not on web">
-                <button type="button">Native only</button>
+                {(disabled) => (
+                    <button type="button" disabled={disabled}>
+                        Native only
+                    </button>
+                )}
             </DisabledFeatureWrapper>
         );
         expect(screen.getByRole('button', { name: 'Native only' })).toBeDisabled();

@@ -9,6 +9,11 @@
 //! Web Audio API's `decodeAudioData` cannot handle (ALAC, many m4a variants,
 //! some FLAC/OGG edge cases).
 
+#![cfg_attr(
+    test,
+    allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
+)]
+
 use wasm_bindgen::prelude::*;
 
 /// Install `console_error_panic_hook` once at wasm module init so a Rust panic
