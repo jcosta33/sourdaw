@@ -88,6 +88,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    limit. Pair the shared-owner progress oracle with a real processor zone table larger than the credit
    window, and require a delivered owner zone acknowledgement to keep every staged follower pending
    beyond ten seconds (#5239).
+   A capacity fix proven at a layer above the one that drops is the same defect: #4255 sized the native slot's
+   note scratch to the engine's 128-event block and pinned it with a runtime double in the slot, while both
+   format wrappers still cut their plugin-facing event lists at 64, so a full block lost its tail, note-offs
+   included, below every assertion. Capture at the list the plugin reads (the CLAP `size`/`get` pair, the VST3
+   `inputEvents` list) through the real wrapper, and require cutting that list back to the old bound to fail the
+   case; a capacity restated across a crate edge needs a compile-time equality assert where both are visible
+   (#6586).
    (#5639, #4271, #5615, #5705, #5595, #5363, #5284, #2097, #4496, #1949, #4577, #5649, #474, #2597, #2811, #2035, #5239)
 
     For a module-graph checker, compare its edges with actual installed Vite transforms and ESM execution
