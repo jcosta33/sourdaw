@@ -7,6 +7,8 @@
 //! the note plays the bank's Runs layer; an explicit choice (a keyswitch)
 //! still outranks the suggestion.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::levain::LevainInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

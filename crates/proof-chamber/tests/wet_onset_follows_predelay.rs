@@ -31,6 +31,8 @@
 //! position and correct — the sweep is what records that the implementations
 //! agree, and what would catch the next one that does not.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::ProofChamberInstance;
 
 /// Rates every sweep in this file runs at.

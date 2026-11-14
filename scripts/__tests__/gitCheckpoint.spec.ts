@@ -17,9 +17,8 @@ import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { checkpointArguments } from '../gitCheckpointArguments';
-import { checkpointDaemonLog } from '../gitCheckpointDaemon';
 import { checkpointMountOptions } from '../gitCheckpointMount';
-import { checkpointSamplePayload } from '../gitCheckpointProcess';
+import { checkpointSamplePayload, runCheckpointSample } from '../gitCheckpointProcess';
 import { checkpointSocketRows } from '../gitCheckpointSocket';
 
 const runner = resolve('scripts/gitCheckpoint.ts');
@@ -430,60 +429,25 @@ exit 23
         expect(capped.arguments.length).toBeLessThanOrEqual(128);
         expect(capped.omitted).toBeGreaterThan(0);
     });
-    it('reads only a bounded log for the matched daemon identity', () => {
-        const { root } = fixture();
-        const logs = join(root, 'logs');
-        mkdirSync(logs);
-        const socket = join(root, 'trace2.sock');
-        const pidFile = join(root, 'daemon.pid.json');
-        const start = 'Thu Nov 12 14:31:15 2026';
-        const peer = `abc stream 0 0 0 def 0 0 0 0 8192 8192 git-ai:123 ${socket}`;
-        const request = {
-            socket,
-            expectedSocket: socket,
-            peerRow: peer,
-            pidFile,
-            logDirectory: logs,
-            uid: 501,
-            identity: () => `501 ${start}`,
-        };
-        writeFileSync(pidFile, JSON.stringify({ pid: 123, started_at_ns: Date.parse(start) * 1_000_000 }));
-        const missing = checkpointDaemonLog(request);
-        expect(missing.status).toBe('unavailable');
-        expect(missing.pid).toBe(123);
-        writeFileSync(join(logs, '123.log'), 'short log');
-        const short = checkpointDaemonLog(request);
-        expect(short.status).toBe('available');
-        if (short.status !== 'available') {
-            throw new Error('matching daemon log was unavailable');
-        }
-        expect(Buffer.from(short.base64, 'base64').toString()).toBe('short log');
-        expect(short.omittedBytes).toBe(0);
-        writeFileSync(join(logs, '123.log'), Buffer.alloc(70000, 65));
-        const large = checkpointDaemonLog(request);
-        expect(large.status).toBe('available');
-        if (large.status !== 'available') {
-            throw new Error('matching daemon log was unavailable');
-        }
-        expect(Buffer.from(large.base64, 'base64')).toHaveLength(65536);
-        expect(large.omittedBytes).toBe(4464);
+    it('returns generic observations without GitAI metadata when writer identity is missing', () => {
+        const observation = runCheckpointSample(process.pid, null, '', undefined);
+        expect(observation.identityMatches).toBe(false);
+        expect(observation.queueSnapshots).toHaveLength(2);
+        expect(observation.sample).toBeNull();
+        expect(observation.socketHolderIdentities).toEqual([]);
+        expect(observation).not.toHaveProperty('daemonLog');
+        expect(observation).not.toHaveProperty('receiver');
+    });
+    it('bounds writer sample payloads and reports omitted bytes', () => {
         const stack = checkpointSamplePayload('a'.repeat(70000));
         expect(stack.sampleOmittedBytes).toBe(4464);
-        expect(Buffer.byteLength(JSON.stringify({ stack, large }))).toBeLessThan(256 * 1024);
-        expect(checkpointDaemonLog({ ...request, expectedSocket: '/different.sock' }).status).toBe('unavailable');
-        expect(checkpointDaemonLog({ ...request, peerRow: peer.replace('git-ai:123', 'git-ai:124') }).status).toBe(
-            'unavailable'
-        );
-        expect(checkpointDaemonLog({ ...request, identity: () => `502 ${start}` }).status).toBe('unavailable');
-        expect(checkpointDaemonLog({ ...request, identity: () => '501 Thu Nov 12 14:31:19 2026' }).status).toBe(
-            'unavailable'
-        );
-        let identityCalls = 0;
-        const changing = checkpointDaemonLog({
-            ...request,
-            identity: () => (++identityCalls === 1 ? `501 ${start}` : null),
+        expect(stack.sample).not.toBeNull();
+        expect(Buffer.from(stack.sample ?? '', 'base64')).toHaveLength(65536);
+        expect(checkpointSamplePayload(null)).toEqual({
+            sample: null,
+            sampleEncoding: 'base64',
+            sampleOmittedBytes: null,
         });
-        expect(changing.status).toBe('unavailable');
     });
     it('selects mount options only for the exact filesystem and mountpoint reported by df', () => {
         const df = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/disk3s1 1000 100 900 10% /work';
@@ -506,7 +470,7 @@ exit 23
     });
     it('selects only the named socket and the exact connected writer pair', () => {
         const header = 'Address Type Recv-Q Send-Q Inode Conn Refs Nextref rxbytes txbytes rhiwat shiwat process:pid';
-        const peer = 'abc stream 2 3 0 def 0 0 10 20 100 100 git-ai:222 /tmp/trace.sock';
+        const peer = 'abc stream 2 3 0 def 0 0 10 20 100 100 receiver:222 /tmp/trace.sock';
         const writer = 'def stream 4 5 0 abc 0 0 20 10 100 100 git:123';
         const unrelated = 'xxx stream 0 0 0 yyy 0 0 0 0 100 100 git:999 /tmp/private';
         expect(checkpointSocketRows([header, peer, writer, unrelated].join('\n'), '/tmp/trace.sock', 123)).toEqual([

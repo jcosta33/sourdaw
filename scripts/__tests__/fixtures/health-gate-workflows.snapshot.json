@@ -1263,6 +1263,13 @@
             "run": "cargo test --package daw-core --package daw-dsp --package daw-engine --all-features"
           },
           {
+            "name": "Lint the native crate",
+            "env": {
+              "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
+            },
+            "run": "cargo clippy --package sourdaw-native --all-targets"
+          },
+          {
             "name": "Test the native crate",
             "env": {
               "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
@@ -3286,6 +3293,10 @@
           {
             "name": "Test the audio crates",
             "run": "cargo test --package daw-core --package daw-dsp --package daw-engine --all-features"
+          },
+          {
+            "name": "Lint the native crate",
+            "run": "cargo clippy --package sourdaw-native --all-targets"
           },
           {
             "name": "Test the native crate",

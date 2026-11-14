@@ -91,3 +91,12 @@ Report the concrete break or none.
     "retains a genuine in-budget control and projects only the %s receipt copy" and "publishes complete
     semantic intake and safe reads before restoring exact effectful contracts after success" are partial
     coverage: none asserts the compacted-carrier input, so add one.
+11. **Measured holds carry their metric's tolerance (#6491, introduced by #6311 on #5852's zero-tolerance
+    recipe pin).** Drive a recipe hold on a continuous metric whose preview moves by rounding (the
+    low-frequency side share 0 to 3.99e-10 through a crossover filter) and one just past its tolerance,
+    in both directions. Admission must admit the first and block the others as out of tolerance, naming
+    the metric, figures, movement and tolerance. Mutate by compiling the hold at `tolerance: 0`, or by
+    reverting the admission equality to `=== 0`: the rounding case in
+    `src/modules/AiRuntime/useCases/__tests__/recipeHoldTolerance.spec.ts` must go red. Also check that
+    every route compiling a goal of that source reads the same table (`readRecipeExpectationTolerance`),
+    and that a hold on a metric with no entry is refused or unsupported, never zero.

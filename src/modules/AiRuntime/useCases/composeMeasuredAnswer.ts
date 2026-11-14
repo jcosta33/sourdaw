@@ -553,6 +553,9 @@ function coversInterpretedTargets(statements: AnswerStatement[], authority: Answ
                     targets.add(reference.targetId);
                 }
                 break;
+            default:
+                // Only measured statements can cover a measured target.
+                break;
         }
     }
     return interpretedTargetIds(authority).every((id) => targets.has(id));

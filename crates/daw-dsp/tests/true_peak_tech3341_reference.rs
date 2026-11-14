@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::proof::true_peak::TruePeakUpsampler;
 
 const SAMPLE_RATE: f64 = 48_000.0;

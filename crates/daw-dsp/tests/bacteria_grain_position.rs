@@ -17,6 +17,8 @@
 //! That layer is the one that can see a **one-sample** error; the windowed
 //! envelope below cannot, and the mutation table in the PR shows the split.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::bacteria::engine::BacteriaEngine;
 
 /// RMS window, in samples at 48 kHz. One millisecond — short enough that the

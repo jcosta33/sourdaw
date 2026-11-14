@@ -23,9 +23,11 @@ import {
     commitUndoEntry,
     createUndoEntry,
     isAppActionCommittedError,
+    isAppActionConflictError,
     executeAppAction,
     executeAppActionBatch,
     executeUserAppAction,
+    getExecutableCommandRegistrations,
     productionBriefAdmissionPort,
     reconcileSessionUndoForProject,
     registerProductionCommandHandlers,
@@ -58,8 +60,17 @@ import {
     setupProjectionBridge,
     subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
-import { decodeMidiClipDataSnapshots, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
+import {
+    assignGrooveTemplate,
+    createGrooveTemplate,
+    decodeMidiClipDataSnapshots,
+    deleteGrooveTemplate,
+    getMidiGrooveHandlers,
+    getGrooveExtractionActionErrorCode,
+    getMidiNoteTransformHandlers,
+    setNotesForClip,
+} from '#/modules/MIDI/useCases';
 import { getProjectHandlers, productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
@@ -241,6 +252,7 @@ function hydrateProductionContracts(deferSessionRestore = false): void {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getMidiGrooveHandlers(),
             getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),
@@ -1575,6 +1587,360 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             reloadSavedProject();
             await redo();
             expect(trackStore.value?.tracks[0]?.clips).toEqual(stripped);
+        });
+
+        it('keeps an agent-compiled strip silence, and the older entry behind it, across a binary reload', async () => {
+            const source: Clip = {
+                ...createClipFixture('clip-a', 0, 8),
+                type: 'audio',
+                audioBufferId: 'source-buffer',
+                audioOffsetSeconds: 0,
+            };
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'audio', name: 'Vox', clips: [source] })],
+                selectedTrackId: TRACK_ID,
+                ghostClips: [],
+            });
+            const channelData = new Float32Array(4 * 48000);
+            channelData.fill(0.5, 0.5 * 48000, 48000);
+            channelData.fill(0.5, 2 * 48000, 3 * 48000);
+            vi.spyOn(audioBufferCache, 'get').mockReturnValue({
+                getChannelData: () => channelData,
+                length: channelData.length,
+                numberOfChannels: 1,
+                sampleRate: 48000,
+                duration: channelData.length / 48000,
+                copyFromChannel: () => undefined,
+                copyToChannel: () => undefined,
+            });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            const before = structuredClone(trackStore.value?.tracks[0]?.clips);
+
+            await executeAppAction({ type: 'renameTrack', payload: { trackId: TRACK_ID, name: 'Lead Vox' } });
+            const registration = getExecutableCommandRegistrations().find(
+                (candidate) => candidate.actionType === 'stripSilence'
+            );
+            if (registration?.materializeCommandArguments === undefined) {
+                throw new Error('stripSilence must be a registered command that materializes its plan');
+            }
+            const compiled: AppAction = {
+                type: 'stripSilence',
+                payload: { clipId: 'clip-a', minDuration: 0.1 },
+            };
+            registration.materializeCommandArguments(compiled);
+            expect(registration.materializedArgumentsValidator?.(compiled.payload)).toBe(true);
+
+            await executeAppActionBatch([compiled], { groupId: 'agent-strip-silence' });
+            const stripped = structuredClone(trackStore.value?.tracks[0]?.clips);
+            expect(stripped).toHaveLength(2);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+            );
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(trackStore.value?.tracks[0]?.clips).toEqual(before);
+            expect((await undo()).headConsumed).toBe(true);
+            expect(trackStore.value?.tracks[0]?.name).toBe('Vox');
+
+            reloadSavedProject();
+            await redo();
+            await redo();
+            expect(trackStore.value?.tracks[0]?.name).toBe('Lead Vox');
+            expect(trackStore.value?.tracks[0]?.clips).toEqual(stripped);
+        });
+
+        function seedStripSource(locked: boolean): void {
+            const source: Clip = {
+                ...createClipFixture('clip-a', 0, 8),
+                type: 'audio',
+                audioBufferId: 'source-buffer',
+                audioOffsetSeconds: 0,
+                locked,
+            };
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'audio', name: 'Vox', clips: [source] })],
+                selectedTrackId: TRACK_ID,
+                ghostClips: [],
+            });
+            const channelData = new Float32Array(4 * 48000);
+            channelData.fill(0.5, 0.5 * 48000, 48000);
+            channelData.fill(0.5, 2 * 48000, 3 * 48000);
+            vi.spyOn(audioBufferCache, 'get').mockReturnValue({
+                getChannelData: () => channelData,
+                length: channelData.length,
+                numberOfChannels: 1,
+                sampleRate: 48000,
+                duration: channelData.length / 48000,
+                copyFromChannel: () => undefined,
+                copyToChannel: () => undefined,
+            });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+        }
+
+        it('refuses to strip a locked clip, writing nothing', async () => {
+            seedStripSource(true);
+            const before = structuredClone(trackStore.value?.tracks[0]?.clips);
+
+            await expect(
+                executeAppAction({ type: 'stripSilence', payload: { clipId: 'clip-a', minDuration: 0.1 } })
+            ).rejects.toThrow(/The clip is locked/);
+
+            expect(trackStore.value?.tracks[0]?.clips).toEqual(before);
+            expect(undoStore.value?.past).toEqual([]);
+        });
+
+        it('refuses a lock and a strip of the same clip in one batch, writing nothing', async () => {
+            seedStripSource(false);
+            const before = structuredClone(trackStore.value?.tracks[0]?.clips);
+            const compiled: AppAction = { type: 'stripSilence', payload: { clipId: 'clip-a', minDuration: 0.1 } };
+            getExecutableCommandRegistrations()
+                .find((candidate) => candidate.actionType === 'stripSilence')
+                ?.materializeCommandArguments?.(compiled);
+
+            const result = await executeAppActionBatch(
+                [{ type: 'lockClip', payload: { clipId: 'clip-a', locked: true } }, compiled],
+                { groupId: 'agent-lock-then-strip' }
+            );
+
+            expect(result).toMatchObject({ status: 'rejected' });
+            expect(trackStore.value?.tracks[0]?.clips).toEqual(before);
+            expect(undoStore.value?.past).toEqual([]);
+        });
+
+        it('refuses a compiled strip of a clip locked between proposal and approval, writing nothing', async () => {
+            seedStripSource(false);
+            const registration = getExecutableCommandRegistrations().find(
+                (candidate) => candidate.actionType === 'stripSilence'
+            );
+            const compiled: AppAction = { type: 'stripSilence', payload: { clipId: 'clip-a', minDuration: 0.1 } };
+            registration?.materializeCommandArguments?.(compiled);
+            expect(registration?.materializedArgumentsValidator?.(compiled.payload)).toBe(true);
+            await executeAppAction({ type: 'lockClip', payload: { clipId: 'clip-a', locked: true } });
+            const locked = structuredClone(trackStore.value?.tracks[0]?.clips);
+
+            const result = await executeAppActionBatch([compiled], { groupId: 'agent-strip-after-lock' });
+
+            expect(result).toMatchObject({ status: 'conflicted' });
+            expect(JSON.stringify(result)).toMatch(/The clip is locked/);
+            expect(trackStore.value?.tracks[0]?.clips).toEqual(locked);
+            expect(undoStore.value?.past).toHaveLength(1);
+        });
+
+        it('refuses to redo a strip once its clip was locked, keeping the entry redoable', async () => {
+            seedStripSource(false);
+            await executeAppAction({ type: 'stripSilence', payload: { clipId: 'clip-a', minDuration: 0.1 } });
+            expect((await undo()).headConsumed).toBe(true);
+            // A collaborator locks the clip; that edit is not on this session's undo stack.
+            await executeAppAction(
+                { type: 'lockClip', payload: { clipId: 'clip-a', locked: true } },
+                { skipUndo: true }
+            );
+            const locked = structuredClone(trackStore.value?.tracks[0]?.clips);
+            const future = structuredClone(undoStore.value?.future);
+
+            await redo();
+
+            expect(trackStore.value?.tracks[0]?.clips).toEqual(locked);
+            expect(undoStore.value?.future).toEqual(future);
+        });
+    });
+
+    describe('groove extraction replay', () => {
+        function extractedTemplates() {
+            return (grooveTemplateStore.value?.templates ?? []).filter(
+                (template) => template.provenance.type === 'midi-clip' && template.provenance.sourceId === 'clip-a'
+            );
+        }
+
+        async function extractGrooveAsAgent(): Promise<void> {
+            midiStore.set({
+                probabilitySeed: 1,
+                notesByClipId: {
+                    'clip-a': [{ id: 'late-note', pitch: 60, startBeat: 0.02, duration: 1, velocity: 96 }],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
+            flushAutomergeStorageWrites();
+            const registration = getExecutableCommandRegistrations().find(
+                (candidate) => candidate.actionType === 'extractGroove'
+            );
+            if (registration?.materializeCommandArguments === undefined) {
+                throw new Error('extractGroove must be a registered command that pins its template');
+            }
+            const compiled: AppAction = { type: 'extractGroove', payload: { clipId: 'clip-a' } };
+            registration.materializeCommandArguments(compiled);
+            expect(registration.materializedArgumentsValidator?.(compiled.payload)).toBe(true);
+            await executeAppActionBatch([compiled], { groupId: 'agent-extract-groove' });
+        }
+
+        it('keeps an agent-compiled extraction, and the older entry behind it, across a binary reload', async () => {
+            await executeAppAction({ type: 'renameTrack', payload: { trackId: TRACK_ID, name: 'Lead Keys' } });
+            await extractGrooveAsAgent();
+            const extracted = structuredClone(extractedTemplates());
+            expect(extracted).toHaveLength(1);
+            expect(extracted[0]?.name).toContain('Clip clip-a');
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+            );
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(extractedTemplates()).toEqual([]);
+            expect((await undo()).headConsumed).toBe(true);
+            expect(trackStore.value?.tracks[0]?.name).toBe('Keys');
+
+            reloadSavedProject();
+            await redo();
+            await redo();
+            expect(trackStore.value?.tracks[0]?.name).toBe('Lead Keys');
+            expect(extractedTemplates()).toEqual(extracted);
+        });
+
+        it('refuses to undo an extraction whose template a later assignment uses, keeping both', async () => {
+            await extractGrooveAsAgent();
+            const [template] = extractedTemplates();
+            if (template === undefined) {
+                throw new Error('Expected the extracted template');
+            }
+            // A collaborator assigns the new template; that edit is not on this session's undo stack.
+            expect(
+                assignGrooveTemplate({ consumerType: 'clip', consumerId: 'clip-b', templateId: template.id, amount: 1 })
+                    .ok
+            ).toBe(true);
+            flushAutomergeStorageWrites();
+            const assignments = structuredClone(grooveTemplateStore.value?.assignments);
+
+            reloadSavedProject();
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect((await undo()).headConsumed).toBe(false);
+            expect(extractedTemplates()).toEqual([template]);
+            expect(grooveTemplateStore.value?.assignments).toEqual(assignments);
+            expect(undoStore.value?.past).toHaveLength(1);
+        });
+
+        it.each([
+            ['live', false],
+            ['after a binary reload', true],
+        ])(
+            'consumes the undo of an extraction whose template a collaborator already deleted (%s)',
+            async (_case, reload) => {
+                await executeAppAction({ type: 'renameTrack', payload: { trackId: TRACK_ID, name: 'Lead Keys' } });
+                await extractGrooveAsAgent();
+                const [template] = extractedTemplates();
+                if (template === undefined) {
+                    throw new Error('Expected the extracted template');
+                }
+                // A collaborator deletes the new template; that edit is not on this session's undo stack.
+                expect(deleteGrooveTemplate(template.id)).not.toBeNull();
+                flushAutomergeStorageWrites();
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+                );
+                if (reload) {
+                    reloadSavedProject();
+                }
+
+                expect((await undo()).headConsumed).toBe(true);
+                expect(extractedTemplates()).toEqual([]);
+                expect(undoStore.value?.past).toHaveLength(1);
+                expect((await undo()).headConsumed).toBe(true);
+                expect(trackStore.value?.tracks[0]?.name).toBe('Keys');
+            }
+        );
+
+        it('refuses to redo a pinned extraction once the clip notes changed, keeping both stacks', async () => {
+            await extractGrooveAsAgent();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(extractedTemplates()).toEqual([]);
+            // A collaborator moves the note the extraction read.
+            setNotesForClip('clip-a', [{ id: 'late-note', pitch: 60, startBeat: 0.04, duration: 1, velocity: 96 }]);
+            flushAutomergeStorageWrites();
+            const future = structuredClone(undoStore.value?.future);
+
+            await redo();
+
+            expect(extractedTemplates()).toEqual([]);
+            expect(undoStore.value?.past).toEqual([]);
+            expect(undoStore.value?.future).toEqual(future);
+        });
+
+        it('refuses to redo an extraction whose template id now holds other content, keeping both stacks', async () => {
+            await extractGrooveAsAgent();
+            const [template] = extractedTemplates();
+            if (template === undefined) {
+                throw new Error('Expected the extracted template');
+            }
+            expect((await undo()).headConsumed).toBe(true);
+            expect(extractedTemplates()).toEqual([]);
+            // A collaborator extracts the same unchanged notes under another name, so the id is taken.
+            const collaboratorTemplate = { ...template, name: 'Collaborator groove' };
+            expect(createGrooveTemplate(collaboratorTemplate).status).not.toBe('no-write');
+            flushAutomergeStorageWrites();
+            const future = structuredClone(undoStore.value?.future);
+
+            await redo();
+
+            expect(extractedTemplates()).toEqual([collaboratorTemplate]);
+            expect(undoStore.value?.past).toEqual([]);
+            expect(undoStore.value?.future).toEqual(future);
+        });
+
+        it('reports a template identity conflict as its code, writing nothing', async () => {
+            await extractGrooveAsAgent();
+            const [template] = extractedTemplates();
+            if (template === undefined) {
+                throw new Error('Expected the extracted template');
+            }
+            expect((await undo()).headConsumed).toBe(true);
+            createGrooveTemplate({ ...template, name: 'Collaborator groove' });
+            flushAutomergeStorageWrites();
+
+            const refusal = await executeAppAction({ type: 'extractGroove', payload: { clipId: 'clip-a' } }).then(
+                () => null,
+                (error: unknown) => error
+            );
+
+            if (!isAppActionConflictError(refusal)) {
+                throw new Error('Expected the extraction to be refused as a conflict');
+            }
+            expect(getGrooveExtractionActionErrorCode(refusal.reason)).toBe('template-identity-conflict');
+            expect(extractedTemplates()).toEqual([{ ...template, name: 'Collaborator groove' }]);
+        });
+
+        it('reports a stale pinned extraction as its divergence code, writing nothing', async () => {
+            midiStore.set({
+                probabilitySeed: 1,
+                notesByClipId: {
+                    'clip-a': [{ id: 'late-note', pitch: 60, startBeat: 0.02, duration: 1, velocity: 96 }],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
+            flushAutomergeStorageWrites();
+            const pinned: AppAction = { type: 'extractGroove', payload: { clipId: 'clip-a' } };
+            getExecutableCommandRegistrations()
+                .find((candidate) => candidate.actionType === 'extractGroove')
+                ?.materializeCommandArguments?.(pinned);
+            setNotesForClip('clip-a', [{ id: 'late-note', pitch: 60, startBeat: 0.04, duration: 1, velocity: 96 }]);
+            flushAutomergeStorageWrites();
+
+            const refusal = await executeAppAction(pinned).then(
+                () => null,
+                (error: unknown) => error
+            );
+
+            if (!isAppActionConflictError(refusal)) {
+                throw new Error('Expected the extraction to be refused as a conflict');
+            }
+            expect(getGrooveExtractionActionErrorCode(refusal.reason)).toBe('source-revision-mismatch');
+            expect(extractedTemplates()).toEqual([]);
+            expect(undoStore.value?.past).toEqual([]);
         });
     });
 

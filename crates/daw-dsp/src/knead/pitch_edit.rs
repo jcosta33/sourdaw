@@ -291,7 +291,6 @@ pub fn render_pitch_commit(
     let cfg = PsolaConfig {
         sample_rate,
         max_semitones_transparent: 4.0,
-        ..PsolaConfig::default()
     };
 
     let mut out_samples = vec![0.0_f32; samples.len()];

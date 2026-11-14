@@ -10,20 +10,14 @@ import { describe, expect, it } from 'vitest';
 const TRACKED_IN_6486 = 'existing violations remain; promotion or baselining tracked in #6486';
 
 const ALLOWED_WARN_RULES: ReadonlyArray<readonly [entry: string, reason: string]> = [
-    ['root:no-constant-condition', TRACKED_IN_6486],
     ['root:typescript/no-unnecessary-condition', TRACKED_IN_6486],
     ['root:typescript/prefer-promise-reject-errors', TRACKED_IN_6486],
     ['root:typescript/require-await', TRACKED_IN_6486],
     ['root:typescript/restrict-template-expressions', TRACKED_IN_6486],
-    ['root:typescript/switch-exhaustiveness-check', TRACKED_IN_6486],
-    ['root:unicorn/prefer-dom-node-text-content', TRACKED_IN_6486],
     ['root:promise/always-return', TRACKED_IN_6486],
-    ['root:promise/catch-or-return', TRACKED_IN_6486],
-    ['root:promise/no-nesting', TRACKED_IN_6486],
     ['root:jsx-a11y/click-events-have-key-events', TRACKED_IN_6486],
     ['root:jsx-a11y/label-has-associated-control', TRACKED_IN_6486],
     ['root:jsx-a11y/no-static-element-interactions', TRACKED_IN_6486],
-    ['root:jsx-a11y/role-supports-aria-props', TRACKED_IN_6486],
     ['src/**/useCases/**/*.ts:func-style', TRACKED_IN_6486],
     ['**/*.spec.{ts,tsx}:typescript/no-explicit-any', TRACKED_IN_6486],
     ['**/*.spec.{ts,tsx}:typescript/no-unsafe-argument', TRACKED_IN_6486],

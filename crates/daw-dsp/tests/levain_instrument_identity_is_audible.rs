@@ -13,6 +13,8 @@
 //! tests assert on the rendered signal rather than on a flag, so dropping the
 //! message again fails here instead of silently flattening every export.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::levain::LevainInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

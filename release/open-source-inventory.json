@@ -170,7 +170,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:34625023ef1971a807722658a25ff2509638d9b17d65bf1d8e850f5a138dfa96:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:a0ecef6506cc429cc95218c3ef86e6608b11bfaf9eea3f01831a6f3b02445407:release/dependency-license-proofs.json"
+                "sha256:592267203f726ef0698e6179d725fbe3f7ebd7492b0b895c3d7dee42c0f62755:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -822,7 +822,7 @@
                 "sha256:556d1e1b766aba32aa3ef0cadbbf45e6dabb321b2178b59988d60862a339cdf7:src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts",
                 "sha256:2eda85bf62b8b8b63bef3a86f7b10009ab0e4c6a1e17cac7e1897943d3ca1ca0:src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts",
                 "sha256:6c7d4d4b94518787ed0d28ccaef0e60019cd71c0305cc513e344fe049fc8a9b2:src/modules/BrowserAi/workers/modelStorageWorker.ts",
-                "sha256:c03d9cc5e52de843b6e2da16c13f68e2d1788d4e7f919e00f743efbffd5730cb:src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
+                "sha256:0dbd7b59f74ffaf300cb13539e275c563ae811c8c983778ec0a18a8d6f828e4e:src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
                 "sha256:c6df6f09c03d695c05eee4b411f46bfd5cd6d661415d0f51da293ee06000d6e6:src/infra/release/modelReleaseAdmission.ts",
                 "sha256:18b18d9f09369884d0a41b78fa584c04858c167e1738fe56f7cf524960511a8a:src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
                 "sha256:cf08e9ea6716c0a9f82b5f91f6ba7b370ac804d55f823cfe6fc140d03db816b2:src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
@@ -1223,14 +1223,14 @@
                 "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
             ],
             "digests": [
-                "tracked-set-sha256:42b498c3466fc5f939972bf046c39bbe147c45efeaf1fded4378ce7268a6ff6d:grand-boule-native-rust",
+                "tracked-set-sha256:256ab7b660aa577a416bca50523096298b8093bbc9b3d975131220533a092937:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:20bcf828794365a588f32d7e13808657502a13d0e8427a6543cf78c2cec789ce:grand-boule-discovery-catalog",
                 "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
                 "tracked-set-sha256:eaa809018aea8e96f598f3b55ad0711e475c6a79f06c87491af507ad88d346bd:grand-boule-live-runtime",
-                "tracked-set-sha256:16a3004282547e2c00be2b45e3a21b9b78d53fd615790560b7ffbd4f3eb0a7c7:grand-boule-project-state",
+                "tracked-set-sha256:a58aff32064c437e8d1b271a459930d1c289299a9ddc6a7b018cfd3c896bfb08:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:0dc1081cc976553c60bdfca0e2a17ff54d44e5f830825d9c0f0c0d66819ee95e:grand-boule-release-proof"
+                "tracked-set-sha256:595ff372d13747883ebfaa3428abc40d541aaeaa64909a363d2a35e84b2ce1c5:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1378,13 +1378,13 @@
                 "wasm-pack 0.15.1",
                 "wasm-bindgen 0.2.130",
                 "wasm-opt bundled-by-wasm-pack@0.15.1",
-                "daw-dsp sha256:196b1e386d9e94200056eb00c40e079974dde2382d995e789448c1ef97a6bf4d",
-                "daw-wasm-decoder sha256:e6fb1f3b2796b0dd2b66fbffc9ce1e14769859e07dd1fd145ea2fbb23cea83b1",
-                "proof-chamber sha256:929525974036b4805e38589140a67bbb067dc4ea0dbcbb1cb72c0931f3e905de",
-                "scoring sha256:ede94eb496e4a8249390a79d61bc4bea0c8bacafbd81247c69c0ba57d7c35a0b"
+                "daw-dsp sha256:927840a5161dc1b38caa5b1afb7ac938ab8ffc71fa552770d7ebd11414d91c05",
+                "daw-wasm-decoder sha256:5d2caa4f7fe69567038fedd20e423825260d3c8a146305f683511a7b989fc996",
+                "proof-chamber sha256:10a96efa87684cfc3999799f8d959e6b085dc587477e75e56360d8243fa027d9",
+                "scoring sha256:db8ed1766d0fadde4f9ae8006c0ade9188611227a7f6523262a0bf379d58f2c9"
             ],
             "digests": [
-                "sha256:5adf6b82644e9c7f2d735401ef6c81f62c6aeab94693bc3d71940021e1f99618:public/wasm/manifest.json"
+                "sha256:5949d93eb97f2c47b5cdd9475454a135c0cb4778ceef8c3d779842123fdd232b:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1906,7 +1906,7 @@
         },
         {
             "path": "Cargo.toml",
-            "sha256": "cbcef1d177ea9d9452c8ad8597290fc1f5ab2c1d0f5d41f7df4b43486e4a59a3"
+            "sha256": "72e703a4b8c90e8c7e40e31a5c9c6d664cd4801b6b01a48f2225f0150a2cee0e"
         },
         {
             "path": "Cargo.lock",
@@ -1918,7 +1918,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "5adf6b82644e9c7f2d735401ef6c81f62c6aeab94693bc3d71940021e1f99618"
+            "sha256": "5949d93eb97f2c47b5cdd9475454a135c0cb4778ceef8c3d779842123fdd232b"
         }
     ],
     "externalReferences": [

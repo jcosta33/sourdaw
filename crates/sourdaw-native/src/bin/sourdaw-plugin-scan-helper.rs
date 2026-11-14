@@ -36,6 +36,11 @@
 //! asked to scan anything: it prints why it exists to stderr and exits 2
 //! rather than silently doing nothing.
 
+#![cfg_attr(
+    test,
+    allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
+)]
+
 fn main() {
     match sourdaw_native::run_plugin_scan_worker_from_process_args() {
         Some(exit_code) => std::process::exit(exit_code),

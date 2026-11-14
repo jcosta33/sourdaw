@@ -38,3 +38,6 @@ js-sys = "0.3"
 # Scoped to wasm so the native build's dependency graph and panic behaviour are
 # unaffected.
 console_error_panic_hook = "0.1"
+
+[lints]
+workspace = true

@@ -1,7 +1,9 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
+import { getSupportedGrooveSubdivisions } from '#/modules/MIDI/useCases';
 import { FADER_MAX_GAIN, VCA_MAX_GAIN } from '#/utils/audioLevelLaw';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { PAYLOAD_VALIDATORS } from '../validateActionPayload';
@@ -892,6 +894,33 @@ const guardedPayloadContractCases = [
             { clipId: 'clip-1', gridSize: 0.25, plan: {} },
         ],
     }),
+    guardedPayloadCase({
+        actionType: 'stripSilence',
+        validPayload: { clipId: 'clip-1', threshold: -50, minDuration: 0.25 },
+        invalidPayloads: [
+            { clipId: '' },
+            { clipId: 'clip-1', threshold: 3 },
+            { clipId: 'clip-1', threshold: -120 },
+            { clipId: 'clip-1', threshold: Number.NaN },
+            { clipId: 'clip-1', minDuration: 0 },
+            { clipId: 'clip-1', minDuration: 32 },
+            { clipId: 'clip-1', expected: {} },
+            { clipId: 'clip-1', replacement: {} },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'extractGroove',
+        validPayload: { clipId: 'clip-1', subdivision: '1/16T' },
+        invalidPayloads: [
+            { clipId: '' },
+            { clipId: 'clip-1', subdivision: '1/4' },
+            { clipId: 'clip-1', subdivision: 16 },
+            { clipId: 'clip-1', templateId: 'groove-1' },
+            { clipId: 'clip-1', sourceName: 'Lead' },
+            { clipId: 'clip-1', proposal: {} },
+            { clipId: 'clip-1', sourceRevision: '[]' },
+        ],
+    }),
 ] as const;
 
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
@@ -1059,6 +1088,52 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         type CreateBusHasIdentity = 'busId' extends keyof CreateBusPayload ? true : false;
 
         expectTypeOf<CreateBusHasIdentity>().toEqualTypeOf<false>();
+    });
+
+    describe('stripSilence bounds', () => {
+        it.each([
+            ['threshold at the floor', { clipId: 'clip-1', threshold: -96 }],
+            ['threshold at the ceiling', { clipId: 'clip-1', threshold: 0 }],
+            ['minDuration at the ceiling', { clipId: 'clip-1', minDuration: 16 }],
+        ])('accepts %s', (_label, payload) => {
+            const guard = PAYLOAD_VALIDATORS.stripSilence;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+            expect(guard(payload)).toBe(true);
+        });
+    });
+
+    describe('extractGroove subdivisions', () => {
+        function getDescriptorSubdivisions(): unknown {
+            const schema = getExecutableAppActionToolSchemas().find(
+                (candidate) => candidate.function.name === 'extractGroove'
+            )?.function.parameters;
+            const properties: unknown = schema?.properties;
+            const subdivision = isRecord(properties) ? properties.subdivision : undefined;
+            return isRecord(subdivision) ? subdivision.enum : undefined;
+        }
+
+        it('publishes exactly the subdivisions the groove engine supports', () => {
+            expect(getDescriptorSubdivisions()).toEqual(getSupportedGrooveSubdivisions());
+        });
+
+        it('accepts exactly the supported subdivisions at runtime', () => {
+            const guard = PAYLOAD_VALIDATORS.extractGroove;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+            const supported = getSupportedGrooveSubdivisions();
+            for (const subdivision of supported) {
+                expect(guard({ clipId: 'clip-1', subdivision }), subdivision).toBe(true);
+            }
+            for (const subdivision of ['1/4', '1/8T', '1/64', '1/32T', '']) {
+                expect(supported).not.toContain(subdivision);
+                expect(guard({ clipId: 'clip-1', subdivision }), subdivision).toBe(false);
+            }
+        });
     });
 
     describe('removeTrack', () => {

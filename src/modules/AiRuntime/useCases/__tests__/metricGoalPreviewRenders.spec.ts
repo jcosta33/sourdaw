@@ -16,14 +16,12 @@ import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
 import { digestCommandBatchContent } from '../digestCommandBatchContent';
 import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
-import * as analysisMeasure from '../executeAnalysisMeasure';
 import { getProjectContext } from '../getProjectContext';
 import { type MetricGoal, type MetricGoalState } from '../metricGoalContractTypes';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { readMeasurementRenderedSeconds } from '../readMeasurementRenderedSeconds';
 
-import { isRecord } from './highLevelIntentWorkflowFixture';
 import { configureMetricGoalProject, metricGoalAudioBuffer, resetMetricGoalProject } from './metricGoalWorkflowFixture';
 
 registerDeviceEnginePorts();
@@ -204,7 +202,6 @@ function compileRecipeCard(trackIds: readonly string[], vocalCutDb: number) {
 }
 
 async function previewCard(compiled: CompiledCard, state: MetricGoalState) {
-    const measure = vi.spyOn(analysisMeasure, 'executeAnalysisMeasure');
     const refreshed = await prepareMetricGoalPreview({
         state,
         commandBatch: compiled.commandBatch,
@@ -217,29 +214,27 @@ async function previewCard(compiled: CompiledCard, state: MetricGoalState) {
         commandBatch: compiled.commandBatch,
         currentRevision: captureProjectRevision(),
     });
-    const requests = measure.mock.calls.map(([input]) => readMeasureRequest(input.call.arguments));
+    const requests = (refreshed.state?.proofs ?? []).map((proof) => readMeasureRequest(proof, state));
     return { evaluation, receipts: refreshed.receipts, requests };
 }
 
-/** What one preview measurement asked for: its prefix length, subjects, metrics and range end. */
-function readMeasureRequest(args: unknown) {
-    if (
-        !isRecord(args) ||
-        !isRecord(args.scope) ||
-        !isRecord(args.range) ||
-        !isRecord(args.proposal) ||
-        !Array.isArray(args.proposal.items) ||
-        !Array.isArray(args.metrics) ||
-        typeof args.range.endBeat !== 'number'
-    ) {
-        throw new TypeError('Expected a preview measurement call.');
+/**
+ * What one preview measurement asked for, read from the proof it left: the prefix it measured (its
+ * step count, the whole batch being every step), its subjects, metrics and range end.
+ */
+function readMeasureRequest(proof: MetricGoalState['proofs'][number], state: MetricGoalState) {
+    const { preview } = proof;
+    const step = state.steps.findIndex((candidate) => candidate.recipePrefixHash === preview.batchContentHash);
+    if (step < 0) {
+        throw new TypeError('Expected a proof measured at one of the card prefixes.');
     }
-    const ids = Array.isArray(args.scope.ids) ? args.scope.ids : [args.scope.kind];
+    const ids =
+        preview.scope.kind === 'tracks' || preview.scope.kind === 'buses' ? preview.scope.ids : [preview.scope.kind];
     return {
-        prefix: args.proposal.items.length,
-        ids: ids.map(String).sort(),
-        metrics: args.metrics.map(String).sort(),
-        endBeat: args.range.endBeat,
+        prefix: step + 1,
+        ids: [...ids].sort(),
+        metrics: Object.keys(preview.targets[0]?.baseline ?? {}).sort(),
+        endBeat: preview.range.endBeat,
     };
 }
 
@@ -297,7 +292,9 @@ describe('a metric-goal preview of a card of recipe steps over eight tracks', { 
         // Seven step prefixes measure the step's own track (its after) and the next step's (its before);
         // the whole batch measures every track, in shared chunks of at most four.
         expect(requests).toHaveLength(9);
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(44);
+        // Each track renders once live and once in each prefix it is read at: the first and last tracks
+        // at two prefixes, the six between at three.
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3 + 6 * 4 + 3);
         expect(receipts).toHaveLength(9);
         expect(receipts.some((receipt) => receipt.error?.code === 'measurement-budget-exhausted')).toBe(false);
         expect(receipts.every((receipt) => receipt.turn === 0 && receipt.origin === 'application-verification')).toBe(

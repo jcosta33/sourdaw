@@ -154,6 +154,7 @@ const mocks = vi.hoisted(() => ({
     setActiveAborter: vi.fn(),
     setChatGenerating: vi.fn(),
     streamCloudChatCompletion: vi.fn(),
+    removeChatMessage: vi.fn(),
     updateChatMessage: vi.fn(),
 }));
 
@@ -230,6 +231,7 @@ vi.mock('../../stores/aiBackendPreferenceStore', () => ({
 vi.mock('../../stores/chatStore', () => ({
     appendChatMessage: mocks.appendChatMessage,
     chatStore: mocks.chatState,
+    removeChatMessage: mocks.removeChatMessage,
     setActiveAborter: mocks.setActiveAborter,
     setChatGenerating: mocks.setChatGenerating,
     updateChatMessage: mocks.updateChatMessage,

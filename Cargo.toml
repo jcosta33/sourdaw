@@ -108,6 +108,62 @@ test-log-macros = { path = "vendor/rust/test-log-macros-0.2.21" }
 hexane = { path = "vendor/rust/hexane-0.2.1" }
 automerge = { path = "vendor/rust/automerge-0.12.0" }
 
+# Workspace lint policy. Every crate opts in with `[lints] workspace = true`.
+# A lint with zero violations is denied. PR clippy enforces it on host-target
+# code only: Linux for every crate but sourdaw-native (health-gates-rust.sh),
+# macOS for sourdaw-native (native-macos). Windows-only and wasm32-only code is
+# not clippy-linted yet (#6528). The `warn` entries are pending cleanup tracked
+# in #6525: shrink that list as sites are fixed, never grow it.
+[workspace.lints.rust]
+unused = { level = "deny", priority = -1 }
+nonstandard_style = { level = "deny", priority = -1 }
+future_incompatible = { level = "deny", priority = -1 }
+dead_code = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+unused_assignments = "warn"
+unused_mut = "warn"
+unused_variables = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+dbg_macro = "deny"
+get_unwrap = "deny"
+todo = "deny"
+unimplemented = "deny"
+unwrap_used = "deny"
+await_holding_lock = "warn"
+bool_assert_comparison = "warn"
+chunks_exact_to_as_chunks = "warn"
+default_constructed_unit_structs = "warn"
+derivable_impls = "warn"
+empty_line_after_doc_comments = "warn"
+excessive_precision = "warn"
+field_reassign_with_default = "warn"
+if_same_then_else = "warn"
+int_plus_one = "warn"
+large_enum_variant = "warn"
+len_without_is_empty = "warn"
+manual_clamp = "warn"
+manual_div_ceil = "warn"
+manual_is_multiple_of = "warn"
+manual_range_contains = "warn"
+manual_repeat_n = "warn"
+needless_borrows_for_generic_args = "warn"
+needless_lifetimes = "warn"
+needless_range_loop = "warn"
+neg_cmp_op_on_partial_ord = "warn"
+new_ret_no_self = "warn"
+new_without_default = "warn"
+panic = "warn"
+result_large_err = "warn"
+result_unit_err = "warn"
+should_implement_trait = "warn"
+too_many_arguments = "warn"
+type_complexity = "warn"
+unnecessary_cast = "warn"
+useless_conversion = "warn"
+vec_box = "warn"
+
 [profile.release]
 opt-level = 3
 lto = true

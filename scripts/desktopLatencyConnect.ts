@@ -550,7 +550,7 @@ async function driveToPlayingProject(
         try {
             await page.getByText(HARNESS_PLUGIN_NAME, { exact: true }).first().waitFor({ timeout: STEP_TIMEOUT_MS });
         } catch {
-            const panelText = await page.locator('[aria-label="Browser panel"]').innerText();
+            const panelText = (await page.locator('[aria-label="Browser panel"]').textContent()) ?? '';
             const collapsed = panelText.replaceAll(/\s+/g, ' ').trim().slice(0, 600);
             throw new Error(
                 `"${HARNESS_PLUGIN_NAME}" never appeared in the plugin list — browser panel showed: "${collapsed}"`

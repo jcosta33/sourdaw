@@ -189,9 +189,18 @@ export async function wait_for_console_marker(
     marker: string,
     timeoutMs: number
 ): Promise<void> {
+    await wait_for_console_marker_from(timeline, marker, timeoutMs, 0);
+}
+
+async function wait_for_console_marker_from(
+    timeline: FirstPaintTimeline,
+    marker: string,
+    timeoutMs: number,
+    firstEvent: number
+): Promise<void> {
     const deadline = performance.now() + timeoutMs;
     for (;;) {
-        if (firstMarkerAtMs(timeline, marker) !== null) {
+        if (timeline.events.slice(firstEvent).some((event) => event.text.includes(marker))) {
             return;
         }
         const remainingMs = deadline - performance.now();
@@ -202,4 +211,15 @@ export async function wait_for_console_marker(
         }
         await new Promise((resolve) => setTimeout(resolve, Math.min(remainingMs, 100)));
     }
+}
+
+export async function wait_for_console_marker_after(
+    timeline: FirstPaintTimeline,
+    marker: string,
+    timeoutMs: number,
+    navigate: () => Promise<unknown>
+): Promise<void> {
+    const firstNewEvent = timeline.events.length;
+    await navigate();
+    await wait_for_console_marker_from(timeline, marker, timeoutMs, firstNewEvent);
 }

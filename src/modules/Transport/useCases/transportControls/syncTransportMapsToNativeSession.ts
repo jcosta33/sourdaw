@@ -240,6 +240,9 @@ export function syncTransportMapsToNativeSession(): () => void {
                 // re-diff against whatever `lastSent` just settled to. See
                 // the module doc's "one round trip at a time" section.
                 attemptSend();
+            })
+            .catch((error: unknown) => {
+                logger.error(new Error('Native transport maps resend failed', { cause: error }));
             });
     }
 

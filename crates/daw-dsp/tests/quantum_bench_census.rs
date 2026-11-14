@@ -30,6 +30,8 @@
 //! names has moved on. Constructing the type is the one thing a row cannot fake
 //! and still be a measurement of that device.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -373,12 +375,11 @@ fn released_grand_boule_is_in_the_browser_wasm_bench() {
             "the browser Grand Boule measurement lacks executable exact-occupancy proof `{required}`"
         );
     }
-    for required in ["const REFERENCE_PROJECT_WORKER = [['grand_boule', 1]]"] {
-        assert!(
-            runner.contains(required),
-            "the browser WASM runner is missing Grand Boule Worker marker `{required}`"
-        );
-    }
+    let required = "const REFERENCE_PROJECT_WORKER = [['grand_boule', 1]]";
+    assert!(
+        runner.contains(required),
+        "the browser WASM runner is missing Grand Boule Worker marker `{required}`"
+    );
     assert!(
         processor.contains("const produced = device.render()"),
         "the browser WASM processor must render the selected Worker recipe in its timed path"

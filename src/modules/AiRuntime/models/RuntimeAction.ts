@@ -359,7 +359,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
     generateDrumPattern: ['style', 'trackId', 'bars', 'density'],
     generateMelody: ['style', 'key', 'scale', 'trackId', 'bars'],
     generateChordProgression: ['style', 'key', 'scale', 'trackId', 'bars', 'voicing'],
-    extractGroove: ['clipId'],
+    extractGroove: ['clipId', 'subdivision'],
     createCollabSession: ['name'],
     joinCollabSession: ['inviteString', 'peerName'],
     createVcaGroup: ['name', 'trackIds'],

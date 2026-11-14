@@ -13,6 +13,9 @@ export class AppActionCommittedError extends Error {
 }
 
 export class AppActionConflictError extends Error {
+    /** The handler's own refusal reason, so a caller can tell one conflict from another without reading the message. */
+    readonly reason: string | undefined;
+
     constructor(action_type: string, reason?: string) {
         super(
             reason === undefined
@@ -20,5 +23,6 @@ export class AppActionConflictError extends Error {
                 : `Action conflicts with current project state: ${action_type}: ${reason}`
         );
         this.name = 'AppActionConflictError';
+        this.reason = reason;
     }
 }

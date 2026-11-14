@@ -2,6 +2,8 @@
 //! write, and the control must change finite, audible PCM on its supported engine.
 //! These source tests require a fresh matching WASM build for the worklet probe.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use assert_no_alloc::{assert_no_alloc, AllocDisabler};
 use proof_chamber::ProofChamberInstance;
 

@@ -1,5 +1,8 @@
 //! Preservation contracts against pre-extraction source, not generated numerical goldens.
 //! Frozen sources identify their exact base.
+
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 #[path = "support/pitch_baseline/mod.rs"]
 mod baseline;
 

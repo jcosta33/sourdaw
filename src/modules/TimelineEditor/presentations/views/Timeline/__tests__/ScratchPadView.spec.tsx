@@ -16,6 +16,11 @@ const reorderScratchPadSection = vi.fn();
 const clearScratchPad = vi.fn();
 const captureArrangementToScratchPad = vi.fn();
 const commitScratchPadToArrangement = vi.fn();
+const executeUserAppAction = vi.fn();
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: (...args: unknown[]) => executeUserAppAction(...args),
+}));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     removeScratchPadSection: (...args: unknown[]) => removeScratchPadSection(...args),
@@ -43,10 +48,11 @@ describe('ScratchPadView', () => {
         expect(screen.queryByLabelText('Clear scratch pad')).not.toBeInTheDocument();
     });
 
-    it('calls captureArrangementToScratchPad when Capture is clicked', () => {
+    it('dispatches captureScratchPad through the command bus when Capture is clicked', () => {
         render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.click(screen.getByText('Capture'));
-        expect(captureArrangementToScratchPad).toHaveBeenCalledWith();
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'captureScratchPad' });
+        expect(captureArrangementToScratchPad).not.toHaveBeenCalled();
     });
 
     it('renders sections with their name and beat duration, using fallback color for the placeholder', () => {
@@ -62,13 +68,15 @@ describe('ScratchPadView', () => {
         expect(chorusBlock).toHaveStyle({ backgroundColor: 'oklch(0.55 0.12 10)' });
     });
 
-    it('calls commitScratchPadToArrangement and clearScratchPad from the header buttons', () => {
+    it('dispatches commitScratchPad and clearScratchPad through the command bus from the header buttons', () => {
         mockScratchPadState = { sections: [sectionA] };
         render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.click(screen.getByText('Apply'));
-        expect(commitScratchPadToArrangement).toHaveBeenCalledWith();
+        expect(executeUserAppAction).toHaveBeenLastCalledWith({ type: 'commitScratchPad' });
         fireEvent.click(screen.getByLabelText('Clear scratch pad'));
-        expect(clearScratchPad).toHaveBeenCalledWith();
+        expect(executeUserAppAction).toHaveBeenLastCalledWith({ type: 'clearScratchPad' });
+        expect(commitScratchPadToArrangement).not.toHaveBeenCalled();
+        expect(clearScratchPad).not.toHaveBeenCalled();
     });
 
     it('asks its owner to collapse and to expand instead of holding that state itself', () => {

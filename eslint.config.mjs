@@ -242,6 +242,17 @@ function bodyContainsAsyncOrFetch(body) {
 }
 
 /**
+ * @param {import('@typescript-eslint/utils').TSESTree.BlockStatement} body
+ * @returns {boolean}
+ */
+function bodyReturnsCleanup(body) {
+    // A state mirror needs no teardown, so an effect that returns a cleanup syncs something external.
+    return body.body.some(
+        (statement) => statement.type === AST_NODE_TYPES.ReturnStatement && statement.argument !== null
+    );
+}
+
+/**
  * @param {import('@typescript-eslint/utils').TSESTree.Node} body
  * @returns {boolean}
  */
@@ -1604,7 +1615,7 @@ const sourdawPlugin = {
                         if (!body || body.type !== AST_NODE_TYPES.BlockStatement) {
                             return;
                         }
-                        if (bodyContainsAsyncOrFetch(body)) {
+                        if (bodyContainsAsyncOrFetch(body) || bodyReturnsCleanup(body)) {
                             return;
                         }
                         if (!bodyLooksLikeDerivedStateEffect(body)) {
@@ -2810,11 +2821,13 @@ export default tseslint.config(
             '@eslint-react/jsx-no-comment-textnodes': 'error',
             '@eslint-react/jsx-no-leaked-dollar': 'error',
             '@eslint-react/jsx-no-leaked-semicolon': 'error',
+            '@eslint-react/naming-convention-id-name': 'error',
             '@eslint-react/no-children-count': 'error',
             '@eslint-react/no-children-for-each': 'error',
             '@eslint-react/no-children-map': 'error',
             '@eslint-react/no-children-only': 'error',
             '@eslint-react/no-children-to-array': 'error',
+            '@eslint-react/no-clone-element': 'error',
             '@eslint-react/no-context-provider': 'error',
             '@eslint-react/no-forward-ref': 'error',
             '@eslint-react/no-set-state-in-component-did-mount': 'error',
@@ -2822,13 +2835,17 @@ export default tseslint.config(
             '@eslint-react/no-set-state-in-component-will-update': 'error',
             '@eslint-react/no-unsafe-component-will-mount': 'error',
             '@eslint-react/no-unsafe-component-will-receive-props': 'error',
+            '@eslint-react/no-unnecessary-use-prefix': 'error',
             '@eslint-react/no-unsafe-component-will-update': 'error',
             '@eslint-react/no-unused-class-component-members': 'error',
+            '@eslint-react/no-use-context': 'error',
+            '@eslint-react/purity': 'error',
             '@eslint-react/web-api-no-leaked-event-listener': 'error',
             '@eslint-react/web-api-no-leaked-fetch': 'error',
             '@eslint-react/web-api-no-leaked-intersection-observer': 'error',
             '@eslint-react/web-api-no-leaked-interval': 'error',
             '@eslint-react/web-api-no-leaked-resize-observer': 'error',
+            '@eslint-react/web-api-no-leaked-timeout': 'error',
             'react-hooks/incompatible-library': 'error',
             'react-hooks/unsupported-syntax': 'error',
             '@tanstack/query/no-rest-destructuring': 'error',
@@ -2990,7 +3007,7 @@ export default tseslint.config(
                     },
                 },
             ],
-            'sourdaw/no-react-import-outside-ui': 'warn',
+            'sourdaw/no-react-import-outside-ui': 'error',
 
             // ── Promise rules retained in ESLint ─────────────────────────────
             // Oxlint's no-return-wrap also fires on non-promise callbacks
@@ -3142,13 +3159,13 @@ export default tseslint.config(
             // Naming conventions
             '@eslint-react/naming-convention-context-name': 'error',
 
-            // DAW UX allowances
-            'jsx-a11y-x/interactive-supports-focus': 'warn',
+            // Interactive roles must be focusable
+            'jsx-a11y-x/interactive-supports-focus': 'error',
 
             // React Compiler/purity allowances
             'react-hooks/refs': 'warn',
-            'react-hooks/purity': 'warn',
-            '@eslint-react/purity': 'warn',
+            'react-hooks/purity': 'error',
+            '@eslint-react/purity': 'error',
             'react-hooks/set-state-in-effect': 'warn',
             '@eslint-react/set-state-in-effect': 'warn',
             '@eslint-react/unsupported-syntax': 'error',
@@ -3158,7 +3175,7 @@ export default tseslint.config(
 
             // Local architecture rules
             'sourdaw/no-useeffect-fetching': 'error',
-            'sourdaw/no-useeffect-derived-state': 'warn',
+            'sourdaw/no-useeffect-derived-state': 'error',
             'sourdaw/no-manual-memoization': 'error',
 
             'no-restricted-syntax': ['error', ...reactDefaultImportRestrictions],

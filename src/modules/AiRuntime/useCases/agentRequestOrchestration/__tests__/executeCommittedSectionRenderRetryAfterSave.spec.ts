@@ -62,6 +62,8 @@ vi.mock('#/modules/AudioRendering/useCases', () => ({
     rebindAgentProjectSectionArtifactRevisions: vi.fn(),
     renderAgentMeasurementScope: vi.fn(),
     renderAgentPreviewMeasurementScope: vi.fn(),
+    renderAgentMeasurementWindows: vi.fn(),
+    renderAgentPreviewMeasurementWindows: vi.fn(),
     retainAgentMeasurementRenders: vi.fn(),
     retryAgentProjectSectionRenders: mocks.retryRenders,
 }));

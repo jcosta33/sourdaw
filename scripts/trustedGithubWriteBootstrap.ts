@@ -26,7 +26,6 @@ export const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
 export const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
 export const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
 export const TRUSTED_PS_PATH_ENV = 'SOURDAW_TRUSTED_PS_PATH';
-export const TRUSTED_GIT_AI_PATH_ENV = 'SOURDAW_TRUSTED_GIT_AI_PATH';
 export const TRUSTED_POWERSHELL_PATH_ENV = 'SOURDAW_TRUSTED_POWERSHELL_PATH';
 export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
@@ -60,7 +59,6 @@ export type TrustedLauncherBinding = {
     ghPath: string;
     psPath?: string;
     powershellPath?: string;
-    gitAiPath?: string;
 };
 
 /**
@@ -5977,7 +5975,7 @@ async function runSnapshotModule(
         'const loaded = await import(pathToFileURL(entryPath).href);',
         'const command = Reflect.get(loaded, runner);',
         "if (typeof command !== 'function') throw new Error(`trusted snapshot does not export ${runner}`);",
-        'const trustedLauncher = typeof process.env.SOURDAW_TRUSTED_PRIMARY_ROOT === "string" && typeof process.env.SOURDAW_TRUSTED_GIT_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_GH_PATH === "string" ? { primaryRoot: process.env.SOURDAW_TRUSTED_PRIMARY_ROOT, gitPath: process.env.SOURDAW_TRUSTED_GIT_PATH, ghPath: process.env.SOURDAW_TRUSTED_GH_PATH, ...(typeof process.env.SOURDAW_TRUSTED_PS_PATH === "string" ? { psPath: process.env.SOURDAW_TRUSTED_PS_PATH } : {}), ...(typeof process.env.SOURDAW_TRUSTED_POWERSHELL_PATH === "string" ? { powershellPath: process.env.SOURDAW_TRUSTED_POWERSHELL_PATH } : {}), ...(typeof process.env.SOURDAW_TRUSTED_GIT_AI_PATH === "string" ? { gitAiPath: process.env.SOURDAW_TRUSTED_GIT_AI_PATH } : {}) } : undefined;',
+        'const trustedLauncher = typeof process.env.SOURDAW_TRUSTED_PRIMARY_ROOT === "string" && typeof process.env.SOURDAW_TRUSTED_GIT_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_GH_PATH === "string" ? { primaryRoot: process.env.SOURDAW_TRUSTED_PRIMARY_ROOT, gitPath: process.env.SOURDAW_TRUSTED_GIT_PATH, ghPath: process.env.SOURDAW_TRUSTED_GH_PATH, ...(typeof process.env.SOURDAW_TRUSTED_PS_PATH === "string" ? { psPath: process.env.SOURDAW_TRUSTED_PS_PATH } : {}), ...(typeof process.env.SOURDAW_TRUSTED_POWERSHELL_PATH === "string" ? { powershellPath: process.env.SOURDAW_TRUSTED_POWERSHELL_PATH } : {}) } : undefined;',
         'const dependencies = runner === "runDeliverCli" ? { trustedLauncher } : undefined;',
         'const result = dependencies === undefined ? await command(args) : await command(args, dependencies);',
         "if (!Number.isSafeInteger(result)) throw new Error('trusted snapshot returned an invalid exit code');",
@@ -6049,7 +6047,6 @@ export function trustedSnapshotEnv(
             dirname(launcher.ghPath),
             ...(launcher.psPath === undefined ? [] : [dirname(launcher.psPath)]),
             ...(launcher.powershellPath === undefined ? [] : [dirname(launcher.powershellPath)]),
-            ...(launcher.gitAiPath === undefined ? [] : [dirname(launcher.gitAiPath)]),
             dirname(process.execPath),
         ]),
     ].join(delimiter);
@@ -6062,9 +6059,6 @@ export function trustedSnapshotEnv(
     }
     if (launcher.powershellPath !== undefined) {
         env[TRUSTED_POWERSHELL_PATH_ENV] = launcher.powershellPath;
-    }
-    if (launcher.gitAiPath !== undefined) {
-        env[TRUSTED_GIT_AI_PATH_ENV] = launcher.gitAiPath;
     }
     env[TRUSTED_ORIGIN_COMMIT_ENV] = snapshot.commit;
     return env;
@@ -6116,7 +6110,7 @@ export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): Node
 }
 
 export function resolveTrustedExecutable(
-    name: 'git' | 'gh' | 'ps' | 'git-ai',
+    name: 'git' | 'gh' | 'ps',
     parent: NodeJS.ProcessEnv = process.env,
     platform: NodeJS.Platform = process.platform
 ): string {
@@ -6147,22 +6141,6 @@ function firstExecutableOnPath(name: string, parent: NodeJS.ProcessEnv, platform
         }
     }
     return undefined;
-}
-
-/**
- * git-ai is operator tooling the delivery authorship sync uses when present; an operator
- * without it keeps the documented skip, so resolution is optional rather than fatal.
- */
-function resolveOptionalTrustedExecutable(
-    name: 'git-ai',
-    parent: NodeJS.ProcessEnv,
-    platform: NodeJS.Platform
-): string | undefined {
-    try {
-        return resolveTrustedExecutable(name, parent, platform);
-    } catch {
-        return undefined;
-    }
 }
 
 export function resolveTrustedPowerShellExecutable(
@@ -6202,7 +6180,6 @@ export function resolveTrustedLauncherBinding(
         psPath: commandRequiresTrustedPs(command, platform)
             ? resolveTrustedExecutable('ps', parent, platform)
             : undefined,
-        gitAiPath: command === 'deliver' ? resolveOptionalTrustedExecutable('git-ai', parent, platform) : undefined,
         powershellPath: commandRequiresTrustedPowerShell(command, platform)
             ? resolveTrustedPowerShellExecutable(parent, platform)
             : undefined,

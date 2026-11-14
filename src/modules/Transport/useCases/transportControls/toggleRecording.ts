@@ -269,7 +269,10 @@ function prepareManualNativeTerminal(
                 'error'
             );
         })
-        .finally(takeHold.release);
+        .finally(takeHold.release)
+        .catch((error: unknown) => {
+            logger.error(new Error('Recovered recording take release failed', { cause: error }));
+        });
     return undefined;
 }
 
@@ -449,6 +452,10 @@ function commitManualTake(
     captureEvidence: Parameters<typeof commitRecording>[1],
     stillOwnsCaptureRoot: () => boolean
 ): Promise<void | 'refused'> {
+    const commitOwnedTake = () =>
+        commitRecording(recordedClip, captureEvidence, { shouldExecute: stillOwnsCaptureRoot }).catch(
+            (error: unknown) => handleManualRecordingCommitFailure(error, recordedClip.id, stillOwnsCaptureRoot)
+        );
     return Promise.resolve().then(() => {
         // A fork can replace the root after the terminal queues this
         // continuation but before commitRecording places its takes.
@@ -459,9 +466,7 @@ function commitManualTake(
             );
             return 'refused' as const;
         }
-        return commitRecording(recordedClip, captureEvidence, { shouldExecute: stillOwnsCaptureRoot }).catch(
-            (error: unknown) => handleManualRecordingCommitFailure(error, recordedClip.id, stillOwnsCaptureRoot)
-        );
+        return commitOwnedTake();
     });
 }
 

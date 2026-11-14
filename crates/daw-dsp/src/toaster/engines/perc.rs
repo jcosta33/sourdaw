@@ -143,8 +143,7 @@ impl PercEngine {
 
         // tone controls high frequency softening
         let mix = (sq1 + sq2) * 0.5;
-        let lpf = self.bandpass(mix, 5000.0 * (self.tone + 0.1), 0.5, sample_rate);
-        lpf
+        self.bandpass(mix, 5000.0 * (self.tone + 0.1), 0.5, sample_rate)
     }
 
     /// Clave: high-Q resonant bandpass excited by a tiny noise burst (Modal Resonator).
