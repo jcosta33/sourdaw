@@ -154,6 +154,14 @@ reviewer prompts and tiers are unestablished unless a probe says otherwise. Repo
     `src/utils/__tests__/platformCapabilities.spec.ts` after collapsing denial into unsupported. These checks do not
     establish physical-controller acceptance.
 
+15. **Retained legal bytes never grant source authority (#2731).** A complete MIT license beside a
+    git-sourced runtime Cargo package must still fail actual installed-metadata artifact generation.
+    In `dependencyLicenseReport.installedSources.spec.ts`, remove source authentication before the
+    retained-legal fast path and require the git-source case to fail. Preserve actual-checksum
+    registry and registered null-source positives, plus unregistered path and offline git negatives.
+    The original archive-fallback case never entered this admitting route; historical review
+    model, tier and prompt are not established.
+
 ## Retired lessons
 
 - A declared Body choice never entered the worklet schema (#5254) → enforced by

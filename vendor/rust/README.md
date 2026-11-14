@@ -9,3 +9,10 @@ The root workspace explicitly excludes these upstream packages. Their developmen
 The Windows projection port covers the features used by the retained native device and MIDI routes. Native Windows compilation and ABI behavior require Windows CI. Source preparation or a macOS check does not prove Windows, Linux, Android, device hardware, model inference, or plugin UI behavior.
 
 When changing a port, preserve the original archive identity, regenerate its patch and changed-file hashes, and check native patch application and final source bytes. Move to an upstream release containing the migration when available.
+
+The Midir Android listener remains owned through the existing five-second receive timeout. Both the
+original `JniProxy` and current `DynamicProxy` remove their Rust handler on drop; a later void
+callback with no handler returns null in both helpers. The existing ignored channel-send failure
+and device-close behavior are preserved. No forgotten proxy or additional lifetime registry extends
+the listener. Android compilation and actual JVM/AMidi callback and device lifecycle checks are
+separate from desktop acceptance.

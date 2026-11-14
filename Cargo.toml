@@ -25,6 +25,33 @@ exclude = [
     "vendor/rust/tracing-attributes-0.1.31",
     "vendor/rust/visibility-0.1.1",
     "vendor/rust/num_enum_derive-0.7.6",
+    "vendor/rust/ring-0.17.14",
+    "vendor/rust/getrandom-0.4.3",
+    "vendor/rust/flume-0.12.0",
+    "vendor/rust/mio-1.2.5",
+    "vendor/rust/windows-sys-0.61.2",
+    "vendor/rust/hostname-0.4.2",
+    "vendor/rust/libloading-0.9.1",
+    "vendor/rust/parking_lot_core-0.10.0",
+    "vendor/rust/jni-0.22.4",
+    "vendor/rust/android-build-0.1.4",
+    "vendor/rust/windows-implement-0.100.0",
+    "vendor/rust/windows-interface-0.100.0",
+    "vendor/rust/jni-macros-0.22.4",
+    "vendor/rust/jni-sys-macros-0.4.1",
+    "vendor/rust/zerocopy-derive-0.8.63",
+    "vendor/rust/criterion-0.8.2",
+    "vendor/rust/criterion-plot-0.8.2",
+    "vendor/rust/symphonia-format-riff-0.6.1",
+    "vendor/rust/redox_users-0.5.3",
+    "vendor/rust/ndk-0.9.0",
+    "vendor/rust/ndk-sys-0.6.0+11769913",
+    "vendor/rust/midir-0.11.1",
+    "vendor/rust/prettytable-0.10.0",
+    "vendor/rust/test-log-core-0.2.21",
+    "vendor/rust/test-log-macros-0.2.21",
+    "vendor/rust/hexane-0.2.1",
+    "vendor/rust/automerge-0.12.0",
 ]
 
 
@@ -52,6 +79,34 @@ cexpr = { path = "vendor/rust/cexpr-0.6.0" }
 tracing-attributes = { path = "vendor/rust/tracing-attributes-0.1.31" }
 visibility = { path = "vendor/rust/visibility-0.1.1" }
 num_enum_derive = { path = "vendor/rust/num_enum_derive-0.7.6" }
+
+ring = { path = "vendor/rust/ring-0.17.14" }
+getrandom = { path = "vendor/rust/getrandom-0.4.3" }
+flume = { path = "vendor/rust/flume-0.12.0" }
+mio = { path = "vendor/rust/mio-1.2.5" }
+windows-sys = { path = "vendor/rust/windows-sys-0.61.2" }
+hostname = { path = "vendor/rust/hostname-0.4.2" }
+libloading = { path = "vendor/rust/libloading-0.9.1" }
+parking_lot_core = { path = "vendor/rust/parking_lot_core-0.10.0" }
+jni = { path = "vendor/rust/jni-0.22.4" }
+android-build = { path = "vendor/rust/android-build-0.1.4" }
+windows-implement = { path = "vendor/rust/windows-implement-0.100.0" }
+windows-interface = { path = "vendor/rust/windows-interface-0.100.0" }
+jni-macros = { path = "vendor/rust/jni-macros-0.22.4" }
+jni-sys-macros = { path = "vendor/rust/jni-sys-macros-0.4.1" }
+zerocopy-derive = { path = "vendor/rust/zerocopy-derive-0.8.63" }
+criterion = { path = "vendor/rust/criterion-0.8.2" }
+criterion-plot = { path = "vendor/rust/criterion-plot-0.8.2" }
+symphonia-format-riff = { path = "vendor/rust/symphonia-format-riff-0.6.1" }
+redox_users = { path = "vendor/rust/redox_users-0.5.3" }
+ndk = { path = "vendor/rust/ndk-0.9.0" }
+ndk-sys = { path = "vendor/rust/ndk-sys-0.6.0+11769913" }
+midir = { path = "vendor/rust/midir-0.11.1" }
+prettytable = { path = "vendor/rust/prettytable-0.10.0" }
+test-log-core = { path = "vendor/rust/test-log-core-0.2.21" }
+test-log-macros = { path = "vendor/rust/test-log-macros-0.2.21" }
+hexane = { path = "vendor/rust/hexane-0.2.1" }
+automerge = { path = "vendor/rust/automerge-0.12.0" }
 
 [profile.release]
 opt-level = 3

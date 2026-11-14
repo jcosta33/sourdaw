@@ -13,7 +13,7 @@ CASES = {
 }
 for name, required in CASES.items():
     result = subprocess.run(
-        ['cargo', 'check', '--manifest-path', str(MANIFEST), '--example', f'reject_{name}'],
+        ['cargo', 'check', '--locked', '--manifest-path', str(MANIFEST), '--example', f'reject_{name}'],
         text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
     )
     print(result.stdout, end='')

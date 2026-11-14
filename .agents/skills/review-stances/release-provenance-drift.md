@@ -43,6 +43,16 @@ limitation, never as passed.
    filesystem/process fixtures do not establish actual archive layout, optimizer invocation or PCM preservation.
    No historical reviewer draw or failure was inferred from these introducing PRs.
 
+7. **Complete legal text cannot authenticate a Cargo origin (#2731).** Drive
+   `buildDependencyLicenseArtifactsFromInstalledMetadata` with a nonworkspace runtime git package
+   carrying genuine complete MIT bytes. It must refuse the origin before retained legal files can
+   authorize it. Keep authenticated registry and registered local-source generation/offline replay as
+   positive controls; unregistered path sources and synchronized offline git rows must refuse.
+   Remove the universal `expectedProofIdentities` call before the installed-legal return and require
+   `dependencyLicenseReport.installedSources.spec.ts` to fail its git-source generation case.
+   The introducing PR's archive-only proof case observed the fallback validator, leaving the
+   installed-legal return unobserved; its historical reviewer model, tier and prompt are unknown.
+
 ## Relocated
 
 - A scanner exception that admits more than its audited finding (#5746, #5748) → `security-and-platform.md`

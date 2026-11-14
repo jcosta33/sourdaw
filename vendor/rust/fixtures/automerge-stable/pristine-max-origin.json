@@ -1,0 +1,28 @@
+{
+  "source": "pristine original0.12+alpha actual wasm32-wasip1 save before inherited load panic",
+  "referenceManifest": "/Users/josecosta/.agents/artifacts/sourdaw/dependency-completion-20261113/rust/next-ports/hexane/runtime32-proof/reference/Cargo.toml",
+  "referenceLockSha256": "bc19e810b4b0d87e1005493c228047e07b4a004452bf153de2e4421b9aa6f7e5",
+  "referenceLog": "run-pristine-save-load.log",
+  "referenceLogSha256": "821aade1df65ccd28cca9e217539cd96b8dc0079922f6d02591c558e66021b23",
+  "bytes": 162,
+  "sha256": "caacbf7d5fdb5f79f2c8dc993ced92135862792aa383164f1df2f58e72a94592",
+  "originalSourceIdentities": {
+    "origin": "pristine actual Automerge0.12.0 with published Hexane1.0.0-alpha.5; generated only by reference/freeze_original.rs",
+    "sourceArchiveSha256": "2fb849130973a7808a167887f56b1e8bdc36b9b541542602dcb337f34aecf47b",
+    "scenarioSha256": "14bfcc26d6dc252966ad703527d18d4d67a86f87c411b74f65c26d1d621903d0",
+    "files": {
+      "bundle.bin": "c5fb65c18d9ff54dc38e0a5959ec5f15d6cb241200f7b26707cd75ec0b6d8627",
+      "document-uncompressed.am": "dad11bb9131b5b57ffd01785fb447208cc6a8c0c363fb4d40e58bc548044b9d1",
+      "document-compressed.am": "a771cb605d794e69e90bf2c889cbae084b99d1f3f7351872c30766ecb1ef0a37",
+      "merge-right-first.am": "a41d49af3fc35568ab697d691a3c50c35d4f7f780563c1db2af8489d785fcebf",
+      "change-hashes.txt": "915cf99ac55286f9bfb8663d4aeaae4c9619425cd104bdb04e6a82c9dccc626b",
+      "merge-left-first.am": "2d30b4a7e6bd6fca25080dc5f94a066574a099bde8bd66b576c3d7021b47810f",
+      "changes/f4c42d74175d55cd9253e8f4f5d840c081038b8421daf9e9a59652cb35e02ec7.bin": "6efdf7d167b3ded7841d4c74ae659f95cb3f99f985c875bcb919f679ea866f5a",
+      "changes/217873847e5bbfb9ebd118fa1d3f3bb39574b76ad4c1e0e98bcedae5635b762e.bin": "75df357483aaaddb457e4ad1416836f18fa1d4b5a2a0cea0d352714033c75e26",
+      "changes/a5bdc74b9a46e03d34b22722a683f9513fe6fa19eda3cafd25ec075a109e51af.bin": "21ebdefffeb198d3f54933fb4ff21430a2337e960aa51300ecac9737904948df",
+      "changes/c8797a4ac22c23ce9f6da3b9f8daab538e493a2047659b2c645c827e8572825e.bin": "bad7e2142229c63ba32d8ef1adb4af1e35406c65a308014297c6dfa708099356"
+    },
+    "referenceCargoLockSha256": "bc19e810b4b0d87e1005493c228047e07b4a004452bf153de2e4421b9aa6f7e5",
+    "hexanePublishedArchiveSha256": "81df830f11babb0eee9a082e09135ef0a7d8791f3fe9b279bb9485bf7eaf23e0"
+  }
+}

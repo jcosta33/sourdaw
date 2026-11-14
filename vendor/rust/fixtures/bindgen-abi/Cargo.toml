@@ -16,3 +16,4 @@ fs_extra = "=1.3.0"
 [patch.crates-io]
 cexpr = { path = "../../cexpr-0.6.0" }
 clang-sys = { path = "../../clang-sys-1.9.1" }
+libloading = { path = "../../libloading-0.9.1" }

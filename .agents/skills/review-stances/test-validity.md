@@ -220,6 +220,15 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    stages on both sides of that boundary. Remove the reporter or setup marker to make the fixture
    fail; process presence alone is not a worker-admission oracle. (#5231)
 
+10. **An archive fallback probe misses an installed-legal admission (#2731).** The original
+    `binds Cargo proof evidence to its locked crate archive` case supplied `legalFiles: []` and
+    called the proof helper directly. It could not observe the production return for complete
+    installed legal bytes. Require `dependencyLicenseReport.installedSources.spec.ts` to generate
+    through actual metadata/manifest/legal/archive consumers, doubling only Cargo metadata and pnpm
+    inventory boundaries. Removing universal source authentication before the retained-legal return
+    must fail the genuine-MIT git-source case, while authenticated registry/local sources remain
+    positive. No historical review tier or prompt is inferred from the introducing PR.
+
 ## Retired lessons
 
 - Listing `vi.mock` barrel factories break when a diff adds a barrel export or import → enforced by `pnpm test:barrel-mocks` (`scripts/checkBarrelMockCoverage.ts`), Validation › Types and contracts › Barrel mock coverage

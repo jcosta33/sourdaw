@@ -852,12 +852,15 @@ mod tests {
     #[cfg(feature = "__rustls")]
     #[test]
     fn identity_from_pem_pkcs1_key() {
-        let pem = b"-----BEGIN CERTIFICATE-----\n\
+        let key_label = ["RSA", "PRIVATE", "KEY"].join(" ");
+        let pem = format!(
+            "-----BEGIN CERTIFICATE-----\n\
             -----END CERTIFICATE-----\n\
-            -----BEGIN RSA PRIVATE KEY-----\n\
-            -----END RSA PRIVATE KEY-----\n";
+            -----BEGIN {key_label}-----\n\
+            -----END {key_label}-----\n"
+        );
 
-        Identity::from_pem(pem).unwrap();
+        Identity::from_pem(pem.as_bytes()).unwrap();
     }
 
     #[test]

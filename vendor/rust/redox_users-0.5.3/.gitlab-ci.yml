@@ -1,0 +1,42 @@
+
+workflow:
+  rules:
+    - if: '$CI_PROJECT_NAMESPACE == "redox-os"'
+    - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"'
+
+stages:
+    - build
+    - test
+
+build:linux:
+    stage: build
+    script:
+    - cargo build --no-default-features
+    - cargo build
+
+build:redox:
+    stage: build
+    script:
+    - redoxer build --no-default-features
+    - redoxer build
+
+fmt:
+    stage: build
+    script: redoxer env cargo fmt -- --check
+
+test:linux:
+    stage: test
+    dependencies:
+        - build:linux
+    script:
+        # TODO: re-enable flock to remove --test-threads=1
+        - cargo +nightly test -- --test-threads=1
+        - cargo +nightly test --no-default-features -- --test-threads=1
+
+test:redox:
+    stage: test
+    dependencies:
+        - build:redox
+    script: 
+    # TODO: doctest cannot run in redoxer
+    - redoxer test --lib -- --test-threads=1
