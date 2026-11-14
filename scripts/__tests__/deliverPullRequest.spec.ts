@@ -6,12 +6,13 @@ import {
     mkdirSync,
     mkdtempSync,
     readFileSync,
+    realpathSync,
     rmSync,
     symlinkSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
@@ -13303,6 +13304,9 @@ describe('delivery shell boundary', () => {
                 ];
                 if (authenticated) {
                     expect(args[0]).toMatch(/^--git-dir=\//);
+                    const gitDir = (args[0] ?? '').slice('--git-dir='.length);
+                    expect(relative(realpathSync(local), realpathSync(dirname(gitDir))).startsWith('..')).toBe(true);
+                    expect(existsSync(gitDir)).toBe(false);
                     expect(args.slice(1, 4)).toEqual(['-c', 'credential.helper=', '-c']);
                     expect(args[4]).toMatch(/^credential\.helper=!'\//);
                     expect(args.slice(5)).toEqual(fetchArgs);

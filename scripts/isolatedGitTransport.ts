@@ -127,22 +127,23 @@ function writeIsolatedGitDir(
     symlinkSync(objects, join(gitDir, 'objects'), 'dir');
 }
 
+/** Pruned refs go first: a fetched ref may nest under a pruned one's name (`feature` replaced by `feature/x`). */
 function applyTrackingRefChanges(
     repository: GitRunner,
     seeded: TrackingRefs,
     fetched: TrackingRefs,
     objectFormat: 'sha1' | 'sha256'
 ): void {
+    for (const [name, oid] of seeded) {
+        if (!fetched.has(name)) {
+            repository.run(['update-ref', '--no-deref', '-d', name, oid]);
+        }
+    }
     const absent = '0'.repeat(objectFormat === 'sha1' ? 40 : 64);
     for (const [name, oid] of fetched) {
         const previous = seeded.get(name);
         if (previous !== oid) {
             repository.run(['update-ref', '--no-deref', name, oid, previous ?? absent]);
-        }
-    }
-    for (const [name, oid] of seeded) {
-        if (!fetched.has(name)) {
-            repository.run(['update-ref', '--no-deref', '-d', name, oid]);
         }
     }
 }

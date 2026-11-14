@@ -272,6 +272,33 @@ describe('isolated git transport', () => {
         });
     });
 
+    it('carries back a remote branch replaced by one nested under its name', () => {
+        withFixture((f) => {
+            fixtureGit(f.primary, ['update-ref', 'refs/remotes/origin/feature', f.main]);
+            const work = join(f.root, 'work');
+            fixtureGit(f.root, ['clone', '-q', f.remote, work]);
+            fixtureGit(work, ['push', '-q', 'origin', 'HEAD:feature/x']);
+            const run = () =>
+                withIsolatedGitTransport(
+                    runner(f.primary, f.env),
+                    { token: SENTINEL, helperDir: f.helperDir },
+                    (transport) => {
+                        transport.run(['fetch', '--prune', f.remoteUrl, '+refs/heads/*:refs/remotes/origin/*']);
+                    }
+                );
+
+            run();
+            run();
+
+            expect(fixtureGit(f.primary, ['for-each-ref', '--format=%(refname)', 'refs/remotes/origin/feature'])).toBe(
+                'refs/remotes/origin/feature/x'
+            );
+            expect(fixtureGit(f.primary, ['rev-parse', 'refs/remotes/origin/feature/x'])).toBe(
+                fixtureGit(work, ['rev-parse', 'HEAD'])
+            );
+        });
+    });
+
     it('refuses to overwrite a tracking ref that moved while it fetched', () => {
         withFixture((f) => {
             fixtureGit(f.primary, ['update-ref', 'refs/remotes/origin/main', f.main]);
