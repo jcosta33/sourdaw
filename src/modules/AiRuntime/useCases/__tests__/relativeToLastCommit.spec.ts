@@ -1765,6 +1765,9 @@ describe('relative to the last commit', () => {
         it.each([
             ['50 Hz more', 200, 250],
             ['make it 50 hz less than that', 200, 150],
+            // Low Freq declares 20 Hz to 500 Hz, so a continuation landing exactly on either end stands.
+            ['50 Hz more', 450, 500],
+            ['50 Hz less', 70, 20],
         ])('"%s" after a committed Low Freq of %s Hz sets it to %s Hz', async (prompt, committedValue, landed) => {
             await commitVocalsParameter(EQ, 'eq-low-freq', committedValue);
             const calls = providerCallCount();

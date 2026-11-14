@@ -4,6 +4,7 @@ import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS } from '../models/AgentContext';
@@ -184,7 +185,7 @@ function isMetricLiteralUnit(unit: string): unit is LastCommitContinuationLitera
 function readContinuationLiterals(
     prompt: string,
     figures: readonly ContinuedFigure[],
-    actions: readonly RuntimeAction[]
+    actions: readonly AppAction[]
 ): LastCommitContinuationLiteral[] {
     return figures.flatMap((figure) => {
         if (!isMetricLiteralUnit(figure.unit)) {
