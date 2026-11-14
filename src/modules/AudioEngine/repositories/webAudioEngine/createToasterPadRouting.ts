@@ -115,192 +115,213 @@ function reattachSnapshotDryRoute(snapshot: ToasterPadRouteSnapshot | undefined)
     controls.setPadDryRouted(snapshot.padIndex, true);
 }
 
-export function createToasterPadRouting({ readTrackStrip }: ToasterPadRoutingPorts): ToasterPadRouting {
-    const routes = new Map<string, ToasterPadRoute>();
+type ReadTrackStrip = ToasterPadRoutingPorts['readTrackStrip'];
+type RouteMap = Map<string, ToasterPadRoute>;
+type RoutingState = Readonly<{ routes: RouteMap; readTrackStrip: ReadTrackStrip }>;
 
-    function getToasterPadControls(toasterParentTrackId: string): ToasterPadOutputControls | undefined {
-        const controls = readTrackStrip(toasterParentTrackId)?.deviceNodes.find(
-            (candidate) => candidate.toasterControls?.connectPadOutput
-        )?.toasterControls;
-        return hasToasterPadOutputControls(controls) ? controls : undefined;
+function getToasterPadControls(
+    readTrackStrip: ReadTrackStrip,
+    toasterParentTrackId: string
+): ToasterPadOutputControls | undefined {
+    const controls = readTrackStrip(toasterParentTrackId)?.deviceNodes.find(
+        (candidate) => candidate.toasterControls?.connectPadOutput
+    )?.toasterControls;
+    return hasToasterPadOutputControls(controls) ? controls : undefined;
+}
+
+function snapshotRoute(routes: RouteMap, trackId: string): ToasterPadRouteSnapshot | undefined {
+    const route = routes.get(trackId);
+    if (!route) {
+        return undefined;
     }
+    return Object.freeze({
+        toasterParentTrackId: route.toasterParentTrackId,
+        padIndex: route.padIndex,
+        destinationNode: route.destinationNode,
+        controls: route.controls,
+        dryRouted: route.destinationNode !== null && route.controls !== null,
+    });
+}
 
-    function snapshotRoute(trackId: string): ToasterPadRouteSnapshot | undefined {
-        const route = routes.get(trackId);
-        if (!route) {
-            return undefined;
-        }
-        return Object.freeze({
-            toasterParentTrackId: route.toasterParentTrackId,
-            padIndex: route.padIndex,
-            destinationNode: route.destinationNode,
-            controls: route.controls,
-            dryRouted: route.destinationNode !== null && route.controls !== null,
+function restoreRouteState(routes: RouteMap, trackId: string, snapshot: ToasterPadRouteSnapshot | undefined): void {
+    if (!snapshot) {
+        routes.delete(trackId);
+        return;
+    }
+    routes.set(trackId, {
+        toasterParentTrackId: snapshot.toasterParentTrackId,
+        padIndex: snapshot.padIndex,
+        destinationNode: snapshot.destinationNode,
+        controls: snapshot.controls,
+    });
+}
+
+function restoreBinding(
+    state: RoutingState,
+    trackId: string,
+    sourceDestinationNode: GainNode,
+    snapshot: ToasterPadRouteSnapshot | undefined,
+    attemptedBinding: ToasterPadBinding | undefined
+): void {
+    const { routes, readTrackStrip } = state;
+    const targets: PadOutputTarget[] = [];
+    const current = routes.get(trackId);
+    if (current?.controls && current.destinationNode) {
+        addPadOutputTarget(targets, {
+            controls: current.controls,
+            padIndex: current.padIndex,
+            destinationNode: current.destinationNode,
         });
     }
-
-    function restoreRouteState(trackId: string, snapshot: ToasterPadRouteSnapshot | undefined): void {
-        if (!snapshot) {
-            routes.delete(trackId);
-            return;
-        }
-        routes.set(trackId, {
-            toasterParentTrackId: snapshot.toasterParentTrackId,
-            padIndex: snapshot.padIndex,
-            destinationNode: snapshot.destinationNode,
-            controls: snapshot.controls,
-        });
-    }
-
-    function restoreBinding(
-        trackId: string,
-        sourceDestinationNode: GainNode,
-        snapshot: ToasterPadRouteSnapshot | undefined,
-        attemptedBinding: ToasterPadBinding | undefined
-    ): void {
-        const targets: PadOutputTarget[] = [];
-        const current = routes.get(trackId);
-        if (current?.controls && current.destinationNode) {
+    if (isValidToasterPadBinding(attemptedBinding)) {
+        const attemptedControls = getToasterPadControls(readTrackStrip, attemptedBinding.toasterParentTrackId);
+        if (attemptedControls) {
             addPadOutputTarget(targets, {
-                controls: current.controls,
-                padIndex: current.padIndex,
-                destinationNode: current.destinationNode,
+                controls: attemptedControls,
+                padIndex: attemptedBinding.padIndex,
+                destinationNode: sourceDestinationNode,
             });
         }
-        if (isValidToasterPadBinding(attemptedBinding)) {
-            const attemptedControls = getToasterPadControls(attemptedBinding.toasterParentTrackId);
-            if (attemptedControls) {
-                addPadOutputTarget(targets, {
-                    controls: attemptedControls,
-                    padIndex: attemptedBinding.padIndex,
-                    destinationNode: sourceDestinationNode,
-                });
-            }
-        }
-
-        const clearErrors = clearPadOutputTargets(targets);
-        restoreRouteState(trackId, snapshot);
-        if (clearErrors.length === 1) {
-            throw clearErrors[0];
-        }
-        if (clearErrors.length > 1) {
-            throw new AggregateError(clearErrors, 'Toaster pad route cleanup failed during transaction restoration');
-        }
-        reattachSnapshotDryRoute(snapshot);
     }
 
-    function detachRoute(trackId: string, forgetRoute: boolean): boolean {
-        const route = routes.get(trackId);
-        if (!route) {
-            return false;
-        }
-        if (route.destinationNode) {
-            try {
-                route.controls?.disconnectPadOutput?.(route.padIndex, route.destinationNode);
-            } finally {
-                route.controls?.setPadDryRouted(route.padIndex, false);
-            }
-        }
-        route.destinationNode = null;
-        route.controls = null;
-        if (forgetRoute) {
-            routes.delete(trackId);
-        }
-        return true;
+    const clearErrors = clearPadOutputTargets(targets);
+    restoreRouteState(routes, trackId, snapshot);
+    if (clearErrors.length === 1) {
+        throw clearErrors[0];
     }
-
-    function reconcileParent(toasterParentTrackId: string): void {
-        const controls = getToasterPadControls(toasterParentTrackId);
-        if (!controls) {
-            return;
-        }
-        for (const [trackId, route] of routes) {
-            if (route.toasterParentTrackId !== toasterParentTrackId || route.controls === controls) {
-                continue;
-            }
-            if (route.destinationNode) {
-                detachRoute(trackId, false);
-            }
-            const destinationNode = readTrackStrip(trackId)?.gainNode;
-            if (!destinationNode) {
-                continue;
-            }
-            controls.connectPadOutput(route.padIndex, destinationNode);
-            controls.setPadDryRouted(route.padIndex, true);
-            route.destinationNode = destinationNode;
-            route.controls = controls;
-        }
+    if (clearErrors.length > 1) {
+        throw new AggregateError(clearErrors, 'Toaster pad route cleanup failed during transaction restoration');
     }
+    reattachSnapshotDryRoute(snapshot);
+}
 
-    function handleDeviceRemoved(trackId: string, device: BuiltinDeviceNode): void {
-        if (device.type !== 'toaster') {
-            return;
-        }
-        for (const [sourceTrackId, route] of routes) {
-            if (route.toasterParentTrackId !== trackId) {
-                continue;
-            }
-            if (route.controls && route.controls !== device.toasterControls) {
-                continue;
-            }
-            detachRoute(sourceTrackId, false);
-        }
-        reconcileParent(trackId);
-    }
-
-    function updateBinding(trackId: string, padBinding: ToasterPadBinding | undefined): boolean {
-        if (!isValidToasterPadBinding(padBinding)) {
-            return detachRoute(trackId, true);
-        }
-        const existing = routes.get(trackId);
-        const changedOwner =
-            existing &&
-            (existing.toasterParentTrackId !== padBinding.toasterParentTrackId ||
-                existing.padIndex !== padBinding.padIndex);
-        if (changedOwner) {
-            detachRoute(trackId, true);
-        }
-        if (!routes.has(trackId)) {
-            routes.set(trackId, { ...padBinding, destinationNode: null, controls: null });
-            reconcileParent(padBinding.toasterParentTrackId);
-            return true;
-        }
-        reconcileParent(padBinding.toasterParentTrackId);
+function detachRoute(routes: RouteMap, trackId: string, forgetRoute: boolean): boolean {
+    const route = routes.get(trackId);
+    if (!route) {
         return false;
     }
-
-    function forgetRoutesOfRemovedStrip(trackId: string): void {
-        detachRoute(trackId, true);
-        for (const [sourceTrackId, route] of routes) {
-            if (route.toasterParentTrackId === trackId) {
-                detachRoute(sourceTrackId, true);
-            }
+    if (route.destinationNode) {
+        try {
+            route.controls?.disconnectPadOutput?.(route.padIndex, route.destinationNode);
+        } finally {
+            route.controls?.setPadDryRouted(route.padIndex, false);
         }
     }
-
-    function resetEffects(): Array<() => void> {
-        return Array.from(routes.values()).flatMap((route) => {
-            const { controls, destinationNode, padIndex } = route;
-            if (!destinationNode) {
-                return [];
-            }
-            return [
-                () => controls?.disconnectPadOutput?.(padIndex, destinationNode),
-                () => controls?.setPadDryRouted(padIndex, false),
-            ];
-        });
+    route.destinationNode = null;
+    route.controls = null;
+    if (forgetRoute) {
+        routes.delete(trackId);
     }
+    return true;
+}
+
+function reconcileParent(state: RoutingState, toasterParentTrackId: string): void {
+    const { routes, readTrackStrip } = state;
+    const controls = getToasterPadControls(readTrackStrip, toasterParentTrackId);
+    if (!controls) {
+        return;
+    }
+    for (const [trackId, route] of routes) {
+        if (route.toasterParentTrackId !== toasterParentTrackId || route.controls === controls) {
+            continue;
+        }
+        if (route.destinationNode) {
+            detachRoute(routes, trackId, false);
+        }
+        const destinationNode = readTrackStrip(trackId)?.gainNode;
+        if (!destinationNode) {
+            continue;
+        }
+        controls.connectPadOutput(route.padIndex, destinationNode);
+        controls.setPadDryRouted(route.padIndex, true);
+        route.destinationNode = destinationNode;
+        route.controls = controls;
+    }
+}
+
+function handleDeviceRemoved(state: RoutingState, trackId: string, device: BuiltinDeviceNode): void {
+    const { routes } = state;
+    if (device.type !== 'toaster') {
+        return;
+    }
+    for (const [sourceTrackId, route] of routes) {
+        if (route.toasterParentTrackId !== trackId) {
+            continue;
+        }
+        if (route.controls && route.controls !== device.toasterControls) {
+            continue;
+        }
+        detachRoute(routes, sourceTrackId, false);
+    }
+    reconcileParent(state, trackId);
+}
+
+function updateBinding(state: RoutingState, trackId: string, padBinding: ToasterPadBinding | undefined): boolean {
+    const { routes } = state;
+    if (!isValidToasterPadBinding(padBinding)) {
+        return detachRoute(routes, trackId, true);
+    }
+    const existing = routes.get(trackId);
+    const changedOwner =
+        existing &&
+        (existing.toasterParentTrackId !== padBinding.toasterParentTrackId ||
+            existing.padIndex !== padBinding.padIndex);
+    if (changedOwner) {
+        detachRoute(routes, trackId, true);
+    }
+    if (!routes.has(trackId)) {
+        routes.set(trackId, { ...padBinding, destinationNode: null, controls: null });
+        reconcileParent(state, padBinding.toasterParentTrackId);
+        return true;
+    }
+    reconcileParent(state, padBinding.toasterParentTrackId);
+    return false;
+}
+
+function forgetRoutesOfRemovedStrip(routes: RouteMap, trackId: string): void {
+    detachRoute(routes, trackId, true);
+    for (const [sourceTrackId, route] of routes) {
+        if (route.toasterParentTrackId === trackId) {
+            detachRoute(routes, sourceTrackId, true);
+        }
+    }
+}
+
+function resetEffects(routes: RouteMap): Array<() => void> {
+    return Array.from(routes.values()).flatMap((route) => {
+        const { controls, destinationNode, padIndex } = route;
+        if (!destinationNode) {
+            return [];
+        }
+        return [
+            () => controls?.disconnectPadOutput?.(padIndex, destinationNode),
+            () => controls?.setPadDryRouted(padIndex, false),
+        ];
+    });
+}
+
+export function createToasterPadRouting({ readTrackStrip }: ToasterPadRoutingPorts): ToasterPadRouting {
+    const routes: RouteMap = new Map();
+    const state: RoutingState = { routes, readTrackStrip };
 
     return {
         routes,
-        snapshotRoute,
-        restoreBinding,
-        updateBinding,
-        reconcileParent,
-        handleDeviceRemoved,
-        forgetRoutesOfRemovedStrip,
+        snapshotRoute: (trackId) => snapshotRoute(routes, trackId),
+        restoreBinding: (trackId, sourceDestinationNode, snapshot, attemptedBinding) => {
+            restoreBinding(state, trackId, sourceDestinationNode, snapshot, attemptedBinding);
+        },
+        updateBinding: (trackId, padBinding) => updateBinding(state, trackId, padBinding),
+        reconcileParent: (toasterParentTrackId) => {
+            reconcileParent(state, toasterParentTrackId);
+        },
+        handleDeviceRemoved: (trackId, device) => {
+            handleDeviceRemoved(state, trackId, device);
+        },
+        forgetRoutesOfRemovedStrip: (trackId) => {
+            forgetRoutesOfRemovedStrip(routes, trackId);
+        },
         hasLiveRoute: () => Array.from(routes.values()).some((route) => route.destinationNode !== null),
-        resetEffects,
+        resetEffects: () => resetEffects(routes),
         clear: () => routes.clear(),
     };
 }
