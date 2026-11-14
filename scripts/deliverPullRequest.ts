@@ -23,9 +23,8 @@ import {
     spawnCapture,
     spawnRun,
     type MintPermissions,
-    withIsolatedGitTransport,
-    type GitRunner,
 } from './githubAppIdentity.ts';
+import { type GitRunner, withIsolatedGitTransport } from './isolatedGitTransport.ts';
 import {
     assertConventionalSubject,
     assertPullRequestBody,

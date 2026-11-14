@@ -50,7 +50,7 @@ the lane's choice, so no environment override can switch them off. The token is 
 out of every Git command that reads that config. No Git child receives `GH_TOKEN` or the GitHub
 CLI's config directory; Git authenticates only through a credential helper, and the only children
 that install one are the network transports (fetch, push, `ls-remote`). Those run through
-`withIsolatedGitTransport` in `scripts/githubAppIdentity.ts`, against a fresh Git directory
+`withIsolatedGitTransport` in `scripts/isolatedGitTransport.ts`, against a fresh Git directory
 whose config the script writes, named with `--git-dir`, whose `objects` links to the repository's
 own store so fetched objects land where later reads find them and pushes find what they send.
 Automatic gc and maintenance are off there, because they would treat the shared store's objects as

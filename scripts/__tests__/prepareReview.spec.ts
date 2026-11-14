@@ -329,6 +329,7 @@ describe('review prepare', () => {
             'scripts/canonicalRecord.ts',
             'scripts/evidenceSafety.ts',
             'scripts/githubAppIdentity.ts',
+            'scripts/isolatedGitTransport.ts',
             'scripts/prContract.ts',
             'scripts/prepareReview.ts',
             'scripts/prepareReviewEntry.ts',

@@ -9,9 +9,8 @@ import {
     spawnCapture,
     spawnCaptureBytes,
     type GhSession,
-    withIsolatedGitTransport,
-    type GitRunner,
 } from './githubAppIdentity.ts';
+import { type GitRunner, withIsolatedGitTransport } from './isolatedGitTransport.ts';
 import { fail } from './prContract.ts';
 import {
     readPublicReviewComments,

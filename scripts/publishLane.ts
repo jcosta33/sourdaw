@@ -29,9 +29,8 @@ import {
     tokenFreeGitEnv,
     type GhSession,
     type PublishingAuthorAuthorization,
-    withIsolatedGitTransport,
-    type GitRunner,
 } from './githubAppIdentity.ts';
+import { type GitRunner, withIsolatedGitTransport } from './isolatedGitTransport.ts';
 import {
     assertConventionalSubject,
     assertIssueNumber,

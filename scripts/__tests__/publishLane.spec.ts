@@ -793,6 +793,7 @@ describe('lane publish', () => {
                 'trustedGithubWriteBootstrap.ts',
                 'publishLane.ts',
                 'githubAppIdentity.ts',
+                'isolatedGitTransport.ts',
                 'prContract.ts',
                 'testInstructions.ts',
                 'testInstructionVocabulary.ts',

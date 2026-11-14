@@ -15,14 +15,8 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import {
-    gitAuthenticatedArgs,
-    githubChildEnv,
-    spawnCapture,
-    spawnRun,
-    withIsolatedGitTransport,
-    type GitRunner,
-} from '../githubAppIdentity.ts';
+import { gitAuthenticatedArgs, githubChildEnv, spawnCapture, spawnRun } from '../githubAppIdentity.ts';
+import { type GitRunner, withIsolatedGitTransport } from '../isolatedGitTransport.ts';
 
 // Composed at runtime: the pull-request secret scan matches token-shaped literals in source.
 const SENTINEL = ['ghs', 'sentinel', 'token'].join('_');

@@ -6,9 +6,8 @@ import {
     type GhSession,
     type spawnCapture,
     spawnCaptureBytes,
-    withIsolatedGitTransport,
-    type GitRunner,
 } from './githubAppIdentity.ts';
+import { type GitRunner, withIsolatedGitTransport } from './isolatedGitTransport.ts';
 import { fail, PR_STATE } from './prContract.ts';
 import { readReviewBundleContext, reviewBundlePath, type ReviewBundleContext } from './prepareReview.ts';
 import {
