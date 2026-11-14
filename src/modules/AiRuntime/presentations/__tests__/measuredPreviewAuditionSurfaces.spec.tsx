@@ -81,21 +81,24 @@ vi.mock('../../useCases/resolveMeasuredPreviewAudition', async () => {
 vi.mock('../../useCases/getMeasuredPreviewAuditionView', async () => {
     const { measuredPreviewAuditionStore: store } = await import('../../stores/measuredPreviewAuditionStore');
     const { resolveMeasuredPreviewAudition } = await import('../../useCases/resolveMeasuredPreviewAudition');
+    function readTarget(pair: ReturnType<typeof resolveMeasuredPreviewAudition>) {
+        if (pair.status !== 'available') {
+            return { targetId: 'drums', targetName: 'Drums', available: false as const, reason: pair.reason };
+        }
+        return {
+            targetId: 'drums',
+            targetName: 'Drums',
+            available: true as const,
+            reason: null,
+            baselineLufs: pair.baseline.lufs,
+            proposalLufs: pair.preview.lufs,
+            matchedLufs: pair.matchLufs,
+        };
+    }
     return {
         getMeasuredPreviewAuditionView: (input: { confirmationId: string }) => {
             const pair = resolveMeasuredPreviewAudition({ confirmationId: input.confirmationId, targetId: 'drums' });
-            const target =
-                pair.status === 'available'
-                    ? {
-                          targetId: 'drums',
-                          targetName: 'Drums',
-                          available: true as const,
-                          reason: null,
-                          baselineLufs: pair.baseline.lufs,
-                          proposalLufs: pair.preview.lufs,
-                          matchedLufs: pair.matchLufs,
-                      }
-                    : { targetId: 'drums', targetName: 'Drums', available: false as const, reason: pair.reason };
+            const target = readTarget(pair);
             const state = store.value;
             const active = state?.confirmationId === input.confirmationId ? state : null;
             return {

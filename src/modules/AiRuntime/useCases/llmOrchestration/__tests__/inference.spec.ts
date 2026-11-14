@@ -69,7 +69,7 @@ const mocks = vi.hoisted(() => ({
     initWebLlmEngine: vi.fn(),
     isWebLlmLoaded: vi.fn(),
     llmStatus: { value: { state: 'idle' } },
-    llmStatusSet: vi.fn(),
+    llmStatusSet: vi.fn<(status: { state: string }) => void>(),
     logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
     providerStartFailure: { value: null as 'openai' | 'webllm' | null },
     /** How the next compiled request is spoiled before the attempt sends it, if at all. */
