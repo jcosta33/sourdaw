@@ -182,6 +182,45 @@ describe('AiSection hosted backend question', () => {
             );
         });
 
+        it('drops a question left unanswered when an already-asked provider is saved next', async () => {
+            preferencesStore.set({ ...defaultPreferences, hostedBackendQuestionAsked: ['anthropic'] });
+            render(<AiSection />);
+            fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai' } });
+            await connectWithKey('sk-openai');
+            expect(question()).toHaveAccessibleName(
+                'Automatic never sends requests to a hosted provider. Use OpenAI for AI requests?'
+            );
+
+            fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'anthropic' } });
+            await connectWithKey('sk-anthropic');
+
+            expect(mocks.configureCloudProvider).toHaveBeenCalledTimes(2);
+            expect(screen.queryByRole('group', { name: QUESTION })).not.toBeInTheDocument();
+            expect(mocks.setAiBackendPreference).not.toHaveBeenCalled();
+            expect(mocks.backendPreference.value).toBe('auto');
+        });
+
+        it('drops the question when the hosted provider is removed', async () => {
+            mocks.hostedProvider.value = {
+                provider: 'anthropic',
+                model: mocks.catalogModelA.value,
+                baseUrl: null,
+                authentication: 'api-key',
+                reasoningEffort: null,
+                thinking: null,
+            };
+            render(<AiSection />);
+            await connectWithKey('sk-first');
+            expect(question()).toBeInTheDocument();
+
+            fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+
+            await waitFor(() => {
+                expect(screen.queryByRole('group', { name: QUESTION })).not.toBeInTheDocument();
+            });
+            expect(mocks.removeCloudProvider).toHaveBeenCalledOnce();
+        });
+
         it('tells two OpenAI-compatible endpoints apart by their base URL', async () => {
             render(<AiSection />);
             fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai-compatible' } });

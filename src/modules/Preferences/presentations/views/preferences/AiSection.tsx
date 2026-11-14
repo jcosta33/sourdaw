@@ -189,7 +189,9 @@ export const AiSection = (): ReactElement => {
     // Automatic never sends a request to a hosted provider, so a provider saved under it would go
     // unused without a word; the user is asked once per provider whether to select it. The selector
     // stays editable while a save is pending, so it is read as it is when the save completes.
+    // A shown question always names the provider currently saved, so every save drops it first.
     const askToSelectHostedProvider = (): void => {
+        setBackendQuestion(null);
         if ((aiBackendPreferenceStore.value ?? 'auto') !== 'auto' || !hostedProvidersAvailable) {
             return;
         }
@@ -228,6 +230,7 @@ export const AiSection = (): ReactElement => {
         setConfigurationPending(true);
         try {
             await removeCloudProvider();
+            setBackendQuestion(null);
             setConfigurationError(null);
             setApiKey('');
         } catch (error) {
