@@ -275,6 +275,8 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
         }
 
         if (this._counter >= this._measureQuanta) {
+            // A tail shorter than one millisecond gets no rate of its own;
+            // calibration rates its samples from the last closed segment.
             const tailMs = Date.now() - this._segmentStartMs;
             if (tailMs > 0) {
                 this._segmentRates.push(((after - this._segmentStartTick) | 0) / tailMs);
