@@ -71,6 +71,16 @@ describe('buildExternalPluginParameterRows', () => {
         );
         expect(rows.map((row) => row.valueText)).toEqual(['0.123', '440 Hz', '3']);
     });
+
+    it('keeps the unit unless the values are normalized, where it describes a different number', () => {
+        const hertz = [parameter({ id: 2, value: 0.004, unit: 'Hz' })];
+
+        const plain = buildExternalPluginParameterRows(hertz, undefined, { valuesAreNormalized: false });
+        const normalized = buildExternalPluginParameterRows(hertz, undefined, { valuesAreNormalized: true });
+
+        expect(plain[0]?.valueText).toBe('0.004 Hz');
+        expect(normalized[0]?.valueText).toBe('0.004');
+    });
 });
 
 describe('filterExternalPluginParameterRows', () => {

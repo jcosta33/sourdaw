@@ -1,7 +1,8 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useRef, useState } from 'react';
 
 import { DawSearchInput } from '#/components/daw/DawSearchInput';
 import { Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import {
     defaultExternalPluginActivationState,
@@ -25,11 +26,23 @@ import {
     buildExternalPluginParameterRows,
     type ExternalPluginParameterRow,
     filterExternalPluginParameterRows,
+    formatExternalPluginParameterValue,
     resolveExternalPluginParameterStatus,
 } from '../../helpers/externalPluginParameterRows';
 
 const PAGE_SIZE = 50;
 const REFUSED_MESSAGE = 'The plugin refused this change.';
+
+function pluralParameters(count: number): string {
+    return count === 1 ? '1 parameter' : `${String(count)} parameters`;
+}
+
+function describeCount(shown: number, total: number): string {
+    if (shown === total) {
+        return pluralParameters(total);
+    }
+    return `${String(shown)} of ${pluralParameters(total)}`;
+}
 
 type ExternalPluginParameterListProps = {
     device: Device;
@@ -42,43 +55,60 @@ type ParameterRowProps = {
 
 const ParameterRow = ({ instanceId, row }: ParameterRowProps): ReactElement => {
     const [refused, setRefused] = useState(false);
+    // The store moves only once the plugin accepts a change, so while the latest send is in flight the
+    // row holds the value it asked for; otherwise a second nudge would start from the stale store value.
+    const [pendingValue, setPendingValue] = useState<number | null>(null);
+    const latestSend = useRef(0);
 
-    const edit = (value: number): void => {
+    const edit = (requested: number): void => {
+        const send = ++latestSend.current;
         setRefused(false);
-        editExternalPluginParameter({ instanceId, parameterId: row.id, value }).catch(() => {
-            setRefused(true);
-        });
+        setPendingValue(requested);
+        editExternalPluginParameter({ instanceId, parameterId: row.id, value: requested })
+            .then(() => {
+                if (latestSend.current === send) {
+                    setPendingValue(null);
+                }
+            })
+            .catch(() => {
+                if (latestSend.current === send) {
+                    setPendingValue(null);
+                    setRefused(true);
+                }
+            });
     };
+
+    const value = pendingValue ?? row.value;
+    const valueText = pendingValue === null ? row.valueText : formatExternalPluginParameterValue(row, pendingValue);
 
     return (
         <li className="flex flex-col gap-0.5" data-testid={`external-parameter-${String(row.id)}`}>
-            <div className="flex items-center gap-2">
-                <span className="w-24 shrink-0 truncate text-[10px] text-foreground" title={row.name}>
-                    {row.name}
-                </span>
-                {row.kind === 'toggle' ? (
+            <div className="flex items-start gap-2">
+                <span className="min-w-0 flex-1 break-words text-[10px] text-foreground">{row.name}</span>
+                {row.kind === 'toggle' && (
                     <input
                         type="checkbox"
                         role="switch"
                         aria-label={row.name}
-                        checked={row.value - row.min >= 0.5}
+                        checked={value - row.min >= 0.5}
                         onChange={(event) => edit(event.target.checked ? row.max : row.min)}
                     />
-                ) : (
-                    <input
-                        type="range"
-                        aria-label={row.name}
-                        aria-valuetext={row.valueText}
-                        className="min-w-0 flex-1"
-                        min={row.min}
-                        max={row.max}
-                        step={row.step}
-                        value={row.value}
-                        onChange={(event) => edit(Number(event.target.value))}
-                    />
                 )}
-                <MetaText className="w-16 shrink-0 text-right tabular-nums">{row.valueText}</MetaText>
+                <MetaText className="shrink-0 text-right tabular-nums">{valueText}</MetaText>
             </div>
+            {row.kind !== 'toggle' && (
+                <input
+                    type="range"
+                    aria-label={row.name}
+                    aria-valuetext={valueText}
+                    className="w-full"
+                    min={row.min}
+                    max={row.max}
+                    step={row.step}
+                    value={value}
+                    onChange={(event) => edit(Number(event.target.value))}
+                />
+            )}
             {refused && (
                 <span role="status" className="text-[10px] text-destructive">
                     {REFUSED_MESSAGE}
@@ -119,7 +149,11 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
     }
 
     const rows = filterExternalPluginParameterRows(
-        buildExternalPluginParameterRows(snapshot.parameters, scanned?.parameters),
+        buildExternalPluginParameterRows(snapshot.parameters, scanned?.parameters, {
+            // The host reports VST3 values normalized, so the unit does not describe the number; #6579
+            // tracks showing the plugin's own display text.
+            valuesAreNormalized: scanned?.format.toLowerCase() === 'vst3',
+        }),
         query
     );
     const shown = rows.slice(0, visibleCount);
@@ -147,11 +181,7 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
                 aria-label="Filter parameters"
             />
             <div role="status">
-                <MetaText>
-                    {rows.length === snapshot.parameters.length
-                        ? `${String(rows.length)} parameters`
-                        : `${String(rows.length)} of ${String(snapshot.parameters.length)} parameters`}
-                </MetaText>
+                <MetaText>{describeCount(rows.length, snapshot.parameters.length)}</MetaText>
             </div>
             <ul className="flex flex-col gap-1.5" aria-label="Plugin parameters">
                 {shown.map((row) => (
@@ -159,13 +189,15 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
                 ))}
             </ul>
             {shown.length < rows.length && (
-                <button
+                <Button
                     type="button"
-                    className="self-start rounded border border-border/40 px-2 py-0.5 text-[10px] text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+                    variant="outline"
+                    size="xs"
+                    className="self-start"
                     onClick={() => setVisibleCount(visibleCount + PAGE_SIZE)}
                 >
                     Show more
-                </button>
+                </Button>
             )}
         </Stack>
     );

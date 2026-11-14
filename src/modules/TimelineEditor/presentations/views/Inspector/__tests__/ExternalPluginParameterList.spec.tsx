@@ -62,9 +62,10 @@ const seed = (
         message?: string;
         scanParameters?: ScannedPlugin['parameters'];
         snapshot?: boolean;
+        format?: string;
     } = {}
 ): void => {
-    const { status = 'active', message, scanParameters, snapshot = true } = options;
+    const { status = 'active', message, scanParameters, snapshot = true, format = 'clap' } = options;
     pluginScanStore.set({
         ...defaultPluginScanState,
         scannedPlugins: [
@@ -72,7 +73,7 @@ const seed = (
                 id: PLUGIN_ID,
                 name: 'Reverb',
                 vendor: 'Vendor',
-                format: 'clap',
+                format,
                 category: 'effect',
                 path: '/plugins/reverb.clap',
                 version: '1.0',
@@ -129,6 +130,102 @@ describe('ExternalPluginParameterList', () => {
         expect(slider).toHaveAttribute('min', '0');
         expect(slider).toHaveAttribute('max', '1');
         expect(slider).toHaveValue('0.5');
+    });
+
+    it.each([
+        { format: 'vst3', expected: '0.004' },
+        { format: 'VST3', expected: '0.004' },
+        { format: 'clap', expected: '0.004 Hz' },
+    ])('shows the $format value as "$expected"', ({ format, expected }) => {
+        seed([parameter({ id: 7, name: 'Band', value: 0.004, unit: 'Hz' })], { format });
+        render(<ExternalPluginParameterList device={device} />);
+
+        expect(screen.getByRole('slider', { name: 'Band' })).toHaveAttribute('aria-valuetext', expected);
+        expect(screen.getByText(expected)).toBeInTheDocument();
+    });
+
+    it.each([
+        { total: 1, query: '', text: '1 parameter' },
+        { total: 3, query: 'param 1', text: '1 of 3 parameters' },
+        { total: 3, query: '', text: '3 parameters' },
+    ])('reads "$text" for $total parameters filtered by "$query"', ({ total, query, text }) => {
+        seed(
+            Array.from({ length: total }, (_unused, index) => parameter({ id: index, name: `Param ${String(index)}` }))
+        );
+        render(<ExternalPluginParameterList device={device} />);
+        if (query !== '') {
+            fireEvent.change(screen.getByRole('searchbox', { name: 'Filter parameters' }), {
+                target: { value: query },
+            });
+        }
+
+        expect(screen.getByText(text)).toBeInTheDocument();
+    });
+
+    it('holds the requested value while the send is in flight and builds the next nudge on it', async () => {
+        const settle: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
+        mockEdit.mockImplementation(
+            () =>
+                new Promise<void>((resolve, reject) => {
+                    settle.push({ resolve, reject });
+                })
+        );
+        seed([parameter({ id: 7, name: 'Decay', value: 0.25 })]);
+        render(<ExternalPluginParameterList device={device} />);
+        const slider = screen.getByRole('slider', { name: 'Decay' });
+
+        fireEvent.change(slider, { target: { value: '0.5' } });
+        expect(slider).toHaveValue('0.5');
+        expect(slider).toHaveAttribute('aria-valuetext', '0.500');
+
+        fireEvent.change(slider, { target: { value: '0.6' } });
+        expect(slider).toHaveValue('0.6');
+
+        // The superseded send settling (and refusing) must not disturb the newer pending value.
+        await act(async () => {
+            settle[0]?.reject(new Error('refused'));
+            await Promise.resolve();
+        });
+        expect(slider).toHaveValue('0.6');
+        expect(screen.queryByText('The plugin refused this change.')).not.toBeInTheDocument();
+
+        // The latest send is refused: the row reverts to the store value and says so.
+        await act(async () => {
+            settle[1]?.reject(new Error('refused'));
+            await Promise.resolve();
+        });
+        expect(slider).toHaveValue('0.25');
+        expect(screen.getByText('The plugin refused this change.')).toBeInTheDocument();
+    });
+
+    it('drops the pending value once the latest send is accepted and the store has moved', async () => {
+        let resolveSend: () => void = () => {};
+        mockEdit.mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveSend = resolve;
+                })
+        );
+        seed([parameter({ id: 7, name: 'Decay', value: 0.25 })]);
+        render(<ExternalPluginParameterList device={device} />);
+        const slider = screen.getByRole('slider', { name: 'Decay' });
+
+        fireEvent.change(slider, { target: { value: '0.5' } });
+        await act(async () => {
+            externalPluginParameterStore.set({
+                byInstanceId: {
+                    [INSTANCE_ID]: {
+                        engineAttached: true,
+                        parameters: [parameter({ id: 7, name: 'Decay', value: 0.5 })],
+                    },
+                },
+            });
+            resolveSend();
+            await Promise.resolve();
+        });
+
+        expect(slider).toHaveValue('0.5');
+        expect(screen.queryByText('The plugin refused this change.')).not.toBeInTheDocument();
     });
 
     it('sends the keyed value of a slider change to the plugin', () => {

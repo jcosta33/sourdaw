@@ -19,6 +19,8 @@ export type ExternalPluginParameterRow = {
     max: number;
     step: number;
     kind: ExternalPluginParameterControlKind;
+    /** The unit shown beside the value; empty when the plugin declares none or the value is normalized. */
+    unit: string;
     valueText: string;
 };
 
@@ -47,24 +49,33 @@ function formatNumber(value: number, kind: ExternalPluginParameterControlKind, s
     return value.toFixed(digits);
 }
 
-/** The value as a plain number, with the plugin's unit when it declares one. */
+/** A value of this row as a plain number, with the unit the row carries when it has one. */
 export function formatExternalPluginParameterValue(
-    parameter: ExternalPluginParameter,
-    kind: ExternalPluginParameterControlKind
+    row: Pick<ExternalPluginParameterRow, 'kind' | 'min' | 'max' | 'unit'>,
+    value: number
 ): string {
-    const text = formatNumber(parameter.value, kind, parameter.maxValue - parameter.minValue);
-    return parameter.unit === '' ? text : `${text} ${parameter.unit}`;
+    const text = formatNumber(value, row.kind, row.max - row.min);
+    return row.unit === '' ? text : `${text} ${row.unit}`;
 }
+
+export type BuildExternalPluginParameterRowsOptions = {
+    /**
+     * The host reports this plugin's values normalized to 0..1 (VST3), so the unit the plugin declares
+     * describes its plain-domain value, not the number shown, and is left off.
+     */
+    valuesAreNormalized: boolean;
+};
 
 export function buildExternalPluginParameterRows(
     parameters: readonly ExternalPluginParameter[],
-    scanParameters: readonly ExternalPluginParameterScanFacts[] | undefined
+    scanParameters: readonly ExternalPluginParameterScanFacts[] | undefined,
+    options: BuildExternalPluginParameterRowsOptions = { valuesAreNormalized: false }
 ): ExternalPluginParameterRow[] {
     const scanById = new Map((scanParameters ?? []).map((scan) => [scan.id, scan]));
     return parameters.map((parameter) => {
         const kind = classify(parameter, scanById.get(parameter.id));
         const span = parameter.maxValue - parameter.minValue;
-        return {
+        const row = {
             id: parameter.id,
             name: parameter.name,
             value: parameter.value,
@@ -72,8 +83,9 @@ export function buildExternalPluginParameterRows(
             max: parameter.maxValue,
             step: kind === 'continuous' ? span / CONTINUOUS_STEPS : 1,
             kind,
-            valueText: formatExternalPluginParameterValue(parameter, kind),
+            unit: options.valuesAreNormalized ? '' : parameter.unit,
         };
+        return { ...row, valueText: formatExternalPluginParameterValue(row, parameter.value) };
     });
 }
 
