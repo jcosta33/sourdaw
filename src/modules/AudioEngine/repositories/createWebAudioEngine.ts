@@ -48,6 +48,7 @@ import { createEmptyGraphSlotResourcesByLoadState } from './webAudioEngine/creat
 import { createMasterSection, type MasterMeterNode, type MasterSection } from './webAudioEngine/createMasterSection';
 import { createNoopAudioContext } from './webAudioEngine/createNoopAudioContext';
 import { createScheduledSources, type ScheduledSources } from './webAudioEngine/createScheduledSources';
+import { createSendRouting, type SendRouting } from './webAudioEngine/createSendRouting';
 import { createTransportClock, type TransportClock } from './webAudioEngine/createTransportClock';
 import { getChromePlaybackStats } from './webAudioEngine/getChromePlaybackStats';
 import { readPlaybackStats } from './webAudioEngine/readPlaybackStats';
@@ -166,18 +167,6 @@ function hasToasterPadOutputControls(
 }
 
 /**
- * Equal-time crossfade duration (seconds) for a live pre/post-fader send-tap
- * handoff. The old tap's send gain ramps to 0 while a freshly-built gain on the
- * new tap ramps up over the same window, so the bus never sees the block of
- * silence a hard disconnect/reconnect produced. ~10ms is short enough to feel
- * instant yet long enough to span a render quantum at any sample rate.
- */
-const SEND_TAP_CROSSFADE_SECONDS = 0.01;
-
-/** Extra margin (seconds) before the faded-out old send node is disconnected. */
-const SEND_TAP_CROSSFADE_TEARDOWN_MARGIN_SECONDS = 0.02;
-
-/**
  * Ceiling (seconds) on a sidechain key alignment line. PDC values are single-
  * digit milliseconds to low tens; a `DelayNode` allocates its ring buffer from
  * this maximum, so it is generous enough that no realistic chain is clipped and
@@ -249,7 +238,7 @@ class AudioEngineImpl implements AudioEngine {
                 return engine.busNodes;
             },
             get sendNodes() {
-                return engine.sendNodes;
+                return engine.sends.sendNodes;
             },
             get toasterPadRoutes() {
                 return engine.toasterPadRoutes;
@@ -286,7 +275,7 @@ class AudioEngineImpl implements AudioEngine {
             reconnectRoutingForTrack: engine.reconnectRoutingForTrack.bind(engine),
             reconcileToasterParent: engine.reconcileToasterParent.bind(engine),
             handleDeviceRemoved: engine.handleDeviceRemoved.bind(engine),
-            crossfadeSendTap: engine.crossfadeSendTap.bind(engine),
+            crossfadeSendTap: engine.sends.crossfadeSendTap,
             waitForDevices: engine.waitForDevices.bind(engine),
         };
     }
@@ -316,7 +305,7 @@ class AudioEngineImpl implements AudioEngine {
      *  {@link setNativeCarriedTracks}. Strips created later read it too. */
     private nativeCarriedTrackIds: ReadonlySet<string> = new Set();
     private busNodes = new Map<string, BusNode>();
-    private sendNodes = new Map<string, SendNode>();
+    private readonly sends: SendRouting;
     private sidechainConnections = new Map<string, SidechainConnection>();
     private toasterPadRoutes = new Map<string, ToasterPadRoute>();
     /**
@@ -408,6 +397,18 @@ class AudioEngineImpl implements AudioEngine {
             readMonitorMono: () => this.master.monitorMonoNode,
             isDisposed: () => this.disposed,
             isFallback: () => this.fallbackMode,
+        });
+
+        this.sends = createSendRouting({
+            readContext: () => this.context,
+            isFallback: () => this.fallbackMode,
+            readTrackStrip: (trackId) => this.trackNodes.get(trackId)?.strip,
+            ensureBusStrip: (busId) => this.ensureBusStripInGraph(busId),
+            scheduleTrackSendAutomation: (sourceTrackId, busId, level, time) =>
+                this.trackNodes.get(sourceTrackId)?.scheduleSendAutomation(busId, level, time),
+            mutateRuntimeGraph: (mutation) => {
+                this.mutateRuntimeGraph(() => ({ value: undefined, changed: mutation() }));
+            },
         });
 
         this.adjustmentRuntime = createAdjustmentLayerRuntime({
@@ -940,7 +941,7 @@ class AudioEngineImpl implements AudioEngine {
                 // A bus owns a backing TrackNode; keep the public counters disjoint.
                 trackStrips: this.trackNodes.size - this.busNodes.size,
                 busStrips: this.busNodes.size,
-                sends: this.sendNodes.size,
+                sends: this.sends.sendNodes.size,
                 sidechains: this.sidechainConnections.size,
                 deviceInstances,
                 pendingDeviceInstances,
@@ -1250,19 +1251,7 @@ class AudioEngineImpl implements AudioEngine {
         if (!strip) {
             return;
         }
-        for (const send of this.sendNodes.values()) {
-            if (send.sourceTrackId !== trackId) {
-                continue;
-            }
-            const sourceNode = send.preFader ? strip.preFaderSendGate : strip.carrierGate;
-            try {
-                send.sourceNode.disconnect(send.gainNode);
-            } catch {
-                // A wider rebuild may already have removed the prior source edge.
-            }
-            sourceNode.connect(send.gainNode);
-            send.sourceNode = sourceNode;
-        }
+        this.sends.reconnectTrack(trackId, strip);
         for (const connection of this.sidechainConnections.values()) {
             if (connection.sourceTrackId !== trackId) {
                 continue;
@@ -1542,8 +1531,7 @@ class AudioEngineImpl implements AudioEngine {
             masterGainNode: this.master.gainNode,
             getBusGainNode: (id) => this.busNodes.get(id)?.strip.gainNode,
             getTrackGainNode: (id) => this.trackNodes.get(id)?.strip.gainNode,
-            getSendsForTrack: (tId) =>
-                Array.from(this.sendNodes.values()).filter((state) => state.sourceTrackId === tId),
+            getSendsForTrack: (tId) => this.sends.sendsForTrack(tId),
             pendingDevicePromises: this.pendingDevicePromises,
             readinessDiagnostics: this.deviceReadinessDiagnostics,
             collaborators: this.deviceCollaborators,
@@ -1606,11 +1594,7 @@ class AudioEngineImpl implements AudioEngine {
         // removeBusStrip's busId sweep. Without this, the send/sidechain GainNodes
         // for the removed track survive in the maps — still wired into their bus /
         // target device, leaking nodes and (for sends) re-summing a ghost tap.
-        for (const send of Array.from(this.sendNodes.values())) {
-            if (send.sourceTrackId === trackId) {
-                this.removeSendFromGraph(send.sourceTrackId, send.busId);
-            }
-        }
+        this.sends.removeSendsFromTrack(trackId);
         for (const [key, connection] of this.sidechainConnections) {
             if (connection.sourceTrackId === trackId || removedDeviceIds.has(connection.targetDeviceId)) {
                 this.removeLiveSidechainConnection(key);
@@ -1786,11 +1770,7 @@ class AudioEngineImpl implements AudioEngine {
         if (!node) {
             return false;
         }
-        for (const send of Array.from(this.sendNodes.values())) {
-            if (send.busId === busId) {
-                this.removeSendFromGraph(send.sourceTrackId, send.busId);
-            }
-        }
+        this.sends.removeSendsToBus(busId);
         const removedTrack = this.removeTrackStripFromGraph(busId, teardown);
         node.dispose();
         this.busNodes.delete(busId);
@@ -1976,119 +1956,15 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public setSend(sourceTrackId: string, busId: string, level: number, preFader = false): void {
-        if (this.fallbackMode) {
-            return;
-        }
-        this.mutateRuntimeGraph(() => {
-            const trackNode = this.trackNodes.get(sourceTrackId);
-            if (!trackNode) {
-                return { value: undefined, changed: false };
-            }
-            const busMutation = this.ensureBusStripInGraph(busId);
-            const key = `${sourceTrackId}→${busId}`;
-            const clampedLevel = Math.max(0, Math.min(1, level));
-            const existing = this.sendNodes.get(key);
-            if (existing) {
-                if (existing.preFader !== preFader) {
-                    this.crossfadeSendTap(existing, busMutation.value, preFader, clampedLevel);
-                    return { value: undefined, changed: true };
-                }
-                existing.gainNode.gain.setTargetAtTime(clampedLevel, this.context.currentTime, 0.01);
-                return { value: undefined, changed: busMutation.changed };
-            }
-
-            const sendGain = this.context.createGain();
-            sendGain.gain.value = clampedLevel;
-            const tap = preFader ? trackNode.strip.preFaderSendGate : trackNode.strip.carrierGate;
-            tap.connect(sendGain);
-            sendGain.connect(busMutation.value.gainNode);
-            this.sendNodes.set(key, { sourceTrackId, busId, gainNode: sendGain, sourceNode: tap, preFader });
-            return { value: undefined, changed: true };
-        });
+        this.sends.setSend(sourceTrackId, busId, level, preFader);
     }
 
     public scheduleSendAutomation(sourceTrackId: string, busId: string, level: number, time: number): void {
-        if (this.fallbackMode) {
-            return;
-        }
-        this.trackNodes.get(sourceTrackId)?.scheduleSendAutomation(busId, level, time);
-    }
-
-    /**
-     * Switch a live send between the pre- and post-fader tap without a gap of
-     * silence on the bus. A hard `disconnect()` then `connect()` left the bus with
-     * no input for one render quantum (~2.7ms at 48k) — audible on a pumping bus.
-     * Instead we build a fresh gain on the new tap and equal-time-crossfade: the
-     * new gain ramps 0→level while the old gain ramps level→0 over the same
-     * window, so the bus is continuously fed. After the ramp the old node is torn
-     * down. The teardown is deferred on the control thread (`setTimeout`), never
-     * on the audio thread, so the RT graph is untouched by the cleanup.
-     */
-    private crossfadeSendTap(existing: SendNode, busStrip: BusStrip, preFader: boolean, clampedLevel: number): void {
-        const now = this.context.currentTime;
-        const end = now + SEND_TAP_CROSSFADE_SECONDS;
-
-        const sourceStrip = this.trackNodes.get(existing.sourceTrackId)?.strip;
-        if (!sourceStrip) {
-            return;
-        }
-        const newTap = preFader ? sourceStrip.preFaderSendGate : sourceStrip.carrierGate;
-        const newGain = this.context.createGain();
-        newGain.gain.setValueAtTime(0, now);
-        newGain.gain.linearRampToValueAtTime(clampedLevel, end);
-        newTap.connect(newGain);
-        newGain.connect(busStrip.gainNode);
-
-        // Ramp the outgoing gain to silence over the same window. Pin its current
-        // value first so the ramp starts from where it is, not from a stale
-        // scheduled value.
-        const oldGain = existing.gainNode;
-        const oldSource = existing.sourceNode;
-        oldGain.gain.cancelScheduledValues(now);
-        oldGain.gain.setValueAtTime(oldGain.gain.value, now);
-        oldGain.gain.linearRampToValueAtTime(0, end);
-
-        // Promote the new node to the live send and tear the old one down after
-        // the crossfade completes (plus a small margin) on the control thread.
-        existing.gainNode = newGain;
-        existing.sourceNode = newTap;
-        existing.preFader = preFader;
-        const teardownMs = (SEND_TAP_CROSSFADE_SECONDS + SEND_TAP_CROSSFADE_TEARDOWN_MARGIN_SECONDS) * 1000;
-        setTimeout(() => {
-            try {
-                oldSource.disconnect(oldGain);
-            } catch {
-                // The old source edge may already be gone after wider teardown.
-            }
-            try {
-                oldGain.disconnect();
-            } catch {
-                // removeSend or resetGraph may already have torn down the gain.
-            }
-        }, teardownMs);
-    }
-
-    private removeSendFromGraph(sourceTrackId: string, busId: string): boolean {
-        const key = `${sourceTrackId}→${busId}`;
-        const send = this.sendNodes.get(key);
-        if (!send) {
-            return false;
-        }
-        try {
-            send.sourceNode.disconnect(send.gainNode);
-        } catch {
-            // The source edge may already be gone after a graph rebuild.
-        }
-        send.gainNode.disconnect();
-        this.sendNodes.delete(key);
-        return true;
+        this.sends.scheduleSendAutomation(sourceTrackId, busId, level, time);
     }
 
     public removeSend(sourceTrackId: string, busId: string): void {
-        this.mutateRuntimeGraph(() => ({
-            value: undefined,
-            changed: this.removeSendFromGraph(sourceTrackId, busId),
-        }));
+        this.sends.removeSend(sourceTrackId, busId);
     }
 
     public setTrackOutput(trackId: string, outputId: string, padBinding?: ToasterPadBinding): void {
@@ -2443,7 +2319,7 @@ class AudioEngineImpl implements AudioEngine {
                     !this.fallbackMode &&
                     (this.trackNodes.size > 0 ||
                         this.busNodes.size > 0 ||
-                        this.sendNodes.size > 0 ||
+                        this.sends.sendNodes.size > 0 ||
                         this.sidechainConnections.size > 0 ||
                         this.adjustmentRuntime.listLiveBusKeys().length > 0 ||
                         Array.from(this.toasterPadRoutes.values()).some((route) => route.destinationNode !== null));
@@ -2464,9 +2340,7 @@ class AudioEngineImpl implements AudioEngine {
                         () => connection.keyDelayNode.disconnect(),
                         () => connection.gainNode.disconnect(),
                     ]),
-                    ...Array.from(this.sendNodes.values(), (send) => () => {
-                        this.removeSendFromGraph(send.sourceTrackId, send.busId);
-                    }),
+                    ...this.sends.resetEffects(),
                     ...Array.from(this.toasterPadRoutes.values()).flatMap((route) => {
                         const { controls, destinationNode, padIndex } = route;
                         if (!destinationNode) {
@@ -2484,7 +2358,7 @@ class AudioEngineImpl implements AudioEngine {
                         // even when a physical disconnect or disposal reported a fault.
                         this.sidechainConnections.clear();
                         this.pendingSidechainRoutes.clear();
-                        this.sendNodes.clear();
+                        this.sends.clear();
                         this.busNodes.clear();
                         this.trackNodes.clear();
                         this.toasterPadRoutes.clear();
