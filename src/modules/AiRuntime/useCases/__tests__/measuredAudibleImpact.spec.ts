@@ -1,4 +1,4 @@
-import { parse } from 'superjson';
+import { parse, stringify } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
@@ -692,6 +692,20 @@ describe('the plan’s audible claim', () => {
         expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(before);
     });
 
+    it('round-trips a claim over a bus target unchanged through what the store wrote', () => {
+        proposeCard({
+            gain: 0.7,
+            preview: previewOf([vocalTarget({ targetId: 'bus-drums', targetKind: 'bus' })]),
+        });
+        const before = audible();
+        if (before.status !== 'measured') {
+            throw new Error('Expected a measured claim.');
+        }
+        expect(before.metrics.every((metric) => metric.targetKind === 'bus')).toBe(true);
+        persistAgentRunState(readAgentRunState());
+        expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(before);
+    });
+
     describe('the size of a claim', () => {
         const manyTargets = (count: number) =>
             Array.from({ length: count }, (_, index) => vocalTarget({ targetId: `target-${String(index)}` }));
@@ -762,5 +776,22 @@ describe('the plan’s audible claim', () => {
                 })
             ).toBe(reference);
         }
+    });
+
+    it('drops a run whose persisted measured claim carries more metrics than the limit', () => {
+        proposeCard({ gain: 0.7, preview: previewOf([vocalTarget()]) });
+        const persisted = (metricCount: number): number => {
+            const copy = structuredClone(readAgentRunState()) as {
+                runs: { plan: { expectedImpact: { audible: { metrics: unknown[] } } } }[];
+            };
+            for (const run of copy.runs) {
+                const [first] = run.plan.expectedImpact.audible.metrics;
+                run.plan.expectedImpact.audible.metrics = Array.from({ length: metricCount }, () => first);
+            }
+            localStorage.setItem('sourdaw-agent-runs', stringify(copy));
+            return reloadRunFromStorage() === undefined ? 0 : 1;
+        };
+        expect(persisted(MAX_AUDIBLE_CLAIM_METRICS)).toBe(1);
+        expect(persisted(MAX_AUDIBLE_CLAIM_METRICS + 1)).toBe(0);
     });
 });
