@@ -1,7 +1,7 @@
 ---
 type: adr
 id: 0058
-title: App actions live with their owning modules; the contract kernel lives in Command
+title: App actions live with their owning modules over a domain-free registry
 status: accepted
 date: 2026-11-14
 owner: The Sourdaw team
@@ -13,7 +13,7 @@ sources:
     - scripts/generateVersionedCommandArgumentSchemas.mjs
 ---
 
-# 0058 - App actions live with their owning modules
+# 0058 - App actions live with their owning modules over a domain-free registry
 
 ## Context
 
@@ -42,38 +42,50 @@ a new action must join.
 
 ## Decision
 
-1. **Kernel home of the contract.** The generic handler contract, `createHandler` and the action
-   registry live in the Command module's `events/` folder and are exported from
-   `#/modules/Command/events`. Command owns dispatch through `executeAppAction`, and `events/` is the
-   only contract barrel that may carry types. Handler maps stay registered in `src/app/bootstrap.ts`
+1. **The domain-free contract stays in `src/utils/handlerContract.ts`.** That file keeps only the
+   generic handler contract (`ActionHandler`, the `Handler*` types, `ExecuteOptions`), and holds the
+   empty action registry. `createHandler` stays in `src/utils/createHandler.ts`. Reason: these types
+   name no module's language. Every layer may import utils, pure layers included, while the pure
+   layers (`models/`, `services/`, `transformers/`, `validators/`) and `repositories/` may not
+   import any module's `events/` folder, their own module's included (`models-are-pure`,
+   `services-must-stay-pure`, `transformers-must-stay-pure`, `validators-must-stay-pure`,
+   `repositories-no-business`). Production files in those layers import `AppAction` today, so a
+   contract in `events/` would break them. Handler maps stay registered in `src/app/bootstrap.ts`
    through `getProductionCommandHandlerMaps`, and every mutation still goes through
    `executeAppAction`.
 
-2. **Composed union.** Command declares `interface AppActionRegistry {}`, with
-   `AppAction = AppActionRegistry[keyof AppActionRegistry]` and `AppActionType = AppAction['type']`.
-   Each owning module declares its variants in its own `events/` folder, in files named
-   `<area>AppActions.ts`, each within the 600-line ceiling. Each such file exports its sub-union and
-   adds exactly one registry key through module augmentation
-   (`declare module '#/modules/Command/events' { interface AppActionRegistry { ... } }`).
-   Reason: the owner-to-Command edge points down to the kernel. Command imports no domain module, so
-   composing the union adds no module edge and no cycle. Interface augmentation is the TypeScript
-   mechanism for an open, compiler-checked registry, and it was verified to merge through the barrel
-   with tsc 7.
+2. **Composed union.** `src/utils/handlerContract.ts` declares `export interface AppActionRegistry {}`,
+   with `AppAction = AppActionRegistry[keyof AppActionRegistry]` and
+   `AppActionType = AppAction['type']`. Each owning module declares its variants in its own
+   `events/` folder, in files named `<area>AppActions.ts`, each within the 600-line ceiling. Each
+   such file exports its sub-union and adds exactly one registry key with
+   `declare module '#/utils/handlerContract' { interface AppActionRegistry { ... } }`. Reason: utils
+   imports nothing, and each module already depends on utils, so composing the union adds no module
+   edge and no cycle. Interface augmentation is the TypeScript mechanism for an open,
+   compiler-checked registry. It was verified with tsc 7, together with a transitional key declared
+   in the same interface.
 
 3. **Ownership oracle.** An action belongs to the module whose `get<Module>Handlers` map registers
    its handler. That set is the one `getProductionCommandHandlerMaps` returns.
 
-4. **Payload and snapshot types.** A shared snapshot type lives with the module that owns its
-   concept. The exception is a type referenced by an action of a lower-tier module, or of a module
-   the tier manifest would put in an unaccepted cycle. Then it lives in the lowest-tier referencing
-   module, as that module's own structural snapshot. No placement may add an upward edge or a cycle
-   outside `allowedCycles` in `.dependency-cruiser.module-tiers.cjs`. If a type cannot be placed under
-   this rule, the slice stops, and this ADR is amended in its own pull request before the slice
-   continues.
+4. **Payload and snapshot types.** A snapshot type is defined by the module that owns its concept,
+   in that module's `events/` file when only non-pure layers need it by name. When the owner's own
+   pure layers (`models/`, `services/`, `transformers/`, `validators/`) need it, it is defined in the
+   owner's `models/`, and the `events/` file references it. Other modules never import a snapshot by
+   a deep path. A consumer in a pure layer, and any consumer of a model-defined snapshot, derives the
+   type from its action, for example `Extract<AppAction, { type: 'restoreTrack' }>['payload']['track']`.
+   That is the same rule as the existing `ReturnType`/`Parameters` derivation. The exception is a
+   type referenced by an action of a lower-tier module, or of a module the tier manifest would put in
+   an unaccepted cycle. Then it lives in the lowest-tier referencing module, as that module's own
+   structural snapshot. No placement may add an upward edge or a cycle outside `allowedCycles` in
+   `.dependency-cruiser.module-tiers.cjs`. If a type cannot be placed under this rule, the slice
+   stops, and this ADR is amended in its own pull request before the slice continues.
 
-5. **`src/utils` holds no domain types.** `handlerContract.ts` is deleted in the last slice.
-   Utilities whose only purpose is the moved types move with them: `createHandler`, and the tempo
-   audio-source promotion helpers that read snapshot types.
+5. **`src/utils` holds no domain types.** After the last slice, `handlerContract.ts` holds only the
+   domain-free contract and the empty registry. The domain types it holds today move to their owners:
+   every variant, every snapshot, and `TrackKind`, `AutomationMode` and `AutomationRecordingPolicy`.
+   Utilities whose only purpose is a moved domain type move with it, for example the tempo
+   audio-source promotion helpers.
 
 6. **Shape preservation.** No action, payload or snapshot changes shape during the moves. Undo
    inverses, `describe()` projections and persisted history therefore stay valid. The command
@@ -97,25 +109,24 @@ a new action must join.
       narrowing to one specific action that it builds or consumes by contract.
 
 8. **Partial programs.** TypeScript programs that do not include all of `src` (the scripts and e2e
-   projects) include the owners' `events/*AppActions.ts` files, or avoid naming `AppAction`. They
+   projects) include the owners' augmentation files (`src/modules/*/events/*AppActions.ts`), or avoid naming `AppAction`. They
    never see a truncated union.
 
 ## Transition
 
-`src/utils` may not import modules, and every dependency-cruiser baseline is empty. No re-export shim
-may stay at the old utils path, because it would be new boundary debt. The slice order:
+No import path changes for the generic contract, so the roughly 745 importers are not rewritten.
+The slice order:
 
 - (a) The command-schema generator emits canonical order. This is a one-time regeneration with no
   change in validation behaviour.
-- (b) The generic contract, `createHandler` and the registry move to Command `events/`. Their
-  importers are rewritten once. During the transition the registry carries one `legacy` key whose
-  value is the not-yet-moved union. Command imports that union from `src/utils/handlerContract.ts`,
-  which is allowed because a module may import utils.
-- (c) Each following slice moves one owner group's variants and snapshot types, and rewrites only the
-  importers of the moved named types. The `legacy` key shrinks each time.
-- (d) The last move slice deletes `handlerContract.ts` and the `legacy` key, and updates the scripts
-  and e2e programs.
-- (e) The lookup-table slices run once per concern-owning module, after (b) has landed.
+- (b) Until the last move slice, `AppActionRegistry` carries one `legacy` key whose value is the
+  union of variants not yet moved, declared in `handlerContract.ts` itself.
+- (c) Each move slice moves one owner group's variants and the snapshot types only they reference,
+  shrinking `legacy`. It rewrites only the importers of the moved named types. The first move slice
+  adds the partial-program includes.
+- (d) The last move slice removes `legacy` and the remaining domain types from `handlerContract.ts`.
+- (e) The lookup-table slices run per concern-owning module and do not wait for the moves, because
+  `AppActionType` keeps its path.
 
 Every slice is behaviour-preserving, leaves the tree compiling, and lands as one reviewable pull
 request.
