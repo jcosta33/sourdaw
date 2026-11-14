@@ -93,7 +93,8 @@ export function readLiveReviewComparison(
     number: number,
     head: string,
     session: GhSession,
-    capture: typeof spawnCapture
+    capture: typeof spawnCapture,
+    captureBytes: typeof spawnCaptureBytes = spawnCaptureBytes
 ): LiveReviewComparison {
     const { gh, git, gitUntrimmed, fetch } = liveCommands(primaryRoot, session, capture);
     const pr = parseJson<{ headRefOid?: unknown; baseRefOid?: unknown }>(
@@ -112,7 +113,7 @@ export function readLiveReviewComparison(
     const mergeBase = git(['merge-base', pr.baseRefOid, head]);
     return {
         mergeBase,
-        patch: spawnCaptureBytes('git', ['diff', `${mergeBase}...${head}`], {
+        patch: captureBytes('git', ['diff', `${mergeBase}...${head}`], {
             cwd: primaryRoot,
             env: session.env,
             maxBufferBytes: 512 * 1024 * 1024,

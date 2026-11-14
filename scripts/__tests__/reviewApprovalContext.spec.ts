@@ -216,6 +216,43 @@ describe('real shell approval context', () => {
 });
 
 describe('real shell live review comparison', () => {
+    it('threads an explicit raw capture through shellPort without decoding or falling back', () => {
+        const f = fixture();
+        const patch = Buffer.from([0xff, 0xfe, 0x0a]);
+        const captureBytes = vi.fn<typeof githubAppIdentity.spawnCaptureBytes>().mockReturnValue(patch);
+        const session = { configDir: f.root, env: {}, dispose: () => undefined };
+        try {
+            const port = shellPort(
+                session,
+                f.root,
+                (command, args, options) => {
+                    if (command === 'gh') {
+                        return JSON.stringify(f.live);
+                    }
+                    if (args.includes('fetch')) {
+                        return '';
+                    }
+                    return spawnCapture(command, args, options);
+                },
+                undefined,
+                undefined,
+                captureBytes
+            );
+            expect(port.liveReviewComparison?.(42, f.head).patch).toBe(patch);
+            expect(captureBytes).toHaveBeenCalledExactlyOnceWith('git', ['diff', `${f.base}...${f.head}`], {
+                cwd: f.root,
+                env: session.env,
+                maxBufferBytes: 512 * 1024 * 1024,
+            });
+            captureBytes.mockImplementationOnce(() => {
+                throw new Error('raw capture refused');
+            });
+            expect(() => port.liveReviewComparison?.(42, f.head)).toThrow('raw capture refused');
+        } finally {
+            removeFixture(f.root);
+        }
+    });
+
     function compare(f: ReturnType<typeof fixture>) {
         const port = shellPort(
             { configDir: f.root, env: {}, dispose: () => undefined },

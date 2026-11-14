@@ -12,6 +12,7 @@ import {
     parseJson,
     resolvePrimaryRoot,
     spawnCapture,
+    spawnCaptureBytes,
     type GhSession,
 } from './githubAppIdentity.ts';
 import { composeReviewCommentBody, fail, PR_STATE } from './prContract.ts';
@@ -423,7 +424,8 @@ export function shellPort(
     capture: typeof spawnCapture = spawnCapture,
     markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined,
     markDefinitiveNoMutationHttpStatus: PullRequestReviewPublicationMutationBoundary['markDefinitiveNoMutationHttpStatus'] = () =>
-        undefined
+        undefined,
+    captureBytes: typeof spawnCaptureBytes = spawnCaptureBytes
 ): PublishReviewPort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => capture(command, args, { cwd: directory }),
@@ -440,7 +442,8 @@ export function shellPort(
         writeBundleText: (path, contents) => writeFileSync(path, contents),
         assertApprovalContext: (number, head, bundle) =>
             readLiveApprovalContext(primaryRoot, number, head, bundle, session, capture),
-        liveReviewComparison: (number, head) => readLiveReviewComparison(primaryRoot, number, head, session, capture),
+        liveReviewComparison: (number, head) =>
+            readLiveReviewComparison(primaryRoot, number, head, session, capture, captureBytes),
         postReview: ({ number, commitId, event, body, comments }) => {
             const input = reviewPublicationPayload({ commitId, event, body, comments });
             markRemoteMutationAttempt();
