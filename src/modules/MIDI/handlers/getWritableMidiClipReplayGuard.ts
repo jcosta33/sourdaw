@@ -1,6 +1,8 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { classifyMidiReplayProducer } from '../useCases/midiNoteTransforms/classifyMidiReplayProducer';
+
 type AddClipAction = Extract<AppAction, { type: 'addClip' }>;
 type AddTrackAction = Extract<AppAction, { type: 'addTrack' }>;
 
@@ -28,8 +30,9 @@ function getLiveTarget(
 function getLatestEarlierClipProducer(clipId: string, context: HandlerValidationContext): AddClipAction | null {
     for (let index = context.actionIndex - 1; index >= 0; index -= 1) {
         const action = context.actions[index];
-        if (action?.type === 'addClip' && action.payload.id === clipId) {
-            return action;
+        const producer = action ? classifyMidiReplayProducer(action) : null;
+        if (producer?.kind === 'clip' && producer.action.payload.id === clipId) {
+            return producer.action;
         }
     }
     return null;
@@ -38,8 +41,9 @@ function getLatestEarlierClipProducer(clipId: string, context: HandlerValidation
 function getLatestEarlierTrackProducer(trackId: string, context: HandlerValidationContext): AddTrackAction | null {
     for (let index = context.actionIndex - 1; index >= 0; index -= 1) {
         const action = context.actions[index];
-        if (action?.type === 'addTrack' && action.payload.id === trackId) {
-            return action;
+        const producer = action ? classifyMidiReplayProducer(action) : null;
+        if (producer?.kind === 'track' && producer.action.payload.id === trackId) {
+            return producer.action;
         }
     }
     return null;

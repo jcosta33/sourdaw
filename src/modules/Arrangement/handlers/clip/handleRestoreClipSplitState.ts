@@ -14,6 +14,7 @@ import {
     type RetiredTakeLaneSnapshot,
 } from '#/utils/handlerContract';
 
+import { changesTempoByActionType } from '../../models/ChangesTempoByActionType';
 import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIdentityIds';
 import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
@@ -71,15 +72,6 @@ function clipAutomationLanesMatch(
     );
 }
 
-/** Same precondition `execute` writes against, split across the track-state, MIDI-state and
- *  satellite stores it reads from — mirrors `replaceClipSplitTrackState`,
- *  `restoreMidiClipSplitState` and `execute`'s own satellite guard exactly, reused by
- *  `validate` so a batch preflight refuses a diverged clip instead of executing into a
- *  conflict. */
-function changesTempo(action: AppAction): boolean {
-    return action.type === 'setTempo' || action.type === 'restoreTempoEdit';
-}
-
 function expectedSatellitesMatch(action: RestoreClipSplitStateAction, priorActions: readonly AppAction[]): boolean {
     return (
         action.payload.expected.clipSatellites === undefined ||
@@ -87,6 +79,11 @@ function expectedSatellitesMatch(action: RestoreClipSplitStateAction, priorActio
     );
 }
 
+/** Same precondition `execute` writes against, split across the track-state, MIDI-state and
+ *  satellite stores it reads from — mirrors `replaceClipSplitTrackState`,
+ *  `restoreMidiClipSplitState` and `execute`'s own satellite guard exactly, reused by
+ *  `validate` so a batch preflight refuses a diverged clip instead of executing into a
+ *  conflict. */
 function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: HandlerValidationContext): boolean {
     const priorActions = context?.actions.slice(0, context.actionIndex) ?? [];
     const projected = projectClipReplayPrefix(priorActions);
@@ -100,7 +97,7 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
         })) ?? [];
     let takePriorActions = priorActions;
     let takeLanes: Parameters<typeof reKeyedTakeLaneOwnersMatchStore>[3] = undefined;
-    if (priorActions.some(changesTempo)) {
+    if (priorActions.some((action) => changesTempoByActionType[action.type])) {
         if (!projected.tracks) {
             return false;
         }
