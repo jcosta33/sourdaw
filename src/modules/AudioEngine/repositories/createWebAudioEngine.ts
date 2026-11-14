@@ -5,7 +5,6 @@ import {
     type AudioLatencyProfile,
 } from '#/infra/audioContext/audioLatencyProfile';
 import { logger } from '#/infra/logger/appLogger';
-import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { runAllAsyncEffects, runAllEffects } from '#/utils/runEffects';
 
@@ -13,11 +12,7 @@ import { createAdjustmentLayerRuntime, type AdjustmentLayerRuntime } from '../en
 import { BusNode } from '../engine/BusNode';
 import { createDeviceReadinessDiagnostics } from '../engine/deviceReadinessDiagnostics';
 import { dropoutCounters } from '../engine/dropoutCounter';
-import {
-    RuntimeGraphMutationFailure,
-    RuntimeGraphMutationRejected,
-    TrackNode,
-} from '../engine/TrackNode';
+import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected, TrackNode } from '../engine/TrackNode';
 import {
     bitcrusherRateProcessorUrl,
     meteringProcessorUrl,
@@ -25,16 +20,10 @@ import {
 } from '../engine/workletProcessorUrls';
 import { type AudioPreviewIntent } from '../models/AudioPreviewIntent';
 import {
-    type RuntimeGraphDelta,
-    type RuntimeGraphDeviceChainDelta,
-    type RuntimeGraphDeltaNode,
     type RuntimeGraphDeltaResult,
     type RuntimeGraphProjectRevisionValidator,
-    type RuntimeGraphTrackStripInitializationDelta,
     type RuntimeGraphTopologyValidator,
 } from '../models/RuntimeGraphDelta';
-import { compileRuntimeGraphDelta } from '../services/compileRuntimeGraphDelta';
-import { matchesRuntimeDeviceChainTopology } from '../services/matchesRuntimeDeviceChainTopology';
 
 import { applyParams } from './applyParams';
 import { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
@@ -46,6 +35,10 @@ import { createAudioPreview, type AudioPreview } from './webAudioEngine/createAu
 import { createEmptyGraphSlotResourcesByLoadState } from './webAudioEngine/createEmptyGraphSlotResourcesByLoadState';
 import { createMasterSection, type MasterMeterNode, type MasterSection } from './webAudioEngine/createMasterSection';
 import { createNoopAudioContext } from './webAudioEngine/createNoopAudioContext';
+import {
+    createRuntimeGraphDeltaApplication,
+    type RuntimeGraphDeltaApplication,
+} from './webAudioEngine/createRuntimeGraphDeltaApplication';
 import {
     createRuntimeGraphRevision,
     type RuntimeGraphMutation,
@@ -247,12 +240,12 @@ class AudioEngineImpl implements AudioEngine {
     private readonly toasterPads: ToasterPadRouting;
     private readonly scheduledSources: ScheduledSources;
     private pendingDevicePromises = new Set<Promise<unknown>>();
-    private withheldDeviceNotices = new Set<string>();
     private workletReady = false;
     private fallbackMode = false;
     private readonly transportClock: TransportClock;
     /** The runtime-graph revision and the validators a compiled delta is admitted against. */
     private readonly runtimeGraph: RuntimeGraphRevision = createRuntimeGraphRevision();
+    private readonly runtimeGraphDeltas: RuntimeGraphDeltaApplication;
     private useCaseDeviceCollaborators: EngineUseCaseCollaborators = UNWIRED_USE_CASE_DEVICE_COLLABORATORS;
     /** Built-ins come straight from this repository; the rest resolve through the installed use cases per call. */
     private readonly deviceCollaborators: EngineDeviceCollaborators = {
@@ -347,6 +340,29 @@ class AudioEngineImpl implements AudioEngine {
             },
         });
 
+        this.runtimeGraphDeltas = createRuntimeGraphDeltaApplication({
+            readRevision: () => this.runtimeGraph.current(),
+            readProjectRevisionValidator: () => this.runtimeGraph.projectRevisionValidator(),
+            readTopologyValidator: () => this.runtimeGraph.topologyValidator(),
+            mutateRuntimeGraph: this.runtimeGraph.mutate,
+            isFallback: () => this.fallbackMode,
+            readTrackNode: (trackId) => this.trackNodes.get(trackId),
+            readToasterPadBinding: (trackId) => this.toasterPads.routes.get(trackId),
+            hasOutputDestination: (outputId) => this.hasRuntimeOutputDestination(outputId),
+            ensureTrackStripInGraph: (trackId) => {
+                this.ensureTrackStripInGraph(trackId);
+            },
+            createTrackNode: (trackId) => this.createTrackNode(trackId),
+            registerTrackNode: (trackId, node) => {
+                this.trackNodes.set(trackId, node);
+            },
+            unregisterTrackNode: (trackId) => {
+                this.trackNodes.delete(trackId);
+            },
+            setTrackOutputTransaction: (node, outputId, padBinding) =>
+                this.setTrackOutputTransaction(node, outputId, padBinding),
+        });
+
         this.adjustmentRuntime = createAdjustmentLayerRuntime({
             getContext: () => this.context ?? null,
             getTrackDefaultDestination: (trackId) => this.trackNodes.get(trackId)?.getDefaultDestination() ?? null,
@@ -368,306 +384,6 @@ class AudioEngineImpl implements AudioEngine {
 
     private hasRuntimeOutputDestination(outputId: string): boolean {
         return outputId === 'master' || outputId === 'hw_out' || this.trackNodes.has(outputId);
-    }
-
-    private matchesRuntimeDeviceChain(node: TrackNode, expected: RuntimeGraphDeltaNode): boolean {
-        return matchesRuntimeDeviceChainTopology(node.strip, expected);
-    }
-
-    private needsRuntimeGraphReconciliation(
-        delta: RuntimeGraphDelta,
-        reason: string,
-        runtimeRevision = this.runtimeGraph.current(),
-        compensation: 'not-attempted' | 'failed' = 'not-attempted'
-    ): RuntimeGraphDeltaResult {
-        return Object.freeze({
-            acceptance: 'accepted' as const,
-            application: 'needs-reconcile' as const,
-            compensation,
-            correlation: delta.correlation,
-            reason,
-            runtimeRevision,
-        });
-    }
-
-    private applyRuntimeDeviceChainDelta(delta: RuntimeGraphDeviceChainDelta): RuntimeGraphDeltaResult {
-        if (delta.correlation.appRevision !== this.runtimeGraph.current()) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph delta is stale for the live engine revision',
-            });
-        }
-        const projectRevisionValidator = this.runtimeGraph.projectRevisionValidator();
-        if (projectRevisionValidator) {
-            let isCurrentProjectRevision: boolean;
-            try {
-                isCurrentProjectRevision = projectRevisionValidator(delta.correlation.projectRevision);
-            } catch (error) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: `Runtime graph delta project revision validation failed: ${String(error)}`,
-                });
-            }
-            if (!isCurrentProjectRevision) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: 'Runtime graph delta is stale for the current project revision',
-                });
-            }
-        }
-        const topologyValidator = this.runtimeGraph.topologyValidator();
-        if (topologyValidator) {
-            let isCurrentProjectTopology: boolean;
-            try {
-                isCurrentProjectTopology = topologyValidator([delta.after]);
-            } catch (error) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: `Runtime graph delta topology validation failed: ${String(error)}`,
-                });
-            }
-            if (!isCurrentProjectTopology) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: 'Runtime graph delta does not match the current project topology',
-                });
-            }
-        }
-
-        let source = this.trackNodes.get(delta.before.id);
-        if (!source && delta.before.devices.length === 0) {
-            this.ensureTrackStripInGraph(delta.before.id);
-            source = this.trackNodes.get(delta.before.id);
-        }
-        if (!source || !this.matchesRuntimeDeviceChain(source, delta.before)) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Live source strip does not match the compiled device-chain delta',
-            });
-        }
-
-        const deviceMutation = this.runtimeGraph.mutate<
-            | { status: 'applied' }
-            | { status: 'rejected'; error: RuntimeGraphMutationRejected }
-            | { status: 'needs-reconcile'; reason: string; compensation: 'not-attempted' | 'failed' }
-        >(() => {
-            try {
-                return { value: { status: 'applied' as const }, changed: source.applyDeviceChain(delta) };
-            } catch (error) {
-                if (error instanceof RuntimeGraphMutationRejected) {
-                    return { value: { status: 'rejected' as const, error }, changed: false };
-                }
-                const typedFailure = error instanceof RuntimeGraphMutationFailure ? error : undefined;
-                return {
-                    value: {
-                        status: 'needs-reconcile' as const,
-                        reason:
-                            typedFailure?.mutation.reason ?? `Live device-chain application threw: ${String(error)}`,
-                        compensation: typedFailure?.rollbackError ? 'failed' : 'not-attempted',
-                    },
-                    changed: true,
-                };
-            }
-        });
-        if (deviceMutation.value.status === 'rejected') {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: deviceMutation.value.error.rejection.reason,
-            });
-        }
-        if (deviceMutation.value.status === 'needs-reconcile') {
-            return this.needsRuntimeGraphReconciliation(
-                delta,
-                deviceMutation.value.reason,
-                deviceMutation.runtimeRevision,
-                deviceMutation.value.compensation
-            );
-        }
-        return Object.freeze({
-            acceptance: 'accepted' as const,
-            application: 'applied' as const,
-            correlation: delta.correlation,
-            runtimeRevision: deviceMutation.runtimeRevision,
-        });
-    }
-
-    /**
-     * Creates a missing strip from one compiled project snapshot. The source is
-     * kept private until its full ordered chain and output route are valid, so a
-     * malformed or stale projection cannot publish a partially-built strip.
-     */
-    private applyRuntimeTrackStripInitialization(
-        delta: RuntimeGraphTrackStripInitializationDelta
-    ): RuntimeGraphDeltaResult {
-        if (delta.correlation.appRevision !== this.runtimeGraph.current()) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph initialization is stale for the live engine revision',
-            });
-        }
-        const projectRevisionValidator = this.runtimeGraph.projectRevisionValidator();
-        if (projectRevisionValidator) {
-            let isCurrentProjectRevision: boolean;
-            try {
-                isCurrentProjectRevision = projectRevisionValidator(delta.correlation.projectRevision);
-            } catch (error) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: `Runtime graph initialization project revision validation failed: ${String(error)}`,
-                });
-            }
-            if (!isCurrentProjectRevision) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: 'Runtime graph initialization is stale for the current project revision',
-                });
-            }
-        }
-        const topologyValidator = this.runtimeGraph.topologyValidator();
-        if (topologyValidator) {
-            let isCurrentProjectTopology: boolean;
-            try {
-                isCurrentProjectTopology = topologyValidator(delta.nodes);
-            } catch (error) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: `Runtime graph initialization topology validation failed: ${String(error)}`,
-                });
-            }
-            if (!isCurrentProjectTopology) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: 'Runtime graph initialization does not match the current project topology',
-                });
-            }
-        }
-
-        const sourcePlan = delta.nodes[0];
-        if (!sourcePlan) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Compiled runtime graph initialization has no source strip',
-            });
-        }
-        const existing = this.trackNodes.get(sourcePlan.id);
-        if (existing) {
-            const existingPadBinding = this.toasterPads.routes.get(sourcePlan.id);
-            const matchesPadBinding = delta.output.padBinding
-                ? existingPadBinding?.toasterParentTrackId === delta.output.padBinding.toasterParentTrackId &&
-                  existingPadBinding.padIndex === delta.output.padBinding.padIndex
-                : !existingPadBinding;
-            if (
-                this.matchesRuntimeDeviceChain(existing, sourcePlan) &&
-                existing.strip.outputId === delta.output.targetId &&
-                matchesPadBinding
-            ) {
-                return Object.freeze({
-                    acceptance: 'accepted' as const,
-                    application: 'applied' as const,
-                    correlation: delta.correlation,
-                    runtimeRevision: this.runtimeGraph.current(),
-                });
-            }
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Live source strip does not match the compiled initialization snapshot',
-            });
-        }
-        if (!this.hasRuntimeOutputDestination(delta.output.targetId)) {
-            return this.needsRuntimeGraphReconciliation(
-                delta,
-                'Live destination strip does not match the compiled initialization snapshot'
-            );
-        }
-        const targetPlan = delta.nodes[1];
-        if (targetPlan) {
-            const target = this.trackNodes.get(targetPlan.id);
-            if (!target || !this.matchesRuntimeDeviceChain(target, targetPlan)) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: 'Live destination strip does not match the compiled initialization snapshot',
-                });
-            }
-        }
-
-        let initializedNode: TrackNode | undefined;
-        try {
-            const initialization = this.runtimeGraph.mutate(() => {
-                initializedNode = this.createTrackNode(sourcePlan.id);
-                try {
-                    for (const device of sourcePlan.devices) {
-                        const added = initializedNode.addDevice(
-                            device.id,
-                            device.type,
-                            device.externalInstanceId,
-                            undefined,
-                            device.parameterIds
-                        );
-                        if (
-                            !added &&
-                            !isDeviceReleaseAdmitted(device.type) &&
-                            !this.withheldDeviceNotices.has(device.type)
-                        ) {
-                            this.withheldDeviceNotices.add(device.type);
-                            notifyUser(
-                                `"${device.type}" is withheld from this build. Its project data is preserved, but it will remain silent.`,
-                                'warning'
-                            );
-                        }
-                    }
-                    this.trackNodes.set(sourcePlan.id, initializedNode);
-                    this.setTrackOutputTransaction(initializedNode, delta.output.targetId, delta.output.padBinding);
-                    return { value: undefined, changed: !this.fallbackMode };
-                } catch (error) {
-                    this.trackNodes.delete(sourcePlan.id);
-                    initializedNode.dispose();
-                    throw error;
-                }
-            });
-            return Object.freeze({
-                acceptance: 'accepted' as const,
-                application: 'applied' as const,
-                correlation: delta.correlation,
-                runtimeRevision: initialization.runtimeRevision,
-            });
-        } catch (error) {
-            if (error instanceof RuntimeGraphMutationRejected) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: error.rejection.reason,
-                });
-            }
-            const typedFailure = error instanceof RuntimeGraphMutationFailure ? error : undefined;
-            if (typedFailure) {
-                return this.needsRuntimeGraphReconciliation(
-                    delta,
-                    typedFailure.mutation.reason,
-                    this.runtimeGraph.current(),
-                    typedFailure.rollbackError ? 'failed' : 'not-attempted'
-                );
-            }
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: `Live strip initialization failed before publication: ${String(error)}`,
-            });
-        }
     }
 
     public initialize(): Promise<void> {
@@ -981,181 +697,12 @@ class AudioEngineImpl implements AudioEngine {
         this.useCaseDeviceCollaborators = collaborators ?? UNWIRED_USE_CASE_DEVICE_COLLABORATORS;
     }
 
-    /**
-     * The sole consumer for compiled output-topology deltas. It runs only on the
-     * main/control thread, after the compiler has bounded and frozen its input;
-     * no worklet callback receives, parses, or allocates for this command.
-     */
     public applyRuntimeGraphDelta(input: unknown): RuntimeGraphDeltaResult {
-        const compilation = compileRuntimeGraphDelta(input);
-        if (compilation.status === 'invalid') {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: compilation.reason,
-            });
-        }
-
-        const { delta } = compilation;
-        if (delta.command === 'replace-track-device-chain') {
-            return this.applyRuntimeDeviceChainDelta(delta);
-        }
-        if (delta.command === 'initialize-track-strip') {
-            return this.applyRuntimeTrackStripInitialization(delta);
-        }
-        if (delta.correlation.appRevision !== this.runtimeGraph.current()) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph delta is stale for the live engine revision',
-            });
-        }
-        const projectRevisionValidator = this.runtimeGraph.projectRevisionValidator();
-        if (projectRevisionValidator) {
-            let isCurrentProjectRevision: boolean;
-            try {
-                isCurrentProjectRevision = projectRevisionValidator(delta.correlation.projectRevision);
-            } catch (error) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: `Runtime graph delta project revision validation failed: ${String(error)}`,
-                });
-            }
-            if (!isCurrentProjectRevision) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: 'Runtime graph delta is stale for the current project revision',
-                });
-            }
-        }
-        const topologyValidator = this.runtimeGraph.topologyValidator();
-        if (topologyValidator) {
-            let isCurrentProjectTopology: boolean;
-            try {
-                isCurrentProjectTopology = topologyValidator(delta.nodes);
-            } catch (error) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: `Runtime graph delta topology validation failed: ${String(error)}`,
-                });
-            }
-            if (!isCurrentProjectTopology) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: 'Runtime graph delta does not match the current project topology',
-                });
-            }
-        }
-
-        const edge = delta.edges[0];
-        const sourcePlan = delta.nodes[0];
-        if (!edge || !sourcePlan) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Compiled runtime graph delta has no output source',
-            });
-        }
-        const source = this.trackNodes.get(edge.sourceId);
-        if (!source || !this.matchesRuntimeDeviceChain(source, sourcePlan)) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Live source strip does not match the compiled graph delta',
-            });
-        }
-        if (!this.hasRuntimeOutputDestination(edge.targetId)) {
-            return this.needsRuntimeGraphReconciliation(
-                delta,
-                'Live destination strip does not match the compiled graph delta'
-            );
-        }
-        const targetPlan = delta.nodes[1];
-        if (targetPlan) {
-            const target = this.trackNodes.get(targetPlan.id);
-            if (!target || !this.matchesRuntimeDeviceChain(target, targetPlan)) {
-                return Object.freeze({
-                    acceptance: 'rejected' as const,
-                    application: 'not-applied' as const,
-                    reason: 'Live destination strip does not match the compiled graph delta',
-                });
-            }
-        }
-
-        const outputMutation = this.runtimeGraph.mutate<
-            | { status: 'applied' }
-            | { status: 'rejected'; error: RuntimeGraphMutationRejected }
-            | { status: 'needs-reconcile'; error: unknown; reason: string; compensation: 'not-attempted' | 'failed' }
-        >(() => {
-            try {
-                return { value: { status: 'applied' as const }, changed: source.setOutput(edge.targetId) };
-            } catch (error) {
-                if (error instanceof RuntimeGraphMutationRejected) {
-                    return { value: { status: 'rejected' as const, error }, changed: false };
-                }
-                // A host-side node operation may have partially taken effect. Do
-                // not claim a CRDT rollback restored it: invalidate the current
-                // generation and force an owner-led reconcile instead.
-                const typedFailure = error instanceof RuntimeGraphMutationFailure ? error : undefined;
-                return {
-                    value: {
-                        status: 'needs-reconcile' as const,
-                        error,
-                        reason: typedFailure?.mutation.reason ?? `Live output application threw: ${String(error)}`,
-                        compensation: typedFailure?.rollbackError ? 'failed' : 'not-attempted',
-                    },
-                    changed: true,
-                };
-            }
-        });
-        if (outputMutation.value.status === 'rejected') {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: outputMutation.value.error.rejection.reason,
-            });
-        }
-        if (outputMutation.value.status === 'needs-reconcile') {
-            return this.needsRuntimeGraphReconciliation(
-                delta,
-                outputMutation.value.reason,
-                outputMutation.runtimeRevision,
-                outputMutation.value.compensation
-            );
-        }
-        return Object.freeze({
-            acceptance: 'accepted' as const,
-            application: 'applied' as const,
-            correlation: delta.correlation,
-            runtimeRevision: outputMutation.runtimeRevision,
-        });
+        return this.runtimeGraphDeltas.apply(input);
     }
 
-    /**
-     * Rehydration-only entrypoint. It accepts only an immutable initialization
-     * snapshot, preventing bootstrap callers from reaching device graph writes.
-     */
     public initializeTrackStripFromSnapshot(input: unknown): RuntimeGraphDeltaResult {
-        const compilation = compileRuntimeGraphDelta(input);
-        if (compilation.status === 'invalid') {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: compilation.reason,
-            });
-        }
-        if (compilation.delta.command !== 'initialize-track-strip') {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime strip initialization requires an initialization snapshot',
-            });
-        }
-        return this.applyRuntimeTrackStripInitialization(compilation.delta);
+        return this.runtimeGraphDeltas.initializeTrackStripFromSnapshot(input);
     }
 
     private reconnectRoutingForTrack(trackId: string): void {
@@ -1854,7 +1401,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     private resetProjectGraph(): void {
-        this.withheldDeviceNotices.clear();
+        this.runtimeGraphDeltas.forgetWithheldDeviceNotices();
         // The carried set names tracks of the project being torn down; a strip
         // ensured for the next one must not inherit a closed gate from it.
         this.nativeCarriedTrackIds = new Set();
