@@ -65,7 +65,7 @@ function renderAudibleImpact(audible: AgentPlanAudibleView, tracks: AgentPlanSec
         const key = `${metric.targetId}\u0000${metric.metricId}`;
         lineCount.set(key, (lineCount.get(key) ?? 0) + 1);
         const beats = `${key}\u0000${formatBeatRange(metric.range)}`;
-        sectionsByBeats.set(beats, (sectionsByBeats.get(beats) ?? new Set()).add(metric.range.sectionId ?? ''));
+        sectionsByBeats.set(beats, (sectionsByBeats.get(beats) ?? new Set<string>()).add(metric.range.sectionId ?? ''));
     }
     return (
         <>

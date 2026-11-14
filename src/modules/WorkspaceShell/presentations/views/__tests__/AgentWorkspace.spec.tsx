@@ -1,6 +1,6 @@
 import { type ComponentProps } from 'react';
 
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import {
@@ -676,6 +676,8 @@ describe('AgentWorkspace', () => {
 
     describe('plan stopping conditions and audible claim', () => {
         afterEach(() => {
+            // Unmount first: the panel subscribes to the track store, so resetting it while mounted updates outside act.
+            cleanup();
             trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         });
 
@@ -889,7 +891,7 @@ describe('AgentWorkspace', () => {
                                 range: { startBeat: 0, endBeat: 4, sectionId: null },
                                 metricId: 'crestFactor',
                                 baseline: { value: 9, unit: 'dB' },
-                                preview: { value: 9, unit: 'dB' },
+                                preview: { value: 9.5, unit: 'dB' },
                                 delta: { value: 0.5, unit: 'dB' },
                             },
                         ],
@@ -908,7 +910,7 @@ describe('AgentWorkspace', () => {
             ).toEqual([
                 'Lead Vocal rms: -20.12 dBFS → -17.00 dBFS (+3.12 dB)',
                 'Master truePeak: -3.00 dBTP → -4.50 dBTP (-1.50 dB)',
-                'bus-uuid crestFactor: 9.00 dB → 9.00 dB (+0.50 dB)',
+                'bus-uuid crestFactor: 9.00 dB → 9.50 dB (+0.50 dB)',
             ]);
             expect(container.textContent).not.toContain('track-uuid-1');
             expect(container.textContent).not.toContain('master-uuid');
