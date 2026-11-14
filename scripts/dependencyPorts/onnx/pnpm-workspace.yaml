@@ -1,0 +1,16 @@
+packages:
+    - .
+enableGlobalVirtualStore: false
+patchedDependencies:
+    terser@5.51.2: patches/terser@5.51.2.patch
+    source-map-js@1.2.2: patches/source-map-js@1.2.2.patch
+    source-map-support@0.5.21: patches/source-map-support@0.5.21.patch
+overrides:
+    terser@5.51.2>commander: 15.1.0
+    source-map-support@0.5.21>source-map: '-'
+packageExtensions:
+    source-map-support@0.5.21:
+        dependencies:
+            source-map-js: 1.2.2
+allowBuilds:
+    esbuild: true

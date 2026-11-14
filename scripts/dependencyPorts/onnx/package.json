@@ -10,5 +10,6 @@
         "terser": "5.51.2",
         "source-map": "0.8.0",
         "minimist": "1.2.8"
-    }
+    },
+    "packageManager": "pnpm@12.21.0"
 }

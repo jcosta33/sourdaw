@@ -26,8 +26,11 @@ function copyPackage(source, target) {
 mkdirSync(join(capsule, 'js'), { recursive: true });
 copyPackage(web, join(capsule, 'js/web'));
 copyPackage(packageRoot('onnxruntime-common', requireWeb), join(capsule, 'js/common'));
-for (const name of ['package.json', 'tsconfig.json', 'tsconfig.tools.json'])
+for (const name of ['package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'tsconfig.json', 'tsconfig.tools.json'])
     cpSync(join(directory, name), join(capsule, 'js', name));
+cpSync(join(directory, 'patches'), join(capsule, 'js/patches'), {
+    recursive: true,
+});
 mkdirSync(join(capsule, 'js/web/script'), { recursive: true });
 cpSync(join(directory, 'build.ts.txt'), join(capsule, 'js/web/script/build.ts'));
 cpSync(join(directory, 'protobuf-port-inputs.json'), join(capsule, 'js/web/script/protobuf-port-inputs.json'));
@@ -56,7 +59,11 @@ for (const name of ['protobufjs', 'long']) {
 for (const name of ['flatbuffers', 'guid-typescript', 'platform']) {
     const source = packageRoot(name, requireWeb);
     const version = JSON.parse(readFileSync(join(source, 'package.json'), 'utf8')).version;
-    const expected = { flatbuffers: '25.9.23', 'guid-typescript': '1.0.9', platform: '1.3.6' };
+    const expected = {
+        flatbuffers: '25.9.23',
+        'guid-typescript': '1.0.9',
+        platform: '1.3.6',
+    };
     assert.equal(version, expected[name]);
     const target = join(
         reproduction,

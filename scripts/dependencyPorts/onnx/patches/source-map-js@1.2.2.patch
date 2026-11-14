@@ -1,0 +1,6 @@
+diff --git a/lib/source-map-consumer.js b/lib/source-map-consumer.js
+--- a/lib/source-map-consumer.js
++++ b/lib/source-map-consumer.js
+@@ -1072,1 +1072,1 @@
++        return (needle.generatedColumn + 1 -
+-        return (needle.generatedColumn -
