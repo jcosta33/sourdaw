@@ -416,23 +416,31 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
 ///
 /// The hint is checked after every pass, not only when the channel is idle: a
 /// plugin marking its state dirty on every edit keeps the channel busy, and a
-/// timeout-only check would starve every `on_main_thread` call behind it. The
-/// static sender is never dropped, so the disconnected arm never runs and the
-/// loop lives for the process.
+/// timeout-only check would starve every `on_main_thread` call behind it. A
+/// disconnect ends the loop only after that pass's check, so an ask standing
+/// when the channel closes is still served. The static sender is never
+/// dropped, so in the process the loop never ends.
 fn serve_wakes_and_hints(
     receiver: &Receiver<QueuedRequest>,
     engine_plugins: &EnginePlugins,
     events: &dyn EventSink,
 ) {
     loop {
-        match receiver.recv_timeout(MAIN_THREAD_CALLBACK_POLL) {
-            Ok(queued) => serve_channel_wake(queued, engine_plugins, events),
-            Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => break,
-        }
+        let disconnected = match receiver.recv_timeout(MAIN_THREAD_CALLBACK_POLL) {
+            Ok(queued) => {
+                serve_channel_wake(queued, engine_plugins, events);
+                false
+            }
+            Err(RecvTimeoutError::Timeout) => false,
+            Err(RecvTimeoutError::Disconnected) => true,
+        };
 
         if take_pending_main_thread_callback_signal() {
             service_pending_main_thread_callbacks(engine_plugins);
+        }
+
+        if disconnected {
+            break;
         }
     }
 }
@@ -838,14 +846,11 @@ mod tests {
         let (sender, receiver) = channel::<QueuedRequest>();
         let sink = RecordingEventSink::default();
 
-        // One pass of the real loop: the channel times out, then the hint the
-        // fixture's ask raised is serviced, then the disconnect ends the loop.
-        let feeder = std::thread::spawn(move || {
-            std::thread::sleep(MAIN_THREAD_CALLBACK_POLL * 3);
-            drop(sender);
-        });
+        // Exactly one pass of the real loop: the closed channel reports the
+        // disconnect at once, the pass still services the hint the fixture's
+        // ask raised, and only then does the loop end.
+        drop(sender);
         serve_wakes_and_hints(&receiver, &engine_plugins, &sink);
-        feeder.join().expect("feeder thread");
 
         assert!(
             !take_pending_main_thread_callback_signal(),
@@ -854,6 +859,47 @@ mod tests {
         assert!(
             !ask_still_pending(engine_plugins, runtime),
             "the hinted ask was serviced, not left pending"
+        );
+    }
+
+    /// A visit refused because another control operation holds the instance —
+    /// an editor opening, a state load — must keep the ask and raise the hint
+    /// again, or the ask waits until the plugin happens to ask a second time.
+    #[test]
+    fn a_main_thread_callback_ask_behind_a_busy_control_seam_is_kept_and_hinted_again() {
+        let _guard = main_thread_callback_hint_guard();
+        let (engine_plugins, runtime) = main_thread_callback_fixture();
+        take_pending_main_thread_callback_signal();
+
+        let (entered_sender, entered) = channel::<()>();
+        let (release, release_receiver) = channel::<()>();
+        let holder_runtime = Arc::clone(&runtime);
+        let holder = std::thread::spawn(move || {
+            holder_runtime
+                .with_control(CONTROL_TIMEOUT, |_| {
+                    entered_sender.send(()).expect("signal entry");
+                    release_receiver.recv().expect("wait for release");
+                    Ok(())
+                })
+                .expect("the holder reaches the control seam");
+        });
+        entered
+            .recv()
+            .expect("the holder is inside the control seam");
+
+        service_pending_main_thread_callbacks(&engine_plugins);
+        let hinted_again = take_pending_main_thread_callback_signal();
+
+        release.send(()).expect("release the holder");
+        holder.join().expect("holder thread");
+
+        assert!(
+            hinted_again,
+            "a refused visit raises the hint again for the next pass"
+        );
+        assert!(
+            ask_still_pending(engine_plugins, runtime),
+            "the refused visit left the ask standing"
         );
     }
 
