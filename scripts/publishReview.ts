@@ -112,7 +112,7 @@ export type PublishReviewPort = {
     };
     readReviewJson: (path: string) => unknown;
     bundleFileExists: (path: string) => boolean;
-    readBundleDiff: (path: string) => string;
+    readBundleDiff: (path: string) => string | Buffer;
     writeBundleText?: (path: string, contents: string) => void;
     assertApprovalContext?: (number: number, head: string, bundle: string) => ReviewBundleContext;
     /**
@@ -250,7 +250,7 @@ function prepareReviewPublication(
     // The approval context and the comment preflight run before the dossier publication, and the
     // order matters: a refusal here must not have written the canonical dossier.
     const approvalContext = publicationApprovalContext(number, head, document, port);
-    assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
+    assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')).toString());
     // A fresh reviewer APPROVE over unresolved review threads can never authorize its head, and the
     // persisted publication then replays forever without an authorization, stranding the head until
     // a new commit and a full fresh round (#5436). Refused here, on the preflight route every
@@ -436,7 +436,7 @@ export function shellPort(
         reviewState: (number, head) => readPullRequestReviewState(number, head, REQUIRED_REPOSITORY, gh),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
         bundleFileExists: (path) => existsSync(path),
-        readBundleDiff: (path) => readFileSync(path, 'utf8'),
+        readBundleDiff: (path) => readFileSync(path),
         writeBundleText: (path, contents) => writeFileSync(path, contents),
         assertApprovalContext: (number, head, bundle) =>
             readLiveApprovalContext(primaryRoot, number, head, bundle, session, capture),

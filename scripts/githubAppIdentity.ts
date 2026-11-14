@@ -807,17 +807,14 @@ function assertTokenBearingGitChildIsHookFree(
 const DEFAULT_CAPTURE_BUFFER_BYTES = 64 * 1024 * 1024;
 const MAX_CAPTURE_BUFFER_BYTES = 512 * 1024 * 1024;
 
-export function spawnCapture(
-    command: string,
-    args: string[],
-    options: {
-        cwd?: string;
-        env?: NodeJS.ProcessEnv;
-        input?: string;
-        trim?: boolean;
-        maxBufferBytes?: number;
-    } = {}
-): string {
+type CaptureOptions = {
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    input?: string;
+    maxBufferBytes?: number;
+};
+
+export function spawnCaptureBytes(command: string, args: string[], options: CaptureOptions = {}): Buffer {
     const maxBufferBytes = options.maxBufferBytes ?? DEFAULT_CAPTURE_BUFFER_BYTES;
     if (!Number.isSafeInteger(maxBufferBytes) || maxBufferBytes <= 0 || maxBufferBytes > MAX_CAPTURE_BUFFER_BYTES) {
         throw new RangeError(`maxBufferBytes must be a positive safe integer at most ${MAX_CAPTURE_BUFFER_BYTES}`);
@@ -828,7 +825,6 @@ export function spawnCapture(
     const result = spawnSync(childCommand, args, {
         cwd,
         env: options.env,
-        encoding: 'utf8',
         // Ordinary commands retain 64 MiB; full review diffs explicitly request bounded headroom.
         // Overflow still throws through result.error rather than returning a partial capture.
         maxBuffer: maxBufferBytes,
@@ -839,9 +835,20 @@ export function spawnCapture(
         throw result.error;
     }
     if (result.status !== 0) {
-        throw new Error(result.stderr.trim() || `${childCommand} failed with exit ${result.status ?? 'signal'}`);
+        throw new Error(
+            result.stderr.toString('utf8').trim() || `${childCommand} failed with exit ${result.status ?? 'signal'}`
+        );
     }
-    return options.trim === false ? result.stdout : result.stdout.trim();
+    return result.stdout;
+}
+
+export function spawnCapture(
+    command: string,
+    args: string[],
+    options: CaptureOptions & { trim?: boolean } = {}
+): string {
+    const stdout = spawnCaptureBytes(command, args, options).toString('utf8');
+    return options.trim === false ? stdout : stdout.trim();
 }
 
 export function spawnRun(

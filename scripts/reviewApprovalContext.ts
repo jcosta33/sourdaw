@@ -7,6 +7,7 @@ import {
     posixSingleQuote,
     type GhSession,
     type spawnCapture,
+    spawnCaptureBytes,
 } from './githubAppIdentity.ts';
 import { fail, PR_STATE } from './prContract.ts';
 import { readReviewBundleContext, reviewBundlePath, type ReviewBundleContext } from './prepareReview.ts';
@@ -85,7 +86,7 @@ function liveCommands(primaryRoot: string, session: GhSession, capture: typeof s
  * arguments `review:prepare` writes `diff.patch` and the risk plan from. Any base branch is
  * accepted: a stack child is reviewed against its parent's head.
  */
-export type LiveReviewComparison = { mergeBase: string; patch: string; numstat: Buffer };
+export type LiveReviewComparison = { mergeBase: string; patch: string | Buffer; numstat: Buffer };
 
 export function readLiveReviewComparison(
     primaryRoot: string,
@@ -111,7 +112,11 @@ export function readLiveReviewComparison(
     const mergeBase = git(['merge-base', pr.baseRefOid, head]);
     return {
         mergeBase,
-        patch: gitUntrimmed(['diff', `${mergeBase}...${head}`]),
+        patch: spawnCaptureBytes('git', ['diff', `${mergeBase}...${head}`], {
+            cwd: primaryRoot,
+            env: session.env,
+            maxBufferBytes: 512 * 1024 * 1024,
+        }),
         numstat: Buffer.from(gitUntrimmed(['diff', '--numstat', '-z', `${mergeBase}...${head}`])),
     };
 }

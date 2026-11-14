@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import * as githubAppIdentity from '../githubAppIdentity.ts';
-import { REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
+import { REVIEWER_BOT_NODE_ID, spawnCapture, type GhSession } from '../githubAppIdentity.ts';
 import {
     installBundleAtomically,
     isProcessAlive,
@@ -20,8 +20,11 @@ import {
     type ReviewPullRequest,
 } from '../prepareReview.ts';
 import { assertTrustedExecutingBlobs, trustedExecutingPaths } from '../prepareReviewEntry.ts';
+import { shellPort as publicationShellPort } from '../publishReview.ts';
+import { parseReviewDocument } from '../reviewDocumentParser.ts';
 import { formatReviewDiffSummary, summarizeReviewDiff } from '../reviewDiffSummary.ts';
 import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
+import { prepareReviewDossierPublication } from '../reviewPublicationBinding.ts';
 import { REVIEW_ROUND_FREEZE_THRESHOLD } from '../reviewRoundEscalation.ts';
 
 /**
@@ -60,7 +63,7 @@ function pullRequest(overrides: Partial<ReviewPullRequest> = {}): ReviewPullRequ
 function fakePort(root: string) {
     const calls: string[] = [];
     const logs: string[] = [];
-    const files: Record<string, string> = {};
+    const files: Record<string, string | Buffer> = {};
     const port: PrepareReviewPort = {
         primaryRoot: () => root,
         pullRequest: () => pullRequest(),
@@ -96,9 +99,72 @@ function fakePort(root: string) {
 }
 
 describe('review prepare', () => {
+    it('installs the exact non-UTF8 patch bytes produced by real Git', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-bytes-'));
+        try {
+            git(root, 'init', '-b', 'main');
+            git(root, 'config', 'user.email', 'review-test@example.com');
+            git(root, 'config', 'user.name', 'Review Test');
+            writeFileSync(join(root, 'source.txt'), 'original\n');
+            const base = commitAll(root, 'base');
+            writeFileSync(join(root, 'source.txt'), Buffer.from([0xff, 0xfe, 0x0a]));
+            const head = commitAll(root, 'non-UTF8 source');
+            const expected = execFileSync('git', ['diff', `${base}...${head}`], { cwd: root });
+            const actual = shellPort({ configDir: root, env: process.env, dispose: () => undefined }, root);
+            const { port } = fakePort(root);
+            port.pullRequest = () => pullRequest({ baseRefOid: base, headRefOid: head });
+            port.mergeBase = actual.mergeBase;
+            port.diff = actual.diff;
+            port.numstat = actual.numstat;
+            const destination = prepareReview(42, port);
+            expect(readFileSync(join(destination, 'diff.patch'))).toEqual(expected);
+            expect(readReviewBundleContext(destination)).toMatchObject({ baseSha: base, headSha: head });
+            const publication = publicationShellPort(
+                { configDir: root, env: process.env, dispose: () => undefined },
+                root,
+                (command, args, options) => {
+                    if (command === 'gh') {
+                        return JSON.stringify({ headRefOid: head, baseRefOid: base });
+                    }
+                    if (args.includes('fetch')) {
+                        return '';
+                    }
+                    return spawnCapture(command, args, options);
+                }
+            );
+            const document = parseReviewDocument({
+                event: 'APPROVE',
+                format: 'compact-v1',
+                body: 'Attacked non-UTF8 byte preservation and live patch binding.',
+                evidence: {
+                    headSha: head,
+                    claims: [{ observable: 'patch bytes', verification: 'real Git fixture', observed: 'equal' }],
+                },
+                draws: ['byte preservation', 'overflow refusal', 'review binding'].map((stance) => ({
+                    stance,
+                    reviewerModel: 'gpt-6-luna',
+                    tier: 'economy',
+                    outcome: 'clean',
+                })),
+            });
+            const bind = () =>
+                prepareReviewDossierPublication({ number: 42, head, bundle: destination, document, port: publication });
+            expect(() => bind()).not.toThrow();
+            const corrupted = Buffer.from(expected);
+            const invalidByte = corrupted.indexOf(0xff);
+            expect(invalidByte).toBeGreaterThanOrEqual(0);
+            corrupted[invalidByte] = 0xfe;
+            expect(corrupted.toString('utf8')).toBe(expected.toString('utf8'));
+            writeFileSync(join(destination, 'diff.patch'), corrupted);
+            expect(bind).toThrow('bundle diff.patch differs from git diff');
+        } finally {
+            removeTempRoot(root);
+        }
+    });
+
     it('gives only the full shell review diff a 512 MiB capture allowance and preserves its bytes', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-capture-'));
-        const diff = 'diff --git a/file b/file\n+  exact bytes  \n';
+        const diff = Buffer.from('diff --git a/file b/file\n+  exact bytes  \n');
         const numstat = '1\t0\tfile\0';
         mkdirSync(join(root, '.git'));
         mkdirSync(join(root, '.gh'));
@@ -107,10 +173,11 @@ describe('review prepare', () => {
                 return join(root, '.git');
             }
             if (args[0] === 'diff') {
-                return args.includes('--numstat') ? numstat : diff;
+                return numstat;
             }
             return 'ordinary';
         });
+        const captureBytes = vi.spyOn(githubAppIdentity, 'spawnCaptureBytes').mockReturnValue(diff);
         try {
             const session: GhSession = {
                 configDir: join(root, '.gh'),
@@ -119,10 +186,9 @@ describe('review prepare', () => {
             };
             const port = shellPort(session, root);
             expect(port.diff('base', 'head')).toBe(diff);
-            expect(capture).toHaveBeenLastCalledWith('git', ['diff', 'base...head'], {
+            expect(captureBytes).toHaveBeenLastCalledWith('git', ['diff', 'base...head'], {
                 cwd: root,
                 env: session.env,
-                trim: false,
                 maxBufferBytes: 512 * 1024 * 1024,
             });
             expect(port.numstat('base', 'head')).toEqual(Buffer.from(numstat));
@@ -131,10 +197,11 @@ describe('review prepare', () => {
             port.listDecisionFiles('head');
             port.fetchShas('base', 'head');
             const overrides = capture.mock.calls.filter(([, , options]) => options?.maxBufferBytes !== undefined);
-            expect(overrides).toHaveLength(1);
-            expect(overrides[0]?.[1]).toEqual(['diff', 'base...head']);
+            expect(overrides).toHaveLength(0);
+            expect(captureBytes).toHaveBeenCalledTimes(1);
         } finally {
             capture.mockRestore();
+            captureBytes.mockRestore();
             removeTempRoot(root);
         }
     });
@@ -151,7 +218,7 @@ describe('review prepare', () => {
             expect(calls).toContain('show:mergebasesha:CLAUDE.md');
             expect(calls).toContain('decisions:mergebasesha');
             expect(calls).toContain('show:mergebasesha:.agents/decisions/0026-ownership-by-exception.md');
-            expect(JSON.parse(files['manifest.json'] ?? '{}')).toEqual({
+            expect(JSON.parse((files['manifest.json'] ?? '{}').toString())).toEqual({
                 pr: 42,
                 baseRefName: 'main',
                 baseSha: 'mergebasesha',
@@ -169,7 +236,7 @@ describe('review prepare', () => {
             });
             expect(files).not.toHaveProperty('semantic-ci.json');
             expect(existsSync(join(destination, 'semantic-ci.json'))).toBe(false);
-            expect(JSON.parse(files['review-size.json'] ?? '{}')).toMatchObject({
+            expect(JSON.parse((files['review-size.json'] ?? '{}').toString())).toMatchObject({
                 files: 2,
                 added: 6,
                 deleted: 3,
@@ -377,7 +444,7 @@ describe('review prepare', () => {
             expect(calls).toContain('show:common-ancestor-sha:CLAUDE.md');
             expect(calls).toContain('decisions:common-ancestor-sha');
             expect(calls).toContain('show:common-ancestor-sha:.agents/decisions/0026-ownership-by-exception.md');
-            expect(JSON.parse(files['manifest.json'] ?? '{}')).toMatchObject({
+            expect(JSON.parse((files['manifest.json'] ?? '{}').toString())).toMatchObject({
                 pr: 42,
                 baseSha: 'common-ancestor-sha',
                 headSha: 'feature-head-sha',
@@ -419,7 +486,7 @@ describe('review prepare', () => {
 
             prepareReview(42, port);
 
-            expect(JSON.parse(files['review-size.json'] ?? '{}')).toMatchObject({
+            expect(JSON.parse((files['review-size.json'] ?? '{}').toString())).toMatchObject({
                 files: 1,
                 added: 2,
                 deleted: 0,

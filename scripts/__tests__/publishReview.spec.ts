@@ -5366,7 +5366,7 @@ describe('fresh reviewer dossier publication', () => {
                 return {
                     mergeBase: input.live?.mergeBase ?? base,
                     patch,
-                    numstat: input.live?.numstat ?? numstatFromPatch(patch),
+                    numstat: input.live?.numstat ?? numstatFromPatch(patch.toString()),
                 };
             },
             postReview: (review) => {

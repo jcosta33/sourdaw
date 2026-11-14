@@ -56,6 +56,7 @@ import {
     parseGraphqlResponse,
     resolvePrimaryRoot,
     spawnCapture,
+    spawnCaptureBytes,
     authorWorkflowWriteRequired,
     type FileReader,
     type GitHubJsonClient,
@@ -1749,6 +1750,15 @@ describe('sterile Git child environments', () => {
 });
 
 describe('spawnCapture output capacity', () => {
+    it('captures non-UTF8 bytes intact through the real child boundary', () => {
+        const bytes = Buffer.from([0x20, 0xff, 0xfe, 0x00, 0x0a]);
+        expect(
+            spawnCaptureBytes(process.execPath, ['-e', 'process.stdout.write(Buffer.from([32,255,254,0,10]))'], {
+                maxBufferBytes: 4096,
+            })
+        ).toEqual(bytes);
+    });
+
     it('keeps the ordinary capture default at 64 MiB', () => {
         const spawn = vi.mocked(spawnSync).mockClear();
         try {
