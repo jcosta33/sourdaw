@@ -49,6 +49,11 @@ import { createMasterSection, type MasterMeterNode, type MasterSection } from '.
 import { createNoopAudioContext } from './webAudioEngine/createNoopAudioContext';
 import { createScheduledSources, type ScheduledSources } from './webAudioEngine/createScheduledSources';
 import { createSendRouting, type SendRouting } from './webAudioEngine/createSendRouting';
+import {
+    createSidechainRouting,
+    type SidechainKeyDelayResolver,
+    type SidechainRouting,
+} from './webAudioEngine/createSidechainRouting';
 import { createTransportClock, type TransportClock } from './webAudioEngine/createTransportClock';
 import { getChromePlaybackStats } from './webAudioEngine/getChromePlaybackStats';
 import { readPlaybackStats } from './webAudioEngine/readPlaybackStats';
@@ -97,28 +102,6 @@ const UNWIRED_USE_CASE_DEVICE_COLLABORATORS: EngineUseCaseCollaborators = {
     },
 };
 
-type SidechainConnection = {
-    sourceTrackId: string;
-    targetTrackId: string;
-    targetDeviceId: string;
-    sourceNode: AudioNode;
-    /** FX-5 — key alignment line sitting between the tap and the route gain. */
-    keyDelayNode: DelayNode;
-    /** Last value written to {@link keyDelayNode}, so a per-tick refresh that
-     *  resolves the same alignment schedules nothing at all. */
-    appliedKeyDelaySec: number;
-    gainNode: GainNode;
-};
-
-/** Resolves the seconds of key delay a wired sidechain route currently needs.
- *  Supplied by the use-case layer (`refreshSidechainAlignment`) so the engine
- *  never reaches into project state for it. */
-export type SidechainKeyDelayResolver = (route: {
-    sourceTrackId: string;
-    targetTrackId: string;
-    targetDeviceId: string;
-}) => number;
-
 type ToasterPadBinding = Readonly<{
     toasterParentTrackId: string;
     padIndex: number;
@@ -165,24 +148,6 @@ function hasToasterPadOutputControls(
 ): controls is ToasterPadOutputControls {
     return typeof controls?.connectPadOutput === 'function';
 }
-
-/**
- * Ceiling (seconds) on a sidechain key alignment line. PDC values are single-
- * digit milliseconds to low tens; a `DelayNode` allocates its ring buffer from
- * this maximum, so it is generous enough that no realistic chain is clipped and
- * small enough that the buffer stays trivial.
- */
-const SIDECHAIN_KEY_MAX_DELAY_SECONDS = 1;
-
-/** Glide span (seconds) for a key-alignment change — one scheduler grain, the
- *  same span the automation ramps use. Stepping `delayTime` resamples the key
- *  and clicks; a short a-rate ramp does not. */
-const SIDECHAIN_KEY_DELAY_RAMP_SECONDS = 0.01;
-
-/** Below this (seconds, well under a sample at any rate) a re-resolved key
- *  alignment counts as unchanged and schedules nothing — the alignment refresh
- *  runs every scheduler tick and must not churn AudioParam events. */
-const SIDECHAIN_KEY_DELAY_EPSILON_SECONDS = 1e-6;
 
 /**
  * Repository-internal view of engine state for repository specs and the
@@ -244,7 +209,7 @@ class AudioEngineImpl implements AudioEngine {
                 return engine.toasterPadRoutes;
             },
             get pendingSidechainRoutes() {
-                return engine.pendingSidechainRoutes;
+                return engine.sidechains.pendingRoutes;
             },
             get pendingDevicePromises() {
                 return engine.pendingDevicePromises;
@@ -306,21 +271,8 @@ class AudioEngineImpl implements AudioEngine {
     private nativeCarriedTrackIds: ReadonlySet<string> = new Set();
     private busNodes = new Map<string, BusNode>();
     private readonly sends: SendRouting;
-    private sidechainConnections = new Map<string, SidechainConnection>();
+    private readonly sidechains: SidechainRouting;
     private toasterPadRoutes = new Map<string, ToasterPadRoute>();
-    /**
-     * Sidechain routes requested while the engine could not wire them (fallback
-     * mode — no live AudioContext). Keyed by `${sourceTrackId}→${targetDeviceId}`
-     * so an unwire request can cancel a still-pending wire. These are replayed
-     * the next time wireSidechainRoute runs outside fallback mode, so a route
-     * requested before the engine was usable is not silently lost (the store
-     * keeps the route but the live graph would otherwise diverge with no
-     * recovery).
-     */
-    private pendingSidechainRoutes = new Map<
-        string,
-        { sourceTrackId: string; targetTrackId: string; targetDeviceId: string }
-    >();
     private readonly scheduledSources: ScheduledSources;
     private pendingDevicePromises = new Set<Promise<unknown>>();
     private withheldDeviceNotices = new Set<string>();
@@ -406,6 +358,15 @@ class AudioEngineImpl implements AudioEngine {
             ensureBusStrip: (busId) => this.ensureBusStripInGraph(busId),
             scheduleTrackSendAutomation: (sourceTrackId, busId, level, time) =>
                 this.trackNodes.get(sourceTrackId)?.scheduleSendAutomation(busId, level, time),
+            mutateRuntimeGraph: (mutation) => {
+                this.mutateRuntimeGraph(() => ({ value: undefined, changed: mutation() }));
+            },
+        });
+
+        this.sidechains = createSidechainRouting({
+            readContext: () => this.context,
+            isFallback: () => this.fallbackMode,
+            readTrackStrip: (trackId) => this.trackNodes.get(trackId)?.strip,
             mutateRuntimeGraph: (mutation) => {
                 this.mutateRuntimeGraph(() => ({ value: undefined, changed: mutation() }));
             },
@@ -942,7 +903,7 @@ class AudioEngineImpl implements AudioEngine {
                 trackStrips: this.trackNodes.size - this.busNodes.size,
                 busStrips: this.busNodes.size,
                 sends: this.sends.sendNodes.size,
-                sidechains: this.sidechainConnections.size,
+                sidechains: this.sidechains.connectionCount(),
                 deviceInstances,
                 pendingDeviceInstances,
                 failedDeviceInstances,
@@ -1252,22 +1213,7 @@ class AudioEngineImpl implements AudioEngine {
             return;
         }
         this.sends.reconnectTrack(trackId, strip);
-        for (const connection of this.sidechainConnections.values()) {
-            if (connection.sourceTrackId !== trackId) {
-                continue;
-            }
-            // The tap stays post-fader (`analyserNode`); the key alignment line
-            // sits between it and the route gain, so a rebuild re-attaches the
-            // tap to the delay rather than straight to the gain.
-            const sourceNode = strip.analyserNode;
-            try {
-                connection.sourceNode.disconnect(connection.keyDelayNode);
-            } catch {
-                // A wider rebuild may already have removed the prior source edge.
-            }
-            sourceNode.connect(connection.keyDelayNode);
-            connection.sourceNode = sourceNode;
-        }
+        this.sidechains.reconnectTrack(trackId, strip);
     }
 
     private getToasterPadControls(toasterParentTrackId: string): ToasterPadOutputControls | undefined {
@@ -1571,15 +1517,7 @@ class AudioEngineImpl implements AudioEngine {
         // Fallback-mode wiring can queue routes without ever materializing a
         // source or target strip. Purge endpoint ownership before the node guard
         // so removing either absent endpoint cannot leave a replayable route.
-        for (const [key, route] of this.pendingSidechainRoutes) {
-            const belongsToRemovedStrip =
-                route.sourceTrackId === trackId ||
-                route.targetTrackId === trackId ||
-                removedDeviceIds.has(route.targetDeviceId);
-            if (belongsToRemovedStrip) {
-                this.pendingSidechainRoutes.delete(key);
-            }
-        }
+        this.sidechains.forgetPendingRoutesOf(trackId, removedDeviceIds);
         this.detachToasterPadRoute(trackId, true);
         for (const [sourceTrackId, route] of this.toasterPadRoutes) {
             if (route.toasterParentTrackId === trackId) {
@@ -1595,11 +1533,7 @@ class AudioEngineImpl implements AudioEngine {
         // for the removed track survive in the maps — still wired into their bus /
         // target device, leaking nodes and (for sends) re-summing a ghost tap.
         this.sends.removeSendsFromTrack(trackId);
-        for (const [key, connection] of this.sidechainConnections) {
-            if (connection.sourceTrackId === trackId || removedDeviceIds.has(connection.targetDeviceId)) {
-                this.removeLiveSidechainConnection(key);
-            }
-        }
+        this.sidechains.removeConnectionsOf(trackId, removedDeviceIds);
         // A track-to-track output is a live edge into the target strip. Preserve
         // the remaining source strips and make the fallback explicit: `hw_out`
         // routes through TrackNode's masterGainNode destination.
@@ -2079,154 +2013,15 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public wireSidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void {
-        const key = `${sourceTrackId}→${targetDeviceId}`;
-        if (this.fallbackMode) {
-            // No live AudioContext to wire into. Queue the route instead of
-            // dropping it, so the next time wiring runs outside fallback mode the
-            // route is replayed rather than lost (the store keeps the route, so
-            // silently no-op'ing here would diverge the live graph with no
-            // recovery path).
-            this.pendingSidechainRoutes.set(key, { sourceTrackId, targetTrackId, targetDeviceId });
-            return;
-        }
-        // Recovery: drain any routes queued while the engine was in fallback mode
-        // before honoring this request, so a route requested before the engine
-        // was usable is now wired up.
-        this.mutateRuntimeGraph(() => {
-            const replayed = this.replayPendingSidechainRoutes();
-            const applied = this.applySidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
-            return { value: undefined, changed: replayed || applied };
-        });
+        this.sidechains.wireRoute(sourceTrackId, targetTrackId, targetDeviceId);
     }
 
-    /**
-     * Re-attempt every sidechain route queued during fallback mode. Routes that
-     * still cannot be wired (e.g. the target strip/device is not present yet) are
-     * dropped from the queue by applySidechainRoute's own guards — they are no
-     * longer recoverable through this path and the caller owns re-requesting.
-     */
-    private replayPendingSidechainRoutes(): boolean {
-        if (this.pendingSidechainRoutes.size === 0) {
-            return false;
-        }
-        const queued = Array.from(this.pendingSidechainRoutes.values());
-        this.pendingSidechainRoutes.clear();
-        let changed = false;
-        for (const route of queued) {
-            changed =
-                this.applySidechainRoute(route.sourceTrackId, route.targetTrackId, route.targetDeviceId) || changed;
-        }
-        return changed;
-    }
-
-    private applySidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): boolean {
-        const sourceStrip = this.trackNodes.get(sourceTrackId)?.strip;
-        const targetStrip = this.trackNodes.get(targetTrackId)?.strip;
-        if (!sourceStrip || !targetStrip) {
-            return false;
-        }
-
-        const deviceNode = targetStrip.deviceNodes.find((data) => data.deviceId === targetDeviceId);
-        if (!deviceNode || deviceNode.type !== 'builtin-sidechain-compressor') {
-            return false;
-        }
-
-        const key = `${sourceTrackId}→${targetDeviceId}`;
-        if (this.sidechainConnections.has(key)) {
-            return false;
-        }
-
-        const scGain = this.context.createGain();
-        scGain.gain.value = 1;
-        // FX-5 — the key is tapped post-fader, so it reaches the detector on the
-        // source track's clock, not the detector's. The alignment line goes
-        // between the tap and the route gain: after the metering/sends tap (which
-        // must keep reading the un-delayed signal) and before the detector input.
-        // It starts at zero and is filled in by refreshSidechainAlignment, which
-        // owns every write to it so there is exactly one place the value lands.
-        const keyDelayNode = this.context.createDelay(SIDECHAIN_KEY_MAX_DELAY_SECONDS);
-        keyDelayNode.delayTime.value = 0;
-        const sourceNode = sourceStrip.analyserNode;
-        sourceNode.connect(keyDelayNode);
-        keyDelayNode.connect(scGain);
-        scGain.connect(deviceNode.inputNode, 0, 1);
-        this.sidechainConnections.set(key, {
-            sourceTrackId,
-            targetTrackId,
-            targetDeviceId,
-            sourceNode,
-            keyDelayNode,
-            appliedKeyDelaySec: 0,
-            gainNode: scGain,
-        });
-        return true;
-    }
-
-    /**
-     * FX-5 — re-resolve every wired route's key alignment and glide the delay
-     * lines onto it. Called on wire and once per scheduler tick, so a mid-session
-     * latency push (a native plugin reporting a new lookahead, a device added or
-     * bypassed) lands within one grain instead of holding a stale alignment for
-     * the rest of the session. Nothing is cached across calls beyond the value
-     * last written, which exists purely to keep an unchanged alignment from
-     * scheduling AudioParam events every tick.
-     */
     public refreshSidechainAlignment(keyDelayFor: SidechainKeyDelayResolver): void {
-        if (this.fallbackMode || this.sidechainConnections.size === 0) {
-            return;
-        }
-        const now = this.context.currentTime;
-        for (const connection of this.sidechainConnections.values()) {
-            const resolved = keyDelayFor({
-                sourceTrackId: connection.sourceTrackId,
-                targetTrackId: connection.targetTrackId,
-                targetDeviceId: connection.targetDeviceId,
-            });
-            const nextSeconds = Math.min(Math.max(resolved, 0), SIDECHAIN_KEY_MAX_DELAY_SECONDS);
-            if (Math.abs(nextSeconds - connection.appliedKeyDelaySec) < SIDECHAIN_KEY_DELAY_EPSILON_SECONDS) {
-                continue;
-            }
-            // Same anchor-then-ramp idiom the automation writes use: a stepped
-            // delayTime resamples the key and clicks, so re-anchor at the live
-            // value, drop stale future events, and glide over one grain.
-            const param = connection.keyDelayNode.delayTime;
-            param.cancelScheduledValues(now);
-            param.setValueAtTime(param.value, now);
-            param.linearRampToValueAtTime(nextSeconds, now + SIDECHAIN_KEY_DELAY_RAMP_SECONDS);
-            connection.appliedKeyDelaySec = nextSeconds;
-        }
-    }
-
-    private removeLiveSidechainConnection(key: string): boolean {
-        const connection = this.sidechainConnections.get(key);
-        if (!connection) {
-            return false;
-        }
-        try {
-            connection.sourceNode.disconnect(connection.keyDelayNode);
-        } catch {
-            // The source edge was already detached by a wider graph teardown.
-        }
-        try {
-            connection.keyDelayNode.disconnect();
-        } catch {
-            // The alignment line was already detached by a wider graph teardown.
-        }
-        try {
-            connection.gainNode.disconnect();
-        } catch {
-            // The target edge was already detached by a wider graph teardown.
-        }
-        this.sidechainConnections.delete(key);
-        return true;
+        this.sidechains.refreshAlignment(keyDelayFor);
     }
 
     public unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void {
-        const key = `${sourceTrackId}→${targetDeviceId}`;
-        // Cancel a still-pending (queued-in-fallback) wire so an unwire issued
-        // before recovery does not get replayed back into the live graph.
-        this.pendingSidechainRoutes.delete(key);
-        this.mutateRuntimeGraph(() => ({ value: undefined, changed: this.removeLiveSidechainConnection(key) }));
+        this.sidechains.unwireRoute(sourceTrackId, targetDeviceId);
     }
 
     public scheduleOscillator(frequency: number, startTime: number, duration: number, gain = 0.3): void {
@@ -2320,7 +2115,7 @@ class AudioEngineImpl implements AudioEngine {
                     (this.trackNodes.size > 0 ||
                         this.busNodes.size > 0 ||
                         this.sends.sendNodes.size > 0 ||
-                        this.sidechainConnections.size > 0 ||
+                        this.sidechains.connectionCount() > 0 ||
                         this.adjustmentRuntime.listLiveBusKeys().length > 0 ||
                         Array.from(this.toasterPadRoutes.values()).some((route) => route.destinationNode !== null));
                 // Reset retires the whole graph, so it must not reroute doomed
@@ -2329,17 +2124,7 @@ class AudioEngineImpl implements AudioEngine {
                 runAllEffects([
                     () => this.stopAllScheduled(),
                     () => this.adjustmentRuntime.reset(),
-                    ...Array.from(this.sidechainConnections.values()).flatMap((connection) => [
-                        () => {
-                            try {
-                                connection.sourceNode.disconnect(connection.keyDelayNode);
-                            } catch {
-                                // The source edge may already be detached by wider teardown.
-                            }
-                        },
-                        () => connection.keyDelayNode.disconnect(),
-                        () => connection.gainNode.disconnect(),
-                    ]),
+                    ...this.sidechains.resetEffects(),
                     ...this.sends.resetEffects(),
                     ...Array.from(this.toasterPadRoutes.values()).flatMap((route) => {
                         const { controls, destinationNode, padIndex } = route;
@@ -2356,8 +2141,7 @@ class AudioEngineImpl implements AudioEngine {
                     () => {
                         // Retired ownership must not replay into the next project,
                         // even when a physical disconnect or disposal reported a fault.
-                        this.sidechainConnections.clear();
-                        this.pendingSidechainRoutes.clear();
+                        this.sidechains.clear();
                         this.sends.clear();
                         this.busNodes.clear();
                         this.trackNodes.clear();
