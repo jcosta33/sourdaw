@@ -8,7 +8,7 @@ This guide defines coding conventions and patterns for clarity, consistency, and
 
 - Use real types. Do not escape through `any`, unsafe casts, or broad index signatures.
 - Narrow unknown values at their boundary.
-- Do not suppress errors with `@ts-ignore`, `@ts-expect-error`, or disabled lint rules.
+- Do not suppress errors with `@ts-ignore`, `@ts-expect-error`, or disabled lint rules. The one exception is an interface that is a declaration-merging target (module augmentation): it may carry a line-scoped disable for the rules that refuse merge targets, with the reason beside it ([ADR 0058](../.agents/decisions/0058-app-actions-live-with-their-owning-modules.md)).
 - Fix fixtures and tests to match production contracts. Never weaken the contract to make a check pass.
 
 ## Prefer explicit control flow
@@ -795,6 +795,7 @@ file in the same change.
 - **Nesting depth**: Control-flow blocks nest at most 4 deep; deeper nesting buries the happy path and calls for the guard clauses and early returns covered under _Prefer explicit control flow_. ([`max-depth`](https://eslint.org/docs/latest/rules/max-depth))
 - **Cyclomatic complexity**: A function's cyclomatic complexity stays at most 20; past that, its branching cannot be reasoned about or tested exhaustively and should be split. ([`complexity`](https://eslint.org/docs/latest/rules/complexity))
 - **Burn-down baseline**: Files that already exceed one of the four limits above are listed in `eslint.size-baseline.mjs`, which holds those files to `warn` instead of `error` so they keep reporting without failing the build. A file leaves the list only once it complies with all four rules; no file is ever added.
+- **Baseline line ceilings**: Because `warn` alone would let a baselined file grow without bound, each baselined file may not exceed its recorded line ceiling in `scripts/lintSizeCeilings.json`, where a file's line count is its number of newline characters. A file over 600 lines is recorded at its line count plus 50, a fixed headroom granted once; a file within 600 lines is recorded at 600, so the ratchet never lets a short file newly exceed `max-lines`. A ceiling more than 100 lines above the ceiling the file's current length earns is stale and must be lowered to that value. Ceilings are never raised: review refuses any raised figure in `scripts/lintSizeCeilings.json`, and the spec catches a raise only when it ends more than 100 lines above the ceiling the file's current length earns. An over-ceiling file is fixed by moving code into a new file, which the size rules hold. Generated files named in the exemption list in `scripts/lintSizeCeilings.ts` carry no ceiling, because their size follows their generator's input. `scripts/__tests__/lintSizeBaseline.spec.ts` enforces that no file exceeds its ceiling, that no ceiling is stale, that the ceilings file lists each non-exempt baseline path exactly once in sorted order, and that each exemption names an existing generator stated in the exempt file's header.
 
 ### Parameter patterns
 

@@ -925,7 +925,9 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
         if (run === null || schedule?.kind !== 'vibe-run') {
             throw new TypeError('Expected the vibe run and its schedule');
         }
-        expect(groundVibeRunBatch(run, schedule, 3)).toEqual({
+        expect(
+            groundVibeRunBatch(run, schedule, 3, { source: 'catalogue-defaults', reason: 'local-backend', detail: '' })
+        ).toEqual({
             status: 'rejected',
             reason: `production brief changed since this run was planned (rev ${String(PLANNED_BRIEF_REVISION)} → ${String(PLANNED_BRIEF_REVISION + 1)})`,
         });

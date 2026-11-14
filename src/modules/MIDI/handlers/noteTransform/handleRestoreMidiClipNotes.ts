@@ -3,6 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { isRestoreMidiClipNotesReplayArguments } from '../../transformers/isRestoreMidiClipNotesReplayArguments';
+import { classifyMidiReplayProducer } from '../../useCases/midiNoteTransforms/classifyMidiReplayProducer';
 import { getRestoreMidiClipNotesStatus } from '../../useCases/midiNoteTransforms/getRestoreMidiClipNotesStatus';
 import { projectMidiNotesByClipIdThroughRestores } from '../../useCases/midiNoteTransforms/projectMidiNotesByClipIdThroughRestores';
 import { restoreMidiClipNotes } from '../../useCases/midiNoteTransforms/restoreMidiClipNotes';
@@ -22,16 +23,16 @@ function getProjectedNoteTransformReplayTarget(action: RestoreMidiClipNotesActio
     if (!guard) {
         return undefined;
     }
-    const clipProducer = context.actions
-        .slice(0, context.actionIndex)
-        .find(
-            (candidate) =>
-                candidate.type === 'addClip' &&
-                candidate.payload.id === action.payload.clipId &&
-                candidate.payload.trackId === guard.trackId &&
-                candidate.payload.type === 'midi' &&
-                candidate.payload.locked !== true
+    const clipProducer = context.actions.slice(0, context.actionIndex).find((candidate) => {
+        const producer = classifyMidiReplayProducer(candidate);
+        return (
+            producer.kind === 'clip' &&
+            producer.action.payload.id === action.payload.clipId &&
+            producer.action.payload.trackId === guard.trackId &&
+            producer.action.payload.type === 'midi' &&
+            producer.action.payload.locked !== true
         );
+    });
     if (!clipProducer) {
         return undefined;
     }
@@ -43,14 +44,14 @@ function getProjectedNoteTransformReplayTarget(action: RestoreMidiClipNotesActio
             clipLocked: false,
         };
     }
-    const trackProducer = context.actions
-        .slice(0, context.actionIndex)
-        .find(
-            (candidate) =>
-                candidate.type === 'addTrack' &&
-                candidate.payload.id === guard.trackId &&
-                candidate.payload.kind === 'midi'
+    const trackProducer = context.actions.slice(0, context.actionIndex).find((candidate) => {
+        const producer = classifyMidiReplayProducer(candidate);
+        return (
+            producer.kind === 'track' &&
+            producer.action.payload.id === guard.trackId &&
+            producer.action.payload.kind === 'midi'
         );
+    });
     if (!trackProducer) {
         return undefined;
     }
