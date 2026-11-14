@@ -108,7 +108,7 @@ function toStatedPhrase(
 }
 
 function findSingleBars(text: string, context: ProjectContext): StatedRangePhrase[] {
-    return [...text.matchAll(SINGLE_BAR_PATTERN)].map((match) => {
+    return Array.from(text.matchAll(SINGLE_BAR_PATTERN), (match) => {
         const bar = Number(match.groups?.bar);
         return toStatedPhrase(
             resolveProjectRange({ startBar: bar, endBar: bar }, context),

@@ -52,9 +52,10 @@ function readStatedRange(value: unknown): ParameterRangePayload['range'] | null 
     }
     if (hasExactKeys(value, ['section', 'barsBefore'])) {
         const { section, barsBefore } = value;
-        return typeof section === 'string' && section.trim() !== '' && isFiniteNumber(barsBefore)
-            ? { section, barsBefore }
-            : null;
+        if (typeof section === 'string' && section.trim() !== '' && isFiniteNumber(barsBefore)) {
+            return { section, barsBefore };
+        }
+        return null;
     }
     if (hasExactKeys(value, ['startBar', 'endBar'])) {
         const { startBar, endBar } = value;
