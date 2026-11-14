@@ -2374,6 +2374,7 @@ describe('repository tooling selects no browser suite', () => {
         '.prettierrc',
         '.editorconfig',
         '.oxlintrc.json',
+        '.oxlint-plugins.json',
         'eslint.config.mjs',
         'eslint.size-baseline.mjs',
         'eslint.size-baseline.d.mts',
@@ -2381,6 +2382,7 @@ describe('repository tooling selects no browser suite', () => {
         'oxlint.craft-baseline.d.mts',
         'knip.json',
         'tsconfig.eslint.json',
+        'tsconfig.eslint-config.json',
     ])('keeps %s on broad non-browser validation', (path) => {
         const plan = selectValidationPlan([path], INVENTORY);
         expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);

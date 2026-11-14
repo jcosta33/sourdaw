@@ -172,7 +172,10 @@ describe('lint entrypoint phase reporting', () => {
         const directory = mkdtempSync(join(tmpdir(), 'run-lint-test-'));
         try {
             const executable = join(directory, 'pnpm');
-            writeFileSync(executable, '#!/bin/sh\necho "$2 output"\nif [ "$2" = "$FAIL_ENGINE" ]; then exit 2; fi\n');
+            writeFileSync(
+                executable,
+                '#!/bin/sh\nengine="$2"\nif [ "$3" = "--config=.oxlint-plugins.json" ]; then engine="oxlint-plugins"; fi\necho "$engine output"\nif [ "$engine" = "$FAIL_ENGINE" ]; then exit 2; fi\n'
+            );
             chmodSync(executable, 0o755);
             return spawnSync(process.execPath, [resolve('scripts/runLint.ts'), 'src/a.ts'], {
                 encoding: 'utf8',
@@ -189,11 +192,11 @@ describe('lint entrypoint phase reporting', () => {
         expect(result.status).toBe(0);
         expect(result.stderr).toBe('');
         expect(result.stdout).toMatch(
-            /^lint: oxlint started\noxlint output\nlint: oxlint passed \(\d+ ms\)\nlint: eslint started\neslint output\nlint: eslint passed \(\d+ ms\)\n$/
+            /^lint: oxlint started\noxlint output\nlint: oxlint passed \(\d+ ms\)\nlint: oxlint-plugins started\noxlint-plugins output\nlint: oxlint-plugins passed \(\d+ ms\)\nlint: eslint started\neslint output\nlint: eslint passed \(\d+ ms\)\n$/
         );
     });
 
-    it.each(['oxlint', 'eslint'])('reports %s failure and retains the original error', (engine) => {
+    it.each(['oxlint', 'oxlint-plugins', 'eslint'])('reports %s failure and retains the original error', (engine) => {
         const result = runLint(engine);
 
         expect(result.status).toBe(1);
@@ -202,8 +205,11 @@ describe('lint entrypoint phase reporting', () => {
             new RegExp(`lint: ${engine} started\\n${engine} output\\nlint: ${engine} failed \\(\\d+ ms\\)`)
         );
         expect(result.stdout).not.toContain(`lint: ${engine} passed`);
-        if (engine === 'oxlint') {
+        if (engine !== 'eslint') {
             expect(result.stdout).not.toContain('eslint');
+        }
+        if (engine === 'oxlint') {
+            expect(result.stdout).not.toContain('oxlint-plugins');
         }
     });
 });

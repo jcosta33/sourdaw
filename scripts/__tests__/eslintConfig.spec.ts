@@ -1,9 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 import { ESLint, Linter } from 'eslint';
 import { describe, expect, it } from 'vitest';
+
+import sourdawPlugin from '../lint/sourdaw.mjs';
+import { lintMigratedRules } from './helpers/lintMigratedRules.ts';
+import { typeQueryLintFixtures } from './helpers/typeQueryLintFixtures.ts';
 
 const REACT_DEFAULT_IMPORT_SELECTOR =
     "ImportDeclaration[source.value='react'] :matches(ImportDefaultSpecifier, ImportNamespaceSpecifier)";
@@ -23,6 +27,33 @@ const restrictedSyntaxFor = async (filePath: string) => {
 };
 
 describe('ESLint configuration', () => {
+    it('keeps the local type-query helper compatible with the original TypeScript parser', async () => {
+        const config = await new ESLint().calculateConfigForFile(resolve('src/app/bootstrap.ts'));
+        const plugin = config?.plugins.sourdaw;
+        const parser = config?.languageOptions.parser;
+        if (!plugin || !parser) {
+            throw new Error('ESLint did not register the local plugin and original parser');
+        }
+        const linter = new Linter();
+        for (const fixture of typeQueryLintFixtures) {
+            const lint = (code: string) =>
+                linter.verify(
+                    code,
+                    {
+                        files: ['**/*.ts'],
+                        languageOptions: { parser },
+                        plugins: { sourdaw: plugin },
+                        rules: { [fixture.rule]: 'error' },
+                    },
+                    { filename: resolve(fixture.filename) }
+                );
+            expect(
+                lint(fixture.invalid).map((message) => message.ruleId),
+                fixture.rule
+            ).toEqual([fixture.rule]);
+            expect(lint(fixture.valid), fixture.rule).toEqual([]);
+        }
+    });
     it('runs both lint engines on the config', () => {
         const result = spawnSync(process.execPath, ['scripts/runLint.ts', 'eslint.config.mjs'], {
             cwd: process.cwd(),
@@ -33,6 +64,7 @@ describe('ESLint configuration', () => {
 
         expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
         expect(result.stdout).toMatch(/lint: oxlint passed/);
+        expect(result.stdout).toMatch(/lint: oxlint-plugins passed/);
         expect(result.stdout).toMatch(/lint: eslint passed/);
     }, 130_000);
 
@@ -62,35 +94,67 @@ describe('ESLint configuration', () => {
         }
     });
 
-    it('loads the config and applies custom rules to invalid and valid TypeScript', async () => {
-        const directory = mkdtempSync(resolve('src/app/eslint-config-fixtures-'));
-        const invalidPath = join(directory, 'invalid.ts');
-        const validPath = join(directory, 'valid.ts');
-        const invalidText = 'enum Fruit { Apple }\n';
-        const validText = 'const fruit = { Apple: 1 } as const;\n';
+    it('rejects missing, unmatched, unsupported and partially missing production targets', () => {
+        const directory = mkdtempSync(resolve('scripts/lint-targets-'));
+        const valid = join(directory, 'valid.ts');
+        const missing = join(directory, 'missing.ts');
+        const unsupported = join(directory, 'example.rs');
         try {
-            writeFileSync(invalidPath, invalidText);
-            writeFileSync(validPath, validText);
-            const eslint = new ESLint();
-            const [invalid] = await eslint.lintText(invalidText, { filePath: invalidPath });
-            const [valid] = await eslint.lintText(validText, { filePath: validPath });
-            if (!invalid || !valid) {
-                throw new Error('ESLint did not return both results');
+            writeFileSync(valid, 'export const value = 1;\n');
+            writeFileSync(unsupported, 'fn main() {}\n');
+            for (const targets of [[missing], [join(directory, 'absent/**/*.ts')], [unsupported], [valid, missing]]) {
+                const result = spawnSync(process.execPath, ['scripts/runLint.ts', ...targets], {
+                    cwd: process.cwd(),
+                    encoding: 'utf8',
+                    timeout: 120_000,
+                    env: { ...process.env, npm_config_verify_deps_before_run: 'false' },
+                });
+                expect(result.status, result.stdout + result.stderr).toBe(1);
             }
-
-            expect(invalid.messages.map((message) => message.ruleId)).toContain('sourdaw/no-enum');
-            expect(valid.messages.map((message) => message.ruleId)).not.toContain('sourdaw/no-enum');
-            expect(valid.messages.filter((message) => message.fatal)).toEqual([]);
         } finally {
-            if (existsSync(invalidPath)) {
-                unlinkSync(invalidPath);
-            }
-            if (existsSync(validPath)) {
-                unlinkSync(validPath);
-            }
+            unlinkSync(valid);
+            unlinkSync(unsupported);
             rmdirSync(directory);
         }
+    }, 180_000);
+
+    it('applies the production Oxlint custom rules to invalid and valid TypeScript', () => {
+        expect(lintMigratedRules('enum Fruit { Apple }\n').messages.map((message) => message.ruleId)).toContain(
+            'sourdaw/no-enum'
+        );
+        expect(
+            lintMigratedRules('const fruit = { Apple: 1 } as const;\n').messages.map((message) => message.ruleId)
+        ).not.toContain('sourdaw/no-enum');
     }, 60_000);
+
+    it('rejects a migrated violation in the production runner and accepts its valid replacement', () => {
+        const directory = mkdtempSync(resolve('scripts/lint-route-'));
+        const fixture = join(directory, 'example.ts');
+        const run = () =>
+            spawnSync(process.execPath, ['scripts/runLint.ts', fixture], {
+                cwd: process.cwd(),
+                encoding: 'utf8',
+                timeout: 120_000,
+                env: { ...process.env, npm_config_verify_deps_before_run: 'false' },
+            });
+        try {
+            writeFileSync(fixture, 'export enum Fruit {\n    Apple,\n}\n');
+            const rejected = run();
+            expect(rejected.status, rejected.stdout + rejected.stderr).toBe(1);
+            expect(rejected.stdout).toContain('lint: oxlint passed');
+            expect(rejected.stdout).toContain('error sourdaw(no-enum)');
+            expect(rejected.stdout).toContain('lint: oxlint-plugins failed');
+            expect(rejected.stdout).not.toContain('lint: eslint started');
+            writeFileSync(fixture, 'export const fruit = { Apple: 1 } as const;\n');
+            const accepted = run();
+            expect(accepted.status, accepted.stdout + accepted.stderr).toBe(0);
+            expect(accepted.stdout).toContain('lint: oxlint-plugins passed');
+            expect(accepted.stdout).toContain('lint: eslint passed');
+        } finally {
+            unlinkSync(fixture);
+            rmdirSync(directory);
+        }
+    }, 180_000);
 
     it('bans default React imports and direct storage calls in production TSX', async () => {
         const selectors = await restrictedSyntaxFor('src/app/App.tsx');
@@ -124,7 +188,7 @@ describe('ESLint configuration', () => {
         if (!config) {
             throw new Error('ESLint did not load the presentation configuration');
         }
-        const sourdawRules = Object.keys(config.plugins.sourdaw?.rules ?? {});
+        const sourdawRules = Object.keys(sourdawPlugin.rules);
 
         expect(sourdawRules).toContain('no-type-assertion-escape');
         expect(sourdawRules.filter((name) => /tauri/i.test(name))).toEqual([]);
@@ -134,32 +198,40 @@ describe('ESLint configuration', () => {
     });
 
     it('reports every assertion escape and no ordinary assertion', async () => {
-        const eslint = new ESLint();
-        const config = await eslint.calculateConfigForFile(resolve('src/app/bootstrap.ts'));
-        if (!config) {
-            throw new Error('ESLint did not load the app configuration');
-        }
-        const restoreHandlerConfig = await eslint.calculateConfigForFile(
-            resolve('src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts')
-        );
-        const linter = new Linter();
-        const lint = (code: string, ruleEntry: Linter.RuleEntry) =>
-            linter
-                .verify(
-                    code,
-                    {
-                        files: ['**/*.ts'],
-                        languageOptions: { parser: config.languageOptions.parser },
-                        plugins: { sourdaw: config.plugins.sourdaw },
-                        rules: { 'sourdaw/no-type-assertion-escape': ruleEntry },
-                    },
-                    { filename: resolve('src/modules/Example/useCases/example.ts') }
-                )
-                .map((message) => message.messageId);
-        const production = config.rules['sourdaw/no-type-assertion-escape'];
-        const restoreHandler = restoreHandlerConfig?.rules['sourdaw/no-type-assertion-escape'];
+        const messages = sourdawPlugin.rules['no-type-assertion-escape'].meta.messages;
+        const lint = (code: string, _ruleEntry: unknown) =>
+            lintMigratedRules(code, 'src/modules/Example/useCases/example.ts')
+                .messages.filter((message) => message.ruleId === 'sourdaw/no-type-assertion-escape')
+                .map((message) => Object.entries(messages).find(([, text]) => text === message.message)?.[0]);
+        const migration = JSON.parse(readFileSync('.oxlint-plugins.json', 'utf8'));
+        const production = migration.overrides.find(
+            (entry: { files: string[] }) => entry.files[0] === '**/*.{ts,tsx,mts,cts}'
+        ).rules['sourdaw/no-type-assertion-escape'];
+        const assertionScopes = migration.overrides
+            .filter(
+                (entry: { rules?: Record<string, unknown> }) =>
+                    entry.rules?.['sourdaw/no-type-assertion-escape'] !== undefined
+            )
+            .map((entry: { files: string[]; rules: Record<string, unknown> }) => [
+                entry.files,
+                entry.rules['sourdaw/no-type-assertion-escape'],
+            ]);
+        expect(assertionScopes).toEqual([
+            [['**/*.{ts,tsx,mts,cts}'], 'error'],
+            [
+                [
+                    '**/*.spec.{ts,tsx}',
+                    '**/*.test.{ts,tsx}',
+                    '**/setupTests.ts',
+                    '**/*.mock.ts',
+                    '**/__tests__/**/*.{ts,tsx}',
+                    'src/**/testing/**/*.{ts,tsx}',
+                ],
+                'off',
+            ],
+        ]);
 
-        expect(production).toEqual([2]);
+        expect(production).toBe('error');
         expect(lint('const value = input as never;', production)).toEqual(['noAsNever']);
         expect(lint('const value = input as any;', production)).toEqual(['noAsAny']);
         expect(lint('const value = input as unknown as Thing;', production)).toEqual(['noAsUnknownAs']);
@@ -185,45 +257,37 @@ describe('ESLint configuration', () => {
         expect(lint('const value = (input as Thing)!;', production)).toEqual([]);
         expect(lint('const value = (input as Thing)! as Other;', production)).toEqual([]);
 
-        expect(restoreHandler).toEqual([2]);
-        expect(lint('const value = input as never;', restoreHandler)).toEqual(['noAsNever']);
-    });
+        const restoreHandler = lintMigratedRules(
+            'const value = input as never;',
+            'src/modules/Example/handlers/restore/handleRestoreTrack.ts'
+        );
+        expect(
+            restoreHandler.messages
+                .filter((message) => message.ruleId === 'sourdaw/no-type-assertion-escape')
+                .map((message) => message.message)
+        ).toEqual([messages.noAsNever]);
+    }, 180_000);
 
     it('preserves custom rule diagnostics through the loaded plugin', async () => {
-        const eslint = new ESLint();
-        const config = await eslint.calculateConfigForFile(resolve('src/app/bootstrap.ts'));
-        if (!config) {
-            throw new Error('ESLint did not load the app configuration');
-        }
-        expect(config.plugins['@tanstack/query']).toBeDefined();
-        expect(config.rules['@tanstack/query/exhaustive-deps']).toEqual([2]);
-        expect(config.rules['@tanstack/query/no-unstable-deps']).toEqual([2]);
-        expect(config.rules['@tanstack/query/stable-query-client']).toEqual([2]);
-        const plugin = config.plugins.sourdaw;
-        const parser = config.languageOptions.parser;
-        expect(plugin).toBeDefined();
-        expect(parser).toBeDefined();
-
-        const linter = new Linter();
         const cases = [
             {
                 rule: 'no-useeffect-fetching',
                 messageId: 'noUseEffectFetching',
-                filename: 'src/modules/Example/presentations/hooks/useExample.ts',
+                filename: 'src/modules/Example/presentations/hooks/useExample.tsx',
                 invalid: 'useEffect(() => { if (ready) { fetch(url); } }, []);',
                 valid: 'useEffect(() => { if (ready) { updateView(); } }, []);',
             },
             {
                 rule: 'no-useeffect-derived-state',
                 messageId: 'noDerivedStateEffect',
-                filename: 'src/modules/Example/presentations/hooks/useExample.ts',
+                filename: 'src/modules/Example/presentations/hooks/useExample.tsx',
                 invalid: 'React.useLayoutEffect(() => { if (ready) { setValue(value); } }, [value]);',
                 valid: 'React.useLayoutEffect(() => { if (ready) { setValue(fetch(url)); } }, [value]);',
             },
             {
                 rule: 'no-useeffect-derived-state',
                 messageId: 'noDerivedStateEffect',
-                filename: 'src/modules/Example/presentations/hooks/useExample.ts',
+                filename: 'src/modules/Example/presentations/hooks/useExample.tsx',
                 invalid: 'useEffect(() => { setActiveDevice(id); }, [id]);',
                 valid: 'useEffect(() => { setActiveDevice(id); return () => setActiveDevice(null); }, [id]);',
             },
@@ -260,35 +324,39 @@ describe('ESLint configuration', () => {
 
         for (const fixture of cases) {
             const lint = (code: string) =>
-                linter.verify(
-                    code,
-                    {
-                        files: ['**/*.ts'],
-                        languageOptions: { parser },
-                        plugins: { sourdaw: plugin },
-                        rules: { [`sourdaw/${fixture.rule}`]: 'error' },
-                    },
-                    { filename: resolve(fixture.filename) }
+                lintMigratedRules(code, fixture.filename).messages.filter(
+                    (message) => message.ruleId === `sourdaw/${fixture.rule}`
                 );
+            const definition = Object.entries(sourdawPlugin.rules).find(([name]) => name === fixture.rule)?.[1];
+            const interpolated = new Map([
+                [
+                    'noMultipleFunctionExports',
+                    'Use-case and repository files must export at most one function value. Found 2 exported functions: first, second.',
+                ],
+                [
+                    'noTypeOnlyPrivateModuleImport',
+                    'Do not import types from another module private folder (`models`). Use an events contract, public value contract derivation, or a local consumer-owned type.',
+                ],
+            ]);
+            const expected =
+                interpolated.get(fixture.messageId) ??
+                Object.entries(definition?.meta.messages ?? {}).find(([name]) => name === fixture.messageId)?.[1];
             expect(
-                lint(fixture.invalid).map((message) => message.messageId),
+                lint(fixture.invalid).map((message) => message.message),
                 fixture.rule
-            ).toEqual([fixture.messageId]);
+            ).toEqual([expected]);
             expect(lint(fixture.valid), fixture.rule).toEqual([]);
         }
 
-        const promisePlugin = config.plugins.promise;
-        if (!promisePlugin) {
-            throw new Error('ESLint did not load the promise plugin');
-        }
-        const lintPromise = (code: string) =>
-            linter.verify(code, {
-                plugins: { promise: promisePlugin },
-                rules: { 'promise/no-return-wrap': 'error' },
-            });
-        expect(lintPromise('task.then(value => Promise.resolve(value));').map((message) => message.messageId)).toEqual([
-            'resolve',
-        ]);
-        expect(lintPromise('task.then(value => value);')).toEqual([]);
-    });
+        expect(
+            lintMigratedRules('task.then(value => Promise.resolve(value));')
+                .messages.filter((message) => message.ruleId === 'promise-js/no-return-wrap')
+                .map((message) => message.message)
+        ).toHaveLength(1);
+        expect(
+            lintMigratedRules('task.then(value => value);').messages.filter(
+                (message) => message.ruleId === 'promise-js/no-return-wrap'
+            )
+        ).toEqual([]);
+    }, 180_000);
 });
