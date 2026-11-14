@@ -530,8 +530,11 @@ At both validation points `deliver` also holds the live pull-request title to th
 `lane:publish` enforces (`assertConventionalSubject` in `scripts/prContract.ts`): it refuses a title
 that is not conventional or that carries an issue-closing reference, because the title becomes the
 squash commit subject and GitHub closes every issue a closing keyword names in a commit on `main`.
-A title edited after publication is caught here; replace it with `lane:publish --title` and keep the
-relationship in the body.
+A title edited after publication is caught here. On a conforming lane, replace it with
+`lane:publish --title` and keep the relationship in the body. `lane:publish` refuses `--title` on a
+pre-convention `agent/` lane, which stays push-only, so such a pull request cannot be retitled
+through the scripts: respin it as a conforming lane and close it with `pr:supersede` once the
+replacement merges.
 
 Head, head branch, base branch, body, canonical closing target, and stacked dependents must stay
 stable between reads. `deliver` remains main-only and refuses any other base; reconcile a landed
