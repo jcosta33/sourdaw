@@ -185,6 +185,48 @@ describe('handleRestoreScratchPadState', () => {
         ).toBe(true);
     });
 
+    it.each([
+        { field: 'name', changed: { name: 'Renamed' } },
+        { field: 'color', changed: { color: '#ffffff' } },
+        { field: 'startBeat', changed: { startBeat: 2 } },
+        { field: 'endBeat', changed: { endBeat: 12 } },
+        { field: 'order', changed: { order: 5 } },
+    ])('isNoop is false when only the pad section $field differs from live state', ({ changed }) => {
+        const live = padSection('a', 0);
+        scratchPadStore.set({ sections: [live] });
+        markerStore.set({ markers: [], sections: [] });
+
+        expect(
+            handleRestoreScratchPadState.isNoop!({
+                type: 'restoreScratchPadState',
+                payload: {
+                    expectedSections: [live],
+                    replacementSections: [{ ...live, ...changed }],
+                    expectedMarkerSections: [],
+                    replacementMarkerSections: [],
+                },
+            })
+        ).toBe(false);
+    });
+
+    it('isNoop is false when only a marker section field differs from live state', () => {
+        const liveMarker = markerSection('m1', 0);
+        scratchPadStore.set({ sections: [] });
+        markerStore.set({ markers: [], sections: [liveMarker] });
+
+        expect(
+            handleRestoreScratchPadState.isNoop!({
+                type: 'restoreScratchPadState',
+                payload: {
+                    expectedSections: [],
+                    replacementSections: [],
+                    expectedMarkerSections: [liveMarker],
+                    replacementMarkerSections: [{ ...liveMarker, name: 'Renamed' }],
+                },
+            })
+        ).toBe(false);
+    });
+
     it('isNoop is false when the replacement pad sections differ from live state', () => {
         scratchPadStore.set({ sections: [padSection('a', 0)] });
         markerStore.set({ markers: [], sections: [] });
