@@ -4,15 +4,15 @@ import { type AgentRunBudgets } from '../../models/AgentRun';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type MeasuredScheduledVibeRunPlan } from '../../models/VibeRunPlan';
 
-import { buildVibeBatchValueRequest, type VibeBatchValueRequest } from './buildVibeBatchValueRequest';
 import {
     buildVibeBatchCorrectionMessage,
     VIBE_BATCH_REFUSED_REPLY_ECHO_MAX_CHARS,
     VIBE_BATCH_REJECTION_REASON_MAX_CHARS,
-} from './chooseVibeBatchValues';
+} from './buildVibeBatchCorrectionMessage';
+import { buildVibeBatchValueRequest, type VibeBatchValueRequest } from './buildVibeBatchValueRequest';
 
 /** A first request and its one correction: the most attempts a batch's value choice makes. */
-const ATTEMPTS_PER_BATCH = 2;
+export const VIBE_BATCH_VALUE_ATTEMPTS_PER_BATCH = 2;
 
 /**
  * What the compiled provider request adds around its messages and tools before the estimator
@@ -87,13 +87,7 @@ export function readVibeRunValueChoiceFit(input: {
     const remaining = readRemaining(input.budgets, 'hostedTextPlanningTokens');
     const refusal =
         worstCaseTokens > remaining
-            ? `parameter-value choice for every batch needs up to ${String(worstCaseTokens)} tokens over ${String(calls * ATTEMPTS_PER_BATCH)} provider calls, more than the ${String(remaining)} this run's hostedTextPlanningTokens budget has left`
+            ? `parameter-value choice for every batch needs up to ${String(worstCaseTokens)} tokens over ${String(calls * VIBE_BATCH_VALUE_ATTEMPTS_PER_BATCH)} provider calls, more than the ${String(remaining)} this run's hostedTextPlanningTokens budget has left`
             : null;
     return { calls, worstCaseTokens, refusal };
-}
-
-/** The brief card's line saying how many hosted calls the run's value choice makes. */
-export function describeVibeRunValueChoiceCalls(calls: number): string {
-    const unit = (count: number) => `${String(count)} call${count === 1 ? '' : 's'}`;
-    return `The run asks the hosted provider for recipe parameter values once per batch: ${unit(calls)}, up to ${unit(calls * ATTEMPTS_PER_BATCH)} if replies need correcting.`;
 }

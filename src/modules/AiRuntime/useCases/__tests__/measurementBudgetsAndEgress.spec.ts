@@ -37,12 +37,12 @@ import {
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
+import { containsSampleData, MAX_BAND_VALUES, parseEncodedJson } from '../../__tests__/hostedSampleDataDetector';
 import {
     AGENT_DATA_CATEGORIES,
     type AgentDataCategory,
     REMOTE_TEXT_AGENT_DATA_CATEGORIES,
 } from '../../models/AgentDataPolicy';
-import { containsSampleData, MAX_BAND_VALUES, parseEncodedJson } from '../../__tests__/hostedSampleDataDetector';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type AnalysisMeasureRead } from '../../models/AnalysisMeasureRead';
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
@@ -85,8 +85,8 @@ import { getProviderRouteView } from '../getProviderRouteView';
 import { generateToolPlanningOutcome, type ProviderAttemptAdmission } from '../llmOrchestration/inference';
 import { planPromptActions } from '../planPromptActions';
 import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
+import { buildVibeBatchCorrectionMessage } from '../vibeRun/buildVibeBatchCorrectionMessage';
 import { VIBE_BATCH_VALUE_TOOLS, type VibeBatchValueRequest } from '../vibeRun/buildVibeBatchValueRequest';
-import { buildVibeBatchCorrectionMessage } from '../vibeRun/chooseVibeBatchValues';
 
 import {
     configureAiWorkflowCommandPreflightFixture,

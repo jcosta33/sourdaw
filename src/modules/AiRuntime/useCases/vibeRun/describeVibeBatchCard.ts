@@ -4,7 +4,8 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { type ScheduledVibeRunBatch, type VibeRunExpectedDelta } from '../../models/VibeRunPlan';
 
 import { type VibeBatchValueChoice } from './chooseVibeBatchValues';
-import { describeCatalogueDefaultsReason, describeRecipeValueSource } from './describeRecipeValueSource';
+import { describeCatalogueDefaultsReason } from './describeCatalogueDefaultsReason';
+import { describeRecipeValueSource } from './describeRecipeValueSource';
 import { describeVibeRunObjective } from './describeVibeRunObjective';
 import { formatVibeFigure } from './formatVibeFigure';
 import { readVibeMetricLabel } from './readVibeMetricLabel';

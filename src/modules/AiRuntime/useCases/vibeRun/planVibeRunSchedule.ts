@@ -25,7 +25,6 @@ import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { readExplicitProtections } from '../agentReference/readExplicitProtections';
 import { agentRunLifecycle } from '../agentRunLifecycle';
-import { CANONICAL_ROLE_OPTIONS } from '../canonicalRoleFamilies';
 import { type MeasurementUnitProgress } from '../measureProjectUnit';
 import { type MetricGoal } from '../metricGoalContractTypes';
 import { objectiveMetricProjection } from '../objectiveMetricProjection';
@@ -35,14 +34,14 @@ import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
 import { readArrangementRange } from '../readArrangementRange';
 import { type readBriefMixIntent } from '../readBriefMixIntent';
 
-import { isHostedValueChoiceChain } from './chooseVibeBatchValues';
 import { collectVibeRunInitialBaselines } from './collectVibeRunInitialBaselines';
 import { describeVibeRunObjective } from './describeVibeRunObjective';
 import { formatVibeFigure } from './formatVibeFigure';
 import { readVibeBatchRecipeGoals } from './readVibeBatchRecipeGoals';
 import { readVibeMetricLabel } from './readVibeMetricLabel';
 import { readVibeRunFitRefusals } from './readVibeRunFitRefusals';
-import { describeVibeRunValueChoiceCalls, readVibeRunValueChoiceFit } from './readVibeRunValueChoiceFit';
+import { readVibeRunValueChoiceScheduleFit } from './readVibeRunValueChoiceScheduleFit';
+import { withBriefTrackRoles } from './withBriefTrackRoles';
 
 type VibeRunSchedule = Extract<NonNullable<IntentResult['batchSchedule']>, { kind: 'vibe-run' }>;
 
@@ -74,43 +73,6 @@ const UNPLANNED_REASONS: Readonly<Record<VibeRunUnplannedRole['reason'], string>
     'no-expected-deltas': 'no requested character has a measurable recipe for them',
     'target-exceeds-batch-cap': 'their recipes alone expand past one batch',
 };
-
-/**
- * The roles the confirmed brief states, read onto every track that had none, exactly as the project
- * context reads an authored role: one supported role, or `unknown` beside a conflicting or unsupported
- * one. A role the project already gives is never replaced, as the brief itself never replaces one.
- */
-function withBriefTrackRoles(
-    tracks: ProjectContext['tracks'],
-    brief: ProjectContextProductionBrief
-): ProjectContext['tracks'] {
-    return tracks.map((track) => {
-        if (track.canonicalRole?.source === 'authored') {
-            return track;
-        }
-        const roles = brief.trackRoles.filter((entry) => entry.trackId === track.id).map((entry) => entry.role);
-        if (roles.length === 0) {
-            return track;
-        }
-        const supported = roles.every((role) => CANONICAL_ROLE_OPTIONS.some((option) => option === role));
-        if (!supported) {
-            return {
-                ...track,
-                canonicalRole: { role: 'unknown', source: 'authored', evidence: 'unsupported-authored-role' },
-            };
-        }
-        if (new Set(roles).size !== 1) {
-            return {
-                ...track,
-                canonicalRole: { role: 'unknown', source: 'authored', evidence: 'conflicting-authored-roles' },
-            };
-        }
-        return {
-            ...track,
-            canonicalRole: { role: roles[0] ?? 'unknown', source: 'authored', evidence: 'authored-role' },
-        };
-    });
-}
 
 function toScheduledBatch(batch: VibeRunPlan['batches'][number]): ScheduledVibeRunBatch {
     return {
@@ -485,7 +447,7 @@ function completeMeasuredSchedule(input: {
             receipts: input.collected.receipts,
         };
     }
-    const valueChoice = readValueChoiceFit(input.source, plan, input.catalog);
+    const valueChoice = readVibeRunValueChoiceScheduleFit(input.source, plan, input.catalog);
     if (valueChoice.status === 'refused') {
         return {
             status: 'unscheduled',
@@ -511,30 +473,6 @@ function completeMeasuredSchedule(input: {
             'Initial figures are historical and do not authorize a batch.',
         ],
     };
-}
-
-/**
- * On a hosted chain every batch asks the provider for its recipe values, so the run must afford a
- * request and its one correction for every batch before it is scheduled, and the card says how many
- * calls that is. A local chain asks nothing and counts nothing.
- */
-function readValueChoiceFit(
-    input: ScheduleInput,
-    plan: MeasuredScheduledVibeRunPlan,
-    catalog: Catalog
-): { status: 'fits'; lines: string[] } | { status: 'refused'; reason: string } {
-    if (!isHostedValueChoiceChain()) {
-        return { status: 'fits', lines: [] };
-    }
-    const run = agentRunLifecycle.get(input.runId);
-    if (run === null) {
-        return { status: 'refused', reason: 'this run no longer exists' };
-    }
-    const fit = readVibeRunValueChoiceFit({ plan, catalog, context: input.context, budgets: run.budgets });
-    if (fit.refusal !== null) {
-        return { status: 'refused', reason: fit.refusal };
-    }
-    return { status: 'fits', lines: [describeVibeRunValueChoiceCalls(fit.calls)] };
 }
 
 function readWholeRunFit(

@@ -7,11 +7,12 @@ import { admitBoundedAgentCorrection } from '../admitBoundedAgentCorrection';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
-import { getBackendChain } from '../llmOrchestration/backendResolution/getBackendChain';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 
+import { buildVibeBatchCorrectionMessage } from './buildVibeBatchCorrectionMessage';
 import { type VibeBatchValueRequest } from './buildVibeBatchValueRequest';
+import { isHostedValueChoiceChain } from './isHostedValueChoiceChain';
 import { type VibeBatchPairValues, readVibeBatchValueReply } from './readVibeBatchValueReply';
 
 /** Why a batch expands at its catalogue defaults rather than at values the provider chose. */
@@ -23,44 +24,11 @@ export type VibeBatchValueChoice =
 
 export type VibeBatchValueChoiceOutcome = VibeBatchValueChoice | { readonly source: 'stopped' };
 
-/** A refused reply is quoted back to the provider in its correction, never more than this. */
-export const VIBE_BATCH_REFUSED_REPLY_ECHO_MAX_CHARS = 4_000;
-/** The rejection reason a correction states, never more than this. */
-export const VIBE_BATCH_REJECTION_REASON_MAX_CHARS = 500;
-
 /** One correction after a refused reply, as the planner's own bounded correction allows. */
 const MAX_CORRECTIONS = 1;
 
-const CORRECTION_INSTRUCTION =
-    'Your previous reply was refused for the reason given in rejection, and nothing of it was applied. Reply again to the same request, calling exactly one tool once.';
-
-/** Value choice runs only where every backend the request could reach is hosted; local and Automatic never do. */
-export function isHostedValueChoiceChain(): boolean {
-    const chain = getBackendChain();
-    return chain.length > 0 && chain.every((backend) => backend === 'cloud');
-}
-
 function defaults(reason: VibeBatchDefaultsReason, detail: string): VibeBatchValueChoice {
     return { source: 'catalogue-defaults', reason, detail };
-}
-
-/** The correction is a fresh request: the original content, the refused reply and why it was refused. */
-export function buildVibeBatchCorrectionMessage(
-    request: VibeBatchValueRequest,
-    calls: readonly ToolCallResult[],
-    reason: string
-): string {
-    const original: unknown = JSON.parse(request.userMessage);
-    const refusedReply = JSON.stringify(calls.map((call) => ({ name: call.name, arguments: call.arguments }))).slice(
-        0,
-        VIBE_BATCH_REFUSED_REPLY_ECHO_MAX_CHARS
-    );
-    return JSON.stringify({
-        request: original,
-        refusedReply,
-        rejection: reason.slice(0, VIBE_BATCH_REJECTION_REASON_MAX_CHARS),
-        instruction: CORRECTION_INSTRUCTION,
-    });
 }
 
 type AttemptResult =

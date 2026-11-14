@@ -905,7 +905,6 @@ describe('AgentWorkspace', () => {
                         title: 'Chest-register lift',
                         targetId: 'track-lead',
                         targetName: 'Lead Vocal',
-                        valueSource: 'measurements',
                         valueSourceLabel: 'values chosen from measurements',
                     },
                     {
@@ -913,7 +912,6 @@ describe('AgentWorkspace', () => {
                         title: 'Low shelf lift',
                         targetId: 'track-bass',
                         targetName: 'Bass',
-                        valueSource: 'catalogue-defaults',
                         valueSourceLabel: 'catalogue defaults',
                     },
                 ],
