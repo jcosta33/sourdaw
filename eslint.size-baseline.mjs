@@ -421,7 +421,6 @@ export const sizeBaselineFiles = [
     'src/modules/Project/presentations/views/TemplateChooser.tsx',
     'src/modules/Project/stores/arrangementStore.ts',
     'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts',
-    'src/modules/Project/useCases/doesProductionBriefAllowActionBatch.ts',
     'src/modules/Project/useCases/getAgentProjectModelContract.ts',
     'src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts',
     'src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts',
