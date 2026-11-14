@@ -71,10 +71,10 @@ function warnEntriesOf(config: Record<string, unknown>): string[] {
 
 function baselineOverridesOf(config: Record<string, unknown>, rule: string): Record<string, unknown>[] {
     const overrides: unknown[] = Array.isArray(config.overrides) ? config.overrides : [];
-    return overrides
+    const singleRuleOverrides = overrides
         .filter(isRecord)
-        .filter((override) => isRecord(override.rules) && Object.keys(override.rules).length === 1)
-        .filter((override) => isRecord(override.rules) && override.rules[rule] === 'off');
+        .filter((override) => isRecord(override.rules) && Object.keys(override.rules).length === 1);
+    return singleRuleOverrides.filter((override) => isRecord(override.rules) && override.rules[rule] === 'off');
 }
 
 function baselineFilesOf(override: Record<string, unknown>): string[] {
