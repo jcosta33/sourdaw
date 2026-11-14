@@ -57,7 +57,8 @@ export type MetricRequestAuthority<MetricId extends string> = {
     /**
      * Who admitted the request's meaning: the complete literal parser, the configured joint intake, an
      * admitted workflow, or the user taking up a suggestion an answer offered, which names one recipe on
-     * one track and states no objective of its own, or the application's reader of the request's
+     * one track and states no objective of its own, or the user repeating the last commit's recipe on
+     * named tracks, which likewise states no objective, or the application's reader of the request's
      * perceptual constraints, which only restricts the batch and grants nothing, or the vibe-run plan
      * the application built for a whole-project request, whose batch promises its recipes' expectations.
      */
@@ -66,6 +67,7 @@ export type MetricRequestAuthority<MetricId extends string> = {
         | 'configured-joint-intake'
         | 'admitted-workflow'
         | 'answer-suggestion'
+        | 'last-commit-recipe'
         | 'perceptual-constraint-reader'
         | 'vibe-run-plan';
     readonly callId: string | null;
@@ -131,12 +133,29 @@ export type MetricNativeLiteralUse = WorkflowNativeLiteralUse & {
     } | null;
 };
 
+/**
+ * A figure a last-commit continuation consumed, recorded by the application beside the action it
+ * compiled from it: the action at `actionIndex` sets `landed`, the committed value moved by `figure`
+ * in its `comparative`'s direction. It accounts for that one stated figure and grants no mutation.
+ */
+export type LastCommitContinuationLiteral = {
+    readonly kind: 'last-commit-continuation';
+    readonly requestDigest: string;
+    readonly actionIndex: number;
+    readonly unit: 'LUFS' | 'dBTP' | 'dBFS' | 'Hz';
+    readonly figure: number;
+    readonly comparative: 'more' | 'less';
+    readonly committed: number;
+    readonly landed: number;
+};
+
 export type MetricGoalState<MetricId extends string> = {
     readonly schemaVersion: 1;
     readonly authorities: readonly MetricRequestAuthority<MetricId>[];
     readonly steps: readonly MetricGoalStep[];
     readonly proofs: readonly MetricGoalProof[];
     readonly nativeLiteralUses?: readonly MetricNativeLiteralUse[];
+    readonly lastCommitContinuations?: readonly LastCommitContinuationLiteral[];
     /**
      * The requests a refinement chain replaced, oldest first. Their figures still need accounting, each
      * against its own text: thread context is cut by provider budgets and is no card's authority. A

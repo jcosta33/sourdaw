@@ -31,8 +31,10 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 import { type AppAction } from '#/utils/handlerContract';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type ToolCallResult } from '../../models/ToolCallResult';
 import { type ToolSchema } from '../../models/ToolDefinitions';
+import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -409,6 +411,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
     });
 
     afterEach(() => {
+        agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -785,6 +788,47 @@ describe('writing the production brief from a whole-project request (AC-001 of #
             )
         );
     }, 15_000);
+
+    /** A one-track project whose stem only the brief gives a role, so its run plans exactly one batch. */
+    async function planStemRun(): Promise<ReturnType<typeof getPendingProposal>> {
+        const STEM_ID = 'track-stem';
+        landProjectEdit(() => {
+            trackStore.set({
+                tracks: [{ ...createTrack(STEM_ID, 'Stem 7'), clips: [audioClip(STEM_ID)] }],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            markerStore.set({ markers: [], sections: [] });
+        });
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => renderShelvedTone(input));
+        const stemRole = { vision: 'A warmer low end', trackRoles: [{ trackId: STEM_ID, role: 'bass' }] };
+        scriptPlanningTurns([briefIntake, compileBrief(stemRole, ['warm']), proposeCompiled()]);
+        await sendChatMessage('make it warmer');
+        return getPendingProposal();
+    }
+
+    // Red when the brief card stops stating the value-choice calls, or counts them other than once per batch.
+    it('states on the brief card how many hosted value calls the run makes, with corrections', async () => {
+        const brief = await planStemRun();
+
+        expect(brief.message.content).toContain('- Batch 2 of 2: warm bass — Stem 7');
+        expect(brief.message.content).toContain(
+            'The run asks the hosted provider for recipe parameter values once per batch: 1 call, up to 2 calls if replies need correcting.'
+        );
+    });
+
+    // Red when a run whose value choice cannot fit its hostedTextPlanningTokens budget is still scheduled.
+    it('schedules no batch when value choice for every batch would not fit the hosted planning budget', async () => {
+        agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, hostedTextPlanningTokens: 3_000 });
+
+        const brief = await planStemRun();
+
+        expect(brief.message.content).toMatch(
+            /No batches were scheduled after the brief: parameter-value choice for every batch needs up to \d+ tokens over 2 provider calls, more than the 3000 this run's hostedTextPlanningTokens budget has left\./u
+        );
+        expect(brief.message.content).not.toContain('- Batch 2 of 2');
+        expect(agentRunLifecycle.get(brief.confirmation.runId)?.plan?.batchSchedule).toBeUndefined();
+    });
 
     it('leaves a request whose plan holds no batch exactly the brief alone', async () => {
         // Every track the request could warm is the locked Drums, so its plan holds no batch at all.

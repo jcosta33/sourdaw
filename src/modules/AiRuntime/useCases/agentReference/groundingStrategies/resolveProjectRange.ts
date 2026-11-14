@@ -1,5 +1,5 @@
 import { resolveMusicalRange } from '#/modules/Arrangement/useCases';
-import { getBarStartBeat } from '#/modules/Transport/useCases';
+import { getBarAtBeat, getBarStartBeat } from '#/modules/Transport/useCases';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
 
@@ -16,5 +16,6 @@ export function resolveProjectRange(range: StatedRange, context: ProjectContext)
         markers: context.markers ?? [],
         tracks: context.tracks,
         barStartBeat: getBarStartBeat,
+        barAtBeat: getBarAtBeat,
     });
 }

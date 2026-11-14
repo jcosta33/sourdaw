@@ -13,6 +13,7 @@ use crate::device::{
     PlatformOutputBackend, PlatformStream, RenderFn, StreamErrorFn,
 };
 use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
+use crate::float_mode::FlushDenormals;
 use crate::midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
 };
@@ -1311,6 +1312,9 @@ impl DeviceRenderer {
         channels: usize,
         timing: OutputTiming,
     ) {
+        // Held for the whole callback: every device the graph reaches runs
+        // with denormals flushed, and the thread gets its own mode back after.
+        let _flush_denormals = FlushDenormals::engage();
         let output_path_frames = timing.output_path_frames;
         // One lock-free atomic increment, no allocation, no lock: this is the
         // one witness the liveness thread trusts to say the stream is still
@@ -5023,6 +5027,87 @@ mod capture_render_tests {
         harness.render(CALLBACK_FRAMES);
 
         assert_eq!(harness.callbacks_rendered(), 2);
+    }
+
+    /// One callback with a probe on the master chain and a rolling transport,
+    /// returning what the probe saw inside its process call.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    fn render_one_callback_through_a_register_probe(
+    ) -> crate::float_mode::test_support::ControlRegisterReadings {
+        use crate::device::OutputTiming;
+        use crate::float_mode::test_support::control_register_probe;
+        use crate::plugin_slot::TransportState;
+
+        let mut harness = RenderHarness::new();
+        let (probe, readings) = control_register_probe();
+        harness.send(GraphCommand::AddPlugin(CONSUMER_ID, Box::new(probe), None));
+        harness.send(GraphCommand::SetTransport(TransportState {
+            is_playing: true,
+            ..TransportState::default()
+        }));
+        let mut data = vec![0.0f32; CALLBACK_FRAMES * OUTPUT_CHANNELS];
+        harness.renderer.render_with_timing(
+            &mut data,
+            OUTPUT_CHANNELS,
+            OutputTiming {
+                output_path_frames: 0,
+                presentation_end: None,
+            },
+        );
+        while harness.retired_rx.pop().is_ok() {}
+        assert!(
+            readings.calls() > 0,
+            "the probe must have processed a block"
+        );
+        readings
+    }
+
+    /// Mutation: remove the `FlushDenormals` guard at the top of
+    /// `render_with_timing` — the reading inside the plugin loses the bits.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    #[test]
+    fn the_render_callback_flushes_denormals_and_restores_the_thread_register() {
+        use crate::float_mode::test_support::{
+            clear_flush_bits, control_bits, read_control, write, FLUSH,
+        };
+
+        let original = clear_flush_bits();
+        let before = read_control();
+
+        let readings = render_one_callback_through_a_register_probe();
+
+        assert_eq!(
+            control_bits(readings.last_seen()),
+            before | FLUSH,
+            "the plugin must process with only the flush bits added to the prior control value"
+        );
+        assert_eq!(
+            read_control(),
+            before,
+            "the callback restores the thread's register"
+        );
+        write(original);
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    #[test]
+    fn the_render_callback_leaves_a_thread_already_flushing_flushing() {
+        use crate::float_mode::test_support::{
+            control_bits, read_control, set_flush_bits, write, FLUSH,
+        };
+
+        let original = set_flush_bits();
+        let before = read_control();
+
+        let readings = render_one_callback_through_a_register_probe();
+
+        assert_eq!(control_bits(readings.last_seen()), before | FLUSH);
+        assert_eq!(
+            read_control(),
+            before,
+            "restore puts back the prior value, set bits included"
+        );
+        write(original);
     }
 
     /// A feed on a ring nothing has written yet, plus the writer that stands

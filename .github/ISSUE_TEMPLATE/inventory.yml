@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Map only. No severity, target architecture, or steps. Secrets stay in `~/.agents/artifacts`.
+        Map only. No severity, target architecture, or steps. Secrets stay in the artifact workspace (`AGENTS.md`, Artifacts).
 
         File for a Change plan. Close when that change lands.
 

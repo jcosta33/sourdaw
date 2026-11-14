@@ -16,17 +16,17 @@ Look at and poke the running app without polluting the maintained E2E suite. Eph
 
 ## Rules
 
-### 1. Probe scripts live under `~/.agents/artifacts/`, never in the repository
+### 1. Probe scripts live in the artifact workspace, never in the repository
 
-Write probe scripts and their screenshots under `~/.agents/artifacts/` (for example `~/.agents/artifacts/ui-scripts/`). Never place them in the repository — not in `.agents/ui-scripts/`, whose only tracked file is the shared `utils.ts` and which ignores only its `*.png`, and never in `tests/e2e/`, which is reserved for maintained `@playwright/test` assertions. Delete scripts and screenshots once you no longer need them.
+Write probe scripts and their screenshots under the artifact workspace `<root>/.agents/artifacts/sourdaw/` on the checkout's drive (root `AGENTS.md`, Artifacts, resolves `<root>`), for example `<root>/.agents/artifacts/sourdaw/ui-scripts/`. Never place them in the repository — not in `.agents/ui-scripts/`, whose only tracked file is the shared `utils.ts` and which ignores only its `*.png`, and never in `tests/e2e/`, which is reserved for maintained `@playwright/test` assertions. Delete scripts and screenshots once you no longer need them.
 
-**Why:** throwaway probes and version-controlled gates have opposite lifecycles; a script written inside a checkout sits untracked in a tree other lanes share, and mixing probes into the suite makes it flaky and the probes unfindable. One-offs belong in `~/.agents/artifacts` (root `AGENTS.md`, Artifacts).
+**Why:** throwaway probes and version-controlled gates have opposite lifecycles; a script written inside a checkout sits untracked in a tree other lanes share, and mixing probes into the suite makes it flaky and the probes unfindable. One-offs belong in the artifact workspace (root `AGENTS.md`, Artifacts).
 
 **Enforced by:** review only.
 
 ### 2. Serve the lane in e2e mode, then run the script with Node
 
-Export a lane-unique `SOURDAW_E2E_PORT` (derive it from the lane slug, root `AGENTS.md` Worktrees), then from the lane start the server in the background with `node scripts/e2eDevServer.ts "$SOURDAW_E2E_PORT"` — the command `playwright.config.ts` uses as its web server. It serves in e2e mode, whose responses carry the serving checkout's identity marker (`sourdawE2eServingCheckoutPlugin` in `vite.config.ts`). Never probe against plain `pnpm dev`: it carries no marker, so the identity assertion cannot refuse another checkout's server. Write a standard Node script against the `playwright` core library and run it with `node ~/.agents/artifacts/ui-scripts/<script-name>.ts`, never through the test runner. Stop the server when you are done.
+Export a lane-unique `SOURDAW_E2E_PORT` (derive it from the lane slug, root `AGENTS.md` Worktrees), then from the lane start the server in the background with `node scripts/e2eDevServer.ts "$SOURDAW_E2E_PORT"` — the command `playwright.config.ts` uses as its web server. It serves in e2e mode, whose responses carry the serving checkout's identity marker (`sourdawE2eServingCheckoutPlugin` in `vite.config.ts`). Never probe against plain `pnpm dev`: it carries no marker, so the identity assertion cannot refuse another checkout's server. Write a standard Node script against the `playwright` core library and run it with `node <root>/.agents/artifacts/sourdaw/ui-scripts/<script-name>.ts`, never through the test runner. Stop the server when you are done.
 
 **Why:** the test runner adds assertion and reporter machinery a one-off probe does not want, and it dirties the stdout the JSON contract owns; a server without the marker lets a probe silently inspect another lane's build.
 
@@ -52,7 +52,7 @@ Emit one structured JSON object on stdout. Send errors and debug to `console.err
 
 ### 5. Screenshots report `screenshotPath`
 
-Write screenshots under `~/.agents/artifacts/` beside the script (rule 1) and report the absolute path in the JSON as `screenshotPath`.
+Write screenshots in the artifact workspace beside the script (rule 1) and report the absolute path in the JSON as `screenshotPath`.
 
 **Why:** a screenshot the next reader cannot locate is wasted work.
 

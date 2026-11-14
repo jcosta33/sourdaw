@@ -329,3 +329,31 @@ describe('Reverse optional beat alias capture', () => {
         );
     });
 });
+
+describe('stored automateParameterRange arguments', () => {
+    // Stored before `barsBefore` joined the range forms: each carries the range as asked and the
+    // beats the handler materialized, and must keep validating so a saved project replays.
+    const stored = { trackId: 'track-1', parameterId: 'gain', deltaDb: -6, startBeat: 112, endBeat: 144 };
+
+    it('admits every range form written before the bars-before form existed', () => {
+        for (const range of [
+            { section: 'second chorus' },
+            { startBar: 29, endBar: 36 },
+            { startBeat: 112, endBeat: 144 },
+        ]) {
+            expect(validateVersionedCommandArguments('automateParameterRange', { ...stored, range })).toBe(true);
+        }
+    });
+
+    it('admits the bars-before form and refuses a count that is not a number', () => {
+        const range = { section: 'second chorus', barsBefore: 4 };
+
+        expect(validateVersionedCommandArguments('automateParameterRange', { ...stored, range })).toBe(true);
+        expect(
+            validateVersionedCommandArguments('automateParameterRange', {
+                ...stored,
+                range: { ...range, barsBefore: 'four' },
+            })
+        ).toBe(false);
+    });
+});

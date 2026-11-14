@@ -287,10 +287,7 @@ export const vocalMixRecipes: readonly MixRecipe[] = [
             'Skip when the vocal already sounds thin on its own; the buildup then belongs to another source.',
             'Skip when a corrective low-mid cut is already in the chain.',
         ],
-        metrics: [
-            { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' },
-            { metric: 'interTrackMasking', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' }],
         source: 'Vocal mud collects between 250 Hz and 400 Hz where proximity effect and room modes overlap, which is below the mid band the descriptor normally reaches; the narrower Q keeps the cut off the vowel fundamentals just above it. The shallower low shelf removes the broad shoulder underneath without hollowing the chest.',
     },
     {

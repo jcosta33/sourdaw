@@ -1293,6 +1293,33 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             ).toBe(true);
         });
 
+        describe('automateParameterRange range forms', () => {
+            const admits = (range: unknown): boolean => {
+                const guard = PAYLOAD_VALIDATORS.automateParameterRange;
+                expect(guard).not.toBe('unchecked');
+                return guard !== 'unchecked' && guard({ trackId: 'track-1', parameterId: 'gain', range, deltaDb: -6 });
+            };
+
+            it.each([
+                ['a section', { section: 'second chorus' }],
+                ['the bars before a section', { section: 'second chorus', barsBefore: 4 }],
+                ['a bar range', { startBar: 9, endBar: 12 }],
+                ['a beat range', { startBeat: 32, endBeat: 48 }],
+            ])('admits %s', (_label, range) => {
+                expect(admits(range)).toBe(true);
+            });
+
+            it.each([
+                ['bars before without a section', { barsBefore: 4 }],
+                ['a fractional count', { section: 'second chorus', barsBefore: 2.5 }],
+                ['a zero count', { section: 'second chorus', barsBefore: 0 }],
+                ['an empty section', { section: '', barsBefore: 4 }],
+                ['bars before beside a bar range', { startBar: 9, endBar: 12, barsBefore: 4 }],
+            ])('rejects %s', (_label, range) => {
+                expect(admits(range)).toBe(false);
+            });
+        });
+
         it.each([
             ['empty lane id', { laneId: '', beat: 4, value: 0.5 }],
             ['negative beat', { laneId: 'lane-1', beat: -1, value: 0.5 }],
