@@ -55,6 +55,34 @@ import {
 
 registerDeviceEnginePorts();
 
+// A committed mute builds a live strip on this context, which jsdom leaves without a stereo panner.
+vi.hoisted(() => {
+    const OriginalAudioContext = globalThis.AudioContext;
+    const createAudioParam = (value: number) => ({
+        value,
+        setValueAtTime: () => undefined,
+        linearRampToValueAtTime: () => undefined,
+        exponentialRampToValueAtTime: () => undefined,
+        setTargetAtTime: () => undefined,
+        cancelScheduledValues: () => undefined,
+    });
+    function AudioContextWithStereoPanner(options?: AudioContextOptions): AudioContext {
+        return Object.assign(new OriginalAudioContext(options), {
+            currentTime: 0,
+            createStereoPanner: () => ({
+                connect: (destination: unknown) => destination,
+                disconnect: () => undefined,
+                pan: createAudioParam(0),
+            }),
+        });
+    }
+    Object.defineProperty(globalThis, 'AudioContext', {
+        configurable: true,
+        writable: true,
+        value: AudioContextWithStereoPanner,
+    });
+});
+
 const audio = vi.hoisted(() => ({
     renderTrackSubgraphOffline: vi.fn(),
     renderOffline: vi.fn(),
@@ -2186,18 +2214,17 @@ describe('a request that states no objective confirms without a measured preview
         expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
     });
 
-    it('admits a literal mute at Confirm: nothing about metrics or risk policy refuses it', async () => {
+    it('executes a literal mute on Confirm without a measured preview', async () => {
         const card = await proposeLiteralCard({
             prompt: 'Mute Drums',
             runId: 'confirmable-mute',
             commands: [{ name: 'muteTrack', arguments: { trackId: 'drums', muted: true } }],
         });
+        expect(drums()?.muted).toBe(false);
         expect(getAgentApprovalView({ confirmationId: card.confirmationId })?.canConfirm).toBe(true);
-        const outcome = await confirmPendingChatActions({ confirmationId: card.confirmationId });
-        // The jsdom audio context cannot realize a mute, so execution may fail in the engine; what this
-        // pins is that admission itself accepted the batch without a measured preview.
-        expect(outcome).not.toMatchObject({
-            reason: expect.stringMatching(/objective|metric|measure|risk policy|trust mode/iu),
+        expect(await confirmPendingChatActions({ confirmationId: card.confirmationId })).toEqual({
+            status: 'executed',
         });
+        expect(drums()?.muted).toBe(true);
     });
 });
