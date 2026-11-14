@@ -1,3 +1,5 @@
+import { getAgentObjectiveDeltaUnit } from '#/modules/AudioAnalysis/useCases';
+
 import { type AgentRunMeasuredAudibleMetric, type AgentRunPlanAudibleImpact } from '../models/AgentRun';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 
@@ -46,7 +48,7 @@ function measuredEntries(preview: MeasuredPreview): MeasuredEntry[] {
                 delta.delta === 0 ||
                 baseline === null ||
                 previewed === null ||
-                delta.unit !== OBJECTIVE_METRIC_UNITS[metricId]
+                delta.unit !== getAgentObjectiveDeltaUnit(OBJECTIVE_METRIC_UNITS[metricId])
             ) {
                 return [{ key, metric: null }];
             }

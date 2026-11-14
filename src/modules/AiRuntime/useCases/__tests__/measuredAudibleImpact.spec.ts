@@ -3,12 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
+import { compareAgentScopeMeasurements } from '#/modules/AudioAnalysis/useCases';
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import {
     type MeasuredMetricDelta,
-    type MeasuredMetricEntry,
     type MeasuredPreview,
     type MeasuredPreviewTarget,
 } from '../../models/MeasuredPreview';
@@ -38,12 +38,22 @@ type AudibleClaim = NonNullable<ReturnType<typeof agentRunLifecycle.get>>['plan'
     ? NonNullable<Plan>['expectedImpact']['audible']
     : never;
 
-function entry(unit: string, value: number): MeasuredMetricEntry {
-    return { status: 'measured', metricVersion: 1, unit, value, confidence: 'exact' };
+type FigureUnit = 'dBFS' | 'dBTP' | 'LUFS' | 'dB';
+
+function entry(unit: FigureUnit, value: number) {
+    return { status: 'measured' as const, metricVersion: 1 as const, unit, value, confidence: 'exact' as const };
 }
 
-function compared(unit: string, delta: number): MeasuredMetricDelta {
-    return { status: 'compared', delta, unit };
+/** The change between two figures of `unit` exactly as the measurement reports it, by the real comparison. */
+function compared(unit: FigureUnit, delta: number): MeasuredMetricDelta {
+    const change = compareAgentScopeMeasurements({
+        baseline: { rms: entry(unit, 0) },
+        preview: { rms: entry(unit, delta) },
+    }).rms;
+    if (change === undefined) {
+        throw new Error('The comparison reported nothing.');
+    }
+    return change;
 }
 
 /** An RMS that moved, a true peak that did not, and a crest factor the two renders cannot compare. */
@@ -276,7 +286,7 @@ describe('the plan’s audible claim', () => {
             metricId: 'rms',
             baseline: { value: -20.123456789, unit: 'dBFS' },
             preview: { value: -17.0000001, unit: 'dBFS' },
-            delta: { value: 3.123456689, unit: 'dBFS' },
+            delta: { value: 3.123456689, unit: 'dB' },
         });
     });
 
@@ -298,7 +308,7 @@ describe('the plan’s audible claim', () => {
                 metricId: 'rms',
                 baseline: { value: -20.123456789, unit: 'dBFS' },
                 preview: { value: -17.0000001, unit: 'dBFS' },
-                delta: { value: 3.123456689, unit: 'dBFS' },
+                delta: { value: 3.123456689, unit: 'dB' },
             },
         ]);
     });
@@ -362,7 +372,7 @@ describe('the plan’s audible claim', () => {
             }
             expect(claim.metrics.map((metric) => metric.metricId)).toEqual(['rms', 'truePeak']);
             expect(claim.metrics[0]?.preview).toEqual({ value: -15.5, unit: 'dBFS' });
-            expect(claim.metrics[0]?.delta).toEqual({ value: 4.5, unit: 'dBFS' });
+            expect(claim.metrics[0]?.delta).toEqual({ value: 4.5, unit: 'dB' });
             expect(claim.metrics[1]?.preview).toEqual({ value: -2.25, unit: 'dBTP' });
         });
 
@@ -452,6 +462,40 @@ describe('the plan’s audible claim', () => {
         expect(claim.metrics.map((metric) => metric.metricId)).toEqual(['truePeak', 'crestFactor']);
     });
 
+    it('claims loudness, true peak and rms changes in the units the real comparison reports', () => {
+        const baseline = {
+            integratedLoudness: entry('LUFS', -14),
+            truePeak: entry('dBTP', -3),
+            rms: entry('dBFS', -20),
+        } as const;
+        const preview = {
+            integratedLoudness: entry('LUFS', -12.5),
+            truePeak: entry('dBTP', -2),
+            rms: entry('dBFS', -17),
+        } as const;
+        const realDeltas = compareAgentScopeMeasurements({
+            baseline: {
+                integratedLoudness: baseline.integratedLoudness,
+                truePeak: baseline.truePeak,
+                rms: baseline.rms,
+            },
+            preview: { integratedLoudness: preview.integratedLoudness, truePeak: preview.truePeak, rms: preview.rms },
+        });
+        proposeCard({
+            gain: 0.7,
+            preview: previewOf([{ ...vocalTarget(), baseline, preview, deltas: realDeltas }]),
+        });
+        const claim = audible();
+        if (claim.status !== 'measured') {
+            throw new Error(`Expected the real changes to be claimed, got: ${JSON.stringify(claim)}`);
+        }
+        expect(claim.metrics.map((metric) => [metric.metricId, metric.delta.unit])).toEqual([
+            ['integratedLoudness', 'LU'],
+            ['truePeak', 'dB'],
+            ['rms', 'dB'],
+        ]);
+    });
+
     it('does not claim a change whose own unit disagrees with the metric definition', () => {
         proposeCard({
             gain: 0.7,
@@ -459,7 +503,10 @@ describe('the plan’s audible claim', () => {
                 vocalTarget({
                     baseline: { rms: entry('dBFS', -20), truePeak: entry('dBTP', -3) },
                     preview: { rms: entry('dBFS', -17), truePeak: entry('dBTP', -2) },
-                    deltas: { rms: compared('LUFS', 3), truePeak: compared('dBTP', 1) },
+                    deltas: {
+                        rms: { status: 'compared', delta: 3, unit: 'LU' },
+                        truePeak: compared('dBTP', 1),
+                    },
                 }),
             ]),
         });
@@ -658,5 +705,16 @@ describe('the plan’s audible claim', () => {
                 (impact.audible as { batchContentHash: unknown }).batchContentHash = '';
             })
         ).toBe(reference);
+        for (const badRange of [
+            { startBeat: 'zero', endBeat: 4, sectionId: null },
+            { startBeat: 0, endBeat: '4', sectionId: null },
+        ]) {
+            expect(
+                corrupt((impact) => {
+                    const claim = impact.audible as { metrics: { range: unknown }[] };
+                    claim.metrics[0]!.range = badRange;
+                })
+            ).toBe(reference);
+        }
     });
 });

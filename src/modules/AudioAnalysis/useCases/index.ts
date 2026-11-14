@@ -14,6 +14,7 @@ export { analyzeAgentAuditionBuffer } from './analyzeAgentAuditionBuffer';
 export { getAgentMeasurementMetricIds } from './getAgentMeasurementMetricIds';
 export { measureAgentScopeRender } from './measureAgentScopeRender';
 export { compareAgentScopeMeasurements } from './compareAgentScopeMeasurements';
+export { getAgentObjectiveDeltaUnit } from './getAgentObjectiveDeltaUnit';
 export { analyzeAgentReferenceBuffer } from './analyzeAgentReferenceBuffer';
 export { compareAgentReferenceToProject } from './compareAgentReferenceToProject';
 

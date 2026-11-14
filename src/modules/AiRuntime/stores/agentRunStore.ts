@@ -950,6 +950,7 @@ function readMeasuredAudibleMetric(value: unknown): AgentRunMeasuredAudibleMetri
     const delta = readMeasuredFigure(value.delta);
     return targetId === null ||
         targetKind === null ||
+        range === null ||
         metricId === null ||
         baseline === null ||
         preview === null ||
