@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { defaultTrackState } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
-
 import { type AppAction } from '#/utils/handlerContract';
 
 import { createDefaultProductionBrief } from '../../models/ProductionBrief';
@@ -65,9 +64,7 @@ describe('production brief admission of an action no scope rule singles out', ()
 
     it('is refused when its type is unknown and its payload names a clip inside the locked range', () => {
         // A persisted batch is untrusted data: JSON.parse yields an untyped value, so no cast is needed.
-        const actions: AppAction[] = JSON.parse(
-            JSON.stringify([{ type: 'noSuchAction', payload: { clipId: 'clip-locked' } }])
-        );
+        const actions: AppAction[] = JSON.parse('[{"type":"noSuchAction","payload":{"clipId":"clip-locked"}}]');
 
         expect(doesProductionBriefAllowActionBatch(actions)).toBe(false);
     });
