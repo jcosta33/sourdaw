@@ -243,14 +243,19 @@ describe('a last-commit continuation accounts only for the figure it consumed', 
     });
 
     it('does not witness a record whose indexed command is another operation setting the landed value', () => {
-        const other = { ...parameterCommand('command-0', 250), operation: 'setTrackGain' };
+        // Value 250 and its Hz unit match a witnessed write, so only the operation can refuse it.
+        const other: Envelope['commands'][number] = {
+            ...parameterCommand('command-0', 250),
+            operation: 'setTrackGain',
+            arguments: { trackId: 'track-vocals', expectedGain: 1, value: 250 },
+        };
         expect(
             unaccountedNumericRefusal(continuationState(PROMPT), { ...envelope(PROMPT), commands: [other] })
         ).toEqual(MISSING);
     });
 
     it('does not witness a record whose indexed parameter write states its value in another unit', () => {
-        const inDecibels = {
+        const inDecibels: Envelope['commands'][number] = {
             ...parameterCommand('command-0', 250),
             parameterUnits: [{ argument: 'value', unit: 'dB' }],
         };
