@@ -1,0 +1,31 @@
+diff --git a/dist/eslint-utils/getParserServices.js b/dist/eslint-utils/getParserServices.js
+--- a/dist/eslint-utils/getParserServices.js
++++ b/dist/eslint-utils/getParserServices.js
+@@ -24,7 +24,7 @@
+     }
+     // if a rule requires full type information, then hard fail if it doesn't exist
+     // this forces the user to supply parserOptions.project
+-    if (context.sourceCode.parserServices.program == null &&
++    if ((context.sourceCode.parserServices.project == null || context.sourceCode.parserServices.checker == null) &&
+         !allowWithoutFullTypeInformation) {
+         throwError(parser);
+     }
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -58,7 +58,7 @@
+   },
+   "peerDependencies": {
+     "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
+-    "typescript": ">=4.8.4 <6.1.0"
++    "typescript": "7.0.2"
+   },
+   "devDependencies": {
+     "@typescript/native": "npm:typescript@^7.0.2",
+@@ -112,4 +112,4 @@
+     "typecheck:tsc6": "pnpm -w exec nx typecheck:tsc6",
+     "attw-check": "pnpm -w exec nx attw-check"
+   }
+-}
+\ No newline at end of file
++}

@@ -416,7 +416,7 @@ const gateNeeds = gate?.needs ?? [];
 // One entry, because the validation lane is one reusable workflow now. A
 // The reusable validation lane includes its own explicit selected-result
 // summary, so the outer Gate can require one result for that whole lane.
-const expectedGateNeeds = ['scope', 'e2e-build', 'validation', 'affected', 'codeql'];
+const expectedGateNeeds = ['scope', 'e2e-build', 'validation', 'affected', 'codeql', 'desktop-packaging'];
 const expectedValidationJobs = [
     'decide',
     'static',
@@ -429,6 +429,7 @@ const expectedValidationJobs = [
     'rust',
     'native-macos',
     'native-windows',
+    'native-typescript-windows',
     'native-parity',
     'dependency-review',
     'pr-secrets',
@@ -1343,6 +1344,8 @@ expect(
         gateRun.includes('.["e2e-build"].result == $selected') &&
         gateRun.includes('.validation.result == "success"') &&
         gateRun.includes('.affected.result == "success"') &&
+        gateRun.includes('.["desktop-packaging"].result == "success"') &&
+        gateRun.includes('.["desktop-packaging"].result == "skipped"') &&
         gateRun.includes('.codeql.result == "success"') &&
         gateRun.includes('.codeql.result == "skipped"'),
     'Gate must require successful selected dependencies and the exact CodeQL skip'
@@ -1359,8 +1362,9 @@ const requiredResults = (codeql, overrides = {}) => {
     const matrix = overrides.matrix ?? selectedMatrix;
     const build = overrides['e2e-build'] ?? (JSON.parse(matrix).include.length > 0 ? 'success' : 'skipped');
     return JSON.stringify({
-        scope: { result: overrides.scope ?? 'success', outputs: { matrix, browser: 'true', 'browser-ai': 'false', codeql } },
+        scope: { result: overrides.scope ?? 'success', outputs: { matrix, browser: 'true', 'browser-ai': 'false', codeql, profile: overrides.profile ?? 'broad' } },
         'e2e-build': { result: build },
+        'desktop-packaging': { result: overrides['desktop-packaging'] ?? 'success' },
         validation: { result: overrides.validation ?? 'success' },
         affected: { result: overrides.affected ?? 'success' },
         codeql: { result: overrides.codeql ?? (codeql === 'true' ? 'success' : 'skipped') },
@@ -1373,6 +1377,21 @@ const gateStatus = (results) => workflowShellStatus(gateRun, {
 });
 expect(gateStatus(requiredResults('true')) === 0, 'selected CodeQL success and selected E2E build must pass Gate');
 expect(gateStatus(requiredResults('false')) === 0, 'unselected CodeQL skip must pass Gate');
+for (const profile of ['docs', 'tooling']) {
+    expect(gateStatus(requiredResults('false', { profile, 'desktop-packaging': 'skipped' })) === 0,
+        'unselected desktop packaging must be skipped for a narrow profile');
+    expect(gateStatus(requiredResults('false', { profile, 'desktop-packaging': 'success' })) !== 0,
+        'unselected desktop packaging must not execute under a narrow profile');
+}
+expect(gateStatus(requiredResults('true', { profile: 'unknown', 'desktop-packaging': 'skipped' })) !== 0,
+    'an unknown profile must not fall through desktop admission');
+for (const result of ['failure', 'cancelled', 'skipped']) {
+    expect(gateStatus(requiredResults('true', { 'desktop-packaging': result })) !== 0,
+        `selected desktop packaging ${result} must fail Gate`);
+}
+const missingDesktop = JSON.parse(requiredResults('true'));
+delete missingDesktop['desktop-packaging'];
+expect(gateStatus(JSON.stringify(missingDesktop)) !== 0, 'missing desktop packaging result must fail Gate');
 expect(gateStatus(requiredResults('true', { matrix: emptyMatrix, 'e2e-build': 'skipped' })) === 0,
     'an empty E2E matrix may skip the producer while an independent hardware-only route passes Gate');
 for (const job of expectedGateNeeds) {

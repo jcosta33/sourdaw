@@ -8,6 +8,8 @@ import { basename, dirname, isAbsolute, posix, relative, resolve, sep } from 'no
 import parseSpdxExpression from 'spdx-expression-parse';
 import { list as listTarArchive } from 'tar';
 
+import { inspectCargoLocalPatch, localPatchDescription, type CargoLocalPatch } from './cargoLocalPatchProof.ts';
+
 import { cargoMetadata } from './cargoMetadata.ts';
 import { parsePnpmLock } from './pnpmLock.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
@@ -43,11 +45,13 @@ export type DependencyLicenseRecord = {
     legalFiles: LegalFile[];
     metadataFiles?: LegalFile[];
     serverLockPath?: string;
-    cargoSource?: string;
+    cargoSource?: string | null;
+    cargoLocalPatch?: CargoLocalPatch;
     graphs?: string[];
 };
 
 export type DependencyLicenseProof = {
+    localPatch?: CargoLocalPatch;
     source: string;
     revision: string;
     files?: Array<{ archivePath: string; sourcePath: string; sha256: string }>;
@@ -73,7 +77,8 @@ export type CargoRuntimeInventorySnapshot = {
     packages: Array<{
         name: string;
         version: string;
-        source: string;
+        source: string | null;
+        localPatch?: CargoLocalPatch;
         license: string;
         legalFiles: EvidenceReference[];
         metadataFiles?: EvidenceReference[];
@@ -82,13 +87,13 @@ export type CargoRuntimeInventorySnapshot = {
 };
 
 export type DependencyLicenseProofSourceManifest = {
-    schemaVersion: 3 | 4;
+    schemaVersion: 3 | 4 | 5;
     packages: Record<string, DependencyLicenseProof>;
     cargoRuntimeInventory?: CargoRuntimeInventorySnapshot;
 };
 
 type DependencyLicenseProofManifest = DependencyLicenseProofSourceManifest & {
-    schemaVersion: 4;
+    schemaVersion: 4 | 5;
     cargoRuntimeInventory: CargoRuntimeInventorySnapshot;
 };
 
@@ -335,6 +340,8 @@ function assertEquivalent(left: DependencyLicenseRecord, right: DependencyLicens
     const comparable = (record: DependencyLicenseRecord): string =>
         JSON.stringify({
             license: record.license,
+            cargoSource: record.cargoSource,
+            cargoLocalPatch: record.cargoLocalPatch,
             legalFiles: record.legalFiles.map(({ label, sha256: digest }) => ({ label, sha256: digest })),
             metadataFiles: record.metadataFiles?.map(({ label, sha256: digest }) => ({
                 label,
@@ -677,6 +684,7 @@ function cargoSourceInputPaths(root: string, workspaceManifestPaths: readonly st
         ...new Set([
             ...CARGO_FIXED_SOURCE_INPUT_PATHS,
             ...workspaceManifestPaths,
+            ...(existsSync(resolve(root, 'vendor/rust/sources.json')) ? ['vendor/rust/sources.json'] : []),
             ...CARGO_CONFIG_PATHS.filter((path) => existsSync(resolve(root, path))),
         ]),
     ].sort(compareCodeUnits);
@@ -747,7 +755,12 @@ function assertCargoRuntimeInventory(
     }
     for (const pkg of inventory.packages) {
         const packageId = `cargo:${cargoPackageId(pkg)}`;
-        if ([pkg.name, pkg.version, pkg.source, pkg.license].some((value) => value.length === 0)) {
+        if (
+            [pkg.name, pkg.version, pkg.license].some((value) => typeof value !== 'string' || value.length === 0) ||
+            (pkg.source === null
+                ? pkg.localPatch === undefined
+                : typeof pkg.source !== 'string' || pkg.source.length === 0 || pkg.localPatch !== undefined)
+        ) {
             throw new Error(`${packageId}: Cargo runtime snapshot metadata is incomplete`);
         }
         if (pkg.reportedLegalFiles.length === 0 || pkg.metadataFiles?.length === 0) {
@@ -806,7 +819,7 @@ function resolveSnapshotMetadataFiles(
 
 function expectedCargoPackageLine(pkg: CargoRuntimeInventorySnapshot['packages'][number]): string {
     const references = [...new Set(pkg.reportedLegalFiles.map(({ sha256: digest }) => `sha256:${digest}`))].sort();
-    return `cargo:${cargoPackageId(pkg)} | ${pkg.license} | ${references.join(',')} | Cargo.lock`;
+    return `cargo:${cargoPackageId(pkg)} | ${pkg.license} | ${references.join(',')} | Cargo.lock${localPatchDescription(pkg.localPatch)}`;
 }
 
 function assertReportedCargoInventory(root: string, inventory: CargoRuntimeInventorySnapshot): void {
@@ -834,6 +847,7 @@ export function collectCargoDependencyLicenses(root: string): DependencyLicenseR
             license: pkg.license,
             legalFiles: resolveEvidenceReferences(packageId, pkg.legalFiles, reported),
             cargoSource: pkg.source,
+            ...(pkg.localPatch === undefined ? {} : { cargoLocalPatch: pkg.localPatch }),
             graphs: ['Cargo.lock'],
             ...(pkg.metadataFiles === undefined
                 ? {}
@@ -866,24 +880,41 @@ export function collectCargoDependencyLicensesFromInstalledMetadata(root: string
         metadata,
         records: metadata.packages
             .filter((pkg) => runtime.has(pkg.id) && !workspace.has(pkg.id))
-            .map((pkg) => ({
-                ecosystem: 'cargo' as const,
-                name: pkg.name,
-                version: pkg.version,
-                license: licenseExpression(pkg.license, `${pkg.name}@${pkg.version}`),
-                legalFiles: packageLegalFiles(
-                    dirname(pkg.manifest_path),
-                    pkg.license_file === null ? undefined : pkg.license_file
-                ),
-                metadataFiles: [
-                    readLegalFile(pkg.manifest_path, basename(pkg.manifest_path)),
-                    ...(existsSync(resolve(dirname(pkg.manifest_path), 'AUTHORS'))
-                        ? [readLegalFile(resolve(dirname(pkg.manifest_path), 'AUTHORS'), 'AUTHORS')]
-                        : []),
-                ],
-                ...(pkg.source === null ? {} : { cargoSource: pkg.source }),
-                graphs: ['Cargo.lock'],
-            })),
+            .map((pkg): DependencyLicenseRecord => {
+                const local =
+                    pkg.source === null
+                        ? inspectCargoLocalPatch(root, {
+                              name: pkg.name,
+                              version: pkg.version,
+                              manifestPath: pkg.manifest_path,
+                          })
+                        : undefined;
+                if (local !== undefined && pkg.license !== local.license)
+                    throw new Error(
+                        `cargo:${pkg.name}@${pkg.version}: local patch metadata license declaration drifted`
+                    );
+                return {
+                    ecosystem: 'cargo',
+                    name: pkg.name,
+                    version: pkg.version,
+                    license: licenseExpression(pkg.license, `${pkg.name}@${pkg.version}`),
+                    legalFiles:
+                        local?.legalFiles ??
+                        packageLegalFiles(
+                            dirname(pkg.manifest_path),
+                            pkg.license_file === null ? undefined : pkg.license_file
+                        ),
+                    metadataFiles: [
+                        readLegalFile(pkg.manifest_path, basename(pkg.manifest_path)),
+                        ...(existsSync(resolve(dirname(pkg.manifest_path), 'AUTHORS'))
+                            ? [readLegalFile(resolve(dirname(pkg.manifest_path), 'AUTHORS'), 'AUTHORS')]
+                            : []),
+                    ],
+                    cargoSource: pkg.source,
+                    ...(local === undefined ? {} : { cargoLocalPatch: local.provenance }),
+                    graphs: ['Cargo.lock'],
+                };
+            }),
     };
 }
 
@@ -941,6 +972,19 @@ export function expectedProofIdentities(
 ): Array<{ source: string; revision: string }> {
     if (record.ecosystem === 'cargo') {
         const source = record.cargoSource;
+        if (source === null) {
+            if (record.cargoLocalPatch === undefined)
+                throw new Error(`cargo:${record.name}@${record.version}: local patch provenance is missing`);
+            const inspected = inspectCargoLocalPatch(root, record, record.cargoLocalPatch);
+            if (licenseExpression(record.license, record.name) !== licenseExpression(inspected.license, record.name))
+                throw new Error(`cargo:${record.name}@${record.version}: local patch license declaration drifted`);
+            const local = inspected.provenance;
+            return [{ source: cargoRegistryArchiveSource(record), revision: `sha256:${local.upstreamArchiveSha256}` }];
+        }
+        if (record.cargoLocalPatch !== undefined)
+            throw new Error(
+                `cargo:${record.name}@${record.version}: registry package cannot carry local patch provenance`
+            );
         if (
             source !== 'registry+https://github.com/rust-lang/crates.io-index' &&
             source !== 'registry+https://index.crates.io/'
@@ -1290,6 +1334,8 @@ export function validateDependencyLicenseProof(
 ): LegalFile[] {
     const packageId = `${record.ecosystem}:${record.name}@${record.version}`;
     const expected = expectedProofIdentities(root, record, loadPnpmLockPackages);
+    if (JSON.stringify(proof.localPatch) !== JSON.stringify(record.cargoLocalPatch))
+        throw new Error(`${packageId}: proof local source binding drifted`);
     if (expected.some((identity) => proof.source !== identity.source || proof.revision !== identity.revision)) {
         throw new Error(`${packageId}: proof source identity does not match the locked package`);
     }
@@ -1315,13 +1361,24 @@ export function readDependencyLicenseProofSourceManifest(root: string): Dependen
 
 export function readDependencyLicenseProofManifest(root: string): DependencyLicenseProofManifest {
     const manifest = readDependencyLicenseProofSourceManifest(root);
-    if (manifest.schemaVersion !== 4 || typeof manifest.packages !== 'object' || manifest.packages === null) {
+    if (
+        (manifest.schemaVersion !== 4 && manifest.schemaVersion !== 5) ||
+        typeof manifest.packages !== 'object' ||
+        manifest.packages === null
+    ) {
         throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: unsupported proof manifest`);
     }
+    const inventory = assertCargoRuntimeInventory(manifest.cargoRuntimeInventory);
+    if (
+        manifest.schemaVersion === 4 &&
+        (inventory.packages.some((pkg) => pkg.source === null || pkg.localPatch !== undefined) ||
+            Object.values(manifest.packages).some((proof) => proof.localPatch !== undefined))
+    )
+        throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: local patch sources require schema version 5`);
     return {
-        schemaVersion: 4,
+        schemaVersion: manifest.schemaVersion,
         packages: manifest.packages,
-        cargoRuntimeInventory: assertCargoRuntimeInventory(manifest.cargoRuntimeInventory),
+        cargoRuntimeInventory: inventory,
     };
 }
 
@@ -1336,6 +1393,16 @@ function applyDependencyLicenseProofs(
     const resolved = records.map((record) => {
         const packageId = `${record.ecosystem}:${record.name}@${record.version}`;
         const proof = proofs[packageId];
+        if (record.ecosystem === 'cargo') expectedProofIdentities(root, record, loadPnpmLockPackages);
+        if (record.cargoLocalPatch !== undefined) {
+            if (proof === undefined)
+                throw new Error(`${packageId}: locally modified source requires its original archive proof`);
+            const originalEvidence = validateDependencyLicenseProof(root, record, proof, loadPnpmLockPackages);
+            const legalFiles = [...record.legalFiles, ...originalEvidence];
+            assertLicenseExpressionEvidence(packageId, record.license, legalFiles);
+            used.add(packageId);
+            return { ...record, legalFiles };
+        }
         if (record.legalFiles.length > 0) {
             try {
                 assertLicenseExpressionEvidence(packageId, record.license, record.legalFiles);
@@ -1416,7 +1483,7 @@ export function renderDependencyLicenseReport(
             throw new Error(`${packageId}: required dependency license record is unavailable`);
         }
         const graphs = [...new Set(record.graphs ?? [])].sort().join(',');
-        return `${packageId} | ${record.license} | ${[...new Set(references)].sort().join(',')} | ${graphs}`;
+        return `${packageId} | ${record.license} | ${[...new Set(references)].sort().join(',')} | ${graphs}${localPatchDescription(record.cargoLocalPatch)}`;
     });
     const npmCount = sorted.filter(({ ecosystem }) => ecosystem === 'npm').length;
     const cargoCount = sorted.length - npmCount;
@@ -1552,6 +1619,7 @@ function createCargoRuntimeInventory(
             name: record.name,
             version: record.version,
             source,
+            ...(record.cargoLocalPatch === undefined ? {} : { localPatch: record.cargoLocalPatch }),
             license: record.license,
             legalFiles: evidenceReferences(record.legalFiles),
             ...(proof?.assembled === undefined
@@ -1611,29 +1679,57 @@ export function buildDependencyLicenseArtifactsFromInstalledMetadata(
 ): GeneratedDependencyLicenseArtifacts {
     const sourceManifest = readDependencyLicenseProofSourceManifest(root);
     if (
-        ![3, 4].includes(sourceManifest.schemaVersion) ||
+        ![3, 4, 5].includes(sourceManifest.schemaVersion) ||
         typeof sourceManifest.packages !== 'object' ||
         sourceManifest.packages === null
     ) {
         throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: unsupported proof manifest`);
     }
     const cargo = collectCargoDependencyLicensesFromInstalledMetadata(root);
+    const proofs = { ...sourceManifest.packages };
+    for (const record of cargo.records) {
+        if (record.cargoLocalPatch === undefined) continue;
+        const packageId = `cargo:${cargoPackageId(record)}`;
+        const existing = proofs[packageId];
+        const local = record.cargoLocalPatch;
+        proofs[packageId] =
+            existing === undefined
+                ? {
+                      source: cargoRegistryArchiveSource(record),
+                      revision: `sha256:${local.upstreamArchiveSha256}`,
+                      localPatch: local,
+                      files: local.legalFiles.map((file) => ({
+                          archivePath: local.archivePath,
+                          sourcePath: file.path,
+                          sha256: file.originalSha256,
+                      })),
+                  }
+                : {
+                      ...existing,
+                      localPatch: local,
+                      ...(existing.assembled === undefined
+                          ? {}
+                          : {
+                                assembled: {
+                                    ...existing.assembled,
+                                    metadata: (record.metadataFiles ?? []).map((file) => ({
+                                        sourcePath: file.label,
+                                        sha256: file.sha256,
+                                    })),
+                                },
+                            }),
+                  };
+    }
     const records = resolveDependencyLicenseRecords(
         root,
         cargo.records,
-        sourceManifest.packages,
+        proofs,
         reusePnpmLockPackages(pnpmLockPackages)
     );
     const manifest: DependencyLicenseProofManifest = {
-        schemaVersion: 4,
-        cargoRuntimeInventory: createCargoRuntimeInventory(
-            root,
-            cargo.metadata,
-            cargo.records,
-            records,
-            sourceManifest.packages
-        ),
-        packages: sourceManifest.packages,
+        schemaVersion: 5,
+        cargoRuntimeInventory: createCargoRuntimeInventory(root, cargo.metadata, cargo.records, records, proofs),
+        packages: proofs,
     };
     return {
         ...renderDependencyLicenseArtifacts(root, records),

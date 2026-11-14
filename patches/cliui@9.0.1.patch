@@ -1,0 +1,16 @@
+diff --git a/package.json b/package.json
+index 91f628a..f7b1980 100644
+--- a/package.json
++++ b/package.json
+@@ -40,9 +40,9 @@
+   "author": "Ben Coe <ben@npmjs.com>",
+   "license": "ISC",
+   "dependencies": {
+-    "string-width": "^7.2.0",
++    "string-width": "^9.0.0",
+     "strip-ansi": "^7.1.0",
+-    "wrap-ansi": "^9.0.0"
++    "wrap-ansi": "^10.0.2"
+   },
+   "devDependencies": {
+     "@types/node": "^22.13.10",

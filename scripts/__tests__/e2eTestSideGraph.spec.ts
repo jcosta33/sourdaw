@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -181,7 +183,7 @@ describe('test-side graph loader', () => {
                 writeFileSync(join(root, path), content);
             }
             const graph = await loadTestSideGraph(root);
-            expect(graph.kind).toBe('graph');
+            expect(graph.kind, JSON.stringify(graph)).toBe('graph');
             const changed = [HELPER, NESTED, FIXTURE, unitOnly, SETUP, 'tests/e2e/devServerOnly.ts', SHARED];
             expect(selectTestSideSpecs(changed, SPECS, graph)).toEqual([
                 { path: HELPER, kind: 'specs', specs: [EXPORT_SPEC, IMPORT_SPEC] },

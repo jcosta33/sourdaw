@@ -8,15 +8,9 @@ import {
     type FunctionDeclaration,
     type FunctionExpression,
     type Node,
-    LanguageVariant,
+    type SourceFile,
     NodeFlags,
-    ScriptKind,
-    ScriptTarget,
     SyntaxKind,
-    createScanner,
-    createPrinter,
-    createSourceFile,
-    forEachChild,
     isArrayLiteralExpression,
     isArrowFunction,
     isAsExpression,
@@ -38,8 +32,15 @@ import {
     isStringLiteral,
     isVariableDeclaration,
     isVariableDeclarationList,
-} from 'typescript';
+} from 'typescript/unstable/ast';
 import { beforeAll, describe, expect, it } from 'vitest';
+
+import {
+    readNativeSource,
+    readNativeSources,
+    requireNativeSyntax,
+    stripNativeComments,
+} from '../../../../../scripts/nativeTypeScript';
 
 type CountByPath = Readonly<Record<string, number>>;
 type SourceText = { path: string; source: string };
@@ -1390,163 +1391,25 @@ function rawSourceContainsCommentIntroducer(source: string): boolean {
     return source.includes('//') || source.includes('/*');
 }
 
-// Scanner comment removal, not a parse+print and not a regex stripper: censused
-// sources carry comment-like text inside string literals (`'audio/*,.wav'`
-// accept filters) and regex bodies (`/a\/*b/`). The TypeScript scanner keeps
-// those intact while skipping comment trivia, provided a `/` in regex position
-// is re-scanned as one token — otherwise `/*` or `//` inside the body is trivia.
-const commentScanner = createScanner(ScriptTarget.Latest, false);
+// Native lexical leaves protect strings, regex bodies and JSX text from comment scanning.
+// Only their gaps are scanned; replacing comment characters with spaces retains census offsets.
+const parsedSourceCache = new Map<string, Map<string, SourceFile>>();
 
-function isIgnorableTrivia(kind: SyntaxKind): boolean {
-    return (
-        kind === SyntaxKind.WhitespaceTrivia ||
-        kind === SyntaxKind.NewLineTrivia ||
-        kind === SyntaxKind.ShebangTrivia ||
-        kind === SyntaxKind.ConflictMarkerTrivia ||
-        kind === SyntaxKind.NonTextFileMarkerTrivia
-    );
-}
-
-type BraceContext = 'expression' | 'statement';
-
-// `/` after `}` is regex only when that brace closed a statement block.
-// Object literals (and nested objects) close expressions, so the same `/` is
-// division — putting CloseBraceToken on the always-division list would turn
-// `} /re/` into division.
-function contextOpenedByBrace(previousKind: SyntaxKind | undefined, enclosing: BraceContext | undefined): BraceContext {
-    switch (previousKind) {
-        case SyntaxKind.EqualsToken:
-        case SyntaxKind.OpenParenToken:
-        case SyntaxKind.OpenBracketToken:
-        case SyntaxKind.CommaToken:
-        case SyntaxKind.ColonToken:
-            return 'expression';
-        case SyntaxKind.OpenBraceToken:
-            return enclosing ?? 'statement';
-        default:
-            return 'statement';
+function parsedSource(path: string, source: string): SourceFile {
+    let versions = parsedSourceCache.get(path);
+    if (!versions) {
+        versions = new Map<string, SourceFile>();
+        parsedSourceCache.set(path, versions);
     }
-}
-
-function slashStartsRegularExpression(
-    previousKind: SyntaxKind | undefined,
-    lastCloseBraceContext: BraceContext | undefined
-): boolean {
-    if (previousKind === undefined) {
-        return true;
-    }
-    if (previousKind === SyntaxKind.CloseBraceToken) {
-        return lastCloseBraceContext !== 'expression';
-    }
-    switch (previousKind) {
-        case SyntaxKind.Identifier:
-        case SyntaxKind.PrivateIdentifier:
-        case SyntaxKind.StringLiteral:
-        case SyntaxKind.NumericLiteral:
-        case SyntaxKind.BigIntLiteral:
-        case SyntaxKind.RegularExpressionLiteral:
-        case SyntaxKind.ThisKeyword:
-        case SyntaxKind.TrueKeyword:
-        case SyntaxKind.FalseKeyword:
-        case SyntaxKind.NullKeyword:
-        case SyntaxKind.SuperKeyword:
-        case SyntaxKind.CloseParenToken:
-        case SyntaxKind.CloseBracketToken:
-        case SyntaxKind.GreaterThanToken:
-        case SyntaxKind.PlusPlusToken:
-        case SyntaxKind.MinusMinusToken:
-        case SyntaxKind.NoSubstitutionTemplateLiteral:
-        case SyntaxKind.TemplateTail:
-            return false;
-        default:
-            return true;
-    }
+    const cached = versions.get(source);
+    if (cached) return cached;
+    const parsed = requireNativeSyntax(readNativeSource(path, source));
+    versions.set(source, parsed);
+    return parsed;
 }
 
 function stripComments(path: string, source: string): string {
-    if (path.endsWith('.tsx')) {
-        const sourceFile = createSourceFile(path, source, ScriptTarget.Latest, false, ScriptKind.TSX);
-        return createPrinter({ removeComments: true }).printFile(sourceFile);
-    }
-
-    commentScanner.setLanguageVariant(LanguageVariant.Standard);
-    commentScanner.setScriptKind(ScriptKind.TS);
-    commentScanner.setText(source);
-
-    const parts: string[] = [];
-    const templates: Array<{ braceDepth: number }> = [];
-    const braces: BraceContext[] = [];
-    let copyFrom = 0;
-    let previousKind: SyntaxKind | undefined;
-    let lastCloseBraceContext: BraceContext | undefined;
-
-    try {
-        while (true) {
-            let kind = commentScanner.scan();
-            if (kind === SyntaxKind.EndOfFileToken) {
-                parts.push(source.slice(copyFrom));
-                break;
-            }
-
-            if (
-                (kind === SyntaxKind.SlashToken || kind === SyntaxKind.SlashEqualsToken) &&
-                slashStartsRegularExpression(previousKind, lastCloseBraceContext)
-            ) {
-                kind = commentScanner.reScanSlashToken();
-            }
-
-            if (kind === SyntaxKind.SingleLineCommentTrivia || kind === SyntaxKind.MultiLineCommentTrivia) {
-                parts.push(source.slice(copyFrom, commentScanner.getTokenStart()));
-                copyFrom = commentScanner.getTokenEnd();
-                continue;
-            }
-
-            if (!isIgnorableTrivia(kind)) {
-                if (kind === SyntaxKind.OpenBraceToken) {
-                    braces.push(contextOpenedByBrace(previousKind, braces.at(-1)));
-                } else if (kind === SyntaxKind.CloseBraceToken) {
-                    const template = templates.at(-1);
-                    const closesInterpolation = template !== undefined && template.braceDepth === 0;
-                    if (!closesInterpolation) {
-                        lastCloseBraceContext = braces.pop() ?? 'statement';
-                    }
-                }
-                previousKind = kind;
-            }
-
-            if (kind === SyntaxKind.TemplateHead) {
-                templates.push({ braceDepth: 0 });
-                continue;
-            }
-
-            const template = templates.at(-1);
-            if (template === undefined) {
-                continue;
-            }
-
-            if (kind === SyntaxKind.OpenBraceToken) {
-                template.braceDepth += 1;
-                continue;
-            }
-            if (kind !== SyntaxKind.CloseBraceToken) {
-                continue;
-            }
-            if (template.braceDepth > 0) {
-                template.braceDepth -= 1;
-                continue;
-            }
-
-            kind = commentScanner.reScanTemplateToken(false);
-            previousKind = kind;
-            if (kind === SyntaxKind.TemplateTail) {
-                templates.pop();
-            }
-        }
-
-        return parts.join('');
-    } finally {
-        commentScanner.setText(undefined);
-    }
+    return stripNativeComments(parsedSource(path, source));
 }
 
 function productionSource(path: string, source: string): ProductionSource {
@@ -1562,7 +1425,7 @@ function productionSource(path: string, source: string): ProductionSource {
 }
 
 function productionSources(root: string): ProductionSource[] {
-    const files: ProductionSource[] = [];
+    const inputs: Array<{ path: string; text: string }> = [];
     function visit(directory: string): void {
         for (const entry of readdirSync(directory, { withFileTypes: true })) {
             const absolutePath = join(directory, entry.name);
@@ -1575,11 +1438,20 @@ function productionSources(root: string): ProductionSource[] {
             if (!/\.tsx?$/.test(entry.name) || entry.name.endsWith('.spec.ts') || entry.name.endsWith('.spec.tsx')) {
                 continue;
             }
-            files.push(productionSource(relative(root, absolutePath), readFileSync(absolutePath, 'utf8')));
+            inputs.push({ path: relative(root, absolutePath), text: readFileSync(absolutePath, 'utf8') });
         }
     }
     visit(join(root, 'src'));
-    return files;
+    const candidates = inputs.filter((file) => rawSourceContainsCensusToken(file.text));
+    const parsed = readNativeSources(candidates);
+    for (const file of candidates) {
+        const value = parsed.get(file.path);
+        if (!value) throw new Error(`Native census source omitted ${file.path}`);
+        const versions = parsedSourceCache.get(file.path) ?? new Map<string, SourceFile>();
+        versions.set(file.text, requireNativeSyntax(value));
+        parsedSourceCache.set(file.path, versions);
+    }
+    return inputs.map((file) => productionSource(file.path, file.text));
 }
 
 /**
@@ -1672,7 +1544,7 @@ function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
         } else if (isBlock(node)) {
             childScope = { parent: scope, bindings: new Map() };
         }
-        forEachChild(node, (child) => visit(child, childScope));
+        node.forEachChild((child) => visit(child, childScope));
     };
     visit(sourceFile, rootScope);
     return scopeByNode;
@@ -1739,20 +1611,14 @@ function returnedStateExpressions(updater: LocalUpdater): Expression[] {
             }
             return;
         }
-        forEachChild(node, visit);
+        node.forEachChild(visit);
     };
     visit(body);
     return expressions;
 }
 
 function countDeviceDataAstWrites(file: SourceText): number {
-    const sourceFile = createSourceFile(
-        file.path,
-        file.source,
-        ScriptTarget.Latest,
-        true,
-        file.path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS
-    );
+    const sourceFile = parsedSource(file.path, file.source);
     const scopeByNode = indexLocalUpdaters(sourceFile);
     const writes = new Set<Node>();
     const visiting = new Set<Expression>();
@@ -1856,7 +1722,7 @@ function countDeviceDataAstWrites(file: SourceText): number {
                 collectStateExpression(stateArgument);
             }
         }
-        forEachChild(node, visit);
+        node.forEachChild(visit);
     };
     visit(sourceFile);
     return writes.size;
@@ -1874,19 +1740,13 @@ function codeMayContainDeviceDataAstWrites(code: string): boolean {
 const DEVICE_DATA_COLON_PATTERN = /\b(?:parameterValues|devices)\s*:/g;
 
 function conditionalColonOffsets(file: ProductionSource): ReadonlySet<number> {
-    const sourceFile = createSourceFile(
-        file.path,
-        file.code,
-        ScriptTarget.Latest,
-        true,
-        file.path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS
-    );
+    const sourceFile = parsedSource(file.path, file.source);
     const offsets = new Set<number>();
     const visit = (node: Node): void => {
         if (isConditionalExpression(node)) {
             offsets.add(node.colonToken.getStart(sourceFile));
         }
-        forEachChild(node, visit);
+        node.forEachChild(visit);
     };
     visit(sourceFile);
     return offsets;

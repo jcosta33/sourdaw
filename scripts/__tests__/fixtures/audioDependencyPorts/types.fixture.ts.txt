@@ -1,0 +1,17 @@
+import Long from 'long';
+import * as protobuf from 'protobufjs';
+import { onnx } from './onnx';
+
+const value: onnx.ITensorProto = {
+  dims: [Long.fromString('9223372036854775807')],
+  uint64Data: [Long.fromString('18446744073709551615', true)],
+  rawData: Uint8Array.from([0, 255, 128, 1]),
+};
+const tensor: onnx.TensorProto = onnx.TensorProto.fromObject(value);
+const writer: protobuf.Writer = onnx.TensorProto.encode(tensor);
+const reader: protobuf.Reader = protobuf.Reader.create(writer.finish());
+const decoded: onnx.TensorProto = onnx.TensorProto.decode(reader);
+const graph: onnx.IModelProto = { irVersion: Long.fromInt(9), graph: { initializer: [decoded] } };
+const model: onnx.ModelProto = onnx.ModelProto.create(graph);
+export const wire: Uint8Array = onnx.ModelProto.encode(model).finish();
+export const object: Record<string, unknown> = onnx.ModelProto.toObject(model, { longs: String });

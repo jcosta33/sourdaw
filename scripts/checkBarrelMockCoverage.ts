@@ -57,7 +57,9 @@ import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import ts from 'typescript';
+import * as ts from 'typescript/unstable/ast';
+
+import { readNativeSource, readNativeSources } from './nativeTypeScript.ts';
 
 import {
     createVitestProgress,
@@ -307,7 +309,7 @@ export type FileFacts = {
     /**
      * Mock calls the scanner saw, and mock calls the parser produced — including
      * the argument-less `vi.mock('./x')` form, which carries no factory and so
-     * never reaches `mocks`. `ts.createSourceFile` never throws: a syntactically
+     * never reaches `mocks`. The native parser can return a recovery tree: a syntactically
      * broken file yields a partial tree and therefore zero mocks, which reads
      * identically to "this file has none". Two independently-sourced counts are
      * what tells those apart (ADR 0015 rule 3).
@@ -415,7 +417,7 @@ function findReturnedObjectLiteral(factory: ts.Node): ts.ObjectLiteralExpression
             if (found !== null) {
                 return;
             }
-            if (ts.isFunctionLike(node) && node !== factory) {
+            if (ts.isSignatureDeclaration(node) && node !== factory) {
                 return;
             }
             if (ts.isReturnStatement(node) && node.expression) {
@@ -618,11 +620,11 @@ function detectOriginalSpread(factory: ts.Node): boolean {
  * regex over the raw text is not — both are single tokens the state machine skips.
  */
 function countScannedMockCalls(contents: string): number {
-    const scanner = ts.createScanner(ts.ScriptTarget.Latest, /* skipTrivia */ true, ts.LanguageVariant.JSX, contents);
+    const scanner = ts.createScanner(/* skipTrivia */ true, ts.LanguageVariant.JSX, contents);
     let count = 0;
     let stage = 0;
     let token = scanner.scan();
-    while (token !== ts.SyntaxKind.EndOfFileToken) {
+    while (token !== ts.SyntaxKind.EndOfFile) {
         if (stage === 0 && token === ts.SyntaxKind.Identifier && scanner.getTokenText() === 'vi') {
             stage = 1;
         } else if (stage === 1 && token === ts.SyntaxKind.DotToken) {
@@ -639,7 +641,13 @@ function countScannedMockCalls(contents: string): number {
         } else {
             stage = token === ts.SyntaxKind.Identifier && scanner.getTokenText() === 'vi' ? 1 : 0;
         }
+        const previousEnd = scanner.getTokenEnd();
         token = scanner.scan();
+        if (token !== ts.SyntaxKind.EndOfFile && scanner.getTokenEnd() <= previousEnd) {
+            throw new Error(
+                `Native scanner did not advance at ${previousEnd}: ${JSON.stringify(contents.slice(previousEnd - 40, previousEnd + 80))}`
+            );
+        }
     }
     return count;
 }
@@ -662,7 +670,7 @@ function isMockCall(call: ts.CallExpression): boolean {
  * the tool recommends.
  */
 function readMockSpecifier(argument: ts.Expression): string | null {
-    if (ts.isStringLiteralLike(argument)) {
+    if (ts.isStringLiteralLikeNode(argument)) {
         return argument.text;
     }
     const unwrapped = ts.isAwaitExpression(argument) ? argument.expression : argument;
@@ -670,7 +678,7 @@ function readMockSpecifier(argument: ts.Expression): string | null {
         ts.isCallExpression(unwrapped) &&
         unwrapped.expression.kind === ts.SyntaxKind.ImportKeyword &&
         unwrapped.arguments[0] &&
-        ts.isStringLiteralLike(unwrapped.arguments[0])
+        ts.isStringLiteralLikeNode(unwrapped.arguments[0])
     ) {
         return unwrapped.arguments[0].text;
     }
@@ -715,12 +723,10 @@ function collectThenCallbackProperties(call: ts.CallExpression, names: Set<strin
 
 /** Parses one source file. Exported so the analyzer and its spec share the parser. */
 export function readFileFacts(absolutePath: string, contents: string): FileFacts {
-    // Script kind must follow the extension. Parsing a `.ts` file as TSX makes
-    // `<T>value` casts and generic arrows parse as JSX, and the tree is silently
-    // truncated from there: `persistCrdtProject.spec.ts` yielded 3 of its 12 mock
-    // calls until the scanner cross-check below disagreed with the parser.
-    const scriptKind = absolutePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-    const sourceFile = ts.createSourceFile(absolutePath, contents, ts.ScriptTarget.Latest, true, scriptKind);
+    return fileFactsFromSource(absolutePath, contents, readNativeSource(absolutePath, contents).source);
+}
+
+function fileFactsFromSource(absolutePath: string, contents: string, sourceFile: ts.SourceFile): FileFacts {
     const imports = new Map<string, Set<string>>();
     const mocks: MockedBarrel[] = [];
     let parsedMockCalls = 0;
@@ -739,7 +745,7 @@ export function readFileFacts(absolutePath: string, contents: string): FileFacts
     const visit = (node: ts.Node): void => {
         if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
             const clause = node.importClause;
-            if (clause && !clause.isTypeOnly) {
+            if (clause && clause.phaseModifier !== ts.SyntaxKind.TypeKeyword) {
                 const names: string[] = [];
                 if (clause.name) {
                     names.push('default');
@@ -787,7 +793,7 @@ export function readFileFacts(absolutePath: string, contents: string): FileFacts
         if (ts.isCallExpression(node)) {
             const firstArgument = node.arguments[0];
             const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
-            if (isDynamicImport && firstArgument && ts.isStringLiteralLike(firstArgument)) {
+            if (isDynamicImport && firstArgument && ts.isStringLiteralLikeNode(firstArgument)) {
                 const names = new Set<string>();
                 collectThenCallbackProperties(node, names);
                 addImport(firstArgument.text, names);
@@ -1075,14 +1081,17 @@ export function analyzeSpecs({
 const specFilePattern = /\.spec\.tsx?$/;
 const skippedDirectories = new Set(['node_modules', 'dist', 'coverage', 'target']);
 
-function walkForSpecs(directory: string, found: string[]): void {
+function walkForSpecs(directory: string, found: string[], sources: string[]): void {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
         if (entry.isDirectory()) {
             if (skippedDirectories.has(entry.name)) {
                 continue;
             }
-            walkForSpecs(join(directory, entry.name), found);
+            walkForSpecs(join(directory, entry.name), found, sources);
             continue;
+        }
+        if (entry.isFile() && moduleExtensions.some((extension) => entry.name.endsWith(extension))) {
+            sources.push(join(directory, entry.name));
         }
         if (entry.isFile() && specFilePattern.test(entry.name)) {
             found.push(join(directory, entry.name));
@@ -1098,9 +1107,10 @@ export function scanRepository(
     progress: (stage: string) => void = (stage) => recordVitestProgress('scan', stage)
 ): AnalysisResult & { specCount: number } {
     const specPaths: string[] = [];
+    const sourcePaths: string[] = [];
     const scope = barrelKinds === allBarrelKinds ? 'all' : 'gated';
     progress(`${scope}-traversal-begin`);
-    walkForSpecs(sourceRoot, specPaths);
+    walkForSpecs(sourceRoot, specPaths, sourcePaths);
     progress(`${scope}-traversal-end`);
 
     const factsCache = new Map<string, FileFacts | null>();
@@ -1126,7 +1136,8 @@ export function scanRepository(
         }
         let facts: FileFacts | null;
         try {
-            facts = readFileFacts(absolutePath, readFileSync(absolutePath, 'utf8'));
+            const parsed = sources.get(absolutePath);
+            facts = parsed ? fileFactsFromSource(absolutePath, parsed.source.text, parsed.source) : null;
         } catch {
             facts = null;
         }
@@ -1135,6 +1146,7 @@ export function scanRepository(
     };
 
     progress(`${scope}-analysis-begin`);
+    const sources = readNativeSources(sourcePaths.map((path) => ({ path, text: readFileSync(path, 'utf8') })));
     const result = analyzeSpecs({ specPaths, readFacts, fileExists, barrelKinds, exemptions: exemptionRows });
     progress(`${scope}-analysis-end`);
     return { specCount: specPaths.length, ...result };

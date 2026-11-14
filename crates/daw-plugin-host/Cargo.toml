@@ -23,7 +23,7 @@ clap-sys = "0.5"
 # unit — see .agents/decisions/0031-native-plugin-format-strategy.md and the
 # third-party notice this crate's Steinberg copyright is discharged in.
 vst3 = "0.3.0"
-libloading = "0.9"
+libloading = "0.9.1"
 sha2 = "0.11"
 
 # A VST3 editor on X11 does not run unless the host answers `IRunLoop`, and the

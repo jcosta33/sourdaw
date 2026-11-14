@@ -1,0 +1,71 @@
+{
+    "unrun": true,
+    "oracle": "Independent protobuf varint/two-complement/length-prefix encoding; manually mapped ONNX fields. No runtime-library roundtrip used to make expected bytes.",
+    "cases": [
+        {
+            "type": "TensorProto",
+            "input": {
+                "dims": ["2", "2"],
+                "dataType": 7,
+                "int64Data": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                "name": "wire",
+                "rawData": [0, 255, 128, 1],
+                "uint64Data": ["0", "9223372036854775808", "18446744073709551615"]
+            },
+            "wireHex": "0a02020210073a1e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7f4204776972654a0400ff80015a150080808080808080808001ffffffffffffffffff01"
+        },
+        {
+            "type": "AttributeProto",
+            "input": {
+                "name": "axis",
+                "i": "-1",
+                "t": {
+                    "dims": ["2", "2"],
+                    "dataType": 7,
+                    "int64Data": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                    "name": "wire",
+                    "rawData": [0, 255, 128, 1],
+                    "uint64Data": ["0", "9223372036854775808", "18446744073709551615"]
+                },
+                "ints": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                "type": 2
+            },
+            "wireHex": "0a046178697318ffffffffffffffffff012a490a02020210073a1e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7f4204776972654a0400ff80015a150080808080808080808001ffffffffffffffffff01421e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7fa00102"
+        },
+        {
+            "type": "ModelProto",
+            "input": {
+                "irVersion": "9",
+                "producerName": "wire-fixture",
+                "graph": {
+                    "node": [
+                        {
+                            "input": ["x"],
+                            "output": ["y"],
+                            "name": "n",
+                            "opType": "Fixture",
+                            "attribute": [
+                                {
+                                    "name": "axis",
+                                    "i": "-1",
+                                    "t": {
+                                        "dims": ["2", "2"],
+                                        "dataType": 7,
+                                        "int64Data": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                                        "name": "wire",
+                                        "rawData": [0, 255, 128, 1],
+                                        "uint64Data": ["0", "9223372036854775808", "18446744073709551615"]
+                                    },
+                                    "ints": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                                    "type": 2
+                                }
+                            ]
+                        }
+                    ],
+                    "name": "wire"
+                }
+            },
+            "wireHex": "0809120c776972652d666978747572653a9c010a93010a01781201791a016e2207466978747572652a7f0a046178697318ffffffffffffffffff012a490a02020210073a1e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7f4204776972654a0400ff80015a150080808080808080808001ffffffffffffffffff01421e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7fa00102120477697265"
+        }
+    ]
+}

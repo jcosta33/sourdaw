@@ -1,7 +1,11 @@
+// @vitest-environment node
+
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import ts from 'typescript';
+import * as ts from 'typescript/unstable/ast';
+
+import { readNativeSource, requireNativeSyntax } from '../nativeTypeScript';
 import { describe, expect, it } from 'vitest';
 
 import admissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
@@ -80,10 +84,8 @@ describe('Browser AI WebGPU admission', () => {
     });
 
     it('reserves the cold-start budget needed before the launch-screen readiness gate', () => {
-        const sourceFile = ts.createSourceFile(
-            admissionSpecPath,
-            readFileSync(admissionSpecPath, 'utf8'),
-            ts.ScriptTarget.Latest
+        const sourceFile = requireNativeSyntax(
+            readNativeSource(admissionSpecPath, readFileSync(admissionSpecPath, 'utf8'))
         );
 
         expect(() => requireColdStartTimeoutFirst(getAdmissionTestBody(sourceFile))).not.toThrow();

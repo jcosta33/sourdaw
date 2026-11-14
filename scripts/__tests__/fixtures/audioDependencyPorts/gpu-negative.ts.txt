@@ -1,0 +1,7 @@
+// @ts-expect-error invalid feature names are rejected
+const invalidFeature: GPUFeatureName = 'not-a-gpu-feature';
+// @ts-expect-error buffer descriptors require a usage flag
+const invalidBuffer: GPUBufferDescriptor = {size: 4};
+// @ts-expect-error invalid texture formats are rejected
+const invalidTexture: GPUTextureDescriptor = {size: [1, 1], format: 'not-a-format', usage: GPUTextureUsage.COPY_DST};
+void [invalidFeature, invalidBuffer, invalidTexture];

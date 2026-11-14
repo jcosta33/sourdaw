@@ -1,0 +1,458 @@
+diff --git a/bin/terser b/bin/terser
+index b0cdc7c..1641014 100755
+--- a/bin/terser
++++ b/bin/terser
+@@ -10,7 +10,8 @@ try {
+ 
+ const fs = require("fs");
+ const path = require("path");
+-const program = require("commander");
++const { Command } = require("commander");
++const program = new Command();
+ 
+ const packageJson = require("../package.json");
+ const { _run_cli: run_cli } = require("..");
+diff --git a/dist/bundle.min.js b/dist/bundle.min.js
+index 664b2ef..eca1699 100644
+--- a/dist/bundle.min.js
++++ b/dist/bundle.min.js
+@@ -34561,8 +34561,6 @@ async function run_cli({ program, packageJson, fs, path }) {
+     };
+     const default_options = await _default_options();
+     program.version(packageJson.name + " " + packageJson.version);
+-    program.parseArgv = program.parse;
+-    program.parse = undefined;
+ 
+     if (process.argv.includes("ast")) program.helpInformation = describe_ast;
+     else if (process.argv.includes("options")) program.helpInformation = function() {
+@@ -34599,11 +34597,12 @@ async function run_cli({ program, packageJson, fs, path }) {
+     program.option("--timings", "Display operations run time on STDERR.");
+     program.option("--toplevel", "Compress and/or mangle variables in toplevel scope.");
+     program.option("--wrap <name>", "Embed everything as a function with “exports” corresponding to “name” globally.");
+-    program.arguments("[files...]").parseArgv(process.argv);
+-    if (program.configFile) {
+-        options = JSON.parse(read_file(program.configFile));
++    program.arguments("[files...]").parse(process.argv);
++    const cli = program.opts();
++    if (cli.configFile) {
++        options = JSON.parse(read_file(cli.configFile));
+     }
+-    if (!program.output && program.sourceMap && program.sourceMap.url != "inline") {
++    if (!cli.output && cli.sourceMap && cli.sourceMap.url != "inline") {
+         fatal("ERROR: cannot write source map to STDOUT");
+     }
+ 
+@@ -34618,76 +34617,76 @@ async function run_cli({ program, packageJson, fs, path }) {
+         "toplevel",
+         "wrap"
+     ].forEach(function(name) {
+-        if (name in program) {
+-            options[name] = program[name];
++        if (name in cli) {
++            options[name] = cli[name];
+         }
+     });
+ 
+-    if ("ecma" in program) {
+-        if (program.ecma != (program.ecma | 0)) fatal("ERROR: ecma must be an integer");
+-        const ecma = program.ecma | 0;
++    if ("ecma" in cli) {
++        if (cli.ecma != (cli.ecma | 0)) fatal("ERROR: ecma must be an integer");
++        const ecma = cli.ecma | 0;
+         if (ecma > 5 && ecma < 2015)
+             options.ecma = ecma + 2009;
+         else
+             options.ecma = ecma;
+     }
+-    if (program.format || program.beautify) {
+-        const chosenOption = program.format || program.beautify;
++    if (cli.format || cli.beautify) {
++        const chosenOption = cli.format || cli.beautify;
+         options.format = typeof chosenOption === "object" ? chosenOption : {};
+     }
+-    if (program.comments) {
++    if (cli.comments) {
+         if (typeof options.format != "object") options.format = {};
+-        options.format.comments = typeof program.comments == "string" ? (program.comments == "false" ? false : program.comments) : "some";
++        options.format.comments = typeof cli.comments == "string" ? (cli.comments == "false" ? false : cli.comments) : "some";
+     }
+-    if (program.define) {
++    if (cli.define) {
+         if (typeof options.compress != "object") options.compress = {};
+         if (typeof options.compress.global_defs != "object") options.compress.global_defs = {};
+-        for (var expr in program.define) {
+-            options.compress.global_defs[expr] = program.define[expr];
++        for (var expr in cli.define) {
++            options.compress.global_defs[expr] = cli.define[expr];
+         }
+     }
+-    if (program.keepClassnames) {
++    if (cli.keepClassnames) {
+         options.keep_classnames = true;
+     }
+-    if (program.keepFnames) {
++    if (cli.keepFnames) {
+         options.keep_fnames = true;
+     }
+-    if (program.mangleProps) {
+-        if (program.mangleProps.domprops) {
+-            delete program.mangleProps.domprops;
++    if (cli.mangleProps) {
++        if (cli.mangleProps.domprops) {
++            delete cli.mangleProps.domprops;
+         } else {
+-            if (typeof program.mangleProps != "object") program.mangleProps = {};
+-            if (!Array.isArray(program.mangleProps.reserved)) program.mangleProps.reserved = [];
++            if (typeof cli.mangleProps != "object") cli.mangleProps = {};
++            if (!Array.isArray(cli.mangleProps.reserved)) cli.mangleProps.reserved = [];
+         }
+         if (typeof options.mangle != "object") options.mangle = {};
+-        options.mangle.properties = program.mangleProps;
++        options.mangle.properties = cli.mangleProps;
+     }
+-    if (program.nameCache) {
+-        options.nameCache = JSON.parse(read_file(program.nameCache, "{}"));
++    if (cli.nameCache) {
++        options.nameCache = JSON.parse(read_file(cli.nameCache, "{}"));
+     }
+-    if (program.output == "ast") {
++    if (cli.output == "ast") {
+         options.format = {
+             ast: true,
+             code: false
+         };
+     }
+-    if (program.parse) {
+-        if (!program.parse.acorn && !program.parse.spidermonkey) {
+-            options.parse = program.parse;
+-        } else if (program.sourceMap && program.sourceMap.content == "inline") {
++    if (cli.parse) {
++        if (!cli.parse.acorn && !cli.parse.spidermonkey) {
++            options.parse = cli.parse;
++        } else if (cli.sourceMap && cli.sourceMap.content == "inline") {
+             fatal("ERROR: inline source map only works with built-in parser");
+         }
+     }
+     if (~program.rawArgs.indexOf("--rename")) {
+         options.rename = true;
+-    } else if (!program.rename) {
++    } else if (!cli.rename) {
+         options.rename = false;
+     }
+ 
+     let convert_path = name => name;
+-    if (typeof program.sourceMap == "object" && "base" in program.sourceMap) {
++    if (typeof cli.sourceMap == "object" && "base" in cli.sourceMap) {
+         convert_path = function() {
+-            var base = program.sourceMap.base;
++            var base = cli.sourceMap.base;
+             delete options.sourceMap.base;
+             return function(name) {
+                 return path.relative(base, name);
+@@ -34729,25 +34728,25 @@ async function run_cli({ program, packageJson, fs, path }) {
+     }
+ 
+     async function run_cli() {
+-        var content = program.sourceMap && program.sourceMap.content;
++        var content = cli.sourceMap && cli.sourceMap.content;
+         if (content && content !== "inline") {
+             options.sourceMap.content = read_file(content, content);
+         }
+-        if (program.timings) options.timings = true;
++        if (cli.timings) options.timings = true;
+ 
+         try {
+-            if (program.parse) {
+-                if (program.parse.acorn) {
++            if (cli.parse) {
++                if (cli.parse.acorn) {
+                     files = convert_ast(function(toplevel, name) {
+                         return require("acorn").parse(files[name], {
+                             ecmaVersion: 2024,
+                             locations: true,
+                             program: toplevel,
+                             sourceFile: name,
+-                            sourceType: options.module || program.parse.module ? "module" : "script"
++                            sourceType: options.module || cli.parse.module ? "module" : "script"
+                         });
+                     });
+-                } else if (program.parse.spidermonkey) {
++                } else if (cli.parse.spidermonkey) {
+                     files = convert_ast(function(toplevel, name) {
+                         var obj = JSON.parse(files[name]);
+                         if (!toplevel) return obj;
+@@ -34791,7 +34790,7 @@ async function run_cli({ program, packageJson, fs, path }) {
+             return;
+         }
+ 
+-        if (program.output == "ast") {
++        if (cli.output == "ast") {
+             if (!options.compress && !options.mangle) {
+                 result.ast.figure_out_scope({});
+             }
+@@ -34825,7 +34824,7 @@ async function run_cli({ program, packageJson, fs, path }) {
+                 }
+                 return value;
+             }, 2));
+-        } else if (program.output == "spidermonkey") {
++        } else if (cli.output == "spidermonkey") {
+             try {
+                 const minified = await minify(
+                     result.code,
+@@ -34844,17 +34843,17 @@ async function run_cli({ program, packageJson, fs, path }) {
+                 fatal(ex);
+                 return;
+             }
+-        } else if (program.output) {
+-            fs.mkdirSync(path.dirname(program.output), { recursive: true });
+-            fs.writeFileSync(program.output, result.code);
++        } else if (cli.output) {
++            fs.mkdirSync(path.dirname(cli.output), { recursive: true });
++            fs.writeFileSync(cli.output, result.code);
+             if (options.sourceMap && options.sourceMap.url !== "inline" && result.map) {
+-                fs.writeFileSync(program.output + ".map", result.map);
++                fs.writeFileSync(cli.output + ".map", result.map);
+             }
+         } else {
+             console.log(result.code);
+         }
+-        if (program.nameCache) {
+-            fs.writeFileSync(program.nameCache, JSON.stringify(options.nameCache));
++        if (cli.nameCache) {
++            fs.writeFileSync(cli.nameCache, JSON.stringify(options.nameCache));
+         }
+         if (result.timings) for (var phase in result.timings) {
+             print_error("- " + phase + ": " + result.timings[phase].toFixed(3) + "s");
+diff --git a/lib/cli.js b/lib/cli.js
+index 56be24f..1803efc 100644
+--- a/lib/cli.js
++++ b/lib/cli.js
+@@ -23,8 +23,6 @@ export async function run_cli({ program, packageJson, fs, path }) {
+     };
+     const default_options = await _default_options();
+     program.version(packageJson.name + " " + packageJson.version);
+-    program.parseArgv = program.parse;
+-    program.parse = undefined;
+ 
+     if (process.argv.includes("ast")) program.helpInformation = describe_ast;
+     else if (process.argv.includes("options")) program.helpInformation = function() {
+@@ -61,11 +59,12 @@ export async function run_cli({ program, packageJson, fs, path }) {
+     program.option("--timings", "Display operations run time on STDERR.");
+     program.option("--toplevel", "Compress and/or mangle variables in toplevel scope.");
+     program.option("--wrap <name>", "Embed everything as a function with “exports” corresponding to “name” globally.");
+-    program.arguments("[files...]").parseArgv(process.argv);
+-    if (program.configFile) {
+-        options = JSON.parse(read_file(program.configFile));
++    program.arguments("[files...]").parse(process.argv);
++    const cli = program.opts();
++    if (cli.configFile) {
++        options = JSON.parse(read_file(cli.configFile));
+     }
+-    if (!program.output && program.sourceMap && program.sourceMap.url != "inline") {
++    if (!cli.output && cli.sourceMap && cli.sourceMap.url != "inline") {
+         fatal("ERROR: cannot write source map to STDOUT");
+     }
+ 
+@@ -80,76 +79,76 @@ export async function run_cli({ program, packageJson, fs, path }) {
+         "toplevel",
+         "wrap"
+     ].forEach(function(name) {
+-        if (name in program) {
+-            options[name] = program[name];
++        if (name in cli) {
++            options[name] = cli[name];
+         }
+     });
+ 
+-    if ("ecma" in program) {
+-        if (program.ecma != (program.ecma | 0)) fatal("ERROR: ecma must be an integer");
+-        const ecma = program.ecma | 0;
++    if ("ecma" in cli) {
++        if (cli.ecma != (cli.ecma | 0)) fatal("ERROR: ecma must be an integer");
++        const ecma = cli.ecma | 0;
+         if (ecma > 5 && ecma < 2015)
+             options.ecma = ecma + 2009;
+         else
+             options.ecma = ecma;
+     }
+-    if (program.format || program.beautify) {
+-        const chosenOption = program.format || program.beautify;
++    if (cli.format || cli.beautify) {
++        const chosenOption = cli.format || cli.beautify;
+         options.format = typeof chosenOption === "object" ? chosenOption : {};
+     }
+-    if (program.comments) {
++    if (cli.comments) {
+         if (typeof options.format != "object") options.format = {};
+-        options.format.comments = typeof program.comments == "string" ? (program.comments == "false" ? false : program.comments) : "some";
++        options.format.comments = typeof cli.comments == "string" ? (cli.comments == "false" ? false : cli.comments) : "some";
+     }
+-    if (program.define) {
++    if (cli.define) {
+         if (typeof options.compress != "object") options.compress = {};
+         if (typeof options.compress.global_defs != "object") options.compress.global_defs = {};
+-        for (var expr in program.define) {
+-            options.compress.global_defs[expr] = program.define[expr];
++        for (var expr in cli.define) {
++            options.compress.global_defs[expr] = cli.define[expr];
+         }
+     }
+-    if (program.keepClassnames) {
++    if (cli.keepClassnames) {
+         options.keep_classnames = true;
+     }
+-    if (program.keepFnames) {
++    if (cli.keepFnames) {
+         options.keep_fnames = true;
+     }
+-    if (program.mangleProps) {
+-        if (program.mangleProps.domprops) {
+-            delete program.mangleProps.domprops;
++    if (cli.mangleProps) {
++        if (cli.mangleProps.domprops) {
++            delete cli.mangleProps.domprops;
+         } else {
+-            if (typeof program.mangleProps != "object") program.mangleProps = {};
+-            if (!Array.isArray(program.mangleProps.reserved)) program.mangleProps.reserved = [];
++            if (typeof cli.mangleProps != "object") cli.mangleProps = {};
++            if (!Array.isArray(cli.mangleProps.reserved)) cli.mangleProps.reserved = [];
+         }
+         if (typeof options.mangle != "object") options.mangle = {};
+-        options.mangle.properties = program.mangleProps;
++        options.mangle.properties = cli.mangleProps;
+     }
+-    if (program.nameCache) {
+-        options.nameCache = JSON.parse(read_file(program.nameCache, "{}"));
++    if (cli.nameCache) {
++        options.nameCache = JSON.parse(read_file(cli.nameCache, "{}"));
+     }
+-    if (program.output == "ast") {
++    if (cli.output == "ast") {
+         options.format = {
+             ast: true,
+             code: false
+         };
+     }
+-    if (program.parse) {
+-        if (!program.parse.acorn && !program.parse.spidermonkey) {
+-            options.parse = program.parse;
+-        } else if (program.sourceMap && program.sourceMap.content == "inline") {
++    if (cli.parse) {
++        if (!cli.parse.acorn && !cli.parse.spidermonkey) {
++            options.parse = cli.parse;
++        } else if (cli.sourceMap && cli.sourceMap.content == "inline") {
+             fatal("ERROR: inline source map only works with built-in parser");
+         }
+     }
+     if (~program.rawArgs.indexOf("--rename")) {
+         options.rename = true;
+-    } else if (!program.rename) {
++    } else if (!cli.rename) {
+         options.rename = false;
+     }
+ 
+     let convert_path = name => name;
+-    if (typeof program.sourceMap == "object" && "base" in program.sourceMap) {
++    if (typeof cli.sourceMap == "object" && "base" in cli.sourceMap) {
+         convert_path = function() {
+-            var base = program.sourceMap.base;
++            var base = cli.sourceMap.base;
+             delete options.sourceMap.base;
+             return function(name) {
+                 return path.relative(base, name);
+@@ -191,25 +190,25 @@ export async function run_cli({ program, packageJson, fs, path }) {
+     }
+ 
+     async function run_cli() {
+-        var content = program.sourceMap && program.sourceMap.content;
++        var content = cli.sourceMap && cli.sourceMap.content;
+         if (content && content !== "inline") {
+             options.sourceMap.content = read_file(content, content);
+         }
+-        if (program.timings) options.timings = true;
++        if (cli.timings) options.timings = true;
+ 
+         try {
+-            if (program.parse) {
+-                if (program.parse.acorn) {
++            if (cli.parse) {
++                if (cli.parse.acorn) {
+                     files = convert_ast(function(toplevel, name) {
+                         return require("acorn").parse(files[name], {
+                             ecmaVersion: 2024,
+                             locations: true,
+                             program: toplevel,
+                             sourceFile: name,
+-                            sourceType: options.module || program.parse.module ? "module" : "script"
++                            sourceType: options.module || cli.parse.module ? "module" : "script"
+                         });
+                     });
+-                } else if (program.parse.spidermonkey) {
++                } else if (cli.parse.spidermonkey) {
+                     files = convert_ast(function(toplevel, name) {
+                         var obj = JSON.parse(files[name]);
+                         if (!toplevel) return obj;
+@@ -253,7 +252,7 @@ export async function run_cli({ program, packageJson, fs, path }) {
+             return;
+         }
+ 
+-        if (program.output == "ast") {
++        if (cli.output == "ast") {
+             if (!options.compress && !options.mangle) {
+                 result.ast.figure_out_scope({});
+             }
+@@ -287,7 +286,7 @@ export async function run_cli({ program, packageJson, fs, path }) {
+                 }
+                 return value;
+             }, 2));
+-        } else if (program.output == "spidermonkey") {
++        } else if (cli.output == "spidermonkey") {
+             try {
+                 const minified = await minify(
+                     result.code,
+@@ -306,17 +305,17 @@ export async function run_cli({ program, packageJson, fs, path }) {
+                 fatal(ex);
+                 return;
+             }
+-        } else if (program.output) {
+-            fs.mkdirSync(path.dirname(program.output), { recursive: true });
+-            fs.writeFileSync(program.output, result.code);
++        } else if (cli.output) {
++            fs.mkdirSync(path.dirname(cli.output), { recursive: true });
++            fs.writeFileSync(cli.output, result.code);
+             if (options.sourceMap && options.sourceMap.url !== "inline" && result.map) {
+-                fs.writeFileSync(program.output + ".map", result.map);
++                fs.writeFileSync(cli.output + ".map", result.map);
+             }
+         } else {
+             console.log(result.code);
+         }
+-        if (program.nameCache) {
+-            fs.writeFileSync(program.nameCache, JSON.stringify(options.nameCache));
++        if (cli.nameCache) {
++            fs.writeFileSync(cli.nameCache, JSON.stringify(options.nameCache));
+         }
+         if (result.timings) for (var phase in result.timings) {
+             print_error("- " + phase + ": " + result.timings[phase].toFixed(3) + "s");
+diff --git a/package.json b/package.json
+index 719e212..8e64d04 100644
+--- a/package.json
++++ b/package.json
+@@ -6,7 +6,7 @@
+   "license": "BSD-2-Clause",
+   "version": "5.51.2",
+   "engines": {
+-    "node": ">=10"
++    "node": ">=26.13.1 <27"
+   },
+   "maintainers": [
+     "Fábio Santos <fabiosantosart@gmail.com>"
+@@ -46,7 +46,7 @@
+   "dependencies": {
+     "@jridgewell/source-map": "^0.3.3",
+     "acorn": "^8.15.0",
+-    "commander": "^2.20.0",
++    "commander": "^15.1.0",
+     "source-map-support": "~0.5.20"
+   },
+   "devDependencies": {

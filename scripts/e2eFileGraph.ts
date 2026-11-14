@@ -1,6 +1,6 @@
 import { isAbsolute, resolve } from 'node:path';
 
-import ts from 'typescript';
+import { API, DiagnosticCategory } from 'typescript/unstable/sync';
 
 import type { SourceNode } from './e2eAffectedGraph.ts';
 
@@ -15,39 +15,47 @@ export async function cruiseFileGraph(
     scope: CruiseScope
 ): Promise<{ kind: 'modules'; modules: SourceNode[] } | { kind: 'full'; reason: string }> {
     const configPath = resolve(root, 'tsconfig.json');
-    const config = ts.getParsedCommandLineOfConfigFile(
-        configPath,
-        {},
-        {
-            ...ts.sys,
-            onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
-                throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'));
-            },
+    const api = new API({ cwd: root });
+    let snapshot: ReturnType<API['updateSnapshot']> | undefined;
+    let config: ReturnType<API['parseConfigFile']>;
+    try {
+        config = api.parseConfigFile(configPath);
+        snapshot = api.updateSnapshot({ openProjects: [configPath] });
+        const project = snapshot.getProject(configPath);
+        if (!project) {
+            throw new Error('invalid dependency graph TypeScript configuration');
         }
-    );
-    if (config === undefined || config.errors.length > 0) {
-        throw new Error('invalid dependency graph TypeScript configuration');
+        const errors = [
+            ...project.program.getConfigFileParsingDiagnostics(),
+            ...project.program.getProgramDiagnostics(),
+        ].filter((diagnostic) => diagnostic.category === DiagnosticCategory.Error);
+        if (errors.length > 0) {
+            throw new Error(errors.map((diagnostic) => diagnostic.text).join('\n'));
+        }
+    } finally {
+        try {
+            snapshot?.dispose();
+        } finally {
+            api.close();
+        }
     }
+    const baseUrl = 'baseUrl' in config.options ? config.options.baseUrl : undefined;
     if (
-        config.options.baseUrl === undefined &&
+        baseUrl === undefined &&
         config.options.paths !== undefined &&
+        typeof config.options.paths === 'object' &&
+        config.options.paths !== null &&
         Object.keys(config.options.paths).length > 0
     ) {
-        const declaringBase = config.options.pathsBasePath;
-        // The installed alias plugin rebases inherited baseUrl, but not inherited implicit paths.
-        if (
-            typeof declaringBase !== 'string' ||
-            !isAbsolute(declaringBase) ||
-            resolve(declaringBase) !== resolve(root)
-        ) {
+        const declaringBase = 'pathsBasePath' in config.options ? config.options.pathsBasePath : undefined;
+        // The patched resolver receives this native declaring base, including inherited paths.
+        if (typeof declaringBase !== 'string' || !isAbsolute(declaringBase)) {
             return {
                 kind: 'full',
                 reason: 'TypeScript alias declaring base is not preserved by the dependency resolver',
             };
         }
     }
-    // The resolver reads aliases from configPath, but otherwise substitutes cwd for an implicit base.
-    const graphConfig = { ...config, options: { ...config.options, baseUrl: config.options.baseUrl ?? resolve(root) } };
     if (process.env.TS_NODE_PROJECT || process.env.TS_NODE_BASEURL) {
         return { kind: 'full', reason: 'caller TypeScript alias override prevents proving the requested root' };
     }
@@ -63,7 +71,7 @@ export async function cruiseFileGraph(
             tsPreCompilationDeps: 'specify',
         },
         undefined,
-        { tsConfig: graphConfig }
+        { tsConfig: config }
     );
     if (result.exitCode !== 0 || typeof result.output !== 'string') {
         return { kind: 'full', reason: 'dependency graph did not complete' };

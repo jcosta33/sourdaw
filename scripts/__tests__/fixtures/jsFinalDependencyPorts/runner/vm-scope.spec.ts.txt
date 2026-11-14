@@ -1,0 +1,5 @@
+import { expect, it } from 'vitest';
+it('external CJS loads both ESM and CJS-shaped JavaScript inside an ESM package', async () => {
+  const result = await import('runner-esm-scope-fixture');
+  expect(result.default).toEqual({esm:'esm detected', cjs:'cjs detected', malformed:'SyntaxError'});
+});

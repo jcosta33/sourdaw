@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,7 @@
+   "author": "Nathan Rajlich <nathan@tootallnate.net> (http://tootallnate.net)",
+   "license": "MIT",
+   "dependencies": {
+-    "debug": "2"
++    "debug": "^4.4.3"
+   },
+   "devDependencies": {
+     "mocha": "*",

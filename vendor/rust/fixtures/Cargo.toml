@@ -1,0 +1,71 @@
+[package]
+name = "sourdaw-rust-consumer-fixtures"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+cexpr = "=0.6.0"
+num_enum = { version = "=0.7.6", features = ["complex-expressions"] }
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["registry"] }
+visibility = "=0.1.1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.62.2", features = ["Foundation", "Win32_Foundation", "Win32_Media_Audio"] }
+windows-core = { version = "=0.100.0", features = ["proc-macros"] }
+
+[patch.crates-io]
+cexpr = { path = "../cexpr-0.6.0" }
+num_enum_derive = { path = "../num_enum_derive-0.7.6" }
+tracing-attributes = { path = "../tracing-attributes-0.1.31" }
+visibility = { path = "../visibility-0.1.1" }
+windows = { path = "../windows-0.62.2" }
+windows-implement = { path = "../windows-implement-0.100.0" }
+windows-interface = { path = "../windows-interface-0.100.0" }
+
+[[test]]
+name = "windows_projection_abi"
+path = "windows_projection_abi.rs"
+
+[[test]]
+name = "cexpr_nom8"
+path = "cexpr_nom8.rs"
+
+[[test]]
+name = "tracing_syn3"
+path = "tracing_syn3.rs"
+
+[[test]]
+name = "visibility_syn3"
+path = "visibility_syn3.rs"
+
+[[test]]
+name = "num_enum_syn3"
+path = "num_enum_syn3.rs"
+
+[[example]]
+name = "reject_num_enum_duplicate_alternatives"
+path = "negative/num_enum_duplicate_alternatives.rs"
+
+[[example]]
+name = "reject_num_enum_invalid_repr"
+path = "negative/num_enum_invalid_repr.rs"
+
+[[example]]
+name = "reject_tracing_unknown_skip"
+path = "negative/tracing_unknown_skip.rs"
+
+[[example]]
+name = "reject_tracing_unsafe_to_safe"
+path = "negative/tracing_unsafe_to_safe.rs"
+
+[[example]]
+name = "reject_visibility_unsafe_to_safe"
+path = "negative/visibility_unsafe_to_safe.rs"
+
+[[example]]
+name = "reject_visibility_unsupported_impl"
+path = "negative/visibility_unsupported_impl.rs"

@@ -81,6 +81,7 @@ revision on its corresponding native runner, followed by packaging and verificat
 of the final artifacts. Portable build-entry-point work is tracked in
 [#6288](https://github.com/jcosta33/sourdaw/issues/6288).
 
+- The macOS package requires macOS 13 or later, matching its bundled Electron runtime.
 - macOS distribution requires a Developer ID signing setup, notarization and
   verification of the downloaded app. `identity: '-'` provides ad-hoc signing only.
   Public macOS release assets are tracked in

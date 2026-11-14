@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { describe, expect, it } from 'vitest';
 
 import { offPageSources, type RuntimeGraph } from '../e2eAffectedGraph';
@@ -306,6 +308,7 @@ describe('coverage-map selection narrows', () => {
     });
 
     it.each([
+        ['type-only import', FEED_BASE.replace('// Feed helpers.', "import type { Extra } from './extra';")],
         ['type-only', FEED_BASE.replace('{ id: string }', '{ id: string; label?: string }')],
         ['comment-only', FEED_BASE.replace('// Feed helpers.', '// Helpers for the feed.')],
         ['blank-line', FEED_BASE.replace('const LIMIT = 10;\n', 'const LIMIT = 10;\n\n')],

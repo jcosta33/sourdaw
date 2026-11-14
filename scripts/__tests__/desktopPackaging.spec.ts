@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { FuseState, FuseV1Options, FuseVersion, flipFuses, getCurrentFuseWire } from '@electron/fuses';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { parseDocument } from 'yaml';
 
 import { ELECTRON_RUNTIME_CONTRACT } from '../electronRuntimeContract';
 import {
@@ -82,6 +83,11 @@ afterEach(() => {
 });
 
 describe('desktop afterPack native admission and hardening', () => {
+    it('declares the Electron macOS 13 minimum in the builder configuration', () => {
+        const config: unknown = parseDocument(readFileSync(join(process.cwd(), 'electron-builder.yml'), 'utf8')).toJS();
+        expect(config).toMatchObject({ mac: { minimumSystemVersion: '13.0' } });
+    });
+
     for (const artifact of ['sourdaw-native.node', 'sourdaw-plugin-scan-helper']) {
         it(`rejects foreign ${artifact} before fuse mutation`, async () => {
             const { context, resources, hook } = fixture();

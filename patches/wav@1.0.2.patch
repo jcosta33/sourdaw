@@ -1,0 +1,56 @@
+diff --git a/lib/reader.js b/lib/reader.js
+--- a/lib/reader.js
++++ b/lib/reader.js
+@@ -5,7 +5,7 @@
+ 
+ var util = require('util');
+ var Parser = require('stream-parser');
+-var Transform = require('readable-stream/transform');
++var Transform = require('readable-stream').Transform;
+ var debug = require('debug')('wave:reader');
+ var inherits = util.inherits;
+ var f = util.format;
+@@ -47,7 +47,7 @@
+   if (!(this instanceof Reader)) {
+     return new Reader(opts);
+   }
+-  Transform.call(this, opts);
++  Transform.call(this, Object.assign({ autoDestroy: false }, opts));
+ 
+   this._bytes(4, this._onRiffID);
+ }
+diff --git a/lib/writer.js b/lib/writer.js
+--- a/lib/writer.js
++++ b/lib/writer.js
+@@ -4,7 +4,7 @@
+  */
+ 
+ var inherits = require('util').inherits;
+-var Transform = require('readable-stream/transform');
++var Transform = require('readable-stream').Transform;
+ var debug = require('debug')('wave:writer');
+ var bufferAlloc = require('buffer-alloc');
+ var bufferFrom = require('buffer-from');
+@@ -62,7 +62,7 @@
+   if (!(this instanceof Writer)) {
+     return new Writer(opts);
+   }
+-  Transform.call(this, opts);
++  Transform.call(this, Object.assign({ autoDestroy: false }, opts));
+ 
+   // TODO: allow/properly handle other WAVE audio formats
+   this.endianness = 'LE';
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -8,8 +8,8 @@
+   "dependencies": {
+     "buffer-alloc": "^1.1.0",
+     "buffer-from": "^1.0.0",
+-    "debug": "^2.2.0",
+-    "readable-stream": "^1.1.14",
++    "debug": "^4.4.3",
++    "readable-stream": "^4.8.0",
+     "stream-parser": "^0.3.1"
+   },
+   "devDependencies": {

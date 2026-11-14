@@ -1,0 +1,65 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -593,19 +593,2 @@
++	return keyv.detectKeyv(keyv$1).compatible;
++}//#endregion
+-	if (keyv$1 === null || keyv$1 === void 0) return false;
+-	if (keyv$1 instanceof keyv.Keyv) return true;
+-	return [
+-		"generateIterator",
+-		"get",
+-		"getMany",
+-		"set",
+-		"setMany",
+-		"delete",
+-		"deleteMany",
+-		"has",
+-		"hasMany",
+-		"clear",
+-		"disconnect",
+-		"serialize",
+-		"deserialize"
+-	].every((method) => typeof keyv$1[method] === "function");
+-}
+-//#endregion
+diff --git a/dist/index.mjs b/dist/index.mjs
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -2,1 +2,1 @@
++import { detectKeyv } from "keyv";
+-import { Keyv } from "keyv";
+@@ -592,19 +592,2 @@
++	return detectKeyv(keyv).compatible;
++}//#endregion
+-	if (keyv === null || keyv === void 0) return false;
+-	if (keyv instanceof Keyv) return true;
+-	return [
+-		"generateIterator",
+-		"get",
+-		"getMany",
+-		"set",
+-		"setMany",
+-		"delete",
+-		"deleteMany",
+-		"has",
+-		"hasMany",
+-		"clear",
+-		"disconnect",
+-		"serialize",
+-		"deserialize"
+-	].every((method) => typeof keyv[method] === "function");
+-}
+-//#endregion
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -30,2 +30,2 @@
++    "hashery": "3.0.6",
++    "keyv": "6.1.0"
+-    "hashery": "^1.5.1",
+-    "keyv": "^5.6.0"
+@@ -56,1 +56,1 @@
+-}
+\ No newline at end of file
++}

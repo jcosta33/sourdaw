@@ -77,11 +77,11 @@ const COMMAND_DIGESTS = {
     // The admission step carries the Grand Boule gate only. The whole-engine
     // capability gate stays on the recorded reference-machine table, enforced
     // by `pnpm test:release-inventory` in the nightly train and the release
-    // proof (ADR 0038); this
-    // workflow measures on a shared hosted runner whose fresh numbers cannot
-    // host that comparison (issue #4076: ~250% of budget on every run since
-    // 2026-09-09 versus 84-88% recorded).
-    admission: '2c38b515189aa00511017d87d0ff4b7d11c00121e774bc6d0c4bb6b75a029455',
+    // proof (ADR 0038).
+    // Historical shared-runner results (#4076) do not establish current public
+    // runner capacity. Evaluate the fresh qualified candidate against the
+    // unchanged whole-engine bound before adopting its retained table.
+    admission: 'a3a3f76d3cc85f3a693c5a818fe183d9687187b3e7da0d322a2647bc8a5b3a92',
     assembly: '5bded47b1e78876ed27bd63d81a47a8a6576ca5f4658ef6ef82d32c069343ea3',
 } as const;
 

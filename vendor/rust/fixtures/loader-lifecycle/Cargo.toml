@@ -1,0 +1,13 @@
+[package]
+name = "sourdaw-plugin-loader-lifecycle"
+version = "0.0.0"
+edition = "2021"
+publish = false
+[workspace]
+[dependencies]
+daw-plugin-host = { path = "../../../../crates/daw-plugin-host" }
+[build-dependencies]
+cc = "=1.11.2"
+
+[patch.crates-io]
+libloading = { path = "../../libloading-0.9.1" }

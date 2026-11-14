@@ -62,7 +62,7 @@ function assertGateCannotSkip(gate: WorkflowRecord): void {
     if (env.DRAFT !== GATE_DRAFT_ENV) {
         throw new Error('Gate must read the event draft flag');
     }
-    for (const job of ['scope', 'e2e-build', 'validation', 'affected', 'codeql']) {
+    for (const job of ['scope', 'e2e-build', 'validation', 'affected', 'codeql', 'desktop-packaging']) {
         if (!needs.includes(job)) {
             throw new Error('Gate must fail unless the selected checks succeeded');
         }
@@ -84,7 +84,7 @@ function assertNonDraftHeavyChecks(jobs: WorkflowRecord): void {
         if (!waitsForScope) {
             throw new Error(`health-gates.yml job ${jobId} must wait for the non-draft scope`);
         }
-        if (jobId === 'e2e-build' || jobId === 'affected') {
+        if (jobId === 'e2e-build' || jobId === 'affected' || jobId === 'desktop-packaging') {
             const condition = typeof record.if === 'string' ? record.if : '';
             if (!condition.includes(NON_DRAFT_CONDITION)) {
                 throw new Error('the heavy checks must run only for a non-draft pull request');

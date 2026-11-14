@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -55,7 +55,7 @@
+   },
+   "dependencies": {
+     "debug": "^4.4.1",
+-    "eslint-import-context": "^0.1.8",
++    "eslint-import-context": "^0.2.1",
+     "get-tsconfig": "^4.10.1",
+     "is-bun-module": "^2.0.0",
+     "stable-hash-x": "^0.2.0",

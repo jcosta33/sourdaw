@@ -1,0 +1,16 @@
+import type { MLCEngine, MLCEngineInterface, AppConfig } from '@mlc-ai/web-llm';
+import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
+export function useContracts(device: GPUDevice, info: GPUAdapterInfo, engine: MLCEngine, api: MLCEngineInterface, config: AppConfig) {
+ return [new WebGPUBackend(device, info), engine, api, config, navigator.gpu];
+}
+export async function actualGpuUses(canvas: HTMLCanvasElement) {
+ const adapter = await navigator.gpu.requestAdapter({powerPreference:'high-performance',featureLevel:'core'});
+ if (!adapter) return null;
+ const {maxComputeWorkgroupStorageSize,maxComputeWorkgroupsPerDimension,maxStorageBufferBindingSize,maxBufferSize,maxComputeWorkgroupSizeX,maxComputeInvocationsPerWorkgroup} = adapter.limits;
+ const device = await adapter.requestDevice({requiredFeatures:['timestamp-query','bgra8unorm-storage'], requiredLimits:{maxComputeWorkgroupStorageSize,maxComputeWorkgroupsPerDimension,maxStorageBufferBindingSize,maxBufferSize,maxComputeWorkgroupSizeX,maxComputeInvocationsPerWorkgroup}});
+ const context = canvas.getContext('webgpu');
+ context?.configure({device,format:navigator.gpu.getPreferredCanvasFormat()});
+ const b = device.createBuffer({size:32,usage:GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.VERTEX | GPUBufferUsage.UNIFORM});
+ const texture = device.createTexture({size:{width:10,height:10},format:'rgba8unorm',usage:GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT});
+ return [b,texture,adapter.info.isFallbackAdapter,device.lost];
+}

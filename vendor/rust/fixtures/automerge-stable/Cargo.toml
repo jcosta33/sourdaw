@@ -1,0 +1,31 @@
+[package]
+name = "sourdaw-automerge-stable-fixtures"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+automerge = "=0.12.0"
+hexane = "=0.2.1"
+
+# Intended destination vendor/rust/fixtures/automerge-stable.
+# These paths resolve after the byte-proven capsules are integrated.
+[patch.crates-io]
+automerge = { path = "../../automerge-0.12.0" }
+hexane = { path = "../../hexane-0.2.1" }
+getrandom = { path = "../../getrandom-0.4.3" }
+tracing-attributes = { path = "../../tracing-attributes-0.1.31" }
+
+[[test]]
+name = "stable_consumer"
+path = "stable_consumer.rs"
+
+[[test]]
+name = "timestamp_extremes"
+path = "timestamp_extremes.rs"
+
+[[test]]
+name = "host32"
+path = "host32.rs"

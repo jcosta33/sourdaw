@@ -77,6 +77,7 @@ const ISOLATED_UNIT_STEPS = [
     'Set up Node',
     'Prepare isolated unit account',
     'Install dependencies',
+    'Prepare isolated native compiler',
     'Install Chromium',
     'Run shard',
     'Report shard failure',
@@ -177,15 +178,21 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         validation: null,
         affected: null,
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
+        'desktop-packaging': [
+            ...SETUP_NODE,
+            'Install native build dependencies',
+            'Build configured desktop packages',
+            'Verify packaged payloads',
+        ],
         gate: ['Require selected checks to succeed'],
     },
     'validation.yml': {
         decide: ['Filter changed paths', 'Retry changed-paths filter after a transient API failure', 'Resolve scope'],
         static: [...SETUP_NODE, ...VALIDATION_STATIC_SUITE_STEPS],
-        lint: [...SETUP_NODE, 'Lint'],
+        lint: [...SETUP_NODE, 'Prepare native compiler', 'Lint'],
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
         unit: ISOLATED_UNIT_STEPS,
-        'tooling-unit': [...SETUP_NODE, 'Run script suite'],
+        'tooling-unit': [...SETUP_NODE, 'Prepare native compiler', 'Run script suite'],
         smoke: [...SETUP_NODE, 'Verify preinstalled browser runtime', 'Run offline smoke set'],
         build: [...SETUP_NODE, 'Build'],
         rust: [
@@ -197,10 +204,15 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Cache Cargo dependencies',
             'Install server dependencies',
             'Server and Rust workspace health gates',
+            'Install fixture libclang',
+            'Install the pinned WASI Preview1 standard library',
+            'Observe native and WASI Rust consumer fixtures',
         ],
         'native-macos': [
             ...NATIVE_MACOS_STEPS,
             'Set up Node for native mutation proof',
+            'Select fixture libclang',
+            'Observe native Rust consumer fixtures',
             'Verify native transport mutation sensitivity',
             'Upload native transport mutation evidence',
         ],
@@ -210,6 +222,10 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Cache cargo build',
             'Cache the cargo registry index',
             'Test the audio crates',
+            'Set up Node for Rust consumer fixtures',
+            'Select fixture libclang',
+            'Compile the Windows native consumer',
+            'Observe native Rust consumer fixtures',
         ],
         'native-parity': [
             'Checkout',
@@ -223,6 +239,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Require the built addon the parity specs probe for',
             'Run the addon parity specs',
         ],
+        'native-typescript-windows': [...SETUP_NODE, 'Prepare native compiler', 'Verify native Windows private cache'],
         'dependency-review': ['Review dependency changes'],
         'pr-secrets': [
             'Checkout trusted scanner',
@@ -243,7 +260,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     'nightly.yml': {
         decide: ['Resolve scope'],
         static: [...SETUP_PNPM_NODE, ...NIGHTLY_STATIC_SUITE_STEPS],
-        lint: [...SETUP_PNPM_NODE, 'Lint'],
+        lint: [...SETUP_PNPM_NODE, 'Prepare native compiler', 'Lint'],
         boundaries: [...SETUP_PNPM_NODE, 'Validate the dependency graph'],
         unit: ISOLATED_UNIT_STEPS,
         build: [...SETUP_PNPM_NODE, 'Build'],
@@ -362,6 +379,11 @@ function pin(workflow: string, job: string, step: string, condition: string): Co
 }
 
 export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
+    ...[
+        'Install fixture libclang',
+        'Install the pinned WASI Preview1 standard library',
+        'Observe native and WASI Rust consumer fixtures',
+    ].map((step) => pin('validation.yml', 'rust', step, "needs.decide.outputs.rust == 'true'")),
     pin('validation.yml', 'native-macos', 'Upload native transport mutation evidence', ALWAYS_EXPRESSION),
     pin('health-gates.yml', 'gate', 'Require selected checks to succeed', ALWAYS_EXPRESSION),
     pin('validation.yml', 'validation-gate', 'Require selected validation jobs to succeed', ALWAYS_EXPRESSION),

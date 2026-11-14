@@ -60,7 +60,7 @@ export const CREDENTIALLESS_CHECKOUTS: JobPins<readonly string[]> = {
         validate: ['Checkout trusted default-branch reporter'],
         publish: ['Checkout trusted default-branch repository context'],
     },
-    'health-gates.yml': { scope: ['Checkout'], 'e2e-build': ['Checkout'] },
+    'health-gates.yml': { scope: ['Checkout'], 'e2e-build': ['Checkout'], 'desktop-packaging': ['Checkout'] },
     'heavy-gates.yml': { e2e: ['Checkout'] },
     'nightly.yml': {
         unit: ['Checkout'],
@@ -88,6 +88,7 @@ export const REQUIRED_CHECK_OWNER = { workflow: 'health-gates.yml', job: 'gate' 
 // names that may carry an expression, each pinned exactly; every one opens with
 // a literal prefix, so no matrix value or output can evaluate it to Gate.
 export const JOB_NAME_EXPRESSION_PINS: JobPins<string> = {
+    'health-gates.yml': { 'desktop-packaging': 'Desktop packaging (${{ matrix.runner }})' },
     'heavy-gates.yml': { e2e: 'Affected end-to-end ${{ matrix.id }}' },
     'nightly.yml': {
         unit: 'Unit suite ${{ matrix.shard }}/4',

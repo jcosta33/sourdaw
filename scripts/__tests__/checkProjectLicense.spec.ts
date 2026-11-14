@@ -2,6 +2,9 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
     chmodSync,
+    cpSync,
+    truncateSync,
+    unlinkSync,
     existsSync,
     mkdirSync,
     mkdtempSync,
@@ -12,7 +15,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { gzipSync } from 'node:zlib';
+import { gzipSync, gunzipSync } from 'node:zlib';
 
 import { Header, Pax } from 'tar';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -28,6 +31,9 @@ import {
     validateServerThirdPartyNotices,
 } from '../checkProjectLicense';
 import {
+    cargoRegistryArchiveSource,
+    type CargoRuntimeInventorySnapshot,
+    type DependencyLicenseProofSourceManifest,
     assertLicenseExpressionEvidence,
     expectedProofIdentities,
     collectNpmLockDependencyLicenses,
@@ -49,6 +55,8 @@ import {
     type DependencyLicenseRecord,
 } from '../dependencyLicenseReport';
 import { parsePnpmLock } from '../pnpmLock';
+import { inspectCargoLocalPatch, type SourceManifest } from '../cargoLocalPatchProof';
+import { parseJsonWithUniqueKeys } from '../strictJson';
 
 const ownershipFiles = [
     '.dependency-cruiser.cjs',
@@ -327,7 +335,18 @@ describe('project license', () => {
         const legalReference = { label: legalFile.label, sha256: legalFile.sha256 };
         write(root, 'pnpm-lock.yaml', `lockfileVersion: '9.0'\npackages:\n${lockPackages.join('\n')}\n`);
         write(root, 'server/package-lock.json', '{"packages":{}}\n');
-        write(root, 'Cargo.lock', '');
+        const cargoArchive = gzipSync(
+            Buffer.concat([
+                encodeTarEntry('fixture-cargo-1.0.0/LICENSE', 'File', Buffer.from(legalContents)),
+                Buffer.alloc(1024),
+            ])
+        );
+        const cargoChecksum = createHash('sha256').update(cargoArchive).digest('hex');
+        write(
+            root,
+            'Cargo.lock',
+            `[[package]]\nname = "fixture-cargo"\nversion = "1.0.0"\nsource = "registry+https://index.crates.io/"\nchecksum = "${cargoChecksum}"\n`
+        );
         write(root, 'release/spdx-license-texts/MIT.txt', legalContents);
         write(
             root,
@@ -1373,5 +1392,539 @@ describe('project license', () => {
         expect(validateServerThirdPartyNotices(root, expected)).toEqual([
             `${SERVER_THIRD_PARTY_NOTICES_PATH}: third-party notices missing`,
         ]);
+    });
+});
+
+describe('registered locally modified Cargo source', () => {
+    function localFixture() {
+        const sourceRoot = process.cwd();
+        const fixture = mkdtempSync(join(tmpdir(), 'sourdaw-local-cargo-license-'));
+        const sources = parseJsonWithUniqueKeys<SourceManifest>(
+            readFileSync(join(sourceRoot, 'vendor/rust/sources.json'), 'utf8'),
+            'genuine fixture source manifest'
+        );
+        const source = sources.sources.find((candidate) => candidate.package === 'cexpr');
+        if (!source) throw new Error('Genuine cexpr source capsule is required');
+        const archive = `release/dependency-license-proofs/cexpr-${source.version}.crate`;
+        const write = (path: string, bytes: string | Buffer) => {
+            mkdirSync(dirname(join(fixture, path)), { recursive: true });
+            writeFileSync(join(fixture, path), bytes);
+        };
+        cpSync(join(sourceRoot, source.directory), join(fixture, source.directory), { recursive: true });
+        write(`vendor/rust/${source.patch}`, readFileSync(join(sourceRoot, 'vendor/rust', source.patch)));
+        write(
+            archive,
+            readFileSync(
+                join(sourceRoot, 'scripts/__tests__/fixtures/local-cargo-proof', `cexpr-${source.version}.crate`)
+            )
+        );
+        write('vendor/rust/sources.json', JSON.stringify({ schemaVersion: 1, sources: [source] }));
+        write(
+            'Cargo.toml',
+            `[workspace]\nresolver = "2"\n[patch.crates-io]\ncexpr = { path = "${source.directory}" }\n`
+        );
+        // This is the real generated lock, not hand-invented registry checksums or a Cargo execution.
+        write('Cargo.lock', readFileSync(join(sourceRoot, 'Cargo.lock')));
+        const pkg = {
+            name: 'cexpr',
+            version: source.version,
+            manifestPath: join(fixture, source.directory, 'Cargo.toml'),
+        };
+        const inspect = () => inspectCargoLocalPatch(fixture, pkg);
+        return { root: fixture, write, source, pkg, inspect, archive };
+    }
+
+    it('authenticates a genuine path-patched source without manufacturing a registry checksum', () => {
+        const f = localFixture();
+        try {
+            const local = f.inspect();
+            const record: DependencyLicenseRecord = {
+                ecosystem: 'cargo',
+                name: f.pkg.name,
+                version: f.pkg.version,
+                license: f.source.license,
+                cargoSource: null,
+                cargoLocalPatch: local.provenance,
+                legalFiles: local.legalFiles,
+                graphs: ['Cargo.lock'],
+            };
+            // The old expectedProofIdentities rejects this exact null source as non-registry.
+            expect(expectedProofIdentities(f.root, record)).toEqual([
+                { source: cargoRegistryArchiveSource(record), revision: `sha256:${f.source.upstreamArchiveSha256}` },
+            ]);
+            expect(record.cargoSource).toBeNull();
+            expect(local.provenance.kind).toBe('local-patch');
+            const originalProof: DependencyLicenseProof = {
+                source: cargoRegistryArchiveSource(record),
+                revision: `sha256:${f.source.upstreamArchiveSha256}`,
+                localPatch: local.provenance,
+                files: local.provenance.legalFiles.map((file) => ({
+                    archivePath: f.archive,
+                    sourcePath: file.path,
+                    sha256: file.originalSha256,
+                })),
+            };
+            const originalLegal = validateDependencyLicenseProof(f.root, record, originalProof);
+            expect(originalLegal.length).toBe(local.legalFiles.length);
+            expect(originalLegal.map(({ sha256 }) => sha256).sort()).toEqual(
+                local.provenance.legalFiles.map(({ originalSha256 }) => originalSha256).sort()
+            );
+            const report = renderDependencyLicenseReport([record]);
+            expect(report).toContain('locally modified vendor/rust/cexpr-');
+            expect(report).toContain(`original archive sha256:${f.source.upstreamArchiveSha256}`);
+            expect(report).toContain(`source tree sha256:${local.provenance.sourceTreeSha256}`);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+
+    it('replays Git-format recipes when private scratch is inside a repository', () => {
+        const f = localFixture();
+        const previousTemp = process.env.TMPDIR;
+        try {
+            execFileSync('git', ['init', '--quiet', f.root]);
+            process.env.TMPDIR = f.root;
+            const original = gunzipSync(readFileSync(join(f.root, 'vendor/rust', f.source.patch))).toString('utf8');
+            const decoded = Buffer.from(
+                original.replace(
+                    /^--- a\/([^\n]+)\n\+\+\+ b\/([^\n]+)$/gmu,
+                    (_header, before: string, after: string) => {
+                        const change = f.source.changedFiles.find(({ path }) => path === before);
+                        if (!change || before !== after) throw new Error('Expected the genuine same-path recipe');
+                        const prefix = `diff --git a/${before} b/${after}\n`;
+                        return change.original_sha256 === null
+                            ? `${prefix}new file mode 100644\n--- /dev/null\n+++ b/${after}`
+                            : `${prefix}--- a/${before}\n+++ b/${after}`;
+                    }
+                )
+            );
+            expect(decoded.toString('utf8')).toContain('diff --git a/Cargo.toml b/Cargo.toml');
+            const compressed = gzipSync(decoded);
+            f.write(`vendor/rust/${f.source.patch}`, compressed);
+            f.source.patchSha256 = createHash('sha256').update(compressed).digest('hex');
+            f.source.patchContentSha256 = createHash('sha256').update(decoded).digest('hex');
+            f.write('vendor/rust/sources.json', JSON.stringify({ schemaVersion: 1, sources: [f.source] }));
+            expect(f.inspect().provenance.sourceTreeSha256).toMatch(/^[a-f0-9]{64}$/u);
+        } finally {
+            if (previousTemp === undefined) delete process.env.TMPDIR;
+            else process.env.TMPDIR = previousTemp;
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a modified Rust source while the lock and source record remain unchanged', () => {
+        const f = localFixture();
+        try {
+            const local = f.inspect();
+            f.write(
+                `${f.source.directory}/src/lib.rs`,
+                `${readFileSync(join(f.root, f.source.directory, 'src/lib.rs'), 'utf8')}\npub fn unrecorded_source_change() {}\n`
+            );
+            expect(f.inspect).toThrow(/modified source capsule bytes drifted/);
+            expect(() => inspectCargoLocalPatch(f.root, f.pkg, local.provenance)).toThrow(
+                /modified source capsule bytes drifted/
+            );
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+
+    it.each(['archive', 'compressed patch', 'decoded patch'])('refuses %s identity drift', (subject) => {
+        const f = localFixture();
+        try {
+            f.inspect();
+            if (subject === 'archive')
+                f.write(f.archive, Buffer.concat([readFileSync(join(f.root, f.archive)), Buffer.from('drift')]));
+            else if (subject === 'compressed patch')
+                f.write(`vendor/rust/${f.source.patch}`, Buffer.from('not the recorded patch'));
+            else {
+                const changed = gzipSync(
+                    Buffer.concat([
+                        gunzipSync(readFileSync(join(f.root, 'vendor/rust', f.source.patch))),
+                        Buffer.from('\nchanged recipe\n'),
+                    ])
+                );
+                f.write(`vendor/rust/${f.source.patch}`, changed);
+                f.source.patchSha256 = createHash('sha256').update(changed).digest('hex');
+                f.write('vendor/rust/sources.json', JSON.stringify({ schemaVersion: 1, sources: [f.source] }));
+            }
+            expect(f.inspect).toThrow(
+                /archive checksum drifted|compressed patch checksum drifted|decoded patch checksum drifted/
+            );
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses legal wording changes even when their recipe and changed-file hashes are updated', () => {
+        const f = localFixture();
+        try {
+            f.inspect();
+            const path = 'LICENSE-MIT';
+            const before = readFileSync(join(f.root, f.source.directory, path));
+            const after = Buffer.concat([before, Buffer.from('Unapproved additional legal wording.\n')]);
+            const oldCount = before.toString('utf8').split('\n').length - 1;
+            const hunk = `--- a/${path}\n+++ b/${path}\n@@ -${oldCount},0 +${oldCount + 1} @@\n+Unapproved additional legal wording.\n`;
+            const decoded = Buffer.concat([
+                gunzipSync(readFileSync(join(f.root, 'vendor/rust', f.source.patch))),
+                Buffer.from(hunk),
+            ]);
+            const compressed = gzipSync(decoded);
+            f.write(`${f.source.directory}/${path}`, after);
+            f.write(`vendor/rust/${f.source.patch}`, compressed);
+            f.source.patchSha256 = createHash('sha256').update(compressed).digest('hex');
+            f.source.patchContentSha256 = createHash('sha256').update(decoded).digest('hex');
+            f.source.changedFiles.push({
+                path,
+                original_sha256: createHash('sha256').update(before).digest('hex'),
+                patched_sha256: createHash('sha256').update(after).digest('hex'),
+            });
+            f.write('vendor/rust/sources.json', JSON.stringify({ schemaVersion: 1, sources: [f.source] }));
+            expect(f.inspect).toThrow(/original legal wording drifted/);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses unapproved EOF normalization outside the admitted reqwest capsule', () => {
+        const f = localFixture();
+        try {
+            f.inspect();
+            const path = 'LICENSE-MIT';
+            const before = readFileSync(join(f.root, f.source.directory, path));
+            expect(before.at(-1)).toBe(10);
+            const after = before.subarray(0, -1);
+            const oldCount = before.toString('utf8').split('\n').length - 1;
+            const finalLine = before.toString('utf8').split('\n').at(-2)!;
+            const hunk = `--- a/${path}\n+++ b/${path}\n@@ -${oldCount} +${oldCount} @@\n-${finalLine}\n+${finalLine}\n\\ No newline at end of file\n`;
+            const decoded = Buffer.concat([
+                gunzipSync(readFileSync(join(f.root, 'vendor/rust', f.source.patch))),
+                Buffer.from(hunk),
+            ]);
+            const compressed = gzipSync(decoded);
+            f.write(`${f.source.directory}/${path}`, after);
+            f.write(`vendor/rust/${f.source.patch}`, compressed);
+            f.source.patchSha256 = createHash('sha256').update(compressed).digest('hex');
+            f.source.patchContentSha256 = createHash('sha256').update(decoded).digest('hex');
+            f.source.changedFiles.push({
+                path,
+                original_sha256: createHash('sha256').update(before).digest('hex'),
+                patched_sha256: createHash('sha256').update(after).digest('hex'),
+            });
+            f.write('vendor/rust/sources.json', JSON.stringify({ schemaVersion: 1, sources: [f.source] }));
+            expect(f.inspect).toThrow(/original legal wording drifted/);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+
+    function writeLocalSnapshot(f: ReturnType<typeof localFixture>) {
+        const local = f.inspect();
+        const record: DependencyLicenseRecord = {
+            ecosystem: 'cargo',
+            name: f.pkg.name,
+            version: f.pkg.version,
+            license: f.source.license,
+            cargoSource: null,
+            cargoLocalPatch: local.provenance,
+            legalFiles: local.legalFiles,
+            graphs: ['Cargo.lock'],
+        };
+        for (const path of [
+            'electron-builder.yml',
+            'package.json',
+            'rust-toolchain.toml',
+            'scripts/buildNativeAddon.ts',
+        ])
+            f.write(path, readFileSync(join(process.cwd(), path)));
+        const paths = [
+            'Cargo.toml',
+            'electron-builder.yml',
+            'package.json',
+            'rust-toolchain.toml',
+            'scripts/buildNativeAddon.ts',
+            'vendor/rust/sources.json',
+        ].sort();
+        const references = local.legalFiles.map(({ label, sha256 }) => ({ label, sha256 }));
+        const inventory: CargoRuntimeInventorySnapshot = {
+            cargoLockSha256: createHash('sha256')
+                .update(readFileSync(join(f.root, 'Cargo.lock')))
+                .digest('hex'),
+            sourceInputs: paths.map((path) => ({
+                path,
+                sha256: createHash('sha256')
+                    .update(readFileSync(join(f.root, path)))
+                    .digest('hex'),
+            })),
+            featureSelection: {
+                allFeatures: false,
+                noDefaultFeatures: false,
+                features: [...CARGO_RUNTIME_FEATURE_SELECTION.features],
+            },
+            packages: [
+                {
+                    name: record.name,
+                    version: record.version,
+                    source: null,
+                    localPatch: local.provenance,
+                    license: record.license,
+                    legalFiles: references,
+                    reportedLegalFiles: references,
+                },
+            ],
+        };
+        const manifest: DependencyLicenseProofSourceManifest = {
+            schemaVersion: 5,
+            cargoRuntimeInventory: inventory,
+            packages: {},
+        };
+        f.write(DEPENDENCY_LICENSE_PROOFS_PATH, JSON.stringify(manifest));
+        f.write(DEPENDENCY_LICENSE_REPORT_PATH, renderDependencyLicenseReport([record]));
+        return { record, manifest };
+    }
+
+    it('replays a genuine local-source snapshot offline and rejects stale source bytes', () => {
+        const f = localFixture();
+        try {
+            const { record } = writeLocalSnapshot(f);
+            const collected = collectCargoDependencyLicenses(f.root);
+            expect(collected).toHaveLength(1);
+            expect(collected[0]?.cargoSource).toBeNull();
+            expect(collected[0]?.cargoLocalPatch).toEqual(record.cargoLocalPatch);
+            f.write(
+                `${f.source.directory}/src/lib.rs`,
+                `${readFileSync(join(f.root, f.source.directory, 'src/lib.rs'), 'utf8')}\npub fn offline_drift() {}\n`
+            );
+            expect(() => collectCargoDependencyLicenses(f.root)).toThrow(/modified source capsule bytes drifted/);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a local source in registry-only schema 4 and a tampered schema 5 source fingerprint', () => {
+        const f = localFixture();
+        try {
+            const { manifest } = writeLocalSnapshot(f);
+            f.write(DEPENDENCY_LICENSE_PROOFS_PATH, JSON.stringify({ ...manifest, schemaVersion: 4 }));
+            expect(() => collectCargoDependencyLicenses(f.root)).toThrow(
+                /local patch sources require schema version 5/
+            );
+            const proofOnlySchema4 = structuredClone(manifest);
+            proofOnlySchema4.schemaVersion = 4;
+            const registryRow = proofOnlySchema4.cargoRuntimeInventory!.packages[0]!;
+            const localProof = registryRow.localPatch!;
+            registryRow.source = 'registry+https://index.crates.io/';
+            delete registryRow.localPatch;
+            f.write(DEPENDENCY_LICENSE_PROOFS_PATH, JSON.stringify(proofOnlySchema4));
+            expect(readDependencyLicenseProofManifest(f.root).schemaVersion).toBe(4);
+            proofOnlySchema4.packages[`cargo:cexpr@${f.pkg.version}`] = {
+                source: cargoRegistryArchiveSource(f.pkg),
+                revision: `sha256:${f.source.upstreamArchiveSha256}`,
+                localPatch: localProof,
+            };
+            f.write(DEPENDENCY_LICENSE_PROOFS_PATH, JSON.stringify(proofOnlySchema4));
+            expect(() => readDependencyLicenseProofManifest(f.root)).toThrow(
+                /local patch sources require schema version 5/
+            );
+            const local = manifest.cargoRuntimeInventory?.packages[0]?.localPatch;
+            if (!local) throw new Error('Local fixture snapshot is missing its subject');
+            local.sourceTreeSha256 = '0'.repeat(64);
+            f.write(DEPENDENCY_LICENSE_PROOFS_PATH, JSON.stringify(manifest));
+            // Keep report assignment in sync so the subject is the authenticated bytes, not row text.
+            const record: DependencyLicenseRecord = {
+                ecosystem: 'cargo',
+                name: f.pkg.name,
+                version: f.pkg.version,
+                license: f.source.license,
+                cargoSource: null,
+                cargoLocalPatch: local,
+                legalFiles: f.inspect().legalFiles,
+                graphs: ['Cargo.lock'],
+            };
+            f.write(DEPENDENCY_LICENSE_REPORT_PATH, renderDependencyLicenseReport([record]));
+            expect(() => collectCargoDependencyLicenses(f.root)).toThrow(
+                /Snapshot-bound local patch provenance drifted/
+            );
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps arbitrary path and git sources refused', () => {
+        const f = localFixture();
+        try {
+            const local = f.inspect();
+            const common: DependencyLicenseRecord = {
+                ecosystem: 'cargo',
+                name: 'cexpr',
+                version: f.pkg.version,
+                license: f.source.license,
+                legalFiles: local.legalFiles,
+            };
+            expect(() => expectedProofIdentities(f.root, { ...common, cargoSource: null })).toThrow(
+                /local patch provenance is missing/
+            );
+            expect(() =>
+                expectedProofIdentities(f.root, {
+                    ...common,
+                    cargoSource: 'git+https://example.invalid/cexpr#revision',
+                })
+            ).toThrow(/not the crates.io registry/);
+            expect(() =>
+                inspectCargoLocalPatch(f.root, { ...f.pkg, manifestPath: join(f.root, 'Cargo.toml') })
+            ).toThrow(/manifest path drifted/);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+    function archiveFixture(f: ReturnType<typeof localFixture>, members: Buffer[]) {
+        const bytes = gzipSync(Buffer.concat([...members, Buffer.alloc(1024)]));
+        f.write(f.archive, bytes);
+        f.source.upstreamArchiveSha256 = createHash('sha256').update(bytes).digest('hex');
+        f.write('vendor/rust/sources.json', JSON.stringify({ schemaVersion: 1, sources: [f.source] }));
+    }
+    it.each([
+        'traversal',
+        'directory traversal',
+        'duplicate',
+        'symbolic link',
+        'hard link',
+        'FIFO',
+        'special permission',
+        'outside package',
+        'malformed tail',
+    ])('refuses real %s archive entries before patch replay', (subject) => {
+        const f = localFixture();
+        try {
+            const prefix = `cexpr-${f.pkg.version}`;
+            const manifest = encodeTarEntry(
+                `${prefix}/Cargo.toml`,
+                'File',
+                readFileSync(join(f.root, f.source.directory, 'Cargo.toml'))
+            );
+            let bad: Buffer;
+            if (subject === 'duplicate') bad = manifest;
+            else if (subject === 'special permission') {
+                bad = Buffer.alloc(512);
+                new Header({ path: `${prefix}/setuid`, type: 'File', size: 0, mode: 0o4755 }).encode(bad);
+            } else if (
+                subject === 'symbolic link' ||
+                subject === 'hard link' ||
+                subject === 'FIFO' ||
+                subject === 'directory traversal'
+            ) {
+                bad = Buffer.alloc(512);
+                new Header({
+                    path: `${prefix}/${subject === 'directory traversal' ? '../escaped/' : 'link'}`,
+                    type:
+                        subject === 'symbolic link'
+                            ? 'SymbolicLink'
+                            : subject === 'hard link'
+                              ? 'Link'
+                              : subject === 'FIFO'
+                                ? 'FIFO'
+                                : 'Directory',
+                    linkpath: subject === 'directory traversal' || subject === 'FIFO' ? '' : '../outside',
+                    size: 0,
+                    mode: 0o644,
+                }).encode(bad);
+            } else if (subject === 'malformed tail') bad = Buffer.alloc(512, 65);
+            else
+                bad = encodeTarEntry(
+                    subject === 'traversal' ? `${prefix}/../../escaped` : 'elsewhere/file',
+                    'File',
+                    Buffer.from('payload')
+                );
+            archiveFixture(f, [manifest, bad]);
+            expect(f.inspect).toThrow(/archive|Noncanonical|TAR_ENTRY_INVALID: checksum failure/);
+            expect(existsSync(join(f.root, 'escaped'))).toBe(false);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+    it('refuses executable-bit drift and source symlinks with unchanged bytes', () => {
+        const f = localFixture();
+        try {
+            f.inspect();
+            const path = join(f.root, f.source.directory, 'src/lib.rs');
+            chmodSync(path, 0o755);
+            expect(f.inspect).toThrow(/modified source capsule bytes drifted/);
+            chmodSync(path, 0o644);
+            const bytes = readFileSync(path);
+            f.write('aliased-source.rs', bytes);
+            unlinkSync(path);
+            symlinkSync(join(f.root, 'aliased-source.rs'), path);
+            expect(f.inspect).toThrow(/source symlink is unsupported/);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+    it('refuses symlinked metadata aliases and incomplete root patch registrations', () => {
+        const f = localFixture();
+        try {
+            symlinkSync(f.pkg.manifestPath, join(f.root, 'manifest-alias.toml'));
+            expect(() =>
+                inspectCargoLocalPatch(f.root, { ...f.pkg, manifestPath: join(f.root, 'manifest-alias.toml') })
+            ).toThrow(/manifest path drifted/);
+            f.write(
+                'Cargo.toml',
+                `[workspace]\n[patch.crates-io]\ncexpr = { path = "${f.source.directory}" }\nunregistered = { path = "vendor/rust/unregistered" }\n`
+            );
+            expect(f.inspect).toThrow(/complete root patch table/);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+    it('refuses oversized compressed archives before reading their contents', () => {
+        const f = localFixture();
+        try {
+            truncateSync(join(f.root, f.archive), 64 * 1024 * 1024 + 1);
+            expect(f.inspect).toThrow(/regular-file size bound/);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+    it('refuses gzip expansion beyond the original source size bound', () => {
+        const f = localFixture();
+        try {
+            const bomb = gzipSync(Buffer.alloc(256 * 1024 * 1024 + 1), { level: 1 });
+            f.write(f.archive, bomb);
+            f.source.upstreamArchiveSha256 = createHash('sha256').update(bomb).digest('hex');
+            f.write('vendor/rust/sources.json', JSON.stringify({ schemaVersion: 1, sources: [f.source] }));
+            expect(f.inspect).toThrow(/Cannot create a Buffer larger|larger than|output length|size/i);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses unrecorded recipe outputs after real native Git patch replay', () => {
+        const f = localFixture();
+        try {
+            const decoded = Buffer.concat([
+                gunzipSync(readFileSync(join(f.root, 'vendor/rust', f.source.patch))),
+                Buffer.from('--- /dev/null\n+++ b/unrecorded.rs\n@@ -0,0 +1 @@\n+not recorded\n'),
+            ]);
+            const compressed = gzipSync(decoded);
+            f.write(`vendor/rust/${f.source.patch}`, compressed);
+            f.source.patchSha256 = createHash('sha256').update(compressed).digest('hex');
+            f.source.patchContentSha256 = createHash('sha256').update(decoded).digest('hex');
+            f.write('vendor/rust/sources.json', JSON.stringify({ schemaVersion: 1, sources: [f.source] }));
+            expect(f.inspect).toThrow(/modifies an unrecorded input: unrecorded.rs/);
+            expect(existsSync(join(f.root, 'unrecorded.rs'))).toBe(false);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+    it('refuses local license metadata drift even when the offline report row agrees', () => {
+        const f = localFixture();
+        try {
+            const { manifest, record } = writeLocalSnapshot(f);
+            manifest.cargoRuntimeInventory!.packages[0]!.license = 'MIT';
+            f.write(DEPENDENCY_LICENSE_PROOFS_PATH, JSON.stringify(manifest));
+            f.write(DEPENDENCY_LICENSE_REPORT_PATH, renderDependencyLicenseReport([{ ...record, license: 'MIT' }]));
+            expect(() => collectCargoDependencyLicenses(f.root)).toThrow(/local patch license declaration drifted/);
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
     });
 });

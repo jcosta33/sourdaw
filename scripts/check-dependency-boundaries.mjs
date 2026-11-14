@@ -6,8 +6,13 @@ import { existsSync, lstatSync, readFileSync, readdirSync, statSync, writeFileSy
 import { dirname, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import * as ts from 'typescript/unstable/ast';
+import { API, DiagnosticCategory, SignatureKind, SymbolFlags, TypeFlags } from 'typescript/unstable/sync';
+
+import { readNativeSource, readNativeSources, requireNativeSyntax } from './nativeTypeScript.ts';
+
 const require = createRequire(import.meta.url);
-const ts = require('typescript');
+
 const {
     MODEL_PATH_PREFIX,
     MODEL_SUPPORT_BARREL_PATH,
@@ -178,7 +183,7 @@ export function collectCausalEdges(cruise) {
 }
 
 export function findMixedTypeValueExports(sourceText, fileName = 'index.ts') {
-    const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const sourceFile = requireNativeSyntax(readNativeSource(fileName, sourceText));
     return findMixedTypeValueExportsInSourceFile(sourceFile, fileName);
 }
 
@@ -384,7 +389,17 @@ function referencedSymbol(context, node) {
 function shadowsCommonJsRuntime(sourceFile, declaration) {
     return (
         declaration.getSourceFile() === sourceFile &&
-        ts.isDeclaration(declaration) &&
+        (ts.isVariableDeclaration(declaration) ||
+            ts.isParameterDeclaration(declaration) ||
+            ts.isBindingElement(declaration) ||
+            ts.isFunctionDeclaration(declaration) ||
+            ts.isClassDeclaration(declaration) ||
+            ts.isEnumDeclaration(declaration) ||
+            ts.isModuleDeclaration(declaration) ||
+            ts.isImportClause(declaration) ||
+            ts.isImportSpecifier(declaration) ||
+            ts.isNamespaceImport(declaration) ||
+            ts.isImportEqualsDeclaration(declaration)) &&
         (declaration.flags & ts.NodeFlags.Ambient) === 0
     );
 }
@@ -393,7 +408,7 @@ function shadowsCommonJsRuntime(sourceFile, declaration) {
 // ambient one.
 function isAmbientIdentifier(context, sourceFile, node) {
     const symbol = referencedSymbol(context, node);
-    return !(symbol?.declarations ?? []).some((declaration) => shadowsCommonJsRuntime(sourceFile, declaration));
+    return !declarationsOf(symbol).some((declaration) => shadowsCommonJsRuntime(sourceFile, declaration));
 }
 
 // A declaration's own name introduces the identifier instead of reading it, so `interface Options {
@@ -415,7 +430,7 @@ function isDeclarationNamePosition(node) {
     ) {
         return true;
     }
-    return ts.isDeclaration(parent) && parent.name === node;
+    return !ts.isPropertyAccessExpression(parent) && parent.name === node;
 }
 
 function isGlobalObjectReference(expression) {
@@ -470,63 +485,142 @@ function findCommonJsSurfaceFindings({ checker, repositoryRoot, sourceFile }) {
         ) {
             report(node);
         }
-        ts.forEachChild(node, visit);
+        node.forEachChild(visit);
     };
     visit(sourceFile);
     return [...findings.values()];
 }
 
 function createRepositoryTypeEnvironment(repositoryRoot) {
-    const options = {
-        allowJs: true,
-        allowSyntheticDefaultImports: true,
-        baseUrl: repositoryRoot,
-        checkJs: true,
-        esModuleInterop: true,
-        jsx: ts.JsxEmit.Preserve,
-        module: ts.ModuleKind.NodeNext,
-        moduleResolution: ts.ModuleResolutionKind.NodeNext,
-        noEmit: true,
-        paths: { '#/*': ['src/*'] },
-        resolveJsonModule: true,
-        skipLibCheck: true,
-        strict: true,
-        target: ts.ScriptTarget.ES2022,
-        types: [],
-    };
-    const compilerHost = ts.createCompilerHost(options, true);
-    return { compilerHost, options };
+    return { repositoryRoot };
 }
 
-function createRepositoryTypeProgram(rootPaths, environment) {
-    const program = ts.createProgram({
-        host: environment.compilerHost,
-        options: environment.options,
-        rootNames: [...new Set(rootPaths.map(normalizeFileName))],
+function withRepositoryTypeProgram(rootPaths, environment, operation) {
+    const config = resolve(environment.repositoryRoot, '.agents-native-boundaries.tsconfig.json');
+    const contents = JSON.stringify({
+        compilerOptions: {
+            allowJs: true,
+            allowSyntheticDefaultImports: true,
+            checkJs: true,
+            esModuleInterop: true,
+            jsx: 'preserve',
+            module: 'nodenext',
+            moduleResolution: 'nodenext',
+            noEmit: true,
+            paths: { '#/*': ['./src/*'] },
+            resolveJsonModule: true,
+            skipLibCheck: true,
+            strict: true,
+            target: 'es2022',
+            types: [],
+        },
+        files: [...new Set(rootPaths.map(normalizeFileName))],
     });
-    return { checker: program.getTypeChecker(), program };
+    const api = new API({
+        cwd: environment.repositoryRoot,
+        fs: {
+            fileExists: (path) => (normalizeFileName(path) === normalizeFileName(config) ? true : undefined),
+            readFile: (path) => (normalizeFileName(path) === normalizeFileName(config) ? contents : undefined),
+        },
+    });
+    let snapshot;
+    try {
+        snapshot = api.updateSnapshot({ openProjects: [config] });
+        const project = snapshot.getProject(config);
+        if (!project) {
+            throw new Error('Native boundary type project did not open');
+        }
+        const errors = [
+            ...project.program.getConfigFileParsingDiagnostics(),
+            ...project.program.getProgramDiagnostics(),
+            ...project.program.getSyntacticDiagnostics(),
+        ].filter((item) => item.category === DiagnosticCategory.Error);
+        if (errors.length > 0) {
+            throw new Error(errors.map((item) => `${item.fileName ?? config}: ${item.text}`).join('\n'));
+        }
+        return operation(project);
+    } finally {
+        try {
+            snapshot?.dispose();
+        } finally {
+            api.close();
+        }
+    }
 }
 
-function resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, options, moduleResolutionHost) {
-    const isRelativeSpecifier = moduleSpecifier.startsWith('.');
-    const basePath = isRelativeSpecifier ? resolve(dirname(normalizeFileName(containingFile)), moduleSpecifier) : null;
-    if (basePath && sourceFilePath.test(toPosixPath(basePath)) && existsSync(basePath)) {
-        return normalizeFileName(basePath);
-    }
-    try {
-        const resolved = ts.resolveModuleName(
-            moduleSpecifier,
-            normalizeFileName(containingFile),
-            options,
-            moduleResolutionHost
-        ).resolvedModule;
-        if (resolved?.resolvedFileName) {
-            return normalizeFileName(resolved.resolvedFileName);
+function programSources(program) {
+    return program.getSourceFileNames().map((path) => {
+        const source = program.getSourceFile(path);
+        if (!source) {
+            throw new Error(`Native boundary program omitted ${path}`);
         }
-    } catch {
-        // Fall through to the explicit source-extension probe below.
+        return source;
+    });
+}
+
+function declarationsOf(symbol) {
+    return (symbol?.declarations ?? []).map((handle) => {
+        const declaration = handle.resolve();
+        if (!declaration) {
+            throw new Error(`Native declaration handle did not resolve: ${symbol.name}`);
+        }
+        return declaration;
+    });
+}
+
+function declarationLocation(symbol, fallback) {
+    const handle = symbol.valueDeclaration ?? symbol.declarations[0];
+    if (!handle) {
+        return fallback;
     }
-    if (!isRelativeSpecifier || !basePath) {
+    const declaration = handle.resolve();
+    if (!declaration) {
+        throw new Error(`Native declaration handle did not resolve: ${symbol.name}`);
+    }
+    return declaration;
+}
+
+function resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, project) {
+    // An explicitly named existing source wins over extension substitution, as in the original audit.
+    const explicitPath = moduleSpecifier.startsWith('.')
+        ? resolve(dirname(normalizeFileName(containingFile)), moduleSpecifier)
+        : null;
+    if (
+        explicitPath &&
+        sourceFilePath.test(toPosixPath(explicitPath)) &&
+        existsSync(explicitPath) &&
+        statSync(explicitPath).isFile()
+    ) {
+        return normalizeFileName(explicitPath);
+    }
+    const source = project.program.getSourceFile(normalizeFileName(containingFile));
+    if (!source) {
+        throw new Error(`Native boundary program omitted ${containingFile}`);
+    }
+    for (const node of source.imports) {
+        if (moduleSpecifierText(node) !== moduleSpecifier) {
+            continue;
+        }
+        const symbol = project.checker.getSymbolAtLocation(node);
+        if (!symbol || project.checker.isUnknownSymbol(symbol)) {
+            continue;
+        }
+        const target = symbol.flags & SymbolFlags.Alias ? project.checker.getAliasedSymbol(symbol) : symbol;
+        for (const declaration of declarationsOf(target)) {
+            const file = declaration.getSourceFile();
+            if (file) {
+                return normalizeFileName(file.fileName);
+            }
+        }
+    }
+    // Preserve the existing explicit source-extension route where NodeNext declines an
+    // extensionless local spelling. Native symbols, never a text guess, own type identity.
+    const basePath = moduleSpecifier.startsWith('.')
+        ? resolve(dirname(normalizeFileName(containingFile)), moduleSpecifier)
+        : moduleSpecifier.startsWith('#/')
+          ? resolve(dirname(project.configFileName), 'src', moduleSpecifier.slice(2))
+          : null;
+    if (!basePath) {
         return null;
     }
     const candidates = [
@@ -538,8 +632,11 @@ function resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, optio
             (entry) => resolve(basePath, entry)
         ),
     ];
-    const existingPath = candidates.find((candidate) => existsSync(candidate));
-    return existingPath ? normalizeFileName(existingPath) : null;
+    const existing = candidates.find((path) => existsSync(path) && statSync(path).isFile());
+    if (!existing) {
+        throw new Error(`Unresolved boundary import ${moduleSpecifier} in ${containingFile}`);
+    }
+    return normalizeFileName(existing);
 }
 
 function collectConsumerTargets(sourceFile, resolveModuleSpecifier) {
@@ -595,23 +692,15 @@ function collectConsumerTargets(sourceFile, resolveModuleSpecifier) {
                 }
             }
         }
-        ts.forEachChild(node, visit);
+        node.forEachChild(visit);
     };
     visit(sourceFile);
     return targets;
 }
 
-function findRepositoryConsumerPaths(
-    repositoryRoot,
-    sourcePaths,
-    sourceFilesByPath,
-    checker,
-    options,
-    compilerHost,
-    targetsByFile
-) {
+function findRepositoryConsumerPaths(repositoryRoot, sourcePaths, sourceFilesByPath, project, targetsByFile) {
     const resolveModuleSpecifier = (moduleSpecifier, containingFile) =>
-        resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, options, compilerHost);
+        resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, project);
     return sourcePaths.filter((filePath) => {
         if (isRepositorySourceFile(repositoryRoot, filePath)) {
             return false;
@@ -645,16 +734,15 @@ function addToSetMap(map, key, value) {
     map.set(key, values);
 }
 
-function createRepositoryTypeContext(repositoryRoot, program, environment) {
+function createRepositoryTypeContext(repositoryRoot, program, project) {
     return {
-        checker: program.getTypeChecker(),
-        compilerHost: environment.compilerHost,
+        checker: project.checker,
+        project,
         declarationsByFile: new Map(),
         directVendorFiles: new Set(),
         moduleExportsByFile: new Map(),
-        options: environment.options,
         programSourceFiles: new Map(
-            program.getSourceFiles().map((sourceFile) => [normalizeFileName(sourceFile.fileName), sourceFile])
+            programSources(program).map((sourceFile) => [normalizeFileName(sourceFile.fileName), sourceFile])
         ),
         recordsByFile: new Map(),
         repositoryRoot,
@@ -685,9 +773,8 @@ function projectDeclarationsForReferencedSymbol(context, node) {
     }
     const declarations = new Set();
     try {
-        const referencedSymbol =
-            symbol.flags & ts.SymbolFlags.Alias ? context.checker.getAliasedSymbol(symbol) : symbol;
-        for (const declaration of referencedSymbol.declarations ?? []) {
+        const referencedSymbol = symbol.flags & SymbolFlags.Alias ? context.checker.getAliasedSymbol(symbol) : symbol;
+        for (const declaration of declarationsOf(referencedSymbol)) {
             const fileName = declaration.getSourceFile?.().fileName ?? '';
             if (!isTypeScriptLibraryFile(fileName) && !isExternalDeclarationFile(fileName)) {
                 declarations.add(declaration);
@@ -696,7 +783,7 @@ function projectDeclarationsForReferencedSymbol(context, node) {
     } catch {
         // Unresolved aliases can still be followed through their import syntax below.
     }
-    for (const declaration of symbol.declarations ?? []) {
+    for (const declaration of declarationsOf(symbol)) {
         if (!ts.isImportSpecifier(declaration)) {
             continue;
         }
@@ -706,12 +793,7 @@ function projectDeclarationsForReferencedSymbol(context, node) {
         }
         const moduleSpecifier = moduleSpecifierText(importDeclaration.moduleSpecifier);
         const targetFile = moduleSpecifier
-            ? resolveRepositoryModuleSpecifier(
-                  moduleSpecifier,
-                  declaration.getSourceFile().fileName,
-                  context.options,
-                  context.compilerHost
-              )
+            ? resolveRepositoryModuleSpecifier(moduleSpecifier, declaration.getSourceFile().fileName, context.project)
             : null;
         if (!targetFile || !isRepositorySourceFile(context.repositoryRoot, targetFile)) {
             continue;
@@ -751,12 +833,7 @@ function registerVendorModule(context, moduleSpecifier, containingFile) {
     const vendorModule = tauriVendorModule(moduleSpecifier);
     if (vendorModule) {
         context.directVendorFiles.add(normalizeFileName(containingFile));
-        const resolvedFile = resolveRepositoryModuleSpecifier(
-            moduleSpecifier,
-            containingFile,
-            context.options,
-            context.compilerHost
-        );
+        const resolvedFile = resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, context.project);
         if (resolvedFile) {
             addToSetMap(context.vendorModulesByFile, resolvedFile, vendorModule);
         }
@@ -776,8 +853,8 @@ function collectSyntaxVendorModules(context, node, sourceFile, { includeImplemen
     };
     const visitJSDoc = (current) => {
         for (const tag of ts.getJSDocTags(current)) {
-            if (tag.typeExpression?.type) {
-                visit(tag.typeExpression.type);
+            if (tag.typeExpression) {
+                visit(tag.typeExpression);
             }
         }
     };
@@ -788,7 +865,7 @@ function collectSyntaxVendorModules(context, node, sourceFile, { includeImplemen
     const visitSignature = (current) => {
         for (const typeParameter of current.typeParameters ?? []) {
             visit(typeParameter.constraint);
-            visit(typeParameter.default);
+            visit(typeParameter.defaultType);
         }
         for (const parameter of current.parameters ?? []) {
             visitParameter(parameter);
@@ -799,7 +876,7 @@ function collectSyntaxVendorModules(context, node, sourceFile, { includeImplemen
         if (isPrivateMember(member)) {
             return;
         }
-        if (ts.isPropertyDeclaration(member) || ts.isPropertySignature(member)) {
+        if (ts.isPropertyDeclaration(member) || ts.isPropertySignatureDeclaration(member)) {
             visitJSDoc(member);
             visit(member.type);
             return;
@@ -849,7 +926,7 @@ function collectSyntaxVendorModules(context, node, sourceFile, { includeImplemen
                     visit(aliasedDeclaration);
                 }
             }
-            ts.forEachChild(current, visit);
+            current.forEachChild(visit);
             return;
         }
         if (ts.isVariableDeclaration(current)) {
@@ -860,7 +937,7 @@ function collectSyntaxVendorModules(context, node, sourceFile, { includeImplemen
             } else if (
                 initializer &&
                 (ts.isAsExpression(initializer) ||
-                    ts.isTypeAssertionExpression(initializer) ||
+                    ts.isTypeAssertion(initializer) ||
                     ts.isSatisfiesExpression(initializer))
             ) {
                 visit(initializer.type);
@@ -870,14 +947,14 @@ function collectSyntaxVendorModules(context, node, sourceFile, { includeImplemen
             }
             return;
         }
-        if (ts.isFunctionLike(current)) {
+        if (ts.isSignatureDeclaration(current)) {
             visitSignature(current);
             return;
         }
         if (ts.isClassDeclaration(current) || ts.isClassExpression(current)) {
             for (const typeParameter of current.typeParameters ?? []) {
                 visit(typeParameter.constraint);
-                visit(typeParameter.default);
+                visit(typeParameter.defaultType);
             }
             for (const heritageClause of current.heritageClauses ?? []) {
                 visit(heritageClause);
@@ -887,7 +964,7 @@ function collectSyntaxVendorModules(context, node, sourceFile, { includeImplemen
             }
             return;
         }
-        ts.forEachChild(current, visit);
+        current.forEachChild(visit);
     };
     visit(node);
     return modules;
@@ -979,7 +1056,7 @@ function collectVendorMetadata(context, sourceFiles) {
                     }
                 }
             }
-            ts.forEachChild(node, visit);
+            node.forEachChild(visit);
         };
         visit(sourceFile);
     }
@@ -1023,7 +1100,7 @@ function addDeclarationRecord(context, sourceFile, statement, declaration, expor
 
 function collectExportRecords(context, sourceFile) {
     const resolveModuleSpecifier = (moduleSpecifier, containingFile) =>
-        resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, context.options, context.compilerHost);
+        resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, context.project);
 
     for (const statement of sourceFile.statements) {
         if (ts.isExportDeclaration(statement)) {
@@ -1111,9 +1188,10 @@ function moduleExportSymbols(context, fileName) {
     }
     const sourceFile = context.programSourceFiles.get(normalizedFileName);
     let symbols = [];
-    if (sourceFile?.symbol) {
+    const moduleSymbol = sourceFile ? context.checker.getSymbolAtLocation(sourceFile) : undefined;
+    if (moduleSymbol) {
         try {
-            symbols = context.checker.getExportsOfModule(sourceFile.symbol);
+            symbols = context.checker.getExportsOfModule(moduleSymbol);
         } catch {
             symbols = [];
         }
@@ -1183,7 +1261,7 @@ function symbolForRecord(context, record, seenRecords = new Set()) {
         }
     }
     const sourceFile = context.programSourceFiles.get(record.fileName);
-    if (sourceFile?.symbol && record.exportedName !== '*' && record.exportedName !== 'export=') {
+    if (sourceFile && record.exportedName !== '*' && record.exportedName !== 'export=') {
         const moduleSymbol = moduleExportSymbols(context, record.fileName).find(
             (symbol) => symbol.name === record.exportedName
         );
@@ -1207,7 +1285,7 @@ function collectVendorModulesFromSymbol(context, symbol, sourceFileName, modules
     }
     seenSymbols.add(symbol);
     let resolved = true;
-    if (symbol.flags & ts.SymbolFlags.Alias) {
+    if (symbol.flags & SymbolFlags.Alias) {
         try {
             const aliasedSymbol = context.checker.getAliasedSymbol(symbol);
             resolved = collectVendorModulesFromSymbol(
@@ -1222,11 +1300,11 @@ function collectVendorModulesFromSymbol(context, symbol, sourceFileName, modules
             resolved = false;
         }
     }
-    const symbolSourceFile = symbol.declarations?.[0]?.getSourceFile?.();
+    const symbolSourceFile = declarationsOf(symbol)[0]?.getSourceFile();
     if (isTypeScriptLibraryFile(symbolSourceFile?.fileName ?? '')) {
         return resolved;
     }
-    for (const declaration of symbol.declarations ?? []) {
+    for (const declaration of declarationsOf(symbol)) {
         const declarationSourceFile = declaration.getSourceFile?.() ?? context.programSourceFiles.get(sourceFileName);
         for (const moduleSpecifier of collectSyntaxVendorModules(context, declaration, declarationSourceFile)) {
             modules.add(moduleSpecifier);
@@ -1235,8 +1313,7 @@ function collectVendorModulesFromSymbol(context, symbol, sourceFileName, modules
             modules.add(moduleSpecifier);
         }
     }
-    const location =
-        symbol.valueDeclaration ?? symbol.declarations?.[0] ?? context.programSourceFiles.get(sourceFileName);
+    const location = declarationLocation(symbol, context.programSourceFiles.get(sourceFileName));
     if (!location) {
         return false;
     }
@@ -1251,7 +1328,7 @@ function collectVendorModulesFromSymbol(context, symbol, sourceFileName, modules
     let declaredTypeResolved = true;
     if (
         symbol.flags &
-        (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class | ts.SymbolFlags.TypeParameter)
+        (SymbolFlags.TypeAlias | SymbolFlags.Interface | SymbolFlags.Class | SymbolFlags.TypeParameter)
     ) {
         declaredTypeResolved = collectTypeSafely(
             context,
@@ -1268,11 +1345,11 @@ function collectVendorModulesFromSymbol(context, symbol, sourceFileName, modules
 function collectTypeSafely(context, getType, location, modules, seenTypes, seenSymbols) {
     try {
         const type = getType();
-        if (!type) {
+        if (!type || type.isErrorType()) {
             return false;
         }
         collectVendorModulesFromType(context, type, location, modules, seenTypes, seenSymbols);
-        return !(type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown));
+        return !(type.flags & (TypeFlags.Any | TypeFlags.Unknown));
     } catch {
         return false;
     }
@@ -1287,7 +1364,7 @@ function collectFactoryPublicType(context, record, modules, seenTypes, seenSymbo
         return false;
     }
     const [factoryArgument] = initializer.arguments;
-    if (!ts.isFunctionLike(factoryArgument)) {
+    if (!ts.isSignatureDeclaration(factoryArgument)) {
         return false;
     }
     return collectTypeSafely(
@@ -1305,19 +1382,23 @@ function collectVendorModulesFromType(context, type, location, modules, seenType
         return;
     }
     seenTypes.add(type);
-    const typeSourceFile = type.symbol?.declarations?.[0]?.getSourceFile?.();
+    const typeSourceFile = declarationsOf(type.getSymbol())[0]?.getSourceFile();
     const isLibraryType = isTypeScriptLibraryFile(typeSourceFile?.fileName ?? '');
     const isExternalType = isExternalDeclarationFile(typeSourceFile?.fileName ?? '');
     const locationSourceFile = location.getSourceFile?.() ?? context.programSourceFiles.get(location.fileName);
     const locationFileName = locationSourceFile?.fileName ?? location.fileName;
-    collectVendorModulesFromSymbol(context, type.symbol, locationFileName, modules, seenSymbols, seenTypes);
-    collectVendorModulesFromSymbol(context, type.aliasSymbol, locationFileName, modules, seenSymbols, seenTypes);
+    collectVendorModulesFromSymbol(context, type.getSymbol(), locationFileName, modules, seenSymbols, seenTypes);
+    collectVendorModulesFromSymbol(context, type.getAliasSymbol(), locationFileName, modules, seenSymbols, seenTypes);
     for (const nestedType of [
-        ...(type.types ?? []),
-        ...(type.typeArguments ?? []),
-        ...(type.aliasTypeArguments ?? []),
-        type.constraint,
-        type.default,
+        ...(type.isUnionType() || type.isIntersectionType() ? type.getTypes() : []),
+        ...(type.isTypeReference() ? context.checker.getTypeArguments(type) : []),
+        ...type.getAliasTypeArguments(),
+        ...(type.isTypeParameter() ? [context.checker.getConstraintOfTypeParameter(type)] : []),
+        ...declarationsOf(type.getSymbol()).flatMap((declaration) =>
+            ts.isTypeParameterDeclaration(declaration) && declaration.defaultType
+                ? [context.checker.getTypeFromTypeNode(declaration.defaultType)]
+                : []
+        ),
     ].filter(Boolean)) {
         collectVendorModulesFromType(context, nestedType, location, modules, seenTypes, seenSymbols);
     }
@@ -1329,9 +1410,12 @@ function collectVendorModulesFromType(context, type, location, modules, seenType
     // outside `src`. Skipping those signatures would lose the only route to a Tauri type carried by
     // a third-party callable interface.
     if (!isLibraryType) {
-        for (const signature of [...(type.getCallSignatures?.() ?? []), ...(type.getConstructSignatures?.() ?? [])]) {
-            for (const parameter of signature.parameters) {
-                const parameterLocation = parameter.valueDeclaration ?? location;
+        for (const signature of [
+            ...context.checker.getSignaturesOfType(type, SignatureKind.Call),
+            ...context.checker.getSignaturesOfType(type, SignatureKind.Construct),
+        ]) {
+            for (const parameter of signature.getParameters()) {
+                const parameterLocation = declarationLocation(parameter, location);
                 collectTypeSafely(
                     context,
                     // Not the `AtLocation` variant: it mints a fresh Type object per call, which
@@ -1344,11 +1428,18 @@ function collectVendorModulesFromType(context, type, location, modules, seenType
                     seenSymbols
                 );
             }
-            collectVendorModulesFromType(context, signature.getReturnType(), location, modules, seenTypes, seenSymbols);
-            for (const typeParameter of signature.typeParameters ?? []) {
+            collectVendorModulesFromType(
+                context,
+                context.checker.getReturnTypeOfSignature(signature),
+                location,
+                modules,
+                seenTypes,
+                seenSymbols
+            );
+            for (const typeParameter of signature.getTypeParameters()) {
                 collectVendorModulesFromSymbol(
                     context,
-                    typeParameter,
+                    typeParameter.getSymbol(),
                     locationFileName,
                     modules,
                     seenSymbols,
@@ -1358,8 +1449,8 @@ function collectVendorModulesFromType(context, type, location, modules, seenType
         }
     }
     if (!isLibraryType && !isExternalType) {
-        for (const property of type.getProperties?.() ?? []) {
-            const propertyLocation = property.valueDeclaration ?? property.declarations?.[0] ?? location;
+        for (const property of context.checker.getPropertiesOfType(type)) {
+            const propertyLocation = declarationLocation(property, location);
             if (isPrivateMember(propertyLocation)) {
                 continue;
             }
@@ -1373,13 +1464,19 @@ function collectVendorModulesFromType(context, type, location, modules, seenType
             );
         }
     }
-    if (!isLibraryType && !isExternalType && type.symbol?.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface)) {
-        try {
-            for (const baseType of context.checker.getBaseTypes(type) ?? []) {
-                collectVendorModulesFromType(context, baseType, location, modules, seenTypes, seenSymbols);
-            }
-        } catch {
-            // Not every class-like type has a base-type query.
+    const typeSymbol = type.getSymbol();
+    if (
+        !isLibraryType &&
+        !isExternalType &&
+        typeSymbol &&
+        typeSymbol.flags & (SymbolFlags.Class | SymbolFlags.Interface)
+    ) {
+        const subject = type.isClassOrInterface() ? type : type.isTypeReference() ? type.getTarget() : undefined;
+        if (!subject?.isClassOrInterface()) {
+            throw new Error(`Unable to resolve native class/interface target: ${context.checker.typeToString(type)}`);
+        }
+        for (const baseType of context.checker.getBaseTypes(subject)) {
+            collectVendorModulesFromType(context, baseType, location, modules, seenTypes, seenSymbols);
         }
     }
 }
@@ -1466,15 +1563,15 @@ function collectRepositoryTauriTypeFindings(
     repositorySourcePaths,
     consumerTargetsByFile,
     program,
-    environment
+    project
 ) {
-    const context = createRepositoryTypeContext(repositoryRoot, program, environment);
+    const context = createRepositoryTypeContext(repositoryRoot, program, project);
     const sourceFiles = repositorySourcePaths
         .map((filePath) => context.programSourceFiles.get(normalizeFileName(filePath)))
         .filter(Boolean);
     collectVendorMetadata(context, sourceFiles);
     const resolveModuleSpecifier = (moduleSpecifier, containingFile) =>
-        resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, context.options, context.compilerHost);
+        resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, context.project);
     const repositoryDependencies = new Map(
         sourceFiles.map((sourceFile) => [
             normalizeFileName(sourceFile.fileName),
@@ -1600,7 +1697,7 @@ const contractReexportRule = {
     name: 'no-models-repos-transformers-in-contract-folders',
 };
 
-function collectContractReexportRows({ files, repositoryRoot, sourceFilesByPath, options, compilerHost }) {
+function collectContractReexportRows({ files, repositoryRoot, sourceFilesByPath, project }) {
     const rowsByKey = new Map();
     for (const { absolutePath, repoPath } of files) {
         if (!contractFolderPath.test(repoPath)) {
@@ -1639,18 +1736,13 @@ function collectContractReexportRows({ files, repositoryRoot, sourceFilesByPath,
                     importSpecifiersByLocalName.set(node.name.text, moduleSpecifier);
                 }
             }
-            ts.forEachChild(node, visitImports);
+            node.forEachChild(visitImports);
         };
         visitImports(sourceFile);
         const privateRowBySpecifier = new Map();
         const privateRowForSpecifier = (moduleSpecifier) => {
             if (!privateRowBySpecifier.has(moduleSpecifier)) {
-                const targetFile = resolveRepositoryModuleSpecifier(
-                    moduleSpecifier,
-                    sourceFile.fileName,
-                    options,
-                    compilerHost
-                );
+                const targetFile = resolveRepositoryModuleSpecifier(moduleSpecifier, sourceFile.fileName, project);
                 const targetPath = targetFile ? toPosixPath(relative(repositoryRoot, targetFile)) : null;
                 privateRowBySpecifier.set(
                     moduleSpecifier,
@@ -1698,7 +1790,7 @@ function collectContractReexportRows({ files, repositoryRoot, sourceFilesByPath,
                     addRow(privateRowForSpecifier(importedSpecifier));
                 }
             }
-            ts.forEachChild(node, visit);
+            node.forEachChild(visit);
         };
         visit(sourceFile);
     }
@@ -1717,20 +1809,24 @@ export function findContractReexportFindings(repositoryRoot = root) {
     const sourcePaths = allSourcePaths.filter((absolutePath) =>
         sourceFilePath.test(toPosixPath(relative(repositoryRoot, absolutePath)))
     );
+    if (sourcePaths.length === 0) {
+        return [];
+    }
     const environment = createRepositoryTypeEnvironment(repositoryRoot);
-    const { program } = createRepositoryTypeProgram(sourcePaths, environment);
-    const sourceFilesByPath = new Map(
-        program.getSourceFiles().map((sourceFile) => [normalizeFileName(sourceFile.fileName), sourceFile])
-    );
-    return sortRows(
-        collectContractReexportRows({
-            files,
-            repositoryRoot,
-            sourceFilesByPath,
-            options: environment.options,
-            compilerHost: environment.compilerHost,
-        })
-    );
+    return withRepositoryTypeProgram(sourcePaths, environment, (project) => {
+        const { program } = project;
+        const sourceFilesByPath = new Map(
+            programSources(program).map((sourceFile) => [normalizeFileName(sourceFile.fileName), sourceFile])
+        );
+        return sortRows(
+            collectContractReexportRows({
+                files,
+                repositoryRoot,
+                sourceFilesByPath,
+                project,
+            })
+        );
+    });
 }
 
 // Module tiers: `.dependency-cruiser.module-tiers.cjs` places every module in a tier and says which
@@ -1796,7 +1892,7 @@ function collectModuleSpecifiers(sourceFile) {
         } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
             add(node.argument.literal);
         }
-        ts.forEachChild(node, visit);
+        node.forEachChild(visit);
     };
     visit(sourceFile);
     return specifiers;
@@ -2082,7 +2178,7 @@ function collectWorkerSpawns(sourceFile) {
         if (ts.isNewExpression(node) && isWorkerConstructor(node.expression)) {
             spawns.push({ target: workerUrlLiteral(node.arguments?.[0]), line: lineOf(node) });
         }
-        ts.forEachChild(node, visit);
+        node.forEachChild(visit);
     };
     visit(sourceFile);
     for (const { text, line } of collectModuleSpecifiers(sourceFile)) {
@@ -2133,28 +2229,17 @@ export function findWorkerSpawnState(repositoryRoot = root) {
         absolutePath,
         repoPath: toPosixPath(relative(repositoryRoot, absolutePath)),
     }));
-    const sourceFileFor = (absolutePath) =>
-        ts.createSourceFile(
-            absolutePath,
-            readFileSync(absolutePath, 'utf8'),
-            ts.ScriptTarget.Latest,
-            true,
-            scriptKindFor(absolutePath)
-        );
+    const parsed = readNativeSources(
+        files
+            .filter(({ repoPath }) => isWorkerSpawnOrigin(repoPath))
+            .map(({ absolutePath }) => ({ path: absolutePath, text: readFileSync(absolutePath, 'utf8') }))
+    );
+    const sourceFileFor = (absolutePath) => {
+        const source = parsed.get(absolutePath);
+        if (!source) throw new Error(`Native source snapshot omitted ${absolutePath}`);
+        return requireNativeSyntax(source);
+    };
     return computeWorkerSpawnRows({ files, sourceFileFor });
-}
-
-function scriptKindFor(fileName) {
-    if (/\.tsx$/i.test(fileName)) {
-        return ts.ScriptKind.TSX;
-    }
-    if (/\.jsx$/i.test(fileName)) {
-        return ts.ScriptKind.JSX;
-    }
-    if (/\.[mc]?js$/i.test(fileName)) {
-        return ts.ScriptKind.JS;
-    }
-    return ts.ScriptKind.TS;
 }
 
 export function findModuleTierState(repositoryRoot = root, manifest = loadModuleTierManifest(repositoryRoot)) {
@@ -2162,14 +2247,16 @@ export function findModuleTierState(repositoryRoot = root, manifest = loadModule
         absolutePath,
         repoPath: toPosixPath(relative(repositoryRoot, absolutePath)),
     }));
-    const sourceFileFor = (absolutePath) =>
-        ts.createSourceFile(
-            absolutePath,
-            readFileSync(absolutePath, 'utf8'),
-            ts.ScriptTarget.Latest,
-            true,
-            scriptKindFor(absolutePath)
-        );
+    const parsed = readNativeSources(
+        files
+            .filter(({ repoPath }) => isModuleEdgeOrigin(repoPath))
+            .map(({ absolutePath }) => ({ path: absolutePath, text: readFileSync(absolutePath, 'utf8') }))
+    );
+    const sourceFileFor = (absolutePath) => {
+        const source = parsed.get(absolutePath);
+        if (!source) throw new Error(`Native source snapshot omitted ${absolutePath}`);
+        return requireNativeSyntax(source);
+    };
     return collectModuleTierState({ repositoryRoot, files, sourceFileFor, manifest });
 }
 
@@ -2198,75 +2285,80 @@ function buildStaticGuardState(repositoryRoot) {
     const sourcePaths = allSourcePaths.filter((absolutePath) =>
         sourceFilePath.test(toPosixPath(relative(repositoryRoot, absolutePath)))
     );
+    if (sourcePaths.length === 0) {
+        return {
+            findings: [...rootIndexes, ...symlinkFindings],
+            contractReexportRows: [],
+            files,
+            sourceFiles: [],
+            sourceFileFor: (path) => {
+                throw new Error(`Source absent from empty boundary program: ${path}`);
+            },
+        };
+    }
     const environment = createRepositoryTypeEnvironment(repositoryRoot);
-    const { program } = createRepositoryTypeProgram(sourcePaths, environment);
-    const checker = program.getTypeChecker();
-    const sourceFilesByPath = new Map(
-        program.getSourceFiles().map((sourceFile) => [normalizeFileName(sourceFile.fileName), sourceFile])
-    );
-    const mixedExports = files
-        .filter(({ repoPath }) => isUseCaseBarrel(repoPath))
-        .flatMap(({ absolutePath, repoPath }) => {
+    return withRepositoryTypeProgram(sourcePaths, environment, (project) => {
+        const { program, checker } = project;
+        const sourceFilesByPath = new Map(
+            programSources(program).map((sourceFile) => [normalizeFileName(sourceFile.fileName), sourceFile])
+        );
+        const mixedExports = files
+            .filter(({ repoPath }) => isUseCaseBarrel(repoPath))
+            .flatMap(({ absolutePath, repoPath }) => {
+                const sourceFile = sourceFilesByPath.get(normalizeFileName(absolutePath));
+                return sourceFile
+                    ? findMixedTypeValueExportsInSourceFile(sourceFile, repoPath).map((finding) => ({
+                          ...finding,
+                          reason: 'split mixed value/type exports so type-edge rules can inspect the type export',
+                      }))
+                    : [];
+            });
+        const commonJsFindings = sourcePaths.flatMap((absolutePath) => {
             const sourceFile = sourceFilesByPath.get(normalizeFileName(absolutePath));
-            return sourceFile
-                ? findMixedTypeValueExportsInSourceFile(sourceFile, repoPath).map((finding) => ({
-                      ...finding,
-                      reason: 'split mixed value/type exports so type-edge rules can inspect the type export',
-                  }))
-                : [];
+            return sourceFile ? findCommonJsSurfaceFindings({ checker, repositoryRoot, sourceFile }) : [];
         });
-    const commonJsFindings = sourcePaths.flatMap((absolutePath) => {
-        const sourceFile = sourceFilesByPath.get(normalizeFileName(absolutePath));
-        return sourceFile ? findCommonJsSurfaceFindings({ checker, repositoryRoot, sourceFile }) : [];
+        const repositorySourcePaths = sourcePaths.filter((filePath) =>
+            isRepositorySourceFile(repositoryRoot, filePath)
+        );
+        const consumerTargetsByFile = new Map();
+        findRepositoryConsumerPaths(repositoryRoot, sourcePaths, sourceFilesByPath, project, consumerTargetsByFile);
+        const repositoryTypeFindings = collectRepositoryTauriTypeFindings(
+            repositoryRoot,
+            repositorySourcePaths,
+            consumerTargetsByFile,
+            program,
+            project
+        );
+        const contractReexportRows = collectContractReexportRows({
+            files,
+            repositoryRoot,
+            sourceFilesByPath,
+            project,
+        });
+        // Dependency-cruiser only reports nodes reachable from imports. Walk every
+        // module file here so an unreferenced model path cannot evade the naming gate.
+        const modelCasingFindings = findModelCasingFindings(files.map(({ repoPath }) => repoPath));
+        // Dependency-cruiser sees resolved edges, so inspect repository declarations to close type laundering through local aliases.
+        const findings = [
+            ...commonJsFindings,
+            ...rootIndexes,
+            ...mixedExports,
+            ...modelCasingFindings,
+            ...repositoryTypeFindings,
+            ...symlinkFindings,
+        ].sort(
+            (left, right) =>
+                comparePaths(left.file, right.file) ||
+                (left.line ?? 0) - (right.line ?? 0) ||
+                comparePaths(left.reason, right.reason)
+        );
+        const sourceFileFor = (absolutePath) => sourceFilesByPath.get(normalizeFileName(absolutePath));
+        const sourceFiles = sourcePaths.map((absolutePath) => ({
+            absolutePath,
+            repoPath: toPosixPath(relative(repositoryRoot, absolutePath)),
+        }));
+        return { findings, contractReexportRows, files, sourceFiles, sourceFileFor };
     });
-    const repositorySourcePaths = sourcePaths.filter((filePath) => isRepositorySourceFile(repositoryRoot, filePath));
-    const consumerTargetsByFile = new Map();
-    findRepositoryConsumerPaths(
-        repositoryRoot,
-        sourcePaths,
-        sourceFilesByPath,
-        checker,
-        environment.options,
-        environment.compilerHost,
-        consumerTargetsByFile
-    );
-    const repositoryTypeFindings = collectRepositoryTauriTypeFindings(
-        repositoryRoot,
-        repositorySourcePaths,
-        consumerTargetsByFile,
-        program,
-        environment
-    );
-    const contractReexportRows = collectContractReexportRows({
-        files,
-        repositoryRoot,
-        sourceFilesByPath,
-        options: environment.options,
-        compilerHost: environment.compilerHost,
-    });
-    // Dependency-cruiser only reports nodes reachable from imports. Walk every
-    // module file here so an unreferenced model path cannot evade the naming gate.
-    const modelCasingFindings = findModelCasingFindings(files.map(({ repoPath }) => repoPath));
-    // Dependency-cruiser sees resolved edges, so inspect repository declarations to close type laundering through local aliases.
-    const findings = [
-        ...commonJsFindings,
-        ...rootIndexes,
-        ...mixedExports,
-        ...modelCasingFindings,
-        ...repositoryTypeFindings,
-        ...symlinkFindings,
-    ].sort(
-        (left, right) =>
-            comparePaths(left.file, right.file) ||
-            (left.line ?? 0) - (right.line ?? 0) ||
-            comparePaths(left.reason, right.reason)
-    );
-    const sourceFileFor = (absolutePath) => sourceFilesByPath.get(normalizeFileName(absolutePath));
-    const sourceFiles = sourcePaths.map((absolutePath) => ({
-        absolutePath,
-        repoPath: toPosixPath(relative(repositoryRoot, absolutePath)),
-    }));
-    return { findings, contractReexportRows, files, sourceFiles, sourceFileFor };
 }
 
 export function findStaticGuardFindings(repositoryRoot = root) {

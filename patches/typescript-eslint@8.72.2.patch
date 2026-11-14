@@ -1,0 +1,42 @@
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -38,19 +38,6 @@
+ };
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.globs = exports.extensions = exports.config = exports.configs = exports.plugin = exports.parser = void 0;
+-const ts = __importStar(require("typescript"));
+-const [versionMajor, _versionMinor] = ts.versionMajorMinor
+-    .split('.')
+-    .map(Number);
+-if (versionMajor >= 7) {
+-    // eslint-disable-next-line no-console
+-    console.error([
+-        'typescript-eslint does not support TS 7.0.',
+-        'Please see https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6.0 to run typescript-eslint using the TS 6 API.',
+-        "See also https://github.com/typescript-eslint/typescript-eslint/issues/10940 for tracking typescript-eslint's support for TS >=7.1",
+-    ].join('\n'));
+-    throw new Error('typescript-eslint does not support TS 7.0.');
+-}
+ const eslint_plugin_1 = __importDefault(require("@typescript-eslint/eslint-plugin"));
+ const raw_plugin_1 = __importDefault(require("@typescript-eslint/eslint-plugin/use-at-your-own-risk/raw-plugin"));
+ const typescript_estree_1 = require("@typescript-eslint/typescript-estree");
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -48,7 +48,7 @@
+   },
+   "peerDependencies": {
+     "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
+-    "typescript": ">=4.8.4 <6.1.0"
++    "typescript": "7.0.2"
+   },
+   "devDependencies": {
+     "@typescript/native": "npm:typescript@^7.0.2",
+@@ -101,4 +101,4 @@
+     "typecheck:tsc6": "pnpm -w exec nx typecheck:tsc6",
+     "attw-check": "pnpm -w exec nx attw-check"
+   }
+-}
+\ No newline at end of file
++}

@@ -1,0 +1,406 @@
+diff --git a/_packages/native-preview/src/api/async/api.ts b/_packages/native-preview/src/api/async/api.ts
+index 1c8b5d7f0fe4f46636b031ebea965a784af52af5..86fe9b84ee99c59a7606fde78176263e76e75271 100644
+--- a/_packages/native-preview/src/api/async/api.ts
++++ b/_packages/native-preview/src/api/async/api.ts
+@@ -1056,6 +1056,16 @@ export class Checker {
+         return data ? this.objectRegistry.getOrCreateType(data) : undefined;
+     }
+ 
++    /** Resolves native Promise/thenable awaiting; an invalid recursive thenable returns undefined. */
++    async getAwaitedType(type: Type): Promise<Type | undefined> {
++        const data = await this.client.apiRequest<TypeResponse | null>("getAwaitedType", {
++            snapshot: this.snapshotId,
++            project: this.project.id,
++            type: type.id,
++        });
++        return data ? this.objectRegistry.getOrCreateType(data) : undefined;
++    }
++
+     async getNonNullableType(type: Type): Promise<Type | undefined> {
+         const data = await this.client.apiRequest<TypeResponse | null>("getNonNullableType", {
+             snapshot: this.snapshotId,
+diff --git a/_packages/native-preview/src/api/sourceFileCache.ts b/_packages/native-preview/src/api/sourceFileCache.ts
+index b4ee651c5e1e841bc8c8673ff4f60948b7744127..379a1a3a3053a28c6fc0e2e665f2eddfaf4a88a8 100644
+--- a/_packages/native-preview/src/api/sourceFileCache.ts
++++ b/_packages/native-preview/src/api/sourceFileCache.ts
+@@ -94,6 +94,8 @@ export class SourceFileCache {
+      *   - Unchanged projects: retain all refs.
+      */
+     retainForSnapshot(newSnapshotId: number, previousSnapshotId: number, changes: SnapshotChanges | undefined): void {
++        // No server diff means no proof that cached content is unchanged.
++        if (!changes) return;
+         const prevProjectMap = this.snapshotProjectPaths.get(previousSnapshotId);
+         if (!prevProjectMap) return;
+ 
+diff --git a/_packages/native-preview/src/api/sync/api.ts b/_packages/native-preview/src/api/sync/api.ts
+index 1a0296ac771de6c04093d52314ecdabbdd7a450a..ef50ef8457f73c6caf7acbbe8fde891d818d6bf2 100644
+--- a/_packages/native-preview/src/api/sync/api.ts
++++ b/_packages/native-preview/src/api/sync/api.ts
+@@ -1064,6 +1064,16 @@ export class Checker {
+         return data ? this.objectRegistry.getOrCreateType(data) : undefined;
+     }
+ 
++    /** Resolves native Promise/thenable awaiting; an invalid recursive thenable returns undefined. */
++    getAwaitedType(type: Type): Type | undefined {
++        const data = this.client.apiRequest<TypeResponse | null>("getAwaitedType", {
++            snapshot: this.snapshotId,
++            project: this.project.id,
++            type: type.id,
++        });
++        return data ? this.objectRegistry.getOrCreateType(data) : undefined;
++    }
++
+     getNonNullableType(type: Type): Type | undefined {
+         const data = this.client.apiRequest<TypeResponse | null>("getNonNullableType", {
+             snapshot: this.snapshotId,
+diff --git a/_packages/native-preview/test/async/api.test.ts b/_packages/native-preview/test/async/api.test.ts
+index 16b3b00ecbc2116f38351476696e5e5e18d0ff78..70b4f0fc10a9f2674357f0c411ebd49139deaf6a 100644
+--- a/_packages/native-preview/test/async/api.test.ts
++++ b/_packages/native-preview/test/async/api.test.ts
+@@ -5202,8 +5202,61 @@ describe("Timing", () => {
+     });
+ });
+ 
++describe("Checker - getAwaitedType", () => {
++    test("uses native Promise, thenable, union and recursive semantics", async () => {
++        const api = spawnAPI({
++            "/tsconfig.json": JSON.stringify({ compilerOptions: { strict: true, target: "esnext" } }),
++            "/src/awaited.ts": `
++export type PromiseVoid = Promise<void>;
++export type PromiseUndefined = Promise<undefined>;
++export type Nested = Promise<Promise<number | undefined>>;
++export type AnyResult = Promise<any>;
++export type UnknownResult = Promise<unknown>;
++export type NeverResult = Promise<never>;
++export type ThenVoid = { then(callback: (value: void) => unknown): unknown };
++export type ThenNumber = { then(callback: (value: number) => unknown): unknown };
++export type Cycle = { then(callback: (value: Cycle) => unknown): unknown };
++`,
++        });
++        try {
++            const snapshot = await api.updateSnapshot({ openProjects: ["/tsconfig.json"] });
++            try {
++                const project = snapshot.getProject("/tsconfig.json");
++                assert.ok(project);
++                const source = await project.program.getSourceFile("/src/awaited.ts");
++                assert.ok(source);
++                const results = new Map<string, string | undefined>();
++                for (const declaration of source.statements) {
++                    assert.ok(isTypeAliasDeclaration(declaration));
++                    const input = await project.checker.getTypeFromTypeNode(declaration.type);
++                    assert.ok(input);
++                    const result = await project.checker.getAwaitedType(input);
++                    assert.equal(await project.checker.getAwaitedType(input), result, "returned types must retain native registry identity");
++                    results.set(declaration.name.text, result ? await project.checker.typeToString(result) : undefined);
++                }
++                assert.equal(results.get("PromiseVoid"), "void");
++                assert.equal(results.get("PromiseUndefined"), "undefined");
++                assert.equal(results.get("Nested"), "number | undefined");
++                assert.equal(results.get("AnyResult"), "any");
++                assert.equal(results.get("UnknownResult"), "unknown");
++                assert.equal(results.get("NeverResult"), "never");
++                assert.equal(results.get("ThenVoid"), "void");
++                assert.equal(results.get("ThenNumber"), "number");
++                assert.equal(results.get("Cycle"), undefined);
++            }
++            finally {
++                await snapshot.dispose();
++            }
++        }
++        finally {
++            await api.close();
++        }
++    });
++});
++
+ function spawnAPI(files: Record<string, string> = { ...defaultFiles }) {
+     return new API({
++        tsserverPath: process.env.SOURDAW_NATIVE_TS_TEST_COMPILER,
+         cwd: fileURLToPath(new URL("../../../../", import.meta.url).toString()),
+         fs: createVirtualFileSystem(files),
+     });
+diff --git a/_packages/native-preview/test/sync/api.test.ts b/_packages/native-preview/test/sync/api.test.ts
+index 6a90030eb2beeb7d4540c52318119d5c8174ee47..20a7a40060c0a6dc751abffd3de53ade17e4630a 100644
+--- a/_packages/native-preview/test/sync/api.test.ts
++++ b/_packages/native-preview/test/sync/api.test.ts
+@@ -5210,8 +5210,61 @@ describe("Timing", () => {
+     });
+ });
+ 
++describe("Checker - getAwaitedType", () => {
++    test("uses native Promise, thenable, union and recursive semantics", () => {
++        const api = spawnAPI({
++            "/tsconfig.json": JSON.stringify({ compilerOptions: { strict: true, target: "esnext" } }),
++            "/src/awaited.ts": `
++export type PromiseVoid = Promise<void>;
++export type PromiseUndefined = Promise<undefined>;
++export type Nested = Promise<Promise<number | undefined>>;
++export type AnyResult = Promise<any>;
++export type UnknownResult = Promise<unknown>;
++export type NeverResult = Promise<never>;
++export type ThenVoid = { then(callback: (value: void) => unknown): unknown };
++export type ThenNumber = { then(callback: (value: number) => unknown): unknown };
++export type Cycle = { then(callback: (value: Cycle) => unknown): unknown };
++`,
++        });
++        try {
++            const snapshot = api.updateSnapshot({ openProjects: ["/tsconfig.json"] });
++            try {
++                const project = snapshot.getProject("/tsconfig.json");
++                assert.ok(project);
++                const source = project.program.getSourceFile("/src/awaited.ts");
++                assert.ok(source);
++                const results = new Map<string, string | undefined>();
++                for (const declaration of source.statements) {
++                    assert.ok(isTypeAliasDeclaration(declaration));
++                    const input = project.checker.getTypeFromTypeNode(declaration.type);
++                    assert.ok(input);
++                    const result = project.checker.getAwaitedType(input);
++                    assert.equal(project.checker.getAwaitedType(input), result, "returned types must retain native registry identity");
++                    results.set(declaration.name.text, result ? project.checker.typeToString(result) : undefined);
++                }
++                assert.equal(results.get("PromiseVoid"), "void");
++                assert.equal(results.get("PromiseUndefined"), "undefined");
++                assert.equal(results.get("Nested"), "number | undefined");
++                assert.equal(results.get("AnyResult"), "any");
++                assert.equal(results.get("UnknownResult"), "unknown");
++                assert.equal(results.get("NeverResult"), "never");
++                assert.equal(results.get("ThenVoid"), "void");
++                assert.equal(results.get("ThenNumber"), "number");
++                assert.equal(results.get("Cycle"), undefined);
++            }
++            finally {
++                snapshot.dispose();
++            }
++        }
++        finally {
++            api.close();
++        }
++    });
++});
++
+ function spawnAPI(files: Record<string, string> = { ...defaultFiles }) {
+     return new API({
++        tsserverPath: process.env.SOURDAW_NATIVE_TS_TEST_COMPILER,
+         cwd: fileURLToPath(new URL("../../../../", import.meta.url).toString()),
+         fs: createVirtualFileSystem(files),
+     });
+diff --git a/internal/api/proto.go b/internal/api/proto.go
+index 0917c385d6465193ba5b392bac5b5b4847bdfaae..6e8c14e2ce9c3bbfaa3937830434f0fc11511cbb 100644
+--- a/internal/api/proto.go
++++ b/internal/api/proto.go
+@@ -122,6 +122,7 @@ const (
+ 	// Checker methods
+ 	MethodGetContextualType                 Method = "getContextualType"
+ 	MethodGetBaseTypeOfLiteralType          Method = "getBaseTypeOfLiteralType"
++	MethodGetAwaitedType                    Method = "getAwaitedType"
+ 	MethodGetNonNullableType                Method = "getNonNullableType"
+ 	MethodGetTypeFromTypeNode               Method = "getTypeFromTypeNode"
+ 	MethodGetWidenedType                    Method = "getWidenedType"
+@@ -412,6 +413,7 @@ var unmarshalers = map[Method]func([]byte) (any, error){
+ 
+ 	MethodGetContextualType:                 unmarshallerFor[GetContextualTypeParams],
+ 	MethodGetBaseTypeOfLiteralType:          unmarshallerFor[GetBaseTypeOfLiteralTypeParams],
++	MethodGetAwaitedType:                    unmarshallerFor[CheckerTypeParams],
+ 	MethodGetNonNullableType:                unmarshallerFor[GetNonNullableTypeParams],
+ 	MethodGetTypeFromTypeNode:               unmarshallerFor[GetTypeFromTypeNodeParams],
+ 	MethodGetWidenedType:                    unmarshallerFor[GetWidenedTypeParams],
+diff --git a/internal/api/session.go b/internal/api/session.go
+index 7e29c44b6ff6673bea01ca8da6256bfb5630bb9e..c9a299a2ddd3481b95968a4fcb8fc16a33caa543 100644
+--- a/internal/api/session.go
++++ b/internal/api/session.go
+@@ -648,6 +648,8 @@ func (s *Session) HandleRequest(ctx context.Context, method string, params json.
+ 		return s.handleGetContextualType(ctx, parsed.(*GetContextualTypeParams))
+ 	case string(MethodGetBaseTypeOfLiteralType):
+ 		return s.handleGetBaseTypeOfLiteralType(ctx, parsed.(*GetBaseTypeOfLiteralTypeParams))
++	case string(MethodGetAwaitedType):
++		return s.handleGetAwaitedType(ctx, parsed.(*CheckerTypeParams))
+ 	case string(MethodGetNonNullableType):
+ 		return s.handleGetNonNullableType(ctx, parsed.(*GetNonNullableTypeParams))
+ 	case string(MethodGetTypeFromTypeNode):
+@@ -1848,6 +1850,27 @@ func (s *Session) handleGetBaseTypeOfLiteralType(ctx context.Context, params *Ge
+ 	return setup.newTypeResponse(result), nil
+ }
+ 
++// handleGetAwaitedType resolves awaiting through the native checker, including
++// thenable overloads, receiver constraints, generic aliases and recursive types.
++func (s *Session) handleGetAwaitedType(ctx context.Context, params *CheckerTypeParams) (*TypeResponse, error) {
++	setup, err := s.setupChecker(ctx, params.Snapshot, params.Project)
++	if err != nil {
++		return nil, err
++	}
++	defer setup.done()
++
++	t, err := setup.resolveTypeHandle(params.Type)
++	if err != nil {
++		return nil, err
++	}
++
++	result := setup.checker.GetAwaitedType(t)
++	if result == nil {
++		return nil, nil
++	}
++	return setup.newTypeResponse(result), nil
++}
++
+ // handleGetNonNullableType returns the type with null and undefined removed.
+ func (s *Session) handleGetNonNullableType(ctx context.Context, params *GetNonNullableTypeParams) (*TypeResponse, error) {
+ 	setup, err := s.setupChecker(ctx, params.Snapshot, params.Project)
+diff --git a/internal/checker/exports.go b/internal/checker/exports.go
+index 90162bdaeb6c4285c852738315c404b2c7c11ff4..25dbcbdeb40c8841372ddeb0c63fe685fff61c77 100644
+--- a/internal/checker/exports.go
++++ b/internal/checker/exports.go
+@@ -54,6 +54,11 @@ func (c *Checker) GetESSymbolType() *Type {
+ 	return c.esSymbolType
+ }
+ 
++// GetAwaitedType returns the native awaited type, or nil for an invalid thenable.
++func (c *Checker) GetAwaitedType(t *Type) *Type {
++	return c.getAwaitedType(t)
++}
++
+ func (c *Checker) GetBaseTypeOfLiteralType(t *Type) *Type {
+ 	return c.getBaseTypeOfLiteralType(t)
+ }
+diff --git a/internal/project/configfileregistrybuilder.go b/internal/project/configfileregistrybuilder.go
+index 1d62a11880af10d201b1e861473c22751d256474..7cdb77a4a2f73d3f87938ee2a6205d0c7e24b210 100644
+--- a/internal/project/configfileregistrybuilder.go
++++ b/internal/project/configfileregistrybuilder.go
+@@ -391,6 +391,16 @@ func (c *configFileRegistryBuilder) isConfigBaseName(baseName string) bool {
+ }
+ 
+ func (c *configFileRegistryBuilder) DidChangeFiles(summary FileChangeSummary, logger *logging.LogTree) changeFileResult {
++	if summary.InvalidateAll {
++		c.configs.Range(func(entry *dirty.SyncMapEntry[tspath.Path, *configFileEntry]) bool {
++			entry.Change(func(config *configFileEntry) {
++				config.pendingReload = PendingReloadFull
++			})
++			return true
++		})
++		return c.invalidateCache(logger)
++	}
++
+ 	var affectedProjects map[tspath.Path]struct{}
+ 	var affectedFiles map[tspath.Path]struct{}
+ 	var shouldInvalidateCache bool
+diff --git a/go.mod b/go.mod
+--- a/go.mod
++++ b/go.mod
+@@ -1,26 +1,31 @@
+ module github.com/microsoft/typescript-go
+ 
+-go 1.26
++go 1.26.0
+ 
+ require (
+-	github.com/Microsoft/go-winio v0.6.2
+-	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68
++	github.com/Microsoft/go-winio v0.6.4
++	github.com/go-json-experiment/json v1.27.2
+ 	github.com/google/go-cmp v0.7.0
+-	github.com/mackerelio/go-osstat v0.2.7
++	github.com/mackerelio/go-osstat v0.2.8
+ 	github.com/peter-evans/patience v0.3.0
+ 	github.com/zeebo/xxh3 v1.1.0
+-	golang.org/x/sync v0.21.0
+-	golang.org/x/sys v0.46.0
+-	golang.org/x/term v0.44.0
+-	golang.org/x/text v0.38.0
++	golang.org/x/sync v0.25.0
++	golang.org/x/sys v0.50.0
++	golang.org/x/term v0.48.0
++	golang.org/x/text v0.44.0
+ 	gotest.tools/v3 v3.5.2
+ )
+ 
+ require (
+-	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
+-	github.com/matryer/moq v0.7.1 // indirect
+-	golang.org/x/mod v0.37.0 // indirect
+-	golang.org/x/tools v0.47.0 // indirect
++	github.com/klauspost/cpuid/v2 v2.4.2 // indirect
++	github.com/matryer/moq v0.8.1 // indirect
++	github.com/yuin/goldmark v1.8.7 // indirect
++	github.com/zeebo/assert v1.3.1 // indirect
++	golang.org/x/crypto v0.59.0 // indirect
++	golang.org/x/mod v0.43.0 // indirect
++	golang.org/x/net v0.62.0 // indirect
++	golang.org/x/telemetry v0.0.0-20261111153349-cdaf7e97dd7b // indirect
++	golang.org/x/tools v0.52.0 // indirect
+ )
+ 
+ tool (
+diff --git a/go.sum b/go.sum
+--- a/go.sum
++++ b/go.sum
+@@ -1,34 +1,46 @@
+-github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
+-github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
+-github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68 h1:KZaTBSyshWX3MP5jukJcNSuXDQTO+rNpt0J564dX/eg=
+-github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68/go.mod h1:tphK2c80bpPhMOI4v6bIc2xWywPfbqi1Z06+RcrMkDg=
++github.com/Microsoft/go-winio v0.6.4 h1:kJF2pamtYCWXf0xAT8sAkwKC0pMl2HYBrRPHAqyUc+g=
++github.com/Microsoft/go-winio v0.6.4/go.mod h1:1xl5JXG4ze/m74GH6Dc4Mwxfc3VL5siRVQjIAlHH07U=
++github.com/go-json-experiment/json v1.27.2 h1:rZIyqYh+Qq+nEa+Y5iwohr8h7G/MfLJqu2CD4/ZONqM=
++github.com/go-json-experiment/json v1.27.2/go.mod h1:tphK2c80bpPhMOI4v6bIc2xWywPfbqi1Z06+RcrMkDg=
+ github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
+ github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
+-github.com/klauspost/cpuid/v2 v2.2.10 h1:tBs3QSyvjDyFTq3uoc/9xFpCuOsJQFNPiAhYdw2skhE=
+-github.com/klauspost/cpuid/v2 v2.2.10/go.mod h1:hqwkgyIinND0mEev00jJYCxPNVRVXFQeu1XKlok6oO0=
+-github.com/mackerelio/go-osstat v0.2.7 h1:TCavZi10wF49bT6iQZ9eT2keGZQpC69MTDfdJej5e94=
+-github.com/mackerelio/go-osstat v0.2.7/go.mod h1:dwpYh5pIPmvk+IEwBKNIWRFMB92mrC08CmXOhDC7nQk=
+-github.com/matryer/moq v0.7.1 h1:/QaXqMAdOrLqlshW2z7SMS21jDi7aVrbW0wJrR+hhJk=
+-github.com/matryer/moq v0.7.1/go.mod h1:IabIiFkaKCyHxej25INgFR+fnOxSZFMv2LYrU+ioyDs=
++github.com/klauspost/cpuid/v2 v2.4.2 h1:xRw7IZEsAgVCp6trS/DgWbTAqpixhmywgVgBjYGg1bQ=
++github.com/klauspost/cpuid/v2 v2.4.2/go.mod h1:19jmZ9mjzoF//ddRSUsv0zfBTJWh3QJh9FNxZTMrGxU=
++github.com/mackerelio/go-osstat v0.2.8 h1:I2duicTaCGWoM53XwAwA9OIe1inu0xnVs8/pqOWWVr4=
++github.com/mackerelio/go-osstat v0.2.8/go.mod h1:SyS3XxKdoSKJnTGTkN5Yrh6VUQVuAURACfE6y+2DN4k=
++github.com/matryer/moq v0.8.1 h1:MpwU+Kz4NhTpDU1vdzmp1B4VUfXCrEJTNXMskdGrTQw=
++github.com/matryer/moq v0.8.1/go.mod h1:a8faQKG0C9Oz5dbTAY69dsuTViGhGiUpyqzlnuUWbJA=
+ github.com/peter-evans/patience v0.3.0 h1:rX0JdJeepqdQl1Sk9c9uvorjYYzL2TfgLX1adqYm9cA=
+ github.com/peter-evans/patience v0.3.0/go.mod h1:Kmxu5sY1NmBLFSStvXjX1wS9mIv7wMcP/ubucyMOAu0=
+ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
+ github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
+-github.com/zeebo/assert v1.3.0 h1:g7C04CbJuIDKNPFHmsk4hwZDO5O+kntRxzaUoNXj+IQ=
+-github.com/zeebo/assert v1.3.0/go.mod h1:Pq9JiuJQpG8JLJdtkwrJESF0Foym2/D9XMU5ciN/wJ0=
++github.com/sirupsen/logrus v1.10.2 h1:G2SED73/qrAu6YwbdxOD6peLkCBI3z7L+ykJFTXJBBo=
++github.com/sirupsen/logrus v1.10.2/go.mod h1:SLEg8TqYulVKKfIGHldVp2K2aYz2DKSVBq4g/H5bR7Q=
++github.com/yuin/goldmark v1.8.7 h1:XT/tNqCIbabh0ln675w4x3dv04kQBKi8NwYqi9IJaxI=
++github.com/yuin/goldmark v1.8.7/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
++github.com/zeebo/assert v1.3.1 h1:vukIABvugfNMZMQO1ABsyQDJDTVQbn+LWSMy1ol1h6A=
++github.com/zeebo/assert v1.3.1/go.mod h1:Pq9JiuJQpG8JLJdtkwrJESF0Foym2/D9XMU5ciN/wJ0=
+ github.com/zeebo/xxh3 v1.1.0 h1:s7DLGDK45Dyfg7++yxI0khrfwq9661w9EN78eP/UZVs=
+ github.com/zeebo/xxh3 v1.1.0/go.mod h1:IisAie1LELR4xhVinxWS5+zf1lA4p0MW4T+w+W07F5s=
+-golang.org/x/mod v0.37.0 h1:vF1DjpVEshcIqoEaauuHebaLk1O1forxjxBaVn884JQ=
+-golang.org/x/mod v0.37.0/go.mod h1:m8S8VeM9r4dzDwjrKO0a1sZP3YjeMamRRlD+fmR2Q/0=
+-golang.org/x/sync v0.21.0 h1:HLII4xRRTtCRkxYp4HNFF0Js/Og6q2i++KXbg0gHCwM=
+-golang.org/x/sync v0.21.0/go.mod h1:9xrNwdLfx4jkKbNva9FpL6vEN7evnE43NNNJQ2LF3+0=
+-golang.org/x/sys v0.46.0 h1:noSf2Fq6F8DBgS+LysIkx7rIExoNHJsxOAtPp4rthXw=
+-golang.org/x/sys v0.46.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
+-golang.org/x/term v0.44.0 h1:0rLvDRCtNj0gZkyIXhCyOb2OAzEhLVqc4B+hrsBhrmc=
+-golang.org/x/term v0.44.0/go.mod h1:7ze4MdzUzLXpSAoFP1H0bOI9aXDqveSvatT5vKcFh2Y=
+-golang.org/x/text v0.38.0 h1:sXmwo9DwP3OK9EZ7PqAdaooSGozfl/3a6/xJcbzPRhE=
+-golang.org/x/text v0.38.0/go.mod h1:YXZt3QhHUKYT53r2lLKFIVi6Ao1jdzrTR/KQ09qyxF4=
+-golang.org/x/tools v0.47.0 h1:7Kn5x/d1svx/PzryTsqeoZN4TZwqeH5pGWjefhLi/1Q=
+-golang.org/x/tools v0.47.0/go.mod h1:dFHnyTvFWY212G+h7ZY4Vsp/K3U4/7W9TyVaAul8uCA=
++golang.org/x/crypto v0.58.0 h1:COkYLr4k7nDI4r6QtMML2AfzeIswWHAJthLS6K/M/54=
++golang.org/x/crypto v0.58.0/go.mod h1:Xh+kl5A+M0gMiWDytH2Hhr5Z7WbNCpv/eB/EFgfSk+w=
++golang.org/x/crypto v0.59.0 h1:xS2jhqYbzNrpvkWP2YTDf4TJwBy3ykR03i8vFDxEc7c=
++golang.org/x/crypto v0.59.0/go.mod h1:veDyUwATGs3c+vN3VfTbzViMGXeTBk3WyhBOkn+F/4U=
++golang.org/x/mod v0.43.0 h1:MFuq5J6s35W9D3IjkwyWc9vHh0nENOrt5K8Iof4ofmg=
++golang.org/x/mod v0.43.0/go.mod h1:4ec1JnuyBz5+FIVhg86UsA39YG8BpnrZdJYSNHmGzHY=
++golang.org/x/net v0.62.0 h1:18ELalfM5+XNRwzM2nYqXsZQ9ByS1uhj2O/U7+5jqRY=
++golang.org/x/net v0.62.0/go.mod h1:WgDCOTH8iwtB66T4/GfI94AHo/hhdb7Hah9NDseQfiI=
++golang.org/x/sync v0.25.0 h1:dJnifr0nMV8/SBnBvdo4eSGGnrc3O4FFx6IqvtLcmRs=
++golang.org/x/sync v0.25.0/go.mod h1:sUUOizhqBxiL6pEWpqNLUiaJn1ShEbZ6BBqskPbjZm0=
++golang.org/x/sys v0.50.0 h1:dkKZEFTEKaLr1sjhs0WiKqoi8Jj5nHbS3Njmx1UoMJs=
++golang.org/x/sys v0.50.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=
++golang.org/x/telemetry v0.0.0-20261111153349-cdaf7e97dd7b h1:HDLCiByjRbzmSn/z4+smkCRQ58Hr5yxP+pq4CwqwCv8=
++golang.org/x/telemetry v0.0.0-20261111153349-cdaf7e97dd7b/go.mod h1:frnW8knEsfI9dILitAKHe8/iQ1ycXgpvIjQ/xz9QFYk=
++golang.org/x/term v0.48.0 h1:G6UU1eiSB8nl3DzeUGt7Mg+2SctI8tPS6Z5/mBt6cOk=
++golang.org/x/term v0.48.0/go.mod h1:BRDLHCZr2SUjIeBHHpRyQeC9xzSAVbzY2rvKgafnHf4=
++golang.org/x/text v0.44.0 h1:YItdp/mQNGnsmrgpcdA5yQ3bnRxCfo/Tj/iByGW9GGo=
++golang.org/x/text v0.44.0/go.mod h1:S4FR1waQ9LbjQTls97SyRjDaUUVkaM+cXwwuG/G+MwY=
++golang.org/x/tools v0.52.0 h1:ryxg4U63oaUYk7uOLTF37n43f4qgtGvqV4Ioit1BaEs=
++golang.org/x/tools v0.52.0/go.mod h1:ItcP5UNaVGG+Yc4eIYmaFLNJ4soEopkx5Y2d4lcEurs=
+ gotest.tools/v3 v3.5.2 h1:7koQfIKdy+I8UTetycgUqXWSDwpgv193Ka+qRsmBY8Q=
+ gotest.tools/v3 v3.5.2/go.mod h1:LtdLGcnqToBH83WByAAi/wiwSFCArdFIUV/xxN4pcjA=

@@ -24,6 +24,27 @@ const packageRoot = dirname(createRequire(import.meta.url).resolve('@spotify/bas
 afterEach(() => vi.unstubAllGlobals());
 
 describe('bundled Basic Pitch real-model inference', () => {
+    it('loads one complete TensorFlow.js cohort shared with the application', () => {
+        const basicPitchRequire = createRequire(resolve(packageRoot, 'package.json'));
+        const tensorflowRequire = createRequire(basicPitchRequire.resolve('@tensorflow/tfjs/package.json'));
+        const runtime: unknown = basicPitchRequire('@tensorflow/tfjs');
+        if (typeof runtime !== 'object' || runtime === null || !('version' in runtime)) {
+            throw new TypeError('Basic Pitch must load the TensorFlow.js runtime');
+        }
+        expect(runtime.version).toEqual({
+            'tfjs-core': '4.22.0',
+            'tfjs-backend-cpu': '4.22.0',
+            'tfjs-backend-webgl': '4.22.0',
+            'tfjs-data': '4.22.0',
+            'tfjs-layers': '4.22.0',
+            'tfjs-converter': '4.22.0',
+            tfjs: '4.22.0',
+        });
+        expect(tensorflowRequire.resolve('@tensorflow/tfjs-core/package.json')).toBe(
+            createRequire(import.meta.url).resolve('@tensorflow/tfjs-core/package.json')
+        );
+    });
+
     it('loads emitted weights and retains simultaneous pitches across the full four-second source', async () => {
         const requests: string[] = [];
         let modelUnavailable = true;

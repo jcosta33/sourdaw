@@ -1,0 +1,16 @@
+import Long from 'long';
+import seedrandom from 'seedrandom';
+import {util, env} from '@tensorflow/tfjs-core';
+import {PlatformNode} from '@tensorflow/tfjs-core/dist/platforms/platform_node';
+import {URLDataSource} from '@tensorflow/tfjs-data';
+import type {MathBackendWebGL} from '@tensorflow/tfjs-backend-webgl';
+const fingerprint: Long=util.fingerPrint64(new Uint8Array([0,255]));
+const request=new Request('https://example.invalid/model',{headers:{'x-model':'native'}});
+const init: RequestInit={signal:new AbortController().signal,headers:request.headers};
+const response: Promise<Response>=new PlatformNode().fetch(request.url,init);
+const source=new URLDataSource(request,{chunkSize:3});
+const canvas: OffscreenCanvas=new OffscreenCanvas(1,1);
+const random: seedrandom.PRNG=seedrandom('reproducible');
+const gpu=globalThis.navigator.gpu;
+void [fingerprint,response,source,canvas,random(),gpu,env()];
+export type BackendContract=MathBackendWebGL;

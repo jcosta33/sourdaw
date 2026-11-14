@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -20,1 +20,1 @@
++    "fs-extra": "11.4.1"
+-    "fs-extra": "^10.0.0"
+@@ -28,1 +28,4 @@
++  "typings": "./out/main.d.ts",
++  "engines": {
++    "node": ">=26.0.0"
++  }
+-  "typings": "./out/main.d.ts"

@@ -81,6 +81,14 @@ reviewer prompts and tiers are unestablished unless a probe says otherwise. Repo
    divergent closure hashes and toolchain pins; invalid or dirty roots must fail before source-toolkit import. For
    return verification, plant a source-toolkit sentinel and prove the verifier only reads the clean source root
    and never imports it. Importing from the source root must fail `scripts/__tests__/hostedWasmSourceContext.spec.ts`.
+   The optimizer assumption introduced in #3018 and carried by #6380 also requires the actual source build
+   route: wasm-pack accepts PATH before its hard-coded fallback, so a CLI pin or version echo does not pin
+   Binaryen. Verify the official archive digest before extraction, reject escaping/link members, authenticate
+   extracted executable bytes and observe its runtime version before and after the build. Substitute an
+   executable that prints version 133 but has different bytes, and require `binaryenBuild.spec.ts` to fail.
+   Exercise all four package wrappers; keep the hosted decoder admission refusal. Existing control code hashes
+   the source-produced manifest, but its older Toolchain receipt does not independently attest optimizer fields.
+   Historical reviewer draws were not reconstructed; these are observed acquisition/provenance gaps.
 9. **ZIP fixture clock drift obscures the strict artifact boundary (#4057, #5308).** A ZIP writer without an
    explicit `mtime` stamps each local and central header from a fresh clock read, so crossing a DOS two-second
    boundary between those writes changes the timestamp word and the strict parser refuses the archive before its
@@ -152,6 +160,14 @@ reviewer prompts and tiers are unestablished unless a probe says otherwise. Repo
     fixed commit for a denial path that keeps the supported state, and runs
     `src/utils/__tests__/platformCapabilities.spec.ts` after collapsing denial into unsupported. These checks do not
     establish physical-controller acceptance.
+
+15. **Retained legal bytes never grant source authority (#2731).** A complete MIT license beside a
+    git-sourced runtime Cargo package must still fail actual installed-metadata artifact generation.
+    In `dependencyLicenseReport.installedSources.spec.ts`, remove source authentication before the
+    retained-legal fast path and require the git-source case to fail. Preserve actual-checksum
+    registry and registered null-source positives, plus unregistered path and offline git negatives.
+    The original archive-fallback case never entered this admitting route; historical review
+    model, tier and prompt are not established.
 
 ## Retired lessons
 

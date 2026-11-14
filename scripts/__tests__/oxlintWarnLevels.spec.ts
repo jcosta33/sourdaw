@@ -1,8 +1,10 @@
+// @vitest-environment node
+
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
-import ts from 'typescript';
+import { parseNativeJsonc } from '../nativeTypeScript';
 import { describe, expect, it } from 'vitest';
 
 const TRACKED_IN_6486 = 'existing violations remain; promotion or baselining tracked in #6486';
@@ -65,11 +67,11 @@ function warnEntriesOf(config: Record<string, unknown>): string[] {
 }
 
 function parsedOxlintConfig(): Record<string, unknown> {
-    const parsed = ts.parseConfigFileTextToJson('.oxlintrc.json', readFileSync('.oxlintrc.json', 'utf8'));
-    if (parsed.error !== undefined || !isRecord(parsed.config)) {
+    const parsed = parseNativeJsonc('.oxlintrc.json', readFileSync('.oxlintrc.json', 'utf8'));
+    if (!isRecord(parsed)) {
         throw new Error('.oxlintrc.json did not parse as a JSONC object');
     }
-    return parsed.config;
+    return parsed;
 }
 
 describe('.oxlintrc.json warn levels', () => {

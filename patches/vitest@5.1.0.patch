@@ -1,0 +1,63 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -170,7 +170,7 @@
+     "@types/chai": "^5.2.2",
+     "@vitest/mocker": "5.1.0",
+     "chai": "^6.3.0",
+-    "es-module-lexer": "^2.3.2",
++    "es-module-lexer": "^3.0.4",
+     "expect-type": "^1.4.0",
+     "magic-string": "^1.4.3",
+     "obug": "^3.0.0",
+@@ -179,7 +179,7 @@
+     "tinybench": "^6.2.2",
+     "tinyexec": "^1.3.1",
+     "tinyglobby": "^0.2.17",
+-    "why-is-node-running": "3.2.1"
++    "why-is-node-running": "3.2.3"
+   },
+   "devDependencies": {
+     "@antfu/install-pkg": "^2.1.0",
+diff --git a/dist/chunks/vm.b4MbCAJQ.js b/dist/chunks/vm.b4MbCAJQ.js
+--- a/dist/chunks/vm.b4MbCAJQ.js
++++ b/dist/chunks/vm.b4MbCAJQ.js
+@@ -8,7 +8,7 @@
+ import { createRequire, Module, isBuiltin } from 'node:module';
+ import { d as dirname, k as extname, b as basename, C as CSS_LANGS_RE, l as KNOWN_ASSET_RE, t as toArray, m as splitFileAndPostfix, n as normalize, o as isBareImport, r as resolve } from './pathe.M-eThtNZ.zq3TM4NT.js';
+ import { l as lookupPackageScopeType } from './resolver.BzpmeQeT.js';
+-import { initSync, parse } from 'es-module-lexer';
++import { parse } from 'es-module-lexer';
+ import { dirname as dirname$1 } from 'node:path';
+ import { V as VITEST_VM_CONTEXT_SYMBOL, s as startVitestModuleRunner, c as createNodeImportMeta } from './index.Bi0NXYPf.js';
+ import { getDefaultRequestStubs } from '../module-evaluator.js';
+@@ -117,7 +117,7 @@
+ // native ESM would fail on it as well, so the CJS error should surface.
+ function hasEsmSyntax(source) {
+ 	if (!lexerInitialized) {
+-		initSync();
++		parse('');
+ 		lexerInitialized = true;
+ 	}
+ 	try {
+diff --git a/dist/chunks/index.Di8au7q4.js b/dist/chunks/index.Di8au7q4.js
+--- a/dist/chunks/index.Di8au7q4.js
++++ b/dist/chunks/index.Di8au7q4.js
+@@ -729,7 +729,7 @@
+ 	if (lookupPackageScopeType(dirname(id)) === "esm") return true;
+ 	if (/\.(?:\w+-)?esm?(?:-\w+)?\.js$|\/esm?\//.test(id)) return false;
+ 	try {
+-		await esModuleLexer.init;
++		await esModuleLexer.init();
+ 		const code = await promises.readFile(id, "utf8");
+ 		const [, , , hasModuleSyntax] = esModuleLexer.parse(code);
+ 		return !hasModuleSyntax;
+@@ -769,7 +769,7 @@
+ 	if (!CJS_GLOBALS_REFERENCE_RE.test(code)) return "esm";
+ 	const source = loadSource ? await loadSource() : null;
+ 	if (source != null) try {
+-		await esModuleLexer.init;
++		await esModuleLexer.init();
+ 		const [, , , hasModuleSyntax] = esModuleLexer.parse(source);
+ 		if (!hasModuleSyntax) return "cjs";
+ 	} catch {}

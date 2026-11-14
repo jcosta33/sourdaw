@@ -1,6 +1,6 @@
 /**
  * Constants for the toolchain parts with no independent in-repo source to verify
- * against: the `wasm-pack` CLI version and the `wasm-opt` (binaryen) it bundles.
+ * against: the `wasm-pack` CLI version and the independently authenticated Binaryen release.
  * `wasm-bindgen` is read live from `Cargo.lock` and the rust toolchain from
  * `rust-toolchain.toml`, so those are not hard-coded here (WB-8).
  *
@@ -10,5 +10,5 @@
  */
 export const wasmToolchainPins = {
     wasmPack: '0.15.1',
-    wasmOpt: 'bundled-by-wasm-pack@0.15.1',
+    wasmOpt: 'binaryen-version_133',
 } as const;

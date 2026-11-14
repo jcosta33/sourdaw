@@ -102,7 +102,7 @@ afterPack: ./scripts/flipElectronFuses.ts
 mac:
     icon: build/icons/icon.icns
     category: public.app-category.music
-    minimumSystemVersion: '11.0'
+    minimumSystemVersion: '13.0'
     hardenedRuntime: true
     entitlements: build/entitlements.mac.plist
     entitlementsInherit: build/entitlements.mac.plist

@@ -1,7 +1,9 @@
 import { lstatSync, readFileSync } from 'node:fs';
-import { posix, resolve } from 'node:path';
+import { isAbsolute, posix, resolve } from 'node:path';
 
-import ts from 'typescript';
+import * as ts from 'typescript/unstable/ast';
+
+import { readNativeSources, requireNativeSyntax } from './nativeTypeScript.ts';
 
 import { cruiseFileGraph } from './e2eFileGraph.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
@@ -160,6 +162,13 @@ function isValidDependency(value: unknown): value is SourceNode['dependencies'][
     );
 }
 
+function isLocalRuntimeSource(path: string): boolean {
+    return (
+        !path.split('/').includes('node_modules') &&
+        (/^(?:src|public)\//.test(path) || /\.(?:[cm]?[jt]sx?)$/.test(path))
+    );
+}
+
 function reverseGraph(graph: readonly SourceNode[]): {
     modules: ReadonlyMap<string, SourceNode>;
     reverse: ReadonlyMap<string, ReadonlySet<string>>;
@@ -184,7 +193,7 @@ function reverseGraph(graph: readonly SourceNode[]): {
             if (dependency.couldNotResolve && /^(?:\.|#\/|\/?src\/)/.test(dependency.module ?? '')) {
                 throw new Error('unresolved local import');
             }
-            if (/^(?:src|public)\//.test(dependency.resolved)) {
+            if (isLocalRuntimeSource(dependency.resolved)) {
                 resolvedSources.add(dependency.resolved);
                 const importers = reverse.get(dependency.resolved) ?? new Set<string>();
                 importers.add(module.source);
@@ -210,7 +219,7 @@ function publicAssetFromInitializer(initializer: ts.Expression | undefined, sour
     if (
         url.arguments?.length !== 2 ||
         !asset ||
-        !ts.isStringLiteralLike(asset) ||
+        !ts.isStringLiteralLikeNode(asset) ||
         !base ||
         !isGlobalLocationHref(base) ||
         !usesPlatformBindings(source, ['URL', 'globalThis'])
@@ -255,7 +264,7 @@ function usesPlatformBindings(source: ts.SourceFile, names: readonly string[]): 
             }
         }
         if (!unproven) {
-            ts.forEachChild(node, visit);
+            node.forEachChild(visit);
         }
     };
     visit(source);
@@ -269,7 +278,7 @@ function sameBlockConstUrl(importCall: ts.CallExpression, source: ts.SourceFile)
     }
     let enclosing: ts.Node | undefined = importCall.parent;
     while (enclosing && !ts.isReturnStatement(enclosing)) {
-        if (ts.isBlock(enclosing) || ts.isFunctionLike(enclosing)) {
+        if (ts.isBlock(enclosing) || ts.isSignatureDeclaration(enclosing)) {
             return undefined;
         }
         enclosing = enclosing.parent;
@@ -303,7 +312,7 @@ function staticWorkerTarget(worker: ts.NewExpression, source: ts.SourceFile, sou
     if (
         url.arguments?.length !== 2 ||
         !target ||
-        !ts.isStringLiteralLike(target) ||
+        !ts.isStringLiteralLikeNode(target) ||
         !base ||
         base.getText(source) !== 'import.meta.url' ||
         !usesPlatformBindings(source, ['URL', 'Worker'])
@@ -333,7 +342,7 @@ function isQualifiedPlatformWorker(expression: ts.Expression): boolean {
         ts.isElementAccessExpression(expression) &&
         ts.isIdentifier(expression.expression) &&
         ['globalThis', 'self', 'window'].includes(expression.expression.text) &&
-        ts.isStringLiteralLike(expression.argumentExpression) &&
+        ts.isStringLiteralLikeNode(expression.argumentExpression) &&
         expression.argumentExpression.text === 'Worker'
     );
 }
@@ -353,22 +362,29 @@ export function completeRuntimeGraph(
         dependencies.add(target);
         extra.set(source, dependencies);
     };
-    for (const path of modules.keys()) {
-        if (!/^(?:src|public)\//.test(path) || !/\.(?:tsx?|jsx?|mjs|cjs|mts|cts)$/.test(path)) {
-            continue;
+    const scriptPaths = [...modules.keys()].filter(
+        (path) => !path.split('/').includes('node_modules') && /\.(?:tsx?|jsx?|mjs|cjs|mts|cts)$/.test(path)
+    );
+    for (const path of scriptPaths) {
+        if (path.startsWith('../') || isAbsolute(path) || path.split('/').includes('..')) {
+            throw new Error(`runtime graph source leaves requested root: ${path}`);
         }
-        const source = ts.createSourceFile(
-            path,
-            readFileSync(resolve(root, path), 'utf8'),
-            ts.ScriptTarget.Latest,
-            true
-        );
+    }
+    const parsed = readNativeSources(
+        scriptPaths.map((path) => ({ path, text: readFileSync(resolve(root, path), 'utf8') }))
+    );
+    for (const path of scriptPaths) {
+        const input = parsed.get(path);
+        if (!input) {
+            throw new Error(`Native source snapshot omitted ${path}`);
+        }
+        const source = requireNativeSyntax(input);
         const visit = (node: ts.Node): void => {
             if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
                 const argument = node.arguments[0];
                 if (node.arguments.length !== 1 || !argument) {
                     opaqueSources.add(path);
-                } else if (!ts.isStringLiteralLike(argument)) {
+                } else if (!ts.isStringLiteralLikeNode(argument)) {
                     const asset = sameBlockConstUrl(node, source);
                     if (!asset || !modules.has(asset) || !lstatSync(resolve(root, asset)).isFile()) {
                         opaqueSources.add(path);
@@ -393,7 +409,7 @@ export function completeRuntimeGraph(
                     }
                 }
             }
-            ts.forEachChild(node, visit);
+            node.forEachChild(visit);
         };
         visit(source);
     }
@@ -409,7 +425,7 @@ export function completeRuntimeGraph(
             if (dependency.resolved.startsWith('src/')) {
                 throw new Error(`public runtime asset imports product source: ${asset}`);
             }
-            if (dependency.resolved.startsWith('public/')) {
+            if (isLocalRuntimeSource(dependency.resolved)) {
                 pending.push(dependency.resolved);
             }
         }
@@ -434,7 +450,7 @@ const SCRIPT_SOURCE = /\.(?:[cm]?[jt]sx?)$/;
 function isOffPageScriptImport(dependency: SourceNode['dependencies'][number]): boolean {
     return (
         dependency.module?.includes('?') === true &&
-        dependency.resolved.startsWith('src/') &&
+        isLocalRuntimeSource(dependency.resolved) &&
         SCRIPT_SOURCE.test(dependency.resolved)
     );
 }
@@ -462,7 +478,7 @@ export function offPageSources(runtime: RuntimeGraph): ReadonlySet<string> {
         }
         reached.add(path);
         for (const dependency of modules.get(path)?.dependencies ?? []) {
-            if (/^(?:src|public)\//.test(dependency.resolved)) {
+            if (isLocalRuntimeSource(dependency.resolved)) {
                 pending.push(dependency.resolved);
             }
         }

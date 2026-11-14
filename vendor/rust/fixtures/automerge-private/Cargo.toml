@@ -1,0 +1,144 @@
+[package]
+name = "sourdaw-automerge-private-invariants"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+name = "automerge"
+path = "../../automerge-0.12.0/src/lib.rs"
+
+[features]
+slow_path_assertions = ["hexane/slow_path_assertions"]
+utf16-indexing = []
+utf8-indexing = []
+wasm = [
+    "js-sys",
+    "wasm-bindgen",
+    "web-sys",
+    "getrandom/wasm_js",
+    "hexane/wasm",
+]
+
+[dependencies.cfg-if]
+version = "1.0"
+
+[dependencies.flate2]
+version = "^1.0.22"
+features = ["zlib-rs"]
+default-features = false
+
+[dependencies.getrandom]
+version = "0.4"
+
+[dependencies.hex]
+version = "^0.4.3"
+
+[dependencies.hexane]
+version = "0.2.1"
+
+[dependencies.itertools]
+version = "0.15.0"
+
+[dependencies.js-sys]
+version = "^0.3"
+optional = true
+
+[dependencies.leb128]
+version = "^0.2.5"
+
+[dependencies.rand]
+version = "^0.10"
+optional = false
+
+[dependencies.rustc-hash]
+version = "^2.1.1"
+
+[dependencies.serde]
+version = "^1.0"
+features = ["derive"]
+
+[dependencies.sha2]
+version = "^0.11.0-rc.5"
+
+[dependencies.smol_str]
+version = "0.3"
+features = ["serde"]
+
+[dependencies.thiserror]
+version = "^2.0.12"
+
+[dependencies.tinyvec]
+version = "^1.5.1"
+features = ["alloc"]
+
+[dependencies.tracing]
+version = "^0.1.29"
+
+[dependencies.unicode-segmentation]
+version = "1.10.1"
+
+[dependencies.wasm-bindgen]
+version = "^0.2"
+optional = true
+
+[dependencies.web-sys]
+version = "^0.3.55"
+features = ["console"]
+optional = true
+
+[dev-dependencies.maplit]
+version = "^1.0"
+
+[dev-dependencies.pretty_assertions]
+version = "1.0.0"
+
+[dev-dependencies.prettytable]
+version = "0.10.0"
+
+[dev-dependencies.proptest]
+version = "^1.7.0"
+features = ["std"]
+default-features = false
+
+[dev-dependencies.serde_json]
+version = "^1.0.73"
+features = ["float_roundtrip"]
+default-features = true
+
+[dev-dependencies.test-log]
+version = "0.2.10"
+features = ["trace"]
+default-features = false
+
+[dev-dependencies.tracing-subscriber]
+version = "^0.3"
+features = [
+    "fmt",
+    "env-filter",
+]
+
+[patch.crates-io]
+hexane = { path = "../../hexane-0.2.1" }
+tracing-attributes = { path = "../../tracing-attributes-0.1.31" }
+getrandom = { path = "../../getrandom-0.4.3" }
+windows-sys = { path = "../../windows-sys-0.61.2" }
+prettytable = { path = "../../prettytable-0.10.0" }
+test-log-core = { path = "../../test-log-core-0.2.21" }
+test-log-macros = { path = "../../test-log-macros-0.2.21" }
+
+[dev-dependencies.test-log-core]
+version = "=0.2.21"
+
+[dev-dependencies.syn]
+version = "3.0.10"
+features = ["full", "parsing"]
+
+[dev-dependencies.quote]
+version = "1.0"
+
+[[test]]
+name = "dev_consumer"
+path = "dev_consumer.rs"

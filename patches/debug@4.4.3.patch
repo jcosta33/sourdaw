@@ -1,0 +1,26 @@
+diff --git a/src/node.js b/src/node.js
+--- a/src/node.js
++++ b/src/node.js
+@@ -29,7 +29,8 @@
+ try {
+ 	// Optional dependency (as in, doesn't need to be installed, NOT like optionalDependencies in package.json)
+ 	// eslint-disable-next-line import/no-extraneous-dependencies
+-	const supportsColor = require('supports-color');
++	const supportsColorModule = require('supports-color');
++	const supportsColor = supportsColorModule.default ?? supportsColorModule;
+ 
+ 	if (supportsColor && (supportsColor.stderr || supportsColor).level >= 2) {
+ 		exports.colors = [
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -46,6 +46,9 @@
+     "sinon": "^14.0.0",
+     "xo": "^0.23.0"
+   },
++  "peerDependencies": {
++    "supports-color": "^11.0.0"
++  },
+   "peerDependenciesMeta": {
+     "supports-color": {
+       "optional": true

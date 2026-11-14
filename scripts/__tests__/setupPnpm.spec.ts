@@ -56,7 +56,7 @@ function fixture() {
     const dest = join(root, 'tools');
     mkdirSync(dest, { mode: 0o755 });
     chmodSync(dest, 0o755);
-    writeFileSync(join(workspace, 'package.json'), JSON.stringify({ packageManager: 'pnpm@12.18.0' }));
+    writeFileSync(join(workspace, 'package.json'), JSON.stringify({ packageManager: 'pnpm@12.20.0' }));
     writeFileSync(join(workspace, 'pnpm-lock.yaml'), 'unchanged project lock\n');
     const env: NodeJS.ProcessEnv = { PATH: process.env.PATH };
     for (const name of ['GITHUB_PATH', 'GITHUB_ENV', 'GITHUB_OUTPUT']) {
@@ -75,7 +75,7 @@ function fixture() {
             mkdirSync(dirname(installedTarget), { recursive: true });
             writeFileSync(installedTarget, nativeBytes(platform), { mode: 0o755 });
         }
-        return { status: 0, stdout: args.includes('--version') ? '12.18.0\n' : '' };
+        return { status: 0, stdout: args.includes('--version') ? '12.20.0\n' : '' };
     };
     const run = vi.fn<NonNullable<SetupPnpmOptions['run']>>(implementation);
     const options: SetupPnpmOptions = {
@@ -296,7 +296,7 @@ describe('verified native pnpm setup', () => {
         expect(download?.[1].slice(3)).toEqual([
             pathToFileURL(join(result.dest, 'bootstrap/node_modules/pnpm/dist/node_modules/get-pnpm/lib/index.js'))
                 .href,
-            '12.18.0',
+            '12.20.0',
             'https://registry.npmjs.org/',
             result.bin,
             input.target,
@@ -376,11 +376,11 @@ describe('verified native pnpm setup', () => {
             ...input.implementation(file, args, options),
             stdout: args.includes('--version') ? '11.26.0\n' : '',
         }));
-        expect(() => setupPnpm(input.options)).toThrow('reports 11.26.0, expected 12.18.0');
+        expect(() => setupPnpm(input.options)).toThrow('reports 11.26.0, expected 12.20.0');
         expect(input.exports()).toEqual(['', '', '']);
     });
 
-    it.each(['pnpm@11.28.11', 'pnpm@^12.18.0', '@pnpm/exe@12.18.0', 'pnpm@12.18.0+sha512.fake', 'npm@12.18.0'])(
+    it.each(['pnpm@11.28.11', 'pnpm@^12.20.0', '@pnpm/exe@12.20.0', 'pnpm@12.20.0+sha512.fake', 'npm@12.20.0'])(
         'refuses unsupported or non-exact declaration %s before invoking a command',
         (packageManager) => {
             const input = fixture();
@@ -395,7 +395,7 @@ describe('verified native pnpm setup', () => {
         const input = fixture();
         writeFileSync(
             join(input.workspace, 'package.json'),
-            JSON.stringify({ packageManager: 'pnpm@12.18.0', devEngines: { packageManager: { name: 'pnpm' } } })
+            JSON.stringify({ packageManager: 'pnpm@12.20.0', devEngines: { packageManager: { name: 'pnpm' } } })
         );
         expect(() => setupPnpm(input.options)).toThrow('one packageManager');
         expect(() => setupPnpm({ ...input.options, manifest: '../package.json' })).toThrow('belong to the workspace');
@@ -409,14 +409,14 @@ describe('verified native pnpm setup', () => {
         mkdirSync(control);
         mkdirSync(source);
         writeFileSync(join(control, 'package.json'), JSON.stringify({ packageManager: 'pnpm@12.17.0' }));
-        writeFileSync(join(source, 'package.json'), JSON.stringify({ packageManager: 'pnpm@12.18.0' }));
+        writeFileSync(join(source, 'package.json'), JSON.stringify({ packageManager: 'pnpm@12.20.0' }));
 
         const result = setupPnpm({ ...input.options, manifest: 'source/package.json' });
 
-        expect(result.version).toBe('12.18.0');
+        expect(result.version).toBe('12.20.0');
         expect(input.run).toHaveBeenCalledTimes(3);
         expect(input.run.mock.calls[1]?.[1].slice(4)).toEqual([
-            '12.18.0',
+            '12.20.0',
             'https://registry.npmjs.org/',
             join(input.dest, 'runtime/bin'),
             input.target,
@@ -458,7 +458,7 @@ describe('verified native pnpm setup', () => {
     it('refuses manifest and destination ancestor symlinks that cross the project boundary', () => {
         const input = fixture();
         const outside = join(dirname(input.workspace), 'outside.json');
-        writeFileSync(outside, JSON.stringify({ packageManager: 'pnpm@12.18.0' }));
+        writeFileSync(outside, JSON.stringify({ packageManager: 'pnpm@12.20.0' }));
         symlinkSync(outside, join(input.workspace, 'manifest-link.json'));
         expect(() => setupPnpm({ ...input.options, manifest: 'manifest-link.json' })).toThrow(
             'belong to the workspace'
@@ -499,7 +499,7 @@ describe('verified native pnpm setup', () => {
             }
             return result;
         });
-        expect(setupPnpm(input.options).version).toBe('12.18.0');
+        expect(setupPnpm(input.options).version).toBe('12.20.0');
         expect(input.run.mock.calls[2]?.[0]).toBe(join(input.dest, 'runtime/bin/pnpm.exe'));
     });
 
@@ -532,11 +532,11 @@ describe('verified native pnpm setup', () => {
             const downloader = `import {mkdirSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 export async function downloadPnpm(options){
- if(options.registry!=='https://registry.npmjs.org/'||options.versionSpec!=='12.18.0')throw new Error('unexpected downloader input');
+ if(options.registry!=='https://registry.npmjs.org/'||options.versionSpec!=='12.20.0')throw new Error('unexpected downloader input');
  mkdirSync(options.dest,{recursive:true});
  const binPath=join(options.dest,'pnpm.exe');
  writeFileSync(binPath,Buffer.from(${JSON.stringify([...nativeBytes('win32')])}),{mode:0o755});
- return {version:${JSON.stringify(resultKind === 'wrong-version' ? '12.17.0' : '12.18.0')},binPath:${resultKind === 'wrong-path' ? 'binPath+".foreign"' : 'binPath'}};
+ return {version:${JSON.stringify(resultKind === 'wrong-version' ? '12.17.0' : '12.20.0')},binPath:${resultKind === 'wrong-path' ? 'binPath+".foreign"' : 'binPath'}};
 }`;
             const npm = `const {mkdirSync,writeFileSync}=require('node:fs');
 const {join}=require('node:path');
@@ -548,7 +548,7 @@ writeFileSync(join(directory,'index.js'),${JSON.stringify(downloader)});`;
             writeFileSync(join(nodeDirectory, 'node_modules/npm/bin/npm-cli.js'), npm);
             const run = vi.fn<NonNullable<SetupPnpmOptions['run']>>((file, args, options) => {
                 if (file === target) {
-                    return { status: 0, stdout: '12.18.0' };
+                    return { status: 0, stdout: '12.20.0' };
                 }
                 const result = spawnSync(file, args, { ...options, encoding: 'utf8' });
                 return { status: result.status, stdout: result.stdout ?? '' };
@@ -561,7 +561,7 @@ writeFileSync(join(directory,'index.js'),${JSON.stringify(downloader)});`;
                 return;
             }
             const result = perform();
-            expect(result.version).toBe('12.18.0');
+            expect(result.version).toBe('12.20.0');
             expect(run.mock.calls[2]?.slice(0, 2)).toEqual([target, ['--version']]);
             expect(input.exports()[0]).toBe(`${result.bin}\n`);
         }
@@ -593,7 +593,7 @@ writeFileSync(join(directory,'index.js'),${JSON.stringify(downloader)});`;
                 if (args.includes('--eval')) {
                     let bytes = nativeBytes();
                     if (kind === 'script') {
-                        bytes = Buffer.from('#!/bin/sh\nprintf "12.18.0"\n');
+                        bytes = Buffer.from('#!/bin/sh\nprintf "12.20.0"\n');
                     }
                     if (kind === 'other-platform') {
                         bytes = nativeBytes(process.platform === 'win32' ? 'linux' : 'win32');
@@ -659,15 +659,15 @@ writeFileSync(join(directory,'index.js'),${JSON.stringify(downloader)});`;
     it('keeps the authenticated official bootstrap byte pin and composite runtime immutable', () => {
         const directory = join(repository, '.github/actions/setup-pnpm');
         const manifest: unknown = JSON.parse(readFileSync(join(directory, 'bootstrap/package.json'), 'utf8'));
-        expect(manifest).toEqual({ name: 'sourdaw-pnpm-bootstrap', private: true, dependencies: { pnpm: '12.18.0' } });
+        expect(manifest).toEqual({ name: 'sourdaw-pnpm-bootstrap', private: true, dependencies: { pnpm: '12.21.0' } });
         const lock: unknown = JSON.parse(readFileSync(join(directory, 'bootstrap/package-lock.json'), 'utf8'));
         expect(lock).toMatchObject({
             packages: {
                 'node_modules/pnpm': {
-                    version: '12.18.0',
-                    resolved: 'https://registry.npmjs.org/pnpm/-/pnpm-12.18.0.tgz',
+                    version: '12.21.0',
+                    resolved: 'https://registry.npmjs.org/pnpm/-/pnpm-12.21.0.tgz',
                     integrity:
-                        'sha512-nXiC1dyCFH7PxOBiqjSDTgrQKWcQoYN6ERWuASEn02txCeMhrBWYod0KZVl2gbHpmRfhLtDXSerpEYeUM2O+sw==',
+                        'sha512-Zv2CeO4ok1zpUXktNDZ/869cQyonVkRYIwKVM4NbjaUpu+C+UTCv1W7QcT+4eJ5Hutgtk71a4v5UsVVi1idu8A==',
                 },
             },
         });
@@ -686,6 +686,7 @@ writeFileSync(join(directory,'index.js'),${JSON.stringify(downloader)});`;
             'linux-s390x',
             'linux-x64',
             'linux-x64-musl',
+            'netbsd-x64',
             'win32-arm64',
             'win32-x64',
         ];
@@ -694,15 +695,15 @@ writeFileSync(join(directory,'index.js'),${JSON.stringify(downloader)});`;
         );
         for (const target of targets) {
             expect(packageLock.packages[`node_modules/@pnpm/exe.${target}`]).toMatchObject({
-                version: '12.18.0',
-                resolved: `https://registry.npmjs.org/@pnpm/exe.${target}/-/exe.${target}-12.18.0.tgz`,
+                version: '12.21.0',
+                resolved: `https://registry.npmjs.org/@pnpm/exe.${target}/-/exe.${target}-12.21.0.tgz`,
                 integrity: expect.stringMatching(/^sha512-[A-Za-z0-9+/]+={0,2}$/),
                 optional: true,
             });
         }
         expect(readFileSync(join(repository, '.node-version'), 'utf8').trim()).toBe('26.13.1');
         expect(JSON.parse(readFileSync(join(repository, 'package.json'), 'utf8'))).toMatchObject({
-            packageManager: 'pnpm@12.18.0',
+            packageManager: 'pnpm@12.21.0',
             engines: { node: '>=26.13.1 <27' },
         });
         const action: unknown = parseDocument(readFileSync(join(directory, 'action.yml'), 'utf8')).toJS();
@@ -795,7 +796,7 @@ describe('selected Node package-manager precedence', () => {
         mkdirSync(target);
         writeFileSync(join(target, 'pnpm'), '#!/bin/sh\nprintf "verified-target-store\\n"\n');
         chmodSync(join(target, 'pnpm'), 0o755);
-        writeFileSync(join(input.root, 'package.json'), JSON.stringify({ packageManager: 'pnpm@12.18.0' }));
+        writeFileSync(join(input.root, 'package.json'), JSON.stringify({ packageManager: 'pnpm@12.20.0' }));
         const query = () =>
             spawnSync('bash', ['-c', 'pnpm store path --silent'], {
                 cwd: input.root,

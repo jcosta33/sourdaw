@@ -1,0 +1,351 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 3f9fdfd..0ae0f2d 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -2,7 +2,7 @@ import { TSESTreeClass, TSESTreeDirective, TSESTreeFunction, TSESTreeMethodOrPro
+ import { RuleContext } from "@eslint-react/eslint";
+ import { TSESTree } from "@typescript-eslint/types";
+ import { RegExpLike } from "@eslint-react/shared";
+-import ts from "typescript";
++import type { BigIntLiteralType, BooleanLiteralType, Checker, Symbol, Type } from "typescript/unstable/sync";
+ import { ESLintUtils } from "@typescript-eslint/utils";
+ export declare namespace isAPI {
+   /** The dual-signature predicate type returned by {@link isAPI}. */
+@@ -777,7 +777,7 @@ export declare function isJSXLike(context: RuleContext, node: TSESTree.Node | nu
+  */
+ export interface JSXConfig {
+   /** The JSX emit mode. */
+-  jsx?: ts.JsxEmit;
++  jsx?: number;
+   /** The JSX factory function (ex: `React.createElement`). */
+   jsxFactory?: string;
+   /** The JSX fragment factory (ex: `React.Fragment`). */
+@@ -824,173 +824,104 @@ export declare function getJSXConfig(context: RuleContext): Required<JSXConfig>;
+  * @param type The type to check.
+  * @returns `true` if the type is a boolean literal type.
+  */
+-export declare const isBooleanLiteralType: <TType extends ts.Type>(type: TType) => type is TType & {
+-  intrinsicName: "false" | "true";
+-};
++export declare const isBooleanLiteralType: <TType extends Type>(type: TType) => type is TType & BooleanLiteralType;
+ /**
+  * Check if the type is the `false` literal type.
+  * @internal
+  */
+-export declare const isFalseLiteralType: (type: ts.Type) => boolean;
++export declare const isFalseLiteralType: (type: Type) => boolean;
+ /**
+  * Check if the type is the `true` literal type.
+  * @internal
+  */
+-export declare const isTrueLiteralType: (type: ts.Type) => boolean;
++export declare const isTrueLiteralType: (type: Type) => boolean;
+ /**
+  * Check if the type is an any-like type.
+  * @internal
+  */
+-export declare const isAnyType: (type: ts.Type) => boolean;
++export declare const isAnyType: (type: Type) => boolean;
+ /**
+  * Check if the type is a bigint-like type.
+  * @internal
+  */
+-export declare const isBigIntType: (type: ts.Type) => boolean;
++export declare const isBigIntType: (type: Type) => boolean;
+ /**
+  * Check if the type is a boolean-like type.
+  * @internal
+  */
+-export declare const isBooleanType: (type: ts.Type) => boolean;
++export declare const isBooleanType: (type: Type) => boolean;
+ /**
+  * Check if the type is an enum-like type.
+  * @internal
+  */
+-export declare const isEnumType: (type: ts.Type) => boolean;
++export declare const isEnumType: (type: Type) => boolean;
+ /**
+  * Check if the type is a falsy bigint literal type.
+  * @internal
+  */
+-export declare const isFalsyBigIntType: (type: ts.Type) => type is ts.LiteralType & {
+-  freshType: ts.FreshableType;
+-  regularType: ts.FreshableType;
+-  flags: ts.TypeFlags;
+-  symbol: ts.Symbol;
+-  pattern?: ts.DestructuringPattern;
+-  aliasSymbol?: ts.Symbol;
+-  aliasTypeArguments?: readonly ts.Type[];
+-  getFlags: () => ts.TypeFlags;
+-  getSymbol: () => ts.Symbol | undefined;
+-  getProperties: () => ts.Symbol[];
+-  getProperty: (propertyName: string) => ts.Symbol | undefined;
+-  getApparentProperties: () => ts.Symbol[];
+-  getCallSignatures: () => readonly ts.Signature[];
+-  getConstructSignatures: () => readonly ts.Signature[];
+-  getStringIndexType: () => ts.Type | undefined;
+-  getNumberIndexType: () => ts.Type | undefined;
+-  getBaseTypes: () => ts.BaseType[] | undefined;
+-  getNonNullableType: () => ts.Type;
+-  getConstraint: () => ts.Type | undefined;
+-  getDefault: () => ts.Type | undefined;
+-  isUnion: () => this is ts.UnionType;
+-  isIntersection: () => this is ts.IntersectionType;
+-  isUnionOrIntersection: () => this is ts.UnionOrIntersectionType;
+-  isLiteral: () => this is ts.LiteralType;
+-  isStringLiteral: () => this is ts.StringLiteralType;
+-  isNumberLiteral: () => this is ts.NumberLiteralType;
+-  isTypeParameter: () => this is ts.TypeParameter;
+-  isClassOrInterface: () => this is ts.InterfaceType;
+-  isClass: () => this is ts.InterfaceType;
+-  isIndexType: () => this is ts.IndexType;
+-  value: {
+-    negative: boolean;
+-    base10Value: "0";
+-  };
+-};
++export declare const isFalsyBigIntType: (type: Type) => type is BigIntLiteralType & { readonly value: 0n; };
+ /**
+  * Check if the type is a falsy number literal type.
+  * @internal
+  */
+-export declare const isFalsyNumberType: (type: ts.Type) => boolean;
++export declare const isFalsyNumberType: (type: Type) => boolean;
+ /**
+  * Check if the type is a falsy string literal type.
+  * @internal
+  */
+-export declare const isFalsyStringType: (type: ts.Type) => boolean;
++export declare const isFalsyStringType: (type: Type) => boolean;
+ /**
+  * Check if the type is the never type.
+  * @internal
+  */
+-export declare const isNeverType: (type: ts.Type) => boolean;
++export declare const isNeverType: (type: Type) => boolean;
+ /**
+  * Check if the type is a nullish type (null, undefined, or void).
+  * @internal
+  */
+-export declare const isNullishType: (type: ts.Type) => boolean;
++export declare const isNullishType: (type: Type) => boolean;
+ /**
+  * Check if the type is a number-like type.
+  * @internal
+  */
+-export declare const isNumberType: (type: ts.Type) => boolean;
++export declare const isNumberType: (type: Type) => boolean;
+ /**
+  * Check if the type is an object type.
+  * @internal
+  */
+-export declare const isObjectType: (type: ts.Type) => boolean;
++export declare const isObjectType: (type: Type) => boolean;
+ /**
+  * Check if the type is a string-like type.
+  * @internal
+  */
+-export declare const isStringType: (type: ts.Type) => boolean;
++export declare const isStringType: (type: Type) => boolean;
+ /**
+  * Check if the type is a truthy bigint literal type.
+  * @internal
+  */
+-export declare const isTruthyBigIntType: (type: ts.Type) => type is ts.LiteralType & {
+-  freshType: ts.FreshableType;
+-  regularType: ts.FreshableType;
+-  flags: ts.TypeFlags;
+-  symbol: ts.Symbol;
+-  pattern?: ts.DestructuringPattern;
+-  aliasSymbol?: ts.Symbol;
+-  aliasTypeArguments?: readonly ts.Type[];
+-  getFlags: () => ts.TypeFlags;
+-  getSymbol: () => ts.Symbol | undefined;
+-  getProperties: () => ts.Symbol[];
+-  getProperty: (propertyName: string) => ts.Symbol | undefined;
+-  getApparentProperties: () => ts.Symbol[];
+-  getCallSignatures: () => readonly ts.Signature[];
+-  getConstructSignatures: () => readonly ts.Signature[];
+-  getStringIndexType: () => ts.Type | undefined;
+-  getNumberIndexType: () => ts.Type | undefined;
+-  getBaseTypes: () => ts.BaseType[] | undefined;
+-  getNonNullableType: () => ts.Type;
+-  getConstraint: () => ts.Type | undefined;
+-  getDefault: () => ts.Type | undefined;
+-  isUnion: () => this is ts.UnionType;
+-  isIntersection: () => this is ts.IntersectionType;
+-  isUnionOrIntersection: () => this is ts.UnionOrIntersectionType;
+-  isLiteral: () => this is ts.LiteralType;
+-  isStringLiteral: () => this is ts.StringLiteralType;
+-  isNumberLiteral: () => this is ts.NumberLiteralType;
+-  isTypeParameter: () => this is ts.TypeParameter;
+-  isClassOrInterface: () => this is ts.InterfaceType;
+-  isClass: () => this is ts.InterfaceType;
+-  isIndexType: () => this is ts.IndexType;
+-  value: ts.PseudoBigInt;
+-};
++export declare const isTruthyBigIntType: (type: Type) => type is BigIntLiteralType;
+ /**
+  * Check if the type is a truthy number literal type.
+  * @internal
+  */
+-export declare const isTruthyNumberType: (type: ts.Type) => boolean;
++export declare const isTruthyNumberType: (type: Type) => boolean;
+ /**
+  * Check if the type is a truthy string literal type.
+  * @internal
+  */
+-export declare const isTruthyStringType: (type: ts.Type) => boolean;
++export declare const isTruthyStringType: (type: Type) => boolean;
+ /**
+  * Check if the type is the unknown type.
+  * @internal
+  */
+-export declare const isUnknownType: (type: ts.Type) => boolean;
++export declare const isUnknownType: (type: Type) => boolean;
+ /**
+- * Get the fully qualified name of a symbol, handling cases that `ts.TypeChecker.getFullyQualifiedName` does not handle (ex: `export as namespace preact`).
++ * Get the fully qualified name of a symbol, handling cases that `Checker.getFullyQualifiedName` does not handle (ex: `export as namespace preact`).
+  * @param checker The TypeScript type checker.
+  * @param symbol The symbol to get fully qualified name for.
+  * @returns The fully qualified name of the symbol.
+  */
+-export declare function getFullyQualifiedNameEx(checker: ts.TypeChecker, symbol: ts.Symbol): string;
++export declare function getFullyQualifiedNameEx(checker: Checker, symbol: Symbol): never;
+ /** Represents the variant of a type for boolean expression analysis. */
+ export type TypeVariant = "any" | "bigint" | "boolean" | "enum" | "never" | "nullish" | "number" | "object" | "string" | "unknown" | "falsy bigint" | "falsy boolean" | "falsy number" | "falsy string" | "truthy bigint" | "truthy boolean" | "truthy number" | "truthy string";
+ /**
+@@ -1000,4 +931,4 @@ export type TypeVariant = "any" | "bigint" | "boolean" | "enum" | "never" | "nul
+  * @remarks Ported from https://github.com/typescript-eslint/typescript-eslint/blob/eb736bbfc22554694400e6a4f97051d845d32e0b/packages/eslint-plugin/src/rules/strict-boolean-expressions.ts#L826 with some enhancements.
+  * @internal
+  */
+-export declare function getTypeVariants(types: ts.Type[]): Set<TypeVariant>;
+\ No newline at end of file
++export declare function getTypeVariants(types: readonly Type[]): Set<TypeVariant>;
+\ No newline at end of file
+diff --git a/dist/index.js b/dist/index.js
+index b64cf6b..0288e04 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -6,7 +6,8 @@ import { RE_ANNOTATION_JSX, RE_ANNOTATION_JSX_FRAG, RE_ANNOTATION_JSX_IMPORT_SOU
+ import { resolve } from "@eslint-react/var";
+ import { findVariable } from "@typescript-eslint/utils/ast-utils";
+ import { P, isMatching, match } from "ts-pattern";
+-import ts from "typescript";
++import * as nativeAst from "typescript/unstable/ast";
++import { TypeFlags } from "typescript/unstable/sync";
+ // src/api.ts
+ function isAPI(api) {
+ 	function impl(context, node) {
+@@ -785,9 +786,9 @@ function getHookCollector(context) {
+ const annotationCache = /* @__PURE__ */ new WeakMap();
+ const mergedCache = /* @__PURE__ */ new WeakMap();
+ function getJSXConfigFromCompilerOptions(context) {
+-	const options = context.sourceCode.parserServices?.program?.getCompilerOptions() ?? {};
++	const options = context.sourceCode.parserServices?.project?.compilerOptions ?? {};
+ 	return {
+-		jsx: options.jsx ?? ts.JsxEmit.ReactJSX,
++		jsx: options.jsx ?? 4,
+ 		jsxFactory: options.jsxFactory ?? "React.createElement",
+ 		jsxFragmentFactory: options.jsxFragmentFactory ?? "React.Fragment",
+ 		jsxImportSource: options.jsxImportSource ?? "react"
+@@ -811,8 +812,8 @@ function getJSXConfigFromAnnotation(context) {
+ 	}
+ 	if (jsx != null) options.jsxFactory = jsx;
+ 	if (jsxFrag != null) options.jsxFragmentFactory = jsxFrag;
+-	if (jsxRuntime === "classic") options.jsx = ts.JsxEmit.React;
+-	else if (jsxRuntime === "automatic") options.jsx = ts.JsxEmit.ReactJSX;
++	if (jsxRuntime === "classic") options.jsx = 2;
++	else if (jsxRuntime === "automatic") options.jsx = 4;
+ 	if (jsxImportSource != null) options.jsxImportSource = jsxImportSource;
+ 	annotationCache.set(context.sourceCode, options);
+ 	return options;
+@@ -835,68 +836,28 @@ function isFlagSetOnObject(obj, flag) {
+ 	return isFlagSet(obj.flags, flag);
+ }
+ const isTypeFlagSet = isFlagSetOnObject;
+-const isBooleanLiteralType = (type) => isTypeFlagSet(type, ts.TypeFlags.BooleanLiteral);
+-const isFalseLiteralType = (type) => isBooleanLiteralType(type) && type.intrinsicName === "false";
+-const isTrueLiteralType = (type) => isBooleanLiteralType(type) && type.intrinsicName === "true";
+-const isAnyType = (type) => isTypeFlagSet(type, ts.TypeFlags.TypeParameter | ts.TypeFlags.Any);
+-const isBigIntType = (type) => isTypeFlagSet(type, ts.TypeFlags.BigIntLike);
+-const isBooleanType = (type) => isTypeFlagSet(type, ts.TypeFlags.BooleanLike);
+-const isEnumType = (type) => isTypeFlagSet(type, ts.TypeFlags.EnumLike);
+-const isFalsyBigIntType = (type) => type.isLiteral() && isMatching({ value: { base10Value: "0" } }, type);
+-const isFalsyNumberType = (type) => type.isNumberLiteral() && type.value === 0;
+-const isFalsyStringType = (type) => type.isStringLiteral() && type.value === "";
+-const isNeverType = (type) => isTypeFlagSet(type, ts.TypeFlags.Never);
+-const isNullishType = (type) => isTypeFlagSet(type, ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.VoidLike);
+-const isNumberType = (type) => isTypeFlagSet(type, ts.TypeFlags.NumberLike);
+-const isObjectType = (type) => !isTypeFlagSet(type, ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.VoidLike | ts.TypeFlags.BooleanLike | ts.TypeFlags.StringLike | ts.TypeFlags.NumberLike | ts.TypeFlags.BigIntLike | ts.TypeFlags.ESSymbolLike | ts.TypeFlags.TypeParameter | ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never);
+-const isStringType = (type) => isTypeFlagSet(type, ts.TypeFlags.StringLike);
+-const isTruthyBigIntType = (type) => type.isLiteral() && isMatching({ value: { base10Value: P.not("0") } }, type);
+-const isTruthyNumberType = (type) => type.isNumberLiteral() && type.value !== 0;
+-const isTruthyStringType = (type) => type.isStringLiteral() && type.value !== "";
+-const isUnknownType = (type) => isTypeFlagSet(type, ts.TypeFlags.Unknown);
++const isBooleanLiteralType = (type) => isTypeFlagSet(type, TypeFlags.BooleanLiteral);
++const isFalseLiteralType = (type) => isBooleanLiteralType(type) && type.value === false;
++const isTrueLiteralType = (type) => isBooleanLiteralType(type) && type.value === true;
++const isAnyType = (type) => isTypeFlagSet(type, TypeFlags.TypeParameter | TypeFlags.Any);
++const isBigIntType = (type) => isTypeFlagSet(type, TypeFlags.BigIntLike);
++const isBooleanType = (type) => isTypeFlagSet(type, TypeFlags.BooleanLike);
++const isEnumType = (type) => isTypeFlagSet(type, TypeFlags.EnumLike);
++const isFalsyBigIntType = (type) => type.isBigIntLiteralType() && type.value === 0n;
++const isFalsyNumberType = (type) => type.isNumberLiteralType() && type.value === 0;
++const isFalsyStringType = (type) => type.isStringLiteralType() && type.value === "";
++const isNeverType = (type) => isTypeFlagSet(type, TypeFlags.Never);
++const isNullishType = (type) => isTypeFlagSet(type, TypeFlags.Null | TypeFlags.Undefined | TypeFlags.VoidLike);
++const isNumberType = (type) => isTypeFlagSet(type, TypeFlags.NumberLike);
++const isObjectType = (type) => !isTypeFlagSet(type, TypeFlags.Null | TypeFlags.Undefined | TypeFlags.VoidLike | TypeFlags.BooleanLike | TypeFlags.StringLike | TypeFlags.NumberLike | TypeFlags.BigIntLike | TypeFlags.ESSymbolLike | TypeFlags.TypeParameter | TypeFlags.Any | TypeFlags.Unknown | TypeFlags.Never);
++const isStringType = (type) => isTypeFlagSet(type, TypeFlags.StringLike);
++const isTruthyBigIntType = (type) => type.isBigIntLiteralType() && type.value !== 0n;
++const isTruthyNumberType = (type) => type.isNumberLiteralType() && type.value !== 0;
++const isTruthyStringType = (type) => type.isStringLiteralType() && type.value !== "";
++const isUnknownType = (type) => isTypeFlagSet(type, TypeFlags.Unknown);
+ // src/type-name.ts
+ function getFullyQualifiedNameEx(checker, symbol) {
+-	let name = symbol.name;
+-	let parent = symbol.declarations?.at(0)?.parent;
+-	if (parent == null) return checker.getFullyQualifiedName(symbol);
+-	while (parent.kind !== ts.SyntaxKind.SourceFile) {
+-		switch (true) {
+-			case ts.isInterfaceDeclaration(parent):
+-			case ts.isTypeAliasDeclaration(parent):
+-			case ts.isEnumDeclaration(parent):
+-			case ts.isModuleDeclaration(parent):
+-			case ts.isNamespaceImport(parent):
+-			case ts.isNamespaceExport(parent):
+-			case ts.isNamespaceExportDeclaration(parent):
+-				name = `${parent.name.text}.${name}`;
+-				break;
+-			case ts.isPropertySignature(parent) && ts.isIdentifier(parent.name):
+-			case ts.isPropertyDeclaration(parent) && ts.isIdentifier(parent.name):
+-			case ts.isMethodDeclaration(parent) && ts.isIdentifier(parent.name):
+-			case ts.isMethodSignature(parent) && ts.isIdentifier(parent.name):
+-			case ts.isPropertyAssignment(parent) && ts.isIdentifier(parent.name):
+-				name = `${parent.name.text}.${name}`;
+-				break;
+-			case ts.isFunctionDeclaration(parent) && parent.name != null:
+-			case ts.isClassExpression(parent) && parent.name != null:
+-			case ts.isClassDeclaration(parent) && parent.name != null:
+-				name = `${parent.name.text}.${name}`;
+-				break;
+-			case ts.isEnumMember(parent):
+-				name = `${parent.name.getText()}.${name}`;
+-				break;
+-			case ts.isTypeLiteralNode(parent):
+-			case ts.isMappedTypeNode(parent):
+-			case ts.isObjectLiteralExpression(parent):
+-			case ts.isIntersectionTypeNode(parent):
+-			case ts.isUnionTypeNode(parent):
+-		}
+-		parent = parent.parent;
+-	}
+-	const namespace = parent.getSourceFile().statements.find((n) => ts.isNamespaceExportDeclaration(n))?.name.text;
+-	if (namespace == null) return name;
+-	if (name === namespace || name.startsWith(`${namespace}.`)) return name;
+-	return `${namespace}.${name}`;
++    throw new Error('Native TypeScript 7 has no getFullyQualifiedName; implicit-prop identity rules need a native symbol/declaration implementation before use');
+ }
+ // src/type-variant.ts
+ function getTypeVariants(types) {

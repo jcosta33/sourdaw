@@ -1,0 +1,18 @@
+diff --git a/lib/lockfile.js b/lib/lockfile.js
+--- a/lib/lockfile.js
++++ b/lib/lockfile.js
+@@ -6,1 +6,1 @@
++const { onExit } = require('signal-exit');
+-const onExit = require('signal-exit');
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -50,2 +50,2 @@
++    "retry": "0.13.1",
++    "signal-exit": "4.1.0"
+-    "retry": "^0.12.0",
+-    "signal-exit": "^3.0.2"
+@@ -69,0 +70,3 @@
++  },
++  "engines": {
++    "node": ">=26.0.0"

@@ -41,7 +41,38 @@ diff --git a/dist/client/client.mjs b/dist/client/client.mjs
 diff --git a/dist/node/chunks/node.js b/dist/node/chunks/node.js
 --- a/dist/node/chunks/node.js
 +++ b/dist/node/chunks/node.js
-@@ -17245,12 +17245,13 @@
+@@ -16784,7 +16784,7 @@
+ 	return true;
+ }
+ function resolveChokidarOptions(options, resolvedOutDirs, emptyOutDir, cacheDir) {
+-	const { ignored: ignoredList, pollInterval, useDebounce, debounceDuration, debounceTickRate, compareContentsForPolling, include, exclude, ...otherOptions } = options ?? {};
++	const { ignored: ignoredList, watcher, pollInterval, useDebounce, debounceDuration, debounceTickRate, compareContentsForPolling, include, exclude, ...otherOptions } = options ?? {};
+ 	const ignored = [
+ 		"**/.git/**",
+ 		"**/node_modules/**",
+@@ -16811,12 +16811,15 @@
+ 	if (options === null) return { enabled: false };
+ 	if (!options) return {};
+ 	return {
+-		usePolling: options.usePolling,
+-		pollInterval: options.pollInterval ?? options.interval,
+-		useDebounce: options.useDebounce,
+-		debounceDuration: options.debounceDuration,
+-		debounceTickRate: options.debounceTickRate,
+-		compareContentsForPolling: options.compareContentsForPolling,
++		watcher: {
++			...options.watcher,
++			usePolling: options.watcher?.usePolling ?? options.usePolling,
++			pollInterval: options.watcher?.pollInterval ?? options.pollInterval ?? options.interval,
++			useDebounce: options.watcher?.useDebounce ?? options.useDebounce,
++			debounceDelay: options.watcher?.debounceDelay ?? options.debounceDuration,
++			debounceTickRate: options.watcher?.debounceTickRate ?? options.debounceTickRate,
++			compareContentsForPolling: options.watcher?.compareContentsForPolling ?? options.compareContentsForPolling
++		},
+ 		include: options.include,
+ 		exclude: options.exclude
+ 	};
+@@ -17245,12 +17248,13 @@
  	const hmrDirectTargetReplacement = escapeReplacement(directTarget);
  	const hmrBaseReplacement = escapeReplacement(hmrBase);
  	const hmrTimeoutReplacement = escapeReplacement(timeout);
@@ -56,3 +87,102 @@ diff --git a/dist/node/chunks/node.js b/dist/node/chunks/node.js
  }
  const ROLLDOWN_DEV_RUNTIME_ENTRY = "rolldown/experimental/runtime";
  async function getHmrImplementation(config) {
+@@ -26920,7 +26924,7 @@
+ const preloadMethod = `__vitePreload`;
+ const preloadMarker = `__VITE_PRELOAD__`;
+ const preloadHelperId = "\0vite/preload-helper.js";
+-const preloadMarkerRE = new RegExp(preloadMarker, "g");
++const preloadMarkerRE = /__VITE_PRELOAD__(?:[\da-f]{32})?/g;
+ function isCssPreloadUrl(url) {
+ 	return url.pathname.endsWith(".css");
+ }
+@@ -26930,7 +26934,7 @@
+ }
+ function findPreloadMarker(str, pos = 0) {
+ 	preloadMarkerRE.lastIndex = pos;
+-	return preloadMarkerRE.exec(str)?.index ?? -1;
++	return preloadMarkerRE.exec(str);
+ }
+ /**
+ * Pairs each dynamic `import()` with the `__VITE_PRELOAD__` marker that belongs to it.
+@@ -26951,11 +26955,12 @@
+ 	if (imports.length === 0) return importMarkerPos;
+ 	const openImports = [];
+ 	let nextImport = 0;
+-	for (let markerStartPos = findPreloadMarker(code, imports[0].e); markerStartPos !== -1; markerStartPos = findPreloadMarker(code, markerStartPos + preloadMarker.length)) {
++	for (let marker = findPreloadMarker(code, imports[0].e); marker; marker = findPreloadMarker(code, marker.index + marker[0].length)) {
++		const markerStartPos = marker.index;
+ 		while (nextImport < imports.length && imports[nextImport].e <= markerStartPos) openImports.push(nextImport++);
+ 		if (openImports.length) importMarkerPos[openImports.pop()] = markerStartPos;
+ 	}
+-	if (imports.length === 1 && importMarkerPos[0] === -1) importMarkerPos[0] = findPreloadMarker(code);
++	if (imports.length === 1 && importMarkerPos[0] === -1) importMarkerPos[0] = findPreloadMarker(code)?.index ?? -1;
+ 	return importMarkerPos;
+ }
+ /**
+@@ -27274,6 +27279,7 @@
+ 							}
+ 							const markerStartPos = importMarkerPos[index];
+ 							if (markerStartPos > 0) {
++								const marker = findPreloadMarker(code, markerStartPos);
+ 								let depsArray = deps.size > 1 || hasRemovedPureCssChunk && deps.size > 0 ? modulePreload === false ? [...deps].filter((d) => d.endsWith(".css")) : [...deps] : [];
+ 								const resolveDependencies = modulePreload ? modulePreload.resolveDependencies : void 0;
+ 								if (resolveDependencies && normalizedFile) {
+@@ -27293,7 +27299,7 @@
+ 									return addFileDep(replacement.runtime, true);
+ 								});
+ 								else renderedDeps = depsArray.map((d) => isRelativeBase ? addFileDep(toRelativePath(d, file)) : addFileDep(d));
+-								s.update(markerStartPos, markerStartPos + preloadMarker.length, renderedDeps.length > 0 ? `__vite__mapDeps([${renderedDeps.join(",")}])` : `[]`);
++								s.update(markerStartPos, markerStartPos + marker[0].length, renderedDeps.length > 0 ? `__vite__mapDeps([${renderedDeps.join(",")}])` : `[]`);
+ 								rewroteMarkerStartPos.add(markerStartPos);
+ 							}
+ 						}
+@@ -27303,10 +27309,11 @@
+ 						if (code.startsWith("#!")) s.prependLeft(getFileStartIndex(code), mapDepsCode);
+ 						else s.prepend(mapDepsCode);
+ 					}
+-					let markerStartPos = findPreloadMarker(code);
+-					while (markerStartPos >= 0) {
+-						if (!rewroteMarkerStartPos.has(markerStartPos)) s.update(markerStartPos, markerStartPos + preloadMarker.length, "void 0");
+-						markerStartPos = findPreloadMarker(code, markerStartPos + preloadMarker.length);
++					let marker = findPreloadMarker(code);
++					while (marker) {
++						const markerStartPos = marker.index;
++						if (!rewroteMarkerStartPos.has(markerStartPos)) s.update(markerStartPos, markerStartPos + marker[0].length, "void 0");
++						marker = findPreloadMarker(code, markerStartPos + marker[0].length);
+ 					}
+ 					if (s.hasChanged()) {
+ 						chunk.code = s.toString();
+diff --git a/dist/node/index.d.ts b/dist/node/index.d.ts
+--- a/dist/node/index.d.ts
++++ b/dist/node/index.d.ts
+@@ -2093,6 +2093,8 @@
+   }>;
+   load?: ObjectHook<(this: PluginContext, id: string, options?: {
+     ssr?: boolean | undefined;
++    rawId?: string;
++    attributes?: Record<string, string>;
+   }) => Promise<LoadResult> | LoadResult, {
+     filter?: {
+       id?: StringFilter;
+@@ -2293,7 +2295,7 @@
+  * the Rolldown options are used by the Rolldown file watcher when bundled dev
+  * mode is enabled.
+  */
+-type ServerWatchOptions = WatchOptions & Omit<DevWatchOptions, "enabled" | "skipWrite">;
++type ServerWatchOptions = WatchOptions & Omit<DevWatchOptions, "enabled" | "skipWrite"> & Omit<NonNullable<DevWatchOptions["watcher"]>, "debounceDelay"> & { debounceDuration?: number };
+ interface ServerOptions$1 extends CommonServerOptions {
+   /**
+    * Configure HMR-specific options (port, host, path & protocol)
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -59,7 +59,7 @@
+     "lightningcss": "^1.33.0",
+     "picomatch": "^4.0.7",
+     "postcss": "^8.5.32",
+-    "rolldown": "~1.2.18",
++    "rolldown": "~1.3.1",
+     "tinyglobby": "^0.2.17"
+   },
+   "devDependencies": {

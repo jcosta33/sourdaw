@@ -3,7 +3,9 @@ import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } fr
 import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import ts from 'typescript';
+import * as ts from 'typescript/unstable/ast';
+
+import { readNativeSources, requireNativeSyntax } from './nativeTypeScript.ts';
 
 export type UiRestatementKind = 'layout' | 'daw-chrome' | 'generic-control';
 
@@ -445,8 +447,7 @@ function classifyElement(
     );
 }
 
-function scanSourceFile(relativePath: string, contents: string): UiRestatementRow[] {
-    const sourceFile = ts.createSourceFile(relativePath, contents, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+function scanSourceFile(relativePath: string, sourceFile: ts.SourceFile): UiRestatementRow[] {
     const classified: ClassifiedRow[] = [];
     const visit = (node: ts.Node): void => {
         if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
@@ -484,9 +485,11 @@ export function scanUiRestatements(root: string): UiRestatementRow[] {
     const src = join(root, 'src');
     collectTsxFiles(existsSync(src) ? src : root, root, files);
     const rows: UiRestatementRow[] = [];
-    for (const absolute of files.sort()) {
-        const relativePath = posixRelative(root, absolute);
-        rows.push(...scanSourceFile(relativePath, readFileSync(absolute, 'utf8')));
+    const sources = files
+        .sort()
+        .map((absolute) => ({ path: posixRelative(root, absolute), text: readFileSync(absolute, 'utf8') }));
+    for (const [relativePath, parsed] of readNativeSources(sources)) {
+        rows.push(...scanSourceFile(relativePath, requireNativeSyntax(parsed)));
     }
     return rows;
 }

@@ -1,0 +1,171 @@
+diff --git a/lib/index.js b/lib/index.js
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1,4 +1,5 @@
+-import { GenMapping, setSourceContent, toEncodedMap, toDecodedMap, allMappings, maybeAddMapping } from '@jridgewell/gen-mapping';
++import { GenMapping, setSourceContent, toEncodedMap, toDecodedMap, allMappings, maybeAddMapping, addMapping } from '@jridgewell/gen-mapping';
++import { encodeRangeMappings } from '@jridgewell/sourcemap-codec';
+ import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
+ import * as _t from '@babel/types';
+ import jsesc from 'jsesc';
+@@ -12,6 +13,7 @@
+   #mappingsBuffer2 = null;
+   #droppedMappingForRange = false;
+   #allowRangeMappings;
++  #rangeMappings = [];
+   constructor(opts, code) {
+     const map = this._map = new GenMapping({
+       sourceRoot: opts.sourceRoot
+@@ -44,12 +46,16 @@
+     this.#flushBuffer();
+     const encoded = toEncodedMap(this._map);
+     encoded.ignoreList ??= [];
++    const ranges = this.#getRanges();
++    encoded.rangeMappings = ranges ? encodeRangeMappings(ranges) : undefined;
+     return encoded;
+   }
+   getDecoded() {
+     this.#flushBuffer();
+     const decoded = toDecodedMap(this._map);
+     decoded.ignoreList ??= [];
++    const ranges = this.#getRanges();
++    decoded.rangeMappings = ranges;
+     return decoded;
+   }
+   getRawMappings() {
+@@ -97,7 +103,7 @@
+     };
+     if (newMapping.name !== null) {
+       this.#flushBuffer();
+-      maybeAddMapping(this._map, newMapping);
++      this.#addMapping(newMapping);
+       return;
+     }
+     if (this.#allowRangeMappings) {
+@@ -121,6 +127,62 @@
+     }
+     this.#bufferMapping(newMapping);
+   }
++  #getRanges() {
++    while (this.#rangeMappings.length && this.#rangeMappings.at(-1).length === 0) {
++      this.#rangeMappings.pop();
++    }
++    return this.#rangeMappings.length ? this.#rangeMappings : undefined;
++  }
++  #addMapping(mapping) {
++    if (!this.#allowRangeMappings) {
++      maybeAddMapping(this._map, mapping);
++      return;
++    }
++    const mappings = toDecodedMap(this._map).mappings;
++    const lineIndex = mapping.generated.line - 1;
++    const column = mapping.generated.column;
++    const line = mappings[lineIndex] ?? [];
++    let insertion = line.length;
++    while (insertion > 0 && line[insertion - 1][0] > column) insertion--;
++    let previousLine = lineIndex;
++    let previousIndex = insertion - 1;
++    while (previousIndex < 0 && previousLine > 0) {
++      previousLine--;
++      previousIndex = (mappings[previousLine]?.length ?? 0) - 1;
++    }
++    const previousRanges = this.#rangeMappings[previousLine];
++    const rangeOpen = previousIndex >= 0 && previousRanges &&
++      previousRanges[this.#rangePosition(previousRanges, previousIndex)] === previousIndex;
++    const before = line.length;
++    if (rangeOpen) addMapping(this._map, mapping);
++    else maybeAddMapping(this._map, mapping);
++    const updated = toDecodedMap(this._map).mappings[lineIndex] ?? [];
++    if (updated.length !== before && insertion < before) {
++      const ranges = this.#rangeMappings[lineIndex];
++      if (ranges) {
++        for (let i = ranges.length - 1; i >= 0 && ranges[i] >= insertion; i--) ranges[i]++;
++      }
++    }
++    if (mapping.isRange) {
++      while (this.#rangeMappings.length <= lineIndex) this.#rangeMappings.push([]);
++      const ranges = this.#rangeMappings[lineIndex];
++      let index = updated.length;
++      while (index > 0 && updated[index - 1][0] > column) index--;
++      const rangeIndex = index - 1;
++      const pos = this.#rangePosition(ranges, rangeIndex);
++      if (ranges[pos] !== rangeIndex) ranges.splice(pos, 0, rangeIndex);
++    }
++  }
++  #rangePosition(ranges, index) {
++    let low = 0;
++    let high = ranges.length;
++    while (low < high) {
++      const mid = (low + high) >>> 1;
++      if (ranges[mid] < index) low = mid + 1;
++      else high = mid;
++    }
++    return low;
++  }
+   #bufferMapping(newMapping) {
+     if (this.#mappingsBuffer0 === null) {
+       this.#mappingsBuffer0 = newMapping;
+@@ -130,7 +192,7 @@
+       if (this.#isRangeCandidate(this.#mappingsBuffer0, newMapping)) {
+         this.#mappingsBuffer1 = newMapping;
+       } else {
+-        maybeAddMapping(this._map, this.#mappingsBuffer0);
++        this.#addMapping(this.#mappingsBuffer0);
+         this.#mappingsBuffer0 = newMapping;
+       }
+       return;
+@@ -140,8 +202,8 @@
+       this.#droppedMappingForRange = true;
+     } else {
+       if (this.#droppedMappingForRange) this.#mappingsBuffer0.isRange = true;
+-      maybeAddMapping(this._map, this.#mappingsBuffer0);
+-      maybeAddMapping(this._map, this.#mappingsBuffer1);
++      this.#addMapping(this.#mappingsBuffer0);
++      this.#addMapping(this.#mappingsBuffer1);
+       this.#mappingsBuffer0 = newMapping;
+       this.#mappingsBuffer1 = null;
+       this.#droppedMappingForRange = false;
+@@ -156,11 +218,11 @@
+     const buf1 = this.#mappingsBuffer1;
+     if (buf0 !== null) {
+       if (buf1 !== null && this.#droppedMappingForRange) buf0.isRange = true;
+-      maybeAddMapping(this._map, buf0);
++      this.#addMapping(buf0);
+       this.#mappingsBuffer0 = null;
+     }
+     if (buf1 !== null) {
+-      maybeAddMapping(this._map, buf1);
++      this.#addMapping(buf1);
+       this.#mappingsBuffer1 = null;
+     }
+   }
+diff --git a/lib/index.d.ts b/lib/index.d.ts
+--- a/lib/index.d.ts
++++ b/lib/index.d.ts
+@@ -86,8 +86,8 @@
+ }
+ interface GeneratorResult {
+     code: string;
+-    map: EncodedSourceMap | null;
+-    decodedMap: DecodedSourceMap | undefined;
++    map: (EncodedSourceMap & { rangeMappings?: string }) | null;
++    decodedMap: (DecodedSourceMap & { rangeMappings?: number[][] }) | undefined;
+     rawMappings: Mapping[] | undefined;
+ }
+ /**
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -21,9 +21,10 @@
+   "dependencies": {
+     "@babel/parser": "^8.1.2",
+     "@babel/types": "^8.1.2",
+-    "@jridgewell/gen-mapping": "0.4.0-beta.0",
++    "@jridgewell/gen-mapping": "0.3.13",
++    "@jridgewell/sourcemap-codec": "1.6.0",
+     "@jridgewell/trace-mapping": "^0.3.31",
+-    "@types/jsesc": "^2.5.0",
++    "@types/jsesc": "^3.0.3",
+     "jsesc": "^3.0.2"
+   },
+   "devDependencies": {

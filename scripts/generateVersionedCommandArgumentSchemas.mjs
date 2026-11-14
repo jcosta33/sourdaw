@@ -2,155 +2,234 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import prettier from 'prettier';
-import ts from 'typescript';
+import { isTypeAliasDeclaration, isTypeReferenceNode } from 'typescript/unstable/ast';
+import { API, DiagnosticCategory, SymbolFlags, TypeFlags } from 'typescript/unstable/sync';
 
 const root = process.cwd();
 const configPath = path.join(root, 'tsconfig.app.json');
 const contractPath = path.join(root, 'src/utils/handlerContract.ts');
 const outputPath = path.join(root, 'src/modules/Command/useCases/versionedCommandArgumentKeys.ts');
 
-const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
-const parsedConfig = ts.parseJsonConfigFileContent(configFile.config, ts.sys, root);
-const program = ts.createProgram(parsedConfig.fileNames, parsedConfig.options);
-const checker = program.getTypeChecker();
-const contractSource = program.getSourceFile(contractPath);
-if (!contractSource) {
-    throw new Error('Unable to read handlerContract.ts');
-}
-const moduleSymbol = checker.getSymbolAtLocation(contractSource);
-const appActionSymbol = moduleSymbol
-    ? checker.getExportsOfModule(moduleSymbol).find((symbol) => symbol.name === 'AppAction')
-    : undefined;
-if (!appActionSymbol) {
-    throw new Error('Unable to resolve AppAction');
-}
-const appAction = checker.getDeclaredTypeOfSymbol(appActionSymbol);
-if (!appAction.isUnion()) {
-    throw new Error('AppAction must remain a discriminated union');
-}
+const schemas = readActionSchemas();
 
-function uniqueSchemas(schemas) {
-    return [...new Map(schemas.map((schema) => [JSON.stringify(schema), schema])).values()];
-}
-
-function schemaFor(type, stack = new Set()) {
-    if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) {
-        return { type: 'json' };
-    }
-    if (type.flags & ts.TypeFlags.Never) {
-        return { type: 'never' };
-    }
-    if (type.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Void)) {
-        return { type: 'never' };
-    }
-    if (type.flags & ts.TypeFlags.Null) {
-        return { type: 'null' };
-    }
-    if (type.isStringLiteral() || type.isNumberLiteral()) {
-        return { type: 'literal', value: type.value };
-    }
-    if (type.flags & ts.TypeFlags.BooleanLiteral) {
-        return { type: 'literal', value: type.intrinsicName === 'true' };
-    }
-    if (type.flags & (ts.TypeFlags.String | ts.TypeFlags.TemplateLiteral)) {
-        return { type: 'string' };
-    }
-    if (type.flags & ts.TypeFlags.Number) {
-        return { type: 'number' };
-    }
-    if (type.flags & ts.TypeFlags.Boolean) {
-        return { type: 'boolean' };
-    }
-    if (stack.has(type.id)) {
-        return { type: 'json' };
-    }
-    const nextStack = new Set(stack);
-    nextStack.add(type.id);
-    if (type.isUnion()) {
-        const schemas = uniqueSchemas(
-            type.types
-                .filter((member) => !(member.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Never)))
-                .map((member) => schemaFor(member, nextStack))
-        );
-        return schemas.length === 1 ? schemas[0] : { anyOf: schemas };
-    }
-    if (type.isIntersection()) {
-        return { allOf: type.types.map((member) => schemaFor(member, nextStack)) };
-    }
-    if (checker.isTupleType(type)) {
-        return {
-            type: 'tuple',
-            items: checker.getTypeArguments(type).map((item) => schemaFor(item, nextStack)),
-        };
-    }
-    if (checker.isArrayType(type) || checker.isArrayLikeType(type)) {
-        const element = checker.getIndexTypeOfType(type, ts.IndexKind.Number);
-        if (!element) {
-            throw new Error(`Unable to resolve array element type: ${checker.typeToString(type)}`);
+function readActionSchemas() {
+    const api = new API({ cwd: root });
+    let snapshot;
+    try {
+        snapshot = api.updateSnapshot({ openProjects: [configPath] });
+        const project = snapshot.getProject(configPath);
+        if (!project) {
+            throw new Error('Unable to open tsconfig.app.json');
         }
-        return { type: 'array', items: schemaFor(element, nextStack) };
-    }
-    if (!(type.flags & ts.TypeFlags.Object)) {
-        throw new Error(`Unsupported AppAction payload type: ${checker.typeToString(type)}`);
-    }
+        const { program, checker } = project;
+        const errors = [
+            ...program.getConfigFileParsingDiagnostics(),
+            ...program.getProgramDiagnostics(),
+            ...program.getSyntacticDiagnostics(contractPath),
+            ...program.getSemanticDiagnostics(contractPath),
+        ].filter((diagnostic) => diagnostic.category === DiagnosticCategory.Error);
+        if (errors.length > 0) {
+            throw new Error(
+                `Unable to generate AppAction schemas:\n${errors
+                    .map(
+                        (diagnostic) =>
+                            `${diagnostic.fileName ?? configPath}:${diagnostic.pos} TS${diagnostic.code}: ${diagnostic.text}`
+                    )
+                    .join('\n')}`
+            );
+        }
+        const contractSource = program.getSourceFile(contractPath);
+        if (!contractSource) {
+            throw new Error('Unable to read handlerContract.ts');
+        }
+        const moduleSymbol = checker.getSymbolAtLocation(contractSource);
+        const appActionSymbol = moduleSymbol
+            ? checker.getExportsOfModule(moduleSymbol).find((symbol) => symbol.name === 'AppAction')
+            : undefined;
+        if (!appActionSymbol) {
+            throw new Error('Unable to resolve AppAction');
+        }
+        const appAction = checker.getDeclaredTypeOfSymbol(appActionSymbol);
+        if (!appAction.isUnionType()) {
+            throw new Error('AppAction must remain a discriminated union');
+        }
 
-    const stringIndex = checker.getIndexTypeOfType(type, ts.IndexKind.String);
-    const properties = {};
-    const required = [];
-    for (const property of checker.getPropertiesOfType(type)) {
-        const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? contractSource;
-        const propertyType = checker.getTypeOfSymbolAtLocation(property, declaration);
-        properties[property.name] = schemaFor(propertyType, nextStack);
-        if ((property.flags & ts.SymbolFlags.Optional) === 0) {
-            required.push(property.name);
+        function resolveDeclaration(symbol) {
+            const handle = symbol.valueDeclaration ?? symbol.declarations[0];
+            if (!handle) {
+                return undefined;
+            }
+            const declaration = handle.resolve(project);
+            if (!declaration) {
+                throw new Error(`Unable to resolve declaration for ${symbol.name}`);
+            }
+            return declaration;
+        }
+
+        function uniqueSchemas(schemas) {
+            return [...new Map(schemas.map((schema) => [JSON.stringify(schema), schema])).values()];
+        }
+
+        // Native unions use a display order; persisted definition IDs retain checker creation order.
+        function orderedProperties(type) {
+            const properties = checker.getPropertiesOfType(type);
+            const alias = type.getAliasSymbol();
+            const declaration = alias ? resolveDeclaration(alias) : undefined;
+            if (!declaration || !isTypeAliasDeclaration(declaration) || !isTypeReferenceNode(declaration.type)) {
+                return properties;
+            }
+            // Mapped aliases such as Pick enumerate their keys differently from their source object.
+            // Only an exact native key-set match can establish an ordering; it never supplies properties.
+            for (const argument of declaration.type.typeArguments ?? []) {
+                const keys = checker.getTypeFromTypeNode(argument);
+                if (!keys?.isUnionType()) continue;
+                const members = [...keys.getTypes()].sort((left, right) => left.id - right.id);
+                if (members.length !== properties.length || !members.every((member) => member.isStringLiteralType()))
+                    continue;
+                const order = new Map(members.map((member, index) => [member.value, index]));
+                if (properties.every((property) => order.has(property.name))) {
+                    return [...properties].sort((left, right) => order.get(left.name) - order.get(right.name));
+                }
+            }
+            return properties;
+        }
+
+        function schemaFor(type, stack = new Set()) {
+            if (type.isErrorType()) {
+                throw new Error(`Unable to resolve AppAction payload type: ${checker.typeToString(type)}`);
+            }
+            if (type.flags & (TypeFlags.Any | TypeFlags.Unknown)) {
+                return { type: 'json' };
+            }
+            if (type.flags & TypeFlags.Never) {
+                return { type: 'never' };
+            }
+            if (type.flags & (TypeFlags.Undefined | TypeFlags.Void)) {
+                return { type: 'never' };
+            }
+            if (type.flags & TypeFlags.Null) {
+                return { type: 'null' };
+            }
+            if (type.isStringLiteralType() || type.isNumberLiteralType()) {
+                return { type: 'literal', value: type.value };
+            }
+            if (type.flags & TypeFlags.BooleanLiteral) {
+                return { type: 'literal', value: type.value };
+            }
+            if (type.flags & (TypeFlags.String | TypeFlags.TemplateLiteral)) {
+                return { type: 'string' };
+            }
+            if (type.flags & TypeFlags.Number) {
+                return { type: 'number' };
+            }
+            if (type.flags & TypeFlags.Boolean) {
+                return { type: 'boolean' };
+            }
+            if (stack.has(type.id)) {
+                return { type: 'json' };
+            }
+            const nextStack = new Set(stack);
+            nextStack.add(type.id);
+            if (type.isUnionType()) {
+                const schemas = uniqueSchemas(
+                    [...type.getTypes()]
+                        .sort((left, right) => left.id - right.id)
+                        .filter((member) => !(member.flags & (TypeFlags.Undefined | TypeFlags.Never)))
+                        .map((member) => schemaFor(member, nextStack))
+                );
+                return schemas.length === 1 ? schemas[0] : { anyOf: schemas };
+            }
+            if (type.isIntersectionType()) {
+                return { allOf: type.getTypes().map((member) => schemaFor(member, nextStack)) };
+            }
+            if (checker.isTupleType(type)) {
+                return {
+                    type: 'tuple',
+                    items: checker.getTypeArguments(type).map((item) => schemaFor(item, nextStack)),
+                };
+            }
+            if (checker.isArrayType(type) || checker.isArrayLikeType(type)) {
+                const element = checker
+                    .getIndexInfosOfType(type)
+                    .find((index) => index.keyType.flags === TypeFlags.Number)?.valueType;
+                if (!element) {
+                    throw new Error(`Unable to resolve array element type: ${checker.typeToString(type)}`);
+                }
+                return { type: 'array', items: schemaFor(element, nextStack) };
+            }
+            if (!(type.flags & TypeFlags.Object)) {
+                throw new Error(`Unsupported AppAction payload type: ${checker.typeToString(type)}`);
+            }
+
+            const stringIndex = checker
+                .getIndexInfosOfType(type)
+                .find((index) => index.keyType.flags === TypeFlags.String)?.valueType;
+            const properties = {};
+            const required = [];
+            for (const property of orderedProperties(type)) {
+                const declaration = resolveDeclaration(property) ?? contractSource;
+                const propertyType = checker.getTypeOfSymbolAtLocation(property, declaration);
+                properties[property.name] = schemaFor(propertyType, nextStack);
+                if ((property.flags & SymbolFlags.Optional) === 0) {
+                    required.push(property.name);
+                }
+            }
+            if (Object.keys(properties).length === 0 && stringIndex) {
+                return { type: 'record', values: schemaFor(stringIndex, nextStack) };
+            }
+            return {
+                type: 'object',
+                properties,
+                required,
+                additionalProperties: stringIndex ? schemaFor(stringIndex, nextStack) : false,
+            };
+        }
+
+        const schemas = {};
+        for (const action of appAction.getTypes()) {
+            const typeProperty = checker.getPropertyOfType(action, 'type');
+            const typeDeclaration = typeProperty ? resolveDeclaration(typeProperty) : undefined;
+            if (!typeProperty || !typeDeclaration) {
+                throw new Error('AppAction variant is missing its type discriminator');
+            }
+            const actionType = checker.getTypeOfSymbolAtLocation(typeProperty, typeDeclaration);
+            if (!actionType.isStringLiteralType()) {
+                throw new Error('AppAction type discriminator must be a string literal');
+            }
+            const payloadProperty = checker.getPropertyOfType(action, 'payload');
+            if (!payloadProperty) {
+                schemas[actionType.value] = {
+                    type: 'object',
+                    properties: {},
+                    required: [],
+                    additionalProperties: false,
+                };
+                continue;
+            }
+            const payloadDeclaration = resolveDeclaration(payloadProperty);
+            if (!payloadDeclaration) {
+                throw new Error(`Unable to resolve ${actionType.value} payload`);
+            }
+            const payloadType = checker.getTypeOfSymbolAtLocation(payloadProperty, payloadDeclaration);
+            schemas[actionType.value] =
+                payloadType.flags & (TypeFlags.Undefined | TypeFlags.Void)
+                    ? {
+                          type: 'object',
+                          properties: {},
+                          required: [],
+                          additionalProperties: false,
+                      }
+                    : schemaFor(payloadType);
+        }
+
+        return schemas;
+    } finally {
+        try {
+            snapshot?.dispose();
+        } finally {
+            api.close();
         }
     }
-    if (Object.keys(properties).length === 0 && stringIndex) {
-        return { type: 'record', values: schemaFor(stringIndex, nextStack) };
-    }
-    return {
-        type: 'object',
-        properties,
-        required,
-        additionalProperties: stringIndex ? schemaFor(stringIndex, nextStack) : false,
-    };
-}
-
-const schemas = {};
-for (const action of appAction.types) {
-    const typeProperty = action.getProperty('type');
-    const typeDeclaration = typeProperty?.valueDeclaration ?? typeProperty?.declarations?.[0];
-    if (!typeProperty || !typeDeclaration) {
-        throw new Error('AppAction variant is missing its type discriminator');
-    }
-    const actionType = checker.getTypeOfSymbolAtLocation(typeProperty, typeDeclaration);
-    if (!actionType.isStringLiteral()) {
-        throw new Error('AppAction type discriminator must be a string literal');
-    }
-    const payloadProperty = action.getProperty('payload');
-    if (!payloadProperty) {
-        schemas[actionType.value] = {
-            type: 'object',
-            properties: {},
-            required: [],
-            additionalProperties: false,
-        };
-        continue;
-    }
-    const payloadDeclaration = payloadProperty.valueDeclaration ?? payloadProperty.declarations?.[0];
-    if (!payloadDeclaration) {
-        throw new Error(`Unable to resolve ${actionType.value} payload`);
-    }
-    const payloadType = checker.getTypeOfSymbolAtLocation(payloadProperty, payloadDeclaration);
-    schemas[actionType.value] =
-        payloadType.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Void)
-            ? {
-                  type: 'object',
-                  properties: {},
-                  required: [],
-                  additionalProperties: false,
-              }
-            : schemaFor(payloadType);
 }
 
 const definitions = [];

@@ -9,12 +9,13 @@
  * artifacts, the crate sources, or the pins ever diverge from this record.
  *
  * The installed `wasm-pack` is asserted against the pin here: the manifest can
- * only be honestly stamped by the pinned CLI, which bundles the pinned
- * `wasm-opt` and drives the pinned `wasm-bindgen` schema version (WB-8).
+ * only be stamped for a rebuilt package after its build wrapper issued a success
+ * receipt bound to actual optimizer bytes, source head, crate hash and outputs.
+ * Checking a PATH version at manifest time cannot establish a prior build.
  *
  * `crateSourceHash` is only re-derived for packages this run has evidence were
  * rebuilt — their artifacts moved, or the caller named them (`--all`,
- * `--package <id>`). A package left alone keeps the hash its committed artifacts
+ * `--package <id>`), and a matching helper-issued success receipt exists. A package left alone keeps the hash its committed artifacts
  * were actually built from, so a partial rebuild can no longer launder another
  * package's pending source change into a green `pnpm wasm:verify` (#2053).
  */
@@ -22,10 +23,11 @@
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
+import { wasmGenerationEnvironment } from './binaryenBuild.ts';
 import { wasmArtifacts } from './wasm-artifacts.ts';
 
 function installedWasmPackVersion(): string {
-    const raw = execFileSync('wasm-pack', ['--version'], { encoding: 'utf8' }).trim();
+    const raw = execFileSync('wasm-pack', ['--version'], { encoding: 'utf8', env: wasmGenerationEnvironment() }).trim();
     // `wasm-pack 0.14.0` → `0.14.0`
     const match = /wasm-pack\s+(\S+)/.exec(raw);
     const version = match?.[1];

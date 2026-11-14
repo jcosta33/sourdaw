@@ -1,0 +1,134 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -51,1 +51,1 @@
++		super({ ...options, throwOnEmptyListeners: options?.throwOnEmptyListeners ?? false });
+-		super(options);
+@@ -166,1 +166,1 @@
++		super({ throwOnEmptyListeners: false });
+-		super();
+@@ -227,1 +227,1 @@
++		return super.onHook(event, handler);
+-		super.onHook(event, handler);
+@@ -839,1 +839,2 @@
++		const results = await this._primary.deleteMany(keys);
++		const result = results.every(Boolean);
+-		const result = await this._primary.deleteMany(keys);
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -2,2 +2,2 @@
++import { HookFn, Hookified, HookifiedOptions, IHook, OnHookOptions } from "hookified";
++import { Keyv, Keyv as Keyv$1, KeyvHooks, KeyvBridgeStore, KeyvOptions, KeyvStoreAdapter, KeyvStoreAdapter as KeyvStoreAdapter$1, KeyvValue } from "keyv";
+-import { Hook, Hookified, HookifiedOptions } from "hookified";
+-import { Keyv, Keyv as Keyv$1, KeyvHooks, KeyvOptions, KeyvStoreAdapter, KeyvStoreAdapter as KeyvStoreAdapter$1, StoredDataRaw } from "keyv";
+@@ -140,1 +140,1 @@
++  primary?: Keyv$1 | KeyvStoreAdapter$1 | KeyvBridgeStore;
+-  primary?: Keyv$1 | KeyvStoreAdapter$1;
+@@ -144,1 +144,1 @@
++  secondary?: Keyv$1 | KeyvStoreAdapter$1 | KeyvBridgeStore;
+-  secondary?: Keyv$1 | KeyvStoreAdapter$1;
+@@ -268,1 +268,1 @@
++  result?: KeyvValue<unknown>;
+-  result?: StoredDataRaw<unknown>;
+@@ -276,1 +276,1 @@
++  result: Array<KeyvValue<unknown> | undefined>;
+-  result: Array<StoredDataRaw<unknown>>;
+@@ -360,2 +360,3 @@
++  onHook<K extends CacheableHooks>(hook: K, handler: CacheableHookHandlerMap[K]): IHook | undefined;
++  onHook(hook: IHook, options?: OnHookOptions): IHook | undefined;
++  onHook(event: string, handler: HookFn): IHook | undefined;
+-  onHook<K extends CacheableHooks>(hook: K, handler: CacheableHookHandlerMap[K]): void;
+-  onHook(event: string, handler: Hook): void;
+@@ -538,1 +539,1 @@
++  setPrimary(primary: Keyv$1 | KeyvStoreAdapter$1 | KeyvBridgeStore): void;
+-  setPrimary(primary: Keyv$1 | KeyvStoreAdapter$1): void;
+@@ -544,1 +545,1 @@
++  setSecondary(secondary: Keyv$1 | KeyvStoreAdapter$1 | KeyvBridgeStore): void;
+-  setSecondary(secondary: Keyv$1 | KeyvStoreAdapter$1): void;
+@@ -568,1 +569,1 @@
++   * @returns {Promise<KeyvValue<T> | undefined>}
+-   * @returns {Promise<StoredDataRaw<T>>}
+@@ -571,1 +572,1 @@
++  getRaw<T>(key: string, options?: GetOptions): Promise<KeyvValue<T> | undefined>;
+-  getRaw<T>(key: string, options?: GetOptions): Promise<StoredDataRaw<T>>;
+@@ -581,1 +582,1 @@
++   * @returns {Promise<Array<KeyvValue<T> | undefined>>}
+-   * @returns {Promise<Array<StoredDataRaw<T>>>}
+@@ -584,1 +585,1 @@
++  getManyRaw<T>(keys: string[], options?: GetOptions): Promise<Array<KeyvValue<T> | undefined>>;
+-  getManyRaw<T>(keys: string[], options?: GetOptions): Promise<Array<StoredDataRaw<T>>>;
+diff --git a/dist/index.d.mts b/dist/index.d.mts
+--- a/dist/index.d.mts
++++ b/dist/index.d.mts
+@@ -3,2 +3,2 @@
++import { HookFn, Hookified, HookifiedOptions, IHook, OnHookOptions } from "hookified";
++import { Keyv, Keyv as Keyv$1, KeyvHooks, KeyvBridgeStore, KeyvOptions, KeyvStoreAdapter, KeyvStoreAdapter as KeyvStoreAdapter$1, KeyvValue } from "keyv";
+-import { Hook, Hookified, HookifiedOptions } from "hookified";
+-import { Keyv, Keyv as Keyv$1, KeyvHooks, KeyvOptions, KeyvStoreAdapter, KeyvStoreAdapter as KeyvStoreAdapter$1, StoredDataRaw } from "keyv";
+@@ -140,1 +140,1 @@
++  primary?: Keyv$1 | KeyvStoreAdapter$1 | KeyvBridgeStore;
+-  primary?: Keyv$1 | KeyvStoreAdapter$1;
+@@ -144,1 +144,1 @@
++  secondary?: Keyv$1 | KeyvStoreAdapter$1 | KeyvBridgeStore;
+-  secondary?: Keyv$1 | KeyvStoreAdapter$1;
+@@ -268,1 +268,1 @@
++  result?: KeyvValue<unknown>;
+-  result?: StoredDataRaw<unknown>;
+@@ -276,1 +276,1 @@
++  result: Array<KeyvValue<unknown> | undefined>;
+-  result: Array<StoredDataRaw<unknown>>;
+@@ -360,2 +360,3 @@
++  onHook<K extends CacheableHooks>(hook: K, handler: CacheableHookHandlerMap[K]): IHook | undefined;
++  onHook(hook: IHook, options?: OnHookOptions): IHook | undefined;
++  onHook(event: string, handler: HookFn): IHook | undefined;
+-  onHook<K extends CacheableHooks>(hook: K, handler: CacheableHookHandlerMap[K]): void;
+-  onHook(event: string, handler: Hook): void;
+@@ -538,1 +539,1 @@
++  setPrimary(primary: Keyv$1 | KeyvStoreAdapter$1 | KeyvBridgeStore): void;
+-  setPrimary(primary: Keyv$1 | KeyvStoreAdapter$1): void;
+@@ -544,1 +545,1 @@
++  setSecondary(secondary: Keyv$1 | KeyvStoreAdapter$1 | KeyvBridgeStore): void;
+-  setSecondary(secondary: Keyv$1 | KeyvStoreAdapter$1): void;
+@@ -568,1 +569,1 @@
++   * @returns {Promise<KeyvValue<T> | undefined>}
+-   * @returns {Promise<StoredDataRaw<T>>}
+@@ -571,1 +572,1 @@
++  getRaw<T>(key: string, options?: GetOptions): Promise<KeyvValue<T> | undefined>;
+-  getRaw<T>(key: string, options?: GetOptions): Promise<StoredDataRaw<T>>;
+@@ -581,1 +582,1 @@
++   * @returns {Promise<Array<KeyvValue<T> | undefined>>}
+-   * @returns {Promise<Array<StoredDataRaw<T>>>}
+@@ -584,1 +585,1 @@
++  getManyRaw<T>(keys: string[], options?: GetOptions): Promise<Array<KeyvValue<T> | undefined>>;
+-  getManyRaw<T>(keys: string[], options?: GetOptions): Promise<Array<StoredDataRaw<T>>>;
+diff --git a/dist/index.mjs b/dist/index.mjs
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -50,1 +50,1 @@
++		super({ ...options, throwOnEmptyListeners: options?.throwOnEmptyListeners ?? false });
+-		super(options);
+@@ -165,1 +165,1 @@
++		super({ throwOnEmptyListeners: false });
+-		super();
+@@ -226,1 +226,1 @@
++		return super.onHook(event, handler);
+-		super.onHook(event, handler);
+@@ -838,1 +838,2 @@
++		const results = await this._primary.deleteMany(keys);
++		const result = results.every(Boolean);
+-		const result = await this._primary.deleteMany(keys);
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -38,3 +38,3 @@
++    "hookified": "3.1.0",
++    "keyv": "6.1.0",
++    "qified": "0.13.2",
+-    "hookified": "^1.15.0",
+-    "keyv": "^5.6.0",
+-    "qified": "^0.10.1",
+@@ -81,1 +81,1 @@
+-}
+\ No newline at end of file
++}

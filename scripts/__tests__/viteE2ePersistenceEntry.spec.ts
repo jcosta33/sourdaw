@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
-import ts from 'typescript';
+import { transformSync } from 'esbuild';
+import * as ts from 'typescript/unstable/ast';
+
+import { readNativeSource, requireNativeSyntax } from '../nativeTypeScript';
 import { resolveConfig } from 'vite';
 import { describe, expect, it } from 'vitest';
 
@@ -12,7 +15,7 @@ const root = resolve(import.meta.dirname, '../..');
 function hasDynamicImport(node: ts.Node): boolean {
     return (
         (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) ||
-        ts.forEachChild(node, hasDynamicImport) === true
+        node.forEachChild(hasDynamicImport) === true
     );
 }
 
@@ -21,7 +24,7 @@ function runtimeExpression(expression: ts.Expression): ts.Expression {
         ts.isParenthesizedExpression(expression) ||
         ts.isSatisfiesExpression(expression) ||
         ts.isAsExpression(expression) ||
-        ts.isTypeAssertionExpression(expression) ||
+        ts.isTypeAssertion(expression) ||
         ts.isNonNullExpression(expression) ||
         ts.isExpressionWithTypeArguments(expression)
     ) {
@@ -34,7 +37,7 @@ function isSafeDirectProjectEntry(entry: string): boolean {
     if (/createProject|projectStore\.set/.test(entry)) {
         return false;
     }
-    const source = ts.createSourceFile('entry.ts', entry, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const source = requireNativeSyntax(readNativeSource('entry.ts', entry));
     if (hasDynamicImport(source)) {
         return false;
     }
@@ -44,7 +47,7 @@ function isSafeDirectProjectEntry(entry: string): boolean {
             !ts.isStringLiteral(statement.moduleSpecifier) ||
             statement.moduleSpecifier.text !== '../../src/modules/Project/useCases' ||
             !statement.importClause ||
-            statement.importClause.isTypeOnly ||
+            statement.importClause.phaseModifier === ts.SyntaxKind.TypeKeyword ||
             !statement.importClause.namedBindings ||
             !ts.isNamedImports(statement.importClause.namedBindings)
         ) {
@@ -67,7 +70,11 @@ function isSafeDirectProjectEntry(entry: string): boolean {
         ) {
             runtimeBindings.add(statement.name.text);
         }
-        if (ts.isImportDeclaration(statement) && statement.importClause && !statement.importClause.isTypeOnly) {
+        if (
+            ts.isImportDeclaration(statement) &&
+            statement.importClause &&
+            statement.importClause.phaseModifier !== ts.SyntaxKind.TypeKeyword
+        ) {
             const clause = statement.importClause;
             if (clause.name) {
                 runtimeBindings.add(clause.name.text);
@@ -144,9 +151,7 @@ describe('same-build persistence inspection entry', () => {
             type _T = typeof _newProject;
             export const newProject = ${initializer};`;
         expect(isSafeDirectProjectEntry(entry)).toBe(true);
-        expect(ts.transpileModule(entry, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText).toMatch(
-            /export const newProject = \(*_newProject\)*/
-        );
+        expect(transformSync(entry, { loader: 'ts' }).code).toMatch(/export const newProject = \(*_newProject\)*/);
     });
 
     it('accepts an erased wrapper around a lazy function', () => {
@@ -154,9 +159,18 @@ describe('same-build persistence inspection entry', () => {
             export const newProject = _newProject;
             const inspect = (((() => new Set()) satisfies () => Set<unknown>)!);`;
         expect(isSafeDirectProjectEntry(entry)).toBe(true);
-        expect(ts.transpileModule(entry, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText).toContain(
-            '() => new Set()'
-        );
+        const emitted = transformSync(entry, { loader: 'ts' }).code;
+        const parsed = requireNativeSyntax(readNativeSource('emitted-entry.js', emitted));
+        const inspect = parsed.statements
+            .flatMap((statement) =>
+                ts.isVariableStatement(statement) ? [...statement.declarationList.declarations] : []
+            )
+            .find((declaration) => declaration.name.getText() === 'inspect');
+        if (!inspect?.initializer) throw new Error('Emitted lazy initializer is absent');
+        const initializer = runtimeExpression(inspect.initializer);
+        expect(ts.isArrowFunction(initializer)).toBe(true);
+        if (!ts.isArrowFunction(initializer)) throw new Error('Emitted initializer is not a lazy function');
+        expect(initializer.body.getText()).toBe('new Set()');
     });
 
     it('accepts runtime bindings and erased generic instantiation without invoking them', () => {
@@ -168,9 +182,7 @@ describe('same-build persistence inspection entry', () => {
             const external = imported;
             export const newProject = _newProject;`;
         expect(isSafeDirectProjectEntry(entry)).toBe(true);
-        expect(ts.transpileModule(entry, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText).toMatch(
-            /const inspect = \(*identity\)*/
-        );
+        expect(transformSync(entry, { loader: 'ts' }).code).toMatch(/const inspect = \(*identity\)*/);
     });
 
     it('rejects an ambient getter read during module initialization', () => {
@@ -178,11 +190,10 @@ describe('same-build persistence inspection entry', () => {
             export const newProject = _newProject;`;
         const observeReads = (entry: string) => {
             let reads = 0;
-            const sandbox = { exports: {}, require: () => ({ newProject: () => true }) };
+            const module = { exports: {} };
+            const sandbox = { module, exports: module.exports, require: () => ({ newProject: () => true }) };
             Object.defineProperty(sandbox, 'localStorage', { get: () => ++reads });
-            const emitted = ts.transpileModule(entry, {
-                compilerOptions: { module: ts.ModuleKind.CommonJS },
-            }).outputText;
+            const emitted = transformSync(entry, { loader: 'ts', format: 'cjs' }).code;
             runInNewContext(emitted, sandbox);
             return reads;
         };
@@ -204,11 +215,10 @@ describe('same-build persistence inspection entry', () => {
                     return () => true;
                 },
             });
-            const emitted = ts.transpileModule(entry, {
-                compilerOptions: { module: ts.ModuleKind.CommonJS },
-            }).outputText;
-            const execute = runInNewContext(`(function (exports, require) { ${emitted}\n})`, sandbox);
-            execute({}, () => ({ newProject: () => true }));
+            const emitted = transformSync(entry, { loader: 'ts', format: 'cjs' }).code;
+            const execute = runInNewContext(`(function (module, exports, require) { ${emitted}\n})`, sandbox);
+            const module = { exports: {} };
+            execute(module, module.exports, () => ({ newProject: () => true }));
             return reads;
         };
         const implemented = `${base}\nfunction ambientAction() { return true; }\nconst inspect = ambientAction;`;

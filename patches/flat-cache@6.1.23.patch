@@ -1,0 +1,24 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -52,7 +52,7 @@
+ 	_parse = flatted.parse;
+ 	_stringify = flatted.stringify;
+ 	constructor(options) {
+-		super();
++		super({ throwOnEmptyListeners: false });
+ 		if (options) this._cache = new cacheable.CacheableMemory({
+ 			ttl: options.ttl,
+ 			useClone: options.useClone,
+diff --git a/dist/index.mjs b/dist/index.mjs
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -24,7 +24,7 @@
+ 	_parse = parse;
+ 	_stringify = stringify;
+ 	constructor(options) {
+-		super();
++		super({ throwOnEmptyListeners: false });
+ 		if (options) this._cache = new CacheableMemory({
+ 			ttl: options.ttl,
+ 			useClone: options.useClone,

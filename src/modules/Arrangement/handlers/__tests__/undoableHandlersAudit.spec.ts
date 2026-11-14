@@ -6,11 +6,7 @@ import {
     type Expression,
     type Node,
     type SourceFile,
-    ScriptKind,
-    ScriptTarget,
     SyntaxKind,
-    createSourceFile,
-    forEachChild,
     isArrowFunction,
     isAsExpression,
     isBinaryExpression,
@@ -30,8 +26,10 @@ import {
     isShorthandPropertyAssignment,
     isStringLiteral,
     isVariableDeclaration,
-} from 'typescript';
+} from 'typescript/unstable/ast';
 import { describe, expect, it } from 'vitest';
+
+import { readNativeSource, readNativeSources, requireNativeSyntax } from '../../../../../scripts/nativeTypeScript';
 
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 
@@ -115,9 +113,9 @@ function returnExpressions(body: ConciseBody | undefined): Expression[] {
         if (isReturnStatement(node) && node.expression) {
             found.push(node.expression);
         }
-        forEachChild(node, visit);
+        node.forEachChild(visit);
     };
-    forEachChild(body, visit);
+    body.forEachChild(visit);
     return found;
 }
 
@@ -151,7 +149,7 @@ function readLocalScope(file: SourceFile): LocalScope {
                 push(values, node.name.text, [node.initializer]);
             }
         }
-        forEachChild(node, visit);
+        node.forEachChild(visit);
     };
     visit(file);
     return { values, returns };
@@ -217,13 +215,10 @@ function collectActionTypes(expression: Expression, scope: LocalScope, into: Set
 /** Exercised directly by the ternary case below, on a real handler, so the extraction is
  *  proved against production syntax rather than a fixture shaped to match it. */
 function readInverseActionTypesInSource(path: string, text: string): string[] {
-    const file = createSourceFile(
-        path,
-        text,
-        ScriptTarget.Latest,
-        true,
-        path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS
-    );
+    return readInverseActionTypesInFile(requireNativeSyntax(readNativeSource(path, text)));
+}
+
+function readInverseActionTypesInFile(file: SourceFile): string[] {
     const scope = readLocalScope(file);
     const types = new Set<string>();
     const seen = new Set<Expression>();
@@ -242,7 +237,7 @@ function readInverseActionTypesInSource(path: string, text: string): string[] {
         ) {
             collectActionTypes(node.right, scope, types, seen);
         }
-        forEachChild(node, visit);
+        node.forEachChild(visit);
     };
     visit(file);
     return [...types].sort();
@@ -278,8 +273,12 @@ function isSourceFile(name: string): boolean {
  *  inverse in an assertion is describing a handler, not declaring one. */
 function readInverseActionTypes(): string[] {
     const types = new Set<string>();
-    for (const path of collectFiles(ARRANGEMENT_ROOT, isSourceFile)) {
-        for (const type of readInverseActionTypesInSource(path, readFileSync(path, 'utf8'))) {
+    const inputs = collectFiles(ARRANGEMENT_ROOT, isSourceFile).map((path) => ({
+        path,
+        text: readFileSync(path, 'utf8'),
+    }));
+    for (const parsed of readNativeSources(inputs).values()) {
+        for (const type of readInverseActionTypesInFile(requireNativeSyntax(parsed))) {
             types.add(type);
         }
     }

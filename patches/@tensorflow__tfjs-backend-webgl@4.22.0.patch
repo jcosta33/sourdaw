@@ -1,0 +1,14 @@
+diff --git a/package.json b/package.json
+index 39a8142..4ae3e8d 100644
+--- a/package.json
++++ b/package.json
+@@ -31,8 +31,7 @@
+   },
+   "dependencies": {
+     "@tensorflow/tfjs-backend-cpu": "4.22.0",
+-    "@types/offscreencanvas": "~2019.3.0",
+-    "@types/seedrandom": "^2.4.28",
++    "@types/seedrandom": "^3.0.8",
+     "seedrandom": "^3.0.5"
+   },
+   "peerDependencies": {

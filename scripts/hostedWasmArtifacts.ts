@@ -16,6 +16,15 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+    buildCommand,
+    generationInputsHash,
+    parseBuildGeneration,
+    sameArtifactHashes,
+    wasmGenerationEnvironment,
+    type WasmBuildGeneration,
+} from './binaryenBuild.ts';
+
+import {
     admitHostedWasmCheckouts,
     admitHostedWasmReturnRoot,
     loadHostedWasmSourceContext,
@@ -31,12 +40,16 @@ const hashPattern = /^sha256:[a-f0-9]{64}$/;
 const shaPattern = /^[a-f0-9]{40}$/;
 export const sharedInputs: ReadonlySet<string> = new Set([
     '.cargo/config.toml',
+    '.node-version',
     '.github/workflows/wasm-artifacts.yml',
     'scripts/hostedWasmArtifacts.ts',
     'scripts/hostedWasmSourceContext.ts',
     'scripts/hostedWasmZip.ts',
     'scripts/wasm-artifacts.ts',
     'scripts/wasmToolchainPins.ts',
+    'scripts/pnpmLock.ts',
+    'scripts/binaryenBuild.ts',
+    'scripts/buildWasmPackage.ts',
     'scripts/workspaceManifestFingerprint.ts',
     'scripts/markWasmPackageInternal.ts',
     'scripts/gen-wasm-manifest.ts',
@@ -73,6 +86,7 @@ type Toolchain = {
     wasmBindgen: string;
 };
 type BuildReceipt = BuildIdentity & {
+    generation: Record<string, WasmBuildGeneration>;
     version: 1;
     packages: string[];
     toolchain: Toolchain;
@@ -155,12 +169,13 @@ export function readHostedBuildIdentity(env: NodeJS.ProcessEnv): BuildIdentity {
     };
 }
 function captureAt(root: string): Capture {
-    return (command, args) => execFileSync(command, args, { cwd: root, encoding: 'utf8' }).trimEnd();
+    return (command, args) =>
+        execFileSync(command, args, { cwd: root, encoding: 'utf8', env: wasmGenerationEnvironment() }).trimEnd();
 }
 function runAt(root: string): Command {
     return (command, args) => {
         console.log(`Running ${command} ${args.join(' ')}`);
-        execFileSync(command, args, { cwd: root, stdio: 'inherit' });
+        execFileSync(command, args, { cwd: root, stdio: 'inherit', env: wasmGenerationEnvironment() });
     };
 }
 function assertHead(capture: Capture, expected: string): void {
@@ -333,7 +348,34 @@ export function buildHostedWasmArtifacts(input: {
         throw new Error(`WASM generation changed source or undeclared files: ${unexpected.join(', ')}`);
     }
     const files = collectHostedArtifacts(input.root, input.selected);
+    // Read bytes under control policy, not a source-provided version claim.
+    const generatedManifest = object(
+        JSON.parse(readRegularFile(input.root, manifestPath).toString('utf8')),
+        'generated manifest'
+    );
+    const generatedPackages = object(generatedManifest.packages, 'generated packages');
+    const generation: Record<string, WasmBuildGeneration> = {};
+    for (const id of input.selected) {
+        const record = object(generatedPackages[id], `generated package ${id}`);
+        const built = parseBuildGeneration(record.generation);
+        const spec = packageSpec(id);
+        const expected = Object.fromEntries(
+            spec.artifacts.map((path) => [path, digest(readRegularFile(input.root, path))])
+        );
+        if (
+            built.packageId !== id ||
+            built.head !== input.identity.headSha ||
+            built.sourceHash !== source.toolkit.hashCrateClosure(spec.crateDir) ||
+            built.inputsHash !== generationInputsHash(input.root, id) ||
+            JSON.stringify(built.command) !== JSON.stringify(buildCommand(id)) ||
+            !sameArtifactHashes(built.artifacts, expected)
+        ) {
+            throw new Error(`Actual optimizer build receipt does not bind source/output for ${id}`);
+        }
+        generation[id] = built;
+    }
     const receipt: BuildReceipt = {
+        generation,
         version: 1,
         ...input.identity,
         packages: [...input.selected],
@@ -375,6 +417,25 @@ function parseReceipt(value: unknown): BuildReceipt {
     hostedArtifactPaths(packages);
     const toolchain = object(record.toolchain, 'toolchain');
     const files = object(record.files, 'file hashes');
+    const generations = object(record.generation, 'optimizer generations');
+    if (Object.keys(generations).length !== packages.length) throw new Error('Optimizer receipt package set differs');
+    const generation: Record<string, WasmBuildGeneration> = {};
+    for (const id of packages) {
+        const built = parseBuildGeneration(generations[id]);
+        if (
+            built.packageId !== id ||
+            built.head !== record.headSha ||
+            JSON.stringify(built.command) !== JSON.stringify(buildCommand(id))
+        )
+            throw new Error('Invalid optimizer generation binding');
+        const expectedPaths = packageSpec(id).artifacts;
+        if (
+            Object.keys(built.artifacts).length !== expectedPaths.length ||
+            expectedPaths.some((path) => built.artifacts[path] !== files[path])
+        )
+            throw new Error('Optimizer generation artifact mismatch');
+        generation[id] = built;
+    }
     const identity = readHostedBuildIdentity({
         BUILD_REPOSITORY: string(record.repository, 'repository'),
         BUILD_PR: String(positiveInteger(record.pullRequest, 'PR')),
@@ -389,6 +450,7 @@ function parseReceipt(value: unknown): BuildReceipt {
         version: 1,
         ...identity,
         packages,
+        generation,
         toolchain: {
             node: string(toolchain.node, 'node'),
             pnpm: string(toolchain.pnpm, 'pnpm'),

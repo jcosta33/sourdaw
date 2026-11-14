@@ -12,7 +12,7 @@
 // - import-x/order, @typescript-eslint/naming-convention, id-length, and a
 //   handful of core rules whose oxlint implementations diverge semantically
 
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import eslintPluginReact from '@eslint-react/eslint-plugin';
@@ -30,7 +30,29 @@ import eslintPluginQuery from '@tanstack/eslint-plugin-query';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+import { getPreparedNativeTypeScriptPath } from './scripts/nativeTypeScript/compiler.mjs';
+import { nativeLintLifecycle } from './scripts/nativeTypeScript/lintLifecycle.mjs';
+import { nativeLintCacheIdentity } from './scripts/nativeTypeScript/lintIdentity.mjs';
 import { sizeBaselineFiles } from './eslint.size-baseline.mjs';
+
+/** @type {string | undefined} */
+let verifiedNativeCompilerPath;
+
+const nativeParser = {
+    ...tseslint.parser,
+    /**
+     * @param {string} text
+     * @param {import('@typescript-eslint/parser').ParserOptions} [options]
+     */
+    parseForESLint(text, options = {}) {
+        const typed = options.project && (!Array.isArray(options.project) || options.project.length > 0);
+        if (!typed) {
+            return tseslint.parser.parseForESLint(text, options);
+        }
+        verifiedNativeCompilerPath ??= getPreparedNativeTypeScriptPath();
+        return tseslint.parser.parseForESLint(text, { ...options, nativeCompilerPath: verifiedNativeCompilerPath });
+    },
+};
 
 const astVisitorKeys = parseForESLint('').visitorKeys;
 
@@ -365,7 +387,18 @@ function resolveSourceExportFile(filename, source) {
         candidates = [`${normalizedBasePath}.ts`, `${normalizedBasePath}/index.ts`];
     }
 
-    return candidates.find((candidate) => existsSync(candidate)) ?? null;
+    return (
+        candidates.find((candidate) => {
+            try {
+                return statSync(candidate).isFile();
+            } catch (error) {
+                if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+                    return false;
+                }
+                throw error;
+            }
+        }) ?? null
+    );
 }
 
 /** @type {Map<string, Set<string>>} */
@@ -538,8 +571,12 @@ function getExportedFunctionNamesFromSource(filename, source, seenFiles) {
         const exportedFunctionNames = collectExportedFunctionNamesFromProgram(parsed.ast, sourceFile, seenFiles);
         exportedFunctionNamesCache.set(sourceFile, exportedFunctionNames);
         return exportedFunctionNames;
-    } catch {
-        return new Set();
+    } catch (error) {
+        // Only an absent optional source may have an empty export surface.
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+            return new Set();
+        }
+        throw error;
     } finally {
         seenFiles.delete(sourceFile);
     }
@@ -1343,8 +1380,12 @@ function getExportedStoreInstanceNamesFromSource(filename, source, seenFiles) {
         );
         exportedStoreInstanceNamesCache.set(sourceFile, exportedStoreInstanceNames);
         return exportedStoreInstanceNames;
-    } catch {
-        return new Set();
+    } catch (error) {
+        // Only an absent optional source may have an empty export surface.
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+            return new Set();
+        }
+        throw error;
     } finally {
         seenFiles.delete(sourceFile);
     }
@@ -2875,7 +2916,7 @@ export default tseslint.config(
             ecmaVersion: 'latest',
             sourceType: 'module',
             globals: globals.browser,
-            parser: tseslint.parser,
+            parser: nativeParser,
             parserOptions: {
                 project: './tsconfig.eslint.json',
                 tsconfigRootDir: import.meta.dirname,
@@ -2883,6 +2924,7 @@ export default tseslint.config(
             },
         },
         settings: {
+            'sourdaw/native-typescript': nativeLintCacheIdentity(),
             react: { version: 'detect' },
             'import-x/resolver-next': [createTypeScriptImportResolver(), createNodeResolver()],
         },
@@ -3317,6 +3359,11 @@ export default tseslint.config(
     {
         files: ['**/*.d.ts'],
         extends: [tseslint.configs.disableTypeChecked],
+    },
+
+    {
+        plugins: { 'native-lint-lifecycle': nativeLintLifecycle },
+        rules: { 'native-lint-lifecycle/release-snapshot': 'error' },
     },
 
     // ─── Prettier (must be last) ─────────────────────────────────────────────

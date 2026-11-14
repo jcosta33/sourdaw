@@ -1,7 +1,12 @@
+// @vitest-environment node
+
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import ts from 'typescript';
+import * as ts from 'typescript/unstable/ast';
+import type { Checker } from 'typescript/unstable/sync';
+
+import { withNativeCheckedSource } from '../nativeTypeScript';
 import { describe, expect, it } from 'vitest';
 
 import { isPlaywrightCollected } from '../vitestCollectionPatterns';
@@ -29,24 +34,6 @@ type OverlayWait = { line: number; timeout: string | undefined };
 type FirstPaintArgument = { line: number; milliseconds: number };
 type SourceAnalysis = { waits: OverlayWait[]; firstPaintArguments: FirstPaintArgument[] };
 type WaitOptions = { options: ts.Expression | undefined };
-
-function createCheckedSource(text: string, fileName: string): { sourceFile: ts.SourceFile; checker: ts.TypeChecker } {
-    const options: ts.CompilerOptions = { noLib: true, noResolve: true, types: [], target: ts.ScriptTarget.Latest };
-    const host = ts.createCompilerHost(options);
-    const read = host.getSourceFile.bind(host);
-    host.getSourceFile = (name, languageVersion, ...rest) => {
-        if (name === fileName) {
-            return ts.createSourceFile(name, text, languageVersion, true);
-        }
-        return read(name, languageVersion, ...rest);
-    };
-    const program = ts.createProgram([fileName], options, host);
-    const sourceFile = program.getSourceFile(fileName);
-    if (sourceFile === undefined) {
-        throw new Error(`${fileName} did not parse`);
-    }
-    return { sourceFile, checker: program.getTypeChecker() };
-}
 
 function unwrap(expression: ts.Expression): ts.Expression {
     if (
@@ -94,8 +81,8 @@ function propertyInitializer(options: ts.Expression | undefined, name: string): 
     return undefined;
 }
 
-function constInitializerOf(identifier: ts.Identifier, checker: ts.TypeChecker): ts.Expression | undefined {
-    const declaration = checker.getSymbolAtLocation(identifier)?.declarations?.[0];
+function constInitializerOf(identifier: ts.Identifier, checker: Checker): ts.Expression | undefined {
+    const declaration = checker.getSymbolAtLocation(identifier)?.declarations[0]?.resolve();
     if (
         declaration === undefined ||
         !ts.isVariableDeclaration(declaration) ||
@@ -112,7 +99,7 @@ function constInitializerOf(identifier: ts.Identifier, checker: ts.TypeChecker):
  * locator chained after the overlay (`.locator(...)`, `.getByRole(...)`) is a
  * child, not the overlay.
  */
-function isOverlayLocator(expression: ts.Expression, checker: ts.TypeChecker, depth = 0): boolean {
+function isOverlayLocator(expression: ts.Expression, checker: Checker, depth = 0): boolean {
     const subject = unwrap(expression);
     if (ts.isIdentifier(subject)) {
         const initializer = constInitializerOf(subject, checker);
@@ -142,10 +129,10 @@ function isExpectCall(expression: ts.Expression): expression is ts.CallExpressio
 }
 
 function containsNode(node: ts.Node, predicate: (candidate: ts.Node) => boolean): boolean {
-    return predicate(node) || ts.forEachChild(node, (child) => containsNode(child, predicate) || undefined) === true;
+    return predicate(node) || node.forEachChild((child) => containsNode(child, predicate) || undefined) === true;
 }
 
-function pollsOverlayVisibility(callback: ts.Expression | undefined, checker: ts.TypeChecker): boolean {
+function pollsOverlayVisibility(callback: ts.Expression | undefined, checker: Checker): boolean {
     if (callback === undefined || !(ts.isArrowFunction(callback) || ts.isFunctionExpression(callback))) {
         return false;
     }
@@ -161,7 +148,7 @@ function pollsOverlayVisibility(callback: ts.Expression | undefined, checker: ts
 
 function waitsForDisappearance(options: ts.Expression | undefined): boolean {
     const state = propertyInitializer(options, 'state');
-    return state !== undefined && ts.isStringLiteralLike(state) && DISAPPEARANCE_STATES.has(state.text);
+    return state !== undefined && ts.isStringLiteralLikeNode(state) && DISAPPEARANCE_STATES.has(state.text);
 }
 
 /**
@@ -172,7 +159,7 @@ function waitsForDisappearance(options: ts.Expression | undefined): boolean {
  */
 function timeoutOf(
     options: ts.Expression | undefined,
-    checker: ts.TypeChecker,
+    checker: Checker,
     sourceFile: ts.SourceFile,
     depth = 0
 ): string | undefined {
@@ -237,7 +224,7 @@ function pollAssertsDisappearance(poll: ts.CallExpression): boolean {
  * <overlay>.isVisible(), opts)`. Disappearance matchers, states, and poll
  * outcomes are not waits for the overlay to appear, and are not judged.
  */
-function describeFirstPaintWait(call: ts.CallExpression, checker: ts.TypeChecker): WaitOptions | undefined {
+function describeFirstPaintWait(call: ts.CallExpression, checker: Checker): WaitOptions | undefined {
     const callee = call.expression;
     if (!ts.isPropertyAccessExpression(callee)) {
         return undefined;
@@ -275,31 +262,32 @@ function firstPaintArgumentOf(node: ts.Node): number | undefined {
 }
 
 function analyzeSource(text: string, fileName: string): SourceAnalysis {
-    const { sourceFile, checker } = createCheckedSource(text, fileName);
-    const lineOf = (node: ts.Node): number =>
-        sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-    const waits: OverlayWait[] = [];
-    const firstPaintArguments: FirstPaintArgument[] = [];
+    return withNativeCheckedSource(fileName, text, (sourceFile, checker) => {
+        const lineOf = (node: ts.Node): number =>
+            sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+        const waits: OverlayWait[] = [];
+        const firstPaintArguments: FirstPaintArgument[] = [];
 
-    const visit = (node: ts.Node): void => {
-        if (ts.isCallExpression(node)) {
-            const wait = describeFirstPaintWait(node, checker);
-            if (wait !== undefined) {
-                waits.push({
-                    line: lineOf(node),
-                    timeout: timeoutOf(wait.options, checker, sourceFile),
-                });
+        const visit = (node: ts.Node): void => {
+            if (ts.isCallExpression(node)) {
+                const wait = describeFirstPaintWait(node, checker);
+                if (wait !== undefined) {
+                    waits.push({
+                        line: lineOf(node),
+                        timeout: timeoutOf(wait.options, checker, sourceFile),
+                    });
+                }
             }
-        }
-        const milliseconds = firstPaintArgumentOf(node);
-        if (milliseconds !== undefined) {
-            firstPaintArguments.push({ line: lineOf(node), milliseconds });
-        }
-        ts.forEachChild(node, visit);
-    };
-    visit(sourceFile);
+            const milliseconds = firstPaintArgumentOf(node);
+            if (milliseconds !== undefined) {
+                firstPaintArguments.push({ line: lineOf(node), milliseconds });
+            }
+            node.forEachChild(visit);
+        };
+        visit(sourceFile);
 
-    return { waits, firstPaintArguments };
+        return { waits, firstPaintArguments };
+    });
 }
 
 /** An explicit timeout on a judged wait must be the shared bound; no timeout rides the suite ceiling. */

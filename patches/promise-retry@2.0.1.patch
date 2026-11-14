@@ -1,0 +1,14 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -28,8 +28,8 @@
+     "sleep-promise": "^8.0.1"
+   },
+   "dependencies": {
+-    "err-code": "^2.0.2",
+-    "retry": "^0.12.0"
++    "err-code": "^3.0.1",
++    "retry": "^0.13.1"
+   },
+   "engines": {
+     "node": ">=10"

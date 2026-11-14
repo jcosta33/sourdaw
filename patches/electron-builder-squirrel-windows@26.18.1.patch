@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -16,7 +16,7 @@
+     "template.nuspectemplate"
+   ],
+   "dependencies": {
+-    "electron-winstaller": "5.4.0",
++    "electron-winstaller": "5.4.4",
+     "app-builder-lib": "26.18.1",
+     "builder-util": "26.18.1"
+   },

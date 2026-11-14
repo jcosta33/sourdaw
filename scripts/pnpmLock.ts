@@ -1,4 +1,23 @@
-import { parseAllDocuments } from 'yaml';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+
+import type { parseAllDocuments } from 'yaml';
+
+type YamlParser = { parseAllDocuments: typeof parseAllDocuments };
+function isYamlParser(value: unknown): value is YamlParser {
+    return typeof value === 'object' && value !== null && typeof Reflect.get(value, 'parseAllDocuments') === 'function';
+}
+/** Control-only imports need no install; generation resolves yaml only from its already admitted package root. */
+function yamlParser(packageRoot?: string): YamlParser {
+    const requirePackage = createRequire(
+        packageRoot === undefined ? import.meta.url : resolve(packageRoot, 'package.json')
+    );
+    const parser: unknown = requirePackage('yaml');
+    if (!isYamlParser(parser)) {
+        throw new Error('pnpm-lock.yaml: yaml parser exports are unavailable');
+    }
+    return parser;
+}
 
 type Mapping = Record<string, unknown>;
 type Dependency = { specifier?: string; version?: string };
@@ -95,8 +114,8 @@ function isTooling(document: LockDocument): boolean {
 }
 
 /** Keep importer authority separate while binding proof identities across both current lock documents. */
-export function parsePnpmLock(source: string): PnpmLock {
-    const documents = parseAllDocuments(source, { uniqueKeys: true });
+export function parsePnpmLock(source: string, packageRoot?: string): PnpmLock {
+    const documents = yamlParser(packageRoot).parseAllDocuments(source, { uniqueKeys: true });
     if (documents.length === 0 || documents.length > 2) {
         throw new Error('pnpm-lock.yaml: expected one application document and at most one package-manager document');
     }

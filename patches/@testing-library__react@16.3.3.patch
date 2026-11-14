@@ -1,0 +1,6 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -48 +48 @@
+-    "@babel/runtime": "^7.12.5"
++    "@babel/runtime": "^8.1.2"

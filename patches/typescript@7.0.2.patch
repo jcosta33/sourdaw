@@ -1,0 +1,78 @@
+diff --git a/dist/api/async/api.d.ts b/dist/api/async/api.d.ts
+index deb29e96867231fbe89d18a976559aa2bd3577bb..fd42c2fd15e1d20a30abb724234e01112e1f33ab 100644
+--- a/dist/api/async/api.d.ts
++++ b/dist/api/async/api.d.ts
+@@ -238,6 +238,7 @@ export declare class Checker {
+     getResolvedSymbol(node: Identifier): Promise<Symbol | undefined>;
+     getContextualType(node: Expression): Promise<Type | undefined>;
+     getBaseTypeOfLiteralType(type: Type): Promise<Type | undefined>;
++    getAwaitedType(type: Type): Promise<Type | undefined>;
+     getNonNullableType(type: Type): Promise<Type | undefined>;
+     getTypeFromTypeNode(node: TypeNode): Promise<Type | undefined>;
+     getWidenedType(type: Type): Promise<Type | undefined>;
+diff --git a/dist/api/async/api.js b/dist/api/async/api.js
+index 78993ae388c2ff37972054ab09f559f36ed13958..a23cada27e64e66fdf1acee90d82184b3135d57e 100644
+--- a/dist/api/async/api.js
++++ b/dist/api/async/api.js
+@@ -818,6 +818,14 @@ export class Checker {
+         });
+         return data ? this.objectRegistry.getOrCreateType(data) : undefined;
+     }
++    async getAwaitedType(type) {
++        const data = await this.client.apiRequest("getAwaitedType", {
++            snapshot: this.snapshotId,
++            project: this.project.id,
++            type: type.id,
++        });
++        return data ? this.objectRegistry.getOrCreateType(data) : undefined;
++    }
+     async getNonNullableType(type) {
+         const data = await this.client.apiRequest("getNonNullableType", {
+             snapshot: this.snapshotId,
+diff --git a/dist/api/sourceFileCache.js b/dist/api/sourceFileCache.js
+index fe44aefbb64a5dab2b913377877fd6844379fd97..4afe324e78a4c798ed2523c6d4fbf5da2f027842 100644
+--- a/dist/api/sourceFileCache.js
++++ b/dist/api/sourceFileCache.js
+@@ -71,6 +71,11 @@ export class SourceFileCache {
+      *   - Unchanged projects: retain all refs.
+      */
+     retainForSnapshot(newSnapshotId, previousSnapshotId, changes) {
++        // An absent server diff has no unchanged-file proof. Keep active older refs.
++        if (!changes) return;
++        // A released server snapshot has no diff base. Never infer unchanged
++        // content from an absent summary; active old snapshot refs remain owned.
++        if (!changes) return;
+         const prevProjectMap = this.snapshotProjectPaths.get(previousSnapshotId);
+         if (!prevProjectMap)
+             return;
+diff --git a/dist/api/sync/api.d.ts b/dist/api/sync/api.d.ts
+index 12950765b7c6450dbcbc786689d503482c2326a2..fba3aa150717a3a25ecd398092ddca67cb06d545 100644
+--- a/dist/api/sync/api.d.ts
++++ b/dist/api/sync/api.d.ts
+@@ -238,6 +238,7 @@ export declare class Checker {
+     getResolvedSymbol(node: Identifier): Symbol | undefined;
+     getContextualType(node: Expression): Type | undefined;
+     getBaseTypeOfLiteralType(type: Type): Type | undefined;
++    getAwaitedType(type: Type): Type | undefined;
+     getNonNullableType(type: Type): Type | undefined;
+     getTypeFromTypeNode(node: TypeNode): Type | undefined;
+     getWidenedType(type: Type): Type | undefined;
+diff --git a/dist/api/sync/api.js b/dist/api/sync/api.js
+index 39a465b79dc48b5d753514f71148a80e3c510251..357989df0977e819ca553626d84dc39ed21ecfd8 100644
+--- a/dist/api/sync/api.js
++++ b/dist/api/sync/api.js
+@@ -826,6 +826,14 @@ export class Checker {
+         });
+         return data ? this.objectRegistry.getOrCreateType(data) : undefined;
+     }
++    getAwaitedType(type) {
++        const data = this.client.apiRequest("getAwaitedType", {
++            snapshot: this.snapshotId,
++            project: this.project.id,
++            type: type.id,
++        });
++        return data ? this.objectRegistry.getOrCreateType(data) : undefined;
++    }
+     getNonNullableType(type) {
+         const data = this.client.apiRequest("getNonNullableType", {
+             snapshot: this.snapshotId,

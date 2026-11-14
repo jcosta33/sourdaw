@@ -1,7 +1,11 @@
+// @vitest-environment node
+
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import ts from 'typescript';
+import * as ts from 'typescript/unstable/ast';
+
+import { readNativeSource, requireNativeSyntax } from '../nativeTypeScript';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import warmFirstPaint from '../../tests/e2e/firstPaintWarmup';
@@ -47,7 +51,7 @@ const repositoryRoot = resolve(import.meta.dirname, '../..');
 
 function parseSource(relativePath: string): ts.SourceFile {
     const absolutePath = join(repositoryRoot, relativePath);
-    return ts.createSourceFile(absolutePath, readFileSync(absolutePath, 'utf8'), ts.ScriptTarget.Latest);
+    return requireNativeSyntax(readNativeSource(absolutePath, readFileSync(absolutePath, 'utf8')));
 }
 
 function findFunctionDeclaration(sourceFile: ts.SourceFile, name: string): ts.FunctionDeclaration | undefined {

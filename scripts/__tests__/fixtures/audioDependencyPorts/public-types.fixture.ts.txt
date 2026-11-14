@@ -1,0 +1,9 @@
+import type { Tensor as RootTensor } from 'onnxruntime-web';
+import type { Tensor as AllTensor } from 'onnxruntime-web/all';
+import type { Tensor as WasmTensor } from 'onnxruntime-web/wasm';
+import type { Tensor as WebglTensor } from 'onnxruntime-web/webgl';
+import type { Tensor as WebgpuTensor } from 'onnxruntime-web/webgpu';
+import type { Tensor as JspiTensor } from 'onnxruntime-web/jspi';
+export function preservePublicTensor(value: RootTensor): [AllTensor, WasmTensor, WebglTensor, WebgpuTensor, JspiTensor] {
+  return [value, value, value, value, value];
+}

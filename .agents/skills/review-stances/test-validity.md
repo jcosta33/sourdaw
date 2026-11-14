@@ -29,6 +29,12 @@ release and provenance drift in `release-provenance-drift.md`.
    required entry point unavailable (rename its locator, unmount it, misname the parameter) and
    require the case to fail. Before any negative, assert the subject was admitted: the route selected,
    every input record consumed by the production reader, the valid control accepted, the write run.
+   Admit the documented CLI under the real guard-owned `TMPDIR` on the target platform before
+   crediting its cases. The server's `tsx --test` launcher (#1693) exceeded macOS's Unix socket path
+   limit in guard storage and failed before collecting a case; `node --import tsx --test` retained
+   the collaboration relay cases. Restoring the CLI under that long guarded path must fail at admission;
+   the Node import route must execute the named spec. The missed probe was launcher admission;
+   historical review draws are unknown.
    A dirty project name admitted only after an incidental autosave cleared its `Unsaved changes` status is the
    same defect (#5749, #5809): assert the real control while the dirty state holds, before waiting for Save or
    autosave, by its stable identity and a separate expected-name assertion, then make that control unavailable
@@ -133,6 +139,11 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    constant, and an untraced anchor prescribed by the orchestrator are self-consistent and cannot
    redden. Mutating the shared expression must fail the case. An exact count or shape must derive from
    the thing observed, not from what the code currently produces.
+   A dependency version and an unchanged bigint literal cannot prove setter preservation. Magicast's
+   setter in the package admitted by #6285 printed `101n` as the number `101`; the earlier bug origin
+   and historical review draws are unknown. Run the real module's parse → setter → print → reparse
+   route, asserting the independently specified bigint value and runtime type. Reverting the native
+   `BigIntLiteral` setter fix must fail the bigint case in `scripts/__tests__/babel8Consumers.spec.ts`.
    (#4491, #4393, #5239, #5437, #5723, #5243, #5323, #5495, #5578)
 
     #1857's batch prefix projector (`064fb88392`, historical review stance unknown) retained -100 where the real
@@ -214,6 +225,15 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    Vitest fixture through the wrapper, hold an import after worker setup, and assert the persisted
    stages on both sides of that boundary. Remove the reporter or setup marker to make the fixture
    fail; process presence alone is not a worker-admission oracle. (#5231)
+
+10. **An archive fallback probe misses an installed-legal admission (#2731).** The original
+    `binds Cargo proof evidence to its locked crate archive` case supplied `legalFiles: []` and
+    called the proof helper directly. It could not observe the production return for complete
+    installed legal bytes. Require `dependencyLicenseReport.installedSources.spec.ts` to generate
+    through actual metadata/manifest/legal/archive consumers, doubling only Cargo metadata and pnpm
+    inventory boundaries. Removing universal source authentication before the retained-legal return
+    must fail the genuine-MIT git-source case, while authenticated registry/local sources remain
+    positive. No historical review tier or prompt is inferred from the introducing PR.
 
 ## Retired lessons
 

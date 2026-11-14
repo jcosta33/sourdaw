@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+    cpSync,
     existsSync,
     mkdirSync,
     mkdtempSync,
@@ -15,6 +16,8 @@ import { dirname, join } from 'node:path';
 import { Zip, ZipDeflate, zipSync } from 'fflate';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { buildCommand, generationInputsHash } from '../binaryenBuild';
+
 import {
     buildHostedWasmArtifacts,
     collectHostedArtifacts,
@@ -25,6 +28,7 @@ import {
     verifyHostedWasmReturn,
 } from '../hostedWasmArtifacts';
 import { readHostedArtifactZip as decodeHostedArtifactZip } from '../hostedWasmZip';
+import { hostedWasmTriggerPaths } from '../hostedWasmWorkflowContract';
 import { wasmArtifacts } from '../wasm-artifacts';
 
 const readHostedArtifactZip = (zip: Buffer) =>
@@ -39,6 +43,19 @@ describe('hosted WASM package selection', () => {
 
     it('does not build or stamp a current package', () => {
         expect(selectHostedWasmPackages({ manifest, sourceHashes, changedPaths: [] })).toEqual([]);
+    });
+
+    it('admits vendored source changes at the trigger while selecting only packages with changed reachable hashes', () => {
+        expect(hostedWasmTriggerPaths()).toContain('vendor/rust/**');
+        const changedPaths = ['vendor/rust/visibility-0.1.1/src/lib.rs'];
+        expect(selectHostedWasmPackages({ manifest, sourceHashes, changedPaths })).toEqual([]);
+        expect(
+            selectHostedWasmPackages({
+                manifest,
+                sourceHashes: { ...sourceHashes, scoring: `sha256:${'c'.repeat(64)}` },
+                changedPaths,
+            })
+        ).toEqual(['scoring']);
     });
 
     it('selects only the stale supported package', () => {
@@ -59,17 +76,21 @@ describe('hosted WASM package selection', () => {
 
     it.each([
         '.cargo/config.toml',
+        '.node-version',
         'scripts/hostedWasmArtifacts.ts',
         'scripts/hostedWasmSourceContext.ts',
         'scripts/hostedWasmZip.ts',
         'scripts/wasm-artifacts.ts',
         'scripts/wasmToolchainPins.ts',
-        'scripts/workspaceManifestFingerprint.ts',
-        'scripts/markWasmPackageInternal.ts',
-        'scripts/gen-wasm-manifest.ts',
-        'scripts/verify-wasm-artifacts.ts',
+        'scripts/pnpmLock.ts',
+        'scripts/binaryenBuild.ts',
         'scripts/strictJson.ts',
+        'scripts/workspaceManifestFingerprint.ts',
         'scripts/workletPolyfills.ts',
+        'scripts/gen-wasm-manifest.ts',
+        'scripts/buildWasmPackage.ts',
+        'scripts/markWasmPackageInternal.ts',
+        'scripts/verify-wasm-artifacts.ts',
         'rust-toolchain.toml',
         'package.json',
         'pnpm-lock.yaml',
@@ -145,11 +166,84 @@ function fixture(selected = ['scoring', 'proof-chamber']) {
     temporaryDirectories.push(directory);
     const root = join(directory, 'source');
     mkdirSync(root);
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ packageManager: 'pnpm@11.6.0' }));
+    mkdirSync(join(root, 'node_modules'));
+    cpSync(realpathSync(join(wasmArtifacts.repoRoot, 'node_modules/yaml')), join(root, 'node_modules/yaml'), {
+        recursive: true,
+    });
+    for (const path of [
+        'Cargo.toml',
+        'Cargo.lock',
+        'pnpm-lock.yaml',
+        '.node-version',
+        '.cargo/config.toml',
+        'rust-toolchain.toml',
+        'scripts/binaryenBuild.ts',
+        'scripts/pnpmLock.ts',
+        'scripts/strictJson.ts',
+        'scripts/wasm-artifacts.ts',
+        'scripts/workspaceManifestFingerprint.ts',
+        'scripts/workletPolyfills.ts',
+        'scripts/gen-wasm-manifest.ts',
+        'scripts/buildWasmPackage.ts',
+        'scripts/wasmToolchainPins.ts',
+        'scripts/markWasmPackageInternal.ts',
+        'scripts/gen-daw-dsp-worklet.ts',
+        'scripts/gen-proof-chamber-worklet.ts',
+        'scripts/gen-scoring-worklet.ts',
+    ]) {
+        mkdirSync(dirname(join(root, path)), { recursive: true });
+        writeFileSync(join(root, path), readFileSync(join(wasmArtifacts.repoRoot, path)));
+    }
+    writeFileSync(
+        join(root, 'package.json'),
+        JSON.stringify({
+            ...JSON.parse(readFileSync(join(wasmArtifacts.repoRoot, 'package.json'), 'utf8')),
+            packageManager: 'pnpm@11.6.0',
+        })
+    );
     for (const path of hostedArtifactPaths(selected)) {
         mkdirSync(dirname(join(root, path)), { recursive: true });
         writeFileSync(join(root, path), `generated ${path}`);
     }
+    // Generated child output is the process boundary; real hosted qualification parses/binds it.
+    const packages = Object.fromEntries(
+        selected.map((id) => {
+            const spec = wasmArtifacts.packages.find((candidate) => candidate.id === id);
+            if (!spec) throw new Error('Missing package fixture');
+            const artifacts = Object.fromEntries(
+                spec.artifacts.map((path) => [
+                    path,
+                    `sha256:${createHash('sha256')
+                        .update(readFileSync(join(root, path)))
+                        .digest('hex')}`,
+                ])
+            );
+            return [
+                id,
+                {
+                    generation: {
+                        version: 1,
+                        packageId: id,
+                        head: headSha,
+                        sourceHash: wasmArtifacts.hashCrateClosure(spec.crateDir),
+                        inputsHash: generationInputsHash(root, id),
+                        command: buildCommand(id),
+                        artifacts,
+                        optimizer: {
+                            host: 'linux-x64',
+                            release: 'version_133',
+                            archive: 'binaryen-version_133-x86_64-linux.tar.gz',
+                            archiveSha256: '2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489',
+                            executable: 'binaryen-version_133/bin/wasm-opt',
+                            executableSha256: 'd'.repeat(64),
+                            version: 'wasm-opt version 133',
+                        },
+                    },
+                },
+            ];
+        })
+    );
+    writeFileSync(join(root, 'public/wasm/manifest.json'), JSON.stringify({ packages }));
     const commands: string[][] = [];
     let changed: string[] = [];
     const capture = (command: string, args: string[]) => {
@@ -195,6 +289,16 @@ function fixture(selected = ['scoring', 'proof-chamber']) {
 }
 
 describe('hosted build qualification', () => {
+    it.each(['optimizer', 'head', 'artifacts'])('refuses altered actual build %s before upload', (field) => {
+        const input = fixture(['scoring']);
+        const path = join(input.root, 'public/wasm/manifest.json');
+        const data = JSON.parse(readFileSync(path, 'utf8'));
+        data.packages.scoring.generation[field] = 'invalid';
+        writeFileSync(path, JSON.stringify(data));
+        expect(() => buildHostedWasmArtifacts(input)).toThrow();
+        expect(existsSync(input.outputDirectory)).toBe(false);
+    });
+
     it('builds daw-dsp with its worklet generator and qualifies every declared output', () => {
         const input = fixture(['daw-dsp']);
         const receipt = buildHostedWasmArtifacts(input);
@@ -323,16 +427,50 @@ describe('hosted build qualification', () => {
     it('compares generator changes against the actual merge base, not the advancing base tip', () => {
         const calls: string[][] = [];
         const mergeBase = 'd'.repeat(40);
-        planHostedWasmBuild(identity, (command, args) => {
-            calls.push([command, ...args]);
-            if (args[0] === 'rev-parse') {
-                return headSha;
-            }
-            if (args[0] === 'merge-base') {
-                return mergeBase;
-            }
-            return '';
-        });
+        const recorded = {
+            comment: 'current source fixture',
+            toolchain: { wasmPack: 'fixture', wasmBindgen: 'fixture', rustToolchain: 'fixture', wasmOpt: 'fixture' },
+            packages: Object.fromEntries(
+                wasmArtifacts.packages.map((spec, index) => [
+                    spec.id,
+                    {
+                        crate: spec.crateDir,
+                        crateSourceHash: `sha256:${String(index + 1).repeat(64)}`,
+                        schemaHash: 'fixture',
+                        artifacts: {},
+                    },
+                ])
+            ),
+        };
+        const source = {
+            root: wasmArtifacts.repoRoot,
+            toolkit: {
+                ...wasmArtifacts,
+                readManifest: () => recorded,
+                hashCrateClosure: (crateDir: string) => {
+                    const spec = wasmArtifacts.packages.find((candidate) => candidate.crateDir === crateDir);
+                    const hash = spec === undefined ? undefined : recorded.packages[spec.id]?.crateSourceHash;
+                    if (hash === undefined) {
+                        throw new Error(`Missing current source fixture: ${crateDir}`);
+                    }
+                    return hash;
+                },
+            },
+        };
+        planHostedWasmBuild(
+            identity,
+            (command, args) => {
+                calls.push([command, ...args]);
+                if (args[0] === 'rev-parse') {
+                    return headSha;
+                }
+                if (args[0] === 'merge-base') {
+                    return mergeBase;
+                }
+                return '';
+            },
+            source
+        );
         expect(calls).toContainEqual(['git', 'diff', '--name-only', '-z', mergeBase, headSha]);
         expect(calls).not.toContainEqual(['git', 'diff', '--name-only', '-z', baseSha, headSha]);
     });

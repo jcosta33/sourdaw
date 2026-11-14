@@ -10,6 +10,7 @@ on:
     paths:
       - .cargo/config.toml
       - .github/workflows/wasm-artifacts.yml
+      - .node-version
       - Cargo.lock
       - Cargo.toml
       - crates/daw-dsp/**
@@ -21,6 +22,8 @@ on:
       - pnpm-lock.yaml
       - public/wasm/manifest.json
       - rust-toolchain.toml
+      - scripts/binaryenBuild.ts
+      - scripts/buildWasmPackage.ts
       - scripts/gen-daw-dsp-worklet.ts
       - scripts/gen-proof-chamber-worklet.ts
       - scripts/gen-scoring-worklet.ts
@@ -29,12 +32,14 @@ on:
       - scripts/hostedWasmSourceContext.ts
       - scripts/hostedWasmZip.ts
       - scripts/markWasmPackageInternal.ts
+      - scripts/pnpmLock.ts
       - scripts/strictJson.ts
       - scripts/verify-wasm-artifacts.ts
       - scripts/wasm-artifacts.ts
       - scripts/wasmToolchainPins.ts
       - scripts/workletPolyfills.ts
       - scripts/workspaceManifestFingerprint.ts
+      - vendor/rust/**
 
 permissions:
   contents: read
