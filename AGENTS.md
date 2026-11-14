@@ -462,9 +462,13 @@ exact previously installed approved blob; local launcher edits and staged change
 the sole tracked-primary installation exception; every other primary edit survives. The installed
 job performs no dependency install. The worker preserves common Git `info/exclude` entries while
 excluding only its operational namespace when the primary's tracked ignore rules are older. Inspect
-`pnpm lane:cleanup --status` from a current checkout,
-the records and `worker*.log` in that directory, and
-`launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` for job status. The worker can run directly
+`pnpm lane:cleanup --status` from a current checkout, the records and historical logs in that
+directory, `~/Library/Logs/Sourdaw/lane-cleanup/worker.log` and `worker-error.log` for current
+worker output, and `launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` plus the macOS system log
+for launchd initialization failures. The job starts with the canonical home as its working directory
+and opens its logs on that volume before Node accesses the primary checkout. Grant the pinned Node
+binary Removable Volumes access for an external primary only when the macOS privacy log identifies
+its denial; use Full Disk Access only when that denial requires it. The worker can run directly
 where process inspection is available; the scheduler installer explicitly requires macOS.
 
 Run `pnpm lane:remove <path>` outside the lane; its author lock remains until removal succeeds.
