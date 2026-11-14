@@ -1,4 +1,5 @@
-import { mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -160,10 +161,13 @@ describe('eslint.config.mjs warn levels', () => {
         }
     }, 60_000);
 
-    it('fails a suppressed file on one extra violation and a new file on its first', async () => {
-        const directory = mkdtempSync(resolve('src/app/eslint-suppressions-'));
-        const suppressed = join(directory, 'suppressed.ts');
-        const fresh = join(directory, 'fresh.ts');
+    // The fixtures lint tracked paths with substituted text. A file created during the run
+    // reaches the type-aware program only through typescript-estree's folder-invalidation
+    // fallback; when that misses, the parse fails and the case would observe nothing.
+    it('fails a suppressed file on one extra violation and an unrecorded file on its first', async () => {
+        const directory = mkdtempSync(join(tmpdir(), 'eslint-suppressions-'));
+        const suppressed = resolve('src/app/bootstrap.ts');
+        const unrecorded = resolve('src/app/browserDisplayScaleHost.ts');
         const suppressionsFile = join(directory, 'eslint-suppressions.json');
         const oneVoid = 'export const first = (value: unknown) => void value;\n';
         const twoVoids = `${oneVoid}export const second = (value: unknown) => void value;\n`;
@@ -172,25 +176,30 @@ describe('eslint.config.mjs warn levels', () => {
             if (!result) {
                 throw new Error(`ESLint returned no result for ${filePath}`);
             }
-            return result.messages.filter((message) => message.ruleId === 'no-void').map((message) => message.severity);
+            // A parse failure or an ignored-file notice carries no rule id, and would
+            // otherwise read as "no violations" below.
+            const ruleless = result.messages.filter((message) => message.ruleId === null);
+            if (ruleless.length > 0) {
+                throw new Error(`ESLint did not lint ${filePath}: ${ruleless.map((m) => m.message).join('; ')}`);
+            }
+            const isVoid = (message: { ruleId: string | null }) => message.ruleId === 'no-void';
+            return {
+                reported: result.messages.filter(isVoid).map((message) => message.severity),
+                suppressed: result.suppressedMessages.filter(isVoid).length,
+            };
         };
         try {
             writeFileSync(
                 suppressionsFile,
                 JSON.stringify({ [relative(process.cwd(), suppressed)]: { 'no-void': { count: 1 } } })
             );
-            writeFileSync(suppressed, twoVoids);
-            writeFileSync(fresh, oneVoid);
             const eslint = new ESLint({ applySuppressions: true, suppressionsLocation: suppressionsFile });
 
-            expect(await voidSeverities(eslint, oneVoid, suppressed)).toEqual([]);
-            expect(await voidSeverities(eslint, twoVoids, suppressed)).toEqual([2, 2]);
-            expect(await voidSeverities(eslint, oneVoid, fresh)).toEqual([2]);
+            expect(await voidSeverities(eslint, oneVoid, suppressed)).toEqual({ reported: [], suppressed: 1 });
+            expect(await voidSeverities(eslint, twoVoids, suppressed)).toEqual({ reported: [2, 2], suppressed: 0 });
+            expect(await voidSeverities(eslint, oneVoid, unrecorded)).toEqual({ reported: [2], suppressed: 0 });
         } finally {
-            unlinkSync(suppressed);
-            unlinkSync(fresh);
-            unlinkSync(suppressionsFile);
-            rmdirSync(directory);
+            rmSync(directory, { recursive: true, force: true });
         }
     }, 60_000);
 });

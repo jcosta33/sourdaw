@@ -60,6 +60,7 @@
                 "SECURITY.md",
                 "ZCODE.md",
                 "components.json",
+                "eslint-suppressions.json",
                 "eslint.config.mjs",
                 "eslint.size-baseline.d.mts",
                 "eslint.size-baseline.mjs",
