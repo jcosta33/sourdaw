@@ -4,6 +4,7 @@ import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS } from '../models/AgentContext';
@@ -21,7 +22,7 @@ import { type IntentResult, type PlannedIntentResult } from '../models/IntentRes
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MeasurementAdmitter } from '../models/MeasurementBudget';
-import { type MetricNativeLiteralUse } from '../models/MetricGoalAdmission';
+import { type LastCommitContinuationLiteral, type MetricNativeLiteralUse } from '../models/MetricGoalAdmission';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type AnswerSuggestion, type PlanningOutcome } from '../models/PlanningOutcome';
 import {
@@ -110,6 +111,7 @@ import { getCompiledTransformTargetIds } from './getCompiledTransformTargetIds';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
 import { type ProjectContext } from './getProjectContext';
 import { groundCompiledCommandBatch } from './groundCompiledCommandBatch';
+import { type ContinuedFigure } from './lastCommitContinuation/lastCommitOutcome';
 import { getBackendChain } from './llmOrchestration/backendResolution/getBackendChain';
 import {
     generateToolPlanningOutcome,
@@ -166,7 +168,53 @@ type CreateFastPathResultInput = {
     actions: RuntimeAction[];
     context: ProjectContext;
     prompt: string;
+    continuedFigures?: readonly ContinuedFigure[];
 };
+
+const METRIC_LITERAL_UNITS = ['LUFS', 'dBTP', 'dBFS', 'Hz'] as const;
+
+function isMetricLiteralUnit(unit: string): unit is LastCommitContinuationLiteral['unit'] {
+    return METRIC_LITERAL_UNITS.some((candidate) => candidate === unit);
+}
+
+/**
+ * The continuation's figures stated in a unit metric admission reads, each bound to the one
+ * materialized action that sets its landed value; a figure no action sets exactly is left unbound,
+ * so metric admission refuses it as any unaccounted figure.
+ */
+function readContinuationLiterals(
+    prompt: string,
+    figures: readonly ContinuedFigure[],
+    actions: readonly AppAction[]
+): LastCommitContinuationLiteral[] {
+    return figures.flatMap((figure) => {
+        if (!isMetricLiteralUnit(figure.unit)) {
+            return [];
+        }
+        const actionIndex = actions.findIndex(
+            (action) =>
+                action.type === 'setDeviceParameter' &&
+                action.payload.deviceId === figure.deviceId &&
+                action.payload.paramId === figure.paramId &&
+                action.payload.value === figure.landed
+        );
+        if (actionIndex < 0) {
+            return [];
+        }
+        return [
+            {
+                kind: 'last-commit-continuation' as const,
+                requestDigest: digest(prompt.trim()),
+                actionIndex,
+                unit: figure.unit,
+                figure: figure.figure,
+                comparative: figure.comparative,
+                committed: figure.committed,
+                landed: figure.landed,
+            },
+        ];
+    });
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -473,6 +521,11 @@ function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
         };
     }
 
+    const continuationLiterals = readContinuationLiterals(
+        input.prompt,
+        input.continuedFigures ?? [],
+        materialized.actions
+    );
     return {
         actions: materialized.actions,
         metricGoalState: JSON.stringify({
@@ -496,6 +549,7 @@ function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
             ],
             steps: [],
             proofs: [],
+            ...(continuationLiterals.length === 0 ? {} : { lastCommitContinuations: continuationLiterals }),
             binding: null,
         } satisfies MetricGoalState),
         rawText: input.prompt,
@@ -514,12 +568,27 @@ function createLastCommitContinuationResult(
     thread: ThreadContext | null,
     projectRevision?: string
 ): IntentResult | null {
-    const continuation = planLastCommitContinuation({ prompt, context, thread });
+    const continuation = planLastCommitContinuation({ prompt, context, thread, projectRevision });
     switch (continuation.status) {
         case 'none':
             return null;
         case 'actions':
-            return createFastPathResult({ actions: continuation.actions, context, prompt, projectRevision });
+            return createFastPathResult({
+                actions: continuation.actions,
+                context,
+                prompt,
+                projectRevision,
+                continuedFigures: continuation.continuedFigures,
+            });
+        case 'recipe':
+            return createAdoptedRecipeResult({
+                grounded: continuation.grounded,
+                creativeAuthority: continuation.creativeAuthority,
+                adoptedRecipes: continuation.adoptedRecipes,
+                origin: 'last-commit-recipe',
+                prompt,
+                context,
+            });
         case 'revert':
             return {
                 actions: [],
@@ -585,14 +654,37 @@ function createAnswerSuggestionResult(input: {
     if (planned.status === 'refused') {
         return refuse(planned.reason);
     }
-    const { grounded, creativeAuthority } = planned;
-    // The user chose one named recipe on one named track, as they choose a preset: a literal request
-    // with no objective to verify, which the answer offered as attributed knowledge, never as a
-    // measured claim about the project.
+    return createAdoptedRecipeResult({
+        grounded: planned.grounded,
+        creativeAuthority: planned.creativeAuthority,
+        adoptedRecipes: [planned.adoptedRecipe],
+        origin: 'answer-suggestion',
+        prompt: input.prompt,
+        context: input.context,
+    });
+}
+
+/**
+ * The proposal of recipes the application expanded itself on tracks the user named: an answer's
+ * suggestion taken up, or the last commit's recipe repeated on other tracks. It always goes to
+ * confirmation and carries the recipes it adopted as its provenance; no provider is asked anything.
+ */
+function createAdoptedRecipeResult(input: {
+    grounded: Extract<ReturnType<typeof planAnswerSuggestion>, { status: 'grounded' }>['grounded'];
+    creativeAuthority: CreativeRequestAuthority;
+    adoptedRecipes: NonNullable<IntentResult['adoptedRecipes']>;
+    origin: 'answer-suggestion' | 'last-commit-recipe';
+    prompt: string;
+    context: ProjectContext;
+}): IntentResult {
+    const { grounded, creativeAuthority } = input;
+    // The user chose a named recipe on named tracks, as they choose a preset: a literal request with
+    // no objective to verify, the recipe being attributed knowledge, never a measured claim about the
+    // project.
     const literalAuthority: MetricRequestAuthority = {
         schemaVersion: 1,
-        authorityId: `answer-suggestion-${creativeAuthority.authorityId}`,
-        origin: 'answer-suggestion',
+        authorityId: `${input.origin}-${creativeAuthority.authorityId}`,
+        origin: input.origin,
         callId: null,
         turn: null,
         catalogId: creativeAuthority.catalogId,
@@ -617,7 +709,7 @@ function createAnswerSuggestionResult(input: {
         actions: grounded.actions,
         rawText: input.prompt,
         requiresConfirmation: true,
-        adoptedRecipes: [planned.adoptedRecipe],
+        adoptedRecipes: input.adoptedRecipes,
         protectionFacts: grounded.protectionFacts,
     };
     if (grounded.actionCommandGraph !== undefined) {
