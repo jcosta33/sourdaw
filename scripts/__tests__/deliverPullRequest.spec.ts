@@ -13270,8 +13270,14 @@ describe('delivery shell boundary', () => {
                 const port = shellPort(
                     'jcosta33/sourdaw',
                     {
-                        capture: () => {
-                            throw new Error('metadata unavailable');
+                        capture: (command, args) => {
+                            if (
+                                command !== 'git' ||
+                                args.some((arg) => arg.includes('notes') || arg.includes('git-ai'))
+                            ) {
+                                throw new Error('metadata unavailable');
+                            }
+                            return git(local, args);
                         },
                         run: (command, args) => {
                             invocations.push({ command, args });
@@ -13286,8 +13292,9 @@ describe('delivery shell boundary', () => {
 
                 port.fetch();
 
-                expect(invocations).toHaveLength(1);
-                const args = invocations[0]?.args ?? [];
+                const fetches = invocations.filter(({ args }) => args.includes('fetch'));
+                expect(fetches).toHaveLength(1);
+                const args = fetches[0]?.args ?? [];
                 const fetchArgs = [
                     'fetch',
                     '--prune',
@@ -13295,9 +13302,10 @@ describe('delivery shell boundary', () => {
                     '+refs/heads/*:refs/remotes/origin/*',
                 ];
                 if (authenticated) {
-                    expect(args.slice(0, 3)).toEqual(['-c', 'credential.helper=', '-c']);
-                    expect(args[3]).toMatch(/^credential\.helper=!'\//);
-                    expect(args.slice(4)).toEqual(fetchArgs);
+                    expect(args[0]).toMatch(/^--git-dir=\//);
+                    expect(args.slice(1, 4)).toEqual(['-c', 'credential.helper=', '-c']);
+                    expect(args[4]).toMatch(/^credential\.helper=!'\//);
+                    expect(args.slice(5)).toEqual(fetchArgs);
                     expect(args.join('\0')).not.toContain('ghs_minted');
                 } else {
                     expect(args).toEqual(fetchArgs);

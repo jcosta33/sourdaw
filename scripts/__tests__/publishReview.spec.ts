@@ -366,6 +366,12 @@ async function runFailingReviewPublication(root: string, number: number, head: s
                 portSession,
                 primaryRoot,
                 (command, args) => {
+                    if (command === 'git' && args.includes('--show-object-format')) {
+                        return 'sha1';
+                    }
+                    if (command === 'git' && args.includes('for-each-ref')) {
+                        return '';
+                    }
                     if (command === 'git' && args[0] === 'rev-parse') {
                         return `${root}/.git`;
                     }
@@ -2301,10 +2307,20 @@ describe('review publish', () => {
  * under `scripts/` and why a prior spec that trusted it filed a live issue on the public tracker.
  */
 describe('shellPort postReview state verification', () => {
-    const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
+    const session: GhSession = {
+        configDir: mkdtempSync(join(tmpdir(), 'sourdaw-gh-')),
+        env: { GH_TOKEN: ['ghs', 'fixture'].join('_') },
+        dispose: () => undefined,
+    };
 
     function fakeCapture(reviewResponse: unknown) {
         return (command: string, args: string[]): string => {
+            if (command === 'git' && args.includes('--show-object-format')) {
+                return 'sha1';
+            }
+            if (command === 'git' && args.includes('for-each-ref')) {
+                return '';
+            }
             if (command === 'git' && args[0] === 'rev-parse') {
                 return `${process.cwd()}/.git`;
             }
@@ -2331,6 +2347,12 @@ describe('shellPort postReview state verification', () => {
     it('posts successfully when the recorded state agrees with the requested event', () => {
         const events: string[] = [];
         const capture = (command: string, args: string[]): string => {
+            if (command === 'git' && args.includes('--show-object-format')) {
+                return 'sha1';
+            }
+            if (command === 'git' && args.includes('for-each-ref')) {
+                return '';
+            }
             if (command === 'git' && args[0] === 'rev-parse') {
                 return `${process.cwd()}/.git`;
             }
@@ -2355,6 +2377,12 @@ describe('shellPort postReview state verification', () => {
     it('fetches label names and descriptions for the diversity fence from gh pr view', () => {
         const requests: string[] = [];
         const capture = (command: string, args: string[]): string => {
+            if (command === 'git' && args.includes('--show-object-format')) {
+                return 'sha1';
+            }
+            if (command === 'git' && args.includes('for-each-ref')) {
+                return '';
+            }
             if (command === 'git' && args[0] === 'rev-parse') {
                 return `${process.cwd()}/.git`;
             }
@@ -2410,6 +2438,12 @@ describe('shellPort postReview state verification', () => {
         writeFileSync(join(bundle, 'diff.patch'), '');
         try {
             const port = shellPort(session, root, (command, args) => {
+                if (command === 'git' && args.includes('--show-object-format')) {
+                    return 'sha1';
+                }
+                if (command === 'git' && args.includes('for-each-ref')) {
+                    return '';
+                }
                 if (command === 'git' && args[0] === 'rev-parse') {
                     return `${root}/.git`;
                 }
@@ -2446,6 +2480,12 @@ describe('shellPort postReview state verification', () => {
                         session,
                         primaryRoot,
                         (command, args) => {
+                            if (command === 'git' && args.includes('--show-object-format')) {
+                                return 'sha1';
+                            }
+                            if (command === 'git' && args.includes('for-each-ref')) {
+                                return '';
+                            }
                             if (command === 'git' && args[0] === 'rev-parse') {
                                 return `${primaryRoot}/.git`;
                             }
@@ -2484,6 +2524,12 @@ describe('shellPort postReview state verification', () => {
 
     it('journals the definitive no-mutation status when the review POST fails with HTTP 422', () => {
         const capture = (command: string, args: string[]): string => {
+            if (command === 'git' && args.includes('--show-object-format')) {
+                return 'sha1';
+            }
+            if (command === 'git' && args.includes('for-each-ref')) {
+                return '';
+            }
             if (command === 'git' && args[0] === 'rev-parse') {
                 return `${process.cwd()}/.git`;
             }
@@ -2511,6 +2557,12 @@ describe('shellPort postReview state verification', () => {
         'does not journal a no-mutation status when the review POST fails with %s',
         (failure) => {
             const capture = (command: string, args: string[]): string => {
+                if (command === 'git' && args.includes('--show-object-format')) {
+                    return 'sha1';
+                }
+                if (command === 'git' && args.includes('for-each-ref')) {
+                    return '';
+                }
                 if (command === 'git' && args[0] === 'rev-parse') {
                     return `${process.cwd()}/.git`;
                 }
@@ -2553,6 +2605,12 @@ describe('shellPort postReview state verification', () => {
     it('sends the composed body for each comment, not the raw defect/consequence/done fields', () => {
         let sentInput: string | undefined;
         const capture = (command: string, args: string[], options?: { input?: string }): string => {
+            if (command === 'git' && args.includes('--show-object-format')) {
+                return 'sha1';
+            }
+            if (command === 'git' && args.includes('for-each-ref')) {
+                return '';
+            }
             if (command === 'git' && args[0] === 'rev-parse') {
                 return `${process.cwd()}/.git`;
             }

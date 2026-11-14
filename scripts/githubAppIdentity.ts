@@ -1,6 +1,17 @@
 import { spawnSync } from 'node:child_process';
 import { createSign } from 'node:crypto';
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    lstatSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    symlinkSync,
+    unlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
@@ -399,12 +410,12 @@ const INHERITED_AUTHORITY_PREFIXES = ['GIT_', 'GH_', 'GITHUB_', 'SOURDAW_GITHUB_
  * runs `core.gitProxy`. That proxy key is multi-valued and the repository's value matches first, so
  * no environment value disarms it; refusing the `git` transport is the defence.
  *
- * This list is not complete. Keys whose names the lane chooses — a `.gitattributes` filter, a merge or
- * diff driver, a custom `name::` remote helper — cannot be named here and still run. Network settings
- * that run no program — URL-scoped or plain `http.*` keys such as `http.curloptResolve`,
- * `http.sslCAInfo`, or `http.proxy` — can still redirect a token-bearing request. Any further
- * fixed-name key not listed here is also outside it (#6448). Keeping the token from same-account
- * processes is outside this boundary.
+ * Keys whose names the lane chooses — a `.gitattributes` filter, a merge or diff driver, a custom
+ * `name::` remote helper — and URL-scoped `http.<url>.*` settings cannot be named here. They are kept
+ * from the token instead: a git child never receives `GH_TOKEN` (`tokenFreeGitEnv`), and the only
+ * git children that hold a credential, the network transports, run against a script-written git
+ * directory (`withIsolatedGitTransport`) and read no lane-writable config.
+ * Keeping the token from same-account processes is outside this boundary.
  */
 const REPOSITORY_PROGRAM_OVERRIDES = [
     ['core.hooksPath', '/dev/null'],
@@ -455,6 +466,25 @@ export function githubAuthorizationGitEnv(parent: NodeJS.ProcessEnv = process.en
         env[`GIT_CONFIG_VALUE_${String(index)}`] = value;
     }
     return env;
+}
+
+/**
+ * Git authenticates only through the credential helper `gitAuthenticatedArgs` installs, so no git child
+ * needs the GitHub CLI's token or config directory. Dropping them keeps the token from every program a
+ * lane's config or attributes select for a local command: filters, merge and diff drivers, textconv.
+ */
+export function tokenFreeGitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const stripped: NodeJS.ProcessEnv = { ...env };
+    for (const key of Object.keys(stripped)) {
+        if (key.toUpperCase().startsWith('GH_')) {
+            delete stripped[key];
+        }
+    }
+    return stripped;
+}
+
+function childEnvironment(childCommand: string, env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv | undefined {
+    return basename(childCommand) === 'git' ? tokenFreeGitEnv(env ?? process.env) : env;
 }
 
 /**
@@ -698,6 +728,163 @@ export function gitAuthenticatedArgs(token: string, helperDir: string, args: str
     return ['-c', 'credential.helper=', '-c', `credential.helper=${gitCredentialHelperValue(helperPath)}`, ...args];
 }
 
+/** Runs git in one repository; the caller fixes the directory and the environment. */
+export type GitRunner = {
+    capture: (args: string[]) => string;
+    run: (args: string[]) => void;
+};
+
+/** The only refs a transport carries back: the remote-tracking refs of `origin`. */
+const TRACKING_NAMESPACE = 'refs/remotes/origin/';
+
+type TrackingRefs = ReadonlyMap<string, string>;
+
+/**
+ * Every lane shares the primary checkout's repository config, `info/attributes` and object store, so
+ * a lane can name the filter, merge or diff driver, remote helper, URL rewrite or `http.<url>.*`
+ * setting any git command run there will use. No environment value can switch those keys off, because
+ * the lane chooses their names. A command holding the token therefore never runs in a lane or the
+ * primary: it runs against a fresh git directory whose config the script writes and whose `objects`
+ * is the repository's own object store, so fetched objects land where later reads find them and
+ * pushes find the objects they send.
+ *
+ * Only the network commands need the token, and none of them needs a working tree, an index or
+ * attributes. Working-tree and object commands (status, diff, merge, show) run in the repository
+ * itself without it.
+ *
+ * The directory starts with the repository's `origin` tracking refs, so fetch negotiation has the
+ * local history to offer and `--prune` sees what it may prune. After `body` returns, every tracking
+ * ref the transport changed is applied to the repository with its seeded value as the expected old
+ * value, so a concurrent update refuses instead of being overwritten. Nothing else crosses back.
+ */
+export function withIsolatedGitTransport<Result>(
+    repository: GitRunner,
+    credential: { token: string; helperDir: string },
+    body: (transport: GitRunner) => Result
+): Result {
+    const objects = repository.capture(['rev-parse', '--path-format=absolute', '--git-path', 'objects']);
+    if (!isAbsolute(objects)) {
+        fail('repository object store did not resolve to an absolute path');
+    }
+    const objectFormat = repository.capture(['rev-parse', '--show-object-format']);
+    if (objectFormat !== 'sha1' && objectFormat !== 'sha256') {
+        fail(`unsupported repository object format: ${objectFormat}`);
+    }
+    const seeded = readTrackingRefs(repository.capture(trackingRefsArgs()));
+    const gitDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-transport-'));
+    try {
+        writeIsolatedGitDir(gitDir, objects, objectFormat, seeded);
+        const isolated = (args: string[]) => [
+            `--git-dir=${gitDir}`,
+            ...gitAuthenticatedArgs(credential.token, credential.helperDir, args),
+        ];
+        const result = body({
+            capture: (args) => repository.capture(isolated(args)),
+            run: (args) => repository.run(isolated(args)),
+        });
+        const fetched = readTrackingRefs(repository.capture([`--git-dir=${gitDir}`, ...trackingRefsArgs()]));
+        applyTrackingRefChanges(repository, seeded, fetched, objectFormat);
+        return result;
+    } finally {
+        removeIsolatedGitDir(gitDir);
+    }
+}
+
+function trackingRefsArgs(): string[] {
+    return ['for-each-ref', '--format=%(objectname) %(refname) %(symref)', TRACKING_NAMESPACE];
+}
+
+/** Symbolic refs such as `origin/HEAD` stay out: writing one through its target would move the target. */
+function readTrackingRefs(output: string): TrackingRefs {
+    const refs = new Map<string, string>();
+    for (const line of output.split('\n')) {
+        if (line.trim() === '') {
+            continue;
+        }
+        const [oid, name, symref] = line.trim().split(' ');
+        if (oid === undefined || name === undefined || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(oid)) {
+            fail(`unreadable tracking ref line: ${line}`);
+        }
+        if (symref === undefined || symref === '') {
+            refs.set(name, oid);
+        }
+    }
+    return refs;
+}
+
+/**
+ * Automatic gc and maintenance stay off: they would treat every object no isolated ref reaches as
+ * garbage in the shared object store.
+ */
+function isolatedConfig(objectFormat: 'sha1' | 'sha256'): string {
+    const lines = [
+        '[core]',
+        `\trepositoryformatversion = ${objectFormat === 'sha1' ? '0' : '1'}`,
+        '\tbare = true',
+        '\tlogAllRefUpdates = false',
+        '[gc]',
+        '\tauto = 0',
+        '[maintenance]',
+        '\tauto = false',
+        '[fetch]',
+        '\twriteCommitGraph = false',
+    ];
+    if (objectFormat === 'sha256') {
+        lines.push('[extensions]', '\tobjectFormat = sha256');
+    }
+    return `${lines.join('\n')}\n`;
+}
+
+function writeIsolatedGitDir(
+    gitDir: string,
+    objects: string,
+    objectFormat: 'sha1' | 'sha256',
+    seeded: TrackingRefs
+): void {
+    writeFileSync(join(gitDir, 'config'), isolatedConfig(objectFormat), { mode: 0o600 });
+    writeFileSync(join(gitDir, 'HEAD'), 'ref: refs/heads/main\n', { mode: 0o600 });
+    mkdirSync(join(gitDir, 'refs', 'heads'), { recursive: true });
+    mkdirSync(join(gitDir, 'refs', 'tags'), { recursive: true });
+    const packed = [...seeded].map(([name, oid]) => `${oid} ${name}\n`).join('');
+    writeFileSync(join(gitDir, 'packed-refs'), packed, { mode: 0o600 });
+    symlinkSync(objects, join(gitDir, 'objects'), 'dir');
+}
+
+function applyTrackingRefChanges(
+    repository: GitRunner,
+    seeded: TrackingRefs,
+    fetched: TrackingRefs,
+    objectFormat: 'sha1' | 'sha256'
+): void {
+    const absent = '0'.repeat(objectFormat === 'sha1' ? 40 : 64);
+    for (const [name, oid] of fetched) {
+        const previous = seeded.get(name);
+        if (previous !== oid) {
+            repository.run(['update-ref', '--no-deref', name, oid, previous ?? absent]);
+        }
+    }
+    for (const [name, oid] of seeded) {
+        if (!fetched.has(name)) {
+            repository.run(['update-ref', '--no-deref', '-d', name, oid]);
+        }
+    }
+}
+
+/** The `objects` link is removed on its own first, so the recursive removal never reaches the store. */
+function removeIsolatedGitDir(gitDir: string): void {
+    const link = join(gitDir, 'objects');
+    try {
+        if (lstatSync(link).isSymbolicLink()) {
+            unlinkSync(link);
+        }
+    } catch (error) {
+        if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+            throw error;
+        }
+    }
+    rmSync(gitDir, { recursive: true, force: true });
+}
+
 const VALUELESS_GIT_GLOBAL_OPTIONS = new Set([
     '--no-replace-objects',
     '--no-pager',
@@ -736,32 +923,45 @@ function gitGlobalOptions(args: readonly string[]): string[] {
     return options;
 }
 
-/**
- * A git child carries a token when `GH_TOKEN` is in its environment, or when its arguments install a
- * credential helper: a hook could call `git credential fill` through the `-c` overrides git passes
- * down in `GIT_CONFIG_PARAMETERS` and read the token back.
- */
-function isTokenBearingGitChild(args: readonly string[], env: NodeJS.ProcessEnv): boolean {
-    if (env.GH_TOKEN !== undefined) {
-        return true;
-    }
+function installsCredentialHelper(args: readonly string[]): boolean {
     return args.some(
         (arg, index) => args[index - 1] === '-c' && arg.startsWith('credential.helper=') && arg !== 'credential.helper='
     );
 }
 
 /**
+ * A git child carries a token when its arguments install a credential helper: a program it runs could
+ * call `git credential fill` through the `-c` overrides git passes down in `GIT_CONFIG_PARAMETERS`
+ * and read the token back. A caller that still hands `GH_TOKEN` to a git child is treated the same,
+ * although the child itself never receives it (`tokenFreeGitEnv`).
+ */
+function isTokenBearingGitChild(args: readonly string[], env: NodeJS.ProcessEnv): boolean {
+    return env.GH_TOKEN !== undefined || installsCredentialHelper(args);
+}
+
+/**
+ * A credential reaches git only through a helper, and a lane can write the config and attributes of
+ * every lane and of the primary checkout. A child that installs a helper therefore must name its git
+ * directory with `--git-dir`: `withIsolatedGitTransport` points it at a directory whose config only
+ * the script writes, so no lane-chosen transport, remote helper, URL rewrite or `http.*` setting
+ * applies beside the token.
+ */
+function assertCredentialHelperChildIsIsolated(args: readonly string[]): void {
+    if (!installsCredentialHelper(args)) {
+        return;
+    }
+    if (!gitGlobalOptions(args).some((option) => option.startsWith('--git-dir='))) {
+        throw new Error('refusing a token-bearing git child outside an isolated git directory');
+    }
+}
+
+/**
  * Config-defined hooks (`hook.<name>.event` with `hook.<name>.command`) run whatever
  * `core.hooksPath` says, and `<name>` is the lane's choice, so no fixed-name override disarms them.
- * A token-bearing git child therefore refuses to start while its repository config defines any
+ * A token-bearing git child therefore refuses to start while the config it reads defines any
  * `hook.*` key. The listing runs in the child's repository without the token; reading config runs no
  * hook or fsmonitor. `git config --get-regexp` exits 1 with no output when nothing matches; any other
  * failure refuses.
- *
- * The refusal reads only the repository the child runs in. A lane-chosen URL rewrite can still send a
- * token-bearing command to another repository over `file`, whose own config then runs programs (a push
- * runs `receive-pack` there). Listing and starting the child are separate steps, so config written in
- * between goes unseen. Both residuals are tracked in #6448.
  */
 function assertNoConfigDefinedHooks(
     childCommand: string,
@@ -769,11 +969,9 @@ function assertNoConfigDefinedHooks(
     cwd: string,
     env: NodeJS.ProcessEnv
 ): void {
-    const tokenFree: NodeJS.ProcessEnv = { ...env };
-    delete tokenFree.GH_TOKEN;
     const listing = spawnSync(childCommand, [...gitGlobalOptions(args), 'config', '-z', '--get-regexp', '^hook\\.'], {
         cwd,
-        env: tokenFree,
+        env: tokenFreeGitEnv(env),
         encoding: 'utf8',
         shell: false,
     });
@@ -801,6 +999,7 @@ function assertTokenBearingGitChildIsHookFree(
     if (basename(childCommand) !== 'git' || !isTokenBearingGitChild(args, env)) {
         return;
     }
+    assertCredentialHelperChildIsIsolated(args);
     assertNoConfigDefinedHooks(childCommand, args, cwd, env);
 }
 
@@ -824,7 +1023,7 @@ export function spawnCaptureBytes(command: string, args: string[], options: Capt
     assertTokenBearingGitChildIsHookFree(childCommand, args, cwd, options.env ?? process.env);
     const result = spawnSync(childCommand, args, {
         cwd,
-        env: options.env,
+        env: childEnvironment(childCommand, options.env),
         // Ordinary commands retain 64 MiB; full review diffs explicitly request bounded headroom.
         // Overflow still throws through result.error rather than returning a partial capture.
         maxBuffer: maxBufferBytes,
@@ -861,7 +1060,7 @@ export function spawnRun(
     assertTokenBearingGitChildIsHookFree(childCommand, args, cwd, options.env ?? process.env);
     const result = spawnSync(childCommand, args, {
         cwd,
-        env: options.env,
+        env: childEnvironment(childCommand, options.env),
         // Captured stderr keeps a failing child's own words in the thrown error (#4344).
         stdio: ['inherit', 'inherit', 'pipe'],
         maxBuffer: 64 * 1024 * 1024,

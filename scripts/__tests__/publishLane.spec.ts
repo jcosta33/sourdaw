@@ -154,6 +154,31 @@ function runTrustedLanePublish(cwd: string, args: string[], env: NodeJS.ProcessE
     });
 }
 
+/**
+ * Token-bearing transports run in a script-written git directory, so a repository `url.insteadOf`
+ * cannot stand a bare remote in for GitHub. This `git` wrapper does it on the command line instead.
+ */
+function githubStandInGit(root: string, remote: string): string {
+    const systemGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+    const directory = join(root, 'github-stand-in');
+    mkdirSync(directory, { recursive: true });
+    const wrapper = join(directory, 'git');
+    writeFileSync(
+        wrapper,
+        [
+            '#!/bin/sh',
+            'for arg do',
+            '    shift',
+            `    if [ "$arg" = ${JSON.stringify(GITHUB_HTTPS_REMOTE)} ]; then set -- "$@" ${JSON.stringify(remote)}; else set -- "$@" "$arg"; fi`,
+            'done',
+            `exec ${JSON.stringify(systemGit)} "$@"`,
+            '',
+        ].join('\n')
+    );
+    chmodSync(wrapper, 0o700);
+    return wrapper;
+}
+
 function initializeRepository(path: string): void {
     mkdirSync(path, { recursive: true });
     fixtureGit(path, ['init', '-b', 'main']);
@@ -1088,7 +1113,7 @@ describe('lane publish', () => {
                 session = createGhSession('ghs_hook_marker', { PATH: process.env.PATH });
 
                 expect(existsSync(hookMarker)).toBe(false);
-                shellPort(session, lane, primary, { git: systemGit, gh: 'gh' }).push(
+                shellPort(session, lane, primary, { git: githubStandInGit(fixtureRoot, remote), gh: 'gh' }).push(
                     lane,
                     'agent/12/hook-proof',
                     headSha
@@ -1112,7 +1137,6 @@ describe('lane publish', () => {
             const primary = join(root, 'primary');
             const peer = join(root, 'peer');
             const remote = join(root, 'remote.git');
-            const systemGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
             initializeRepository(primary);
             writeFileSync(join(primary, 'base.txt'), 'base\n');
             fixtureGit(primary, ['add', 'base.txt']);
@@ -1130,7 +1154,8 @@ describe('lane publish', () => {
             fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
             const session = createGhSession('ghs_hook_marker', { PATH: process.env.PATH });
             const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
-            const push = (git = systemGit) =>
+            const standIn = githubStandInGit(root, remote);
+            const push = (git = standIn) =>
                 shellPort(session, primary, primary, { git, gh: 'gh' }).push(primary, 'agent/12/notes-proof', headSha);
             const note = (repository: string, target: string, message: string) => {
                 fixtureGit(repository, ['notes', '--ref=ai', 'add', '-m', message, target]);
@@ -1147,7 +1172,7 @@ describe('lane publish', () => {
                 primary,
                 peer,
                 remote,
-                systemGit,
+                systemGit: standIn,
                 baseSha,
                 headSha,
                 push,
@@ -3224,6 +3249,9 @@ describe('lane publish', () => {
                 '#!/usr/bin/env node\n' +
                     'const args = process.argv.slice(2);\n' +
                     "if (args.includes('ls-remote')) { process.stdout.write(process.env.TEST_LS_REMOTE_OUTPUT ?? ''); process.exit(0); }\n" +
+                    `if (args.includes('--git-path')) { process.stdout.write(${JSON.stringify(join(root, 'objects'))}); process.exit(0); }\n` +
+                    "if (args.includes('--show-object-format')) { process.stdout.write('sha1'); process.exit(0); }\n" +
+                    "if (args.includes('for-each-ref')) { process.exit(0); }\n" +
                     "console.error('unexpected git ' + args.join(' ')); process.exit(1);\n"
             );
             chmodSync(gitShim, 0o700);
@@ -5007,7 +5035,7 @@ describe('push delta authorship gate', () => {
         fixtureGit(primary, ['config', `branch.${BRANCH}.sourdaw-author-model`, 'glm-5.3']);
         const session = createGhSession('ghs_authorship_marker', { PATH: process.env.PATH });
         const port: PublishLanePort = {
-            ...shellPort(session, lane, primary, { git: systemGit, gh: 'gh' }),
+            ...shellPort(session, lane, primary, { git: githubStandInGit(fixtureRoot, remote), gh: 'gh' }),
             issueExists: () => true,
             existingOpenPullRequest: () => undefined,
             createPullRequest: () => 88,

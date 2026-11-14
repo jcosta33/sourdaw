@@ -308,6 +308,12 @@ function publicationPort(root: string, gh: (args: string[]) => string): PublishR
         session,
         root,
         (command, args) => {
+            if (command === 'git' && args.includes('--show-object-format')) {
+                return 'sha1';
+            }
+            if (command === 'git' && args.includes('for-each-ref')) {
+                return '';
+            }
             if (command === 'git' && args[0] === 'rev-parse') {
                 return join(root, '.git');
             }
