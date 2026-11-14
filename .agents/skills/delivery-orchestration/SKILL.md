@@ -621,10 +621,15 @@ sources when its HEAD/index or previous verified installation proves the current
 refuses. It preserves other primary dirt and never depends on the author lane surviving. Install
 then verifies the job's first launchd launch and, when launchd cannot initialize it, boots the job
 out, restores and re-bootstraps the previous plist when one existed (otherwise removes it), and fails
-with the remediation; after a verified launch it prunes superseded runtimes. On macOS a primary on an external volume needs
-the pinned Node binary granted Full Disk Access (or Removable Volumes access). Consult
-`lane:cleanup --status` from a current checkout, `.agents/lane-cleanup/worker*.log`, and
-`launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` for retained work and scheduler status.
+with the remediation; after a verified launch it prunes superseded runtimes. Launchd starts from the
+canonical home and opens `~/Library/Logs/Sourdaw/lane-cleanup/worker.log` and `worker-error.log`
+before Node reaches an external primary checkout. Consult `lane:cleanup --status` from a current
+checkout for retained work, those home logs for worker output, and
+`launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` plus the macOS system log for launchd
+initialization failures. Existing `.agents/lane-cleanup/worker*.log` files in the primary remain
+historical and untouched. Grant the pinned Node binary Removable Volumes access for an external
+primary only when the macOS privacy log identifies its denial; use Full Disk Access only when that
+denial requires it.
 
 ## Briefs
 

@@ -12,6 +12,10 @@ import { clearAgentMeasurementArtifacts } from '#/modules/AudioRendering/useCase
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
 import { assertRemoteAgentDataPolicy, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
+import {
+    ANALYSIS_COMPARE_REFERENCE_MAX_TARGETS,
+    ANALYSIS_MEASURE_MAX_TARGETS,
+} from '../../models/AnalysisMeasureLimits';
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { classifyApplicationToolReceiptData } from '../../models/ApplicationToolReceiptData';
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
@@ -107,6 +111,7 @@ const REVISION = 'revision-7';
 const SECTIONS: ProjectContextSection[] = [{ id: 'chorus', name: 'Chorus', startBeat: 16, endBeat: 32 }];
 const CHORUS = { sectionId: 'chorus' };
 const MASTER = { kind: 'master' };
+const THREE_TRACKS = { kind: 'tracks', ids: ['vocal', 'kick', 'snare'] };
 const FOUR_TRACKS = { kind: 'tracks', ids: ['vocal', 'kick', 'snare', 'pad'] };
 const REFERENCE_FILE_NAME = 'Private Mix Master v3.wav';
 const REFERENCE_ID = 'reference-test';
@@ -300,9 +305,15 @@ describe('analysis.compareReference publication', () => {
 
         expect(compare.parameters).toMatchObject({ additionalProperties: false, required: ['scope', 'range'] });
         expect(Object.keys(compare.parameters.properties)).toEqual(COMPARE_ARGUMENT_KEYS);
-        for (const key of COMPARE_ARGUMENT_KEYS) {
+        for (const key of COMPARE_ARGUMENT_KEYS.filter((argumentKey) => argumentKey !== 'scope')) {
             expect(compare.parameters.properties[key]).toEqual(measure.parameters.properties[key]);
         }
+        expect(compare.parameters.properties.scope).toMatchObject({
+            properties: { ids: { maxItems: ANALYSIS_COMPARE_REFERENCE_MAX_TARGETS } },
+        });
+        expect(measure.parameters.properties.scope).toMatchObject({
+            properties: { ids: { maxItems: ANALYSIS_MEASURE_MAX_TARGETS } },
+        });
         const names = new Set<string>();
         collectParameterNames(compare.parameters, names);
         expect(
@@ -389,15 +400,29 @@ describe('analysis.compareReference execution', () => {
         expect(Object.keys(target?.deltas as object)).toEqual(['integratedLoudness', 'truePeak']);
     });
 
-    // Red when four targets with every metric overflow the per-call receipt budget, which would drop the comparison.
-    it('keeps four track targets with every metric inside the per-call receipt budget', async () => {
+    // Red when three targets with every metric overflow the per-call receipt budget, which would drop the comparison.
+    it('keeps three track targets with every metric inside the per-call receipt budget', async () => {
+        await loadReference();
+
+        const receipt = await compareOnce({ scope: THREE_TRACKS, range: CHORUS });
+
+        expect(receipt.status).toBe('success');
+        expect(receiptTargets(receipt)).toHaveLength(3);
+        expect(new TextEncoder().encode(JSON.stringify(receipt)).byteLength).toBeLessThanOrEqual(16_384);
+    });
+
+    // Red when the bound drifts back to analysis.measure's four, whose every-metric receipt overflows the budget.
+    it('refuses four track targets without rendering, naming its own bound of three', async () => {
         await loadReference();
 
         const receipt = await compareOnce({ scope: FOUR_TRACKS, range: CHORUS });
 
-        expect(receipt.status).toBe('success');
-        expect(receiptTargets(receipt)).toHaveLength(4);
-        expect(new TextEncoder().encode(JSON.stringify(receipt)).byteLength).toBeLessThanOrEqual(16_384);
+        expect(receipt.status).toBe('failure');
+        expect(receipt.error?.code).toBe('invalid-arguments');
+        expect(receipt.error?.safeMessage).toContain('analysis.compareReference');
+        expect(receipt.error?.safeMessage).toContain('1 to 3 distinct ids');
+        expect(engine.renderOffline).not.toHaveBeenCalled();
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
     });
 
     // Red when the receipt starts naming the file, its extension, or any path.

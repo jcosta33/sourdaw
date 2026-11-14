@@ -86,6 +86,7 @@ export { getTempoMapState } from './transportQueries/getTempoMapState';
 export { resolveTempoFieldState } from './transportQueries/resolveTempoFieldState';
 export { getTimeSignatureAtBeat } from './transportQueries/getTimeSignatureAtBeat';
 export { getBarStartBeat } from './transportQueries/getBarStartBeat';
+export { getBarAtBeat } from './transportQueries/getBarAtBeat';
 export { getTimelineRulerGrid } from './transportQueries/getTimelineRulerGrid';
 export { updateTransportState } from './transportQueries/updateTransportState';
 export { formatMusicalPosition } from './transportQueries/formatMusicalPosition';

@@ -33,7 +33,11 @@ import {
     RENDER_REQUEST_TOOL_NAME,
     TRANSFORM_COMPILE_TOOL_NAME,
 } from '../models/AgentToolCatalogNames';
-import { ANALYSIS_MEASURE_MAX_ID_LENGTH, ANALYSIS_MEASURE_MAX_TARGETS } from '../models/AnalysisMeasureLimits';
+import {
+    ANALYSIS_COMPARE_REFERENCE_MAX_TARGETS,
+    ANALYSIS_MEASURE_MAX_ID_LENGTH,
+    ANALYSIS_MEASURE_MAX_TARGETS,
+} from '../models/AnalysisMeasureLimits';
 import {
     COMMAND_BATCH_DECLINE_KINDS,
     COMMAND_BATCH_DECLINE_MAX_QUESTION_LENGTH,
@@ -254,7 +258,7 @@ function getRecipeExpansionSchema(): ToolSchema {
 }
 
 /** The scope, range and metrics a project measurement reads, which `analysis.measure` and `analysis.compareReference` share. */
-function getProjectMeasurementProperties() {
+function getProjectMeasurementProperties(maxTargets: number) {
     const metricIds = getAgentMeasurementMetricIds();
     const boundedId = { type: 'string', minLength: 1, maxLength: ANALYSIS_MEASURE_MAX_ID_LENGTH };
     return {
@@ -265,7 +269,7 @@ function getProjectMeasurementProperties() {
                 ids: {
                     type: 'array',
                     minItems: 1,
-                    maxItems: ANALYSIS_MEASURE_MAX_TARGETS,
+                    maxItems: maxTargets,
                     items: { ...boundedId },
                 },
             },
@@ -298,7 +302,7 @@ function getAnalysisMeasureSchema(): ToolSchema {
             subject: { type: 'string', enum: ['project', 'preview'] },
             proposal: SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA,
             recipeCallId: { type: 'string', minLength: 1, maxLength: ANALYSIS_MEASURE_MAX_ID_LENGTH },
-            ...getProjectMeasurementProperties(),
+            ...getProjectMeasurementProperties(ANALYSIS_MEASURE_MAX_TARGETS),
         },
         ['scope', 'range']
     );
@@ -320,8 +324,8 @@ function getTransientOnsetReadSchema(): ToolSchema {
 function getAnalysisCompareReferenceSchema(): ToolSchema {
     return tool(
         ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
-        `Compare the project to the reference the user loaded for comparison. Takes the scope and range analysis.measure takes. The application measured the reference locally over its whole duration, renders the project scope at the current project revision, and returns the reference's figures, the project's figures for each target, and per-metric deltas that read reference minus project: a positive loudness delta means the reference is louder than the project. A per-band figure has no delta. Only figures are returned, never the reference file or any audio; the reference is named by an opaque identifier. Fails with no-reference-loaded while the user has loaded none. Counts against the one measurement allowed per turn, alongside analysis.measure.`,
-        getProjectMeasurementProperties(),
+        `Compare the project to the reference the user loaded for comparison. Takes the scope and range analysis.measure takes, with up to ${String(ANALYSIS_COMPARE_REFERENCE_MAX_TARGETS)} tracks/buses. The application measured the reference locally over its whole duration, renders the project scope at the current project revision, and returns the reference's figures, the project's figures for each target, and per-metric deltas that read reference minus project: a positive loudness delta means the reference is louder than the project. A per-band figure has no delta. Only figures are returned, never the reference file or any audio; the reference is named by an opaque identifier. Fails with no-reference-loaded while the user has loaded none. Counts against the one measurement allowed per turn, alongside analysis.measure.`,
+        getProjectMeasurementProperties(ANALYSIS_COMPARE_REFERENCE_MAX_TARGETS),
         ['scope', 'range']
     );
 }

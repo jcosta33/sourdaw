@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Ledger only. Execute on child Spec, Task, Bug, or Change plan issues. Secrets stay in `~/.agents/artifacts`.
+        Ledger only. Execute on child Spec, Task, Bug, or Change plan issues. Secrets stay in the artifact workspace (`AGENTS.md`, Artifacts).
 
         No live SHAs, counts, occupancy, or checkboxes. After create: add `priority:P*`; attach children as sub-issues.
 

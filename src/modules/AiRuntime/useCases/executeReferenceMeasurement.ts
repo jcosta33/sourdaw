@@ -2,6 +2,7 @@ import { compareAgentReferenceToProject } from '#/modules/AudioAnalysis/useCases
 import { digest } from '#/utils/canonicalDigest';
 
 import { ANALYSIS_COMPARE_REFERENCE_TOOL_NAME } from '../models/AgentToolCatalogNames';
+import { ANALYSIS_COMPARE_REFERENCE_MAX_TARGETS } from '../models/AnalysisMeasureLimits';
 import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type MeasurementAdmitter, type MeasurementFailure } from '../models/MeasurementBudget';
@@ -155,7 +156,11 @@ export async function executeReferenceMeasurement(
             })
         );
     }
-    const parsed = parseAnalysisMeasureArguments(input.call.arguments, ANALYSIS_COMPARE_REFERENCE_TOOL_NAME);
+    const parsed = parseAnalysisMeasureArguments(
+        input.call.arguments,
+        ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
+        ANALYSIS_COMPARE_REFERENCE_MAX_TARGETS
+    );
     if (parsed.status === 'invalid') {
         return read(failureReceipt(input, { code: 'invalid-arguments', safeMessage: parsed.reason, retryable: true }));
     }

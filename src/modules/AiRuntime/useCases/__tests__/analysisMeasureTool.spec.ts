@@ -4,6 +4,7 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createAppError } from '#/infra/errors/createAppError';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
+import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 import { clearAgentMeasurementArtifacts, getAgentMeasurementArtifacts } from '#/modules/AudioRendering/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
@@ -321,7 +322,7 @@ describe('analysis.measure', () => {
         expect(receipt.data).toMatchObject({ metrics: expect.arrayContaining(['onsetCount']) });
         expect((receipt.data as { targets: unknown[] }).targets).toHaveLength(4);
         for (const target of (receipt.data as { targets: { measurements: object }[] }).targets) {
-            expect(Object.keys(target.measurements)).toHaveLength(14);
+            expect(Object.keys(target.measurements)).toHaveLength(getAgentMeasurementMetricIds().length);
         }
         expect(new TextEncoder().encode(JSON.stringify(receipt)).byteLength).toBeLessThanOrEqual(16_384);
         expect(containsRawAudioData(receipt.data)).toBe(false);

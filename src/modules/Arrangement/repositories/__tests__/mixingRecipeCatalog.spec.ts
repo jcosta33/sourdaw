@@ -14,6 +14,7 @@ import {
     type MixRecipeStep,
 } from '#/modules/Arrangement/models/MixRecipe';
 import { buildMixRecipeCatalog } from '#/modules/Arrangement/repositories/mixRecipes/mixRecipeCatalog';
+import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 
 const catalog = buildMixRecipeCatalog();
 
@@ -53,7 +54,7 @@ function hasMisplacedBand(entry: MixRecipeMetricExpectation, declaredBands: Read
 
 describe('mixingRecipeCatalog', () => {
     it('publishes the declared version and vocabulary', () => {
-        expect(MIX_RECIPE_CATALOG_VERSION).toBe(2);
+        expect(MIX_RECIPE_CATALOG_VERSION).toBe(3);
         expect(catalog.version).toBe(MIX_RECIPE_CATALOG_VERSION);
         expect(catalog.descriptors).toEqual([...MIX_RECIPE_DESCRIPTORS]);
         expect(catalog.roles).toEqual([...MIX_RECIPE_ROLES]);
@@ -188,6 +189,32 @@ describe('mixingRecipeCatalog', () => {
 
         expect(unknownCitedMetrics).toEqual([]);
         expect(misplacedBands).toEqual([]);
+    });
+
+    describe('measurability by analysis.measure', () => {
+        const measurable = new Set<string>(getAgentMeasurementMetricIds());
+
+        it('cites only metrics analysis.measure reports', () => {
+            const offenders = catalog.recipes.flatMap((recipe) =>
+                recipe.metrics
+                    .filter((entry) => !measurable.has(entry.metric))
+                    .map((entry) => `${recipe.id}:${entry.metric}`)
+            );
+
+            expect(offenders).toEqual([]);
+        });
+
+        it('gives every recipe at least one measurable expectation', () => {
+            const offenders = catalog.recipes
+                .filter((recipe) => !recipe.metrics.some((entry) => measurable.has(entry.metric)))
+                .map((recipe) => recipe.id);
+
+            expect(offenders).toEqual([]);
+        });
+
+        it('declares only metric ids analysis.measure reports', () => {
+            expect(MIX_RECIPE_METRIC_IDS.filter((metric) => !measurable.has(metric))).toEqual([]);
+        });
     });
 
     it('derives the direction of every less/more descriptor phrase from the produces/removes tables, not a hand-written list', () => {

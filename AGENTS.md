@@ -396,8 +396,9 @@ writer PID. The initial private receipt must be created before Git starts; failu
 refuses the checkpoint. Once Git starts, a diagnostic storage failure does not change its result.
 Receipts contain selected source and index hashes, Git metadata, bounded stderr and a
 stall observation; retain them when a checkpoint fails. They may contain private paths and Git
-output. Set `SOURDAW_CHECKPOINT_DIR` to a private directory outside the worktree to choose their
-location. The watchdog does not stop a stalled writer or prevent Trace2 backpressure. Writer sampling uses a
+output. They default to `~/.agents/artifacts/sourdaw/git-checkpoints`; set `SOURDAW_CHECKPOINT_DIR`
+to a private directory outside the worktree to choose their location, under the artifact workspace
+([Artifacts](#artifacts)) when the checkout's drive is not the home directory's. The watchdog does not stop a stalled writer or prevent Trace2 backpressure. Writer sampling uses a
 best-effort PID and start identity check; the check is not atomic and the process can exit or its
 PID can be reused before sampling. Shared receivers are never sampled. A failed
 syscall pathname requires separately authorized observation arranged before the write; a receipt or
@@ -461,9 +462,13 @@ exact previously installed approved blob; local launcher edits and staged change
 the sole tracked-primary installation exception; every other primary edit survives. The installed
 job performs no dependency install. The worker preserves common Git `info/exclude` entries while
 excluding only its operational namespace when the primary's tracked ignore rules are older. Inspect
-`pnpm lane:cleanup --status` from a current checkout,
-the records and `worker*.log` in that directory, and
-`launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` for job status. The worker can run directly
+`pnpm lane:cleanup --status` from a current checkout, the records and historical logs in that
+directory, `~/Library/Logs/Sourdaw/lane-cleanup/worker.log` and `worker-error.log` for current
+worker output, and `launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` plus the macOS system log
+for launchd initialization failures. The job starts with the canonical home as its working directory
+and opens its logs on that volume before Node accesses the primary checkout. Grant the pinned Node
+binary Removable Volumes access for an external primary only when the macOS privacy log identifies
+its denial; use Full Disk Access only when that denial requires it. The worker can run directly
 where process inspection is available; the scheduler installer explicitly requires macOS.
 
 Run `pnpm lane:remove <path>` outside the lane; its author lock remains until removal succeeds.
@@ -482,7 +487,15 @@ removes the worktree and deletes the lane's local branch with `git branch -D`;
 
 ## Artifacts
 
-Drafts, one-offs, and unpublished or secret work stay in `~/.agents/artifacts` and are not filed.
+Drafts, one-offs, scratch clones and checkouts, dependency installs, and unpublished or secret work
+stay in `<root>/.agents/artifacts/sourdaw/`, outside every checkout, and are not filed. `<root>` is
+the mount point of the drive holding the primary checkout, printed by
+`df -P . | awk 'NR==2{match($0, /[0-9]+% +/); print substr($0, RSTART + RLENGTH)}'` run there. It
+reads the text after the capacity column because filesystem names and mount points can contain
+spaces; quote the result. When the same command run on `~` prints the same mount point, `<root>` is the home
+directory. When `<root>` is the primary checkout itself, ask the owner for a directory on that drive
+outside the checkout. Never place this work on another drive or under `~/.agents/artifacts` when
+the checkout's drive differs.
 The tracker is public. The issue body is the original; delete any local copy after filing.
 `.agents/specs/` is leftover corpus: do not add files there. Assigned leftover files stay until
 their work is done. Planning handed to future agents lives in GitHub issues, never a plan file.

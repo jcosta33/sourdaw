@@ -140,7 +140,6 @@ const WARM_ON_DRUMS_AND_BASS = synthetic(
     [
         { metric: 'spectralCentroid', direction: 'decrease' },
         { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'increase' },
-        { metric: 'interTrackMasking', direction: 'hold' },
     ]
 );
 const WIDE_ON_VOCAL = synthetic(
@@ -666,12 +665,7 @@ describe('planWholeProjectVibeRun batches', () => {
             ['drums'],
             [{ metric: 'spectralCentroid', direction: 'decrease' }]
         );
-        const unmeasurable = synthetic(
-            'warm-unmeasurable',
-            'warm',
-            ['drums'],
-            [{ metric: 'spectralRolloff', direction: 'decrease' }]
-        );
+        const unmeasurable = synthetic('warm-unmeasurable', 'warm', ['drums'], []);
 
         const result = planWholeProjectVibeRun({
             context: { tracks: [contextTrack('t-kick', 'Kick', 'kick')] },
