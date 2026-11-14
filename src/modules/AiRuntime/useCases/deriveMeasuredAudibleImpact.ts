@@ -48,23 +48,40 @@ function movedMetrics(preview: MeasuredPreview): AgentRunMeasuredAudibleMetric[]
     );
 }
 
+function claimOf(preview: MeasuredPreview, metrics: AgentRunMeasuredAudibleMetric[]): MeasuredAudibleImpact | null {
+    if (metrics.length === 0) {
+        return null;
+    }
+    return { status: 'measured', revision: preview.revision, batchContentHash: preview.batchContentHash, metrics };
+}
+
+/** Metrics of every bound proof, a later proof replacing an earlier figure of the same target and metric. */
+function mergeProofMetrics(proofs: readonly MeasuredPreview[]): AgentRunMeasuredAudibleMetric[] {
+    const latest = new Map<string, AgentRunMeasuredAudibleMetric>();
+    for (const proof of proofs) {
+        for (const metric of movedMetrics(proof)) {
+            latest.set(`${metric.targetId}\u0000${metric.metricId}`, metric);
+        }
+    }
+    return [...latest.values()];
+}
+
 /**
- * The audible claim of one exact batch: the figures of the latest measurement bound to it, listing
- * only metrics whose compared change is not zero. A preview that measured another batch or revision
- * claims nothing, so a claim never describes a change nobody measured.
+ * The audible claim of one exact batch, listing only metrics whose compared change is not zero. A
+ * card whose own preview is bound to the batch claims exactly what that card shows. A card with none
+ * (a vibe-run batch) claims what its bound proofs measured, the latest figure of each target and
+ * metric. A preview of another batch or revision never contributes, so a claim never describes a
+ * change nobody measured.
  */
 export function deriveMeasuredAudibleImpact(input: DeriveMeasuredAudibleImpactInput): MeasuredAudibleImpact | null {
+    const snapshot = bindMeasuredPreviewToBatch(input.snapshotPreview, input.envelope);
+    if (snapshot !== undefined) {
+        return claimOf(snapshot, movedMetrics(snapshot));
+    }
     const boundProofs = input.proofPreviews.flatMap((preview) => {
         const bound = bindMeasuredPreviewToBatch(preview, input.envelope);
         return bound === undefined ? [] : [bound];
     });
-    const current = boundProofs.at(-1) ?? bindMeasuredPreviewToBatch(input.snapshotPreview, input.envelope);
-    if (current === undefined) {
-        return null;
-    }
-    const metrics = movedMetrics(current);
-    if (metrics.length === 0) {
-        return null;
-    }
-    return { status: 'measured', revision: current.revision, batchContentHash: current.batchContentHash, metrics };
+    const latestProof = boundProofs.at(-1);
+    return latestProof === undefined ? null : claimOf(latestProof, mergeProofMetrics(boundProofs));
 }

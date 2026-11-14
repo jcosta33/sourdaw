@@ -77,7 +77,7 @@ function proposeCard(input: {
     gain: number;
     preview?: (bound: { revision: string; batchContentHash: string }) => MeasuredPreview;
     /** A preview held only by the metric-goal proofs, as a vibe-run batch card holds it. */
-    proofPreview?: (bound: { revision: string; batchContentHash: string }) => MeasuredPreview;
+    proofPreviews?: readonly ((bound: { revision: string; batchContentHash: string }) => MeasuredPreview)[];
     foreignHash?: boolean;
 }): Card {
     const revision = captureProjectRevision();
@@ -110,7 +110,10 @@ function proposeCard(input: {
         agentApproval: compiled.agentApproval,
         affectedIds: ['vocal'],
         protectedUnchanged: [],
-        metricGoalState: proofOnlyState(compiled.commandBatch, input.proofPreview?.({ revision, batchContentHash })),
+        metricGoalState: proofOnlyState(
+            compiled.commandBatch,
+            input.proofPreviews?.map((build) => build({ revision, batchContentHash }))
+        ),
         measuredPreview: input.preview?.({ revision, batchContentHash }),
         executionMode: 'atomic',
         group: { groupId: `group-${String(input.gain)}`, groupLabel: 'Set vocal gain' },
@@ -126,28 +129,31 @@ function proposeCard(input: {
 
 function proofOnlyState(
     commandBatch: ReturnType<typeof compileAgentActionExecution>['commandBatch'],
-    preview: MeasuredPreview | undefined
+    previews: readonly MeasuredPreview[] | undefined
 ): string | undefined {
-    if (preview === undefined) {
+    if (previews === undefined) {
         return undefined;
     }
     const state = JSON.parse(configuredLiteralMetricState(commandBatch)) as Record<string, unknown>;
     const artifact = { route: 'isolated-subgraph' as const, artifact: { contentAddress: 'content-address' } };
-    const provenance = {
-        origin: 'approval-preview' as const,
-        callId: 'proof-call',
-        turn: 0,
-        runId: RUN_ID,
-        targets: preview.targets.map((target) => ({
-            targetId: target.targetId,
-            baseline: artifact,
-            preview: artifact,
-        })),
-    };
-    return JSON.stringify({
-        ...state,
-        proofs: [{ preview: { ...preview, provenance }, receiptDigest: 'proof-receipt-digest' }],
-    });
+    const proofs = previews.map((preview, index) => ({
+        preview: {
+            ...preview,
+            provenance: {
+                origin: 'approval-preview' as const,
+                callId: `proof-call-${String(index)}`,
+                turn: index,
+                runId: RUN_ID,
+                targets: preview.targets.map((target) => ({
+                    targetId: target.targetId,
+                    baseline: artifact,
+                    preview: artifact,
+                })),
+            },
+        },
+        receiptDigest: `proof-receipt-digest-${String(index)}`,
+    }));
+    return JSON.stringify({ ...state, proofs });
 }
 
 function parseBatch(commandBatch: ReturnType<typeof compileAgentActionExecution>['commandBatch']) {
@@ -272,7 +278,7 @@ describe('the plan’s audible claim', () => {
     });
 
     it('claims a preview held only by the metric-goal proofs, as a vibe-run batch card holds it', () => {
-        const card = proposeCard({ gain: 0.7, proofPreview: previewOf([vocalTarget()]) });
+        const card = proposeCard({ gain: 0.7, proofPreviews: [previewOf([vocalTarget()])] });
         const snapshot = getPendingActionConfirmation(card.confirmationId)?.approvalSnapshot;
         expect(snapshot?.measuredPreview).toBeUndefined();
         expect(metricGoalStateCodec(snapshot?.metricGoalState)?.proofs).toHaveLength(1);
@@ -291,6 +297,88 @@ describe('the plan’s audible claim', () => {
                 delta: { value: 3.123456689, unit: 'dBFS' },
             },
         ]);
+    });
+
+    describe('which measurement the claim comes from', () => {
+        const masterTarget = (rmsPreview: number, delta: number): MeasuredPreviewTarget => ({
+            targetId: 'master',
+            targetKind: 'master',
+            baseline: { rms: entry('dBFS', -14) },
+            preview: { rms: entry('dBFS', rmsPreview) },
+            deltas: { rms: compared('dBFS', delta) },
+        });
+        const heldMaster = masterTarget(-14, 0);
+        const vocalRms = (previewDb: number, delta: number): MeasuredPreviewTarget =>
+            vocalTarget({
+                preview: { rms: entry('dBFS', previewDb) },
+                deltas: { rms: compared('dBFS', delta) },
+            });
+
+        it('claims exactly what the card shows when the snapshot preview binds, whatever later proofs measured', () => {
+            const card = proposeCard({
+                gain: 0.7,
+                preview: previewOf([vocalTarget()]),
+                proofPreviews: [previewOf([vocalTarget()]), previewOf([heldMaster])],
+            });
+            const claim = audible();
+            if (claim.status !== 'measured') {
+                throw new Error(`Expected the card's measurement to be claimed, got: ${JSON.stringify(claim)}`);
+            }
+            expect(claim.metrics).toEqual(movedFiguresFromApprovalCard(card.confirmationId));
+            expect(claim.metrics.length).toBeGreaterThan(0);
+        });
+
+        it('lists metrics of different targets from different proofs when the card has no snapshot preview', () => {
+            proposeCard({
+                gain: 0.7,
+                proofPreviews: [previewOf([vocalRms(-17, 3)]), previewOf([masterTarget(-12, 2)])],
+            });
+            const claim = audible();
+            if (claim.status !== 'measured') {
+                throw new Error('Expected both proofs to be claimed.');
+            }
+            expect(claim.metrics.map((metric) => `${metric.targetId}:${metric.metricId}`)).toEqual([
+                'vocal:rms',
+                'master:rms',
+            ]);
+        });
+
+        it('takes the latest bound proof for the same target and metric, keeping the others', () => {
+            const oldVocal = vocalTarget({
+                preview: { rms: entry('dBFS', -17), truePeak: entry('dBTP', -2.25) },
+                deltas: { rms: compared('dBFS', 3), truePeak: compared('dBTP', 1) },
+            });
+            proposeCard({
+                gain: 0.7,
+                proofPreviews: [previewOf([oldVocal]), previewOf([vocalRms(-15.5, 4.5)])],
+            });
+            const claim = audible();
+            if (claim.status !== 'measured') {
+                throw new Error('Expected the merged proofs to be claimed.');
+            }
+            expect(claim.metrics.map((metric) => metric.metricId)).toEqual(['rms', 'truePeak']);
+            expect(claim.metrics[0]?.preview).toEqual({ value: -15.5, unit: 'dBFS' });
+            expect(claim.metrics[0]?.delta).toEqual({ value: 4.5, unit: 'dBFS' });
+            expect(claim.metrics[1]?.preview).toEqual({ value: -2.25, unit: 'dBTP' });
+        });
+
+        it('never claims from a proof of another batch', () => {
+            proposeCard({
+                gain: 0.7,
+                proofPreviews: [
+                    (bound) => ({ ...previewOf([vocalTarget()])(bound), batchContentHash: 'another-batch' }),
+                ],
+            });
+            expect(audible().status).toBe('not-claimed');
+        });
+
+        it('never claims from a proof measured at another revision', () => {
+            proposeCard({
+                gain: 0.7,
+                proofPreviews: [(bound) => ({ ...previewOf([vocalTarget()])(bound), revision: 'another-revision' })],
+            });
+            expect(audible().status).toBe('not-claimed');
+        });
     });
 
     it('does not claim a figure whose unit disagrees with the metric definition', () => {
