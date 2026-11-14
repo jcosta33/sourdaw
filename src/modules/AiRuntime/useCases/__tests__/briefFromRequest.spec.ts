@@ -859,10 +859,10 @@ describe('writing the production brief from a whole-project request (AC-001 of #
             expect(message.content).toContain('- Batch 2 of 2: warm bass — Stem 7');
             expect(countCards()).toBe(1);
             // The Prompt Bar planned once with the brief offered, then stopped before the vibe run measured anything:
-            // every render here is the chat's own plan, the three the chat route alone renders.
+            // every render here is the chat's own plan, the one baseline render the chat route alone takes.
             expect(requests).toHaveLength(6);
             expect(requests[0]?.schemas.map((schema) => schema.function.name)).toContain('brief.compile');
-            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
+            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
             expect(agentRunLifecycle.get(submitted.runId)).toMatchObject({ phase: 'completed', batches: [] });
         }, 15_000);
 
