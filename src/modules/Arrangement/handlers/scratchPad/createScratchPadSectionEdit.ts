@@ -16,8 +16,9 @@ export function isScratchPadEditNoop(project: ScratchPadProjection): boolean {
     return valuesEqual(project(live), live);
 }
 
-// The pad edit never touches markers, so both sides of the marker guard carry the same live
-// snapshot: the restore still refuses if the marker ids moved, and leaves the markers unwritten.
+// The pad edit never touches markers, so its inverse carries equal marker snapshots on both
+// sides. `handleRestoreScratchPadState` then neither guards nor writes markers: it checks marker
+// ids and writes markers only when the expected and replacement snapshots differ.
 export function describeScratchPadSectionEdit(label: string, project: ScratchPadProjection): HandlerDescribeResult {
     const capturedSections = structuredClone(readLiveScratchPadSections());
     const producedSections = structuredClone(project(capturedSections));
