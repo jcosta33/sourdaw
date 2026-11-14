@@ -102,8 +102,8 @@ const makeDevice = (overrides: Partial<Device> = {}): Device => ({
 });
 
 const EXTERNAL_OPENABLE =
-    "Edit this plugin's parameters in its own window: use Open editor on its device in the track's device list.";
-const EXTERNAL_NO_EDITOR = 'This plugin has no editor window of its own, and its parameters are not listed here.';
+    "Parameters are listed below and can also be edited in the plugin's own window: use Open editor on its device in the track's device list.";
+const EXTERNAL_NO_EDITOR = 'This plugin has no editor window of its own; its parameters are listed below.';
 const EXTERNAL_NOT_LOADED =
     "Its editor can be opened from its device in the track's device list once the plugin is loaded.";
 
@@ -444,7 +444,7 @@ describe('DeviceInspector external plugin', () => {
         externalPluginParameterStore.set(defaultExternalPluginParameterState);
     });
 
-    it('points at the Open editor control, and shows no published parameter, when the plugin has an editor and is active', () => {
+    it('points at the Open editor control and lists the published parameters when the plugin has an editor and is active', () => {
         seedPlugin(scannedReverb({ has_custom_ui: true }), 'active');
         externalPluginParameterStore.set({
             byInstanceId: {
@@ -468,7 +468,7 @@ describe('DeviceInspector external plugin', () => {
         render(<DeviceInspector device={addedPluginDevice()} trackId="track-1" onBack={mockOnBack} />);
         expect(screen.getByText(EXTERNAL_OPENABLE)).toBeInTheDocument();
         expect(screen.queryByTestId('generic-layout')).not.toBeInTheDocument();
-        expect(screen.queryByText('Pre Gain')).not.toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Pre Gain' })).toBeInTheDocument();
     });
 
     it('says the plugin has no editor window, not that Open editor exists, when the scan reports none', () => {
