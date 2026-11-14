@@ -157,3 +157,134 @@ describe('readRequestMetricNumbers', () => {
         }
     );
 });
+
+describe('a last-commit continuation accounts only for the figure it consumed', () => {
+    const PROMPT = '50 Hz more';
+    const MISSING = {
+        failure: 'missing',
+        reason: "The request's 50 Hz candidate has no selected metric goal or grounded literal use.",
+    };
+
+    function parameterCommand(commandId: string, value: number): Envelope['commands'][number] {
+        return {
+            schemaVersion: 1,
+            commandId,
+            issuedAt: 0,
+            operation: 'setDeviceParameter',
+            arguments: { deviceId: 'device-eq', paramId: 'eq-low-freq', value },
+            argumentsDigest: commandId,
+            dependencyIds: [],
+            reason: 'continued',
+            expectedEffect: 'continued',
+            objectReferences: [],
+            time: [],
+            parameterUnits: [{ argument: 'value', unit: 'Hz' }],
+            seed: null,
+            normalizedProjectRevision: 'revision',
+            availableDeviceVersions: {},
+            applicationAssignedIds: [],
+        };
+    }
+
+    function continuationState(
+        prompt: string,
+        record: Partial<NonNullable<MetricGoalState['lastCommitContinuations']>[number]> = {}
+    ): MetricGoalState {
+        return {
+            ...state(prompt, []),
+            lastCommitContinuations: [
+                {
+                    kind: 'last-commit-continuation',
+                    requestDigest: digest(prompt.trim()),
+                    actionIndex: 0,
+                    unit: 'Hz',
+                    figure: 50,
+                    comparative: 'more',
+                    committed: 200,
+                    landed: 250,
+                    ...record,
+                },
+            ],
+        };
+    }
+
+    function continuedEnvelope(prompt: string, ...values: number[]): Envelope {
+        return {
+            ...envelope(prompt),
+            commands: values.map((value, index) => parameterCommand(`command-${String(index)}`, value)),
+        };
+    }
+
+    it('accounts the consumed figure by the action that lands committed plus the figure', () => {
+        expect(unaccountedNumericRefusal(continuationState(PROMPT), continuedEnvelope(PROMPT, 250))).toBeNull();
+        expect(
+            unaccountedNumericRefusal(
+                continuationState('50 Hz less', { comparative: 'less', landed: 150 }),
+                continuedEnvelope('50 Hz less', 150)
+            )
+        ).toBeNull();
+    });
+
+    it('still refuses a provider-planned figure carrying no continuation record, as before', () => {
+        expect(unaccountedNumericRefusal(state(PROMPT, []), continuedEnvelope(PROMPT, 250))).toEqual(MISSING);
+    });
+
+    it.each([
+        ['records a landed value other than committed plus the figure', { landed: 260 }, 260],
+        ['records a direction the landed value does not follow', { comparative: 'less' as const }, 250],
+        ['records a landed value the action does not set', {}, 260],
+        ['names another figure than the one stated', { figure: 60, landed: 260 }, 260],
+        ['names another unit than the one stated', { unit: 'dBFS' as const }, 250],
+        ['belongs to another request', { requestDigest: digest('60 Hz more') }, 250],
+    ])('does not witness a record that %s', (_name, record, landed) => {
+        expect(unaccountedNumericRefusal(continuationState(PROMPT, record), continuedEnvelope(PROMPT, landed))).toEqual(
+            MISSING
+        );
+    });
+
+    it('does not witness a record whose indexed command is another operation setting the landed value', () => {
+        // Value 250 and its Hz unit match a witnessed write, so only the operation can refuse it.
+        const other: Envelope['commands'][number] = {
+            ...parameterCommand('command-0', 250),
+            operation: 'setTrackGain',
+            arguments: { trackId: 'track-vocals', expectedGain: 1, value: 250 },
+        };
+        expect(
+            unaccountedNumericRefusal(continuationState(PROMPT), { ...envelope(PROMPT), commands: [other] })
+        ).toEqual(MISSING);
+    });
+
+    it('does not witness a record whose indexed parameter write states its value in another unit', () => {
+        const inDecibels: Envelope['commands'][number] = {
+            ...parameterCommand('command-0', 250),
+            parameterUnits: [{ argument: 'value', unit: 'dB' }],
+        };
+        expect(
+            unaccountedNumericRefusal(continuationState(PROMPT), { ...envelope(PROMPT), commands: [inDecibels] })
+        ).toEqual(MISSING);
+    });
+
+    it('does not witness a figure the request states twice', () => {
+        const prompt = '50 Hz more, 50 Hz more';
+        expect(unaccountedNumericRefusal(continuationState(prompt), continuedEnvelope(prompt, 250, 250))).toMatchObject(
+            { failure: 'missing' }
+        );
+    });
+
+    it('does not witness a second figure in the unit the continuation did not consume', () => {
+        const prompt = '50 Hz more and 80 Hz';
+        expect(unaccountedNumericRefusal(continuationState(prompt), continuedEnvelope(prompt, 250))).toEqual({
+            failure: 'missing',
+            reason: "The request's 80 Hz candidate has no selected metric goal or grounded literal use.",
+        });
+    });
+
+    it.each([
+        ['another action than the one landing the value', 0, [300, 250]],
+        ['no action', 1, [250]],
+    ])('does not witness a record whose index names %s', (_name, actionIndex, values) => {
+        expect(
+            unaccountedNumericRefusal(continuationState(PROMPT, { actionIndex }), continuedEnvelope(PROMPT, ...values))
+        ).toEqual(MISSING);
+    });
+});

@@ -287,6 +287,22 @@ export function getBarStartBeat(
     return segmentStart + (bar - segmentBar) * barLength;
 }
 
+/**
+ * The bar a beat falls in and whether the beat is that bar's own bar line. A bar line is read with
+ * the grid tolerance against {@link getBarStartBeat}, so a change that cuts a bar short, which
+ * reads as the same bar number as the bar it cuts, is not a bar line of its own.
+ */
+export function getBarAtBeat(
+    changes: readonly TimeSignatureChange[],
+    beat: number,
+    defaultNumerator: number,
+    defaultDenominator: number
+): { bar: number; opensBar: boolean } {
+    const { bar } = getBarBeatAtPosition(changes, beat, defaultNumerator, defaultDenominator);
+    const barStart = getBarStartBeat(changes, bar, defaultNumerator, defaultDenominator);
+    return { bar, opensBar: barStart !== null && Math.abs(barStart - beat) <= GRID_EPSILON };
+}
+
 export type TimelineBar = {
     /** Timeline position of the bar's first beat, in quarter notes. May be negative. */
     startBeat: number;

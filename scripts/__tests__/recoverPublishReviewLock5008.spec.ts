@@ -10,6 +10,7 @@ import {
     ORCHESTRATOR_USER_NODE_ID,
     REVIEWER_BOT_NODE_ID,
     type GhSession,
+    type spawnCaptureBytes,
 } from '../githubAppIdentity.ts';
 import { composeReviewCommentBody } from '../prContract.ts';
 import {
@@ -296,28 +297,38 @@ const session: GhSession = { configDir: '/tmp/reviewer', env: {}, dispose: () =>
 function publicationPort(root: string, gh: (args: string[]) => string): PublishReviewPort {
     // The live comparison the production port reads from git objects: the fetched base and head,
     // their merge base, and the same patch the bundle's diff.patch was written from.
-    const livePatch = () => readFileSync(join(bundlePath(root), 'diff.patch'), 'utf8');
-    const port = shellPort(session, root, (command, args) => {
-        if (command === 'git' && args[0] === 'rev-parse') {
-            return join(root, '.git');
-        }
-        if (command === 'git' && args.includes('fetch')) {
-            return '';
-        }
-        if (command === 'git' && args[0] === 'merge-base') {
-            return base;
-        }
-        if (command === 'git' && args[0] === 'diff' && args[1] === '--numstat') {
-            return numstatFromPatch(livePatch()).toString('utf8');
-        }
-        if (command === 'git' && args[0] === 'diff') {
-            return livePatch();
-        }
-        if (command === 'gh') {
-            return gh(args);
-        }
-        throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
-    });
+    const livePatch = () => readFileSync(join(bundlePath(root), 'diff.patch'));
+    const captureBytes: typeof spawnCaptureBytes = (command, args, options) => {
+        expect(command).toBe('git');
+        expect(args).toEqual(['diff', `${base}...${head}`]);
+        expect(options).toEqual({ cwd: root, env: session.env, maxBufferBytes: 512 * 1024 * 1024 });
+        return livePatch();
+    };
+    const port = shellPort(
+        session,
+        root,
+        (command, args) => {
+            if (command === 'git' && args[0] === 'rev-parse') {
+                return join(root, '.git');
+            }
+            if (command === 'git' && args.includes('fetch')) {
+                return '';
+            }
+            if (command === 'git' && args[0] === 'merge-base') {
+                return base;
+            }
+            if (command === 'git' && args[0] === 'diff' && args[1] === '--numstat') {
+                return numstatFromPatch(livePatch().toString('utf8')).toString('utf8');
+            }
+            if (command === 'gh') {
+                return gh(args);
+            }
+            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+        },
+        undefined,
+        undefined,
+        captureBytes
+    );
     return { ...port, primaryRoot: () => root };
 }
 

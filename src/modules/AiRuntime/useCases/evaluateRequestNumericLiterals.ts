@@ -1,6 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { type parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { digest } from '#/utils/canonicalDigest';
+import { roundToThousandths } from '#/utils/Math/roundToThousandths';
 
 import { type MetricGoalEvaluation, type MetricNativeLiteralUse } from '../models/MetricGoalAdmission';
 
@@ -205,6 +206,7 @@ function unaccountedRequestNumber(
         if (
             selectedGoal === undefined &&
             !workflowNativeLiteralWitness(candidate, request, state, usedArguments) &&
+            !lastCommitContinuationWitness({ candidate, request, state, envelope, usedArguments }) &&
             !numericLiteralWitness(candidate, request, envelope, usedArguments)
         ) {
             return {
@@ -269,6 +271,56 @@ function nativeLiteralCandidateMatches(use: MetricNativeLiteralUse, matches: rea
         candidate.token === use.token &&
         candidate.start === use.start
     );
+}
+
+type ContinuationWitnessInput = {
+    candidate: RequestMetricNumber;
+    request: string;
+    state: MetricGoalState;
+    envelope: Envelope;
+    usedArguments: Set<string>;
+};
+
+/**
+ * A figure a last-commit continuation consumed is accounted only by the action that continuation
+ * compiled from it: the request states that figure in that unit exactly once, the record's landed
+ * value is the committed value moved by the figure in its direction, and the action at the record's
+ * index sets exactly that value in that unit.
+ */
+function lastCommitContinuationWitness(input: ContinuationWitnessInput): boolean {
+    const { candidate, envelope, usedArguments } = input;
+    const requestDigest = digest(input.request.trim());
+    const record = input.state.lastCommitContinuations?.find(
+        (entry) =>
+            entry.requestDigest === requestDigest && entry.unit === candidate.unit && entry.figure === candidate.value
+    );
+    if (record === undefined) {
+        return false;
+    }
+    const sameFigure = readRequestMetricNumbers(input.request).filter(
+        (entry) => entry.unit === record.unit && entry.value === record.figure
+    );
+    if (sameFigure.length !== 1) {
+        return false;
+    }
+    const moved = record.comparative === 'more' ? record.committed + record.figure : record.committed - record.figure;
+    if (roundToThousandths(moved) !== record.landed) {
+        return false;
+    }
+    const command = envelope.commands[record.actionIndex];
+    if (
+        command?.operation !== 'setDeviceParameter' ||
+        command.arguments.value !== record.landed ||
+        !command.parameterUnits.some((entry) => entry.argument === 'value' && entry.unit === record.unit)
+    ) {
+        return false;
+    }
+    const argument = `${command.commandId}:${record.unit}`;
+    if (usedArguments.has(argument)) {
+        return false;
+    }
+    usedArguments.add(argument);
+    return true;
 }
 
 function workflowNativeLiteralWitness(

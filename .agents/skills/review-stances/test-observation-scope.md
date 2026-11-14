@@ -59,6 +59,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    (#5624, #5240, #5115, #5320, #5331)
 
 6. **A test double or controlled system cannot fail the way the real boundary does.**
+   Review capture #2591 (`5cfdc662e38e`) tested 4 MiB ASCII through a real child, but that did not
+   cover combined review-output capacity or raw-byte identity. Historical reviewer tier and prompt
+   are unknown. Pair small real-pipe limit enforcement with caller-specific capacity checks, and
+   compare a real non-UTF-8 Git diff with the installed bundle and live publication bytes. Replacing
+   raw capture with UTF-8 round-tripping or comparing only decoded strings must fail
+   `scripts/__tests__/prepareReview.spec.ts`; an actual large-diff acceptance compares independent
+   streaming byte counts and hashes under the same cwd and environment without printing source.
    Probe: exercise the real thing: the default launcher and owner fence, a real Git DAG, the installed tool, the
    SDK in its server environment, the live GraphQL schema, the pinned scanner, the served entry under the
    production CSP, the compiled build rather than the dev loader, and a transport buffer at production size. A

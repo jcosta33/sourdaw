@@ -8,6 +8,7 @@ import {
     parseJson,
     resolvePrimaryRoot,
     spawnCapture,
+    spawnCaptureBytes,
     type GhSession,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
@@ -42,13 +43,13 @@ export type PrepareReviewPort = {
     pullRequest: (number: number) => ReviewPullRequest;
     fetchShas: (baseSha: string, headSha: string) => void;
     mergeBase: (baseSha: string, headSha: string) => string;
-    diff: (baseSha: string, headSha: string) => string;
+    diff: (baseSha: string, headSha: string) => string | Buffer;
     numstat: (baseSha: string, headSha: string) => Buffer;
     showFile: (sha: string, path: string) => string;
     listDecisionFiles: (sha: string) => string[];
     reviews?: (number: number) => PublicReview[];
     reviewComments?: (number: number) => PublicReviewComment[];
-    installBundle: (destination: string, files: Record<string, string>) => void;
+    installBundle: (destination: string, files: Record<string, string | Buffer>) => void;
     log: (message: string) => void;
 };
 
@@ -167,7 +168,7 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
     const agents = port.showFile(baseSha, 'AGENTS.md');
     const claude = port.showFile(baseSha, 'CLAUDE.md');
     const decisionFiles = port.listDecisionFiles(baseSha);
-    const files: Record<string, string> = {
+    const files: Record<string, string | Buffer> = {
         'diff.patch': port.diff(baseSha, pullRequest.headRefOid),
         'review-size.json': `${formatReviewDiffSummary(summarizeReviewDiff(port.primaryRoot(), numstat))}\n`,
         'risk-plan.json': `${JSON.stringify(
@@ -333,7 +334,7 @@ export function sweepStaleBundleSiblings(
  */
 export function installBundleAtomically(
     destination: string,
-    files: Record<string, string>,
+    files: Record<string, string | Buffer>,
     checkProcessAlive?: (pid: number) => boolean
 ): void {
     sweepStaleBundleSiblings(destination, checkProcessAlive);
@@ -400,10 +401,11 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prep
                 env: session.env,
             }),
         diff: (baseSha, headSha) =>
-            spawnCapture('git', ['diff', `${baseSha}...${headSha}`], {
+            spawnCaptureBytes('git', ['diff', `${baseSha}...${headSha}`], {
                 cwd: primaryRoot,
                 env: session.env,
-                trim: false,
+                // Complete source diffs can exceed 256 MiB; keep this exceptional allowance local.
+                maxBufferBytes: 512 * 1024 * 1024,
             }),
         numstat: (baseSha, headSha) =>
             Buffer.from(

@@ -829,6 +829,24 @@ describe('automateParameterRange', () => {
             ).toContain('An earlier addSection in this batch can move the beats the pan range is resolved to');
         });
 
+        it.each([
+            ['a bar range', { startBar: 9, endBar: 10 }],
+            ['the bars before a section', { section: 'Bridge', barsBefore: 2 }],
+        ])('refuses %s after a member that removes a clip, which can move the arrangement end', (_label, range) => {
+            // Both forms are refused past the arrangement end, so removing the clip that ends it can
+            // change whether the range resolves at all.
+            const removeClip: AppAction = { type: 'removeClip', payload: { clipId: 'clip-last' } };
+            const action: Extract<AppAction, { type: 'automateParameterRange' }> = {
+                type: 'automateParameterRange',
+                payload: { trackId: VOCAL_ID, parameterId: 'pan', range, value: 0.5 },
+            };
+            const handler = getAutomationHandlers().automateParameterRange;
+
+            expect(
+                handler.validationRefusalReason?.(action, { actions: [removeClip, action], actionIndex: 1 })
+            ).toContain('An earlier removeClip in this batch can move the beats the pan range is resolved to');
+        });
+
         it('refuses a section range after a member whose effect Command does not declare', async () => {
             const busLane: AutomationLane = {
                 ...createAutomationLane(BUS_ID, 'gain', 'Gain', 0, FADER_MAX_GAIN),

@@ -200,6 +200,7 @@ function authorityIdentity(entry: Record<string, unknown>): boolean {
             'configured-joint-intake',
             'admitted-workflow',
             'answer-suggestion',
+            'last-commit-recipe',
             'perceptual-constraint-reader',
             'vibe-run-plan',
         ]) &&
@@ -397,19 +398,24 @@ function batchBinding(binding: unknown): boolean {
     );
 }
 
+/** An optional list of at most one batch's entries, each passing its own check. */
+function optionalBatchList(value: unknown, check: (entry: unknown) => boolean): boolean {
+    return (
+        value === undefined || (Array.isArray(value) && value.length <= MAX_LLM_ACTIONS_PER_BATCH && value.every(check))
+    );
+}
+
 function state(entry: unknown, metricIds: readonly string[]): entry is MetricGoalState {
     return (
         record(entry) &&
         keys(
             entry,
             ['schemaVersion', 'authorities', 'steps', 'proofs', 'binding'],
-            ['nativeLiteralUses', 'refinedRequests']
+            ['nativeLiteralUses', 'lastCommitContinuations', 'refinedRequests']
         ) &&
         (entry.refinedRequests === undefined || strings(entry.refinedRequests)) &&
-        (entry.nativeLiteralUses === undefined ||
-            (Array.isArray(entry.nativeLiteralUses) &&
-                entry.nativeLiteralUses.length <= MAX_LLM_ACTIONS_PER_BATCH &&
-                entry.nativeLiteralUses.every(nativeLiteralUse))) &&
+        optionalBatchList(entry.lastCommitContinuations, lastCommitContinuation) &&
+        optionalBatchList(entry.nativeLiteralUses, nativeLiteralUse) &&
         entry.schemaVersion === 1 &&
         Array.isArray(entry.authorities) &&
         entry.authorities.every((authorityEntry: unknown) => authority(authorityEntry, metricIds)) &&
@@ -419,6 +425,22 @@ function state(entry: unknown, metricIds: readonly string[]): entry is MetricGoa
         entry.proofs.every((proofEntry: unknown) => proof(proofEntry, metricIds)) &&
         entry.steps.every(logicalStep) &&
         batchBinding(entry.binding)
+    );
+}
+
+function lastCommitContinuation(entry: unknown): boolean {
+    return (
+        record(entry) &&
+        keys(entry, ['kind', 'requestDigest', 'actionIndex', 'unit', 'figure', 'comparative', 'committed', 'landed']) &&
+        entry.kind === 'last-commit-continuation' &&
+        text(entry.requestDigest) &&
+        entry.requestDigest.length > 0 &&
+        integer(entry.actionIndex) &&
+        oneOf(entry.unit, ['LUFS', 'dBTP', 'dBFS', 'Hz']) &&
+        finite(entry.figure) &&
+        oneOf(entry.comparative, ['more', 'less']) &&
+        finite(entry.committed) &&
+        finite(entry.landed)
     );
 }
 

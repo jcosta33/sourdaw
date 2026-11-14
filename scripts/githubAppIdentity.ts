@@ -804,24 +804,30 @@ function assertTokenBearingGitChildIsHookFree(
     assertNoConfigDefinedHooks(childCommand, args, cwd, env);
 }
 
-export function spawnCapture(
-    command: string,
-    args: string[],
-    options: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string; trim?: boolean } = {}
-): string {
+const DEFAULT_CAPTURE_BUFFER_BYTES = 64 * 1024 * 1024;
+const MAX_CAPTURE_BUFFER_BYTES = 512 * 1024 * 1024;
+
+type CaptureOptions = {
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    input?: string;
+    maxBufferBytes?: number;
+};
+
+export function spawnCaptureBytes(command: string, args: string[], options: CaptureOptions = {}): Buffer {
+    const maxBufferBytes = options.maxBufferBytes ?? DEFAULT_CAPTURE_BUFFER_BYTES;
+    if (!Number.isSafeInteger(maxBufferBytes) || maxBufferBytes <= 0 || maxBufferBytes > MAX_CAPTURE_BUFFER_BYTES) {
+        throw new RangeError(`maxBufferBytes must be a positive safe integer at most ${MAX_CAPTURE_BUFFER_BYTES}`);
+    }
     const childCommand = trustedChildExecutable(command, options.env ?? process.env);
     const cwd = options.cwd ?? process.cwd();
     assertTokenBearingGitChildIsHookFree(childCommand, args, cwd, options.env ?? process.env);
     const result = spawnSync(childCommand, args, {
         cwd,
         env: options.env,
-        encoding: 'utf8',
-        // Sized at 64 MiB: spawnSync's 1 MiB default kills any larger capture with ENOBUFS.
-        // The largest legitimate capture is `git show` of the biggest tracked blob (~5 MiB
-        // sample wav today); `git diff` captures stay textual because git elides binaries.
-        // 64 MiB covers that plus a whole-source-tree textual diff with headroom, and a
-        // capture exceeding even this bound still fails loudly through result.error below.
-        maxBuffer: 64 * 1024 * 1024,
+        // Ordinary commands retain 64 MiB; full review diffs explicitly request bounded headroom.
+        // Overflow still throws through result.error rather than returning a partial capture.
+        maxBuffer: maxBufferBytes,
         shell: false,
         input: options.input,
     });
@@ -829,9 +835,20 @@ export function spawnCapture(
         throw result.error;
     }
     if (result.status !== 0) {
-        throw new Error(result.stderr.trim() || `${childCommand} failed with exit ${result.status ?? 'signal'}`);
+        throw new Error(
+            result.stderr.toString('utf8').trim() || `${childCommand} failed with exit ${result.status ?? 'signal'}`
+        );
     }
-    return options.trim === false ? result.stdout : result.stdout.trim();
+    return result.stdout;
+}
+
+export function spawnCapture(
+    command: string,
+    args: string[],
+    options: CaptureOptions & { trim?: boolean } = {}
+): string {
+    const stdout = spawnCaptureBytes(command, args, options).toString('utf8');
+    return options.trim === false ? stdout : stdout.trim();
 }
 
 export function spawnRun(

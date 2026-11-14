@@ -50,3 +50,12 @@ concrete break or none.
    same owned-lane boundary and drive body validation, derived labels and projects, and type warnings from the
    title GitHub will show; observe the actual authenticated edit arguments for an explicit correction and the
    absence of a title argument on a default republish.
+6. **Prepared and live review patches must preserve the same complete bytes.** The 64 MiB capture
+   bound introduced by #2591 (`5cfdc662e38e`) admitted a 4 MiB ASCII child test but refused a larger
+   combined source diff; the UTF-8 string capture also replaced non-UTF-8 source bytes. Historical
+   reviewer tier and prompt are unknown. Trace both prepare and fresh publication through the same
+   hook-safe capture boundary. Exercise real child stdout/stderr limits and a real Git patch containing
+   non-UTF-8 bytes through bundle installation and live comparison. Alter one invalid byte to another
+   with the same decoded text: publication must refuse the raw mismatch. Removing either full-diff
+   allowance, restoring UTF-8 storage, or comparing decoded text must fail the corresponding cases in
+   `githubAppIdentity.spec.ts`, `prepareReview.spec.ts`, and `reviewApprovalContext.spec.ts`.
