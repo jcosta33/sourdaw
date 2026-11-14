@@ -13,8 +13,7 @@ import { type RecipeExpansionInput } from './parseRecipeExpansionInput';
 
 /**
  * One recipe the application chose to expand on one track; `role` is a role argued for that track, if
- * any. `values` are the parameter values to expand with, each already held to its window; a parameter
- * they leave out, or every parameter when they are absent, takes the middle of its window.
+ * any, and `values` the values the expansion takes, each window's middle where omitted.
  */
 type ApplicationRecipePair = {
     recipeId: string;
@@ -96,9 +95,8 @@ function applicationRecipeAuthority(input: {
 }
 
 /**
- * Expands recipes the application itself chose, each on its own track with the values its pair
- * carries or, for every value it leaves out, the middle of the authored window (exactly as
- * `recipe.expand` lowers it), and grounds the expansions as one batch
+ * Expands recipes the application itself chose, each on its own track with the values its pair carries
+ * (with none, the middle of each authored window, exactly as `recipe.expand` lowers it), and grounds the expansions as one batch
  * adopting them: through the bridge's compilation proof, runtime validation, state guards and the
  * production brief, asking no provider. Each pair expands under its own ordinal, so the device
  * bindings two expansions mint never collide. A pair that does not expand refuses the whole batch with

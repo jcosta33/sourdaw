@@ -117,7 +117,10 @@ function assertReviewRiskPlanMatchesLiveDiff(
     if (live.mergeBase !== plan.baseSha) {
         fail(`review risk plan baseSha ${plan.baseSha} is not the live merge base ${live.mergeBase}${reprepare}`);
     }
-    if (port.readBundleDiff(join(bundle, 'diff.patch')) !== live.patch) {
+    const bundleDiff = port.readBundleDiff(join(bundle, 'diff.patch'));
+    const bundleBytes = typeof bundleDiff === 'string' ? Buffer.from(bundleDiff) : bundleDiff;
+    const liveBytes = typeof live.patch === 'string' ? Buffer.from(live.patch) : live.patch;
+    if (!bundleBytes.equals(liveBytes)) {
         fail(`bundle diff.patch differs from git diff ${plan.baseSha}...${plan.headSha}${reprepare}`);
     }
     const derived = planReviewRisk({

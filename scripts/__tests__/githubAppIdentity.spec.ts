@@ -15,7 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { authenticateConfirmReviewer } from '../confirmReviewRepairs.ts';
 import {
@@ -56,12 +56,18 @@ import {
     parseGraphqlResponse,
     resolvePrimaryRoot,
     spawnCapture,
+    spawnCaptureBytes,
     authorWorkflowWriteRequired,
     type FileReader,
     type GitHubJsonClient,
     spawnRun,
 } from '../githubAppIdentity.ts';
 import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
+
+vi.mock('node:child_process', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('node:child_process')>();
+    return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
+});
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const pem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
@@ -1646,6 +1652,9 @@ describe('sterile Git child environments', () => {
             expect(() => spawnCapture('git', fetchArgs, { cwd: repository, env })).toThrow(
                 `refusing a token-bearing git child: repository config defines hook.lane.event`
             );
+            expect(() => spawnCapture('git', fetchArgs, { cwd: repository, env, maxBufferBytes: 4096 })).toThrow(
+                `refusing a token-bearing git child: repository config defines hook.lane.event`
+            );
             expect(() => spawnRun('git', ['-C', repository, ...fetchArgs], { env })).toThrow(
                 'repository config defines hook.lane.event'
             );
@@ -1741,6 +1750,70 @@ describe('sterile Git child environments', () => {
 });
 
 describe('spawnCapture output capacity', () => {
+    it('captures non-UTF8 bytes intact through the real child boundary', () => {
+        const bytes = Buffer.from([0x20, 0xff, 0xfe, 0x00, 0x0a]);
+        expect(
+            spawnCaptureBytes(process.execPath, ['-e', 'process.stdout.write(Buffer.from([32,255,254,0,10]))'], {
+                maxBufferBytes: 4096,
+            })
+        ).toEqual(bytes);
+    });
+
+    it('keeps the ordinary capture default at 64 MiB', () => {
+        const spawn = vi.mocked(spawnSync).mockClear();
+        try {
+            expect(spawnCapture(process.execPath, ['-e', "process.stdout.write('ordinary')"])).toBe('ordinary');
+            expect(spawn).toHaveBeenLastCalledWith(
+                process.execPath,
+                ['-e', "process.stdout.write('ordinary')"],
+                expect.objectContaining({ maxBuffer: 64 * 1024 * 1024 })
+            );
+        } finally {
+            spawn.mockClear();
+        }
+    });
+
+    it('captures complete output within an explicit byte limit without trimming', () => {
+        const payload = `  begin\0${'é'.repeat(1024)}\nend\n`;
+        expect(
+            spawnCapture(process.execPath, ['-e', `process.stdout.write(${JSON.stringify(payload)})`], {
+                maxBufferBytes: 4096,
+                trim: false,
+            })
+        ).toBe(payload);
+    });
+
+    it.each(['stdout', 'stderr'])('throws instead of returning partial output when %s exceeds its limit', (stream) => {
+        expect(() =>
+            spawnCapture(process.execPath, ['-e', `process.${stream}.write('x'.repeat(4096))`], {
+                maxBufferBytes: 2048,
+            })
+        ).toThrow(/ENOBUFS/);
+    });
+
+    it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 512 * 1024 * 1024 + 1])(
+        'rejects invalid capture byte limit %s before starting a child',
+        (maxBufferBytes) => {
+            const spawn = vi.mocked(spawnSync).mockClear();
+            try {
+                expect(() => spawnCapture(process.execPath, ['-e', 'process.exit(0)'], { maxBufferBytes })).toThrow(
+                    /maxBufferBytes/
+                );
+                expect(spawn).not.toHaveBeenCalled();
+            } finally {
+                spawn.mockClear();
+            }
+        }
+    );
+
+    it('still refuses nonzero exit with an explicit capture limit', () => {
+        expect(() =>
+            spawnCapture(process.execPath, ['-e', "process.stderr.write('capture-child-boom'); process.exit(7)"], {
+                maxBufferBytes: 4096,
+            })
+        ).toThrow('capture-child-boom');
+    });
+
     it('captures stdout larger than spawnSync 1 MiB default intact', () => {
         const payload = `--capture-start--\n${'x'.repeat(4 * 1024 * 1024)}\n--capture-end--`;
         const captured = spawnCapture(process.execPath, [
