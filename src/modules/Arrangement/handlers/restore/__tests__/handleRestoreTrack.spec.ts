@@ -961,6 +961,23 @@ describe('handleRestoreTrack', () => {
             expect(mocks.restoreAutomationLanes).toHaveBeenCalledWith(payload.automationLaneSnapshots);
         });
 
+        // Deleting an alternative drops its clips and leaves their clip lanes
+        // on the track; a removal captures them with the track's other lanes.
+        it('restores a clip automation lane whose clip no clip list holds any more', async () => {
+            const row = storeTrackRow();
+            const orphanedLane = clipLane('lane-dropped', 'clip-dropped');
+            mocks.capturedStores.automationLanes = [orphanedLane];
+            const payload = captureRemoval(row, storeTakeLane());
+            vi.clearAllMocks();
+            const action: RestoreTrackAction = { type: 'restoreTrack', payload };
+
+            expect(payload.automationLaneSnapshots).toEqual([orphanedLane]);
+            expect(handleRestoreTrack.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
+            const result = await handleRestoreTrack.execute(action);
+            expect(result).toMatchObject({ status: 'written' });
+            expect(mocks.restoreAutomationLanes).toHaveBeenCalledWith([orphanedLane]);
+        });
+
         function withoutClipKeyedMembers(payload: RestoreTrackPayload): RestoreTrackPayload {
             return {
                 ...payload,
@@ -1184,7 +1201,8 @@ describe('handleRestoreTrack', () => {
                 }),
             ],
             [
-                "a clip automation lane on another track's clip",
+                // `survivor` holds `survivorClipId` live after the removal.
+                'a clip automation lane on a clip a surviving track holds',
                 (payload: RestoreTrackPayload) => ({
                     ...payload,
                     automationLaneSnapshots: [

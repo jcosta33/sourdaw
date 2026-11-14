@@ -210,7 +210,9 @@ type RestoreTrackPayload = Extract<AppAction, { type: 'restoreTrack' }>['payload
  * store rows. Decoding them through the stores' own row laws restores exactly
  * what the store held, and refuses a payload that is not a row of this track.
  */
-function decodeRestoredRows(payload: RestoreTrackPayload): { track: Track; takeLanes: TakeLane[] } | null {
+function decodeRestoredRows(
+    payload: RestoreTrackPayload
+): { track: Track; takeLanes: TakeLane[]; ownClipIds: ReadonlySet<string> } | null {
     const track = decodeTrackSnapshot(payload.trackSnapshot);
     const takeLanes = decodeExactTakeLaneSnapshots(payload.takeLaneSnapshots);
     if (track?.id !== payload.trackId) {
@@ -221,13 +223,13 @@ function decodeRestoredRows(payload: RestoreTrackPayload): { track: Track; takeL
         !holdsOnlyOwnClips(track) ||
         !describesRow(payload, track) ||
         !keysOnlyOwnClips(payload, ownClipIds) ||
-        !holdsOnlyOwnAutomationLanes(payload, ownClipIds) ||
+        payload.automationLaneSnapshots.some((lane) => lane.trackId !== payload.trackId) ||
         !takeLanes ||
         takeLanes.some((lane) => lane.trackId !== payload.trackId)
     ) {
         return null;
     }
-    return { track, takeLanes };
+    return { track, takeLanes, ownClipIds };
 }
 
 // The capture copies kind and parent from the row it snapshots; a decoded row
@@ -248,24 +250,32 @@ function keysOnlyOwnClips(payload: RestoreTrackPayload, ownClipIds: ReadonlySet<
     ].every((clipId) => ownClipIds.has(clipId));
 }
 
-// The capture takes every automation lane of the track; a clip lane rides one
-// of the row's clips, since moving a clip carries its lanes to the target track
-// and removing it drops them. The contract type names only the lane's identity,
-// so a captured `clipId` is narrowed from the snapshot itself.
-function holdsOnlyOwnAutomationLanes(payload: RestoreTrackPayload, ownClipIds: ReadonlySet<string>): boolean {
-    return payload.automationLaneSnapshots.every(
-        (lane) =>
-            lane.trackId === payload.trackId &&
-            (!('clipId' in lane) || (typeof lane.clipId === 'string' && ownClipIds.has(lane.clipId)))
-    );
+function collectLiveHeldClipIds(liveTracks: readonly Track[]): ReadonlySet<string> {
+    return new Set(liveTracks.flatMap((track) => getHeldClips(track).map((clip) => clip.id)));
 }
 
 // A clip id names one clip project-wide: MIDI data and satellites are keyed by
 // it. Both sides count held clips, so the active alternative's stored copy,
 // which a cross-track move leaves stale, never collides with the moved clip.
-function reusesLiveHeldClipId(row: Track, liveTracks: readonly Track[]): boolean {
-    const liveClipIds = new Set(liveTracks.flatMap((track) => getHeldClips(track).map((clip) => clip.id)));
-    return getHeldClips(row).some((clip) => liveClipIds.has(clip.id));
+function reusesLiveHeldClipId(row: Track, liveHeldClipIds: ReadonlySet<string>): boolean {
+    return getHeldClips(row).some((clip) => liveHeldClipIds.has(clip.id));
+}
+
+// The capture takes every automation lane of the track. A clip lane rides one
+// of the row's clips, or a clip no list holds any more: deleting an alternative
+// drops its clips and leaves their lanes behind. A lane on a clip a live track
+// holds would retarget that clip's automation. The contract type names only
+// the lane's identity, so a captured `clipId` is narrowed from the snapshot.
+function lanesSpareLiveClips(
+    payload: RestoreTrackPayload,
+    ownClipIds: ReadonlySet<string>,
+    liveHeldClipIds: ReadonlySet<string>
+): boolean {
+    return payload.automationLaneSnapshots.every(
+        (lane) =>
+            !('clipId' in lane) ||
+            (typeof lane.clipId === 'string' && (ownClipIds.has(lane.clipId) || !liveHeldClipIds.has(lane.clipId)))
+    );
 }
 
 // Every clip a track holds, live or in a stored alternative copy, names that
@@ -337,11 +347,13 @@ function restoreStateMatches(
 ): boolean {
     const state = getTrackStoreState();
     const restored = decodeRestoredRows(action.payload);
+    if (!state || !restored || state.tracks.some((track) => track.id === action.payload.trackId)) {
+        return false;
+    }
+    const liveHeldClipIds = collectLiveHeldClipIds(state.tracks);
     if (
-        !state ||
-        !restored ||
-        state.tracks.some((track) => track.id === action.payload.trackId) ||
-        reusesLiveHeldClipId(restored.track, state.tracks)
+        reusesLiveHeldClipId(restored.track, liveHeldClipIds) ||
+        !lanesSpareLiveClips(action.payload, restored.ownClipIds, liveHeldClipIds)
     ) {
         return false;
     }
