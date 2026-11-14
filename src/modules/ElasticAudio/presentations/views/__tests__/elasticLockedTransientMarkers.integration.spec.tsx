@@ -240,7 +240,7 @@ function requestedByEditorPaint(): boolean {
     const limit = Error.stackTraceLimit;
     Error.stackTraceLimit = Infinity;
     try {
-        return new Error().stack?.includes('/ElasticEditorPanel.tsx') === true;
+        return new Error('animation frame requester').stack?.includes('/ElasticEditorPanel.tsx') === true;
     } finally {
         Error.stackTraceLimit = limit;
     }
