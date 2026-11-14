@@ -54,6 +54,12 @@ import {
     type SidechainKeyDelayResolver,
     type SidechainRouting,
 } from './webAudioEngine/createSidechainRouting';
+import {
+    createToasterPadRouting,
+    type ToasterPadBinding,
+    type ToasterPadRoute,
+    type ToasterPadRouting,
+} from './webAudioEngine/createToasterPadRouting';
 import { createTransportClock, type TransportClock } from './webAudioEngine/createTransportClock';
 import { getChromePlaybackStats } from './webAudioEngine/getChromePlaybackStats';
 import { readPlaybackStats } from './webAudioEngine/readPlaybackStats';
@@ -102,28 +108,6 @@ const UNWIRED_USE_CASE_DEVICE_COLLABORATORS: EngineUseCaseCollaborators = {
     },
 };
 
-type ToasterPadBinding = Readonly<{
-    toasterParentTrackId: string;
-    padIndex: number;
-}>;
-
-export type ToasterPadRoute = ToasterPadBinding & {
-    destinationNode: GainNode | null;
-    controls: ToasterDeviceControls | null;
-};
-
-type ToasterPadRouteSnapshot = Readonly<{
-    toasterParentTrackId: string;
-    padIndex: number;
-    destinationNode: GainNode | null;
-    controls: ToasterDeviceControls | null;
-    dryRouted: boolean;
-}>;
-
-type ToasterPadOutputControls = ToasterDeviceControls & {
-    connectPadOutput: NonNullable<ToasterDeviceControls['connectPadOutput']>;
-};
-
 /**
  * Why a strip is torn down. Only a strip whose track left the project takes its
  * devices out of the project. A deactivated strip's track keeps its devices
@@ -142,12 +126,6 @@ type RuntimeGraphMutationReceipt<TValue> = Readonly<{
     value: TValue;
     runtimeRevision: number;
 }>;
-
-function hasToasterPadOutputControls(
-    controls: ToasterDeviceControls | undefined | null
-): controls is ToasterPadOutputControls {
-    return typeof controls?.connectPadOutput === 'function';
-}
 
 /**
  * Repository-internal view of engine state for repository specs and the
@@ -206,7 +184,7 @@ class AudioEngineImpl implements AudioEngine {
                 return engine.sends.sendNodes;
             },
             get toasterPadRoutes() {
-                return engine.toasterPadRoutes;
+                return engine.toasterPads.routes;
             },
             get pendingSidechainRoutes() {
                 return engine.sidechains.pendingRoutes;
@@ -238,8 +216,8 @@ class AudioEngineImpl implements AudioEngine {
             addDeviceToStrip: engine.addDeviceToStrip.bind(engine),
             removeDeviceFromStrip: engine.removeDeviceFromStrip.bind(engine),
             reconnectRoutingForTrack: engine.reconnectRoutingForTrack.bind(engine),
-            reconcileToasterParent: engine.reconcileToasterParent.bind(engine),
-            handleDeviceRemoved: engine.handleDeviceRemoved.bind(engine),
+            reconcileToasterParent: engine.toasterPads.reconcileParent,
+            handleDeviceRemoved: engine.toasterPads.handleDeviceRemoved,
             crossfadeSendTap: engine.sends.crossfadeSendTap,
             waitForDevices: engine.waitForDevices.bind(engine),
         };
@@ -272,7 +250,7 @@ class AudioEngineImpl implements AudioEngine {
     private busNodes = new Map<string, BusNode>();
     private readonly sends: SendRouting;
     private readonly sidechains: SidechainRouting;
-    private toasterPadRoutes = new Map<string, ToasterPadRoute>();
+    private readonly toasterPads: ToasterPadRouting;
     private readonly scheduledSources: ScheduledSources;
     private pendingDevicePromises = new Set<Promise<unknown>>();
     private withheldDeviceNotices = new Set<string>();
@@ -361,6 +339,10 @@ class AudioEngineImpl implements AudioEngine {
             mutateRuntimeGraph: (mutation) => {
                 this.mutateRuntimeGraph(() => ({ value: undefined, changed: mutation() }));
             },
+        });
+
+        this.toasterPads = createToasterPadRouting({
+            readTrackStrip: (trackId) => this.trackNodes.get(trackId)?.strip,
         });
 
         this.sidechains = createSidechainRouting({
@@ -613,7 +595,7 @@ class AudioEngineImpl implements AudioEngine {
         }
         const existing = this.trackNodes.get(sourcePlan.id);
         if (existing) {
-            const existingPadBinding = this.toasterPadRoutes.get(sourcePlan.id);
+            const existingPadBinding = this.toasterPads.routes.get(sourcePlan.id);
             const matchesPadBinding = delta.output.padBinding
                 ? existingPadBinding?.toasterParentTrackId === delta.output.padBinding.toasterParentTrackId &&
                   existingPadBinding.padIndex === delta.output.padBinding.padIndex
@@ -1216,115 +1198,6 @@ class AudioEngineImpl implements AudioEngine {
         this.sidechains.reconnectTrack(trackId, strip);
     }
 
-    private getToasterPadControls(toasterParentTrackId: string): ToasterPadOutputControls | undefined {
-        const controls = this.trackNodes
-            .get(toasterParentTrackId)
-            ?.strip.deviceNodes.find((candidate) => candidate.toasterControls?.connectPadOutput)?.toasterControls;
-        return hasToasterPadOutputControls(controls) ? controls : undefined;
-    }
-
-    private isValidToasterPadBinding(padBinding: ToasterPadBinding | undefined): padBinding is ToasterPadBinding {
-        return (
-            padBinding !== undefined &&
-            Number.isInteger(padBinding.padIndex) &&
-            padBinding.padIndex >= 0 &&
-            padBinding.padIndex < 16
-        );
-    }
-
-    private snapshotToasterPadRoute(trackId: string): ToasterPadRouteSnapshot | undefined {
-        const route = this.toasterPadRoutes.get(trackId);
-        if (!route) {
-            return undefined;
-        }
-        return Object.freeze({
-            toasterParentTrackId: route.toasterParentTrackId,
-            padIndex: route.padIndex,
-            destinationNode: route.destinationNode,
-            controls: route.controls,
-            dryRouted: route.destinationNode !== null && route.controls !== null,
-        });
-    }
-
-    private restoreToasterPadRouteState(trackId: string, snapshot: ToasterPadRouteSnapshot | undefined): void {
-        if (!snapshot) {
-            this.toasterPadRoutes.delete(trackId);
-            return;
-        }
-        this.toasterPadRoutes.set(trackId, {
-            toasterParentTrackId: snapshot.toasterParentTrackId,
-            padIndex: snapshot.padIndex,
-            destinationNode: snapshot.destinationNode,
-            controls: snapshot.controls,
-        });
-    }
-
-    private clearToasterPadOutput(controls: ToasterDeviceControls, padIndex: number, destinationNode: GainNode): void {
-        try {
-            controls.disconnectPadOutput?.(padIndex, destinationNode);
-        } finally {
-            controls.setPadDryRouted(padIndex, false);
-        }
-    }
-
-    private restoreToasterPadBinding(
-        trackId: string,
-        sourceDestinationNode: GainNode,
-        snapshot: ToasterPadRouteSnapshot | undefined,
-        attemptedBinding: ToasterPadBinding | undefined
-    ): void {
-        const targets: Array<
-            Readonly<{ controls: ToasterDeviceControls; padIndex: number; destinationNode: GainNode }>
-        > = [];
-        const addTarget = (controls: ToasterDeviceControls, padIndex: number, destinationNode: GainNode): void => {
-            if (
-                targets.some(
-                    (target) =>
-                        target.controls === controls &&
-                        target.padIndex === padIndex &&
-                        target.destinationNode === destinationNode
-                )
-            ) {
-                return;
-            }
-            targets.push({ controls, padIndex, destinationNode });
-        };
-        const current = this.toasterPadRoutes.get(trackId);
-        if (current?.controls && current.destinationNode) {
-            addTarget(current.controls, current.padIndex, current.destinationNode);
-        }
-        if (this.isValidToasterPadBinding(attemptedBinding)) {
-            const attemptedControls = this.getToasterPadControls(attemptedBinding.toasterParentTrackId);
-            if (attemptedControls) {
-                addTarget(attemptedControls, attemptedBinding.padIndex, sourceDestinationNode);
-            }
-        }
-
-        const clearErrors: unknown[] = [];
-        for (const target of targets) {
-            try {
-                this.clearToasterPadOutput(target.controls, target.padIndex, target.destinationNode);
-            } catch (error) {
-                clearErrors.push(error);
-            }
-        }
-        this.restoreToasterPadRouteState(trackId, snapshot);
-        if (clearErrors.length > 0) {
-            throw clearErrors.length === 1
-                ? clearErrors[0]
-                : new AggregateError(clearErrors, 'Toaster pad route cleanup failed during transaction restoration');
-        }
-        if (!snapshot?.dryRouted || !snapshot.controls || !snapshot.destinationNode) {
-            return;
-        }
-        const controls = snapshot.controls;
-        if (!hasToasterPadOutputControls(controls)) {
-            throw new Error('Toaster pad route snapshot has no connect output control');
-        }
-        controls.connectPadOutput(snapshot.padIndex, snapshot.destinationNode);
-        controls.setPadDryRouted(snapshot.padIndex, true);
-    }
-
     private restoreTrackOutput(trackNode: TrackNode, previousOutputId: string | undefined): void {
         trackNode.setOutput(previousOutputId ?? 'hw_out');
         if (previousOutputId === undefined) {
@@ -1338,15 +1211,15 @@ class AudioEngineImpl implements AudioEngine {
         padBinding: ToasterPadBinding | undefined
     ): RuntimeGraphMutation<void> {
         const previousOutputId = trackNode.strip.outputId;
-        const padSnapshot = this.snapshotToasterPadRoute(trackNode.trackId);
+        const padSnapshot = this.toasterPads.snapshotRoute(trackNode.trackId);
         const outputChanged = trackNode.setOutput(outputId);
         try {
-            const padBindingChanged = this.updateToasterPadBinding(trackNode.trackId, padBinding);
+            const padBindingChanged = this.toasterPads.updateBinding(trackNode.trackId, padBinding);
             return { value: undefined, changed: outputChanged || padBindingChanged };
         } catch (error) {
             const rollbackErrors: unknown[] = [];
             try {
-                this.restoreToasterPadBinding(trackNode.trackId, trackNode.strip.gainNode, padSnapshot, padBinding);
+                this.toasterPads.restoreBinding(trackNode.trackId, trackNode.strip.gainNode, padSnapshot, padBinding);
             } catch (rollbackError) {
                 rollbackErrors.push(rollbackError);
             }
@@ -1374,86 +1247,6 @@ class AudioEngineImpl implements AudioEngine {
                     : new AggregateError(rollbackErrors, 'Toaster output transaction restoration failed')
             );
         }
-    }
-
-    private detachToasterPadRoute(trackId: string, forgetRoute: boolean): boolean {
-        const route = this.toasterPadRoutes.get(trackId);
-        if (!route) {
-            return false;
-        }
-        if (route.destinationNode) {
-            try {
-                route.controls?.disconnectPadOutput?.(route.padIndex, route.destinationNode);
-            } finally {
-                route.controls?.setPadDryRouted(route.padIndex, false);
-            }
-        }
-        route.destinationNode = null;
-        route.controls = null;
-        if (forgetRoute) {
-            this.toasterPadRoutes.delete(trackId);
-        }
-        return true;
-    }
-
-    private reconcileToasterParent(toasterParentTrackId: string): void {
-        const controls = this.getToasterPadControls(toasterParentTrackId);
-        if (!controls) {
-            return;
-        }
-        for (const [trackId, route] of this.toasterPadRoutes) {
-            if (route.toasterParentTrackId !== toasterParentTrackId || route.controls === controls) {
-                continue;
-            }
-            if (route.destinationNode) {
-                this.detachToasterPadRoute(trackId, false);
-            }
-            const destinationNode = this.trackNodes.get(trackId)?.strip.gainNode;
-            if (!destinationNode) {
-                continue;
-            }
-            controls.connectPadOutput(route.padIndex, destinationNode);
-            controls.setPadDryRouted(route.padIndex, true);
-            route.destinationNode = destinationNode;
-            route.controls = controls;
-        }
-    }
-
-    private handleDeviceRemoved(trackId: string, device: BuiltinDeviceNode): void {
-        if (device.type !== 'toaster') {
-            return;
-        }
-        for (const [sourceTrackId, route] of this.toasterPadRoutes) {
-            if (route.toasterParentTrackId !== trackId) {
-                continue;
-            }
-            if (route.controls && route.controls !== device.toasterControls) {
-                continue;
-            }
-            this.detachToasterPadRoute(sourceTrackId, false);
-        }
-        this.reconcileToasterParent(trackId);
-    }
-
-    private updateToasterPadBinding(trackId: string, padBinding: ToasterPadBinding | undefined): boolean {
-        if (!this.isValidToasterPadBinding(padBinding)) {
-            return this.detachToasterPadRoute(trackId, true);
-        }
-        const existing = this.toasterPadRoutes.get(trackId);
-        const changedOwner =
-            existing &&
-            (existing.toasterParentTrackId !== padBinding.toasterParentTrackId ||
-                existing.padIndex !== padBinding.padIndex);
-        if (changedOwner) {
-            this.detachToasterPadRoute(trackId, true);
-        }
-        if (!this.toasterPadRoutes.has(trackId)) {
-            this.toasterPadRoutes.set(trackId, { ...padBinding, destinationNode: null, controls: null });
-            this.reconcileToasterParent(padBinding.toasterParentTrackId);
-            return true;
-        }
-        this.reconcileToasterParent(padBinding.toasterParentTrackId);
-        return false;
     }
 
     private createTrackNode(trackId: string): TrackNode {
@@ -1484,8 +1277,8 @@ class AudioEngineImpl implements AudioEngine {
             transportSAB: this.transportClock.sharedBuffer() ?? undefined,
             getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
             reconnectRoutingForTrack: (id) => this.reconnectRoutingForTrack(id),
-            onDeviceLoaded: (id) => this.reconcileToasterParent(id),
-            onDeviceRemoved: (id, device) => this.handleDeviceRemoved(id, device),
+            onDeviceLoaded: (id) => this.toasterPads.reconcileParent(id),
+            onDeviceRemoved: (id, device) => this.toasterPads.handleDeviceRemoved(id, device),
             onAsyncRuntimeGraphMutation: (mutation) => this.recordRuntimeGraphMutation(mutation),
         });
     }
@@ -1518,12 +1311,7 @@ class AudioEngineImpl implements AudioEngine {
         // source or target strip. Purge endpoint ownership before the node guard
         // so removing either absent endpoint cannot leave a replayable route.
         this.sidechains.forgetPendingRoutesOf(trackId, removedDeviceIds);
-        this.detachToasterPadRoute(trackId, true);
-        for (const [sourceTrackId, route] of this.toasterPadRoutes) {
-            if (route.toasterParentTrackId === trackId) {
-                this.detachToasterPadRoute(sourceTrackId, true);
-            }
-        }
+        this.toasterPads.forgetRoutesOfRemovedStrip(trackId);
         if (!node) {
             return false;
         }
@@ -2117,7 +1905,7 @@ class AudioEngineImpl implements AudioEngine {
                         this.sends.sendNodes.size > 0 ||
                         this.sidechains.connectionCount() > 0 ||
                         this.adjustmentRuntime.listLiveBusKeys().length > 0 ||
-                        Array.from(this.toasterPadRoutes.values()).some((route) => route.destinationNode !== null));
+                        this.toasterPads.hasLiveRoute());
                 // Reset retires the whole graph, so it must not reroute doomed
                 // peers through ordinary transactional strip removal. Snapshot
                 // each owner once and keep retiring after an independent fault.
@@ -2126,16 +1914,7 @@ class AudioEngineImpl implements AudioEngine {
                     () => this.adjustmentRuntime.reset(),
                     ...this.sidechains.resetEffects(),
                     ...this.sends.resetEffects(),
-                    ...Array.from(this.toasterPadRoutes.values()).flatMap((route) => {
-                        const { controls, destinationNode, padIndex } = route;
-                        if (!destinationNode) {
-                            return [];
-                        }
-                        return [
-                            () => controls?.disconnectPadOutput?.(padIndex, destinationNode),
-                            () => controls?.setPadDryRouted(padIndex, false),
-                        ];
-                    }),
+                    ...this.toasterPads.resetEffects(),
                     ...Array.from(this.busNodes.values(), (node) => () => node.dispose()),
                     ...Array.from(this.trackNodes.values(), (node) => () => node.dispose()),
                     () => {
@@ -2145,7 +1924,7 @@ class AudioEngineImpl implements AudioEngine {
                         this.sends.clear();
                         this.busNodes.clear();
                         this.trackNodes.clear();
-                        this.toasterPadRoutes.clear();
+                        this.toasterPads.clear();
                         this.pendingDevicePromises.clear();
                     },
                     () => this.deviceReadinessDiagnostics.reset(),
