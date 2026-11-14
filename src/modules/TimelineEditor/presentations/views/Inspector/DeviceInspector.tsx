@@ -129,7 +129,8 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                     <div className="px-1">
                         <MetaText>{EXTERNAL_PLUGIN_EDITOR_HINTS[editorAccess]}</MetaText>
                     </div>
-                    <ExternalPluginParameterList device={device} />
+                    {/* Keyed by instance so pending values, refusals, filter and page reset on a device switch. */}
+                    <ExternalPluginParameterList key={device.externalInstanceId ?? device.id} device={device} />
                 </Stack>
             );
         }

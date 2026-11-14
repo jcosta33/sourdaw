@@ -34,6 +34,15 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     };
 });
 
+const mockEditExternalPluginParameter = vi.fn<(input: unknown) => Promise<void>>(() => Promise.resolve());
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return {
+        ...actual,
+        editExternalPluginParameter: (input: unknown) => mockEditExternalPluginParameter(input),
+    };
+});
+
 const mockResolveDeviceLayout = vi.fn<() => unknown>(() => null);
 vi.mock('../deviceLayoutRegistry', () => ({
     resolveDeviceLayout: () => mockResolveDeviceLayout(),
@@ -488,6 +497,49 @@ describe('DeviceInspector external plugin', () => {
             expect(screen.queryByText(EXTERNAL_OPENABLE)).not.toBeInTheDocument();
         }
     );
+
+    it('resets the parameter list state when the inspector switches to another plugin instance', async () => {
+        mockEditExternalPluginParameter.mockRejectedValueOnce(new Error('refused'));
+        const instanceB = 'plugin-reverb-instance-b';
+        const parameterOf = (value: number) => ({
+            id: 7,
+            name: 'Pre Gain',
+            value,
+            defaultValue: 0,
+            minValue: 0,
+            maxValue: 1,
+            unit: '',
+            isAutomatable: true,
+        });
+        seedPlugin(scannedReverb({ has_custom_ui: true }), 'active');
+        externalPluginActivationStore.set({
+            byInstanceId: { [INSTANCE_ID]: { status: 'active' }, [instanceB]: { status: 'active' } },
+        });
+        externalPluginParameterStore.set({
+            byInstanceId: {
+                [INSTANCE_ID]: { engineAttached: true, parameters: [parameterOf(0.25)] },
+                [instanceB]: { engineAttached: true, parameters: [parameterOf(0.75)] },
+            },
+        });
+        const { rerender } = render(
+            <DeviceInspector device={addedPluginDevice()} trackId="track-1" onBack={mockOnBack} />
+        );
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Filter parameters' }), { target: { value: 'pre' } });
+        fireEvent.change(screen.getByRole('slider', { name: 'Pre Gain' }), { target: { value: '0.5' } });
+        expect(await screen.findByText('The plugin refused this change.')).toBeInTheDocument();
+
+        rerender(
+            <DeviceInspector
+                device={{ ...addedPluginDevice(), externalInstanceId: instanceB }}
+                trackId="track-1"
+                onBack={mockOnBack}
+            />
+        );
+
+        expect(screen.queryByText('The plugin refused this change.')).not.toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Pre Gain' })).toHaveValue('0.75');
+        expect(screen.getByRole('searchbox', { name: 'Filter parameters' })).toHaveValue('');
+    });
 
     it('still shows a builtin Reverb its own controls', () => {
         render(

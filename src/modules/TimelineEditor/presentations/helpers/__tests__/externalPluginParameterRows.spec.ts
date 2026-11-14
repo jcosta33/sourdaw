@@ -72,6 +72,21 @@ describe('buildExternalPluginParameterRows', () => {
         expect(rows.map((row) => row.valueText)).toEqual(['0.123', '440 Hz', '3']);
     });
 
+    it.each([
+        { span: 1, value: 0.12345, expected: '0.123' },
+        { span: 10, value: 3.14159, expected: '3.14' },
+        { span: 100, value: 42.4567, expected: '42.5' },
+        { span: 1000, value: 440.6, expected: '441' },
+        { span: 20000, value: 8000.4, expected: '8000' },
+    ])(
+        'shows a continuous value over a span of $span with the precision that span deserves',
+        ({ span, value, expected }) => {
+            const [row] = buildExternalPluginParameterRows([parameter({ id: 1, value, maxValue: span })], undefined);
+
+            expect(row?.valueText).toBe(expected);
+        }
+    );
+
     it('keeps the unit unless the values are normalized, where it describes a different number', () => {
         const hertz = [parameter({ id: 2, value: 0.004, unit: 'Hz' })];
 

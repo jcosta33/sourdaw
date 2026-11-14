@@ -1,17 +1,17 @@
 import { setPluginParameter } from '../../repositories/pluginBridge/setPluginParameter';
 import { externalPluginParameterStore } from '../../stores/externalPluginParameterStore';
 
-import { publishExternalPluginParameterEdit } from './publishExternalPluginParameterEdit';
+import {
+    beginHostParameterSend,
+    endHostParameterSend,
+    publishAcceptedHostParameterEdit,
+} from './publishExternalPluginParameterEdit';
 
 type EditExternalPluginParameterInput = {
     instanceId: string;
     parameterId: number;
     value: number;
 };
-
-/** Newest send per parameter; a settled send that is no longer the newest is stale. */
-const latestSend = new Map<string, number>();
-let nextSend = 0;
 
 /**
  * Set a hosted plugin's parameter from the host's own control surface.
@@ -23,8 +23,10 @@ let nextSend = 0;
  * set, which is why this publishes the edit itself.
  *
  * Rejects without patching when the instance or parameter is unknown, the value
- * is not finite, or the host refuses. A send that settles after a newer send for
- * the same parameter is dropped, so a fast drag cannot land an older value last.
+ * is not finite, or the host refuses. Publication follows acceptance order: a
+ * send accepted after a newer accepted send, or after the plugin published an
+ * edit of its own, is dropped, so the snapshot always shows what the plugin
+ * holds.
  */
 export async function editExternalPluginParameter(input: EditExternalPluginParameterInput): Promise<void> {
     const { instanceId, parameterId } = input;
@@ -38,22 +40,11 @@ export async function editExternalPluginParameter(input: EditExternalPluginParam
     }
 
     const value = Math.min(parameter.maxValue, Math.max(parameter.minValue, input.value));
-    const key = `${instanceId}|${String(parameterId)}`;
-    const send = ++nextSend;
-    latestSend.set(key, send);
-
+    const send = beginHostParameterSend(instanceId, parameterId);
     try {
         await setPluginParameter({ instanceId, paramId: parameterId, value });
-    } catch (error: unknown) {
-        if (latestSend.get(key) === send) {
-            latestSend.delete(key);
-        }
-        throw error;
+        publishAcceptedHostParameterEdit(send, { instanceId, parameterId, kind: 'value', value });
+    } finally {
+        endHostParameterSend(send);
     }
-
-    if (latestSend.get(key) !== send) {
-        return;
-    }
-    latestSend.delete(key);
-    publishExternalPluginParameterEdit({ instanceId, parameterId, kind: 'value', value });
 }

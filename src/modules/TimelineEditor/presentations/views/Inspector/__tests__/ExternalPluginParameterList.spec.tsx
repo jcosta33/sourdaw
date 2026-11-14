@@ -94,6 +94,14 @@ const seed = (
     });
 };
 
+const moveStoreValue = (id: number, name: string, value: number): void => {
+    externalPluginParameterStore.set({
+        byInstanceId: {
+            [INSTANCE_ID]: { engineAttached: true, parameters: [parameter({ id, name, value })] },
+        },
+    });
+};
+
 const scanRow = (id: number, flags: { is_stepped?: boolean; is_enum?: boolean }) => ({
     id,
     name: `P${String(id)}`,
@@ -163,13 +171,15 @@ describe('ExternalPluginParameterList', () => {
     });
 
     it('holds the requested value while the send is in flight and builds the next nudge on it', async () => {
-        const settle: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
-        mockEdit.mockImplementation(
-            () =>
-                new Promise<void>((resolve, reject) => {
-                    settle.push({ resolve, reject });
-                })
-        );
+        const settle: Array<{ reject: (error: Error) => void; promise: Promise<void> }> = [];
+        mockEdit.mockImplementation(() => {
+            let reject: (error: Error) => void = () => {};
+            const promise = new Promise<void>((_resolve, rejectPromise) => {
+                reject = rejectPromise;
+            });
+            settle.push({ reject, promise });
+            return promise;
+        });
         seed([parameter({ id: 7, name: 'Decay', value: 0.25 })]);
         render(<ExternalPluginParameterList device={device} />);
         const slider = screen.getByRole('slider', { name: 'Decay' });
@@ -182,9 +192,10 @@ describe('ExternalPluginParameterList', () => {
         expect(slider).toHaveValue('0.6');
 
         // The superseded send settling (and refusing) must not disturb the newer pending value.
+        // Awaiting the rejected promise runs after the row's own handlers, which were attached first.
         await act(async () => {
             settle[0]?.reject(new Error('refused'));
-            await Promise.resolve();
+            await settle[0]?.promise.catch(() => {});
         });
         expect(slider).toHaveValue('0.6');
         expect(screen.queryByText('The plugin refused this change.')).not.toBeInTheDocument();
@@ -192,7 +203,7 @@ describe('ExternalPluginParameterList', () => {
         // The latest send is refused: the row reverts to the store value and says so.
         await act(async () => {
             settle[1]?.reject(new Error('refused'));
-            await Promise.resolve();
+            await settle[1]?.promise.catch(() => {});
         });
         expect(slider).toHaveValue('0.25');
         expect(screen.getByText('The plugin refused this change.')).toBeInTheDocument();
@@ -200,32 +211,31 @@ describe('ExternalPluginParameterList', () => {
 
     it('drops the pending value once the latest send is accepted and the store has moved', async () => {
         let resolveSend: () => void = () => {};
-        mockEdit.mockImplementation(
-            () =>
-                new Promise<void>((resolve) => {
-                    resolveSend = resolve;
-                })
-        );
+        let sent: Promise<void> = Promise.resolve();
+        mockEdit.mockImplementation(() => {
+            sent = new Promise<void>((resolve) => {
+                resolveSend = resolve;
+            });
+            return sent;
+        });
         seed([parameter({ id: 7, name: 'Decay', value: 0.25 })]);
         render(<ExternalPluginParameterList device={device} />);
         const slider = screen.getByRole('slider', { name: 'Decay' });
 
         fireEvent.change(slider, { target: { value: '0.5' } });
         await act(async () => {
-            externalPluginParameterStore.set({
-                byInstanceId: {
-                    [INSTANCE_ID]: {
-                        engineAttached: true,
-                        parameters: [parameter({ id: 7, name: 'Decay', value: 0.5 })],
-                    },
-                },
-            });
+            moveStoreValue(7, 'Decay', 0.5);
             resolveSend();
-            await Promise.resolve();
+            await sent;
         });
-
         expect(slider).toHaveValue('0.5');
         expect(screen.queryByText('The plugin refused this change.')).not.toBeInTheDocument();
+
+        // With the pending value dropped, the row follows the store again.
+        act(() => {
+            moveStoreValue(7, 'Decay', 0.9);
+        });
+        expect(slider).toHaveValue('0.9');
     });
 
     it('sends the keyed value of a slider change to the plugin', () => {
@@ -249,6 +259,23 @@ describe('ExternalPluginParameterList', () => {
 
         expect(mockEdit).toHaveBeenCalledExactlyOnceWith({ instanceId: INSTANCE_ID, parameterId: 3, value: 1 });
         expect(screen.queryByRole('slider', { name: 'Freeze' })).not.toBeInTheDocument();
+    });
+
+    it('shows a switch as checked at the range maximum and unchecked at the minimum', () => {
+        seed([parameter({ id: 3, name: 'Freeze', value: 0 })], {
+            scanParameters: [scanRow(3, { is_stepped: true })],
+        });
+        render(<ExternalPluginParameterList device={device} />);
+
+        act(() => {
+            moveStoreValue(3, 'Freeze', 1);
+        });
+        expect(screen.getByRole('switch', { name: 'Freeze' })).toBeChecked();
+
+        act(() => {
+            moveStoreValue(3, 'Freeze', 0);
+        });
+        expect(screen.getByRole('switch', { name: 'Freeze' })).not.toBeChecked();
     });
 
     it('steps a stepped multi-value parameter by whole values', () => {
@@ -325,6 +352,31 @@ describe('ExternalPluginParameterList', () => {
         expect(screen.queryByRole('button', { name: 'Show more' })).not.toBeInTheDocument();
     });
 
+    it('returns to one page when a filter that still matches many rows replaces a longer page', () => {
+        seed(Array.from({ length: 200 }, (_unused, index) => parameter({ id: index, name: `Band ${String(index)}` })));
+        render(<ExternalPluginParameterList device={device} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+        expect(screen.getAllByRole('slider')).toHaveLength(100);
+
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Filter parameters' }), {
+            target: { value: 'band' },
+        });
+
+        expect(screen.getAllByRole('slider')).toHaveLength(50);
+    });
+
+    it('moves focus to the first revealed control when Show more is used', () => {
+        seed(Array.from({ length: 60 }, (_unused, index) => parameter({ id: index, name: `Param ${String(index)}` })));
+        render(<ExternalPluginParameterList device={device} />);
+        const showMore = screen.getByRole('button', { name: 'Show more' });
+        showMore.focus();
+
+        fireEvent.click(showMore);
+
+        expect(screen.queryByRole('button', { name: 'Show more' })).not.toBeInTheDocument();
+        expect(document.activeElement).toBe(screen.getByRole('slider', { name: 'Param 50' }));
+    });
+
     it('shows an inline error on the row when the plugin refuses the change', async () => {
         mockEdit.mockRejectedValue(new Error('refused'));
         seed([parameter({ id: 7, name: 'Decay' }), parameter({ id: 8, name: 'Mix' })]);
@@ -332,13 +384,37 @@ describe('ExternalPluginParameterList', () => {
 
         await act(async () => {
             fireEvent.change(screen.getByRole('slider', { name: 'Decay' }), { target: { value: '0.75' } });
-            await Promise.resolve();
+            await (mockEdit.mock.results[0]?.value as Promise<void>).catch(() => {});
         });
 
         const row = screen.getByTestId('external-parameter-7');
-        expect(await within(row).findByText('The plugin refused this change.')).toBeInTheDocument();
+        expect(within(row).getByText('The plugin refused this change.')).toBeInTheDocument();
         expect(within(screen.getByTestId('external-parameter-8')).queryByRole('status')).not.toBeInTheDocument();
         expect(screen.getByRole('slider', { name: 'Decay' })).toHaveValue('0.25');
+    });
+
+    it('announces a refusal in a live region that exists before any edit, and clears it on the next edit', async () => {
+        mockEdit.mockRejectedValueOnce(new Error('refused'));
+        seed([parameter({ id: 7, name: 'Decay' })]);
+        render(<ExternalPluginParameterList device={device} />);
+        const region = screen.getByTestId('parameter-announcements');
+        expect(region).toHaveAttribute('role', 'status');
+        expect(region).toHaveTextContent('');
+
+        await act(async () => {
+            fireEvent.change(screen.getByRole('slider', { name: 'Decay' }), { target: { value: '0.75' } });
+            await (mockEdit.mock.results[0]?.value as Promise<void>).catch(() => {});
+        });
+        expect(screen.getByTestId('parameter-announcements')).toBe(region);
+        expect(region).toHaveTextContent('Decay: The plugin refused this change.');
+        expect(screen.getByText('The plugin refused this change.')).toBeInTheDocument();
+
+        await act(async () => {
+            fireEvent.change(screen.getByRole('slider', { name: 'Decay' }), { target: { value: '0.8' } });
+            await (mockEdit.mock.results[1]?.value as Promise<void>);
+        });
+        expect(screen.queryByText('The plugin refused this change.')).not.toBeInTheDocument();
+        expect(region).toHaveTextContent('');
     });
 
     it('warns that edits will not be saved while the state restore failure stands', () => {

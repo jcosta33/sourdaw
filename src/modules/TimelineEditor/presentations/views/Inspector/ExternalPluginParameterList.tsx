@@ -1,4 +1,4 @@
-import { type ReactElement, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { DawSearchInput } from '#/components/daw/DawSearchInput';
 import { Stack } from '#/components/layout';
@@ -51,9 +51,11 @@ type ExternalPluginParameterListProps = {
 type ParameterRowProps = {
     instanceId: string;
     row: ExternalPluginParameterRow;
+    /** Writes to the list's live region, which is mounted before any edit so the text is announced. */
+    onAnnounce: (message: string) => void;
 };
 
-const ParameterRow = ({ instanceId, row }: ParameterRowProps): ReactElement => {
+const ParameterRow = ({ instanceId, row, onAnnounce }: ParameterRowProps): ReactElement => {
     const [refused, setRefused] = useState(false);
     // The store moves only once the plugin accepts a change, so while the latest send is in flight the
     // row holds the value it asked for; otherwise a second nudge would start from the stale store value.
@@ -63,6 +65,7 @@ const ParameterRow = ({ instanceId, row }: ParameterRowProps): ReactElement => {
     const edit = (requested: number): void => {
         const send = ++latestSend.current;
         setRefused(false);
+        onAnnounce('');
         setPendingValue(requested);
         editExternalPluginParameter({ instanceId, parameterId: row.id, value: requested })
             .then(() => {
@@ -74,6 +77,7 @@ const ParameterRow = ({ instanceId, row }: ParameterRowProps): ReactElement => {
                 if (latestSend.current === send) {
                     setPendingValue(null);
                     setRefused(true);
+                    onAnnounce(`${row.name}: ${REFUSED_MESSAGE}`);
                 }
             });
     };
@@ -109,11 +113,7 @@ const ParameterRow = ({ instanceId, row }: ParameterRowProps): ReactElement => {
                     onChange={(event) => edit(Number(event.target.value))}
                 />
             )}
-            {refused && (
-                <span role="status" className="text-[10px] text-destructive">
-                    {REFUSED_MESSAGE}
-                </span>
-            )}
+            {refused && <span className="text-[10px] text-destructive">{REFUSED_MESSAGE}</span>}
         </li>
     );
 };
@@ -126,6 +126,19 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
     useStore(externalPluginRestoreFailureStore, defaultExternalPluginRestoreFailureState);
     const [query, setQuery] = useState('');
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+    const [announcement, setAnnouncement] = useState('');
+    const listRef = useRef<HTMLUListElement>(null);
+    const focusIndexAfterReveal = useRef<number | null>(null);
+
+    // Revealing a page can unmount the focused Show more button; move focus to the first revealed control.
+    useEffect(() => {
+        const index = focusIndexAfterReveal.current;
+        if (index === null) {
+            return;
+        }
+        focusIndexAfterReveal.current = null;
+        listRef.current?.children[index]?.querySelector<HTMLElement>('input')?.focus();
+    }, [visibleCount]);
 
     const instanceId = device.externalInstanceId;
     const scanned = scanState.scannedPlugins
@@ -183,9 +196,12 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
             <div role="status">
                 <MetaText>{describeCount(rows.length, snapshot.parameters.length)}</MetaText>
             </div>
-            <ul className="flex flex-col gap-1.5" aria-label="Plugin parameters">
+            <div role="status" className="sr-only" data-testid="parameter-announcements">
+                {announcement}
+            </div>
+            <ul ref={listRef} className="flex flex-col gap-1.5" aria-label="Plugin parameters">
                 {shown.map((row) => (
-                    <ParameterRow key={row.id} instanceId={instanceId} row={row} />
+                    <ParameterRow key={row.id} instanceId={instanceId} row={row} onAnnounce={setAnnouncement} />
                 ))}
             </ul>
             {shown.length < rows.length && (
@@ -194,7 +210,10 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
                     variant="outline"
                     size="xs"
                     className="self-start"
-                    onClick={() => setVisibleCount(visibleCount + PAGE_SIZE)}
+                    onClick={() => {
+                        focusIndexAfterReveal.current = shown.length;
+                        setVisibleCount(visibleCount + PAGE_SIZE);
+                    }}
                 >
                     Show more
                 </Button>

@@ -9,6 +9,7 @@ import {
 import { editExternalPluginParameter } from '../editExternalPluginParameter';
 import { type ExternalPluginParameterEdit } from '../externalPluginParameterEditObservers';
 import { observeExternalPluginParameterEdits } from '../observeExternalPluginParameterEdits';
+import { publishExternalPluginParameterEdit } from '../publishExternalPluginParameterEdit';
 
 vi.mock('../../../repositories/pluginBridge/setPluginParameter', () => ({
     setPluginParameter: vi.fn(),
@@ -109,5 +110,60 @@ describe('editExternalPluginParameter', () => {
 
         expect(valueOf()).toBe(0.8);
         expect(edits).toEqual([{ instanceId: INSTANCE, parameterId: 12, kind: 'value', value: 0.8 }]);
+    });
+
+    it('publishes the older value once when the older send is accepted and the newer one is refused', async () => {
+        const settle: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
+        vi.mocked(setPluginParameter).mockImplementation(
+            () =>
+                new Promise<void>((resolve, reject) => {
+                    settle.push({ resolve, reject });
+                })
+        );
+
+        const older = editExternalPluginParameter({ instanceId: INSTANCE, parameterId: 12, value: 0.3 });
+        const newer = editExternalPluginParameter({ instanceId: INSTANCE, parameterId: 12, value: 0.8 });
+        settle[0]?.resolve();
+        await older;
+        settle[1]?.reject(new Error('refused'));
+        await expect(newer).rejects.toThrow('refused');
+
+        expect(valueOf()).toBe(0.3);
+        expect(edits).toEqual([{ instanceId: INSTANCE, parameterId: 12, kind: 'value', value: 0.3 }]);
+    });
+
+    it('publishes both sends in order when each is accepted in the order it started', async () => {
+        await editExternalPluginParameter({ instanceId: INSTANCE, parameterId: 12, value: 0.3 });
+        await editExternalPluginParameter({ instanceId: INSTANCE, parameterId: 12, value: 0.8 });
+
+        expect(valueOf()).toBe(0.8);
+        expect(edits.map((edit) => edit.value)).toEqual([0.3, 0.8]);
+    });
+
+    it('keeps a plugin-originated edit that published while a host send was in flight', async () => {
+        let settle = (): void => {};
+        vi.mocked(setPluginParameter).mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    settle = resolve;
+                })
+        );
+
+        const send = editExternalPluginParameter({ instanceId: INSTANCE, parameterId: 12, value: 0.9 });
+        publishExternalPluginParameterEdit({ instanceId: INSTANCE, parameterId: 12, kind: 'value', value: 0.4 });
+        settle();
+        await send;
+
+        expect(valueOf()).toBe(0.4);
+        expect(edits).toEqual([{ instanceId: INSTANCE, parameterId: 12, kind: 'value', value: 0.4 }]);
+    });
+
+    it('publishes a host send that started after a plugin-originated edit', async () => {
+        publishExternalPluginParameterEdit({ instanceId: INSTANCE, parameterId: 12, kind: 'value', value: 0.4 });
+
+        await editExternalPluginParameter({ instanceId: INSTANCE, parameterId: 12, value: 0.9 });
+
+        expect(valueOf()).toBe(0.9);
+        expect(edits.map((edit) => edit.value)).toEqual([0.4, 0.9]);
     });
 });
