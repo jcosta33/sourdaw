@@ -5,6 +5,8 @@ import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/Mid
 import { isExactMidiClipDataActionSnapshot } from '../../services/isExactMidiClipDataActionSnapshot';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
+import { projectMidiSnapshotThroughAction, type ProjectedMidiSnapshot } from './projectMidiSnapshotThroughAction';
+import { readRestoredMidiOwnerIds } from './readRestoredMidiOwnerIds';
 import { snapshotMidiClipData } from './snapshotMidiClipData';
 
 type MidiClipDataSlotSnapshot<Row> = {
@@ -36,43 +38,9 @@ function snapshotIsAbsent(snapshot: MidiClipDataActionSnapshot): boolean {
 }
 
 function projectSnapshot(state: MidiStoreState, clipId: string, priorActions: readonly AppAction[]) {
-    let snapshot: {
-        notes: { present: boolean; value: readonly unknown[] };
-        controlChanges: { present: boolean; value: readonly unknown[] };
-        pitchBends: { present: boolean; value: readonly unknown[] };
-    } = snapshotMidiClipData(state, clipId);
+    let snapshot: ProjectedMidiSnapshot = snapshotMidiClipData(state, clipId);
     for (const action of priorActions) {
-        if (action.type === 'removeClip' && action.payload.clipId === clipId) {
-            snapshot = {
-                notes: { present: false, value: [] },
-                controlChanges: { present: false, value: [] },
-                pitchBends: { present: false, value: [] },
-            };
-        }
-        if (action.type === 'restoreClip' && action.payload.clipId === clipId) {
-            const payload = action.payload;
-            let notes = snapshot.notes;
-            let controlChanges = snapshot.controlChanges;
-            let pitchBends = snapshot.pitchBends;
-            if (payload.midiNotesSnapshot !== null) {
-                notes = { present: true, value: payload.midiNotesSnapshot };
-            }
-            if (payload.midiCcSnapshot !== null) {
-                controlChanges = { present: true, value: payload.midiCcSnapshot };
-            }
-            if (payload.midiPitchBendSnapshot !== null) {
-                pitchBends = { present: true, value: payload.midiPitchBendSnapshot };
-            }
-            snapshot = { notes, controlChanges, pitchBends };
-        }
-        if (action.type === 'restoreClipSplitState') {
-            if (action.payload.clipId === clipId) {
-                snapshot = action.payload.replacement.sourceMidi;
-            }
-            if (action.payload.rightClipId === clipId) {
-                snapshot = action.payload.replacement.rightMidi;
-            }
-        }
+        snapshot = projectMidiSnapshotThroughAction(action, clipId, snapshot);
     }
     return snapshot;
 }
@@ -97,11 +65,8 @@ function replacementIdentitiesAreAvailable(
         ...Object.keys(state.pitchBendByClipId),
     ]);
     for (const action of priorActions) {
-        if (action.type === 'restoreClip') {
-            ownerIds.add(action.payload.clipId);
-        } else if (action.type === 'restoreClipSplitState') {
-            ownerIds.add(action.payload.clipId);
-            ownerIds.add(action.payload.rightClipId);
+        for (const clipId of readRestoredMidiOwnerIds(action)) {
+            ownerIds.add(clipId);
         }
     }
     const occupied = new Set<string>();

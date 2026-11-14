@@ -8,4 +8,9 @@ export type AdoptedRecipe = {
     title: string;
     targetId: string;
     presetVersion?: string;
+    /**
+     * Set only on a vibe-run batch: whether its parameter values were chosen from the target's
+     * measured baselines or kept at the catalogue defaults. Absent everywhere else.
+     */
+    valueSource?: 'measurements' | 'catalogue-defaults';
 };

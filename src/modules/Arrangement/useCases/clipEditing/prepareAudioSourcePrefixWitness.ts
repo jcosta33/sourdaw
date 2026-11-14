@@ -1,7 +1,7 @@
 import { getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { type AppAction, type HandlerCommitValidation, type HandlerValidationContext } from '#/utils/handlerContract';
-import { isRecord, valuesEqual } from '#/utils/structuralEquality';
+import { isRecord } from '#/utils/structuralEquality';
 import { getTempoAudioSourceRequirements } from '#/utils/tempoAudioSourceCoverage';
 import {
     captureTempoSourceOwnerValue,
@@ -9,7 +9,6 @@ import {
     tempoSourceOwnerWitnessMatches,
     type TempoScalarTransition,
     type TempoSourceClock,
-    type TempoSourceOwner,
     type TempoSourceOwnerWitness,
 } from '#/utils/tempoAudioSourcePromotion';
 
@@ -19,8 +18,11 @@ import { type projectTempoAudioSources } from '../../stores/tempoAudioSources';
 import { type TempoAudioSourceWriteClock } from '../../stores/tempoAudioSourceWriteIntent';
 import { getTrackStoreState } from '../getTrackStoreState';
 
-import { preparedClipSplits } from './preparedClipSplit';
+import { addActionSourceOwners } from './addActionSourceOwners';
+import { addPromotionOwners } from './addPromotionOwners';
+import { type OwnerFields } from './addSourceOwner';
 import { projectClipReplayPrefix } from './projectClipReplayPrefix';
+import { readTempoScalarTransition } from './readTempoScalarTransition';
 
 type Input = {
     readonly promotion: Extract<AppAction, { type: 'restoreTempoEdit' }>['payload']['audioSourcePromotion'];
@@ -29,250 +31,9 @@ type Input = {
 } & TempoAudioSourceWriteClock;
 type State = NonNullable<ReturnType<typeof projectClipReplayPrefix>>;
 type SourceState = Pick<State, 'tracks' | 'takeLanes'>;
-type OwnerFields = { owner: TempoSourceOwner; fields: Set<string> };
-
-const CLIP_SOURCE_FIELDS = [
-    'id',
-    'trackId',
-    'type',
-    'startBeat',
-    'endBeat',
-    'audioBufferId',
-    'fileId',
-    'assetHash',
-    'audioOffsetBeats',
-    'audioOffsetSeconds',
-    'audioUnwrappedOffsetSeconds',
-    'audioLoopStartSeconds',
-    'audioLoopPassEntrySeconds',
-    'audioLoopPassOriginBeat',
-    'loopEnabled',
-    'loopLength',
-    'loopOriginBeat',
-    'stretchMode',
-    'stretchRatio',
-];
-const TAKE_SOURCE_FIELDS = [
-    'id',
-    'clipId',
-    'startBeat',
-    'endBeat',
-    'sourceOffsetBeats',
-    'sourceOffsetSeconds',
-    'passAnchorSeconds',
-    'passDepthSeconds',
-    'passSourceEndSeconds',
-    'passOriginBeat',
-    'passOriginSourceSeconds',
-];
-
-function addOwner(owners: Map<string, OwnerFields>, owner: TempoSourceOwner, fields: readonly string[]): void {
-    const key = JSON.stringify(owner);
-    const existing = owners.get(key);
-    const ownerFields = new Set(existing?.fields);
-    for (const field of fields) {
-        ownerFields.add(field);
-    }
-    owners.set(key, { owner, fields: ownerFields });
-}
 
 function sourceContext(state: SourceState) {
     return { tracks: { tracks: state.tracks }, takeLanes: { lanes: state.takeLanes } };
-}
-
-function addSplitGapOwners(
-    owners: Map<string, OwnerFields>,
-    trackId: string,
-    laneId: string,
-    oldLane: State['takeLanes'][number] | undefined,
-    nextLane: State['takeLanes'][number] | undefined
-): void {
-    const gaps = (oldLane?.baseGapAudioSources ?? []).concat(nextLane?.baseGapAudioSources ?? []);
-    for (const gap of gaps) {
-        const matches = (row: typeof gap) =>
-            row.clipId === gap.clipId && row.startBeat === gap.startBeat && row.endBeat === gap.endBeat;
-        if (
-            !valuesEqual(
-                oldLane?.baseGapAudioSources?.find(matches) ?? null,
-                nextLane?.baseGapAudioSources?.find(matches) ?? null
-            )
-        ) {
-            addOwner(
-                owners,
-                {
-                    kind: 'gap',
-                    trackId,
-                    laneId,
-                    clipId: gap.clipId,
-                    startBeat: gap.startBeat,
-                    endBeat: gap.endBeat,
-                },
-                ['clipId', 'startBeat', 'endBeat', 'audioSource']
-            );
-        }
-    }
-}
-
-function addSplitRegionAndGapOwners(
-    owners: Map<string, OwnerFields>,
-    trackId: string,
-    laneId: string,
-    oldLane: State['takeLanes'][number] | undefined,
-    nextLane: State['takeLanes'][number] | undefined
-): void {
-    const regions = (oldLane?.activeCompRegions ?? []).concat(nextLane?.activeCompRegions ?? []);
-    for (const region of regions) {
-        const matches = (row: typeof region) =>
-            row.takeId === region.takeId && row.startBeat === region.startBeat && row.endBeat === region.endBeat;
-        if (
-            !valuesEqual(
-                oldLane?.activeCompRegions.find(matches) ?? null,
-                nextLane?.activeCompRegions.find(matches) ?? null
-            )
-        ) {
-            addOwner(
-                owners,
-                {
-                    kind: 'region',
-                    trackId,
-                    laneId,
-                    takeId: region.takeId,
-                    startBeat: region.startBeat,
-                    endBeat: region.endBeat,
-                },
-                ['takeId', 'startBeat', 'endBeat', 'audioSource']
-            );
-        }
-    }
-    addSplitGapOwners(owners, trackId, laneId, oldLane, nextLane);
-}
-
-function addSplitLaneOwners(
-    owners: Map<string, OwnerFields>,
-    trackId: string,
-    laneId: string,
-    before: State,
-    after: State
-): void {
-    const oldLane = before.takeLanes.find((lane) => lane.id === laneId);
-    const nextLane = after.takeLanes.find((lane) => lane.id === laneId);
-    const takes = new Map((oldLane?.takes ?? []).concat(nextLane?.takes ?? []).map((take) => [take.id, take]));
-    for (const take of takes.values()) {
-        const old = oldLane?.takes.find((row) => row.id === take.id);
-        const next = nextLane?.takes.find((row) => row.id === take.id);
-        if (!valuesEqual(old ? { ...old, selected: false } : null, next ? { ...next, selected: false } : null)) {
-            addOwner(owners, { kind: 'take', trackId, laneId, takeId: take.id }, TAKE_SOURCE_FIELDS);
-        }
-    }
-    addSplitRegionAndGapOwners(owners, trackId, laneId, oldLane, nextLane);
-}
-
-function addSplitOwners(owners: Map<string, OwnerFields>, action: AppAction, before: State, after: State): void {
-    let pair: Pick<NonNullable<ReturnType<typeof preparedClipSplits.get>>, 'previous' | 'next'> | null = null;
-    if (action.type === 'splitClip') {
-        pair = preparedClipSplits.get(action) ?? null;
-    } else if (action.type === 'restoreClipSplitState') {
-        pair = { previous: action.payload.expected, next: action.payload.replacement };
-    }
-    if (!pair || pair.previous.leftClip.type !== 'audio') {
-        return;
-    }
-    const track = before.tracks?.find((row) => row.id === pair.previous.trackId);
-    if (!track) {
-        return;
-    }
-    const clipIds = [pair.previous.leftClip.id, pair.next.rightClip?.id ?? pair.previous.rightClip?.id];
-    for (const clipId of clipIds) {
-        if (clipId) {
-            addOwner(
-                owners,
-                {
-                    kind: 'clip',
-                    trackId: track.id,
-                    collection: 'active',
-                    alternativeId: track.activeAlternativeId,
-                    clipId,
-                },
-                CLIP_SOURCE_FIELDS
-            );
-        }
-    }
-    const laneIds = new Set(
-        [...before.takeLanes, ...after.takeLanes].filter((lane) => lane.trackId === track.id).map((lane) => lane.id)
-    );
-    for (const laneId of laneIds) {
-        addSplitLaneOwners(owners, track.id, laneId, before, after);
-    }
-}
-
-function addTempoOwners(owners: Map<string, OwnerFields>, action: AppAction): void {
-    if (action.type !== 'setTempo' && action.type !== 'restoreTempoEdit') {
-        return;
-    }
-    if (action.type === 'setTempo' && action.payload.bpm === action.payload.expectedBpm) {
-        return;
-    }
-    const plan = action.payload.audioSourcePromotion;
-    if (!plan) {
-        return;
-    }
-    addPromotionOwners(owners, plan);
-}
-
-function addPromotionOwners(owners: Map<string, OwnerFields>, plan: Input['promotion']): void {
-    for (const clip of plan.clips) {
-        addOwner(
-            owners,
-            {
-                kind: 'clip',
-                trackId: clip.trackId,
-                collection: clip.collection,
-                alternativeId: clip.alternativeId,
-                clipId: clip.clipId,
-            },
-            CLIP_SOURCE_FIELDS
-        );
-    }
-    for (const take of plan.takes) {
-        addOwner(
-            owners,
-            {
-                kind: 'take',
-                trackId: take.trackId,
-                laneId: take.laneId,
-                takeId: take.takeId,
-            },
-            TAKE_SOURCE_FIELDS
-        );
-    }
-    for (const region of plan.regions) {
-        addOwner(
-            owners,
-            {
-                kind: 'region',
-                trackId: region.trackId,
-                laneId: region.laneId,
-                takeId: region.takeId,
-                startBeat: region.startBeat,
-                endBeat: region.endBeat,
-            },
-            ['takeId', 'startBeat', 'endBeat', 'audioSource']
-        );
-    }
-    for (const gap of plan.gaps) {
-        addOwner(
-            owners,
-            {
-                kind: 'gap',
-                trackId: gap.trackId,
-                laneId: gap.laneId,
-                clipId: gap.clipId,
-                startBeat: gap.startBeat,
-                endBeat: gap.endBeat,
-            },
-            ['clipId', 'startBeat', 'endBeat', 'audioSource']
-        );
-    }
 }
 
 function initialClock(input: Input): TempoSourceClock | null {
@@ -284,14 +45,14 @@ function initialClock(input: Input): TempoSourceClock | null {
     const reverse: TempoScalarTransition[] = [];
     const priorActions = input.context?.actions.slice(0, input.context.actionIndex) ?? [];
     for (const action of priorActions.reverse()) {
-        if (action.type !== 'setTempo' && action.type !== 'restoreTempoEdit') {
+        const transition = readTempoScalarTransition(action);
+        if (transition === undefined) {
             continue;
         }
-        const { bpm, expectedBpm, tempoChangeId } = action.payload;
-        if (tempoChangeId === undefined || expectedBpm === undefined) {
+        if (transition === null) {
             return null;
         }
-        reverse.push({ tempoChangeId, expectedBpm: bpm, bpm: expectedBpm });
+        reverse.push(transition);
     }
     return projectTempoSourceClock(actual, reverse);
 }
@@ -393,8 +154,7 @@ export function prepareAudioSourcePrefixWitness(
         if (!next?.tracks) {
             return null;
         }
-        addTempoOwners(owners, action);
-        addSplitOwners(owners, action, state, next);
+        addActionSourceOwners(owners, action, state, next);
         state = next;
     }
     return captureWitness(document, owners, read, state);

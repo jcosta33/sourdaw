@@ -19,6 +19,7 @@ pub mod retrospective;
 /// its refusal is the one part of it a host has to be able to name.
 pub use device::InputOpenRefusal;
 pub mod engine_events;
+mod float_mode;
 mod meter;
 pub mod midi;
 pub mod midi_fx;
