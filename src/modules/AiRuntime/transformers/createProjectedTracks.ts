@@ -33,10 +33,10 @@ export function createProjectedTrack(
     kind: string,
     initialDeviceId: string | undefined
 ): ProjectContextTrack {
-    const devices =
-        kind === 'midi' && initialDeviceId !== undefined
-            ? [{ id: initialDeviceId, name: 'Synth', type: 'builtin-synth', bypassed: false, parameters: [] }]
-            : [];
+    const devices: ProjectContextTrack['devices'] = [];
+    if (kind === 'midi' && initialDeviceId !== undefined) {
+        devices.push({ id: initialDeviceId, name: 'Synth', type: 'builtin-synth', bypassed: false, parameters: [] });
+    }
     return {
         id: trackId,
         name,

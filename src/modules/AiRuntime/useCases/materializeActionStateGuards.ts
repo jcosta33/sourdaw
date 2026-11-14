@@ -343,15 +343,7 @@ export function materializeActionStateGuards(
         (context.adjustmentLayers ?? []).flatMap((layer) => layer.regions.map((region) => region.id))
     );
     const projectedAdjustmentLayers = new Map<string, ProjectContextAdjustmentLayer>(
-        (context.adjustmentLayers ?? []).map((layer) => [
-            layer.id,
-            {
-                ...layer,
-                parameters: layer.parameters.map((parameter) => ({ ...parameter })),
-                affectedTrackIds: [...layer.affectedTrackIds],
-                regions: layer.regions.map((region) => ({ ...region })),
-            },
-        ])
+        (context.adjustmentLayers ?? []).map((layer) => [layer.id, structuredClone(layer)])
     );
     const deviceIdsByTrack = new Map(
         context.tracks.map((track) => [track.id, track.devices.map((device) => device.id)] as const)

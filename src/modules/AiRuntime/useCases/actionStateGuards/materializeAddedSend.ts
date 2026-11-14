@@ -29,8 +29,9 @@ export function materializeAddedSend(action: Action, state: MaterializationState
     if (!level.ok) {
         return { status: 'rejected', reason: level.reason };
     }
+    const existingSends = sourceTrack.sends ?? [];
     const projectedSends = [
-        ...(sourceTrack.sends ?? []),
+        ...existingSends,
         {
             busId: action.payload.busId,
             level: level.linear,

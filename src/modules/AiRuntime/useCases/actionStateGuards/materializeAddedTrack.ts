@@ -7,6 +7,13 @@ import { type MaterializationState, type MaterializationStep } from './Materiali
 
 type Action = Extract<MaterializableRuntimeAction, { type: 'addTrack' }>;
 
+function readInitialDeviceIds(kind: string, initialDeviceId: string | undefined): string[] {
+    if (kind === 'midi' && initialDeviceId !== undefined) {
+        return [initialDeviceId];
+    }
+    return [];
+}
+
 export function materializeAddedTrack(action: Action, state: MaterializationState): MaterializationStep {
     const { tracksById, frozenByTrack, deviceIdsByTrack } = state;
     if (!action.payload.id) {
@@ -22,12 +29,7 @@ export function materializeAddedTrack(action: Action, state: MaterializationStat
         action.payload.id,
         createProjectedTrack(action.payload.id, name, action.payload.kind, action.payload.initialDeviceId)
     );
-    deviceIdsByTrack.set(
-        action.payload.id,
-        action.payload.kind === 'midi' && action.payload.initialDeviceId !== undefined
-            ? [action.payload.initialDeviceId]
-            : []
-    );
+    deviceIdsByTrack.set(action.payload.id, readInitialDeviceIds(action.payload.kind, action.payload.initialDeviceId));
     frozenByTrack.set(action.payload.id, false);
     return {
         status: 'accepted',

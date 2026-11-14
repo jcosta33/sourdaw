@@ -27,8 +27,8 @@ export function materializeCopyMidiArticulations(action: Action, state: Material
     ) {
         return { status: 'rejected', reason: 'MF-03 clip pair is unavailable or protected' };
     }
-    const expectedSourceNotes = getNotesForClip(action.payload.sourceClipId).map((note) => ({ ...note }));
-    const expectedTargetNotes = getNotesForClip(action.payload.targetClipId).map((note) => ({ ...note }));
+    const expectedSourceNotes = structuredClone(getNotesForClip(action.payload.sourceClipId));
+    const expectedTargetNotes = structuredClone(getNotesForClip(action.payload.targetClipId));
     const projectedPairs = projectMidiArticulationTransfer({
         sourceNotes: expectedSourceNotes,
         targetNotes: expectedTargetNotes,

@@ -42,8 +42,8 @@ export function materializeDrumPreviewBranches(action: Action, state: Materializ
             branchName: `Drum Candidate ${String(index + 1)} — ${names[index]!}`,
             rootDocId: `branch_${branchId}`,
             recipe,
-            snareNotes: snareNotes.map((note) => ({ ...note })),
-            hiHatNotes: hiHatNotes.map((note) => ({ ...note })),
+            snareNotes: structuredClone(snareNotes),
+            hiHatNotes: structuredClone(hiHatNotes),
         });
     }
     return {
@@ -67,9 +67,9 @@ export function materializeDrumPreviewBranches(action: Action, state: Materializ
                     sectionEndBeat: scope.section.endBeat,
                     candidateCount: 3,
                     varyingRoles: ['snare', 'hi-hat'],
-                    kick: { ...scope.kick, expectedNotes: scope.kick.expectedNotes.map((note) => ({ ...note })) },
-                    snare: { ...scope.snare, expectedNotes: scope.snare.expectedNotes.map((note) => ({ ...note })) },
-                    hiHat: { ...scope.hiHat, expectedNotes: scope.hiHat.expectedNotes.map((note) => ({ ...note })) },
+                    kick: structuredClone(scope.kick),
+                    snare: structuredClone(scope.snare),
+                    hiHat: structuredClone(scope.hiHat),
                     candidates,
                 },
             },

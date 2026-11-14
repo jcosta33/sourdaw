@@ -35,7 +35,7 @@ export function materializeArpeggio(action: Action, state: MaterializationState)
                     expectedTrackFrozen: scope.expectedTrackFrozen,
                     clipName: scope.clipName,
                     expectedClipLocked: scope.expectedClipLocked,
-                    expectedNotes: scope.expectedNotes.map((note) => ({ ...note })),
+                    expectedNotes: structuredClone(scope.expectedNotes),
                     addedNotes,
                 },
             },

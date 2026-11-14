@@ -1,7 +1,7 @@
 import { markerStore } from '#/modules/Arrangement/stores';
 import { describeAction } from '#/modules/Command/useCases';
-import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
+import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 
 import { type ProjectContext } from '../models/ProjectContext';
 import { findContextClip } from '../transformers/findContextClip';

@@ -41,7 +41,7 @@ function materializeGuardedParameter(
     tracksById: ReadonlyMap<string, ProjectContextTrack>,
     deviceIdsByTrack: ReadonlyMap<string, string[]>
 ): MaterializationStep {
-    const owners = [...tracksById.values()].filter((track) =>
+    const owners = Array.from(tracksById.values()).filter((track) =>
         track.devices.some((device) => device.id === action.payload.deviceId)
     );
     const owner = owners.length === 1 ? owners[0] : undefined;

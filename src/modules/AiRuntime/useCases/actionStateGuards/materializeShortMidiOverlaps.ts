@@ -28,7 +28,7 @@ export function materializeShortMidiOverlaps(action: Action, state: Materializat
                     expectedTrackFrozen: entry.expectedTrackFrozen,
                     clipName: entry.clipName,
                     expectedClipLocked: entry.expectedClipLocked,
-                    expectedNotes: entry.expectedNotes.map((note) => ({ ...note })),
+                    expectedNotes: structuredClone(entry.expectedNotes),
                 },
             },
         ],

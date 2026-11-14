@@ -1,14 +1,14 @@
 import { type AppAction } from '#/utils/handlerContract';
 
-import { type BassProcessingCopyRequestScope } from '../agentReference/getBassProcessingCopyPromptScope';
-import { type DrumPreviewBranchesRequestScope } from '../agentReference/getDrumPreviewBranchesPromptScope';
-import { type MidiOverlapTransformRequestScope } from '../agentReference/getMidiOverlapTransformPromptScope';
-import { type SyncopatedArpeggioRequestScope } from '../agentReference/getSyncopatedArpeggioPromptScope';
 import {
     type ProjectContext,
     type ProjectContextAdjustmentLayer,
     type ProjectContextTrack,
 } from '../../models/ProjectContext';
+import { type BassProcessingCopyRequestScope } from '../agentReference/getBassProcessingCopyPromptScope';
+import { type DrumPreviewBranchesRequestScope } from '../agentReference/getDrumPreviewBranchesPromptScope';
+import { type MidiOverlapTransformRequestScope } from '../agentReference/getMidiOverlapTransformPromptScope';
+import { type SyncopatedArpeggioRequestScope } from '../agentReference/getSyncopatedArpeggioPromptScope';
 
 export type MaterializeActionStateGuardsOptions = {
     appOwnedRenderTailSeconds?: number;

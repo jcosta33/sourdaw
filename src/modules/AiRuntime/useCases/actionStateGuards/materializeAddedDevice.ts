@@ -1,4 +1,5 @@
 import { type MaterializableRuntimeAction } from '../../models/ExecutableRuntimeAction';
+import { type ProjectContextDevice } from '../../models/ProjectContext';
 
 import { type MaterializationState, type MaterializationStep } from './MaterializationState';
 
@@ -52,13 +53,16 @@ export function materializeAddedDevice(action: Action, state: MaterializationSta
     }
     const projectedDevices = [...projectedTrack.devices];
     const descriptor = context.availableDeviceTypes?.find((candidate) => candidate.id === action.payload.deviceType);
-    projectedDevices.splice(insertionIndex, 0, {
+    const projectedDevice: ProjectContextDevice = {
         id: deviceId,
-        ...(descriptor ? { name: descriptor.name } : {}),
         type: action.payload.deviceType,
         bypassed: false,
-        parameters: descriptor?.parameters?.map((parameter) => ({ ...parameter })) ?? [],
-    });
+        parameters: structuredClone(descriptor?.parameters ?? []),
+    };
+    if (descriptor) {
+        projectedDevice.name = descriptor.name;
+    }
+    projectedDevices.splice(insertionIndex, 0, projectedDevice);
     tracksById.set(action.payload.trackId, {
         ...projectedTrack,
         deviceCount: projectedDevices.length,
