@@ -154,7 +154,11 @@ function doesProductionBriefAllowActionFootprint(footprint: ProductionBriefActio
     // or an authorized replay), and the project-data repair changes no musical
     // content — a lock protects content, not the reconciliation that lets a
     // broken document be edited again.
-    const isAdmittedRoute = (action: AppAction): boolean => productionBriefRouteByActionType[action.type] !== 'content';
+    // An action type absent from the route table reads `undefined` and stays on the scope-checked path.
+    const isAdmittedRoute = (action: AppAction): boolean => {
+        const route = productionBriefRouteByActionType[action.type];
+        return route === 'brief' || route === 'repair';
+    };
     if (!brief || actions.every(isAdmittedRoute)) {
         return true;
     }
