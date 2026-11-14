@@ -8,7 +8,9 @@ use crate::host::plugin_registry_store::{
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::plugin_scan_worker;
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
-use crate::host::ui_thread::lend_on_ui_thread;
+use crate::host::ui_thread::{
+    call_on_ui_thread, lend_on_ui_thread, release_on_ui_thread, UiThread,
+};
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::plugin_slot::MidiNoteEvent;
@@ -1311,6 +1313,70 @@ fn editor_support_on_ui_thread<P: AudioPlugin + ?Sized + 'static>(
     lend_on_ui_thread(windows_host, runtime, |runtime| runtime.has_gui())
 }
 
+/// How a load builds its runtime: [`create_hosted_runtime`] in production, a
+/// fixture in a test. `Send + 'static` because it runs on the shell's UI thread,
+/// not on the worker that took the load.
+trait RuntimeConstructor:
+    FnOnce(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String> + Send + 'static
+{
+}
+
+impl<Constructor> RuntimeConstructor for Constructor where
+    Constructor:
+        FnOnce(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String> + Send + 'static
+{
+}
+
+/// Build and activate a runtime on the shell's UI thread.
+///
+/// Both formats bind instantiation to the host's main thread. VST3 runs the
+/// module's entry (`bundleEntry`, `InitDll`, `ModuleEntry`), the factory, and
+/// the component's and controller's `initialize` and `setActive` there, and a
+/// plugin whose module startup builds a Qt application calls a macOS API that
+/// asserts it is on the main queue: off it, the whole app dies with
+/// `EXC_BREAKPOINT`. CLAP marks `plugin.init` and `activate` `[main-thread]`;
+/// only its entry's `init` and the factory's `create_plugin` may run anywhere.
+///
+/// The worker holds `PLUGIN_RUNTIME_GATE` in read mode and this instance's
+/// lifecycle lease across the hop, and that closes no cycle: the gate and the
+/// lease are `async` locks the UI thread never waits on — every synchronous
+/// path there only `try_read`s the gate (`attach_dormant_plugins`), and the
+/// quit cascade takes neither (`shutdown::destroy_live_plugin_instances`). What
+/// the UI thread does block on, the engine lock and the stores, the worker does
+/// not hold here. The hop's own deadline only bounds the wait for the UI thread
+/// to *start*; a module that takes seconds to open is waited out.
+fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
+    ui: &Ui,
+    backend: HostBackend,
+    path: String,
+    descriptor_id: String,
+    sample_rate: f64,
+    create_runtime: impl RuntimeConstructor,
+) -> Result<HostedRuntime, String> {
+    call_on_ui_thread(ui, move || {
+        create_runtime(backend, &path, &descriptor_id, sample_rate)
+    })?
+}
+
+/// Run a runtime's teardown on the shell's UI thread.
+///
+/// Dropping a runtime is the plugin's own teardown — CLAP `deactivate` and
+/// `destroy`, VST3 `setActive(false)`, `terminate` and the module's exit — and
+/// both formats bind it to the main thread, as they bind the construction in
+/// [`construct_runtime_on_ui_thread`]. A hop that never lands hands the runtime
+/// to the retirement vec instead, whose next sweep tries the UI thread again;
+/// tearing it down here would be the off-thread call this exists to prevent.
+fn tear_down_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
+    ui: &Ui,
+    state: &AppState,
+    runtime: HostedRuntime,
+) {
+    if let Err((runtime, reason)) = release_on_ui_thread(ui, runtime) {
+        eprintln!("[Plugin] teardown deferred to the next sweep: {reason}");
+        state.retain_retired_engine_plugin(Arc::new(SharedHostedPlugin::new(runtime)));
+    }
+}
+
 pub async fn load_plugin(
     plugin_id: PluginId,
     instance_id: PluginInstanceId,
@@ -1342,7 +1408,7 @@ async fn load_plugin_with_backend(
     instance_id: PluginInstanceId,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
-    create_runtime: impl Fn(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String>,
+    create_runtime: impl RuntimeConstructor,
 ) -> Result<PluginInstance, String> {
     let instance =
         load_plugin_under_runtime_gate(plugin_id, instance_id, windows_host, state, create_runtime)
@@ -1356,7 +1422,7 @@ async fn load_plugin_with_backend(
         // so running a retired plugin's teardown under it would park a
         // queued `unload_all_plugin_runtimes` writer, and every later
         // `try_read` attach, for as long as that third-party teardown takes.
-        state.sweep_retired_engine_plugins();
+        state.sweep_retired_engine_plugins(windows_host);
     }
 
     Ok(instance)
@@ -1381,7 +1447,7 @@ async fn load_plugin_under_runtime_gate(
     instance_id: PluginInstanceId,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
-    create_runtime: impl Fn(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String>,
+    create_runtime: impl RuntimeConstructor,
 ) -> Result<PluginInstance, String> {
     // The rate is decided before anything is resolved, locked or constructed:
     // it is the native engine's own clock, never a caller's input, and a load
@@ -1439,7 +1505,15 @@ async fn load_plugin_under_runtime_gate(
     }
     let descriptor_id = entry.descriptor_id.clone();
 
-    let mut wrapper = create_runtime(backend, &entry.path, &descriptor_id, sample_rate)?;
+    // Constructed on the shell's UI thread: see `construct_runtime_on_ui_thread`.
+    let mut wrapper = construct_runtime_on_ui_thread(
+        windows_host,
+        backend,
+        entry.path.clone(),
+        descriptor_id,
+        sample_rate,
+        create_runtime,
+    )?;
     let name = wrapper.get_name().to_string();
     // A wrapper is built even when the plugin's own `activate` says no, so this
     // is where a load learns it. Refused whether or not an engine is running,
@@ -1454,7 +1528,13 @@ async fn load_plugin_under_runtime_gate(
     // instance's lifecycle lease stays held until this function returns.
     if !wrapper.is_activated() {
         let reason = activation_refusal_reason(&name);
-        return Err(refuse_load(wrapper, reason, _runtime_guard));
+        return Err(refuse_load(
+            wrapper,
+            reason,
+            _runtime_guard,
+            windows_host,
+            state,
+        ));
     }
     let params = wrapper.get_parameters();
     // Asked on the shell's UI thread because, for VST3, the question is a real
@@ -1469,7 +1549,15 @@ async fn load_plugin_under_runtime_gate(
     // loop is wedged returns an error here with an activated plugin in hand.
     let has_gui = match editor_support_on_ui_thread(windows_host, &mut wrapper) {
         Ok(has_gui) => has_gui,
-        Err(reason) => return Err(refuse_load(wrapper, reason, _runtime_guard)),
+        Err(reason) => {
+            return Err(refuse_load(
+                wrapper,
+                reason,
+                _runtime_guard,
+                windows_host,
+                state,
+            ))
+        }
     };
     // Query the plugin's latency on the control thread while it is active (the
     // wrapper just activated it) — both formats define the value only for an
@@ -1520,7 +1608,13 @@ async fn load_plugin_under_runtime_gate(
             Ok(engine_guard) => engine_guard,
             Err(error) => {
                 let reason = format!("Failed to lock engine: {error}");
-                return Err(refuse_load(wrapper, reason, _runtime_guard));
+                return Err(refuse_load(
+                    wrapper,
+                    reason,
+                    _runtime_guard,
+                    windows_host,
+                    state,
+                ));
             }
         };
         match engine_guard.as_mut() {
@@ -1556,7 +1650,13 @@ async fn load_plugin_under_runtime_gate(
                 // nothing down and has nothing to order.
                 return Err(refusal.reason);
             };
-            return Err(refuse_load(runtime, refusal.reason, _runtime_guard));
+            return Err(refuse_load(
+                runtime,
+                refusal.reason,
+                _runtime_guard,
+                windows_host,
+                state,
+            ));
         }
         EngineHandover::NoEngine(wrapper) => {
             eprintln!("[Plugin] Warning: native engine not running, plugin won't process audio");
@@ -1571,7 +1671,13 @@ async fn load_plugin_under_runtime_gate(
                 Ok(plugins) => plugins,
                 Err(error) => {
                     let reason = format!("Failed to lock plugins: {error}");
-                    return Err(refuse_load(wrapper, reason, _runtime_guard));
+                    return Err(refuse_load(
+                        wrapper,
+                        reason,
+                        _runtime_guard,
+                        windows_host,
+                        state,
+                    ));
                 }
             };
             plugins.insert(
@@ -1735,13 +1841,18 @@ fn activation_rate_refusal_reason(name: &str, runtime_rate: f64, engine_rate: f6
 /// so reverse declaration order is what each exit between the runtime's
 /// construction and its handover would otherwise fall back on — which is the
 /// teardown-under-the-gate this exists to prevent.
+///
+/// The teardown itself runs on the shell's UI thread
+/// ([`tear_down_runtime_on_ui_thread`]), still inside the lease.
 fn refuse_load(
     runtime: HostedRuntime,
     reason: String,
     gate: ObservedGateGuard<tokio::sync::RwLockReadGuard<'_, ()>>,
+    ui: &dyn PluginWindowHost,
+    state: &AppState,
 ) -> String {
     drop(gate);
-    drop(runtime);
+    tear_down_runtime_on_ui_thread(ui, state, runtime);
     reason
 }
 
@@ -2271,7 +2382,7 @@ pub async fn unload_plugin(
             // here rather than under the guard — `PLUGIN_RUNTIME_GATE` is
             // fair, so a queued `unload_all_plugin_runtimes` writer would
             // otherwise wait out third-party teardown of unbounded length.
-            state.sweep_retired_engine_plugins();
+            state.sweep_retired_engine_plugins(windows_host);
             Ok(reply)
         }
         None => unload_all_plugin_runtimes(Some(windows_host), state).await,
@@ -2333,7 +2444,7 @@ async fn unload_all_plugin_runtimes(
     // One sweep for the whole cascade, after the write guard above is gone:
     // the gate has to be free either way, and a sweep per instance inside the
     // loop would only repeat the same wait under it once per instance.
-    state.sweep_retired_engine_plugins();
+    state.sweep_retired_engine_plugins(editor_thread(windows_host));
     reply.reports = dedupe_strip_reports_keeping_last(reports);
     Ok(reply)
 }
@@ -2451,6 +2562,7 @@ async fn unload_plugin_runtime(
             |plugin| plugin.close_gui(),
         );
         remove_plugin_window(instance_id, windows_host, state);
+        tear_down_runtime_on_ui_thread(editor_thread(windows_host), state, instance.plugin);
         // A command-owned instance names no chain entry: it never bound to
         // a strip, so there is no strip to report.
         return Ok(Vec::new());
@@ -2902,25 +3014,54 @@ mod tests {
         teardown.checked_sub(1).map(|before| events[before])
     }
 
-    /// A shell whose UI thread never answers: it has a thread of its own, so
-    /// every editor call has to cross to it, and it refuses to carry one.
+    /// A shell whose UI thread carries or refuses each hop in a scripted order,
+    /// and carries every hop past the end of the script.
     ///
-    /// Which is what a wedged main loop looks like from this side — the real
-    /// implementation gives up on its own deadline (`lend_on_ui_thread`) and
-    /// reports the same shape of error.
-    struct UnreachableUiWindowHost;
+    /// A refusal is what a wedged main loop looks like from this side — the
+    /// real implementation gives up on its own deadline and reports the same
+    /// shape of error. A carried hop runs on the caller's thread, so a test
+    /// reading this thread's records still sees what the hop did.
+    ///
+    /// A load hops three times: to construct the runtime, to ask its editor
+    /// support, and — when it refuses — to tear the runtime down again.
+    struct ScriptedUiWindowHost {
+        carries: Mutex<std::collections::VecDeque<bool>>,
+    }
 
-    impl UiThread for UnreachableUiWindowHost {
+    impl ScriptedUiWindowHost {
+        fn new(carries: &[bool]) -> Self {
+            Self {
+                carries: Mutex::new(carries.iter().copied().collect()),
+            }
+        }
+
+        /// Carries the construction and refuses the editor-support ask.
+        fn refusing_the_editor_ask() -> Self {
+            Self::new(&[true, false])
+        }
+    }
+
+    impl UiThread for ScriptedUiWindowHost {
         fn is_ui_thread(&self) -> bool {
             false
         }
 
-        fn run_on_ui_thread(&self, _task: &Arc<UiThreadTask>) -> Result<(), String> {
-            Err("The shell's UI thread did not take the editor call".to_string())
+        fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
+            let carries = self
+                .carries
+                .lock()
+                .expect("hop script")
+                .pop_front()
+                .unwrap_or(true);
+            if !carries {
+                return Err("the shell's UI thread did not take the editor call".to_string());
+            }
+            task.run();
+            Ok(())
         }
     }
 
-    impl PluginWindowHost for UnreachableUiWindowHost {
+    impl PluginWindowHost for ScriptedUiWindowHost {
         fn window_exists(&self, _label: &str) -> bool {
             false
         }
@@ -4048,27 +4189,33 @@ mod tests {
             PluginInstanceId("refused-by-the-engine".to_string()),
             &NoWindowHost,
             &state,
-            |_backend, _path, _descriptor_id, _sample_rate| {
-                // The ceiling is crossed here, after the load read it and before
-                // the registration reads it again.
-                for index in 0..HOSTED_PLUGIN_RESERVE {
-                    insert_engine_owned_fixture(&state, &format!("ceiling-{index}"), Vec::new());
-                }
-                let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
-                    "Refused By The Engine",
-                    Vec::new(),
-                    false,
-                );
+            {
                 let observed_state = Arc::clone(&state);
                 let engine_free = Arc::clone(&engine_free_at_teardown);
-                wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
-                    note_teardown_event(TeardownEvent::RuntimeTornDown);
-                    engine_free.store(
-                        observed_state.engine.try_lock().is_ok(),
-                        std::sync::atomic::Ordering::SeqCst,
+                move |_backend, _path, _descriptor_id, _sample_rate| {
+                    // The ceiling is crossed here, after the load read it and before
+                    // the registration reads it again.
+                    for index in 0..HOSTED_PLUGIN_RESERVE {
+                        insert_engine_owned_fixture(
+                            &observed_state,
+                            &format!("ceiling-{index}"),
+                            Vec::new(),
+                        );
+                    }
+                    let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
+                        "Refused By The Engine",
+                        Vec::new(),
+                        false,
                     );
-                }));
-                Ok(HostedRuntime::from(wrapper))
+                    wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
+                        note_teardown_event(TeardownEvent::RuntimeTornDown);
+                        engine_free.store(
+                            observed_state.engine.try_lock().is_ok(),
+                            std::sync::atomic::Ordering::SeqCst,
+                        );
+                    }));
+                    Ok(HostedRuntime::from(wrapper))
+                }
             },
         ))
         .expect_err("a session already at its ceiling must refuse the load");
@@ -4143,24 +4290,26 @@ mod tests {
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("editor-ask-unanswered".to_string()),
-            &UnreachableUiWindowHost,
+            &ScriptedUiWindowHost::refusing_the_editor_ask(),
             &state,
-            |_backend, _path, _descriptor_id, _sample_rate| {
-                let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
-                    "Editor Ask Unanswered",
-                    Vec::new(),
-                    true,
-                );
+            {
                 let observed_state = Arc::clone(&state);
                 let engine_free = Arc::clone(&engine_free_at_teardown);
-                wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
-                    note_teardown_event(TeardownEvent::RuntimeTornDown);
-                    engine_free.store(
-                        observed_state.engine.try_lock().is_ok(),
-                        std::sync::atomic::Ordering::SeqCst,
+                move |_backend, _path, _descriptor_id, _sample_rate| {
+                    let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
+                        "Editor Ask Unanswered",
+                        Vec::new(),
+                        true,
                     );
-                }));
-                Ok(HostedRuntime::from(wrapper))
+                    wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
+                        note_teardown_event(TeardownEvent::RuntimeTornDown);
+                        engine_free.store(
+                            observed_state.engine.try_lock().is_ok(),
+                            std::sync::atomic::Ordering::SeqCst,
+                        );
+                    }));
+                    Ok(HostedRuntime::from(wrapper))
+                }
             },
         ))
         .expect_err("a load whose editor ask never ran must not report a loaded plugin");
@@ -4237,22 +4386,27 @@ mod tests {
             PluginInstanceId("wake-installed".to_string()),
             &NoWindowHost,
             &state,
-            |_backend, _path, _descriptor_id, _sample_rate| {
-                let mut wrapper =
-                    ClapWrapper::new_engine_owned_command_fixture("Wake Loaded", Vec::new(), false);
+            {
                 let observed_state = Arc::clone(&state);
                 let installs = Arc::clone(&installs);
                 let engine_free = Arc::clone(&engine_free_at_install);
-                wrapper.observe_engine_owned_command_fixture_notifier_install(Box::new(
-                    move || {
-                        installs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        engine_free.store(
-                            observed_state.engine.try_lock().is_ok(),
-                            std::sync::atomic::Ordering::SeqCst,
-                        );
-                    },
-                ));
-                Ok(HostedRuntime::from(wrapper))
+                move |_backend, _path, _descriptor_id, _sample_rate| {
+                    let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
+                        "Wake Loaded",
+                        Vec::new(),
+                        false,
+                    );
+                    wrapper.observe_engine_owned_command_fixture_notifier_install(Box::new(
+                        move || {
+                            installs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            engine_free.store(
+                                observed_state.engine.try_lock().is_ok(),
+                                std::sync::atomic::Ordering::SeqCst,
+                            );
+                        },
+                    ));
+                    Ok(HostedRuntime::from(wrapper))
+                }
             },
         ))
         .expect("a load against a running engine must succeed");
@@ -4298,7 +4452,7 @@ mod tests {
             PluginInstanceId("instrument-instance".to_string()),
             &NoWindowHost,
             &state,
-            |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate| {
                 let wrapper = ClapWrapper::new_engine_owned_command_fixture(
                     "Synth Fixture",
                     Vec::new(),
@@ -4589,22 +4743,24 @@ mod tests {
             PluginInstanceId("never-activated-dormant".to_string()),
             &NoWindowHost,
             &state,
-            |_backend, _path, _descriptor_id, _sample_rate| {
-                let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
-                    "Never Activated",
-                    Vec::new(),
-                    false,
-                );
-                wrapper.deactivate_engine_owned_command_fixture();
+            {
                 let lease_held = Arc::clone(&lease_held_at_teardown);
-                wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
-                    note_teardown_event(TeardownEvent::RuntimeTornDown);
-                    lease_held.store(
-                        try_lock_plugin_lifecycle("never-activated-dormant").is_none(),
-                        std::sync::atomic::Ordering::SeqCst,
+                move |_backend, _path, _descriptor_id, _sample_rate| {
+                    let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
+                        "Never Activated",
+                        Vec::new(),
+                        false,
                     );
-                }));
-                Ok(HostedRuntime::from(wrapper))
+                    wrapper.deactivate_engine_owned_command_fixture();
+                    wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
+                        note_teardown_event(TeardownEvent::RuntimeTornDown);
+                        lease_held.store(
+                            try_lock_plugin_lifecycle("never-activated-dormant").is_none(),
+                            std::sync::atomic::Ordering::SeqCst,
+                        );
+                    }));
+                    Ok(HostedRuntime::from(wrapper))
+                }
             },
         ))
         .expect_err("a plugin that never activated must not load, engine or no engine");
@@ -4685,7 +4841,7 @@ mod tests {
             PluginInstanceId("fixture-a".to_string()),
             &NoWindowHost,
             &state,
-            |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate| {
                 let mut wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
@@ -4720,7 +4876,7 @@ mod tests {
             PluginInstanceId("fixture-b".to_string()),
             &NoWindowHost,
             &state,
-            |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate| {
                 let wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture B", Vec::new(), false);
                 Ok(HostedRuntime::from(wrapper))
@@ -4771,7 +4927,7 @@ mod tests {
             PluginInstanceId("fixture-a".to_string()),
             &NoWindowHost,
             &state,
-            |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate| {
                 let mut wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
@@ -4797,7 +4953,7 @@ mod tests {
             PluginInstanceId("fixture-c".to_string()),
             &NoWindowHost,
             &state,
-            |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate| {
                 let wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture C", Vec::new(), false);
                 Ok(HostedRuntime::from(wrapper))
@@ -4868,7 +5024,7 @@ mod tests {
             PluginInstanceId("fixture-a".to_string()),
             &NoWindowHost,
             &state,
-            |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate| {
                 let mut wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
@@ -4894,7 +5050,7 @@ mod tests {
             PluginInstanceId("fixture-d".to_string()),
             &NoWindowHost,
             &state,
-            |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate| {
                 let wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture D", Vec::new(), false);
                 Ok(HostedRuntime::from(wrapper))
@@ -5032,41 +5188,6 @@ mod tests {
         );
     }
 
-    /// A shell whose UI thread never takes an editor lend — what the real
-    /// seam's deadline produces when the shell is gone or stuck. Standing in
-    /// for the give-up rather than reproducing its wait, because a host that
-    /// hangs proves nothing about what broke.
-    struct LendRefusingWindowHost;
-
-    impl UiThread for LendRefusingWindowHost {
-        fn is_ui_thread(&self) -> bool {
-            false
-        }
-
-        fn run_on_ui_thread(&self, _task: &Arc<UiThreadTask>) -> Result<(), String> {
-            Err("the shell's UI thread did not take the editor call".to_string())
-        }
-    }
-
-    impl PluginWindowHost for LendRefusingWindowHost {
-        fn window_exists(&self, _label: &str) -> bool {
-            false
-        }
-
-        fn create_editor_window(
-            &self,
-            _label: &str,
-            _title: &str,
-            _instance_id: &str,
-        ) -> Result<Box<dyn PluginEditorWindow>, String> {
-            Err("This host cannot create plugin editor windows".to_string())
-        }
-
-        fn destroy_window(&self, _label: &str) {}
-        fn hide_window(&self, _label: &str) {}
-        fn show_window(&self, _label: &str) {}
-    }
-
     /// A plugin that records the thread its editor support was asked on. The
     /// real VST3 backend's ask is a `createView` — the format has no other
     /// "has an editor" query — so this stands in for exactly the call the load
@@ -5186,7 +5307,7 @@ mod tests {
             PluginInstanceId("editor-support-instance".to_string()),
             &windows,
             &state,
-            |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate| {
                 slot.lock()
                     .expect("fixture runtime slot")
                     .take()
@@ -5220,6 +5341,198 @@ mod tests {
         );
     }
 
+    /// Register one fixture row per hosted format, so a load test can name the
+    /// format it is loading.
+    fn register_thread_fixture(state: &AppState, plugin_id: &str, format: &str) {
+        state
+            .plugin_registry
+            .lock()
+            .expect("plugin registry lock should be available")
+            .insert(
+                plugin_id.to_string(),
+                PluginRegistryEntry {
+                    path: format!("/plugins/{plugin_id}.{format}"),
+                    stable_id: plugin_id.to_string(),
+                    descriptor_id: "0123456789ABCDEF0123456789ABCDEF".to_string(),
+                    format: format.to_string(),
+                    name: "Thread Fixture".to_string(),
+                    num_inputs: 2,
+                    num_outputs: 2,
+                    has_custom_ui: false,
+                    capability_metadata_reason: None,
+                    chain_kind: DeviceKind::Effect,
+                },
+            );
+    }
+
+    /// A fixture runtime whose teardown appends the thread it ran on to the
+    /// returned log.
+    fn runtime_recording_teardown(
+        activated: bool,
+    ) -> (HostedRuntime, Arc<Mutex<Vec<std::thread::ThreadId>>>) {
+        let torn_down_on = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&torn_down_on);
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Thread Fixture", Vec::new(), false);
+        if !activated {
+            wrapper.deactivate_engine_owned_command_fixture();
+        }
+        wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
+            log.lock()
+                .expect("teardown log")
+                .push(std::thread::current().id());
+        }));
+        (HostedRuntime::from(wrapper), torn_down_on)
+    }
+
+    /// The defect behind #6588: a VST3 module's entry, its factory and the
+    /// component's `initialize` ran on the worker that took the load, and a
+    /// plugin whose module startup builds a Qt application asserted it was on
+    /// the main queue and killed the app. Both formats bind instantiation to
+    /// the host's main thread — CLAP marks `plugin.init` and `activate`
+    /// `[main-thread]` — so the construction the load injects must run on the
+    /// shell's UI thread, whichever format the registry names.
+    #[test]
+    fn loading_a_plugin_constructs_its_runtime_on_the_shells_ui_thread() {
+        for format in ["vst3", "clap"] {
+            let state = AppState::default();
+            let plugin_id = format!("thread-fixture-{format}");
+            register_thread_fixture(&state, &plugin_id, format);
+            let windows = DedicatedUiWindowHost::start();
+            let constructed_on = Arc::new(Mutex::new(Vec::new()));
+            let log = Arc::clone(&constructed_on);
+
+            crate::block_on_test(load_plugin_with_backend(
+                PluginId(plugin_id.clone()),
+                PluginInstanceId(format!("{plugin_id}-instance")),
+                &windows,
+                &state,
+                move |_backend, _path, _descriptor_id, _sample_rate| {
+                    log.lock()
+                        .expect("construction log")
+                        .push(std::thread::current().id());
+                    Ok(runtime_recording_teardown(true).0)
+                },
+            ))
+            .expect("the fixture plugin should load");
+
+            assert_ne!(
+                windows.thread_id,
+                std::thread::current().id(),
+                "the fake shell thread must not be this one, or this test proves nothing"
+            );
+            assert_eq!(
+                *constructed_on.lock().expect("construction log"),
+                [windows.thread_id],
+                "a {format} runtime must be constructed on the shell's UI thread and nowhere else"
+            );
+        }
+    }
+
+    /// Unloading is the other half of the same law: dropping the runtime runs
+    /// the plugin's `deactivate`/`destroy` (CLAP) or `setActive(false)`,
+    /// `terminate` and module exit (VST3), all main-thread work.
+    #[test]
+    fn unloading_a_plugin_tears_its_runtime_down_on_the_shells_ui_thread() {
+        let state = AppState::default();
+        register_thread_fixture(&state, "thread-fixture-unload", "vst3");
+        let windows = DedicatedUiWindowHost::start();
+        let (runtime, torn_down_on) = runtime_recording_teardown(true);
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("thread-fixture-unload".to_string()),
+            PluginInstanceId("thread-fixture-unload-instance".to_string()),
+            &windows,
+            &state,
+            move |_backend, _path, _descriptor_id, _sample_rate| Ok(runtime),
+        ))
+        .expect("the fixture plugin should load");
+        let reply = crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId(
+                "thread-fixture-unload-instance".to_string(),
+            )),
+            &windows,
+            &state,
+        ))
+        .expect("the unload runs");
+
+        assert_eq!(
+            reply.unloaded_instance_ids,
+            ["thread-fixture-unload-instance"]
+        );
+        assert_eq!(
+            *torn_down_on.lock().expect("teardown log"),
+            [windows.thread_id],
+            "the unloaded runtime must be torn down on the shell's UI thread and nowhere else"
+        );
+    }
+
+    /// A load refused after its runtime was built tears that runtime down on
+    /// the shell's UI thread too: a refusal is a teardown like any other.
+    #[test]
+    fn a_refused_load_tears_its_runtime_down_on_the_shells_ui_thread() {
+        let state = AppState::default();
+        register_thread_fixture(&state, "thread-fixture-refused", "vst3");
+        let windows = DedicatedUiWindowHost::start();
+        let (runtime, torn_down_on) = runtime_recording_teardown(false);
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("thread-fixture-refused".to_string()),
+            PluginInstanceId("thread-fixture-refused-instance".to_string()),
+            &windows,
+            &state,
+            move |_backend, _path, _descriptor_id, _sample_rate| Ok(runtime),
+        ))
+        .expect_err("a plugin that never activated must not load");
+
+        assert_eq!(
+            *torn_down_on.lock().expect("teardown log"),
+            [windows.thread_id],
+            "the refused runtime must be torn down on the shell's UI thread and nowhere else"
+        );
+    }
+
+    /// A refusal whose teardown hop never lands must not fall back to tearing
+    /// the runtime down on the worker — that is the crash — nor leak it: the
+    /// runtime is retired, and the next sweep that reaches the UI thread frees
+    /// it.
+    #[test]
+    fn a_refused_load_whose_teardown_hop_never_lands_retires_the_runtime() {
+        let state = AppState::default();
+        register_thread_fixture(&state, "thread-fixture-deferred", "vst3");
+        let (runtime, torn_down_on) = runtime_recording_teardown(false);
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("thread-fixture-deferred".to_string()),
+            PluginInstanceId("thread-fixture-deferred-instance".to_string()),
+            &ScriptedUiWindowHost::new(&[true, false]),
+            &state,
+            move |_backend, _path, _descriptor_id, _sample_rate| Ok(runtime),
+        ))
+        .expect_err("a plugin that never activated must not load");
+
+        assert!(
+            torn_down_on.lock().expect("teardown log").is_empty(),
+            "a teardown that could not reach the UI thread must not run on this one"
+        );
+        assert_eq!(
+            state
+                .retired_engine_plugins
+                .lock()
+                .expect("retirement lock")
+                .len(),
+            1,
+            "the runtime must be retired for a later sweep, not lost"
+        );
+
+        let windows = DedicatedUiWindowHost::start();
+        state.sweep_retired_engine_plugins(&windows);
+        assert_eq!(
+            *torn_down_on.lock().expect("teardown log"),
+            [windows.thread_id]
+        );
+    }
+
     /// A shell whose UI thread cannot take the lend — the give-up the real
     /// seam's deadline produces. Swallowing it (`.unwrap_or(false)`) would
     /// report a successful load whose plugin has its GUI permanently hidden,
@@ -5243,9 +5556,9 @@ mod tests {
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("editor-support-fixture".to_string()),
             PluginInstanceId("lend-refused-instance".to_string()),
-            &LendRefusingWindowHost,
+            &ScriptedUiWindowHost::refusing_the_editor_ask(),
             &state,
-            |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate| {
                 slot.lock()
                     .expect("fixture runtime slot")
                     .take()
