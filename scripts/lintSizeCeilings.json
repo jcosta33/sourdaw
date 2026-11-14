@@ -67,7 +67,7 @@
     "src/modules/AiRuntime/services/fuzzySearch.ts": 600,
     "src/modules/AiRuntime/stores/agentRunStore.ts": 2390,
     "src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts": 839,
-    "src/modules/AiRuntime/transformers/llmActionBridge.ts": 1545,
+    "src/modules/AiRuntime/transformers/llmActionBridge.ts": 998,
     "src/modules/AiRuntime/transformers/promptParser/parsing.ts": 600,
     "src/modules/AiRuntime/useCases/agentReference/bridgeBackingVocalPlatePlan.ts": 600,
     "src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts": 8667,
