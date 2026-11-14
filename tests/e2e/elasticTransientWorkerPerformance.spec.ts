@@ -111,7 +111,12 @@ function readElasticIntervalTasks(
 }
 
 function materializationTaskSpans(measures: PreparationMeasure[], inputMarkStart: number, tasks: MainThreadTask[]) {
-    return ['automerge-prospective-parse-task', 'elastic-transient-change-task'].map((name) => {
+    return [
+        'automerge-prospective-response-task',
+        'automerge-prospective-apply-task',
+        'automerge-prospective-authority-task',
+        'elastic-transient-change-task',
+    ].map((name) => {
         const phases = measures.filter((measure) => measure.name === name);
         expect(phases, `Missing or repeated native phase: ${name}`).toHaveLength(1);
         const phase = phases[0]!;
@@ -645,7 +650,7 @@ for (const projectScale of [false, true]) {
                             entry.name.startsWith('elastic-transient-') ||
                             entry.name === 'automerge-storage-prepared-publication' ||
                             entry.name === 'automerge-storage-materialization-handoff-task' ||
-                            entry.name === 'automerge-prospective-parse-task'
+                            entry.name.startsWith('automerge-prospective-')
                         )
                             metrics.measures.push({
                                 name: entry.name,
@@ -736,7 +741,9 @@ for (const projectScale of [false, true]) {
                     'elastic-transient-plan-task',
                     'elastic-transient-clone-task',
                     'elastic-transient-change-task',
-                    'automerge-prospective-parse-task',
+                    'automerge-prospective-response-task',
+                    'automerge-prospective-apply-task',
+                    'automerge-prospective-authority-task',
                     'automerge-storage-materialization-handoff-task',
                 ].includes(entry.name)
             );
@@ -1106,7 +1113,7 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                     entry.name.startsWith('elastic-transient-') ||
                     entry.name === 'automerge-storage-prepared-publication' ||
                     entry.name === 'automerge-storage-materialization-handoff-task' ||
-                    entry.name === 'automerge-prospective-parse-task'
+                    entry.name.startsWith('automerge-prospective-')
                 )
                     metrics.measures.push({ name: entry.name, duration: entry.duration, startTime: entry.startTime });
         });
@@ -1204,7 +1211,9 @@ async function assertPopulatedMeasurement(
             'elastic-transient-plan-task',
             'elastic-transient-clone-task',
             'elastic-transient-change-task',
-            'automerge-prospective-parse-task',
+            'automerge-prospective-response-task',
+            'automerge-prospective-apply-task',
+            'automerge-prospective-authority-task',
             'automerge-storage-materialization-handoff-task',
         ].includes(entry.name)
     );

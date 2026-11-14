@@ -1,3 +1,5 @@
+import { deflateRawSync } from 'node:zlib';
+
 import {
     applyChanges,
     change,
@@ -93,6 +95,16 @@ function response(request: ProspectiveMutationWorkerRequest): ProspectiveMutatio
     } finally {
         free(candidate);
     }
+}
+
+function compressSmallChange(bytes: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> {
+    // This fixture's complete body length fits one uLEB byte; no format parser is needed.
+    expect(bytes[8]).toBe(1);
+    expect(bytes[9]).toBe(bytes.length - 10);
+    expect(bytes.length - 10).toBeLessThan(128);
+    const compressed = deflateRawSync(bytes.subarray(10));
+    expect(compressed.length).toBeLessThan(128);
+    return Uint8Array.from([...bytes.subarray(0, 8), 2, compressed.length, ...compressed]);
 }
 function seed() {
     const doc = from<Document>(
@@ -217,6 +229,54 @@ describe('repository canonical Worker candidate adoption', () => {
         expect(original.slot.count).toBe(0);
         free(changed);
     });
+
+    it.each([false, true])(
+        'accepts the native change with its computed checksum, compressed=%s',
+        async (compressed) => {
+            const original = seed();
+            mocks.request.mockImplementationOnce(async (request) => {
+                const result = response(request);
+                return { ...result, changes: compressed ? [compressSmallChange(result.changes[0]!)] : result.changes };
+            });
+            const prepared = plan(original);
+            await prepared.requestMaterialization!(new AbortController().signal);
+            publish(prepared.materialize());
+            const actual = repository.getDoc<Document>('root');
+            expect(actual?.slot.count).toBe(1);
+            expect(getChanges(original, actual!)).toHaveLength(1);
+            expect(getActorId(actual!)).toBe(actor);
+        }
+    );
+
+    it.each([false, true])(
+        'rejects a corrupt checksum even with forged response heads, compressed=%s',
+        async (compressed) => {
+            const original = seed();
+            mocks.request.mockImplementationOnce(async (request) => {
+                const result = response(request);
+                const bytes = compressed
+                    ? compressSmallChange(result.changes[0]!)
+                    : Uint8Array.from(result.changes[0]!);
+                bytes[4] = bytes[4]! ^ 1;
+                const prefix = Array.from(bytes.subarray(4, 8), (byte) => byte.toString(16).padStart(2, '0')).join('');
+                return { changes: [bytes], heads: [prefix + result.heads[0]!.slice(8)] };
+            });
+            const prepared = plan(original);
+            const retainedBackend = getBackend(vi.mocked(native.clone).mock.results.at(-1)!.value);
+            vi.mocked(native.applyChanges).mockClear();
+            vi.mocked(native.free).mockClear();
+            await expect(prepared.requestMaterialization!(new AbortController().signal)).rejects.toThrow(
+                'invalid change checksum'
+            );
+            expect(native.applyChanges).not.toHaveBeenCalled();
+            expect(
+                vi.mocked(native.free).mock.calls.filter(([doc]) => getBackend(doc) === retainedBackend)
+            ).toHaveLength(1);
+            expect(repository.getDoc('root')).toBe(original);
+            expect(original.slot.count).toBe(0);
+            prepared.discard();
+        }
+    );
 
     it('matches native applied-history membership for complete, partial and absent multihead frontiers', () => {
         const { merged, left, rightHeads } = multiheadFixture();
@@ -902,13 +962,10 @@ describe('repository canonical Worker candidate adoption', () => {
         if (kind === 'frontier') {
             await prepared.requestMaterialization!(new AbortController().signal);
             expect(prepared.materialize).toThrow('changed native heads');
-        } else if (kind === 'checksum') {
-            await prepared.requestMaterialization!(new AbortController().signal);
-            vi.mocked(native.applyChanges).mockClear();
-            expect(prepared.materialize).toThrow();
-            expect(native.applyChanges).toHaveBeenCalledOnce();
         } else {
+            vi.mocked(native.applyChanges).mockClear();
             await expect(prepared.requestMaterialization!(new AbortController().signal)).rejects.toThrow();
+            expect(native.applyChanges).not.toHaveBeenCalled();
         }
         if (kind !== 'checksum' && kind !== 'frontier') {
             expect(native.prepareLoad).not.toHaveBeenCalled();

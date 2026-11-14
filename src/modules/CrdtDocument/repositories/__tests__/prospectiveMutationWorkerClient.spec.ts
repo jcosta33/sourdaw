@@ -1,4 +1,15 @@
-import { change, clone, decodeChange, from, getActorId, getChanges, getHeads, load, save } from '@automerge/automerge';
+import {
+    applyChanges,
+    change,
+    clone,
+    decodeChange,
+    from,
+    getActorId,
+    getChanges,
+    getHeads,
+    load,
+    save,
+} from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
@@ -59,22 +70,24 @@ describe('prospective mutation Worker ownership', () => {
     it('accepts an owned zero-change response and releases its timer and listeners', async () => {
         vi.useFakeTimers();
         const { request } = fixture();
-        const bytes = Uint8Array.from(request.seed);
         const result = requestProspectiveMutation(request, new AbortController().signal);
         const worker = ControlledWorker.instances[0]!;
-        worker.onmessage?.(new MessageEvent('message', { data: { status: 'complete', bytes, heads: request.heads } }));
-        expect(await result).toEqual({ bytes, heads: request.heads });
+        worker.onmessage?.(
+            new MessageEvent('message', { data: { status: 'complete', changes: [], heads: request.heads } })
+        );
+        expect(await result).toEqual({ changes: [], heads: request.heads });
         expectReleased(worker);
         expect(vi.getTimerCount()).toBe(0);
     });
 
     it.each([
-        { bytes: [Uint8Array.of(1)], heads: [] },
-        { bytes: new Uint8Array(), heads: [] },
-        { bytes: Uint8Array.of(1), heads: ['invalid'] },
-        { bytes: Uint8Array.of(1), heads: ['0'.repeat(64), '0'.repeat(64)] },
-        { bytes: new Uint8Array(new SharedArrayBuffer(1)), heads: [] },
-        { bytes: new Uint8Array(new ArrayBuffer(2), 1), heads: [] },
+        { changes: Uint8Array.of(1), heads: [] },
+        { changes: [new Uint8Array()], heads: [] },
+        { changes: [Uint8Array.of(1), Uint8Array.of(2)], heads: [] },
+        { changes: [Uint8Array.of(1)], heads: ['invalid'] },
+        { changes: [Uint8Array.of(1)], heads: ['0'.repeat(64), '0'.repeat(64)] },
+        { changes: [new Uint8Array(new SharedArrayBuffer(1))], heads: [] },
+        { changes: [new Uint8Array(new ArrayBuffer(2), 1)], heads: [] },
     ])('rejects a malformed or unowned document envelope %#', async (response) => {
         const result = requestProspectiveMutation(fixture().request, new AbortController().signal);
         const rejected = expect(result).rejects.toThrow('Invalid prospective mutation Worker response');
@@ -84,7 +97,7 @@ describe('prospective mutation Worker ownership', () => {
         expectReleased(worker);
     });
 
-    it('transfers only owned seed bytes and receives a real one-change native saved document', async () => {
+    it('transfers only owned seed bytes and receives a real one-change native delta', async () => {
         const { doc, request } = fixture();
         const originalBytes = save(clone(doc));
         const signal = new AbortController().signal;
@@ -101,24 +114,24 @@ describe('prospective mutation Worker ownership', () => {
         const candidate = change(seed, { message: posted.message }, (draft) =>
             applyCanonicalStorageSlotMutation(draft, posted.mutation)
         );
-        const bytes = Uint8Array.from(save(candidate));
+        const changes = getChanges(doc, candidate).map((bytes) => Uint8Array.from(bytes));
         const reply = structuredClone(
-            { status: 'complete', bytes, heads: getHeads(candidate) },
-            { transfer: [bytes.buffer] }
+            { status: 'complete', changes, heads: getHeads(candidate) },
+            { transfer: changes.map((bytes) => bytes.buffer) }
         );
-        expect(bytes.byteLength).toBe(0);
+        expect(changes[0]?.byteLength).toBe(0);
         // Node's structuredClone returns its host-realm typed array; browser messaging rehomes it.
         worker.onmessage?.(
             new MessageEvent('message', {
-                data: { ...reply, bytes: Uint8Array.from(reply.bytes) },
+                data: { ...reply, changes: reply.changes.map((bytes) => Uint8Array.from(bytes)) },
             })
         );
         const response = await result;
-        const actual = load<{ slot: { count: number } }>(response.bytes, { actor: request.actor });
-        const changes = getChanges(doc, actual);
+        const [actual] = applyChanges(clone(doc, { actor: request.actor }), response.changes);
+        const applied = getChanges(doc, actual);
         expect(getHeads(actual)).toEqual(response.heads);
-        expect(changes).toHaveLength(1);
-        expect(decodeChange(changes[0]!)).toMatchObject({
+        expect(applied).toHaveLength(1);
+        expect(decodeChange(applied[0]!)).toMatchObject({
             actor: request.actor,
             seq: 2,
             deps: getHeads(doc),
@@ -166,7 +179,7 @@ describe('prospective mutation Worker ownership', () => {
                 );
             }
             await rejected;
-            late?.(new MessageEvent('message', { data: { status: 'complete', bytes: Uint8Array.of(1) } }));
+            late?.(new MessageEvent('message', { data: { status: 'complete', changes: [], heads: request.heads } }));
             expectReleased(worker);
             expect(vi.getTimerCount()).toBe(0);
         }

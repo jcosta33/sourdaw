@@ -5,11 +5,12 @@ import {
     type ChangeMetadata,
     init,
     load,
-    prepareLoad,
     save,
     saveIncremental,
     saveSince,
     loadIncremental,
+    applyChanges,
+    decodeChange,
     merge,
     change,
     getChanges,
@@ -80,17 +81,17 @@ type MergeBundleOptions = {
     shouldCommit?: () => boolean;
 };
 
-/** Only a complete document may enter checked load; trailing changes use native incremental insertion. */
-function assertCompleteCanonicalDocument(bytes: Uint8Array<ArrayBuffer>): void {
+/** One complete native change is admitted; a document or appended chunks never enter adoption. */
+function assertCompleteCanonicalChange(bytes: Uint8Array<ArrayBuffer>): void {
     if (
         bytes.length < 10 ||
         bytes[0] !== 0x85 ||
         bytes[1] !== 0x6f ||
         bytes[2] !== 0x4a ||
         bytes[3] !== 0x83 ||
-        bytes[8] !== 0
+        (bytes[8] !== 1 && bytes[8] !== 2)
     ) {
-        throw new Error('Prospective mutation Worker returned an invalid document envelope');
+        throw new Error('Prospective mutation Worker returned an invalid change envelope');
     }
     let length = 0n;
     for (let index = 0; index < 10; index++) {
@@ -103,10 +104,16 @@ function assertCompleteCanonicalDocument(bytes: Uint8Array<ArrayBuffer>): void {
             if ((index > 0 && byte === 0) || length !== BigInt(bytes.length - 10 - index)) {
                 break;
             }
+            // Native insertion accepts a corrupt checksum; the public decoder
+            // recomputes the change hash, including for compressed changes.
+            const checksum = Array.from(bytes.subarray(4, 8), (value) => value.toString(16).padStart(2, '0')).join('');
+            if (!decodeChange(bytes).hash.startsWith(checksum)) {
+                throw new Error('Prospective mutation Worker returned an invalid change checksum');
+            }
             return;
         }
     }
-    throw new Error('Prospective mutation Worker returned an invalid document length');
+    throw new Error('Prospective mutation Worker returned an invalid change length');
 }
 
 function createMissingRootError(): Error {
@@ -616,14 +623,11 @@ class AutomergeRepository {
         let cloneConsumed = false;
         let workerRequested = false;
         let workerResult: ProspectiveMutationWorkerResult | undefined;
-        let pendingLoad: ReturnType<typeof prepareLoad<TDoc>> | undefined;
         let removeMaterializationAbortListener: (() => void) | undefined;
         const controller = new AbortController();
         const releaseClone = (): void => {
             removeMaterializationAbortListener?.();
             removeMaterializationAbortListener = undefined;
-            pendingLoad?.discard();
-            pendingLoad = undefined;
             if (candidate) {
                 free(candidate);
                 candidate = undefined;
@@ -667,17 +671,17 @@ class AutomergeRepository {
                             }
                             const started = performance.now();
                             try {
-                                assertCompleteCanonicalDocument(result.bytes);
-                                // The caller yields a frame after this request. Keep JS-root
-                                // materialization in the later synchronous adoption phase.
-                                pendingLoad = prepareLoad<TDoc>(result.bytes, { actor });
+                                if (result.changes.length > 1) {
+                                    throw new Error('Prospective mutation Worker changed native authorship');
+                                }
+                                for (const bytes of result.changes) assertCompleteCanonicalChange(bytes);
                                 workerResult = result;
                             } finally {
-                                performance.measure('automerge-prospective-parse-task', {
+                                performance.measure('automerge-prospective-response-task', {
                                     start: started,
                                     end: performance.now(),
                                 });
-                                performance.clearMeasures('automerge-prospective-parse-task');
+                                performance.clearMeasures('automerge-prospective-response-task');
                             }
                         })
                         .catch((error: unknown) => {
@@ -714,61 +718,99 @@ class AutomergeRepository {
                 if (workerRequested) {
                     let loaded: Doc<TDoc> | undefined;
                     try {
-                        if (!workerResult || !candidate || !pendingLoad) {
+                        if (!workerResult || !candidate) {
                             throw new Error('Prospective mutation Worker has not completed');
                         }
-                        const { heads } = workerResult;
+                        const { heads, changes } = workerResult;
                         workerResult = undefined;
-                        loaded = pendingLoad.materialize();
-                        pendingLoad = undefined;
-                        // A checked complete document has an empty change queue; missing heads
-                        // therefore detect an absent applied frontier without exporting operations.
-                        if (getMissingDeps(loaded, previousHeads).length > 0) {
-                            throw new Error('Prospective mutation Worker lost the native frontier');
-                        }
-                        const additions = getChangesMetaSince(loaded, previousHeads);
-                        if (additions.length > 1) {
-                            throw new Error('Prospective mutation Worker changed native authorship');
-                        }
-                        const addition = additions[0];
-                        if (addition) {
-                            const previousOwnChange = getChangesMetaSince(doc, []).reduce<ChangeMetadata | undefined>(
-                                (latest, entry) =>
-                                    entry.actor === actor && (!latest || entry.seq > latest.seq) ? entry : latest,
-                                undefined
-                            );
-                            const nextSequence = (previousOwnChange?.seq ?? 0) + 1;
-                            const expectedDependencies = new Set(previousHeads);
-                            // Native transactions also name this actor's last change when it is no longer a head.
-                            if (previousOwnChange) {
-                                expectedDependencies.add(previousOwnChange.hash);
+                        // The returned JS root shares this private native handle. Transfer
+                        // ownership before apply, so cleanup never frees its consumed alias.
+                        loaded = candidate;
+                        candidate = undefined;
+                        const applyStarted = performance.now();
+                        try {
+                            if (changes.length > 0) {
+                                [loaded] = applyChanges(loaded, changes, {
+                                    patchCallback: (patches) => {
+                                        for (const patch of patches) {
+                                            const retiresEvidence =
+                                                patch.action === 'del' &&
+                                                patch.path.length === 1 &&
+                                                patch.path[0] === '_storagePublicationEvidence';
+                                            if (patch.path[0] !== canonicalMutation?.key && !retiresEvidence) {
+                                                throw new Error('Prospective mutation Worker changed an unowned slot');
+                                            }
+                                        }
+                                    },
+                                });
                             }
-                            const dependencies = new Set(addition.deps);
+                        } finally {
+                            performance.measure('automerge-prospective-apply-task', {
+                                start: applyStarted,
+                                end: performance.now(),
+                            });
+                            performance.clearMeasures('automerge-prospective-apply-task');
+                        }
+                        const authorityStarted = performance.now();
+                        try {
+                            if (getMissingDeps(loaded, []).length > 0) {
+                                throw new Error('Prospective mutation Worker left missing native dependencies');
+                            }
+                            if (getMissingDeps(loaded, previousHeads).length > 0) {
+                                throw new Error('Prospective mutation Worker lost the native frontier');
+                            }
+                            const additions = getChangesMetaSince(loaded, previousHeads);
+                            if (additions.length > 1) {
+                                throw new Error('Prospective mutation Worker changed native authorship');
+                            }
+                            const addition = additions[0];
+                            if (addition) {
+                                const previousOwnChange = getChangesMetaSince(doc, []).reduce<
+                                    ChangeMetadata | undefined
+                                >(
+                                    (latest, entry) =>
+                                        entry.actor === actor && (!latest || entry.seq > latest.seq) ? entry : latest,
+                                    undefined
+                                );
+                                const nextSequence = (previousOwnChange?.seq ?? 0) + 1;
+                                const expectedDependencies = new Set(previousHeads);
+                                // Native transactions also name this actor's last change when it is no longer a head.
+                                if (previousOwnChange) {
+                                    expectedDependencies.add(previousOwnChange.hash);
+                                }
+                                const dependencies = new Set(addition.deps);
+                                if (
+                                    addition.actor !== actor ||
+                                    addition.seq !== nextSequence ||
+                                    addition.message !== (message || null) ||
+                                    addition.deps.length !== dependencies.size ||
+                                    dependencies.size !== expectedDependencies.size ||
+                                    addition.deps.some((head) => !expectedDependencies.has(head))
+                                ) {
+                                    throw new Error('Prospective mutation Worker changed native authority');
+                                }
+                            }
+                            const expectedHeads = addition ? [addition.hash] : previousHeads;
+                            const installedHeads = getHeads(loaded);
                             if (
-                                addition.actor !== actor ||
-                                addition.seq !== nextSequence ||
-                                addition.message !== (message || null) ||
-                                addition.deps.length !== dependencies.size ||
-                                dependencies.size !== expectedDependencies.size ||
-                                addition.deps.some((head) => !expectedDependencies.has(head))
+                                heads.length !== expectedHeads.length ||
+                                heads.some((head) => !expectedHeads.includes(head)) ||
+                                installedHeads.length !== expectedHeads.length ||
+                                installedHeads.some((head) => !expectedHeads.includes(head))
                             ) {
+                                throw new Error('Prospective mutation Worker changed native heads');
+                            }
+                            if (getActorId(loaded) !== actor) {
                                 throw new Error('Prospective mutation Worker changed native authority');
                             }
+                            authority.assertCurrent();
+                        } finally {
+                            performance.measure('automerge-prospective-authority-task', {
+                                start: authorityStarted,
+                                end: performance.now(),
+                            });
+                            performance.clearMeasures('automerge-prospective-authority-task');
                         }
-                        const expectedHeads = addition ? [addition.hash] : previousHeads;
-                        const installedHeads = getHeads(loaded);
-                        if (
-                            heads.length !== expectedHeads.length ||
-                            heads.some((head) => !expectedHeads.includes(head)) ||
-                            installedHeads.length !== expectedHeads.length ||
-                            installedHeads.some((head) => !expectedHeads.includes(head))
-                        ) {
-                            throw new Error('Prospective mutation Worker changed native heads');
-                        }
-                        if (getActorId(loaded) !== actor || getMissingDeps(loaded, []).length > 0) {
-                            throw new Error('Prospective mutation Worker left missing native dependencies');
-                        }
-                        authority.assertCurrent();
                         releaseClone();
                         updated = loaded;
                         loaded = undefined;
