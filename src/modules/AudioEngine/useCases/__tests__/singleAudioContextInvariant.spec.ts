@@ -147,16 +147,16 @@ describe('single AudioContext invariant census', () => {
     it('keeps every OfflineAudioContext construction out of repositories/, except the named capability probe', () => {
         const { offlineByFile } = buildContextCensus();
 
-        // createWebAudioEngine.ts's fallback-mode `createNoopAudioContext` builds
-        // a throwaway 1-frame OfflineAudioContext as a structurally-checked
-        // AudioContext shim; it never carries live playback and does not
-        // compete with the one live context asserted above. The permitted
-        // count bounds the exemption to that one shim: the same path
-        // constructing a second, unrelated OfflineAudioContext is still an
-        // offender.
+        // `webAudioEngine/createNoopAudioContext.ts` builds a throwaway 1-frame
+        // OfflineAudioContext as a structurally-checked AudioContext shim for
+        // createWebAudioEngine.ts's fallback mode; it never carries live
+        // playback and does not compete with the one live context asserted
+        // above. The permitted count bounds the exemption to that one shim: the
+        // same file constructing a second, unrelated OfflineAudioContext is
+        // still an offender.
         const permittedRepositoryOffenders = [
             {
-                path: LIVE_CONTEXT_OWNER,
+                path: 'modules/AudioEngine/repositories/webAudioEngine/createNoopAudioContext.ts',
                 count: 1,
                 reason: 'createNoopAudioContext builds a 1-frame OfflineAudioContext-based fallback shim, not a live context',
             },
