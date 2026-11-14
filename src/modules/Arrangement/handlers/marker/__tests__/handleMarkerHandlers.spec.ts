@@ -131,12 +131,12 @@ describe('handleAddSection — index', () => {
         { index: Number.NaN, valid: false },
         { index: Number.POSITIVE_INFINITY, valid: false },
     ])('validate returns $valid for index $index', ({ index, valid }) => {
-        expect(
-            handleAddSection.validate({
-                type: 'addSection',
-                payload: { startBeat: 0, endBeat: 4, name: 'X', index },
-            })
-        ).toBe(valid);
+        const action = {
+            type: 'addSection' as const,
+            payload: { startBeat: 0, endBeat: 4, name: 'X', index },
+        };
+
+        expect(handleAddSection.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(valid);
     });
 });
 

@@ -110,7 +110,7 @@ describe('removeSection undo restores section order', () => {
         removeCrdtDoc('root');
     });
 
-    const sectionRows = () => markerStore.value?.sections.map((section) => ({ ...section }));
+    const sectionRows = () => markerStore.value?.sections;
     const sectionIds = () => markerStore.value?.sections.map((section) => section.id);
 
     it('restores the first of two sections to its original position', async () => {
@@ -172,7 +172,11 @@ describe('removeSection undo restores section order', () => {
         await addSections([A, B, C]);
         await executeAppAction({ type: 'removeSection', payload: { sectionId: B.id } });
         // A collaborator re-creates the same section id at the end before this undo runs.
-        markerStore.set({ markers: [], sections: [...(markerStore.value?.sections ?? []), { ...B }] });
+        const currentSections = markerStore.value?.sections;
+        if (!currentSections) {
+            throw new Error('expected marker store sections to be initialized');
+        }
+        markerStore.set({ markers: [], sections: [...currentSections, B] });
         expect(sectionIds()).toEqual([A.id, C.id, B.id]);
 
         await undo({ stepOverConflicts: false });
