@@ -3626,6 +3626,10 @@ mod tests {
     #[test]
     fn a_request_callback_ask_reaches_on_main_thread_once_per_service() {
         let _guard = MAIN_THREAD_CALLBACK_TEST_LOCK.lock().unwrap();
+        // The callback raises the process-wide hint, which other tests assert.
+        let _signal_guard = crate::clap_host::MAIN_THREAD_CALLBACK_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         MAIN_THREAD_CALLBACKS.store(0, Ordering::Relaxed);
         let mut wrapper = stub_wrapper(main_thread_stub_plugin_ptr());
         pin_host_state(&mut wrapper);
