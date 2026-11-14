@@ -124,6 +124,7 @@ function movedFiguresOnCard(confirmationId: string) {
                 {
                     targetId: target.targetId,
                     targetKind: target.targetKind,
+                    range: getAgentApprovalView({ confirmationId })?.measuredPreview?.range,
                     metricId: metric.metricId,
                     baseline: metric.baseline,
                     preview: metric.preview,
@@ -137,6 +138,42 @@ function movedFiguresOnCard(confirmationId: string) {
 function planAudible() {
     return agentRunLifecycle.get(RUN_ID)?.plan?.expectedImpact.audible;
 }
+
+const MODES = [
+    'matched',
+    'contradicted',
+    'render-failed',
+    'two-recipes',
+    'two-recipes-parameter-drift',
+    'two-recipes-order-drift',
+    'stopped-repreview',
+    'project-edited-repreview',
+    'project-saved-repreview',
+    'project-edited-saved-repreview',
+    'configuration-replaced-repreview',
+    'two-recipes-subset',
+] as const;
+type Mode = (typeof MODES)[number];
+
+/**
+ * What the plan claims once the first card is persisted: measured, with exactly the figures the card
+ * shows as moved, wherever that card carries a bound preview in which a metric moved; nothing where it
+ * carries none, or one in which nothing moved (the contradicted render changes no figure).
+ */
+const EXPECTED_CLAIM = {
+    matched: 'measured',
+    contradicted: 'not-claimed',
+    'render-failed': 'not-claimed',
+    'two-recipes': 'measured',
+    'two-recipes-parameter-drift': 'measured',
+    'two-recipes-order-drift': 'measured',
+    'stopped-repreview': 'measured',
+    'project-edited-repreview': 'measured',
+    'project-saved-repreview': 'measured',
+    'project-edited-saved-repreview': 'measured',
+    'configuration-replaced-repreview': 'measured',
+    'two-recipes-subset': 'measured',
+} as const satisfies Record<Mode, 'measured' | 'not-claimed'>;
 
 describe('configured mixing plan with actual measurements', () => {
     it.each(['save', 'unflushed edit', 'flushed edit', 'saved edit', 'edit and revert'] as const)(
@@ -368,20 +405,7 @@ describe('configured mixing plan with actual measurements', () => {
         }
     );
 
-    it.each([
-        'matched',
-        'contradicted',
-        'render-failed',
-        'two-recipes',
-        'two-recipes-parameter-drift',
-        'two-recipes-order-drift',
-        'stopped-repreview',
-        'project-edited-repreview',
-        'project-saved-repreview',
-        'project-edited-saved-repreview',
-        'configuration-replaced-repreview',
-        'two-recipes-subset',
-    ] as const)('keeps the real five-turn warm-vocal plan visible and verifies %s evidence', async (mode) => {
+    it.each(MODES)('keeps the real five-turn warm-vocal plan visible and verifies %s evidence', async (mode) => {
         const multipleRecipes = mode.startsWith('two-recipes');
         const lateRepreview = mode.endsWith('repreview');
         const matchedSingle = mode === 'matched' || lateRepreview;
@@ -826,15 +850,8 @@ describe('configured mixing plan with actual measurements', () => {
         expect(view?.actionLabels).toHaveLength(expectedCommands);
         expect(view?.canConfirm).toBe(matchedSingle);
         const claim = planAudible();
-        if (matchedSingle) {
-            if (claim?.status !== 'measured') {
-                throw new Error(`Expected the measured preview to be claimed: ${JSON.stringify(claim)}`);
-            }
-            expect(claim.metrics.length).toBeGreaterThan(0);
-            expect(claim.metrics).toEqual(movedFiguresOnCard(confirmationId));
-        } else if (mode === 'render-failed') {
-            expect(claim?.status).toBe('not-claimed');
-        }
+        expect(claim?.status).toBe(EXPECTED_CLAIM[mode]);
+        expect(claim?.status === 'measured' ? claim.metrics : []).toEqual(movedFiguresOnCard(confirmationId));
         if (mode === 'render-failed') {
             // Confirm is refused for the missing measurement, not for a policy mismatch.
             const refused = await confirmPendingChatActions({ confirmationId });
