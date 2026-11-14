@@ -39,6 +39,18 @@ allowBuilds:
 # must not reload when that editor socket disconnects. Keep the browser control
 # in e2eHmrDisconnectBoundary.spec.ts when updating or removing this patch.
 patchedDependencies:
+    'eslint-plugin-react-jsx@5.30.2': patches/eslint-plugin-react-jsx@5.30.2.patch
+    'eslint-plugin-react-x@5.30.2': patches/eslint-plugin-react-x@5.30.2.patch
+    '@eslint-react/core@5.30.2': patches/@eslint-react__core@5.30.2.patch
+    '@eslint-react/eslint@5.30.2': patches/@eslint-react__eslint@5.30.2.patch
+    '@tanstack/eslint-plugin-query@5.107.1': patches/@tanstack__eslint-plugin-query@5.107.1.patch
+    'typescript@7.0.2': patches/typescript@7.0.2.patch
+    '@typescript-eslint/eslint-plugin@8.72.2': patches/@typescript-eslint__eslint-plugin@8.72.2.patch
+    '@typescript-eslint/parser@8.72.2': patches/@typescript-eslint__parser@8.72.2.patch
+    '@typescript-eslint/types@8.72.2': patches/@typescript-eslint__types@8.72.2.patch
+    '@typescript-eslint/typescript-estree@8.72.2': patches/@typescript-eslint__typescript-estree@8.72.2.patch
+    '@typescript-eslint/utils@8.72.2': patches/@typescript-eslint__utils@8.72.2.patch
+    'typescript-eslint@8.72.2': patches/typescript-eslint@8.72.2.patch
     '@rolldown/plugin-babel@0.3.1': patches/@rolldown__plugin-babel@0.3.1.patch
     'babel-plugin-react-compiler@1.0.0': patches/babel-plugin-react-compiler@1.0.0.patch
     'magicast@0.5.5': patches/magicast@0.5.5.patch
@@ -57,6 +69,19 @@ patchedDependencies:
 # worker. Overriding core alone leaves incompatible backend kernels. Keep the
 # complete cohort together; bundled-model inference checks its actual runtime.
 overrides:
+    # These exact consumer forks use native7 AST/project/checker APIs. The
+    # declarations mirror the source patches; removed edges belong to unused
+    # upstream Program/watch/rule loaders, admitted by scoped rule validation.
+    '@typescript-eslint/eslint-plugin@8.72.2>typescript:peer': 7.0.2
+    '@typescript-eslint/parser@8.72.2>typescript:peer': 7.0.2
+    '@typescript-eslint/typescript-estree@8.72.2>typescript:peer': 7.0.2
+    '@typescript-eslint/utils@8.72.2>typescript:peer': 7.0.2
+    'typescript-eslint@8.72.2>typescript:peer': 7.0.2
+    '@typescript-eslint/typescript-estree@8.72.2>@typescript-eslint/project-service': '-'
+    '@typescript-eslint/typescript-estree@8.72.2>@typescript-eslint/tsconfig-utils': '-'
+    '@typescript-eslint/typescript-estree@8.72.2>ts-api-utils': '-'
+    '@typescript-eslint/eslint-plugin@8.72.2>@typescript-eslint/type-utils': '-'
+    '@typescript-eslint/eslint-plugin@8.72.2>ts-api-utils': '-'
     '@rolldown/plugin-babel@0.3.1>@babel/core': 8.1.2
     '@rolldown/plugin-babel@0.3.1>@babel/plugin-transform-runtime': 8.1.2
     '@rolldown/plugin-babel@0.3.1>@babel/runtime': 8.1.2

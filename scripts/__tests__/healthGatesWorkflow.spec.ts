@@ -209,6 +209,7 @@ const VALIDATION_JOBS = [
     'rust',
     'native-macos',
     'native-windows',
+    'native-typescript-windows',
     'native-parity',
     'dependency-review',
     'pr-secrets',
@@ -3169,6 +3170,7 @@ describe('health gates workflow contract', () => {
             'lint',
             'boundaries',
             'tooling-unit',
+            'native-typescript-windows',
             'dependency-review',
             'pr-secrets',
         ]);
@@ -4431,7 +4433,7 @@ describe('health gates workflow contract', () => {
             const candidate = loadWorkflow(file).parsed;
             callers += assertVerifiedPnpmCallers(candidate, file === 'wasm-artifacts.yml');
         }
-        expect(callers).toBe(28);
+        expect(callers).toBe(29);
 
         const oldBootstrap = structuredClone(validationWorkflow);
         stepNamed(jobAt(oldBootstrap, 'lint'), PNPM_SETUP_STEP).uses =
@@ -4757,7 +4759,12 @@ describe('health gates workflow contract', () => {
         expect(stringAt(browsers, 'run')).toBe(
             'node scripts/runIsolatedUnitShard.ts browsers --context "${{ steps.unit_isolation.outputs.context }}"'
         );
-        expect(steps.indexOf(browsers)).toBe(steps.indexOf(stepNamed(unit, 'Install dependencies')) + 1);
+        const prepare = stepNamed(unit, 'Prepare isolated native compiler');
+        expect(prepare.run).toBe(
+            'node scripts/runIsolatedUnitShard.ts native-compiler --context "${{ steps.unit_isolation.outputs.context }}"'
+        );
+        expect(steps.indexOf(prepare)).toBe(steps.indexOf(stepNamed(unit, 'Install dependencies')) + 1);
+        expect(steps.indexOf(browsers)).toBe(steps.indexOf(prepare) + 1);
         expect(steps.indexOf(browsers)).toBe(steps.indexOf(stepNamed(unit, 'Run shard')) - 1);
         expect(browsers['timeout-minutes']).toBe(2);
         expect(browsers.if).toBeUndefined();
@@ -5258,7 +5265,15 @@ describe('health gates workflow contract', () => {
         );
         full.decide = { result: 'success', outputs: broadScope };
         expect(run(full)).toBe(0);
-        const broadJobs = ['unit', 'build', 'rust', 'native-macos', 'native-windows', 'native-parity'];
+        const broadJobs = [
+            'unit',
+            'build',
+            'rust',
+            'native-macos',
+            'native-windows',
+            'native-typescript-windows',
+            'native-parity',
+        ];
         for (const job of broadJobs) {
             for (const outcome of ['failure', 'cancelled', 'skipped']) {
                 expect(run({ ...full, [job]: { result: outcome } })).not.toBe(0);

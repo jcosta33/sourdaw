@@ -23,6 +23,7 @@ export function hostedWasmTriggerPaths(): string[] {
         relative(wasmArtifacts.repoRoot, wasmArtifacts.manifestPath),
         'Cargo.toml',
         'Cargo.lock',
+        'vendor/rust/**',
         ...Array.from(crateDirs, (dir) => `${dir}/**`),
     ].sort();
 }

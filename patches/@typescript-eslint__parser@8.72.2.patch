@@ -1,0 +1,87 @@
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -34,20 +34,6 @@
+ })();
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.meta = exports.version = exports.withoutProjectParserOptions = exports.createProgram = exports.clearCaches = exports.parseForESLint = exports.parse = void 0;
+-const ts = __importStar(require("typescript"));
+-// intentionally executing code before rest of the require()s. This will not work with ESM.
+-const [versionMajor, _versionMinor] = ts.versionMajorMinor
+-    .split('.')
+-    .map(Number);
+-if (versionMajor >= 7) {
+-    // eslint-disable-next-line no-console
+-    console.error([
+-        'typescript-eslint does not support TS 7.0.',
+-        'Please see https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6.0 to run typescript-eslint using the TS 6 API.',
+-        "See also https://github.com/typescript-eslint/typescript-eslint/issues/10940 for tracking typescript-eslint's support for TS >=7.1",
+-    ].join('\n'));
+-    throw new Error('typescript-eslint does not support TS 7.0.');
+-}
+ var parser_1 = require("./parser");
+ Object.defineProperty(exports, "parse", { enumerable: true, get: function () { return parser_1.parse; } });
+ Object.defineProperty(exports, "parseForESLint", { enumerable: true, get: function () { return parser_1.parseForESLint; } });
+diff --git a/dist/parser.d.ts b/dist/parser.d.ts
+--- a/dist/parser.d.ts
++++ b/dist/parser.d.ts
+@@ -2,7 +2,6 @@
+ import type { ParserOptions, TSESTree } from '@typescript-eslint/types';
+ import type { AST, ParserServices } from '@typescript-eslint/typescript-estree';
+ import type { VisitorKeys } from '@typescript-eslint/visitor-keys';
+-import type * as ts from 'typescript';
+ interface ESLintProgram extends AST<{
+     comment: true;
+     tokens: true;
+@@ -17,6 +16,6 @@
+     services: ParserServices;
+     visitorKeys: VisitorKeys;
+ }
+-export declare function parse(code: string | ts.SourceFile, options?: ParserOptions): ParseForESLintResult['ast'];
+-export declare function parseForESLint(code: string | ts.SourceFile, parserOptions?: ParserOptions | null): ParseForESLintResult;
++export declare function parse(code: string, options?: ParserOptions): ParseForESLintResult['ast'];
++export declare function parseForESLint(code: string, parserOptions?: ParserOptions | null): ParseForESLintResult;
+ export type { ParserOptions } from '@typescript-eslint/types';
+diff --git a/dist/parser.js b/dist/parser.js
+--- a/dist/parser.js
++++ b/dist/parser.js
+@@ -9,7 +9,7 @@
+ const typescript_estree_1 = require("@typescript-eslint/typescript-estree");
+ const visitor_keys_1 = require("@typescript-eslint/visitor-keys");
+ const debug_1 = __importDefault(require("debug"));
+-const typescript_1 = require("typescript");
++const typescript_1 = require("typescript/unstable/ast");
+ const log = (0, debug_1.default)('typescript-eslint:parser:parser');
+ function validateBoolean(value, fallback = false) {
+     if (typeof value !== 'boolean') {
+@@ -110,9 +110,9 @@
+     };
+     const { ast, services } = (0, typescript_estree_1.parseAndGenerateServices)(code, tsestreeOptions);
+     ast.sourceType = parserOptions.sourceType;
+-    if (services.program) {
++    if (services.project) {
+         // automatically apply the options configured for the program
+-        const compilerOptions = services.program.getCompilerOptions();
++        const compilerOptions = services.project.compilerOptions;
+         if (analyzeOptions.lib == null) {
+             analyzeOptions.lib = getLib(compilerOptions);
+             log('Resolved libs from program: %o', analyzeOptions.lib);
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -39,7 +39,7 @@
+   ],
+   "peerDependencies": {
+     "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
+-    "typescript": ">=4.8.4 <6.1.0"
++    "typescript": "7.0.2"
+   },
+   "dependencies": {
+     "@typescript-eslint/scope-manager": "8.72.2",
+@@ -84,4 +84,4 @@
+     "typecheck:tsc6": "pnpm -w exec nx typecheck:tsc6",
+     "attw-check": "pnpm -w exec nx attw-check"
+   }
+-}
+\ No newline at end of file
++}

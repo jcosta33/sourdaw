@@ -1,0 +1,1807 @@
+diff --git a/dist/ast-converter.js b/dist/ast-converter.js
+index 34407594638335eb6565b4f07cc047a180d75a7e..5442688901a220d2d36e3001a1da2af9e7b4c2da 100644
+--- a/dist/ast-converter.js
++++ b/dist/ast-converter.js
+@@ -6,14 +6,6 @@ const convert_comments_1 = require("./convert-comments");
+ const node_utils_1 = require("./node-utils");
+ const simple_traverse_1 = require("./simple-traverse");
+ function astConverter(ast, parseSettings, shouldPreserveNodeMaps) {
+-    /**
+-     * The TypeScript compiler produced fundamental parse errors when parsing the
+-     * source.
+-     */
+-    const { parseDiagnostics } = ast;
+-    if (parseDiagnostics.length) {
+-        throw (0, convert_1.convertError)(parseDiagnostics[0]);
+-    }
+     /**
+      * Recursively convert the TypeScript AST into an ESTree-compatible AST
+      */
+diff --git a/dist/check-modifiers.js b/dist/check-modifiers.js
+index 6509ac89c6ade65cfff8ab25836e98184bafb56d..a97d6a2f1e4c107e6c4299ef5e32d075a8b043b4 100644
+--- a/dist/check-modifiers.js
++++ b/dist/check-modifiers.js
+@@ -34,7 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
+ })();
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.checkModifiers = checkModifiers;
+-const ts = __importStar(require("typescript"));
++const ts = __importStar(require("typescript/unstable/ast"));
+ const getModifiers_1 = require("./getModifiers");
+ const node_utils_1 = require("./node-utils");
+ const SyntaxKind = ts.SyntaxKind;
+@@ -45,7 +45,7 @@ function nodeIsMissing(node) {
+     }
+     return (node.pos === node.end &&
+         node.pos >= 0 &&
+-        node.kind !== SyntaxKind.EndOfFileToken);
++        node.kind !== SyntaxKind.EndOfFile);
+ }
+ // `ts.nodeIsPresent`
+ function nodeIsPresent(node) {
+@@ -71,7 +71,12 @@ function parameterIsThisKeyword(parameter) {
+ }
+ // `ts.getContainingFunction`
+ function getContainingFunction(node) {
+-    return ts.findAncestor(node.parent, ts.isFunctionLike);
++    let parent = node.parent;
++    while (parent) {
++        if (ts.isFunctionLikeDeclaration(parent)) return parent;
++        parent = parent.parent;
++    }
++    return undefined;
+ }
+ // Rewrite version of `ts.nodeCanBeDecorated`
+ // Returns `true` for both `useLegacyDecorators: true` and `useLegacyDecorators: false`
+@@ -91,7 +96,7 @@ function nodeCanBeDecorated(node) {
+             // `ts.nodeCanBeDecorated` uses this if `useLegacyDecorators: false`
+             // parent is already a ClassLike subtype; defensive check
+             // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+-            if (ts.isClassLike(parent) && !hasAbstractModifier(node)) {
++            if (ts.isClassLikeDeclaration(parent) && !hasAbstractModifier(node)) {
+                 return true;
+             }
+             return false;
+@@ -104,7 +109,7 @@ function nodeCanBeDecorated(node) {
+             // when `useLegacyDecorators: true` uses `ts.isClassDeclaration`
+             // when `useLegacyDecorators: true` uses `ts.isClassLike`
+             return (Boolean(node.body) &&
+-                (ts.isClassDeclaration(parent) || ts.isClassLike(parent)));
++                (ts.isClassDeclaration(parent) || ts.isClassLikeDeclaration(parent)));
+         }
+         case SyntaxKind.Parameter: {
+             // `ts.nodeCanBeDecorated` returns `false` if `useLegacyDecorators: false`
+@@ -153,7 +158,7 @@ function checkModifiers(node) {
+             }
+             if (node.kind === SyntaxKind.IndexSignature &&
+                 (modifier.kind !== SyntaxKind.StaticKeyword ||
+-                    !ts.isClassLike(node.parent))) {
++                    !ts.isClassLikeDeclaration(node.parent))) {
+                 throw (0, node_utils_1.createError)(modifier, `'${ts.tokenToString(modifier.kind)}' modifier cannot appear on an index signature`);
+             }
+         }
+@@ -167,7 +172,7 @@ function checkModifiers(node) {
+             modifier.kind === SyntaxKind.OutKeyword) &&
+             (node.kind !== SyntaxKind.TypeParameter ||
+                 !(ts.isInterfaceDeclaration(node.parent) ||
+-                    ts.isClassLike(node.parent) ||
++                    ts.isClassLikeDeclaration(node.parent) ||
+                     ts.isTypeAliasDeclaration(node.parent)))) {
+             throw (0, node_utils_1.createError)(modifier, `'${ts.tokenToString(modifier.kind)}' modifier can only appear on a type parameter of a class, interface or type alias`);
+         }
+@@ -179,7 +184,7 @@ function checkModifiers(node) {
+             throw (0, node_utils_1.createError)(modifier, "'readonly' modifier can only appear on a property declaration or index signature.");
+         }
+         if (modifier.kind === SyntaxKind.DeclareKeyword &&
+-            ts.isClassLike(node.parent) &&
++            ts.isClassLikeDeclaration(node.parent) &&
+             !ts.isPropertyDeclaration(node)) {
+             throw (0, node_utils_1.createError)(modifier, `'${ts.tokenToString(modifier.kind)}' modifier cannot appear on class elements of this kind.`);
+         }
+diff --git a/dist/check-syntax-errors.js b/dist/check-syntax-errors.js
+index 08141bdca94bf205f18349da113e5f8cf2d59c9c..09ee9d13fbe04b565986625ee0c367a28404b829 100644
+--- a/dist/check-syntax-errors.js
++++ b/dist/check-syntax-errors.js
+@@ -34,7 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
+ })();
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.checkSyntaxError = checkSyntaxError;
+-const ts = __importStar(require("typescript"));
++const ts = __importStar(require("typescript/unstable/ast"));
+ const check_modifiers_1 = require("./check-modifiers");
+ const getImportClausePhaseModifier_1 = require("./getImportClausePhaseModifier");
+ const node_utils_1 = require("./node-utils");
+@@ -230,7 +230,6 @@ function checkSyntaxError(tsNode, parent, allowPattern) {
+             break;
+         }
+         // eslint-disable-next-line @typescript-eslint/no-deprecated
+-        case SyntaxKind.AssertEntry:
+         case SyntaxKind.ImportAttribute:
+             if (node.value.kind !== SyntaxKind.StringLiteral) {
+                 throw (0, node_utils_1.createError)(node.value, 'String literal expected.');
+@@ -326,7 +325,7 @@ function checkSyntaxError(tsNode, parent, allowPattern) {
+                     }
+                     for (const heritageType of heritageClause.types) {
+                         if (!(0, node_utils_1.isEntityNameExpression)(heritageType.expression) ||
+-                            ts.isOptionalChain(heritageType.expression)) {
++                            (heritageType.expression.flags & ts.NodeFlags.OptionalChain)) {
+                             throw (0, node_utils_1.createError)(heritageType, 'A class can only implement an identifier/qualified-name with optional type arguments.');
+                         }
+                     }
+@@ -356,7 +355,7 @@ function checkSyntaxError(tsNode, parent, allowPattern) {
+                 seenExtendsClause = true;
+                 for (const heritageType of heritageClause.types) {
+                     if (!(0, node_utils_1.isEntityNameExpression)(heritageType.expression) ||
+-                        ts.isOptionalChain(heritageType.expression)) {
++                        (heritageType.expression.flags & ts.NodeFlags.OptionalChain)) {
+                         throw (0, node_utils_1.createError)(heritageType, 'Interface declaration can only extend an identifier/qualified name with optional type arguments.');
+                     }
+                 }
+@@ -414,7 +413,7 @@ function checkSyntaxError(tsNode, parent, allowPattern) {
+             }
+             break;
+         case SyntaxKind.ModuleDeclaration: {
+-            if (node.flags & ts.NodeFlags.GlobalAugmentation) {
++            if (require('./native-module-kind').nativeModuleKind(node) === 'global') {
+                 const { body } = node;
+                 if (body == null || body.kind === SyntaxKind.ModuleDeclaration) {
+                     throw (0, node_utils_1.createError)(node.body ?? node, 'Expected a valid module body');
+diff --git a/dist/convert-comments.js b/dist/convert-comments.js
+index 4dfdaae67d6bfc27ef5a61b01112014f39ed3d73..814c551d41b5cfe0c62a7ecde451c02b8258e37f 100644
+--- a/dist/convert-comments.js
++++ b/dist/convert-comments.js
+@@ -34,8 +34,8 @@ var __importStar = (this && this.__importStar) || (function () {
+ })();
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.convertComments = convertComments;
+-const tsutils = __importStar(require("ts-api-utils"));
+-const ts = __importStar(require("typescript"));
++const tsutils = __importStar(require("./native-comments"));
++const ts = __importStar(require("typescript/unstable/ast"));
+ const node_utils_1 = require("./node-utils");
+ const ts_estree_1 = require("./ts-estree");
+ /**
+diff --git a/dist/convert.d.ts b/dist/convert.d.ts
+index d029a83e6bd9756d2bad4c0e7764bb4f1d000582..9b58da847cc39c5fc2f1085ebb54bf7249e9f749 100644
+--- a/dist/convert.d.ts
++++ b/dist/convert.d.ts
+@@ -1,4 +1,4 @@
+-import * as ts from 'typescript';
++import * as ts from 'typescript/unstable/ast';
+ import type { TSError } from './node-utils';
+ import type { ParserWeakMap, ParserWeakMapESTreeToTSNode } from './parser-options';
+ import type { SemanticOrSyntacticError } from './semantic-or-syntactic-errors';
+diff --git a/dist/convert.js b/dist/convert.js
+index fbe58c993eacdd3f61043ddcf051165f0cd7163b..47b943d8c4589878ed4f0d35bc21fe95fa344ba7 100644
+--- a/dist/convert.js
++++ b/dist/convert.js
+@@ -37,7 +37,7 @@ exports.Converter = void 0;
+ exports.convertError = convertError;
+ // There's lots of funny stuff due to the typing of ts.Node
+ /* eslint-disable @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
+-const ts = __importStar(require("typescript"));
++const ts = __importStar(require("typescript/unstable/ast"));
+ const check_syntax_errors_1 = require("./check-syntax-errors");
+ const getImportClausePhaseModifier_1 = require("./getImportClausePhaseModifier");
+ const getModifiers_1 = require("./getModifiers");
+@@ -351,8 +351,7 @@ class Converter {
+     }
+     convertImportAttributes(node) {
+         // eslint-disable-next-line @typescript-eslint/no-deprecated
+-        const attributes = node.attributes ?? node.assertClause;
+-        return this.convertChildren(attributes?.elements ?? []);
++        return this.convertChildren(node.attributes?.attributes ?? []);
+     }
+     convertJSXIdentifier(node) {
+         const result = this.createNode(node, {
+@@ -802,13 +801,13 @@ class Converter {
+                     computed: (0, node_utils_1.isComputedProperty)(node.name),
+                     declare: (0, node_utils_1.hasModifier)(SyntaxKind.DeclareKeyword, node),
+                     decorators: this.convertChildren((0, getModifiers_1.getDecorators)(node) ?? []),
+-                    definite: !!node.exclamationToken,
++                    definite: node.postfixToken?.kind === SyntaxKind.ExclamationToken,
+                     key,
+                     optional: (key.type === ts_estree_1.AST_NODE_TYPES.Literal ||
+                         node.name.kind === SyntaxKind.Identifier ||
+                         node.name.kind === SyntaxKind.ComputedPropertyName ||
+                         node.name.kind === SyntaxKind.PrivateIdentifier) &&
+-                        !!node.questionToken,
++                        node.postfixToken?.kind === SyntaxKind.QuestionToken,
+                     override: (0, node_utils_1.hasModifier)(SyntaxKind.OverrideKeyword, node),
+                     readonly: (0, node_utils_1.hasModifier)(SyntaxKind.ReadonlyKeyword, node),
+                     static: (0, node_utils_1.hasModifier)(SyntaxKind.StaticKeyword, node),
+@@ -852,7 +851,7 @@ class Converter {
+                         key: this.convertChild(node.name),
+                         kind: 'init',
+                         method: node.kind === SyntaxKind.MethodDeclaration,
+-                        optional: !!node.questionToken,
++                        optional: node.postfixToken?.kind === SyntaxKind.QuestionToken,
+                         shorthand: false,
+                         value: method,
+                     });
+@@ -877,7 +876,7 @@ class Converter {
+                         decorators: this.convertChildren((0, getModifiers_1.getDecorators)(node) ?? []),
+                         key: this.convertChild(node.name),
+                         kind: 'method',
+-                        optional: !!node.questionToken,
++                        optional: node.postfixToken?.kind === SyntaxKind.QuestionToken,
+                         override: (0, node_utils_1.hasModifier)(SyntaxKind.OverrideKeyword, node),
+                         static: (0, node_utils_1.hasModifier)(SyntaxKind.StaticKeyword, node),
+                         value: method,
+@@ -901,7 +900,7 @@ class Converter {
+             case SyntaxKind.Constructor: {
+                 const lastModifier = (0, node_utils_1.getLastModifier)(node);
+                 const constructorToken = (lastModifier && (0, node_utils_1.findNextToken)(lastModifier, node, this.ast)) ??
+-                    node.getFirstToken();
++                    ts.getTokenAtPosition(this.ast, node.getStart(this.ast));
+                 const constructor = this.createNode(node, {
+                     type: !node.body
+                         ? ts_estree_1.AST_NODE_TYPES.TSEmptyBodyFunctionExpression
+@@ -1530,7 +1529,7 @@ class Converter {
+                     type: ts_estree_1.AST_NODE_TYPES.MetaProperty,
+                     meta: this.createNode(
+                     // TODO: do we really want to convert it to Token?
+-                    node.getFirstToken(), {
++                    ts.getTokenAtPosition(this.ast, node.getStart(this.ast)), {
+                         type: ts_estree_1.AST_NODE_TYPES.Identifier,
+                         decorators: [],
+                         name: (0, node_utils_1.getTextForTokenKind)(node.keywordToken),
+@@ -1744,7 +1743,7 @@ class Converter {
+                     type: ts_estree_1.AST_NODE_TYPES.TSTypeParameter,
+                     const: (0, node_utils_1.hasModifier)(SyntaxKind.ConstKeyword, node),
+                     constraint: node.constraint && this.convertChild(node.constraint),
+-                    default: node.default ? this.convertChild(node.default) : undefined,
++                    default: node.defaultType ? this.convertChild(node.defaultType) : undefined,
+                     in: (0, node_utils_1.hasModifier)(SyntaxKind.InKeyword, node),
+                     name: this.convertChild(node.name),
+                     out: (0, node_utils_1.hasModifier)(SyntaxKind.OutKeyword, node),
+@@ -1947,14 +1946,14 @@ class Converter {
+             case SyntaxKind.ImportType: {
+                 const range = (0, node_utils_1.getRange)(node, this.ast);
+                 if (node.isTypeOf) {
+-                    const token = (0, node_utils_1.findNextToken)(node.getFirstToken(), node, this.ast);
++                    const token = (0, node_utils_1.findNextToken)(ts.getTokenAtPosition(this.ast, node.getStart(this.ast)), node, this.ast);
+                     range[0] = token.getStart(this.ast);
+                 }
+                 let options = null;
+                 if (node.attributes) {
+                     const value = this.createNode(node.attributes, {
+                         type: ts_estree_1.AST_NODE_TYPES.ObjectExpression,
+-                        properties: node.attributes.elements.map(importAttribute => this.createNode(importAttribute, {
++                        properties: node.attributes.attributes.map(importAttribute => this.createNode(importAttribute, {
+                             type: ts_estree_1.AST_NODE_TYPES.Property,
+                             computed: false,
+                             key: this.convertChild(importAttribute.name),
+@@ -2045,11 +2044,12 @@ class Converter {
+                 }, 'computed', undefined, computed));
+             }
+             case SyntaxKind.ModuleDeclaration: {
++                const moduleKind = require('./native-module-kind').nativeModuleKind(node);
+                 let isDeclare = (0, node_utils_1.hasModifier)(SyntaxKind.DeclareKeyword, node);
+                 const result = this.createNode(node, {
+                     type: ts_estree_1.AST_NODE_TYPES.TSModuleDeclaration,
+                     ...(() => {
+-                        if (node.flags & ts.NodeFlags.GlobalAugmentation) {
++                        if (moduleKind === 'global') {
+                             return {
+                                 body: this.convertChild(node.body),
+                                 declare: false,
+@@ -2108,12 +2108,12 @@ class Converter {
+                             // eslint-disable-next-line @typescript-eslint/no-deprecated -- `global` is a required property
+                             global: false,
+                             id: name,
+-                            kind: node.flags & ts.NodeFlags.Namespace ? 'namespace' : 'module',
++                            kind: moduleKind,
+                         };
+                     })(),
+                 });
+                 result.declare = isDeclare;
+-                if (node.flags & ts.NodeFlags.GlobalAugmentation) {
++                if (moduleKind === 'global') {
+                     // eslint-disable-next-line @typescript-eslint/no-deprecated
+                     result.global = true;
+                 }
+@@ -2251,7 +2251,6 @@ class Converter {
+                 });
+             }
+             // eslint-disable-next-line @typescript-eslint/no-deprecated
+-            case SyntaxKind.AssertEntry:
+             case SyntaxKind.ImportAttribute: {
+                 return this.createNode(node, {
+                     type: ts_estree_1.AST_NODE_TYPES.ImportAttribute,
+@@ -2288,84 +2287,12 @@ class Converter {
+      * property instead of a kind property. Recursively copies all children.
+      */
+     deeplyCopy(node) {
+-        if (node.kind === ts.SyntaxKind.JSDocFunctionType) {
+-            this.#throwError(node, 'JSDoc types can only be used inside documentation comments.');
+-        }
+-        // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-assignment
+-        const customType = `TS${SyntaxKind[node.kind]}`;
+-        /**
+-         * If the "errorOnUnknownASTType" option is set to true, throw an error,
+-         * otherwise fallback to just including the unknown type as-is.
+-         */
+-        if (this.options.errorOnUnknownASTType && !ts_estree_1.AST_NODE_TYPES[customType]) {
+-            throw new Error(`Unknown AST_NODE_TYPE: "${customType}"`);
+-        }
+-        const result = this.createNode(node, {
+-            type: customType,
+-        });
+-        if ('type' in node) {
+-            result.typeAnnotation =
+-                node.type && 'kind' in node.type && ts.isTypeNode(node.type)
+-                    ? this.convertTypeAnnotation(node.type, node)
+-                    : null;
+-        }
+-        if ('typeArguments' in node) {
+-            result.typeArguments =
+-                node.typeArguments && 'pos' in node.typeArguments
+-                    ? this.convertTypeArguments(node)
+-                    : null;
+-        }
+-        if ('typeParameters' in node) {
+-            result.typeParameters =
+-                node.typeParameters && 'pos' in node.typeParameters
+-                    ? // @ts-expect-error -- Fix me
+-                        this.convertTypeParameters(node)
+-                    : null;
+-        }
+-        const decorators = (0, getModifiers_1.getDecorators)(node);
+-        if (decorators?.length) {
+-            result.decorators = this.convertChildren(decorators);
+-        }
+-        // keys we never want to clone from the base typescript node as they
+-        // introduce garbage into our AST
+-        const KEYS_TO_NOT_COPY = new Set([
+-            '_children',
+-            'decorators',
+-            'end',
+-            'flags',
+-            'heritageClauses',
+-            'illegalDecorators',
+-            'jsDoc',
+-            'kind',
+-            'locals',
+-            'localSymbol',
+-            'modifierFlagsCache',
+-            'modifiers',
+-            'nextContainer',
+-            'parent',
+-            'pos',
+-            'symbol',
+-            'transformFlags',
+-            'type',
+-            'typeArguments',
+-            'typeParameters',
+-        ]);
+-        Object.entries(node)
+-            .filter(([key]) => !KEYS_TO_NOT_COPY.has(key))
+-            .forEach(([key, value]) => {
+-            if (Array.isArray(value)) {
+-                result[key] = this.convertChildren(value);
+-            }
+-            else if (value && typeof value === 'object' && value.kind) {
+-                // need to check node[key].kind to ensure we don't try to convert a symbol
+-                result[key] = this.convertChild(value);
+-            }
+-            else {
+-                result[key] = value;
+-            }
+-        });
+-        return result;
++        // Native nodes store their syntax fields on generated accessors, while
++        // own enumerable fields contain decoder/buffer infrastructure. Generic
++        // object copying would lose syntax and leak internal data into ESTree.
++        throw new Error(`Unsupported native AST_NODE_TYPE: ${SyntaxKind[node.kind]}`);
+     }
++
+     /**
+      * Fixes the exports of the given ts.Node
+      * @returns the ESTreeNode with fixed exports
+@@ -2431,4 +2358,4 @@ class Converter {
+     }
+ }
+ exports.Converter = Converter;
+-//# sourceMappingURL=convert.js.map
+\ No newline at end of file
++//# sourceMappingURL=convert.js.map
+diff --git a/dist/create-program/getScriptKind.d.ts b/dist/create-program/getScriptKind.d.ts
+index 331cee7700ecdb29905b5c6570e38d101619d161..5e22e2221d43a98f18e3d3886cb3c16870eab7e3 100644
+--- a/dist/create-program/getScriptKind.d.ts
++++ b/dist/create-program/getScriptKind.d.ts
+@@ -1,3 +1,3 @@
+-import * as ts from 'typescript';
++import * as ts from 'typescript/unstable/ast';
+ export declare function getScriptKind(filePath: string, jsx: boolean): ts.ScriptKind;
+ export declare function getLanguageVariant(scriptKind: ts.ScriptKind): ts.LanguageVariant;
+diff --git a/dist/create-program/getScriptKind.js b/dist/create-program/getScriptKind.js
+index 1796e1c2fa274b158e10092db12c50b01b0df792..7ba878c8a2ad45def7f9bea11a20cbb0b6638373 100644
+--- a/dist/create-program/getScriptKind.js
++++ b/dist/create-program/getScriptKind.js
+@@ -39,7 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.getScriptKind = getScriptKind;
+ exports.getLanguageVariant = getLanguageVariant;
+ const node_path_1 = __importDefault(require("node:path"));
+-const ts = __importStar(require("typescript"));
++const ts = __importStar(require("typescript/unstable/ast"));
+ function getScriptKind(filePath, jsx) {
+     // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-assignment
+     const extension = node_path_1.default.extname(filePath).toLowerCase();
+@@ -48,19 +48,19 @@ function getScriptKind(filePath, jsx) {
+     // weird errors due to a mismatch.
+     // https://github.com/microsoft/TypeScript/blob/da00ba67ed1182ad334f7c713b8254fba174aeba/src/compiler/utilities.ts#L6948-L6968
+     switch (extension) {
+-        case ts.Extension.Cjs:
+-        case ts.Extension.Js:
+-        case ts.Extension.Mjs:
++        case '.cjs':
++        case '.js':
++        case '.mjs':
+             return ts.ScriptKind.JS;
+-        case ts.Extension.Cts:
+-        case ts.Extension.Mts:
+-        case ts.Extension.Ts:
++        case '.cts':
++        case '.mts':
++        case '.ts':
+             return ts.ScriptKind.TS;
+-        case ts.Extension.Json:
++        case '.json':
+             return ts.ScriptKind.JSON;
+-        case ts.Extension.Jsx:
++        case '.jsx':
+             return ts.ScriptKind.JSX;
+-        case ts.Extension.Tsx:
++        case '.tsx':
+             return ts.ScriptKind.TSX;
+         default:
+             // unknown extension, force typescript to ignore the file extension, and respect the user's setting
+diff --git a/dist/createParserServices.d.ts b/dist/createParserServices.d.ts
+index 685ef30d8e6052b757eb4fd1edbe6f3b9a7183c4..c90846bb45bb08857e4e7d42545a4f10a621a900 100644
+--- a/dist/createParserServices.d.ts
++++ b/dist/createParserServices.d.ts
+@@ -1,4 +1,12 @@
+-import type * as ts from 'typescript';
+-import type { ASTMaps } from './convert';
+-import type { ParserServices } from './parser-options';
+-export declare function createParserServices(astMaps: ASTMaps, program: ts.Program | null): ParserServices;
++import type { Project } from 'typescript/unstable/sync';
++import type { SourceFile } from 'typescript/unstable/ast';
++import type { NativeParserServices } from './native-parser-services';
++type NativeLease = {
++    ast: SourceFile;
++    project: Project;
++    typed: boolean;
++    release(): void;
++    assertLive(): void;
++};
++type NativeMaps = Pick<NativeParserServices, 'esTreeNodeToTSNodeMap' | 'tsNodeToESTreeNodeMap'>;
++export declare function createParserServices(astMaps: NativeMaps, lease: NativeLease): NativeParserServices;
+diff --git a/dist/createParserServices.js b/dist/createParserServices.js
+index 1d207727057f172351acdcce09577396eef4bcee..baee357163d5095bed9b8281e06cbe5fece07547 100644
+--- a/dist/createParserServices.js
++++ b/dist/createParserServices.js
+@@ -1,34 +1,40 @@
+-"use strict";
+-Object.defineProperty(exports, "__esModule", { value: true });
++'use strict';
+ exports.createParserServices = createParserServices;
+-function createParserServices(astMaps, program) {
+-    if (!program) {
+-        return {
+-            emitDecoratorMetadata: undefined,
+-            experimentalDecorators: undefined,
+-            isolatedDeclarations: undefined,
+-            program,
+-            // we always return the node maps because
+-            // (a) they don't require type info and
+-            // (b) they can be useful when using some of TS's internal non-type-aware AST utils
+-            ...astMaps,
+-        };
++function createParserServices(astMaps, lease) {
++    if (!lease.typed) return { ...astMaps, hasTypeInformation: false, project: undefined, checker: undefined };
++    const { project } = lease;
++    const checker = project.checker;
++    function nativeNode(node) {
++        lease.assertLive();
++        const native = astMaps.esTreeNodeToTSNodeMap.get(node);
++        if (!native) throw new Error('ESTree node does not belong to this native lint snapshot');
++        return native;
++    }
++    function requireType(type) {
++        if (!type || type.isErrorType()) throw new Error('Native checker could not resolve the lint type');
++        return type;
+     }
+-    const checker = program.getTypeChecker();
+-    const compilerOptions = program.getCompilerOptions();
+     return {
+-        program,
+-        // not set in the config is the same as off
+-        emitDecoratorMetadata: compilerOptions.emitDecoratorMetadata ?? false,
+-        experimentalDecorators: compilerOptions.experimentalDecorators ?? false,
+-        isolatedDeclarations: compilerOptions.isolatedDeclarations ?? false,
++        hasTypeInformation: true,
++        project,
++        checker,
+         ...astMaps,
+-        getContextualType: node => checker.getContextualType(astMaps.esTreeNodeToTSNodeMap.get(node)),
+-        getResolvedSignature: node => checker.getResolvedSignature(astMaps.esTreeNodeToTSNodeMap.get(node)),
+-        getSymbolAtLocation: node => checker.getSymbolAtLocation(astMaps.esTreeNodeToTSNodeMap.get(node)),
+-        getTypeAtLocation: node => checker.getTypeAtLocation(astMaps.esTreeNodeToTSNodeMap.get(node)),
+-        getTypeFromTypeNode: node => checker.getTypeFromTypeNode(astMaps.esTreeNodeToTSNodeMap.get(node)),
+-        getTypeOfSymbolAtLocation: (symbol, node) => checker.getTypeOfSymbolAtLocation(symbol, astMaps.esTreeNodeToTSNodeMap.get(node)),
++        emitDecoratorMetadata: project.compilerOptions.emitDecoratorMetadata ?? false,
++        experimentalDecorators: project.compilerOptions.experimentalDecorators ?? false,
++        isolatedDeclarations: project.compilerOptions.isolatedDeclarations ?? false,
++        getContextualType: node => checker.getContextualType(nativeNode(node)),
++        getResolvedSignature: node => checker.getResolvedSignature(nativeNode(node)),
++        getSymbolAtLocation: node => checker.getSymbolAtLocation(nativeNode(node)),
++        getTypeAtLocation: node => requireType(checker.getTypeAtLocation(nativeNode(node))),
++        getTypeFromTypeNode: node => requireType(checker.getTypeFromTypeNode(nativeNode(node))),
++        getTypeOfSymbolAtLocation: (symbol, node) => requireType(checker.getTypeOfSymbolAtLocation(symbol, nativeNode(node))),
++        resolveNodeHandle: handle => {
++            lease.assertLive();
++            const node = handle.resolve(project);
++            if (!node) throw new Error('Native symbol declaration handle no longer resolves');
++            return node;
++        },
++        whenDisposed: lease.whenDisposed,
++        dispose: () => lease.release(),
+     };
+ }
+-//# sourceMappingURL=createParserServices.js.map
+\ No newline at end of file
+diff --git a/dist/getImportClausePhaseModifier.js b/dist/getImportClausePhaseModifier.js
+index 88a6c27da3d05059b21031f14f2b12b7f43764a4..6d4afeed01be49b80974f6b0420c2ed6e85562a2 100644
+--- a/dist/getImportClausePhaseModifier.js
++++ b/dist/getImportClausePhaseModifier.js
+@@ -1,57 +1,9 @@
+ "use strict";
+-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+-    if (k2 === undefined) k2 = k;
+-    var desc = Object.getOwnPropertyDescriptor(m, k);
+-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+-      desc = { enumerable: true, get: function() { return m[k]; } };
+-    }
+-    Object.defineProperty(o, k2, desc);
+-}) : (function(o, m, k, k2) {
+-    if (k2 === undefined) k2 = k;
+-    o[k2] = m[k];
+-}));
+-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+-    Object.defineProperty(o, "default", { enumerable: true, value: v });
+-}) : function(o, v) {
+-    o["default"] = v;
+-});
+-var __importStar = (this && this.__importStar) || (function () {
+-    var ownKeys = function(o) {
+-        ownKeys = Object.getOwnPropertyNames || function (o) {
+-            var ar = [];
+-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+-            return ar;
+-        };
+-        return ownKeys(o);
+-    };
+-    return function (mod) {
+-        if (mod && mod.__esModule) return mod;
+-        var result = {};
+-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+-        __setModuleDefault(result, mod);
+-        return result;
+-    };
+-})();
+-Object.defineProperty(exports, "__esModule", { value: true });
+-exports.getImportClausePhaseModifier = getImportClausePhaseModifier;
+-const ts = __importStar(require("typescript"));
+-const version_check_1 = require("./version-check");
+-const isAtLeast59 = version_check_1.typescriptVersionIsAtLeast['5.9'];
+-// TODO: Remove when we support TS >= 5.9
++const { SyntaxKind } = require('typescript/unstable/ast');
+ function getImportClausePhaseModifier(node) {
+-    if (!node) {
+-        return null;
+-    }
+-    if (isAtLeast59) {
+-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- guarded by TS version check.
+-        return node.phaseModifier === ts.SyntaxKind.TypeKeyword
+-            ? 'type'
+-            : // eslint-disable-next-line @typescript-eslint/no-deprecated -- guarded by TS version check
+-                node.phaseModifier === ts.SyntaxKind.DeferKeyword
+-                    ? 'defer'
+-                    : null;
+-    }
+-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- guarded by TS version check
+-    return node.isTypeOnly ? 'type' : null;
++    if (!node) return null;
++    if (node.phaseModifier === SyntaxKind.TypeKeyword) return 'type';
++    if (node.phaseModifier === SyntaxKind.DeferKeyword) return 'defer';
++    return null;
+ }
+-//# sourceMappingURL=getImportClausePhaseModifier.js.map
+\ No newline at end of file
++exports.getImportClausePhaseModifier = getImportClausePhaseModifier;
+diff --git a/dist/getModifiers.d.ts b/dist/getModifiers.d.ts
+index 481dfaa02595c697cae122af4cfee58cee14677d..e425a2540267d86162f23a449a207f5a1ca3d5f5 100644
+--- a/dist/getModifiers.d.ts
++++ b/dist/getModifiers.d.ts
+@@ -1,3 +1,3 @@
+-import * as ts from 'typescript';
++import * as ts from 'typescript/unstable/ast';
+ export declare function getModifiers(node: ts.Node | null | undefined, includeIllegalModifiers?: boolean): ts.Modifier[] | undefined;
+ export declare function getDecorators(node: ts.Node | null | undefined, includeIllegalDecorators?: boolean): ts.Decorator[] | undefined;
+diff --git a/dist/getModifiers.js b/dist/getModifiers.js
+index a5d358a6806724eb4b26603d488703bd78b41884..a430f68bd585e71abd4ec9669bae9561b778362d 100644
+--- a/dist/getModifiers.js
++++ b/dist/getModifiers.js
+@@ -1,75 +1,4 @@
+ "use strict";
+-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+-    if (k2 === undefined) k2 = k;
+-    var desc = Object.getOwnPropertyDescriptor(m, k);
+-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+-      desc = { enumerable: true, get: function() { return m[k]; } };
+-    }
+-    Object.defineProperty(o, k2, desc);
+-}) : (function(o, m, k, k2) {
+-    if (k2 === undefined) k2 = k;
+-    o[k2] = m[k];
+-}));
+-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+-    Object.defineProperty(o, "default", { enumerable: true, value: v });
+-}) : function(o, v) {
+-    o["default"] = v;
+-});
+-var __importStar = (this && this.__importStar) || (function () {
+-    var ownKeys = function(o) {
+-        ownKeys = Object.getOwnPropertyNames || function (o) {
+-            var ar = [];
+-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+-            return ar;
+-        };
+-        return ownKeys(o);
+-    };
+-    return function (mod) {
+-        if (mod && mod.__esModule) return mod;
+-        var result = {};
+-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+-        __setModuleDefault(result, mod);
+-        return result;
+-    };
+-})();
+-Object.defineProperty(exports, "__esModule", { value: true });
+-exports.getModifiers = getModifiers;
+-exports.getDecorators = getDecorators;
+-const ts = __importStar(require("typescript"));
+-const version_check_1 = require("./version-check");
+-const isAtLeast48 = version_check_1.typescriptVersionIsAtLeast['4.8'];
+-function getModifiers(node, includeIllegalModifiers = false) {
+-    if (node == null) {
+-        return undefined;
+-    }
+-    if (isAtLeast48) {
+-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- this is safe as it's guarded
+-        if (includeIllegalModifiers || ts.canHaveModifiers(node)) {
+-            // eslint-disable-next-line @typescript-eslint/no-deprecated -- this is safe as it's guarded
+-            const modifiers = ts.getModifiers(node);
+-            return modifiers ? [...modifiers] : undefined;
+-        }
+-        return undefined;
+-    }
+-    return (
+-    // @ts-expect-error intentional fallback for older TS versions
+-    node.modifiers?.filter((m) => !ts.isDecorator(m)));
+-}
+-function getDecorators(node, includeIllegalDecorators = false) {
+-    if (node == null) {
+-        return undefined;
+-    }
+-    if (isAtLeast48) {
+-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- this is safe as it's guarded
+-        if (includeIllegalDecorators || ts.canHaveDecorators(node)) {
+-            // eslint-disable-next-line @typescript-eslint/no-deprecated -- this is safe as it's guarded
+-            const decorators = ts.getDecorators(node);
+-            return decorators ? [...decorators] : undefined;
+-        }
+-        return undefined;
+-    }
+-    return (
+-    // @ts-expect-error intentional fallback for older TS versions
+-    node.decorators?.filter(ts.isDecorator));
+-}
+-//# sourceMappingURL=getModifiers.js.map
+\ No newline at end of file
++const { isDecorator } = require('typescript/unstable/ast');
++exports.getModifiers = node => node?.modifiers?.filter(modifier => !isDecorator(modifier));
++exports.getDecorators = node => node?.modifiers?.filter(isDecorator);
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 9a294fac880e5e3f436b1d0a0288e08bdbe57196..1a7472768dbf8b72db3e328a00042a399f8a284d 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -1,7 +1,8 @@
+ export * from './clear-caches';
+ export * from './create-program/getScriptKind';
+-export { getCanonicalFileName } from './create-program/shared';
+-export { createProgramFromConfigFile as createProgram } from './create-program/useProvidedPrograms';
++export declare function getCanonicalFileName(): never;
++export declare function createProgram(): never;
++export type { NativeParserServices, NativeParserServicesWithTypeInformation, NativeParserServicesWithoutTypeInformation } from './native-parser-services';
+ export * from './getModifiers';
+ export { TSError } from './node-utils';
+ export { type AST, parse, parseAndGenerateServices, type ParseAndGenerateServicesResult, } from './parser';
+diff --git a/dist/index.js b/dist/index.js
+index 23cd64aff8cdf3fa8bc548ea441d87c553d85efc..f5feec921a12fcb3352eab9ea5794b9ba10c856c 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -15,12 +15,11 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
+ };
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.withoutProjectParserOptions = exports.version = exports.typescriptVersionIsAtLeast = exports.simpleTraverse = exports.clearCandidateTSConfigRootDirs = exports.addCandidateTSConfigRootDir = exports.parseAndGenerateServices = exports.parse = exports.TSError = exports.createProgram = exports.getCanonicalFileName = void 0;
+-__exportStar(require("./clear-caches"), exports);
+-__exportStar(require("./create-program/getScriptKind"), exports);
+-var shared_1 = require("./create-program/shared");
+-Object.defineProperty(exports, "getCanonicalFileName", { enumerable: true, get: function () { return shared_1.getCanonicalFileName; } });
+-var useProvidedPrograms_1 = require("./create-program/useProvidedPrograms");
+-Object.defineProperty(exports, "createProgram", { enumerable: true, get: function () { return useProvidedPrograms_1.createProgramFromConfigFile; } });
++const nativeSession = require('./native-session');
++exports.clearCaches = nativeSession.clearNativeSessions;
++exports.createProgram = () => { throw new Error('TS6 createProgram is unavailable: use a native project snapshot with an explicit lifetime'); };
++exports.getCanonicalFileName = () => { throw new Error('TS6 filesystem canonicalization is unavailable: use native project file identity'); };
++exports.getScriptKind = require('./create-program/getScriptKind').getScriptKind;
+ __exportStar(require("./getModifiers"), exports);
+ var node_utils_1 = require("./node-utils");
+ Object.defineProperty(exports, "TSError", { enumerable: true, get: function () { return node_utils_1.TSError; } });
+diff --git b/dist/native-comments.LICENSE b/dist/native-comments.LICENSE
+new file mode 100644
+index 0000000000000000000000000000000000000000..08520a1e2740fb6923f63950220ad3c50d16399e
+--- /dev/null
++++ b/dist/native-comments.LICENSE
+@@ -0,0 +1,20 @@
++# MIT License
++
++Permission is hereby granted, free of charge, to any person obtaining
++a copy of this software and associated documentation files (the
++'Software'), to deal in the Software without restriction, including
++without limitation the rights to use, copy, modify, merge, publish,
++distribute, sublicense, and/or sell copies of the Software, and to
++permit persons to whom the Software is furnished to do so, subject to
++the following conditions:
++
++The above copyright notice and this permission notice shall be
++included in all copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,
++EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
++IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
++CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
++TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
++SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+diff --git b/dist/native-comments.js b/dist/native-comments.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..aa8f6b6f75e8a749f8ba402d99fd2c98b56357d2
+--- /dev/null
++++ b/dist/native-comments.js
+@@ -0,0 +1,67 @@
++"use strict";
++// Comment extraction derives from ts-api-utils 2.5.0 (MIT); see native-comments.LICENSE
++// and source tarball provenance. AST navigation is TypeScript 7's public API.
++const ast = require('typescript/unstable/ast');
++const { nativeTokens } = require('./native-tokens');
++function* iterateComments(sourceFile) {
++  const fullText = sourceFile.text;
++  const notJsx = sourceFile.languageVariant !== ast.LanguageVariant.JSX;
++  for (const token of nativeTokens(sourceFile)) {
++    if (token.pos === token.end) {
++      continue;
++    }
++    if (token.kind !== ast.SyntaxKind.JsxText) {
++      yield* collectComments((callback) => {
++        ast.forEachLeadingCommentRange(
++          fullText,
++          // skip shebang at position 0
++          token.pos === 0 ? (ast.getShebang(fullText) ?? "").length : token.pos,
++          callback
++        );
++      }, fullText);
++    }
++    if (notJsx || canHaveTrailingTrivia(token)) {
++      yield* collectComments((callback) => {
++        ast.forEachTrailingCommentRange(fullText, token.end, callback);
++      }, fullText);
++    }
++  }
++}
++function canHaveTrailingTrivia(token) {
++  switch (token.kind) {
++    case ast.SyntaxKind.CloseBraceToken:
++      return token.parent.kind !== ast.SyntaxKind.JsxExpression || !isJsxElementOrFragment(token.parent.parent);
++    case ast.SyntaxKind.GreaterThanToken:
++      switch (token.parent.kind) {
++        case ast.SyntaxKind.JsxClosingElement:
++        case ast.SyntaxKind.JsxClosingFragment:
++          return !isJsxElementOrFragment(token.parent.parent.parent);
++        case ast.SyntaxKind.JsxOpeningElement:
++          return token.end !== token.parent.end;
++        case ast.SyntaxKind.JsxOpeningFragment:
++          return false;
++        // would be inside the fragment
++        case ast.SyntaxKind.JsxSelfClosingElement:
++          return token.end !== token.parent.end || // if end is not equal, this is part of the type arguments list
++          !isJsxElementOrFragment(token.parent.parent);
++      }
++  }
++  return true;
++}
++function collectComments(execute, fullText) {
++  const comments = [];
++  execute((pos, end, kind) => {
++    const text = fullText.slice(pos, end);
++    const value = text.slice(
++      2,
++      kind === ast.SyntaxKind.SingleLineCommentTrivia ? void 0 : -2
++    );
++    comments.push({ end, kind, pos, text, value });
++  });
++  return comments;
++}
++function isJsxElementOrFragment(node) {
++  return node.kind === ast.SyntaxKind.JsxElement || node.kind === ast.SyntaxKind.JsxFragment;
++}
++
++exports.iterateComments = iterateComments;
+diff --git b/dist/native-module-kind.js b/dist/native-module-kind.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..843475e60f80b5778e0657822ffe81790e57552b
+--- /dev/null
++++ b/dist/native-module-kind.js
+@@ -0,0 +1,15 @@
++'use strict';
++const ast = require('typescript/unstable/ast');
++function nativeModuleKind(node) {
++    const source = node.getSourceFile();
++    let token = ast.getTokenAtPosition(source, node.getStart(source));
++    while (token.kind === ast.SyntaxKind.DeclareKeyword || token.kind === ast.SyntaxKind.ExportKeyword || token.kind === ast.SyntaxKind.DefaultKeyword) {
++        token = ast.findNextToken(token, node, source);
++        if (!token) throw new Error('Native module declaration has no declaration keyword');
++    }
++    if (token.kind === ast.SyntaxKind.NamespaceKeyword) return 'namespace';
++    if (token.kind === ast.SyntaxKind.ModuleKeyword) return 'module';
++    if (ast.isIdentifier(node.name) && token === node.name && node.name.text === 'global') return 'global';
++    throw new Error('Native module declaration keyword could not be identified');
++}
++exports.nativeModuleKind = nativeModuleKind;
+diff --git b/dist/native-parser-services.d.ts b/dist/native-parser-services.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..55e3a7739676fda736ab3d8c04f5dea8d65eee73
+--- /dev/null
++++ b/dist/native-parser-services.d.ts
+@@ -0,0 +1,34 @@
++import type { Checker, NodeHandle, Project, Signature, Symbol, Type } from 'typescript/unstable/sync';
++import type { Node } from 'typescript/unstable/ast';
++import type { TSESTree } from '@typescript-eslint/types';
++export type NativeParserServicesWithTypeInformation = {
++    hasTypeInformation: true;
++    project: Project;
++    checker: Checker;
++    esTreeNodeToTSNodeMap: WeakMap<TSESTree.Node, Node>;
++    tsNodeToESTreeNodeMap: WeakMap<Node, TSESTree.Node>;
++    emitDecoratorMetadata: boolean;
++    experimentalDecorators: boolean;
++    isolatedDeclarations: boolean;
++    getTypeAtLocation(node: TSESTree.Node): Type;
++    getSymbolAtLocation(node: TSESTree.Node): Symbol | undefined;
++    getContextualType(node: TSESTree.Node): Type | undefined;
++    getResolvedSignature(node: TSESTree.Node): Signature | undefined;
++    getTypeFromTypeNode(node: TSESTree.Node): Type;
++    getTypeOfSymbolAtLocation(symbol: Symbol, node: TSESTree.Node): Type;
++    resolveNodeHandle(handle: NodeHandle): Node;
++    readonly whenDisposed: Promise<void>;
++    dispose(): void;
++};
++
++export type NativeParserServicesWithoutTypeInformation = {
++    hasTypeInformation: false;
++    project: undefined;
++    checker: undefined;
++    emitDecoratorMetadata?: boolean;
++    experimentalDecorators?: boolean;
++    isolatedDeclarations?: boolean;
++    esTreeNodeToTSNodeMap: WeakMap<TSESTree.Node, Node>;
++    tsNodeToESTreeNodeMap: WeakMap<Node, TSESTree.Node>;
++};
++export type NativeParserServices = NativeParserServicesWithTypeInformation | NativeParserServicesWithoutTypeInformation;
+diff --git b/dist/native-session.js b/dist/native-session.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..7164f5f8bcb707e227c11a129fe51a3717b689d4
+--- /dev/null
++++ b/dist/native-session.js
+@@ -0,0 +1,257 @@
++'use strict';
++const { resolve, dirname, basename, relative, sep, isAbsolute, join } = require('node:path');
++const { existsSync, readFileSync, readdirSync, statSync } = require('node:fs');
++const { API, DiagnosticCategory } = require('typescript/unstable/sync');
++const { createError } = require('./node-utils');
++const { globSync } = require('tinyglobby');
++
++// Native sessions and source overlays are runtime state owned here. Each
++// active typed lint traversal owns its own independently released snapshot.
++const owners = new Map();
++const collectedLeases = new FinalizationRegistry(release => release());
++
++function projectFiles(options, cwd, filePath) {
++    if (options.project === true) {
++        let directory = dirname(filePath);
++        while (true) {
++            const candidate = resolve(directory, 'tsconfig.json');
++            if (existsSync(candidate)) return [candidate];
++            if (directory === cwd || dirname(directory) === directory) break;
++            directory = dirname(directory);
++        }
++        throw new Error(`No tsconfig.json found for ${filePath}`);
++    }
++    const patterns = options.project ? [].concat(options.project) : [];
++    const paths = new Set();
++    for (const pattern of patterns) {
++        if (typeof pattern !== 'string') throw new TypeError('project must contain tsconfig paths');
++        if (/[*?{[\]]/.test(pattern)) {
++            for (const match of globSync(pattern, { cwd, absolute: true, onlyFiles: true })) paths.add(match);
++        } else {
++            const path = resolve(cwd, pattern);
++            if (!existsSync(path)) throw new Error(`Project configuration does not exist: ${path}`);
++            paths.add(path);
++        }
++    }
++    if (patterns.length && !paths.size) throw new Error('Project patterns matched no configurations');
++    return [...paths];
++}
++
++function diskText(path) {
++    try { return readFileSync(path, 'utf8'); }
++    catch (error) {
++        if (error.code === 'ENOENT') return undefined;
++        throw error;
++    }
++}
++
++function virtualEntries(files, directory) {
++    const virtualFiles = new Set();
++    const virtualDirectories = new Set();
++    for (const file of files.keys()) {
++        const path = relative(directory, file);
++        if (!path || path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path)) continue;
++        const segments = path.split(sep);
++        if (segments.length === 1) virtualFiles.add(segments[0]);
++        else virtualDirectories.add(segments[0]);
++    }
++    if (!virtualFiles.size && !virtualDirectories.size) return undefined;
++    try {
++        for (const entry of readdirSync(directory, { withFileTypes: true })) {
++            const info = entry.isSymbolicLink() ? statSync(join(directory, entry.name)) : entry;
++            if (info.isDirectory()) virtualDirectories.add(entry.name);
++            else virtualFiles.add(entry.name);
++        }
++    } catch (error) {
++        if (error.code !== 'ENOENT') throw error;
++    }
++    return { files: [...virtualFiles], directories: [...virtualDirectories] };
++}
++
++function overlayFileSystem(files) {
++    return {
++        readFile: path => files.get(resolve(path)),
++        fileExists: path => files.has(resolve(path)) ? true : undefined,
++        directoryExists: directory => virtualEntries(files, resolve(directory)) ? true : undefined,
++        getAccessibleEntries: directory => virtualEntries(files, resolve(directory)),
++    };
++}
++
++function checkSource(project, ast, options, typed) {
++    const errors = [...project.program.getConfigFileParsingDiagnostics(), ...project.program.getProgramDiagnostics()]
++        .filter(diagnostic => diagnostic.category === DiagnosticCategory.Error);
++    if (errors.length) throw new Error(errors.map(diagnostic => diagnostic.text).join('\n'));
++    const syntax = project.program.getSyntacticDiagnostics(ast.fileName)
++        .find(diagnostic => diagnostic.category === DiagnosticCategory.Error);
++    if (syntax) throw createError([syntax.pos, syntax.end], syntax.text, ast);
++    if (options.errorOnTypeScriptSyntacticAndSemanticIssues) {
++        if (!typed) throw new Error('Cannot calculate semantic issues without a configured lint project');
++        const issue = [...project.program.getBindDiagnostics(ast.fileName), ...project.program.getSemanticDiagnostics(ast.fileName)]
++            .find(diagnostic => diagnostic.category === DiagnosticCategory.Error);
++        if (issue) throw createError([issue.pos, issue.end], issue.text, ast);
++    }
++}
++
++function leaseFor(entry, project, ast, typed, releaseEntry) {
++    entry.references++;
++    let released = false;
++    let completed;
++    const whenDisposed = new Promise(resolve => { completed = resolve; });
++    const token = {};
++    const release = () => {
++        if (released) return;
++        released = true;
++        collectedLeases.unregister(token);
++        try { releaseEntry(entry); }
++        finally { completed(); }
++    };
++    const lease = { project, ast, typed, whenDisposed, release, assertLive() {
++        if (released || entry.snapshot.isDisposed()) throw new Error('Native lint snapshot lease has been released');
++    } };
++    collectedLeases.register(lease, release, token);
++    return lease;
++}
++
++class CheckingOwner {
++    constructor(cwd, compilerPath) {
++        this.cwd = cwd;
++        this.files = new Map();
++        this.snapshots = new Set();
++        this.openProjects = new Set();
++        this.closed = false;
++        this.api = new API({ cwd, tsserverPath: compilerPath, fs: overlayFileSystem(this.files) });
++    }
++    acquire(code, options, filePath, projects) {
++        if (this.closed) throw new Error('Native checking owner is closed');
++        // Matching disk contents need no overlay. Supplied editor/fix text stays
++        // in the native FS override without writing a source file to disk.
++        if (diskText(filePath) === code) this.files.delete(filePath);
++        else this.files.set(filePath, code);
++        const newlyOpened = projects.filter(path => !this.openProjects.has(path));
++        // A standalone API has no LSP change producer. Ask native code to reload
++        // its inputs and config/discovery state at every typed acquisition.
++        // The native parse cache can reuse content; checker freshness is never
++        // inferred from incomplete JavaScript filesystem observations.
++        const snapshot = this.api.updateSnapshot({ openProjects: newlyOpened, fileChanges: { invalidateAll: true } });
++        for (const path of newlyOpened) this.openProjects.add(path);
++        const entry = { snapshot, references: 0 };
++        this.snapshots.add(entry);
++        try {
++            let selected;
++            for (const path of projects) {
++                const project = snapshot.getProject(path);
++                const ast = project?.program.getSourceFile(filePath);
++                if (ast) { selected = { project, ast }; break; }
++            }
++            if (!selected) throw new Error(`File is outside the configured lint projects: ${filePath}`);
++            if (selected.ast.text !== code) throw new Error(`Native checking snapshot did not parse the supplied text: ${filePath}`);
++            checkSource(selected.project, selected.ast, options, true);
++            return leaseFor(entry, selected.project, selected.ast, true, entry => {
++                if (entry.references !== 1) throw new Error('Native checking lease ownership was lost');
++                entry.references = 0;
++                this.snapshots.delete(entry);
++                entry.snapshot.dispose();
++            });
++        } catch (error) {
++            this.snapshots.delete(entry);
++            snapshot.dispose();
++            throw error;
++        }
++    }
++    close() {
++        if (this.closed) return;
++        this.closed = true;
++        try { for (const entry of this.snapshots) entry.snapshot.dispose(); }
++        finally { this.snapshots.clear(); this.files.clear(); this.api.close(); }
++    }
++}
++
++class SyntaxOwner {
++    constructor(cwd, compilerPath) {
++        this.cwd = cwd;
++        this.files = new Map();
++        this.configPath = join(cwd, '__native_eslint_syntax__', 'tsconfig.json');
++        this.opened = false;
++        this.closed = false;
++        this.snapshots = new Set();
++        this.api = new API({ cwd, tsserverPath: compilerPath, fs: overlayFileSystem(this.files) });
++    }
++    acquire(code, options, filePath) {
++        if (this.closed) throw new Error('Native syntax owner is closed');
++        const previous = new Map(this.files);
++        this.files.clear();
++        this.files.set(filePath, code);
++        this.files.set(this.configPath, JSON.stringify({
++            compilerOptions: { target: 'ESNext', module: 'ESNext', allowJs: true, noEmit: true, noResolve: true, noLib: true, types: [], jsx: 'preserve' },
++            files: [filePath],
++        }));
++        const changed = [];
++        const created = [];
++        const deleted = [];
++        for (const [path, text] of this.files) {
++            if (!previous.has(path)) created.push(path);
++            else if (previous.get(path) !== text) changed.push(path);
++        }
++        for (const path of previous.keys()) if (!this.files.has(path)) deleted.push(path);
++        const snapshot = this.api.updateSnapshot({
++            openProjects: this.opened ? [] : [this.configPath],
++            fileChanges: { changed, created, deleted },
++        });
++        this.opened = true;
++        const entry = { snapshot, references: 0 };
++        this.snapshots.add(entry);
++        try {
++            const project = snapshot.getProject(this.configPath);
++            const ast = project?.program.getSourceFile(filePath);
++            if (!ast || ast.text !== code) throw new Error(`Native syntax project did not parse the supplied text: ${filePath}`);
++            checkSource(project, ast, options, false);
++            return leaseFor(entry, project, ast, false, entry => {
++                if (entry.references !== 1) throw new Error('Native syntax lease ownership was lost');
++                entry.references = 0;
++                this.snapshots.delete(entry);
++                entry.snapshot.dispose();
++            });
++        } catch (error) {
++            this.snapshots.delete(entry);
++            snapshot.dispose();
++            throw error;
++        }
++    }
++    close() {
++        if (this.closed) return;
++        this.closed = true;
++        try { for (const entry of this.snapshots) entry.snapshot.dispose(); }
++        finally { this.snapshots.clear(); this.files.clear(); this.api.close(); }
++    }
++}
++
++function acquireNativeSource(code, options = {}) {
++    if (typeof code !== 'string') throw new TypeError('The native parser requires source text');
++    if (options.programs || options.projectService) throw new Error('Native lint uses explicit project snapshots; TS6 programs/projectService objects are unsupported');
++    const cwd = resolve(options.tsconfigRootDir || process.cwd());
++    const filePath = resolve(cwd, options.filePath || (options.jsx ? '__eslint__.tsx' : '__eslint__.ts'));
++    const projects = projectFiles(options, cwd, filePath);
++    const typed = projects.length > 0;
++    if (typed && (typeof options.nativeCompilerPath !== 'string' || !options.nativeCompilerPath)) throw new Error('Typed native lint requires the verified prepared compiler path in parserOptions.nativeCompilerPath; run pnpm native:typescript:prepare and use the repository resolver');
++    if (options.nativeCompilerPath !== undefined && (typeof options.nativeCompilerPath !== 'string' || !options.nativeCompilerPath)) throw new TypeError('nativeCompilerPath must be a nonempty executable path when supplied');
++    const key = `${cwd}\0${options.nativeCompilerPath}\0${typed ? 'checking' : 'syntax'}`;
++    let owner = owners.get(key);
++    if (!owner) {
++        owner = typed ? new CheckingOwner(cwd, options.nativeCompilerPath) : new SyntaxOwner(cwd, options.nativeCompilerPath);
++        owners.set(key, owner);
++    }
++    return typed ? owner.acquire(code, options, filePath, projects) : owner.acquire(code, options, filePath);
++}
++function clearNativeSessions() {
++    const failures = [];
++    for (const owner of owners.values()) {
++        try { owner.close(); } catch (error) { failures.push(error); }
++    }
++    owners.clear();
++    if (failures.length) throw new AggregateError(failures, 'Native lint owners failed to close');
++}
++// The native channel's earlier exit handler kills its children. Close owners
++// before that phase rather than releasing through an already killed channel.
++process.once('beforeExit', clearNativeSessions);
++exports.acquireNativeSource = acquireNativeSource;
++exports.clearNativeSessions = clearNativeSessions;
+diff --git b/dist/native-tokens.js b/dist/native-tokens.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..adcfe14c68d7c07b4fe4444858e1d93fa561f0a5
+--- /dev/null
++++ b/dist/native-tokens.js
+@@ -0,0 +1,24 @@
++"use strict";
++const ast = require('typescript/unstable/ast');
++// Native navigation reconstructs punctuation from gaps between parsed children,
++// preserving regexp, JSX and split generic tokens instead of lexing raw text.
++function* nativeTokens(sourceFile) {
++    let position = ast.skipTrivia(sourceFile.text, 0);
++    while (position <= sourceFile.end) {
++        let token = ast.getTokenAtPosition(sourceFile, position);
++        // Native navigation exposes JSDoc AST children inside leading trivia.
++        // Skip only those comments; JSX whitespace remains a genuine token.
++        if (ast.isJSDocNodeKind(token.kind)) {
++            const afterComment = ast.skipTrivia(sourceFile.text, position);
++            if (afterComment <= position) throw new Error('Native JSDoc trivia did not advance');
++            token = ast.getTokenAtPosition(sourceFile, afterComment);
++        }
++        if (!ast.isTokenKind(token.kind)) throw new Error(`Native token navigation returned a non-token: ${ast.SyntaxKind[token.kind]} at ${position}`);
++        yield token;
++        if (token.kind === ast.SyntaxKind.EndOfFile) return;
++        if (token.end <= position) throw new Error('Native token navigation did not advance');
++        position = token.end;
++    }
++    throw new Error('Native token navigation did not reach EOF');
++}
++exports.nativeTokens = nativeTokens;
+diff --git a/dist/node-utils.d.ts b/dist/node-utils.d.ts
+index 60f7f40e02a6d65e6c556accc05c041bc0005ef6..976076aa35c813da2ca7f5807919562be60eb11e 100644
+--- a/dist/node-utils.d.ts
++++ b/dist/node-utils.d.ts
+@@ -1,4 +1,4 @@
+-import * as ts from 'typescript';
++import * as ts from 'typescript/unstable/ast';
+ import type { TSESTree } from './ts-estree';
+ import { AST_NODE_TYPES, AST_TOKEN_TYPES } from './ts-estree';
+ declare const SyntaxKind: typeof ts.SyntaxKind;
+@@ -116,9 +116,7 @@ export declare function isComputedProperty(node: ts.Node): node is ts.ComputedPr
+  * Returns true if a given ts.Node is optional (has QuestionToken)
+  * @param node ts.Node to be checked
+  */
+-export declare function isOptional(node: {
+-    questionToken?: ts.QuestionToken;
+-}): boolean;
++export declare function isOptional(node: ts.NamedMemberBase): boolean;
+ /**
+  * Returns true if the node is an optional chain node
+  */
+diff --git a/dist/node-utils.js b/dist/node-utils.js
+index 19b7dcc773c58c81e46ae680f4dc865130b31ea6..df6b4ba8f0d14e981f94a5716f0c0ab72b57c763 100644
+--- a/dist/node-utils.js
++++ b/dist/node-utils.js
+@@ -71,7 +71,7 @@ exports.isValidAssignmentTarget = isValidAssignmentTarget;
+ exports.getNamespaceModifiers = getNamespaceModifiers;
+ exports.declarationNameToString = declarationNameToString;
+ exports.isEntityNameExpression = isEntityNameExpression;
+-const ts = __importStar(require("typescript"));
++const ts = __importStar(require("typescript/unstable/ast"));
+ const getModifiers_1 = require("./getModifiers");
+ const xhtml_entities_1 = require("./jsx/xhtml-entities");
+ const ts_estree_1 = require("./ts-estree");
+@@ -190,7 +190,7 @@ function isComment(node) {
+  */
+ function isJSDocComment(node) {
+     // eslint-disable-next-line @typescript-eslint/no-deprecated -- SyntaxKind.JSDoc was only added in TS4.7 so we can't use it yet
+-    return node.kind === SyntaxKind.JSDocComment;
++    return node.kind === SyntaxKind.JSDoc;
+ }
+ /**
+  * Returns the binary expression type of the given ts.Token
+@@ -318,24 +318,9 @@ function getTSNodeAccessibility(node) {
+  * Had to copy this from TS instead of using TS's version because theirs doesn't pass the ast to getChildren
+  */
+ function findNextToken(previousToken, parent, ast) {
+-    return find(parent);
+-    function find(n) {
+-        if (ts.isToken(n) && n.pos === previousToken.end) {
+-            // this is token that starts at the end of previous token - return it
+-            return n;
+-        }
+-        return firstDefined(n.getChildren(ast), (child) => {
+-            const shouldDiveInChildNode = 
+-            // previous token is enclosed somewhere in the child
+-            (child.pos <= previousToken.pos && child.end > previousToken.end) ||
+-                // previous token ends exactly at the beginning of child
+-                child.pos === previousToken.end;
+-            return shouldDiveInChildNode && nodeHasTokens(child, ast)
+-                ? find(child)
+-                : undefined;
+-        });
+-    }
++    return ts.findNextToken(previousToken, parent, ast);
+ }
++
+ /**
+  * Find the first matching ancestor based on the given predicate function.
+  * @param node The current ts.Node
+@@ -388,7 +373,7 @@ function isComputedProperty(node) {
+  * @param node ts.Node to be checked
+  */
+ function isOptional(node) {
+-    return !!node.questionToken;
++    return node.postfixToken?.kind === SyntaxKind.QuestionToken;
+ }
+ /**
+  * Returns true if the node is an optional chain node
+@@ -512,33 +497,12 @@ function convertToken(token, ast) {
+  */
+ function convertTokens(ast) {
+     const result = [];
+-    /**
+-     * @param node the ts.Node
+-     */
+-    function walk(node) {
+-        // TypeScript generates tokens for types in JSDoc blocks. Comment tokens
+-        // and their children should not be walked or added to the resulting tokens list.
+-        if (isComment(node) || isJSDocComment(node)) {
+-            return;
+-        }
+-        const { kind } = node;
+-        if (isToken(node) && kind !== SyntaxKind.EndOfFileToken) {
+-            const token = convertToken(node, ast);
+-            // TypeScript drops first half of a `<<` in some cases.
+-            // Gating on `kind` (a cheap check) keeps the rest of the check,
+-            // which has to look at the text, off the hot path.
+-            if (kind === SyntaxKind.LessThanToken) {
+-                addMissingLessThanToken(result, token, ast);
+-            }
+-            result.push(token);
+-        }
+-        else {
+-            node.getChildren(ast).forEach(walk);
+-        }
++    for (const node of require('./native-tokens').nativeTokens(ast)) {
++        if (node.kind !== SyntaxKind.EndOfFile) result.push(convertToken(node, ast));
+     }
+-    walk(ast);
+     return result;
+ }
++
+ /**
+  * TypeScript recovers the tokens its parser did not keep as children of a node
+  * (`<` and `>` of a type argument list, for instance) by re-scanning the source
+@@ -625,7 +589,7 @@ function createError(node, message, sourceFile) {
+ function nodeHasTokens(n, ast) {
+     // If we have a token or node that has a non-zero width, it must have tokens.
+     // Note: getWidth() does not take trivia into account.
+-    return n.kind === SyntaxKind.EndOfFileToken
++    return n.kind === SyntaxKind.EndOfFile
+         ? !!n.jsDoc
+         : n.getWidth(ast) !== 0;
+ }
+@@ -647,11 +611,9 @@ function firstDefined(array, callback) {
+     return undefined;
+ }
+ function identifierIsThisKeyword(id) {
+-    return ((isAtLeast50
+-        ? ts.identifierToKeywordKind(id)
+-        : // @ts-expect-error -- intentional fallback for older TS versions <=4.9
+-            id.originalKeywordKind) === SyntaxKind.ThisKeyword);
++    return ts.stringToToken(id.text) === SyntaxKind.ThisKeyword;
+ }
++
+ function isThisIdentifier(node) {
+     return (!!node &&
+         node.kind === SyntaxKind.Identifier &&
+diff --git a/dist/parser-options.d.ts b/dist/parser-options.d.ts
+index 1d52c5438b473ebbaa78de70dee4637b997d911c..c1e43d43f0c6c5e09f6418d1416091a5b0e152a1 100644
+--- a/dist/parser-options.d.ts
++++ b/dist/parser-options.d.ts
+@@ -1,5 +1,5 @@
+ import type { CacheDurationSeconds, DebugLevel, JSDocParsingMode, ProjectServiceOptions, SourceType } from '@typescript-eslint/types';
+-import type * as ts from 'typescript';
++import type { NativeParserServices, NativeParserServicesWithTypeInformation, NativeParserServicesWithoutTypeInformation } from './native-parser-services';
+ import type { TSESTree, TSESTreeToTSNode, TSNode, TSToken } from './ts-estree';
+ interface ParseOptions {
+     /**
+@@ -182,7 +182,8 @@ interface ParseAndGenerateServicesOptions extends ParseOptions {
+      * This overrides any program or programs that would have been computed from the `project` option.
+      * All linted files must be part of the provided program(s).
+      */
+-    programs?: ts.Program[] | null;
++    programs?: never;
++    nativeCompilerPath?: string;
+ }
+ export type TSESTreeOptions = ParseAndGenerateServicesOptions;
+ export interface ParserWeakMap<Key, ValueBase> {
+@@ -202,17 +203,6 @@ export interface ParserServicesNodeMaps {
+     esTreeNodeToTSNodeMap: ParserWeakMapESTreeToTSNode;
+     tsNodeToESTreeNodeMap: ParserWeakMap<TSNode | TSToken, TSESTree.Node>;
+ }
+-export interface ParserServicesWithTypeInformation extends ParserServicesNodeMaps, ParserServicesBase {
+-    getSymbolAtLocation: (node: TSESTree.Node) => ts.Symbol | undefined;
+-    getTypeAtLocation: (node: TSESTree.Node) => ts.Type;
+-    getContextualType: (node: TSESTree.Expression) => ts.Type | undefined;
+-    getResolvedSignature: (node: TSESTree.CallExpression | TSESTree.NewExpression) => ts.Signature | undefined;
+-    getTypeFromTypeNode: (node: TSESTree.TypeNode) => ts.Type;
+-    getTypeOfSymbolAtLocation: (symbol: ts.Symbol, node: TSESTree.Node) => ts.Type;
+-    program: ts.Program;
+-}
+-export interface ParserServicesWithoutTypeInformation extends ParserServicesNodeMaps, ParserServicesBase {
+-    program: null;
+-}
+-export type ParserServices = ParserServicesWithoutTypeInformation | ParserServicesWithTypeInformation;
+-export {};
++export type ParserServicesWithTypeInformation = NativeParserServicesWithTypeInformation;
++export type ParserServicesWithoutTypeInformation = NativeParserServicesWithoutTypeInformation;
++export type ParserServices = NativeParserServices;
+diff --git a/dist/parser.d.ts b/dist/parser.d.ts
+index 91588c937be1f22cacd0fca222740159c37090f7..4d9811e707494a94ce17d45af91a51e5b14d930c 100644
+--- a/dist/parser.d.ts
++++ b/dist/parser.d.ts
+@@ -1,4 +1,3 @@
+-import * as ts from 'typescript';
+ import type { ParserServices, TSESTreeOptions } from './parser-options';
+ import type { TSESTree } from './ts-estree';
+ export declare function clearProgramCache(): void;
+@@ -14,4 +13,4 @@ export interface ParseAndGenerateServicesResult<T extends TSESTreeOptions> {
+ }
+ export declare function parse<T extends TSESTreeOptions = TSESTreeOptions>(code: string, options?: T): AST<T>;
+ export declare function clearParseAndGenerateServicesCalls(): void;
+-export declare function parseAndGenerateServices<T extends TSESTreeOptions = TSESTreeOptions>(code: string | ts.SourceFile, tsestreeOptions: T): ParseAndGenerateServicesResult<T>;
++export declare function parseAndGenerateServices<T extends TSESTreeOptions = TSESTreeOptions>(code: string, tsestreeOptions: T): ParseAndGenerateServicesResult<T>;
+diff --git a/dist/parser.js b/dist/parser.js
+index b803d4d802d7b5f9f829aed4d10ae2ca61eacc71..b7659d5d7abd50f879f91a8b69cb1fbbae92c7db 100644
+--- a/dist/parser.js
++++ b/dist/parser.js
+@@ -1,290 +1,26 @@
+-"use strict";
+-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+-    if (k2 === undefined) k2 = k;
+-    var desc = Object.getOwnPropertyDescriptor(m, k);
+-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+-      desc = { enumerable: true, get: function() { return m[k]; } };
+-    }
+-    Object.defineProperty(o, k2, desc);
+-}) : (function(o, m, k, k2) {
+-    if (k2 === undefined) k2 = k;
+-    o[k2] = m[k];
+-}));
+-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+-    Object.defineProperty(o, "default", { enumerable: true, value: v });
+-}) : function(o, v) {
+-    o["default"] = v;
+-});
+-var __importStar = (this && this.__importStar) || (function () {
+-    var ownKeys = function(o) {
+-        ownKeys = Object.getOwnPropertyNames || function (o) {
+-            var ar = [];
+-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+-            return ar;
+-        };
+-        return ownKeys(o);
+-    };
+-    return function (mod) {
+-        if (mod && mod.__esModule) return mod;
+-        var result = {};
+-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+-        __setModuleDefault(result, mod);
+-        return result;
+-    };
+-})();
+-var __importDefault = (this && this.__importDefault) || function (mod) {
+-    return (mod && mod.__esModule) ? mod : { "default": mod };
+-};
+-Object.defineProperty(exports, "__esModule", { value: true });
+-exports.clearProgramCache = clearProgramCache;
+-exports.clearDefaultProjectMatchedFiles = clearDefaultProjectMatchedFiles;
+-exports.parse = parse;
+-exports.clearParseAndGenerateServicesCalls = clearParseAndGenerateServicesCalls;
+-exports.parseAndGenerateServices = parseAndGenerateServices;
+-const debug_1 = __importDefault(require("debug"));
+-const ts = __importStar(require("typescript"));
+-const ast_converter_1 = require("./ast-converter");
+-const convert_1 = require("./convert");
+-const createIsolatedProgram_1 = require("./create-program/createIsolatedProgram");
+-const createProjectProgram_1 = require("./create-program/createProjectProgram");
+-const createSourceFile_1 = require("./create-program/createSourceFile");
+-const getWatchProgramsForProjects_1 = require("./create-program/getWatchProgramsForProjects");
+-const shared_1 = require("./create-program/shared");
+-const useProvidedPrograms_1 = require("./create-program/useProvidedPrograms");
+-const createParserServices_1 = require("./createParserServices");
+-const createParseSettings_1 = require("./parseSettings/createParseSettings");
+-const getProjectConfigFiles_1 = require("./parseSettings/getProjectConfigFiles");
+-const semantic_or_syntactic_errors_1 = require("./semantic-or-syntactic-errors");
+-const useProgramFromProjectService_1 = require("./useProgramFromProjectService");
+-const log = (0, debug_1.default)('typescript-eslint:typescript-estree:parser');
+-/**
+- * Cache existing programs for the single run use-case.
+- *
+- * clearProgramCache() is only intended to be used in testing to ensure the parser is clean between tests.
+- */
+-const existingPrograms = new Map();
+-/**
+- * Tsconfigs with project references, which single runs leave to the project service.
+- */
+-const configFilesWithReferences = new Set();
+-/**
+- * Directories' config files as the project service finds them, which unlike
+- * `parserOptions.project: true` includes jsconfig.json files.
+- */
+-const projectServiceConfigFileMatches = new Map();
+-function clearProgramCache() {
+-    existingPrograms.clear();
+-    configFilesWithReferences.clear();
+-    projectServiceConfigFileMatches.clear();
+-}
+-/**
+- * Files don't change on disk during a single run, so the project service's
+- * bookkeeping for each opened file isn't needed. Instead, each file can come
+- * from a Program created once for its tsconfig, the same as with
+- * `parserOptions.project`. Anything less straightforward is left to the
+- * project service: default project files, extra file extensions, project
+- * references, and files not found in their tsconfig's Program.
+- */
+-function useSingleRunProgramForProjectService(parseSettings) {
+-    if (parseSettings.extraFileExtensions.length ||
+-        parseSettings.projectService?.allowDefaultProject?.length) {
+-        return undefined;
+-    }
+-    let configFile;
++'use strict';
++const { astConverter } = require('./ast-converter');
++const { createParserServices } = require('./createParserServices');
++const { acquireNativeSource, clearNativeSessions } = require('./native-session');
++function parseAndGenerateServices(code, options = {}) {
++    const lease = acquireNativeSource(code, options);
+     try {
+-        [configFile] =
+-            (0, getProjectConfigFiles_1.getProjectConfigFiles)({
+-                ...parseSettings,
+-                tsconfigMatchCache: projectServiceConfigFileMatches,
+-            }, true, ['tsconfig.json', 'jsconfig.json']) ?? [];
+-    }
+-    catch {
+-        return undefined;
+-    }
+-    if (!configFile) {
+-        return undefined;
+-    }
+-    const canonicalConfigFile = (0, shared_1.getCanonicalFileName)(configFile);
+-    if (configFilesWithReferences.has(canonicalConfigFile)) {
+-        return undefined;
+-    }
+-    let program = existingPrograms.get(canonicalConfigFile);
+-    if (!program) {
+-        // The project service loads referenced projects from their source files,
+-        // while a Program would use their built declaration files.
+-        // References aren't inherited through extends, so the raw file is enough.
+-        const rawConfig = ts.readConfigFile(configFile, ts.sys.readFile).config;
+-        if (rawConfig?.references?.length) {
+-            configFilesWithReferences.add(canonicalConfigFile);
+-            return undefined;
+-        }
+-        log('Creating single-run Program for project service: %s', configFile);
+-        program = (0, useProvidedPrograms_1.createProgramFromConfigFile)(configFile, undefined, parseSettings.jsDocParsingMode);
+-        existingPrograms.set(canonicalConfigFile, program);
+-    }
+-    const astAndProgram = (0, shared_1.getAstFromProgram)(program, parseSettings.filePath);
+-    if (astAndProgram?.ast.text !== parseSettings.codeFullText) {
+-        return undefined;
+-    }
+-    astAndProgram.program.getTypeChecker(); // ensure parent pointers are set in source files
+-    return astAndProgram;
+-}
+-const defaultProjectMatchedFiles = new Set();
+-function clearDefaultProjectMatchedFiles() {
+-    defaultProjectMatchedFiles.clear();
+-}
+-/**
+- * @param parseSettings Internal settings for parsing the file
+- * @param hasFullTypeInformation True if the program should be attempted to be calculated from provided tsconfig files
+- * @returns Returns a source file and program corresponding to the linted code
+- */
+-function getProgramAndAST(parseSettings, hasFullTypeInformation) {
+-    if (parseSettings.projectService) {
+-        if (parseSettings.singleRun && hasFullTypeInformation) {
+-            const fromSingleRunProgram = useSingleRunProgramForProjectService(parseSettings);
+-            if (fromSingleRunProgram) {
+-                return fromSingleRunProgram;
+-            }
+-        }
+-        const fromProjectService = (0, useProgramFromProjectService_1.useProgramFromProjectService)(parseSettings.projectService, parseSettings, hasFullTypeInformation, defaultProjectMatchedFiles);
+-        if (fromProjectService) {
+-            return fromProjectService;
+-        }
+-    }
+-    if (parseSettings.programs) {
+-        return (0, useProvidedPrograms_1.useProvidedPrograms)(parseSettings.programs, parseSettings);
+-    }
+-    // no need to waste time creating a program as the caller didn't want parser services
+-    // so we can save time and just create a lonesome source file
+-    if (!hasFullTypeInformation) {
+-        return (0, createSourceFile_1.createNoProgram)(parseSettings);
+-    }
+-    return (0, createProjectProgram_1.createProjectProgram)(parseSettings, (0, getWatchProgramsForProjects_1.getWatchProgramsForProjects)(parseSettings));
+-}
+-function parse(code, options) {
+-    const { ast } = parseWithNodeMapsInternal(code, options, false);
++        const { estree, astMaps } = astConverter(lease.ast, options, options.preserveNodeMaps !== false);
++        const services = createParserServices(astMaps, lease);
++        if (!lease.typed) lease.release();
++        return { ast: estree, services };
++    } catch (error) {
++        lease.release();
++        throw error;
++    }
++}
++function parse(code, options = {}) {
++    const { ast, services } = parseAndGenerateServices(code, { ...options, project: false });
++    services.dispose?.();
+     return ast;
+ }
+-function parseWithNodeMapsInternal(code, options, shouldPreserveNodeMaps) {
+-    /**
+-     * Reset the parse configuration
+-     */
+-    const parseSettings = (0, createParseSettings_1.createParseSettings)(code, options);
+-    /**
+-     * Ensure users do not attempt to use parse() when they need parseAndGenerateServices()
+-     */
+-    if (options?.errorOnTypeScriptSyntacticAndSemanticIssues) {
+-        throw new Error(`"errorOnTypeScriptSyntacticAndSemanticIssues" is only supported for parseAndGenerateServices()`);
+-    }
+-    /**
+-     * Create a ts.SourceFile directly, no ts.Program is needed for a simple parse
+-     */
+-    const ast = (0, createSourceFile_1.createSourceFile)(parseSettings);
+-    /**
+-     * Convert the TypeScript AST to an ESTree-compatible one
+-     */
+-    const { astMaps, estree } = (0, ast_converter_1.astConverter)(ast, parseSettings, shouldPreserveNodeMaps);
+-    return {
+-        ast: estree,
+-        esTreeNodeToTSNodeMap: astMaps.esTreeNodeToTSNodeMap,
+-        tsNodeToESTreeNodeMap: astMaps.tsNodeToESTreeNodeMap,
+-    };
+-}
+-let parseAndGenerateServicesCalls = {};
+-// Privately exported utility intended for use in typescript-eslint unit tests only
+-function clearParseAndGenerateServicesCalls() {
+-    parseAndGenerateServicesCalls = {};
+-}
+-function parseAndGenerateServices(code, tsestreeOptions) {
+-    /**
+-     * Reset the parse configuration
+-     */
+-    const parseSettings = (0, createParseSettings_1.createParseSettings)(code, tsestreeOptions);
+-    /**
+-     * If this is a single run in which the user has not provided any existing programs but there
+-     * are programs which need to be created from the provided "project" option,
+-     * create an Iterable which will lazily create the programs as needed by the iteration logic
+-     */
+-    if (parseSettings.singleRun &&
+-        !parseSettings.programs &&
+-        parseSettings.projects.size > 0) {
+-        parseSettings.programs = {
+-            *[Symbol.iterator]() {
+-                for (const configFile of parseSettings.projects) {
+-                    const existingProgram = existingPrograms.get(configFile[0]);
+-                    if (existingProgram) {
+-                        yield existingProgram;
+-                    }
+-                    else {
+-                        log('Detected single-run/CLI usage, creating Program once ahead of time for project: %s', configFile);
+-                        const newProgram = (0, useProvidedPrograms_1.createProgramFromConfigFile)(configFile[1]);
+-                        existingPrograms.set(configFile[0], newProgram);
+-                        yield newProgram;
+-                    }
+-                }
+-            },
+-        };
+-    }
+-    const hasFullTypeInformation = parseSettings.programs != null ||
+-        parseSettings.projects.size > 0 ||
+-        !!parseSettings.projectService;
+-    if (typeof tsestreeOptions.errorOnTypeScriptSyntacticAndSemanticIssues ===
+-        'boolean' &&
+-        tsestreeOptions.errorOnTypeScriptSyntacticAndSemanticIssues) {
+-        parseSettings.errorOnTypeScriptSyntacticAndSemanticIssues = true;
+-    }
+-    if (parseSettings.errorOnTypeScriptSyntacticAndSemanticIssues &&
+-        !hasFullTypeInformation) {
+-        throw new Error('Cannot calculate TypeScript semantic issues without a valid project.');
+-    }
+-    /**
+-     * If we are in singleRun mode but the parseAndGenerateServices() function has been called more than once for the current file,
+-     * it must mean that we are in the middle of an ESLint automated fix cycle (in which parsing can be performed up to an additional
+-     * 10 times in order to apply all possible fixes for the file).
+-     *
+-     * In this scenario we cannot rely upon the singleRun AOT compiled programs because the SourceFiles will not contain the source
+-     * with the latest fixes applied. Therefore we fallback to creating the quickest possible isolated program from the updated source.
+-     *
+-     * Note: This fallback is only needed for the legacy `project` option which uses AOT compiled programs.
+-     * When `projectService` is used, the TypeScript language service always provides up-to-date programs,
+-     * so no fallback is necessary. Additionally, external parsers like vue-eslint-parser may call
+-     * parseAndGenerateServices() multiple times for the same file in a single lint pass, which would
+-     * incorrectly trigger this fallback.
+-     */
+-    if (parseSettings.singleRun && tsestreeOptions.filePath) {
+-        parseAndGenerateServicesCalls[tsestreeOptions.filePath] =
+-            (parseAndGenerateServicesCalls[tsestreeOptions.filePath] || 0) + 1;
+-    }
+-    const { ast, program } = parseSettings.singleRun &&
+-        tsestreeOptions.filePath &&
+-        parseAndGenerateServicesCalls[tsestreeOptions.filePath] > 1 &&
+-        !parseSettings.projectService
+-        ? (0, createIsolatedProgram_1.createIsolatedProgram)(parseSettings)
+-        : getProgramAndAST(parseSettings, hasFullTypeInformation);
+-    /**
+-     * Convert the TypeScript AST to an ESTree-compatible one, and optionally preserve
+-     * mappings between converted and original AST nodes
+-     */
+-    const shouldPreserveNodeMaps = typeof parseSettings.preserveNodeMaps === 'boolean'
+-        ? parseSettings.preserveNodeMaps
+-        : true;
+-    const { astMaps, estree } = (0, ast_converter_1.astConverter)(ast, parseSettings, shouldPreserveNodeMaps);
+-    /**
+-     * Even if TypeScript parsed the source code ok, and we had no problems converting the AST,
+-     * there may be other syntactic or semantic issues in the code that we can optionally report on.
+-     */
+-    if (program && parseSettings.errorOnTypeScriptSyntacticAndSemanticIssues) {
+-        const error = (0, semantic_or_syntactic_errors_1.getFirstSemanticOrSyntacticError)(program, ast);
+-        if (error) {
+-            throw (0, convert_1.convertError)(error);
+-        }
+-    }
+-    /**
+-     * Return the converted AST and additional parser services
+-     */
+-    return {
+-        ast: estree,
+-        services: (0, createParserServices_1.createParserServices)(astMaps, program),
+-    };
+-}
+-//# sourceMappingURL=parser.js.map
+\ No newline at end of file
++exports.parse = parse;
++exports.parseAndGenerateServices = parseAndGenerateServices;
++exports.clearProgramCache = clearNativeSessions;
++exports.clearDefaultProjectMatchedFiles = clearNativeSessions;
++exports.clearParseAndGenerateServicesCalls = clearNativeSessions;
+diff --git a/dist/ts-estree/estree-to-ts-node-types.d.ts b/dist/ts-estree/estree-to-ts-node-types.d.ts
+index 0b05666ed6d15210e23e7c4c8908c2f5c534b16a..a49124b8d358bdca5911f0d8d260e1fba0a2aaaa 100644
+--- a/dist/ts-estree/estree-to-ts-node-types.d.ts
++++ b/dist/ts-estree/estree-to-ts-node-types.d.ts
+@@ -1,6 +1,5 @@
+ import type { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/types';
+-import type * as ts from 'typescript';
+-import type { TSNode } from './ts-nodes';
++import type * as ts from 'typescript/unstable/ast';
+ export interface EstreeToTsNodeTypes {
+     [AST_NODE_TYPES.AccessorProperty]: ts.PropertyDeclaration;
+     [AST_NODE_TYPES.ArrayExpression]: ts.ArrayLiteralExpression;
+@@ -38,7 +37,7 @@ export interface EstreeToTsNodeTypes {
+     [AST_NODE_TYPES.IfStatement]: ts.IfStatement;
+     [AST_NODE_TYPES.PrivateIdentifier]: ts.PrivateIdentifier;
+     [AST_NODE_TYPES.PropertyDefinition]: ts.PropertyDeclaration;
+-    [AST_NODE_TYPES.ImportAttribute]: 'ImportAttribute' extends keyof typeof ts ? ts.ImportAttribute : ts.AssertEntry;
++    [AST_NODE_TYPES.ImportAttribute]: 'ImportAttribute' extends keyof typeof ts ? ts.ImportAttribute : ts.ImportAttribute;
+     [AST_NODE_TYPES.ImportDeclaration]: ts.ImportDeclaration;
+     [AST_NODE_TYPES.ImportDefaultSpecifier]: ts.ImportClause;
+     [AST_NODE_TYPES.ImportExpression]: ts.CallExpression;
+@@ -113,7 +112,7 @@ export interface EstreeToTsNodeTypes {
+     [AST_NODE_TYPES.TSIntersectionType]: ts.IntersectionTypeNode;
+     [AST_NODE_TYPES.TSLiteralType]: ts.LiteralTypeNode;
+     [AST_NODE_TYPES.TSMappedType]: ts.MappedTypeNode;
+-    [AST_NODE_TYPES.TSMethodSignature]: ts.GetAccessorDeclaration | ts.MethodSignature | ts.SetAccessorDeclaration;
++    [AST_NODE_TYPES.TSMethodSignature]: ts.GetAccessorDeclaration | ts.MethodSignatureDeclaration | ts.SetAccessorDeclaration;
+     [AST_NODE_TYPES.TSModuleBlock]: ts.ModuleBlock;
+     [AST_NODE_TYPES.TSModuleDeclaration]: ts.ModuleDeclaration;
+     [AST_NODE_TYPES.TSNamedTupleMember]: ts.NamedTupleMember;
+@@ -121,7 +120,7 @@ export interface EstreeToTsNodeTypes {
+     [AST_NODE_TYPES.TSNonNullExpression]: ts.NonNullExpression;
+     [AST_NODE_TYPES.TSOptionalType]: ts.OptionalTypeNode;
+     [AST_NODE_TYPES.TSParameterProperty]: ts.ParameterDeclaration;
+-    [AST_NODE_TYPES.TSPropertySignature]: ts.PropertySignature;
++    [AST_NODE_TYPES.TSPropertySignature]: ts.PropertySignatureDeclaration;
+     [AST_NODE_TYPES.TSQualifiedName]: ts.Identifier | ts.QualifiedName;
+     [AST_NODE_TYPES.TSRestType]: ts.NamedTupleMember | ts.RestTypeNode;
+     [AST_NODE_TYPES.TSSatisfiesExpression]: ts.SatisfiesExpression;
+@@ -175,4 +174,4 @@ export interface EstreeToTsNodeTypes {
+  * Maps TSESTree AST Node type to the expected TypeScript AST Node type(s).
+  * This mapping is based on the internal logic of the parser.
+  */
+-export type TSESTreeToTSNode<T extends TSESTree.Node = TSESTree.Node> = Extract<ts.Token<ts.SyntaxKind.ImportKeyword | ts.SyntaxKind.NewKeyword> | TSNode, EstreeToTsNodeTypes[T['type']]>;
++export type TSESTreeToTSNode<T extends TSESTree.Node = TSESTree.Node> = EstreeToTsNodeTypes[T['type']];
+diff --git a/dist/ts-estree/ts-nodes.d.ts b/dist/ts-estree/ts-nodes.d.ts
+index 3eb4d8d14ac019fb18d97a9b77e34c54544fa16a..e02c818ca6226666450d5b8e4f49d11bf7310b62 100644
+--- a/dist/ts-estree/ts-nodes.d.ts
++++ b/dist/ts-estree/ts-nodes.d.ts
+@@ -1,17 +1,3 @@
+-import type * as ts from 'typescript';
+-declare module 'typescript' {
+-    interface AssertClause extends ts.ImportAttributes {
+-    }
+-    interface AssertEntry extends ts.ImportAttribute {
+-    }
+-    interface SatisfiesExpression extends ts.Node {
+-    }
+-    interface JsxNamespacedName extends ts.Node {
+-    }
+-    interface ImportAttribute extends ts.Node {
+-    }
+-    interface ImportAttributes extends ts.Node {
+-    }
+-}
+-export type TSToken = ts.Token<ts.SyntaxKind>;
+-export type TSNode = ts.ArrayBindingPattern | ts.ArrayLiteralExpression | ts.ArrayTypeNode | ts.ArrowFunction | ts.AsExpression | ts.AssertClause | ts.AssertEntry | ts.AwaitExpression | ts.BigIntLiteral | ts.BinaryExpression | ts.BindingElement | ts.Block | ts.BooleanLiteral | ts.BreakStatement | ts.Bundle | ts.CallExpression | ts.CallSignatureDeclaration | ts.CaseBlock | ts.CaseClause | ts.CatchClause | ts.ClassDeclaration | ts.ClassExpression | ts.ClassStaticBlockDeclaration | ts.CommaListExpression | ts.ComputedPropertyName | ts.ConditionalExpression | ts.ConditionalTypeNode | ts.ConstructorDeclaration | ts.ConstructorTypeNode | ts.ConstructSignatureDeclaration | ts.ContinueStatement | ts.DebuggerStatement | ts.Decorator | ts.DefaultClause | ts.DeleteExpression | ts.DoStatement | ts.ElementAccessExpression | ts.EmptyStatement | ts.EnumDeclaration | ts.EnumMember | ts.ExportAssignment | ts.ExportDeclaration | ts.ExportSpecifier | ts.ExpressionStatement | ts.ExpressionWithTypeArguments | ts.ExternalModuleReference | ts.ForInStatement | ts.ForOfStatement | ts.ForStatement | ts.FunctionDeclaration | ts.FunctionExpression | ts.FunctionTypeNode | ts.GetAccessorDeclaration | ts.HeritageClause | ts.Identifier | ts.IfStatement | ts.ImportAttribute | ts.ImportAttributes | ts.ImportClause | ts.ImportDeclaration | ts.ImportEqualsDeclaration | ts.ImportExpression | ts.ImportSpecifier | ts.ImportTypeNode | ts.IndexedAccessTypeNode | ts.IndexSignatureDeclaration | ts.InferTypeNode | ts.InterfaceDeclaration | ts.IntersectionTypeNode | ts.JSDoc | ts.JSDocAllType | ts.JSDocAugmentsTag | ts.JSDocAuthorTag | ts.JSDocCallbackTag | ts.JSDocClassTag | ts.JSDocEnumTag | ts.JSDocFunctionType | ts.JSDocNonNullableType | ts.JSDocNullableType | ts.JSDocOptionalType | ts.JSDocParameterTag | ts.JSDocPropertyTag | ts.JSDocReturnTag | ts.JSDocSignature | ts.JSDocTemplateTag | ts.JSDocThisTag | ts.JSDocTypedefTag | ts.JSDocTypeExpression | ts.JSDocTypeLiteral | ts.JSDocTypeTag | ts.JSDocUnknownTag | ts.JSDocUnknownType | ts.JSDocVariadicType | ts.JsonMinusNumericLiteral | ts.JsxAttribute | ts.JsxClosingElement | ts.JsxClosingFragment | ts.JsxElement | ts.JsxExpression | ts.JsxFragment | ts.JsxNamespacedName | ts.JsxOpeningElement | ts.JsxOpeningFragment | ts.JsxSelfClosingElement | ts.JsxSpreadAttribute | ts.JsxText | ts.KeywordTypeNode | ts.LabeledStatement | ts.LiteralTypeNode | ts.MappedTypeNode | ts.MetaProperty | ts.MethodDeclaration | ts.MethodSignature | ts.MissingDeclaration | ts.Modifier | ts.ModuleBlock | ts.ModuleDeclaration | ts.NamedExports | ts.NamedImports | ts.NamedTupleMember | ts.NamespaceExportDeclaration | ts.NamespaceImport | ts.NewExpression | ts.NonNullExpression | ts.NoSubstitutionTemplateLiteral | ts.NotEmittedStatement | ts.NullLiteral | ts.NumericLiteral | ts.ObjectBindingPattern | ts.ObjectLiteralExpression | ts.OmittedExpression | ts.OptionalTypeNode | ts.ParameterDeclaration | ts.ParenthesizedExpression | ts.ParenthesizedTypeNode | ts.PartiallyEmittedExpression | ts.PostfixUnaryExpression | ts.PrefixUnaryExpression | ts.PrivateIdentifier | ts.PropertyAccessExpression | ts.PropertyAssignment | ts.PropertyDeclaration | ts.PropertySignature | ts.QualifiedName | ts.RegularExpressionLiteral | ts.RestTypeNode | ts.ReturnStatement | ts.SatisfiesExpression | ts.SemicolonClassElement | ts.SetAccessorDeclaration | ts.ShorthandPropertyAssignment | ts.SourceFile | ts.SpreadAssignment | ts.SpreadElement | ts.StringLiteral | ts.SuperExpression | ts.SwitchStatement | ts.SyntheticExpression | ts.TaggedTemplateExpression | ts.TemplateExpression | ts.TemplateHead | ts.TemplateLiteralTypeNode | ts.TemplateMiddle | ts.TemplateSpan | ts.TemplateTail | ts.ThisExpression | ts.ThisTypeNode | ts.ThrowStatement | ts.TryStatement | ts.TupleTypeNode | ts.TypeAliasDeclaration | ts.TypeAssertion | ts.TypeLiteralNode | ts.TypeOfExpression | ts.TypeOperatorNode | ts.TypeParameterDeclaration | ts.TypePredicateNode | ts.TypeQueryNode | ts.TypeReferenceNode | ts.UnionTypeNode | ts.VariableDeclaration | ts.VariableDeclarationList | ts.VariableStatement | ts.VoidExpression | ts.WhileStatement | ts.WithStatement | ts.YieldExpression;
++import type { Node, Token } from 'typescript/unstable/ast';
++export type TSToken = Token;
++export type TSNode = Node;
+diff --git a/dist/use-at-your-own-risk.js b/dist/use-at-your-own-risk.js
+index eda04f003033434bf95fe70b9912ee27e5bd875e..d6d20b4a42844c1f0e737d9e900d270ce1f9db10 100644
+--- a/dist/use-at-your-own-risk.js
++++ b/dist/use-at-your-own-risk.js
+@@ -25,6 +25,7 @@ __exportStar(require("./getModifiers"), exports);
+ var version_check_1 = require("./version-check");
+ Object.defineProperty(exports, "typescriptVersionIsAtLeast", { enumerable: true, get: function () { return version_check_1.typescriptVersionIsAtLeast; } });
+ // required by packages/type-utils
+-var shared_1 = require("./create-program/shared");
+-Object.defineProperty(exports, "getCanonicalFileName", { enumerable: true, get: function () { return shared_1.getCanonicalFileName; } });
+-//# sourceMappingURL=use-at-your-own-risk.js.map
+\ No newline at end of file
++exports.getCanonicalFileName = () => {
++    throw new Error('TS6 filesystem canonicalization is unavailable: use native project file identity');
++};
++//# sourceMappingURL=use-at-your-own-risk.js.map

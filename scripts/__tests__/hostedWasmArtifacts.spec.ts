@@ -28,6 +28,7 @@ import {
     verifyHostedWasmReturn,
 } from '../hostedWasmArtifacts';
 import { readHostedArtifactZip as decodeHostedArtifactZip } from '../hostedWasmZip';
+import { hostedWasmTriggerPaths } from '../hostedWasmWorkflowContract';
 import { wasmArtifacts } from '../wasm-artifacts';
 
 const readHostedArtifactZip = (zip: Buffer) =>
@@ -42,6 +43,19 @@ describe('hosted WASM package selection', () => {
 
     it('does not build or stamp a current package', () => {
         expect(selectHostedWasmPackages({ manifest, sourceHashes, changedPaths: [] })).toEqual([]);
+    });
+
+    it('admits vendored source changes at the trigger while selecting only packages with changed reachable hashes', () => {
+        expect(hostedWasmTriggerPaths()).toContain('vendor/rust/**');
+        const changedPaths = ['vendor/rust/visibility-0.1.1/src/lib.rs'];
+        expect(selectHostedWasmPackages({ manifest, sourceHashes, changedPaths })).toEqual([]);
+        expect(
+            selectHostedWasmPackages({
+                manifest,
+                sourceHashes: { ...sourceHashes, scoring: `sha256:${'c'.repeat(64)}` },
+                changedPaths,
+            })
+        ).toEqual(['scoring']);
     });
 
     it('selects only the stale supported package', () => {

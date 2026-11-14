@@ -571,6 +571,33 @@ describe('required unit account isolation', () => {
         }
     });
 
+    it('prepares the native compiler only as the admitted account in its private HOME and propagates failure', () => {
+        const { ports, run } = runtimePorts();
+        const receipt = vi.spyOn(console, 'info').mockImplementation(() => {});
+        try {
+            run.mockReturnValue({ status: 7, stdout: '', stderr: '' });
+            expect(runUnitPhase(context, 'native-compiler', undefined, ports)).toBe(7);
+            expect(run).toHaveBeenCalledTimes(1);
+            const [file, args, options] = run.mock.calls[0] ?? [];
+            expect([file, args]).toEqual([context.pnpm, ['run', 'native:typescript:prepare']]);
+            expect(options?.env).toEqual(ports.env);
+            expect(options?.env?.HOME).toBe(context.home);
+            expect(options?.env).not.toHaveProperty('SOURDAW_NATIVE_TS_CACHE');
+            expect(receipt).toHaveBeenCalledWith(expect.stringContaining('no-new-privs=1 phase=native-compiler'));
+            run.mockReturnValue({ status: 0, stdout: '', stderr: '' });
+            expect(runUnitPhase(context, 'native-compiler', undefined, ports)).toBe(0);
+        } finally {
+            receipt.mockRestore();
+        }
+    });
+
+    it('refuses native compiler preparation before identity admission', () => {
+        const { ports, run } = runtimePorts();
+        ports.read = () => status.replace('NoNewPrivs:\t1', 'NoNewPrivs:\t0');
+        expect(() => runUnitPhase(context, 'native-compiler', undefined, ports)).toThrow();
+        expect(run).not.toHaveBeenCalled();
+    });
+
     it('refuses the browser install without real identity admission', () => {
         const { ports, run } = runtimePorts();
         ports.read = () => status.replace('NoNewPrivs:\t1', 'NoNewPrivs:\t0');

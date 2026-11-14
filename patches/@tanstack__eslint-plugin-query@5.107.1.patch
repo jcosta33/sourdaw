@@ -1,0 +1,484 @@
+diff --git a/build/legacy/rules-BLyIzGVm.cjs b/build/legacy/rules-BLyIzGVm.cjs
+--- a/build/legacy/rules-BLyIzGVm.cjs
++++ b/build/legacy/rules-BLyIzGVm.cjs
+@@ -1,3 +1,4 @@
++const { SignatureKind } = require("typescript/unstable/sync");
+ let _typescript_eslint_utils = require("@typescript-eslint/utils");
+ // src/utils/unique-by.ts
+ /**
+@@ -660,10 +661,11 @@
+ * @returns `true` if the type's alias or symbol name is a known query result type.
+ */
+ function isQueryResultType(type) {
+-	if (type.aliasSymbol && QUERY_RESULT_TYPE_NAMES.has(type.aliasSymbol.name)) return true;
++	const alias = type.getAliasSymbol();
++	if (alias && QUERY_RESULT_TYPE_NAMES.has(alias.name)) return true;
+ 	const symbol = type.getSymbol();
+ 	if (symbol && QUERY_RESULT_TYPE_NAMES.has(symbol.name)) return true;
+-	return type.isUnion() && type.types.some(isQueryResultType);
++	return type.isUnionType() && type.getTypes().some(isQueryResultType);
+ }
+ const NoRestDestructuringUtils = {
+ 	isObjectRestDestructuring(node) {
+@@ -671,10 +673,16 @@
+ 		return node.properties.some((p) => p.type === _typescript_eslint_utils.AST_NODE_TYPES.RestElement);
+ 	},
+ 	isQueryResultCall(node, parserServices) {
+-		if (!(parserServices === null || parserServices === void 0 ? void 0 : parserServices.program) || !parserServices.esTreeNodeToTSNodeMap) return false;
+-		const checker = parserServices.program.getTypeChecker();
+-		const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node.callee);
+-		return checker.getTypeAtLocation(tsNode).getCallSignatures().some((sig) => isQueryResultType(sig.getReturnType()));
++        if (parserServices?.hasTypeInformation === false) return false;
++        if (!parserServices?.project || !parserServices.checker || !parserServices.esTreeNodeToTSNodeMap) throw new Error("Typed query lint requires native project/checker services");
++        const checker = parserServices.checker;
++        const nodeType = parserServices.getTypeAtLocation(node.callee);
++        const signatures = checker.getSignaturesOfType(nodeType, SignatureKind.Call);
++        return signatures.some(signature => {
++            const result = checker.getReturnTypeOfSignature(signature);
++            if (!result || result.isErrorType()) throw new Error("Native query result type could not be resolved");
++            return isQueryResultType(result);
++        });
+ 	}
+ };
+ // src/rules/no-rest-destructuring/no-rest-destructuring.rule.ts
+@@ -1067,19 +1075,16 @@
+ 		return { Property(node) {
+ 			if (!ASTUtils.isObjectExpression(node.parent) || !ASTUtils.isIdentifierWithName(node.key, "queryFn")) return;
+ 			const parserServices = context.sourceCode.parserServices;
+-			if (!parserServices || !parserServices.esTreeNodeToTSNodeMap || !parserServices.program) return;
+-			const checker = parserServices.program.getTypeChecker();
+-			const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node.value);
+-			const type = checker.getTypeAtLocation(tsNode);
+-			if (type.getCallSignatures().length > 0) {
+-				var _type$getCallSignatur;
+-				const returnType = (_type$getCallSignatur = type.getCallSignatures()[0]) === null || _type$getCallSignatur === void 0 ? void 0 : _type$getCallSignatur.getReturnType();
+-				if (!returnType) return;
+-				if (isIllegalReturn(checker, returnType)) context.report({
+-					node: node.value,
+-					messageId: "noVoidReturn"
+-				});
+-			}
++            if (parserServices?.hasTypeInformation === false) return;
++            if (!parserServices?.project || !parserServices.checker || !parserServices.esTreeNodeToTSNodeMap) throw new Error("Typed query lint requires native project/checker services");
++            const checker = parserServices.checker;
++            const type = parserServices.getTypeAtLocation(node.value);
++            const signatures = checker.getSignaturesOfType(type, SignatureKind.Call);
++            if (signatures.length > 0) {
++                const returnType = checker.getReturnTypeOfSignature(signatures[0]);
++                if (!returnType || returnType.isErrorType()) throw new Error("Native query return type could not be resolved");
++                if (isIllegalReturn(checker, returnType)) context.report({ node: node.value, messageId: "noVoidReturn" });
++            }
+ 		} };
+ 	})
+ });
+@@ -1091,9 +1096,10 @@
+ * @returns `true` if the awaited type, or a member of it, is `void` or `undefined`.
+ */
+ function isIllegalReturn(checker, type) {
++    if (type.isErrorType()) throw new Error("Native query return type could not be resolved");
+ 	const awaited = checker.getAwaitedType(type);
+ 	if (!awaited) return false;
+-	if (awaited.isUnion()) return awaited.types.some((t) => isIllegalReturn(checker, t));
++	if (awaited.isUnionType()) return awaited.getTypes().some((t) => isIllegalReturn(checker, t));
+ 	const typeString = checker.typeToString(awaited);
+ 	return typeString === "void" || typeString === "undefined";
+ }
+diff --git a/build/legacy/rules-CPKYJdWR.js b/build/legacy/rules-CPKYJdWR.js
+--- a/build/legacy/rules-CPKYJdWR.js
++++ b/build/legacy/rules-CPKYJdWR.js
+@@ -1,3 +1,4 @@
++import { SignatureKind } from "typescript/unstable/sync";
+ import { AST_NODE_TYPES, ESLintUtils, TSESTree } from "@typescript-eslint/utils";
+ // src/utils/unique-by.ts
+ /**
+@@ -660,10 +661,11 @@
+ * @returns `true` if the type's alias or symbol name is a known query result type.
+ */
+ function isQueryResultType(type) {
+-	if (type.aliasSymbol && QUERY_RESULT_TYPE_NAMES.has(type.aliasSymbol.name)) return true;
++	const alias = type.getAliasSymbol();
++	if (alias && QUERY_RESULT_TYPE_NAMES.has(alias.name)) return true;
+ 	const symbol = type.getSymbol();
+ 	if (symbol && QUERY_RESULT_TYPE_NAMES.has(symbol.name)) return true;
+-	return type.isUnion() && type.types.some(isQueryResultType);
++	return type.isUnionType() && type.getTypes().some(isQueryResultType);
+ }
+ const NoRestDestructuringUtils = {
+ 	isObjectRestDestructuring(node) {
+@@ -671,10 +673,16 @@
+ 		return node.properties.some((p) => p.type === AST_NODE_TYPES.RestElement);
+ 	},
+ 	isQueryResultCall(node, parserServices) {
+-		if (!(parserServices === null || parserServices === void 0 ? void 0 : parserServices.program) || !parserServices.esTreeNodeToTSNodeMap) return false;
+-		const checker = parserServices.program.getTypeChecker();
+-		const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node.callee);
+-		return checker.getTypeAtLocation(tsNode).getCallSignatures().some((sig) => isQueryResultType(sig.getReturnType()));
++        if (parserServices?.hasTypeInformation === false) return false;
++        if (!parserServices?.project || !parserServices.checker || !parserServices.esTreeNodeToTSNodeMap) throw new Error("Typed query lint requires native project/checker services");
++        const checker = parserServices.checker;
++        const nodeType = parserServices.getTypeAtLocation(node.callee);
++        const signatures = checker.getSignaturesOfType(nodeType, SignatureKind.Call);
++        return signatures.some(signature => {
++            const result = checker.getReturnTypeOfSignature(signature);
++            if (!result || result.isErrorType()) throw new Error("Native query result type could not be resolved");
++            return isQueryResultType(result);
++        });
+ 	}
+ };
+ // src/rules/no-rest-destructuring/no-rest-destructuring.rule.ts
+@@ -1067,19 +1075,16 @@
+ 		return { Property(node) {
+ 			if (!ASTUtils.isObjectExpression(node.parent) || !ASTUtils.isIdentifierWithName(node.key, "queryFn")) return;
+ 			const parserServices = context.sourceCode.parserServices;
+-			if (!parserServices || !parserServices.esTreeNodeToTSNodeMap || !parserServices.program) return;
+-			const checker = parserServices.program.getTypeChecker();
+-			const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node.value);
+-			const type = checker.getTypeAtLocation(tsNode);
+-			if (type.getCallSignatures().length > 0) {
+-				var _type$getCallSignatur;
+-				const returnType = (_type$getCallSignatur = type.getCallSignatures()[0]) === null || _type$getCallSignatur === void 0 ? void 0 : _type$getCallSignatur.getReturnType();
+-				if (!returnType) return;
+-				if (isIllegalReturn(checker, returnType)) context.report({
+-					node: node.value,
+-					messageId: "noVoidReturn"
+-				});
+-			}
++            if (parserServices?.hasTypeInformation === false) return;
++            if (!parserServices?.project || !parserServices.checker || !parserServices.esTreeNodeToTSNodeMap) throw new Error("Typed query lint requires native project/checker services");
++            const checker = parserServices.checker;
++            const type = parserServices.getTypeAtLocation(node.value);
++            const signatures = checker.getSignaturesOfType(type, SignatureKind.Call);
++            if (signatures.length > 0) {
++                const returnType = checker.getReturnTypeOfSignature(signatures[0]);
++                if (!returnType || returnType.isErrorType()) throw new Error("Native query return type could not be resolved");
++                if (isIllegalReturn(checker, returnType)) context.report({ node: node.value, messageId: "noVoidReturn" });
++            }
+ 		} };
+ 	})
+ });
+@@ -1091,9 +1096,10 @@
+ * @returns `true` if the awaited type, or a member of it, is `void` or `undefined`.
+ */
+ function isIllegalReturn(checker, type) {
++    if (type.isErrorType()) throw new Error("Native query return type could not be resolved");
+ 	const awaited = checker.getAwaitedType(type);
+ 	if (!awaited) return false;
+-	if (awaited.isUnion()) return awaited.types.some((t) => isIllegalReturn(checker, t));
++	if (awaited.isUnionType()) return awaited.getTypes().some((t) => isIllegalReturn(checker, t));
+ 	const typeString = checker.typeToString(awaited);
+ 	return typeString === "void" || typeString === "undefined";
+ }
+diff --git a/build/modern/rules-37gxMz0U.cjs b/build/modern/rules-37gxMz0U.cjs
+--- a/build/modern/rules-37gxMz0U.cjs
++++ b/build/modern/rules-37gxMz0U.cjs
+@@ -1,3 +1,4 @@
++const { SignatureKind } = require("typescript/unstable/sync");
+ let _typescript_eslint_utils = require("@typescript-eslint/utils");
+ // src/utils/unique-by.ts
+ /**
+@@ -651,10 +652,11 @@
+ * @returns `true` if the type's alias or symbol name is a known query result type.
+ */
+ function isQueryResultType(type) {
+-	if (type.aliasSymbol && QUERY_RESULT_TYPE_NAMES.has(type.aliasSymbol.name)) return true;
++	const alias = type.getAliasSymbol();
++	if (alias && QUERY_RESULT_TYPE_NAMES.has(alias.name)) return true;
+ 	const symbol = type.getSymbol();
+ 	if (symbol && QUERY_RESULT_TYPE_NAMES.has(symbol.name)) return true;
+-	return type.isUnion() && type.types.some(isQueryResultType);
++	return type.isUnionType() && type.getTypes().some(isQueryResultType);
+ }
+ const NoRestDestructuringUtils = {
+ 	isObjectRestDestructuring(node) {
+@@ -662,10 +664,16 @@
+ 		return node.properties.some((p) => p.type === _typescript_eslint_utils.AST_NODE_TYPES.RestElement);
+ 	},
+ 	isQueryResultCall(node, parserServices) {
+-		if (!parserServices?.program || !parserServices.esTreeNodeToTSNodeMap) return false;
+-		const checker = parserServices.program.getTypeChecker();
+-		const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node.callee);
+-		return checker.getTypeAtLocation(tsNode).getCallSignatures().some((sig) => isQueryResultType(sig.getReturnType()));
++        if (parserServices?.hasTypeInformation === false) return false;
++        if (!parserServices?.project || !parserServices.checker || !parserServices.esTreeNodeToTSNodeMap) throw new Error("Typed query lint requires native project/checker services");
++        const checker = parserServices.checker;
++        const nodeType = parserServices.getTypeAtLocation(node.callee);
++        const signatures = checker.getSignaturesOfType(nodeType, SignatureKind.Call);
++        return signatures.some(signature => {
++            const result = checker.getReturnTypeOfSignature(signature);
++            if (!result || result.isErrorType()) throw new Error("Native query result type could not be resolved");
++            return isQueryResultType(result);
++        });
+ 	}
+ };
+ // src/rules/no-rest-destructuring/no-rest-destructuring.rule.ts
+@@ -1051,18 +1059,16 @@
+ 		return { Property(node) {
+ 			if (!ASTUtils.isObjectExpression(node.parent) || !ASTUtils.isIdentifierWithName(node.key, "queryFn")) return;
+ 			const parserServices = context.sourceCode.parserServices;
+-			if (!parserServices || !parserServices.esTreeNodeToTSNodeMap || !parserServices.program) return;
+-			const checker = parserServices.program.getTypeChecker();
+-			const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node.value);
+-			const type = checker.getTypeAtLocation(tsNode);
+-			if (type.getCallSignatures().length > 0) {
+-				const returnType = type.getCallSignatures()[0]?.getReturnType();
+-				if (!returnType) return;
+-				if (isIllegalReturn(checker, returnType)) context.report({
+-					node: node.value,
+-					messageId: "noVoidReturn"
+-				});
+-			}
++            if (parserServices?.hasTypeInformation === false) return;
++            if (!parserServices?.project || !parserServices.checker || !parserServices.esTreeNodeToTSNodeMap) throw new Error("Typed query lint requires native project/checker services");
++            const checker = parserServices.checker;
++            const type = parserServices.getTypeAtLocation(node.value);
++            const signatures = checker.getSignaturesOfType(type, SignatureKind.Call);
++            if (signatures.length > 0) {
++                const returnType = checker.getReturnTypeOfSignature(signatures[0]);
++                if (!returnType || returnType.isErrorType()) throw new Error("Native query return type could not be resolved");
++                if (isIllegalReturn(checker, returnType)) context.report({ node: node.value, messageId: "noVoidReturn" });
++            }
+ 		} };
+ 	})
+ });
+@@ -1074,9 +1080,10 @@
+ * @returns `true` if the awaited type, or a member of it, is `void` or `undefined`.
+ */
+ function isIllegalReturn(checker, type) {
++    if (type.isErrorType()) throw new Error("Native query return type could not be resolved");
+ 	const awaited = checker.getAwaitedType(type);
+ 	if (!awaited) return false;
+-	if (awaited.isUnion()) return awaited.types.some((t) => isIllegalReturn(checker, t));
++	if (awaited.isUnionType()) return awaited.getTypes().some((t) => isIllegalReturn(checker, t));
+ 	const typeString = checker.typeToString(awaited);
+ 	return typeString === "void" || typeString === "undefined";
+ }
+diff --git a/build/modern/rules-D9GziSYo.js b/build/modern/rules-D9GziSYo.js
+--- a/build/modern/rules-D9GziSYo.js
++++ b/build/modern/rules-D9GziSYo.js
+@@ -1,3 +1,4 @@
++import { SignatureKind } from "typescript/unstable/sync";
+ import { AST_NODE_TYPES, ESLintUtils, TSESTree } from "@typescript-eslint/utils";
+ // src/utils/unique-by.ts
+ /**
+@@ -651,10 +652,11 @@
+ * @returns `true` if the type's alias or symbol name is a known query result type.
+ */
+ function isQueryResultType(type) {
+-	if (type.aliasSymbol && QUERY_RESULT_TYPE_NAMES.has(type.aliasSymbol.name)) return true;
++	const alias = type.getAliasSymbol();
++	if (alias && QUERY_RESULT_TYPE_NAMES.has(alias.name)) return true;
+ 	const symbol = type.getSymbol();
+ 	if (symbol && QUERY_RESULT_TYPE_NAMES.has(symbol.name)) return true;
+-	return type.isUnion() && type.types.some(isQueryResultType);
++	return type.isUnionType() && type.getTypes().some(isQueryResultType);
+ }
+ const NoRestDestructuringUtils = {
+ 	isObjectRestDestructuring(node) {
+@@ -662,10 +664,16 @@
+ 		return node.properties.some((p) => p.type === AST_NODE_TYPES.RestElement);
+ 	},
+ 	isQueryResultCall(node, parserServices) {
+-		if (!parserServices?.program || !parserServices.esTreeNodeToTSNodeMap) return false;
+-		const checker = parserServices.program.getTypeChecker();
+-		const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node.callee);
+-		return checker.getTypeAtLocation(tsNode).getCallSignatures().some((sig) => isQueryResultType(sig.getReturnType()));
++        if (parserServices?.hasTypeInformation === false) return false;
++        if (!parserServices?.project || !parserServices.checker || !parserServices.esTreeNodeToTSNodeMap) throw new Error("Typed query lint requires native project/checker services");
++        const checker = parserServices.checker;
++        const nodeType = parserServices.getTypeAtLocation(node.callee);
++        const signatures = checker.getSignaturesOfType(nodeType, SignatureKind.Call);
++        return signatures.some(signature => {
++            const result = checker.getReturnTypeOfSignature(signature);
++            if (!result || result.isErrorType()) throw new Error("Native query result type could not be resolved");
++            return isQueryResultType(result);
++        });
+ 	}
+ };
+ // src/rules/no-rest-destructuring/no-rest-destructuring.rule.ts
+@@ -1051,18 +1059,16 @@
+ 		return { Property(node) {
+ 			if (!ASTUtils.isObjectExpression(node.parent) || !ASTUtils.isIdentifierWithName(node.key, "queryFn")) return;
+ 			const parserServices = context.sourceCode.parserServices;
+-			if (!parserServices || !parserServices.esTreeNodeToTSNodeMap || !parserServices.program) return;
+-			const checker = parserServices.program.getTypeChecker();
+-			const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node.value);
+-			const type = checker.getTypeAtLocation(tsNode);
+-			if (type.getCallSignatures().length > 0) {
+-				const returnType = type.getCallSignatures()[0]?.getReturnType();
+-				if (!returnType) return;
+-				if (isIllegalReturn(checker, returnType)) context.report({
+-					node: node.value,
+-					messageId: "noVoidReturn"
+-				});
+-			}
++            if (parserServices?.hasTypeInformation === false) return;
++            if (!parserServices?.project || !parserServices.checker || !parserServices.esTreeNodeToTSNodeMap) throw new Error("Typed query lint requires native project/checker services");
++            const checker = parserServices.checker;
++            const type = parserServices.getTypeAtLocation(node.value);
++            const signatures = checker.getSignaturesOfType(type, SignatureKind.Call);
++            if (signatures.length > 0) {
++                const returnType = checker.getReturnTypeOfSignature(signatures[0]);
++                if (!returnType || returnType.isErrorType()) throw new Error("Native query return type could not be resolved");
++                if (isIllegalReturn(checker, returnType)) context.report({ node: node.value, messageId: "noVoidReturn" });
++            }
+ 		} };
+ 	})
+ });
+@@ -1074,9 +1080,10 @@
+ * @returns `true` if the awaited type, or a member of it, is `void` or `undefined`.
+ */
+ function isIllegalReturn(checker, type) {
++    if (type.isErrorType()) throw new Error("Native query return type could not be resolved");
+ 	const awaited = checker.getAwaitedType(type);
+ 	if (!awaited) return false;
+-	if (awaited.isUnion()) return awaited.types.some((t) => isIllegalReturn(checker, t));
++	if (awaited.isUnionType()) return awaited.getTypes().some((t) => isIllegalReturn(checker, t));
+ 	const typeString = checker.typeToString(awaited);
+ 	return typeString === "void" || typeString === "undefined";
+ }
+diff --git a/src/rules/no-rest-destructuring/no-rest-destructuring.utils.ts b/src/rules/no-rest-destructuring/no-rest-destructuring.utils.ts
+--- a/src/rules/no-rest-destructuring/no-rest-destructuring.utils.ts
++++ b/src/rules/no-rest-destructuring/no-rest-destructuring.utils.ts
+@@ -1,14 +1,8 @@
+ import { AST_NODE_TYPES } from '@typescript-eslint/utils'
+-import type {
+-  ParserServices,
+-  ParserServicesWithTypeInformation,
+-  TSESTree,
+-} from '@typescript-eslint/utils'
+-
+-type TypeChecker = ReturnType<
+-  ParserServicesWithTypeInformation['program']['getTypeChecker']
+->
+-type Type = ReturnType<TypeChecker['getTypeAtLocation']>
++import { SignatureKind } from 'typescript/unstable/sync'
++import type { Type } from 'typescript/unstable/sync'
++import type { NativeParserServices } from '@typescript-eslint/typescript-estree'
++import type { TSESTree } from '@typescript-eslint/utils'
+ 
+ const QUERY_RESULT_TYPE_NAMES = new Set([
+   'UseBaseQueryResult',
+@@ -28,14 +22,15 @@
+  * @returns `true` if the type's alias or symbol name is a known query result type.
+  */
+ function isQueryResultType(type: Type): boolean {
+-  if (type.aliasSymbol && QUERY_RESULT_TYPE_NAMES.has(type.aliasSymbol.name)) {
++  const alias = type.getAliasSymbol()
++  if (alias && QUERY_RESULT_TYPE_NAMES.has(alias.name)) {
+     return true
+   }
+   const symbol = type.getSymbol()
+   if (symbol && QUERY_RESULT_TYPE_NAMES.has(symbol.name)) {
+     return true
+   }
+-  return type.isUnion() && type.types.some(isQueryResultType)
++  return type.isUnionType() && type.getTypes().some(isQueryResultType)
+ }
+ 
+ export const NoRestDestructuringUtils = {
+@@ -47,14 +42,20 @@
+   },
+   isQueryResultCall(
+     node: TSESTree.CallExpression,
+-    parserServices: Partial<ParserServices> | null | undefined,
++    parserServices: Partial<NativeParserServices> | null | undefined,
+   ): boolean {
+-    if (!parserServices?.program || !parserServices.esTreeNodeToTSNodeMap) {
+-      return false
+-    }
+-    const checker = parserServices.program.getTypeChecker()
++    if (parserServices?.hasTypeInformation === false) return false
++    if (!parserServices?.project || !parserServices.checker || !parserServices.esTreeNodeToTSNodeMap) throw new Error('Typed query lint requires native project/checker services')
++    const checker = parserServices.checker
+     const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node.callee)
+-    const signatures = checker.getTypeAtLocation(tsNode).getCallSignatures()
+-    return signatures.some((sig) => isQueryResultType(sig.getReturnType()))
++    if (!tsNode) throw new Error('Query callee is absent from the native AST map')
++    const type = checker.getTypeAtLocation(tsNode)
++    if (!type || type.isErrorType()) throw new Error('Native query callee type could not be resolved')
++    const signatures = checker.getSignaturesOfType(type, SignatureKind.Call)
++    return signatures.some(signature => {
++      const result = checker.getReturnTypeOfSignature(signature)
++      if (!result || result.isErrorType()) throw new Error('Native query result type could not be resolved')
++      return isQueryResultType(result)
++    })
+   },
+ }
+diff --git a/src/rules/no-void-query-fn/no-void-query-fn.rule.ts b/src/rules/no-void-query-fn/no-void-query-fn.rule.ts
+--- a/src/rules/no-void-query-fn/no-void-query-fn.rule.ts
++++ b/src/rules/no-void-query-fn/no-void-query-fn.rule.ts
+@@ -2,7 +2,8 @@
+ import { ASTUtils } from '../../utils/ast-utils'
+ import { detectTanstackQueryImports } from '../../utils/detect-react-query-imports'
+ import { getDocsUrl } from '../../utils/get-docs-url'
+-import type { ParserServicesWithTypeInformation } from '@typescript-eslint/utils'
++import { SignatureKind } from 'typescript/unstable/sync'
++import type { Checker, Type } from 'typescript/unstable/sync'
+ import type { ExtraRuleDocs } from '../../types'
+ 
+ export const name = 'no-void-query-fn'
+@@ -36,24 +37,22 @@
+ 
+         const parserServices = context.sourceCode.parserServices
+ 
+-        if (
+-          !parserServices ||
+-          !parserServices.esTreeNodeToTSNodeMap ||
+-          !parserServices.program
+-        ) {
+-          return
+-        }
++        if (parserServices?.hasTypeInformation === false) return
++        if (!parserServices?.project || !parserServices.checker || !parserServices.esTreeNodeToTSNodeMap) throw new Error('Typed query lint requires native project/checker services')
+ 
+-        const checker = parserServices.program.getTypeChecker()
++        const checker = parserServices.checker
+         const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node.value)
++        if (!tsNode) throw new Error('Query function is absent from the native AST map')
+         const type = checker.getTypeAtLocation(tsNode)
++        if (!type || type.isErrorType()) throw new Error('Native query function type could not be resolved')
+ 
+         // Get the return type of the function
+-        if (type.getCallSignatures().length > 0) {
+-          const returnType = type.getCallSignatures()[0]?.getReturnType()
++        const signatures = checker.getSignaturesOfType(type, SignatureKind.Call)
++        if (signatures.length > 0) {
++          const returnType = checker.getReturnTypeOfSignature(signatures[0])
+ 
+           if (!returnType) {
+-            return
++            throw new Error('Native query function return type could not be resolved')
+           }
+ 
+           // Check if return type is void or undefined
+@@ -69,26 +68,12 @@
+   }),
+ })
+ 
+-type Program = ParserServicesWithTypeInformation['program']
+-type TypeChecker = ReturnType<Program['getTypeChecker']>
+-type Type = ReturnType<TypeChecker['getTypeAtLocation']>
+-
+-/**
+- * Checks whether a query function's return type resolves to `void` or `undefined`, including in any
+- * member of a union.
+- * @param checker - The TypeScript type checker.
+- * @param type - The return type of the query function.
+- * @returns `true` if the awaited type, or a member of it, is `void` or `undefined`.
+- */
+-function isIllegalReturn(checker: TypeChecker, type: Type): boolean {
++function isIllegalReturn(checker: Checker, type: Type): boolean {
++  if (type.isErrorType()) throw new Error('Native query return type could not be resolved')
+   const awaited = checker.getAwaitedType(type)
+-
+   if (!awaited) return false
+-
+-  if (awaited.isUnion()) {
+-    return awaited.types.some((t) => isIllegalReturn(checker, t))
+-  }
+-
++  if (awaited.isUnionType()) return awaited.getTypes().some(member => isIllegalReturn(checker, member))
+   const typeString = checker.typeToString(awaited)
+   return typeString === 'void' || typeString === 'undefined'
+ }
++

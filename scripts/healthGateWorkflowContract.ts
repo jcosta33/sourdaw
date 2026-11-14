@@ -77,6 +77,7 @@ const ISOLATED_UNIT_STEPS = [
     'Set up Node',
     'Prepare isolated unit account',
     'Install dependencies',
+    'Prepare isolated native compiler',
     'Install Chromium',
     'Run shard',
     'Report shard failure',
@@ -181,10 +182,10 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     'validation.yml': {
         decide: ['Filter changed paths', 'Retry changed-paths filter after a transient API failure', 'Resolve scope'],
         static: [...SETUP_NODE, ...VALIDATION_STATIC_SUITE_STEPS],
-        lint: [...SETUP_NODE, 'Lint'],
+        lint: [...SETUP_NODE, 'Prepare native compiler', 'Lint'],
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
         unit: ISOLATED_UNIT_STEPS,
-        'tooling-unit': [...SETUP_NODE, 'Run script suite'],
+        'tooling-unit': [...SETUP_NODE, 'Prepare native compiler', 'Run script suite'],
         smoke: [...SETUP_NODE, 'Verify preinstalled browser runtime', 'Run offline smoke set'],
         build: [...SETUP_NODE, 'Build'],
         rust: [
@@ -222,6 +223,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Require the built addon the parity specs probe for',
             'Run the addon parity specs',
         ],
+        'native-typescript-windows': [...SETUP_NODE, 'Prepare native compiler', 'Verify native Windows private cache'],
         'dependency-review': ['Review dependency changes'],
         'pr-secrets': [
             'Checkout trusted scanner',
@@ -242,7 +244,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     'nightly.yml': {
         decide: ['Resolve scope'],
         static: [...SETUP_PNPM_NODE, ...NIGHTLY_STATIC_SUITE_STEPS],
-        lint: [...SETUP_PNPM_NODE, 'Lint'],
+        lint: [...SETUP_PNPM_NODE, 'Prepare native compiler', 'Lint'],
         boundaries: [...SETUP_PNPM_NODE, 'Validate the dependency graph'],
         unit: ISOLATED_UNIT_STEPS,
         build: [...SETUP_PNPM_NODE, 'Build'],

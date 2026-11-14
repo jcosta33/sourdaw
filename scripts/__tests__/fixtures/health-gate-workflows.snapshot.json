@@ -788,6 +788,11 @@
             "run": "pnpm install --frozen-lockfile"
           },
           {
+            "name": "Prepare native compiler",
+            "timeout-minutes": 10,
+            "run": "pnpm native:typescript:prepare"
+          },
+          {
             "name": "Lint",
             "timeout-minutes": 20,
             "env": {
@@ -895,6 +900,11 @@
             "run": "node scripts/runIsolatedUnitShard.ts install --context \"${{ steps.unit_isolation.outputs.context }}\""
           },
           {
+            "name": "Prepare isolated native compiler",
+            "timeout-minutes": 10,
+            "run": "node scripts/runIsolatedUnitShard.ts native-compiler --context \"${{ steps.unit_isolation.outputs.context }}\""
+          },
+          {
             "name": "Install Chromium",
             "timeout-minutes": 2,
             "run": "node scripts/runIsolatedUnitShard.ts browsers --context \"${{ steps.unit_isolation.outputs.context }}\""
@@ -948,6 +958,11 @@
           {
             "name": "Install dependencies",
             "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Prepare native compiler",
+            "timeout-minutes": 10,
+            "run": "pnpm native:typescript:prepare"
           },
           {
             "name": "Run script suite",
@@ -1241,6 +1256,47 @@
           }
         ]
       },
+      "native-typescript-windows": {
+        "name": "Native TypeScript cache (Windows)",
+        "needs": "decide",
+        "if": "needs.decide.outputs.code == 'true'",
+        "runs-on": "windows-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "./.github/actions/setup-pnpm",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Prepare native compiler",
+            "timeout-minutes": 10,
+            "run": "pnpm native:typescript:prepare"
+          },
+          {
+            "name": "Verify native Windows private cache",
+            "timeout-minutes": 5,
+            "run": "pnpm test:run scripts/__tests__/nativeTypeScriptWindowsCache.spec.ts"
+          }
+        ]
+      },
       "native-parity": {
         "name": "Native parity (macOS)",
         "needs": "decide",
@@ -1401,6 +1457,7 @@
           "rust",
           "native-macos",
           "native-windows",
+          "native-typescript-windows",
           "native-parity",
           "dependency-review",
           "pr-secrets"
@@ -1415,7 +1472,7 @@
               "RESULTS": "${{ toJSON(needs) }}",
               "PULL_REQUEST": "${{ github.event.pull_request != null }}"
             },
-            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e --arg pr \"$PULL_REQUEST\" '\n  def selected($flag):\n    if $flag == \"true\" then \"success\"\n    elif $flag == \"false\" then \"skipped\"\n    else error(\"missing scope verdict\") end;\n  (keys | sort) == ([\"decide\", \"static\", \"lint\", \"boundaries\", \"unit\", \"tooling-unit\", \"smoke\", \"build\", \"rust\", \"native-macos\", \"native-windows\", \"native-parity\", \"dependency-review\", \"pr-secrets\"] | sort) and\n  .decide.result == \"success\" and .static.result == \"success\" and\n  (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == \"true\" or . == \"false\")) and\n  .lint.result == selected(.decide.outputs.code) and\n  .boundaries.result == selected(.decide.outputs.code) and\n  .unit.result == selected(.decide.outputs.web) and\n  .[\"tooling-unit\"].result == selected(.decide.outputs.tooling) and\n  .build.result == selected(.decide.outputs.web) and\n  .rust.result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.server == \"true\" then \"true\" else \"false\" end) and\n  .[\"native-macos\"].result == selected(.decide.outputs.rust) and\n  .[\"native-windows\"].result == selected(.decide.outputs.rust) and\n  .[\"native-parity\"].result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.web == \"true\" then \"true\" else \"false\" end) and\n  .smoke.result == (if $pr == \"true\" then selected(.decide.outputs.e2e) elif $pr == \"false\" then \"skipped\" else error(\"missing PR verdict\") end) and\n  .[\"dependency-review\"].result == selected($pr) and\n  .[\"pr-secrets\"].result == selected($pr)'\n"
+            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e --arg pr \"$PULL_REQUEST\" '\n  def selected($flag):\n    if $flag == \"true\" then \"success\"\n    elif $flag == \"false\" then \"skipped\"\n    else error(\"missing scope verdict\") end;\n  (keys | sort) == ([\"decide\", \"static\", \"lint\", \"boundaries\", \"unit\", \"tooling-unit\", \"smoke\", \"build\", \"rust\", \"native-macos\", \"native-windows\", \"native-typescript-windows\", \"native-parity\", \"dependency-review\", \"pr-secrets\"] | sort) and\n  .decide.result == \"success\" and .static.result == \"success\" and\n  (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == \"true\" or . == \"false\")) and\n  .lint.result == selected(.decide.outputs.code) and\n  .boundaries.result == selected(.decide.outputs.code) and\n  .unit.result == selected(.decide.outputs.web) and\n  .[\"tooling-unit\"].result == selected(.decide.outputs.tooling) and\n  .build.result == selected(.decide.outputs.web) and\n  .rust.result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.server == \"true\" then \"true\" else \"false\" end) and\n  .[\"native-macos\"].result == selected(.decide.outputs.rust) and\n  .[\"native-windows\"].result == selected(.decide.outputs.rust) and\n  .[\"native-typescript-windows\"].result == selected(.decide.outputs.code) and\n  .[\"native-parity\"].result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.web == \"true\" then \"true\" else \"false\" end) and\n  .smoke.result == (if $pr == \"true\" then selected(.decide.outputs.e2e) elif $pr == \"false\" then \"skipped\" else error(\"missing PR verdict\") end) and\n  .[\"dependency-review\"].result == selected($pr) and\n  .[\"pr-secrets\"].result == selected($pr)'\n"
           }
         ]
       }
@@ -1599,6 +1656,11 @@
             "run": "pnpm install --frozen-lockfile"
           },
           {
+            "name": "Prepare native compiler",
+            "timeout-minutes": 10,
+            "run": "pnpm native:typescript:prepare"
+          },
+          {
             "name": "Lint",
             "env": {
               "SOURDAW_LINT_CONCURRENCY": "auto",
@@ -1707,6 +1769,11 @@
           {
             "name": "Install dependencies",
             "run": "node scripts/runIsolatedUnitShard.ts install --context \"${{ steps.unit_isolation.outputs.context }}\""
+          },
+          {
+            "name": "Prepare isolated native compiler",
+            "timeout-minutes": 10,
+            "run": "node scripts/runIsolatedUnitShard.ts native-compiler --context \"${{ steps.unit_isolation.outputs.context }}\""
           },
           {
             "name": "Install Chromium",
@@ -2865,6 +2932,7 @@
         "paths": [
           ".cargo/config.toml",
           ".github/workflows/wasm-artifacts.yml",
+          ".node-version",
           "Cargo.lock",
           "Cargo.toml",
           "crates/daw-dsp/**",
@@ -2876,6 +2944,8 @@
           "pnpm-lock.yaml",
           "public/wasm/manifest.json",
           "rust-toolchain.toml",
+          "scripts/binaryenBuild.ts",
+          "scripts/buildWasmPackage.ts",
           "scripts/gen-daw-dsp-worklet.ts",
           "scripts/gen-proof-chamber-worklet.ts",
           "scripts/gen-scoring-worklet.ts",
@@ -2884,12 +2954,14 @@
           "scripts/hostedWasmSourceContext.ts",
           "scripts/hostedWasmZip.ts",
           "scripts/markWasmPackageInternal.ts",
+          "scripts/pnpmLock.ts",
           "scripts/strictJson.ts",
           "scripts/verify-wasm-artifacts.ts",
           "scripts/wasm-artifacts.ts",
           "scripts/wasmToolchainPins.ts",
           "scripts/workletPolyfills.ts",
-          "scripts/workspaceManifestFingerprint.ts"
+          "scripts/workspaceManifestFingerprint.ts",
+          "vendor/rust/**"
         ]
       }
     },

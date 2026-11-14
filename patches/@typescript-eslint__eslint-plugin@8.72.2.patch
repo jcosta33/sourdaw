@@ -1,0 +1,275 @@
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -36,19 +36,6 @@
+ var __importDefault = (this && this.__importDefault) || function (mod) {
+     return (mod && mod.__esModule) ? mod : { "default": mod };
+ };
+-const ts = __importStar(require("typescript"));
+-const [versionMajor, _versionMinor] = ts.versionMajorMinor
+-    .split('.')
+-    .map(Number);
+-if (versionMajor >= 7) {
+-    // eslint-disable-next-line no-console
+-    console.error([
+-        'typescript-eslint does not support TS 7.0.',
+-        'Please see https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6.0 to run typescript-eslint using the TS 6 API.',
+-        "See also https://github.com/typescript-eslint/typescript-eslint/issues/10940 for tracking typescript-eslint's support for TS >=7.1",
+-    ].join('\n'));
+-    throw new Error('typescript-eslint does not support TS 7.0.');
+-}
+ const raw_plugin_1 = __importDefault(require("./raw-plugin"));
+ module.exports = raw_plugin_1.default.plugin;
+ //# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/dist/rules/naming-convention-utils/parse-options.js b/dist/rules/naming-convention-utils/parse-options.js
+--- a/dist/rules/naming-convention-utils/parse-options.js
++++ b/dist/rules/naming-convention-utils/parse-options.js
+@@ -1,7 +1,7 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.parseOptions = parseOptions;
+-const util_1 = require("../../util");
++const util_1 = require("../../util/nativeEnumNames");
+ const enums_1 = require("./enums");
+ const shared_1 = require("./shared");
+ const validator_1 = require("./validator");
+diff --git a/dist/rules/naming-convention-utils/schema.js b/dist/rules/naming-convention-utils/schema.js
+--- a/dist/rules/naming-convention-utils/schema.js
++++ b/dist/rules/naming-convention-utils/schema.js
+@@ -1,7 +1,7 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.SCHEMA = void 0;
+-const util_1 = require("../../util");
++const util_1 = require("../../util/nativeEnumNames");
+ const enums_1 = require("./enums");
+ const $DEFS = {
+     // enums
+diff --git a/dist/rules/naming-convention-utils/validator.js b/dist/rules/naming-convention-utils/validator.js
+--- a/dist/rules/naming-convention-utils/validator.js
++++ b/dist/rules/naming-convention-utils/validator.js
+@@ -2,7 +2,8 @@
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.createValidator = createValidator;
+ const utils_1 = require("@typescript-eslint/utils");
+-const util_1 = require("../../util");
++const { ESLintUtils: { getParserServices } } = require('@typescript-eslint/utils');
++const { SignatureKind } = require('typescript/unstable/sync');
+ const enums_1 = require("./enums");
+ const format_1 = require("./format");
+ const shared_1 = require("./shared");
+@@ -304,12 +305,10 @@
+     if ((SelectorsAllowedToHaveTypes & selector) === 0) {
+         return true;
+     }
+-    const services = (0, util_1.getParserServices)(context);
+-    const checker = services.program.getTypeChecker();
+-    const type = services
+-        .getTypeAtLocation(node)
+-        // remove null and undefined from the type, as we don't care about it here
+-        .getNonNullableType();
++    const services = getParserServices(context);
++    const checker = services.checker;
++    const type = checker.getNonNullableType(services.getTypeAtLocation(node));
++    if (!type || type.isErrorType()) throw new Error('Native naming-convention type could not be resolved');
+     for (const allowedType of config.types) {
+         switch (allowedType) {
+             case enums_1.TypeModifiers.array:
+@@ -318,16 +317,18 @@
+                 }
+                 break;
+             case enums_1.TypeModifiers.function:
+-                if (isAllTypesMatch(type, t => t.getCallSignatures().length > 0)) {
++                if (isAllTypesMatch(type, t => checker.getSignaturesOfType(t, SignatureKind.Call).length > 0)) {
+                     return true;
+                 }
+                 break;
+             case enums_1.TypeModifiers.boolean:
+             case enums_1.TypeModifiers.number:
+             case enums_1.TypeModifiers.string: {
+-                const typeString = checker.typeToString(
+-                // this will resolve things like true => boolean, 'a' => string and 1 => number
+-                checker.getWidenedType(checker.getBaseTypeOfLiteralType(type)));
++                const base = checker.getBaseTypeOfLiteralType(type);
++                if (!base) throw new Error('Native checker could not widen the naming type literal');
++                const widened = checker.getWidenedType(base);
++                if (!widened || widened.isErrorType()) throw new Error('Native checker could not widen the naming type');
++                const typeString = checker.typeToString(widened);
+                 const allowedTypeString = enums_1.TypeModifiers[allowedType];
+                 if (typeString === allowedTypeString) {
+                     return true;
+@@ -342,8 +343,8 @@
+  * @returns `true` if the type (or all union types) in the given type return true for the callback
+  */
+ function isAllTypesMatch(type, cb) {
+-    if (type.isUnion()) {
+-        return type.types.every(t => cb(t));
++    if (type.isUnionType()) {
++        return type.getTypes().every(t => cb(t));
+     }
+     return cb(type);
+ }
+diff --git a/dist/rules/naming-convention.js b/dist/rules/naming-convention.js
+--- a/dist/rules/naming-convention.js
++++ b/dist/rules/naming-convention.js
+@@ -4,7 +4,10 @@
+ Object.defineProperty(exports, "__esModule", { value: true });
+ const scope_manager_1 = require("@typescript-eslint/scope-manager");
+ const utils_1 = require("@typescript-eslint/utils");
+-const util_1 = require("../util");
++const { createRule } = require('../util/createRule');
++const { collectVariables } = require('../util/collectUnusedVariables');
++const { ESLintUtils: { getParserServices } } = require('@typescript-eslint/utils');
++const { requiresQuoting: quoteRequired } = require('../util/nativeRequiresQuoting');
+ const naming_convention_utils_1 = require("./naming-convention-utils");
+ // This essentially mirrors ESLint's `camelcase` rule
+ // note that that rule ignores leading and trailing underscores and only checks those in the middle of a variable name
+@@ -30,7 +33,7 @@
+         selector: 'typeLike',
+     },
+ ];
+-exports.default = (0, util_1.createRule)({
++exports.default = createRule({
+     name: 'naming-convention',
+     meta: {
+         type: 'suggestion',
+@@ -60,7 +63,7 @@
+                     options: defaultCamelCaseAllTheThingsConfig,
+                 }, contextWithoutDefaults);
+         const validators = (0, naming_convention_utils_1.parseOptions)(context);
+-        const compilerOptions = (0, util_1.getParserServices)(context, true).program?.getCompilerOptions() ?? {};
++        const compilerOptions = getParserServices(context, true).project?.compilerOptions ?? {};
+         function handleMember(validator, node, modifiers) {
+             const key = node.key;
+             if (requiresQuoting(key, compilerOptions.target)) {
+@@ -95,7 +98,7 @@
+             }
+             return modifiers;
+         }
+-        const { unusedVariables } = (0, util_1.collectVariables)(context);
++        const { unusedVariables } = collectVariables(context);
+         function isUnused(name, initialScope) {
+             let variable = null;
+             let scope = initialScope;
+@@ -502,6 +505,6 @@
+         node.type === utils_1.AST_NODE_TYPES.PrivateIdentifier
+         ? node.name
+         : `${node.value}`;
+-    return (0, util_1.requiresQuoting)(name, target);
++    return quoteRequired(name, target);
+ }
+ //# sourceMappingURL=naming-convention.js.map
+\ No newline at end of file
+diff --git a/dist/util/lazyRules.js b/dist/util/lazyRules.js
+--- a/dist/util/lazyRules.js
++++ b/dist/util/lazyRules.js
+@@ -8,6 +8,7 @@
+         Object.defineProperty(rules, name, {
+             enumerable: true,
+             get: () => {
++                if (name !== 'naming-convention') throw new Error(`TypeScript 7 scoped ESLint fork has not ported rule ${name}; the production contract enables naming-convention only`);
+                 rule ??= load().default;
+                 return rule;
+             },
+diff --git a/dist/util/nativeEnumNames.js b/dist/util/nativeEnumNames.js
+new file mode 100644
+--- /dev/null
++++ b/dist/util/nativeEnumNames.js
+@@ -0,0 +1,4 @@
++"use strict";
++// Extracted unchanged from upstream util/misc.js to avoid loading unrelated
++// compiler/checker-dependent helpers when naming parses its option schema.
++exports.getEnumNames = myEnum => Object.keys(myEnum).filter(x => Number.isNaN(Number(x)));
+diff --git a/dist/util/nativeRequiresQuoting.js b/dist/util/nativeRequiresQuoting.js
+new file mode 100644
+--- /dev/null
++++ b/dist/util/nativeRequiresQuoting.js
+@@ -0,0 +1,53 @@
++"use strict";
++var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
++    if (k2 === undefined) k2 = k;
++    var desc = Object.getOwnPropertyDescriptor(m, k);
++    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
++      desc = { enumerable: true, get: function() { return m[k]; } };
++    }
++    Object.defineProperty(o, k2, desc);
++}) : (function(o, m, k, k2) {
++    if (k2 === undefined) k2 = k;
++    o[k2] = m[k];
++}));
++var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
++    Object.defineProperty(o, "default", { enumerable: true, value: v });
++}) : function(o, v) {
++    o["default"] = v;
++});
++var __importStar = (this && this.__importStar) || (function () {
++    var ownKeys = function(o) {
++        ownKeys = Object.getOwnPropertyNames || function (o) {
++            var ar = [];
++            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
++            return ar;
++        };
++        return ownKeys(o);
++    };
++    return function (mod) {
++        if (mod && mod.__esModule) return mod;
++        var result = {};
++        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
++        __setModuleDefault(result, mod);
++        return result;
++    };
++})();
++Object.defineProperty(exports, "__esModule", { value: true });
++exports.requiresQuoting = requiresQuoting;
++const ts = __importStar(require("typescript/unstable/ast"));
++/*** Indicates whether identifiers require the use of quotation marks when accessing property definitions and dot notation. */
++function requiresQuoting(name, target = ts.ScriptTarget.ESNext) {
++    if (name.length === 0) {
++        return true;
++    }
++    if (!ts.isIdentifierStart(name.charCodeAt(0), target)) {
++        return true;
++    }
++    for (let i = 1; i < name.length; i += 1) {
++        if (!ts.isIdentifierPart(name.charCodeAt(i), target)) {
++            return true;
++        }
++    }
++    return false;
++}
++//# sourceMappingURL=requiresQuoting.js.map
+\ No newline at end of file
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -48,12 +48,10 @@
+   "dependencies": {
+     "@eslint-community/regexpp": "^4.12.2",
+     "@typescript-eslint/scope-manager": "8.72.2",
+-    "@typescript-eslint/type-utils": "8.72.2",
+     "@typescript-eslint/utils": "8.72.2",
+     "@typescript-eslint/visitor-keys": "8.72.2",
+     "ignore": "^7.0.5",
+-    "natural-compare": "^1.4.0",
+-    "ts-api-utils": "^2.5.0"
++    "natural-compare": "^1.4.0"
+   },
+   "devDependencies": {
+     "@types/json-schema": "^7.0.15",
+@@ -83,7 +81,7 @@
+   "peerDependencies": {
+     "@typescript-eslint/parser": "^8.72.2",
+     "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
+-    "typescript": ">=4.8.4 <6.1.0"
++    "typescript": "7.0.2"
+   },
+   "funding": {
+     "type": "opencollective",
+@@ -132,4 +130,4 @@
+     "typecheck:tsc6": "pnpm -w exec nx typecheck:tsc6",
+     "attw-check": "pnpm -w exec nx attw-check"
+   }
+-}
+\ No newline at end of file
++}

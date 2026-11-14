@@ -508,7 +508,7 @@ export function runUnitPhase(
             }).status ?? 1
         );
     }
-    if (phase !== 'install' && phase !== 'browsers' && phase !== 'shard') {
+    if (phase !== 'install' && phase !== 'browsers' && phase !== 'native-compiler' && phase !== 'shard') {
         throw new Error('unit isolation phase is invalid');
     }
     if (phase === 'shard' && !/^[1-4]\/4$/.test(shard ?? '')) {
@@ -539,6 +539,9 @@ export function runUnitPhase(
     // strict environment and the shard never falls back to the image's Chrome.
     if (phase === 'browsers') {
         args = ['exec', 'playwright', 'install', 'chromium'];
+    }
+    if (phase === 'native-compiler') {
+        args = ['run', 'native:typescript:prepare'];
     }
     return ports.run(context.pnpm, args, options).status ?? 1;
 }
@@ -611,7 +614,7 @@ function main(args: string[], ports: UnitIsolationPorts): number {
     if (mode === 'execute') {
         return runUnitPhase(parseContext(argument(args, '--context-json')), argument(args, '--phase'), shard, ports);
     }
-    if (mode === 'install' || mode === 'browsers' || mode === 'shard') {
+    if (mode === 'install' || mode === 'browsers' || mode === 'native-compiler' || mode === 'shard') {
         return launchUnitPhase(argument(args, '--context'), mode, shard, ports);
     }
     throw new Error('unit isolation command is invalid');

@@ -1,0 +1,285 @@
+diff --git a/_packages/native-preview/src/api/async/api.ts b/_packages/native-preview/src/api/async/api.ts
+index 1c8b5d7f0fe4f46636b031ebea965a784af52af5..86fe9b84ee99c59a7606fde78176263e76e75271 100644
+--- a/_packages/native-preview/src/api/async/api.ts
++++ b/_packages/native-preview/src/api/async/api.ts
+@@ -1056,6 +1056,16 @@ export class Checker {
+         return data ? this.objectRegistry.getOrCreateType(data) : undefined;
+     }
+ 
++    /** Resolves native Promise/thenable awaiting; an invalid recursive thenable returns undefined. */
++    async getAwaitedType(type: Type): Promise<Type | undefined> {
++        const data = await this.client.apiRequest<TypeResponse | null>("getAwaitedType", {
++            snapshot: this.snapshotId,
++            project: this.project.id,
++            type: type.id,
++        });
++        return data ? this.objectRegistry.getOrCreateType(data) : undefined;
++    }
++
+     async getNonNullableType(type: Type): Promise<Type | undefined> {
+         const data = await this.client.apiRequest<TypeResponse | null>("getNonNullableType", {
+             snapshot: this.snapshotId,
+diff --git a/_packages/native-preview/src/api/sourceFileCache.ts b/_packages/native-preview/src/api/sourceFileCache.ts
+index b4ee651c5e1e841bc8c8673ff4f60948b7744127..379a1a3a3053a28c6fc0e2e665f2eddfaf4a88a8 100644
+--- a/_packages/native-preview/src/api/sourceFileCache.ts
++++ b/_packages/native-preview/src/api/sourceFileCache.ts
+@@ -94,6 +94,8 @@ export class SourceFileCache {
+      *   - Unchanged projects: retain all refs.
+      */
+     retainForSnapshot(newSnapshotId: number, previousSnapshotId: number, changes: SnapshotChanges | undefined): void {
++        // No server diff means no proof that cached content is unchanged.
++        if (!changes) return;
+         const prevProjectMap = this.snapshotProjectPaths.get(previousSnapshotId);
+         if (!prevProjectMap) return;
+ 
+diff --git a/_packages/native-preview/src/api/sync/api.ts b/_packages/native-preview/src/api/sync/api.ts
+index 1a0296ac771de6c04093d52314ecdabbdd7a450a..ef50ef8457f73c6caf7acbbe8fde891d818d6bf2 100644
+--- a/_packages/native-preview/src/api/sync/api.ts
++++ b/_packages/native-preview/src/api/sync/api.ts
+@@ -1064,6 +1064,16 @@ export class Checker {
+         return data ? this.objectRegistry.getOrCreateType(data) : undefined;
+     }
+ 
++    /** Resolves native Promise/thenable awaiting; an invalid recursive thenable returns undefined. */
++    getAwaitedType(type: Type): Type | undefined {
++        const data = this.client.apiRequest<TypeResponse | null>("getAwaitedType", {
++            snapshot: this.snapshotId,
++            project: this.project.id,
++            type: type.id,
++        });
++        return data ? this.objectRegistry.getOrCreateType(data) : undefined;
++    }
++
+     getNonNullableType(type: Type): Type | undefined {
+         const data = this.client.apiRequest<TypeResponse | null>("getNonNullableType", {
+             snapshot: this.snapshotId,
+diff --git a/_packages/native-preview/test/async/api.test.ts b/_packages/native-preview/test/async/api.test.ts
+index 16b3b00ecbc2116f38351476696e5e5e18d0ff78..70b4f0fc10a9f2674357f0c411ebd49139deaf6a 100644
+--- a/_packages/native-preview/test/async/api.test.ts
++++ b/_packages/native-preview/test/async/api.test.ts
+@@ -5202,8 +5202,61 @@ describe("Timing", () => {
+     });
+ });
+ 
++describe("Checker - getAwaitedType", () => {
++    test("uses native Promise, thenable, union and recursive semantics", async () => {
++        const api = spawnAPI({
++            "/tsconfig.json": JSON.stringify({ compilerOptions: { strict: true, target: "esnext" } }),
++            "/src/awaited.ts": `
++export type PromiseVoid = Promise<void>;
++export type PromiseUndefined = Promise<undefined>;
++export type Nested = Promise<Promise<number | undefined>>;
++export type AnyResult = Promise<any>;
++export type UnknownResult = Promise<unknown>;
++export type NeverResult = Promise<never>;
++export type ThenVoid = { then(callback: (value: void) => unknown): unknown };
++export type ThenNumber = { then(callback: (value: number) => unknown): unknown };
++export type Cycle = { then(callback: (value: Cycle) => unknown): unknown };
++`,
++        });
++        try {
++            const snapshot = await api.updateSnapshot({ openProjects: ["/tsconfig.json"] });
++            try {
++                const project = snapshot.getProject("/tsconfig.json");
++                assert.ok(project);
++                const source = await project.program.getSourceFile("/src/awaited.ts");
++                assert.ok(source);
++                const results = new Map<string, string | undefined>();
++                for (const declaration of source.statements) {
++                    assert.ok(isTypeAliasDeclaration(declaration));
++                    const input = await project.checker.getTypeFromTypeNode(declaration.type);
++                    assert.ok(input);
++                    const result = await project.checker.getAwaitedType(input);
++                    assert.equal(await project.checker.getAwaitedType(input), result, "returned types must retain native registry identity");
++                    results.set(declaration.name.text, result ? await project.checker.typeToString(result) : undefined);
++                }
++                assert.equal(results.get("PromiseVoid"), "void");
++                assert.equal(results.get("PromiseUndefined"), "undefined");
++                assert.equal(results.get("Nested"), "number | undefined");
++                assert.equal(results.get("AnyResult"), "any");
++                assert.equal(results.get("UnknownResult"), "unknown");
++                assert.equal(results.get("NeverResult"), "never");
++                assert.equal(results.get("ThenVoid"), "void");
++                assert.equal(results.get("ThenNumber"), "number");
++                assert.equal(results.get("Cycle"), undefined);
++            }
++            finally {
++                await snapshot.dispose();
++            }
++        }
++        finally {
++            await api.close();
++        }
++    });
++});
++
+ function spawnAPI(files: Record<string, string> = { ...defaultFiles }) {
+     return new API({
++        tsserverPath: process.env.SOURDAW_NATIVE_TS_TEST_COMPILER,
+         cwd: fileURLToPath(new URL("../../../../", import.meta.url).toString()),
+         fs: createVirtualFileSystem(files),
+     });
+diff --git a/_packages/native-preview/test/sync/api.test.ts b/_packages/native-preview/test/sync/api.test.ts
+index 6a90030eb2beeb7d4540c52318119d5c8174ee47..20a7a40060c0a6dc751abffd3de53ade17e4630a 100644
+--- a/_packages/native-preview/test/sync/api.test.ts
++++ b/_packages/native-preview/test/sync/api.test.ts
+@@ -5210,8 +5210,61 @@ describe("Timing", () => {
+     });
+ });
+ 
++describe("Checker - getAwaitedType", () => {
++    test("uses native Promise, thenable, union and recursive semantics", () => {
++        const api = spawnAPI({
++            "/tsconfig.json": JSON.stringify({ compilerOptions: { strict: true, target: "esnext" } }),
++            "/src/awaited.ts": `
++export type PromiseVoid = Promise<void>;
++export type PromiseUndefined = Promise<undefined>;
++export type Nested = Promise<Promise<number | undefined>>;
++export type AnyResult = Promise<any>;
++export type UnknownResult = Promise<unknown>;
++export type NeverResult = Promise<never>;
++export type ThenVoid = { then(callback: (value: void) => unknown): unknown };
++export type ThenNumber = { then(callback: (value: number) => unknown): unknown };
++export type Cycle = { then(callback: (value: Cycle) => unknown): unknown };
++`,
++        });
++        try {
++            const snapshot = api.updateSnapshot({ openProjects: ["/tsconfig.json"] });
++            try {
++                const project = snapshot.getProject("/tsconfig.json");
++                assert.ok(project);
++                const source = project.program.getSourceFile("/src/awaited.ts");
++                assert.ok(source);
++                const results = new Map<string, string | undefined>();
++                for (const declaration of source.statements) {
++                    assert.ok(isTypeAliasDeclaration(declaration));
++                    const input = project.checker.getTypeFromTypeNode(declaration.type);
++                    assert.ok(input);
++                    const result = project.checker.getAwaitedType(input);
++                    assert.equal(project.checker.getAwaitedType(input), result, "returned types must retain native registry identity");
++                    results.set(declaration.name.text, result ? project.checker.typeToString(result) : undefined);
++                }
++                assert.equal(results.get("PromiseVoid"), "void");
++                assert.equal(results.get("PromiseUndefined"), "undefined");
++                assert.equal(results.get("Nested"), "number | undefined");
++                assert.equal(results.get("AnyResult"), "any");
++                assert.equal(results.get("UnknownResult"), "unknown");
++                assert.equal(results.get("NeverResult"), "never");
++                assert.equal(results.get("ThenVoid"), "void");
++                assert.equal(results.get("ThenNumber"), "number");
++                assert.equal(results.get("Cycle"), undefined);
++            }
++            finally {
++                snapshot.dispose();
++            }
++        }
++        finally {
++            api.close();
++        }
++    });
++});
++
+ function spawnAPI(files: Record<string, string> = { ...defaultFiles }) {
+     return new API({
++        tsserverPath: process.env.SOURDAW_NATIVE_TS_TEST_COMPILER,
+         cwd: fileURLToPath(new URL("../../../../", import.meta.url).toString()),
+         fs: createVirtualFileSystem(files),
+     });
+diff --git a/internal/api/proto.go b/internal/api/proto.go
+index 0917c385d6465193ba5b392bac5b5b4847bdfaae..6e8c14e2ce9c3bbfaa3937830434f0fc11511cbb 100644
+--- a/internal/api/proto.go
++++ b/internal/api/proto.go
+@@ -122,6 +122,7 @@ const (
+ 	// Checker methods
+ 	MethodGetContextualType                 Method = "getContextualType"
+ 	MethodGetBaseTypeOfLiteralType          Method = "getBaseTypeOfLiteralType"
++	MethodGetAwaitedType                    Method = "getAwaitedType"
+ 	MethodGetNonNullableType                Method = "getNonNullableType"
+ 	MethodGetTypeFromTypeNode               Method = "getTypeFromTypeNode"
+ 	MethodGetWidenedType                    Method = "getWidenedType"
+@@ -412,6 +413,7 @@ var unmarshalers = map[Method]func([]byte) (any, error){
+ 
+ 	MethodGetContextualType:                 unmarshallerFor[GetContextualTypeParams],
+ 	MethodGetBaseTypeOfLiteralType:          unmarshallerFor[GetBaseTypeOfLiteralTypeParams],
++	MethodGetAwaitedType:                    unmarshallerFor[CheckerTypeParams],
+ 	MethodGetNonNullableType:                unmarshallerFor[GetNonNullableTypeParams],
+ 	MethodGetTypeFromTypeNode:               unmarshallerFor[GetTypeFromTypeNodeParams],
+ 	MethodGetWidenedType:                    unmarshallerFor[GetWidenedTypeParams],
+diff --git a/internal/api/session.go b/internal/api/session.go
+index 7e29c44b6ff6673bea01ca8da6256bfb5630bb9e..c9a299a2ddd3481b95968a4fcb8fc16a33caa543 100644
+--- a/internal/api/session.go
++++ b/internal/api/session.go
+@@ -648,6 +648,8 @@ func (s *Session) HandleRequest(ctx context.Context, method string, params json.
+ 		return s.handleGetContextualType(ctx, parsed.(*GetContextualTypeParams))
+ 	case string(MethodGetBaseTypeOfLiteralType):
+ 		return s.handleGetBaseTypeOfLiteralType(ctx, parsed.(*GetBaseTypeOfLiteralTypeParams))
++	case string(MethodGetAwaitedType):
++		return s.handleGetAwaitedType(ctx, parsed.(*CheckerTypeParams))
+ 	case string(MethodGetNonNullableType):
+ 		return s.handleGetNonNullableType(ctx, parsed.(*GetNonNullableTypeParams))
+ 	case string(MethodGetTypeFromTypeNode):
+@@ -1848,6 +1850,27 @@ func (s *Session) handleGetBaseTypeOfLiteralType(ctx context.Context, params *Ge
+ 	return setup.newTypeResponse(result), nil
+ }
+ 
++// handleGetAwaitedType resolves awaiting through the native checker, including
++// thenable overloads, receiver constraints, generic aliases and recursive types.
++func (s *Session) handleGetAwaitedType(ctx context.Context, params *CheckerTypeParams) (*TypeResponse, error) {
++	setup, err := s.setupChecker(ctx, params.Snapshot, params.Project)
++	if err != nil {
++		return nil, err
++	}
++	defer setup.done()
++
++	t, err := setup.resolveTypeHandle(params.Type)
++	if err != nil {
++		return nil, err
++	}
++
++	result := setup.checker.GetAwaitedType(t)
++	if result == nil {
++		return nil, nil
++	}
++	return setup.newTypeResponse(result), nil
++}
++
+ // handleGetNonNullableType returns the type with null and undefined removed.
+ func (s *Session) handleGetNonNullableType(ctx context.Context, params *GetNonNullableTypeParams) (*TypeResponse, error) {
+ 	setup, err := s.setupChecker(ctx, params.Snapshot, params.Project)
+diff --git a/internal/checker/exports.go b/internal/checker/exports.go
+index 90162bdaeb6c4285c852738315c404b2c7c11ff4..25dbcbdeb40c8841372ddeb0c63fe685fff61c77 100644
+--- a/internal/checker/exports.go
++++ b/internal/checker/exports.go
+@@ -54,6 +54,11 @@ func (c *Checker) GetESSymbolType() *Type {
+ 	return c.esSymbolType
+ }
+ 
++// GetAwaitedType returns the native awaited type, or nil for an invalid thenable.
++func (c *Checker) GetAwaitedType(t *Type) *Type {
++	return c.getAwaitedType(t)
++}
++
+ func (c *Checker) GetBaseTypeOfLiteralType(t *Type) *Type {
+ 	return c.getBaseTypeOfLiteralType(t)
+ }
+diff --git a/internal/project/configfileregistrybuilder.go b/internal/project/configfileregistrybuilder.go
+index 1d62a11880af10d201b1e861473c22751d256474..7cdb77a4a2f73d3f87938ee2a6205d0c7e24b210 100644
+--- a/internal/project/configfileregistrybuilder.go
++++ b/internal/project/configfileregistrybuilder.go
+@@ -391,6 +391,16 @@ func (c *configFileRegistryBuilder) isConfigBaseName(baseName string) bool {
+ }
+ 
+ func (c *configFileRegistryBuilder) DidChangeFiles(summary FileChangeSummary, logger *logging.LogTree) changeFileResult {
++	if summary.InvalidateAll {
++		c.configs.Range(func(entry *dirty.SyncMapEntry[tspath.Path, *configFileEntry]) bool {
++			entry.Change(func(config *configFileEntry) {
++				config.pendingReload = PendingReloadFull
++			})
++			return true
++		})
++		return c.invalidateCache(logger)
++	}
++
+ 	var affectedProjects map[tspath.Path]struct{}
+ 	var affectedFiles map[tspath.Path]struct{}
+ 	var shouldInvalidateCache bool

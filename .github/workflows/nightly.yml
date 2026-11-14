@@ -169,6 +169,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare native compiler
+        timeout-minutes: 10
+        run: pnpm native:typescript:prepare
+
       - name: Lint
         # The longest single check in the fast lane, and the local default runs
         # it on one worker for the resource guard's sake rather than the work's.
@@ -261,6 +265,10 @@ jobs:
 
       - name: Install dependencies
         run: node scripts/runIsolatedUnitShard.ts install --context "${{ steps.unit_isolation.outputs.context }}"
+
+      - name: Prepare isolated native compiler
+        timeout-minutes: 10
+        run: node scripts/runIsolatedUnitShard.ts native-compiler --context "${{ steps.unit_isolation.outputs.context }}"
 
       # Real-render specs launch Chromium from inside a loaded shard. Without
       # the pinned Playwright build they fall back to the image's full Chrome,

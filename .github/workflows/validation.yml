@@ -434,6 +434,10 @@ jobs:
         timeout-minutes: 5
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare native compiler
+        timeout-minutes: 10
+        run: pnpm native:typescript:prepare
+
       - name: Lint
         timeout-minutes: 20
         # The longest single check in the fast lane, and the local default runs
@@ -526,6 +530,10 @@ jobs:
       - name: Install dependencies
         run: node scripts/runIsolatedUnitShard.ts install --context "${{ steps.unit_isolation.outputs.context }}"
 
+      - name: Prepare isolated native compiler
+        timeout-minutes: 10
+        run: node scripts/runIsolatedUnitShard.ts native-compiler --context "${{ steps.unit_isolation.outputs.context }}"
+
       # Real-render specs launch Chromium from inside a loaded shard. Without
       # the pinned Playwright build they fall back to the image's full Chrome,
       # whose cold start exceeded a 120s warm-up under shard load (run
@@ -589,6 +597,10 @@ jobs:
       # profile cannot change the guard: its sources are not review tooling
       # (scripts/prValidationScope.ts), so a head touching them takes the broad
       # profile, whose unit shards run them isolated.
+      - name: Prepare native compiler
+        timeout-minutes: 10
+        run: pnpm native:typescript:prepare
+
       - name: Run script suite
         run: pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts' --exclude='**/resourceGuardStorage.spec.ts' --exclude='**/resourceGuard.spec.ts' --exclude='**/resourceGuardShowOutput.spec.ts'
 
@@ -914,6 +926,37 @@ jobs:
           CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
 
+  native-typescript-windows:
+    name: Native TypeScript cache (Windows)
+    needs: decide
+    if: needs.decide.outputs.code == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+        with:
+          package_json_file: package.json
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare native compiler
+        timeout-minutes: 10
+        run: pnpm native:typescript:prepare
+
+      - name: Verify native Windows private cache
+        timeout-minutes: 5
+        run: pnpm test:run scripts/__tests__/nativeTypeScriptWindowsCache.spec.ts
+
   native-parity:
     name: Native parity (macOS)
     needs: decide
@@ -1193,6 +1236,7 @@ jobs:
       - rust
       - native-macos
       - native-windows
+      - native-typescript-windows
       - native-parity
       - dependency-review
       - pr-secrets
@@ -1211,7 +1255,7 @@ jobs:
               if $flag == "true" then "success"
               elif $flag == "false" then "skipped"
               else error("missing scope verdict") end;
-            (keys | sort) == (["decide", "static", "lint", "boundaries", "unit", "tooling-unit", "smoke", "build", "rust", "native-macos", "native-windows", "native-parity", "dependency-review", "pr-secrets"] | sort) and
+            (keys | sort) == (["decide", "static", "lint", "boundaries", "unit", "tooling-unit", "smoke", "build", "rust", "native-macos", "native-windows", "native-typescript-windows", "native-parity", "dependency-review", "pr-secrets"] | sort) and
             .decide.result == "success" and .static.result == "success" and
             (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == "true" or . == "false")) and
             .lint.result == selected(.decide.outputs.code) and
@@ -1222,6 +1266,7 @@ jobs:
             .rust.result == selected(if .decide.outputs.rust == "true" or .decide.outputs.server == "true" then "true" else "false" end) and
             .["native-macos"].result == selected(.decide.outputs.rust) and
             .["native-windows"].result == selected(.decide.outputs.rust) and
+            .["native-typescript-windows"].result == selected(.decide.outputs.code) and
             .["native-parity"].result == selected(if .decide.outputs.rust == "true" or .decide.outputs.web == "true" then "true" else "false" end) and
             .smoke.result == (if $pr == "true" then selected(.decide.outputs.e2e) elif $pr == "false" then "skipped" else error("missing PR verdict") end) and
             .["dependency-review"].result == selected($pr) and

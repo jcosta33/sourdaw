@@ -1,0 +1,35 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 8f0d1b6..47e667c 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -3,7 +3,7 @@ import * as tseslint from "@typescript-eslint/utils/ts-eslint";
+ import { ReportDescriptor, ReportFixFunction, RuleFix, RuleFixer, RuleListener, RuleListener as RuleListener$1 } from "@typescript-eslint/utils/ts-eslint";
+ import { TSESTree } from "@typescript-eslint/types";
+ import { ParserServicesWithTypeInformation } from "@typescript-eslint/utils";
+-import ts from "typescript";
++import type { Type } from "typescript/unstable/sync";
+ /**
+  * Represents the ESLint rule context.
+  * @since 0.0.1
+@@ -48,7 +48,7 @@ export declare function report(context: RuleContext): (desc?: null | ReportDescr
+  * the `eslint` package.
+  * @see https://github.com/typescript-eslint/typescript-eslint/issues/10438
+  */
+-export declare function getConstrainedTypeAtLocation(services: ParserServicesWithTypeInformation, node: TSESTree.Node): ts.Type;
++export declare function getConstrainedTypeAtLocation(services: ParserServicesWithTypeInformation, node: TSESTree.Node): Type;
+ /**
+  * Merge multiple visitor objects into a single visitor object.
+  *
+diff --git a/dist/index.js b/dist/index.js
+index 2de8109..22dd663 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -16,7 +16,7 @@ function report(context) {
+ }
+ function getConstrainedTypeAtLocation(services, node) {
+ 	const nodeType = services.getTypeAtLocation(node);
+-	return services.program.getTypeChecker().getBaseConstraintOfType(nodeType) ?? nodeType;
++	return services.checker.getBaseConstraintOfType(nodeType) ?? nodeType;
+ }
+ function merge(base, ...rest) {
+ 	for (const r of rest) for (const key in r) {

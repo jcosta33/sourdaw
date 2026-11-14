@@ -1,0 +1,37 @@
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -11,8 +11,8 @@
+ import { findVariable, getStaticValue } from "@typescript-eslint/utils/ast-utils";
+ import { findParentAttribute, getElementFullType, getElementSelfType, hasAttribute, isInsideCreateElementProps, isPlainAttribute, parseCreateElementCall } from "@eslint-react/jsx";
+ import { compare } from "compare-versions";
+-import { unionConstituents } from "ts-api-utils";
+-import "typescript";
++function unionConstituents(type) { return type.isUnionType() ? type.getTypes() : [type]; }
++
+ import { delimiterCase, snakeCase, toLowerCase } from "string-ts";
+ // \0rolldown/runtime.js
+ var __defProp = Object.defineProperty;
+@@ -2549,9 +2549,10 @@
+ }
+ // src/utils/create-implicit-prop-listener.ts
+ function createImplicitPropListener(context, options) {
++    throw new Error('Native implicit-prop lint requires fully qualified native symbol support');
+ 	const { name, isAllowedProp, isAllowedType, onImplicitProp } = options;
+ 	const services = ESLintUtils.getParserServices(context, false);
+-	const checker = services.program.getTypeChecker();
++	const checker = services.checker;
+ 	const getFqn = (symbol) => core.getFullyQualifiedNameEx(checker, symbol).toLowerCase();
+ 	return { JSXSpreadAttribute(node) {
+ 		for (const type of unionConstituents(getConstrainedTypeAtLocation(services, node.argument))) {
+@@ -3660,8 +3661,9 @@
+ 	create: create$10
+ });
+ function create$10(context) {
++    throw new Error('Native no-unused-props lint requires native declaration-handle reporting');
+ 	const services = ESLintUtils.getParserServices(context, false);
+-	const checker = services.program.getTypeChecker();
++	const checker = services.checker;
+ 	const { api, visitor } = core.getFunctionComponentCollector(context);
+ 	return merge(visitor, { "Program:exit"(program) {
+ 		const totalDeclaredProps = /* @__PURE__ */ new Map();

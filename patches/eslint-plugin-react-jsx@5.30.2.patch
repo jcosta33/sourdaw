@@ -1,0 +1,21 @@
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -5,7 +5,7 @@
+ import { Check } from "@eslint-react/ast";
+ import { AST_NODE_TYPES } from "@typescript-eslint/types";
+ import * as core from "@eslint-react/core";
+-import ts from "typescript";
++// Native CompilerOptions JSX protocol: ReactJSX=4, ReactJSXDev=5.
+ // \0rolldown/runtime.js
+ var __defProp = Object.defineProperty;
+ var __exportAll = (all, flags) => {
+@@ -287,7 +287,7 @@
+ function create$4(context) {
+ 	if (!/key\s*=/.test(context.sourceCode.text)) return {};
+ 	const { jsx } = core.getJSXConfig(context);
+-	if (jsx !== ts.JsxEmit.ReactJSX && jsx !== ts.JsxEmit.ReactJSXDev) return {};
++	if (jsx !== 4 && jsx !== 5) return {};
+ 	return { JSXOpeningElement(node) {
+ 		for (const n of dropWhile(node.attributes, not(Check.isJSXSpreadAttribute)).filter(isPlainAttribute("key"))) context.report({
+ 			messageId: "default",

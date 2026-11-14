@@ -41,6 +41,12 @@ shared Git publication in `trusted-script-delivery.md`.
    and producer at head and drive each through the new clause; the population, not the incident, bounds
    the sweep (#3112: promotion wrote `sourceRevision` for generic effects). Name the throw any empty
    catch around persistence hides and construct the input.
+   Static lint export discovery has the same fail-closed requirement (#10 and #52): an existing
+   source that the real nested parser cannot parse, or a parser/protocol/storage failure, must not
+   become an empty export set and silently remove a configured diagnostic. Only a documented absent
+   optional source may use an empty result. Probe the real recursive reader with malformed source
+   and an unreadable existing file; require a visible error, and retain the ordinary valid re-export
+   positive and negative controls. Mutating the nested reader to throw must not leave lint green.
 5. **Witnesses outside the author's list.** Runs: CI; the reviewer reads the `Unit suite` and
    `Affected end-to-end <id>` jobs that ran each named witness on the head, and the greps run from the fixed
    commit. A change to a durable record's contents or to a UI label,
