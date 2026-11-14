@@ -105,8 +105,14 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
     }
     // Optional only for decoding legacy approval snapshots; omission never authorizes a fresh write.
     const metricFields: { metricGoalState?: string | null } = { metricGoalState: input.metricGoalState ?? null };
+    // Recorded so revalidation recompiles with the input this compilation used: the decision alone cannot
+    // say it, since metric admission escalates an allow batch to confirm without any explicit request.
+    const explicitFields: { explicitApprovalRequired?: boolean } = {
+        explicitApprovalRequired: input.requireExplicitApproval !== false,
+    };
     return {
         ...metricFields,
+        ...explicitFields,
         schemaVersion: 1 as const,
         actionHashes: envelope.commands.map((command) =>
             getExactAgentActionHash({ operation: command.operation, arguments: command.arguments })
