@@ -11,7 +11,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -359,6 +359,100 @@ describe('isolated git transport', () => {
                     env: f.env,
                 })
             ).toThrow('refusing a token-bearing git child outside an isolated git directory');
+        });
+    });
+
+    it('refuses a credential-holding git child that names the shared repository as its git directory', () => {
+        withFixture((f) => {
+            const credentialArgs = (gitDir: string) => [
+                `--git-dir=${gitDir}`,
+                ...gitAuthenticatedArgs(SENTINEL, f.helperDir, ['ls-remote', f.remoteUrl]),
+            ];
+
+            expect(() =>
+                spawnCapture('git', credentialArgs(join(f.primary, '.git')), { cwd: f.lane, env: f.env })
+            ).toThrow('refusing a token-bearing git child outside an isolated git directory');
+            expect(() => spawnRun('git', credentialArgs(join(f.primary, '.git')), { cwd: f.lane, env: f.env })).toThrow(
+                'refusing a token-bearing git child outside an isolated git directory'
+            );
+        });
+    });
+
+    it('refuses a git directory laid out like a transport directory that the transport did not create', () => {
+        withFixture((f) => {
+            const lookalike = mkdtempSync(join(tmpdir(), 'sourdaw-git-transport-'));
+            try {
+                fixtureGit(f.root, ['init', '-q', '--bare', lookalike]);
+
+                expect(() =>
+                    spawnCapture(
+                        'git',
+                        [
+                            `--git-dir=${lookalike}`,
+                            ...gitAuthenticatedArgs(SENTINEL, f.helperDir, ['ls-remote', f.remoteUrl]),
+                        ],
+                        { cwd: f.lane, env: f.env }
+                    )
+                ).toThrow('refusing a token-bearing git child outside an isolated git directory');
+            } finally {
+                rmSync(lookalike, { recursive: true, force: true });
+            }
+        });
+    });
+
+    it('refuses a transport git directory that a later git-dir overrides or a path that only resolves to it', () => {
+        withFixture((f) => {
+            withIsolatedGitTransport(
+                runner(f.lane, f.env),
+                { token: SENTINEL, helperDir: f.helperDir },
+                (transport) => {
+                    const gitDir = transport.capture(['rev-parse', '--absolute-git-dir']);
+                    const listRemote = gitAuthenticatedArgs(SENTINEL, f.helperDir, ['ls-remote', f.remoteUrl]);
+
+                    // Git honours the last --git-dir, so a trailing one would run against the shared repository.
+                    expect(() =>
+                        spawnCapture(
+                            'git',
+                            [`--git-dir=${gitDir}`, `--git-dir=${join(f.primary, '.git')}`, ...listRemote],
+                            {
+                                cwd: f.lane,
+                                env: f.env,
+                            }
+                        )
+                    ).toThrow('refusing a token-bearing git child outside an isolated git directory');
+                    expect(() =>
+                        spawnCapture('git', [`--git-dir=${gitDir}/../${basename(gitDir)}`, ...listRemote], {
+                            cwd: f.lane,
+                            env: f.env,
+                        })
+                    ).toThrow('refusing a token-bearing git child outside an isolated git directory');
+                }
+            );
+        });
+    });
+
+    it('refuses a transport git directory once its transport has returned', () => {
+        withFixture((f) => {
+            let gitDir = '';
+            withIsolatedGitTransport(
+                runner(f.lane, f.env),
+                { token: SENTINEL, helperDir: f.helperDir },
+                (transport) => {
+                    gitDir = transport.capture(['rev-parse', '--git-dir']);
+                    expect(transport.capture(['ls-remote', f.remoteUrl, 'refs/heads/main'])).toContain(f.main);
+                }
+            );
+            mkdirSync(gitDir);
+            fixtureGit(f.root, ['init', '-q', '--bare', gitDir]);
+
+            expect(() =>
+                spawnCapture(
+                    'git',
+                    [`--git-dir=${gitDir}`, ...gitAuthenticatedArgs(SENTINEL, f.helperDir, ['ls-remote', f.remoteUrl])],
+                    { cwd: f.lane, env: f.env }
+                )
+            ).toThrow('refusing a token-bearing git child outside an isolated git directory');
+            rmSync(gitDir, { recursive: true, force: true });
         });
     });
 });

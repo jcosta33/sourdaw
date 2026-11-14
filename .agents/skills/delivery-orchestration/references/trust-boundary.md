@@ -56,7 +56,10 @@ own store so fetched objects land where later reads find them and pushes find wh
 Automatic gc and maintenance are off there, because they would treat the shared store's objects as
 unreachable. The directory starts with the repository's `origin` tracking refs for negotiation and
 pruning; afterwards only changed tracking refs are written back, each against its seeded value, so
-a concurrent update refuses. A token-bearing Git child that names no `--git-dir` refuses to start.
+a concurrent update refuses. A credential-holding Git child refuses to start unless every
+`--git-dir` it names is, character for character, a directory a running transport created; the
+shared repository's own Git directory, a look-alike temporary directory, and a transport directory
+after its transport returned all refuse.
 Working-tree and object commands (status, diff, merge, show) need lane config but no token, and
 run in the lane or primary without it.
 

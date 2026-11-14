@@ -771,18 +771,41 @@ function isTokenBearingGitChild(args: readonly string[], env: NodeJS.ProcessEnv)
     return env.GH_TOKEN !== undefined || installsCredentialHelper(args);
 }
 
+/** The git directories `createIsolatedGitDirectory` made that have not been released yet. */
+const liveIsolatedGitDirectories = new Set<string>();
+
+/**
+ * A fresh, empty directory for `withIsolatedGitTransport` to write a git directory into. Only a path
+ * this returned, until `releaseIsolatedGitDirectory` retires it, may hold a credential-holding git
+ * child (`assertCredentialHelperChildIsIsolated`).
+ */
+export function createIsolatedGitDirectory(): string {
+    const gitDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-transport-'));
+    liveIsolatedGitDirectories.add(gitDir);
+    return gitDir;
+}
+
+export function releaseIsolatedGitDirectory(gitDir: string): void {
+    liveIsolatedGitDirectories.delete(gitDir);
+}
+
 /**
  * A credential reaches git only through a helper, and a lane can write the config and attributes of
- * every lane and of the primary checkout. A child that installs a helper therefore must name its git
- * directory with `--git-dir`: `withIsolatedGitTransport` points it at a directory whose config only
- * the script writes, so no lane-chosen transport, remote helper, URL rewrite or `http.*` setting
- * applies beside the token.
+ * every lane and of the primary checkout. A child that installs a helper therefore must run against a
+ * git directory `withIsolatedGitTransport` created and still holds, whose config only the script
+ * writes, so no lane-chosen transport, remote helper, URL rewrite or `http.*` setting applies beside
+ * the token. Naming `--git-dir` proves nothing alone: it could name the shared repository. Every
+ * `--git-dir` must match a live directory exactly, because git honours the last one and a path that
+ * only resolves to a live directory has not been proven to.
  */
 function assertCredentialHelperChildIsIsolated(args: readonly string[]): void {
     if (!installsCredentialHelper(args)) {
         return;
     }
-    if (!gitGlobalOptions(args).some((option) => option.startsWith('--git-dir='))) {
+    const gitDirs = gitGlobalOptions(args)
+        .filter((option) => option.startsWith('--git-dir='))
+        .map((option) => option.slice('--git-dir='.length));
+    if (gitDirs.length === 0 || !gitDirs.every((gitDir) => liveIsolatedGitDirectories.has(gitDir))) {
         throw new Error('refusing a token-bearing git child outside an isolated git directory');
     }
 }

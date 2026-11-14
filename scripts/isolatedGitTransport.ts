@@ -1,8 +1,7 @@
-import { lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { lstatSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
-import { gitAuthenticatedArgs } from './githubAppIdentity.ts';
+import { createIsolatedGitDirectory, gitAuthenticatedArgs, releaseIsolatedGitDirectory } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 
 /** Runs git in one repository; the caller fixes the directory and the environment. */
@@ -48,7 +47,7 @@ export function withIsolatedGitTransport<Result>(
         fail(`unsupported repository object format: ${objectFormat}`);
     }
     const seeded = readTrackingRefs(repository.capture(trackingRefsArgs()));
-    const gitDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-transport-'));
+    const gitDir = createIsolatedGitDirectory();
     try {
         writeIsolatedGitDir(gitDir, objects, objectFormat, seeded);
         const isolated = (args: string[]) => [
@@ -63,6 +62,7 @@ export function withIsolatedGitTransport<Result>(
         applyTrackingRefChanges(repository, seeded, fetched, objectFormat);
         return result;
     } finally {
+        releaseIsolatedGitDirectory(gitDir);
         removeIsolatedGitDir(gitDir);
     }
 }
