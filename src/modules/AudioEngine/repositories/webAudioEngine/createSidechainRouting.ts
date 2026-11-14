@@ -107,77 +107,186 @@ function disconnectConnection(connection: SidechainConnection): void {
     }
 }
 
+type ConnectionMap = Map<string, SidechainConnection>;
+type SidechainState = Readonly<{
+    connections: ConnectionMap;
+    pendingRoutes: Map<string, SidechainRoute>;
+    readContext: () => AudioContext;
+    readTrackStrip: SidechainRoutingPorts['readTrackStrip'];
+    isFallback: () => boolean;
+}>;
+
+function applyRoute(
+    state: SidechainState,
+    sourceTrackId: string,
+    targetTrackId: string,
+    targetDeviceId: string
+): boolean {
+    const { connections, readContext, readTrackStrip } = state;
+    const sourceStrip = readTrackStrip(sourceTrackId);
+    const targetStrip = readTrackStrip(targetTrackId);
+    if (!sourceStrip || !targetStrip) {
+        return false;
+    }
+
+    const deviceNode = targetStrip.deviceNodes.find((data) => data.deviceId === targetDeviceId);
+    if (!deviceNode || deviceNode.type !== 'builtin-sidechain-compressor') {
+        return false;
+    }
+
+    const key = routeKey(sourceTrackId, targetDeviceId);
+    if (connections.has(key)) {
+        return false;
+    }
+
+    const context = readContext();
+    const scGain = context.createGain();
+    scGain.gain.value = 1;
+    // FX-5 — the key is tapped post-fader, so it reaches the detector on the
+    // source track's clock, not the detector's. The alignment line goes
+    // between the tap and the route gain: after the metering/sends tap (which
+    // must keep reading the un-delayed signal) and before the detector input.
+    // It starts at zero and is filled in by refreshAlignment, which owns
+    // every write to it so there is exactly one place the value lands.
+    const keyDelayNode = context.createDelay(SIDECHAIN_KEY_MAX_DELAY_SECONDS);
+    keyDelayNode.delayTime.value = 0;
+    const sourceNode = sourceStrip.analyserNode;
+    sourceNode.connect(keyDelayNode);
+    keyDelayNode.connect(scGain);
+    scGain.connect(deviceNode.inputNode, 0, 1);
+    connections.set(key, {
+        sourceTrackId,
+        targetTrackId,
+        targetDeviceId,
+        sourceNode,
+        keyDelayNode,
+        appliedKeyDelaySec: 0,
+        gainNode: scGain,
+    });
+    return true;
+}
+
+/**
+ * Re-attempt every sidechain route queued during fallback mode. Routes that
+ * still cannot be wired (e.g. the target strip/device is not present yet) are
+ * dropped from the queue by applyRoute's own guards — they are no longer
+ * recoverable through this path and the caller owns re-requesting.
+ */
+function replayPendingRoutes(state: SidechainState): boolean {
+    const { pendingRoutes } = state;
+    if (pendingRoutes.size === 0) {
+        return false;
+    }
+    const queued = Array.from(pendingRoutes.values());
+    pendingRoutes.clear();
+    let changed = false;
+    for (const route of queued) {
+        changed = applyRoute(state, route.sourceTrackId, route.targetTrackId, route.targetDeviceId) || changed;
+    }
+    return changed;
+}
+
+function removeConnection(connections: ConnectionMap, key: string): boolean {
+    const connection = connections.get(key);
+    if (!connection) {
+        return false;
+    }
+    disconnectConnection(connection);
+    connections.delete(key);
+    return true;
+}
+
+/**
+ * FX-5 — re-resolve every wired route's key alignment and glide the delay
+ * lines onto it. Called on wire and once per scheduler tick, so a mid-session
+ * latency push (a native plugin reporting a new lookahead, a device added or
+ * bypassed) lands within one grain instead of holding a stale alignment for
+ * the rest of the session. Nothing is cached across calls beyond the value
+ * last written, which exists purely to keep an unchanged alignment from
+ * scheduling AudioParam events every tick.
+ */
+function refreshAlignment(state: SidechainState, keyDelayFor: SidechainKeyDelayResolver): void {
+    const { connections, readContext, isFallback } = state;
+    if (isFallback() || connections.size === 0) {
+        return;
+    }
+    const now = readContext().currentTime;
+    for (const connection of connections.values()) {
+        const resolved = keyDelayFor({
+            sourceTrackId: connection.sourceTrackId,
+            targetTrackId: connection.targetTrackId,
+            targetDeviceId: connection.targetDeviceId,
+        });
+        glideKeyDelay(connection, resolved, now);
+    }
+}
+
+function reconnectConnectionsOfTrack(connections: ConnectionMap, trackId: string, strip: TrackChannelStrip): void {
+    for (const connection of connections.values()) {
+        if (connection.sourceTrackId !== trackId) {
+            continue;
+        }
+        // The tap stays post-fader (`analyserNode`); the key alignment line
+        // sits between it and the route gain, so a rebuild re-attaches the
+        // tap to the delay rather than straight to the gain.
+        const sourceNode = strip.analyserNode;
+        try {
+            connection.sourceNode.disconnect(connection.keyDelayNode);
+        } catch {
+            // A wider rebuild may already have removed the prior source edge.
+        }
+        sourceNode.connect(connection.keyDelayNode);
+        connection.sourceNode = sourceNode;
+    }
+}
+
+function forgetPendingRoutesOf(
+    pendingRoutes: Map<string, SidechainRoute>,
+    trackId: string,
+    removedDeviceIds: ReadonlySet<string>
+): void {
+    for (const [key, route] of pendingRoutes) {
+        const belongsToRemovedStrip =
+            route.sourceTrackId === trackId ||
+            route.targetTrackId === trackId ||
+            removedDeviceIds.has(route.targetDeviceId);
+        if (belongsToRemovedStrip) {
+            pendingRoutes.delete(key);
+        }
+    }
+}
+
+function removeConnectionsOf(connections: ConnectionMap, trackId: string, removedDeviceIds: ReadonlySet<string>): void {
+    for (const [key, connection] of connections) {
+        if (connection.sourceTrackId === trackId || removedDeviceIds.has(connection.targetDeviceId)) {
+            removeConnection(connections, key);
+        }
+    }
+}
+
+function resetEffects(connections: ConnectionMap): Array<() => void> {
+    return Array.from(connections.values()).flatMap((connection) => [
+        () => {
+            try {
+                connection.sourceNode.disconnect(connection.keyDelayNode);
+            } catch {
+                // The source edge may already be detached by wider teardown.
+            }
+        },
+        () => connection.keyDelayNode.disconnect(),
+        () => connection.gainNode.disconnect(),
+    ]);
+}
+
 export function createSidechainRouting({
     readContext,
     isFallback,
     readTrackStrip,
     mutateRuntimeGraph,
 }: SidechainRoutingPorts): SidechainRouting {
-    const connections = new Map<string, SidechainConnection>();
+    const connections: ConnectionMap = new Map();
     const pendingRoutes = new Map<string, SidechainRoute>();
-
-    function applyRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): boolean {
-        const sourceStrip = readTrackStrip(sourceTrackId);
-        const targetStrip = readTrackStrip(targetTrackId);
-        if (!sourceStrip || !targetStrip) {
-            return false;
-        }
-
-        const deviceNode = targetStrip.deviceNodes.find((data) => data.deviceId === targetDeviceId);
-        if (!deviceNode || deviceNode.type !== 'builtin-sidechain-compressor') {
-            return false;
-        }
-
-        const key = routeKey(sourceTrackId, targetDeviceId);
-        if (connections.has(key)) {
-            return false;
-        }
-
-        const context = readContext();
-        const scGain = context.createGain();
-        scGain.gain.value = 1;
-        // FX-5 — the key is tapped post-fader, so it reaches the detector on the
-        // source track's clock, not the detector's. The alignment line goes
-        // between the tap and the route gain: after the metering/sends tap (which
-        // must keep reading the un-delayed signal) and before the detector input.
-        // It starts at zero and is filled in by refreshAlignment, which owns
-        // every write to it so there is exactly one place the value lands.
-        const keyDelayNode = context.createDelay(SIDECHAIN_KEY_MAX_DELAY_SECONDS);
-        keyDelayNode.delayTime.value = 0;
-        const sourceNode = sourceStrip.analyserNode;
-        sourceNode.connect(keyDelayNode);
-        keyDelayNode.connect(scGain);
-        scGain.connect(deviceNode.inputNode, 0, 1);
-        connections.set(key, {
-            sourceTrackId,
-            targetTrackId,
-            targetDeviceId,
-            sourceNode,
-            keyDelayNode,
-            appliedKeyDelaySec: 0,
-            gainNode: scGain,
-        });
-        return true;
-    }
-
-    /**
-     * Re-attempt every sidechain route queued during fallback mode. Routes that
-     * still cannot be wired (e.g. the target strip/device is not present yet) are
-     * dropped from the queue by applyRoute's own guards — they are no longer
-     * recoverable through this path and the caller owns re-requesting.
-     */
-    function replayPendingRoutes(): boolean {
-        if (pendingRoutes.size === 0) {
-            return false;
-        }
-        const queued = Array.from(pendingRoutes.values());
-        pendingRoutes.clear();
-        let changed = false;
-        for (const route of queued) {
-            changed = applyRoute(route.sourceTrackId, route.targetTrackId, route.targetDeviceId) || changed;
-        }
-        return changed;
-    }
+    const state: SidechainState = { connections, pendingRoutes, readContext, readTrackStrip, isFallback };
 
     function wireRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void {
         const key = routeKey(sourceTrackId, targetDeviceId);
@@ -194,20 +303,10 @@ export function createSidechainRouting({
         // before honoring this request, so a route requested before the engine
         // was usable is now wired up.
         mutateRuntimeGraph(() => {
-            const replayed = replayPendingRoutes();
-            const applied = applyRoute(sourceTrackId, targetTrackId, targetDeviceId);
+            const replayed = replayPendingRoutes(state);
+            const applied = applyRoute(state, sourceTrackId, targetTrackId, targetDeviceId);
             return replayed || applied;
         });
-    }
-
-    function removeConnection(key: string): boolean {
-        const connection = connections.get(key);
-        if (!connection) {
-            return false;
-        }
-        disconnectConnection(connection);
-        connections.delete(key);
-        return true;
     }
 
     function unwireRoute(sourceTrackId: string, targetDeviceId: string): void {
@@ -215,84 +314,7 @@ export function createSidechainRouting({
         // Cancel a still-pending (queued-in-fallback) wire so an unwire issued
         // before recovery does not get replayed back into the live graph.
         pendingRoutes.delete(key);
-        mutateRuntimeGraph(() => removeConnection(key));
-    }
-
-    /**
-     * FX-5 — re-resolve every wired route's key alignment and glide the delay
-     * lines onto it. Called on wire and once per scheduler tick, so a mid-session
-     * latency push (a native plugin reporting a new lookahead, a device added or
-     * bypassed) lands within one grain instead of holding a stale alignment for
-     * the rest of the session. Nothing is cached across calls beyond the value
-     * last written, which exists purely to keep an unchanged alignment from
-     * scheduling AudioParam events every tick.
-     */
-    function refreshAlignment(keyDelayFor: SidechainKeyDelayResolver): void {
-        if (isFallback() || connections.size === 0) {
-            return;
-        }
-        const now = readContext().currentTime;
-        for (const connection of connections.values()) {
-            const resolved = keyDelayFor({
-                sourceTrackId: connection.sourceTrackId,
-                targetTrackId: connection.targetTrackId,
-                targetDeviceId: connection.targetDeviceId,
-            });
-            glideKeyDelay(connection, resolved, now);
-        }
-    }
-
-    function reconnectTrack(trackId: string, strip: TrackChannelStrip): void {
-        for (const connection of connections.values()) {
-            if (connection.sourceTrackId !== trackId) {
-                continue;
-            }
-            // The tap stays post-fader (`analyserNode`); the key alignment line
-            // sits between it and the route gain, so a rebuild re-attaches the
-            // tap to the delay rather than straight to the gain.
-            const sourceNode = strip.analyserNode;
-            try {
-                connection.sourceNode.disconnect(connection.keyDelayNode);
-            } catch {
-                // A wider rebuild may already have removed the prior source edge.
-            }
-            sourceNode.connect(connection.keyDelayNode);
-            connection.sourceNode = sourceNode;
-        }
-    }
-
-    function forgetPendingRoutesOf(trackId: string, removedDeviceIds: ReadonlySet<string>): void {
-        for (const [key, route] of pendingRoutes) {
-            const belongsToRemovedStrip =
-                route.sourceTrackId === trackId ||
-                route.targetTrackId === trackId ||
-                removedDeviceIds.has(route.targetDeviceId);
-            if (belongsToRemovedStrip) {
-                pendingRoutes.delete(key);
-            }
-        }
-    }
-
-    function removeConnectionsOf(trackId: string, removedDeviceIds: ReadonlySet<string>): void {
-        for (const [key, connection] of connections) {
-            if (connection.sourceTrackId === trackId || removedDeviceIds.has(connection.targetDeviceId)) {
-                removeConnection(key);
-            }
-        }
-    }
-
-    function resetEffects(): Array<() => void> {
-        return Array.from(connections.values()).flatMap((connection) => [
-            () => {
-                try {
-                    connection.sourceNode.disconnect(connection.keyDelayNode);
-                } catch {
-                    // The source edge may already be detached by wider teardown.
-                }
-            },
-            () => connection.keyDelayNode.disconnect(),
-            () => connection.gainNode.disconnect(),
-        ]);
+        mutateRuntimeGraph(() => removeConnection(connections, key));
     }
 
     return {
@@ -300,11 +322,19 @@ export function createSidechainRouting({
         connectionCount: () => connections.size,
         wireRoute,
         unwireRoute,
-        refreshAlignment,
-        reconnectTrack,
-        forgetPendingRoutesOf,
-        removeConnectionsOf,
-        resetEffects,
+        refreshAlignment: (keyDelayFor) => {
+            refreshAlignment(state, keyDelayFor);
+        },
+        reconnectTrack: (trackId, strip) => {
+            reconnectConnectionsOfTrack(connections, trackId, strip);
+        },
+        forgetPendingRoutesOf: (trackId, removedDeviceIds) => {
+            forgetPendingRoutesOf(pendingRoutes, trackId, removedDeviceIds);
+        },
+        removeConnectionsOf: (trackId, removedDeviceIds) => {
+            removeConnectionsOf(connections, trackId, removedDeviceIds);
+        },
+        resetEffects: () => resetEffects(connections),
         clear: () => {
             connections.clear();
             pendingRoutes.clear();
