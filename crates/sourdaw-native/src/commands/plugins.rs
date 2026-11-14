@@ -1646,8 +1646,8 @@ async fn load_plugin_under_runtime_gate(
             // rather than left to the order the scopes happen to end in.
             let Some(runtime) = refusal.runtime else {
                 // The refusal could not get the runtime back out of its owner
-                // (see `RegistrationRefusal::recovered`), so this path tears
-                // nothing down and has nothing to order.
+                // and retired it instead (see `RegistrationRefusal::recovered`),
+                // so this path tears nothing down and has nothing to order.
                 return Err(refusal.reason);
             };
             return Err(refuse_load(
@@ -1956,19 +1956,28 @@ impl RegistrationRefusal {
     /// the renderer still shows whose native instance is gone.
     ///
     /// Sole ownership is proven rather than assumed. A `try_unwrap` that fails
-    /// means some other holder is still inside the wrapper, and handing that
-    /// runtime to a second owner would be the real defect; the refusal then says
-    /// the instance is gone, which is at least true.
-    fn recovered(reason: String, shared: Arc<SharedHostedPlugin>) -> Self {
+    /// means some other holder is still inside the wrapper — a watcher that
+    /// cloned the runtime out of `engine_plugins` while the record was
+    /// published — and handing that runtime to a second owner would be the real
+    /// defect; the refusal then says the instance is gone, which is at least
+    /// true. The owner is retired rather than dropped: dropping this reference
+    /// would leave the final drop, and with it the plugin's teardown, to that
+    /// other holder's thread, where neither format allows it. Retired, it is
+    /// freed by the next sweep, on the shell's UI thread.
+    fn recovered(reason: String, shared: Arc<SharedHostedPlugin>, state: &AppState) -> Self {
         match Arc::try_unwrap(shared) {
             Ok(owner) => Self {
                 reason,
                 runtime: Some(owner.into_inner()),
             },
-            Err(_) => Self {
-                reason,
-                runtime: None,
-            },
+            Err(shared) => {
+                shared.retire();
+                state.retain_retired_engine_plugin(shared);
+                Self {
+                    reason,
+                    runtime: None,
+                }
+            }
         }
     }
 }
@@ -2074,7 +2083,7 @@ fn register_runtime_with_engine(
             parameter_events,
         },
     ) {
-        return Err(RegistrationRefusal::recovered(reason, shared_plugin));
+        return Err(RegistrationRefusal::recovered(reason, shared_plugin, state));
     }
 
     // The slot gets a clone rather than the owner itself: a refused push drops
@@ -2098,10 +2107,11 @@ fn register_runtime_with_engine(
                 return Err(RegistrationRefusal::recovered(
                     format!("Failed to lock engine_plugins: {lock_error}"),
                     shared_plugin,
+                    state,
                 ));
             }
         }
-        return Err(RegistrationRefusal::recovered(error, shared_plugin));
+        return Err(RegistrationRefusal::recovered(error, shared_plugin, state));
     }
 
     // Past the registration, on the same control-thread visit that read the
@@ -5530,6 +5540,38 @@ mod tests {
         assert_eq!(
             *torn_down_on.lock().expect("teardown log"),
             [windows.thread_id]
+        );
+    }
+
+    /// A registration refused after the runtime moved into its shared owner,
+    /// while another holder — a watcher that cloned it out of `engine_plugins`
+    /// — still has it. Dropping the refusal's reference would make that holder
+    /// the final owner, and its thread would run the plugin's teardown; the
+    /// owner is retired instead, so the sweep frees it on the shell's UI thread.
+    #[test]
+    fn a_registration_refusal_that_cannot_take_its_runtime_back_retires_it() {
+        let state = AppState::default();
+        let (runtime, torn_down_on) = runtime_recording_teardown(true);
+        let shared = Arc::new(SharedHostedPlugin::new(runtime));
+        let watcher_clone = Arc::clone(&shared);
+
+        let refusal = RegistrationRefusal::recovered("ring full".to_string(), shared, &state);
+        drop(watcher_clone);
+
+        assert!(
+            refusal.runtime.is_none(),
+            "a runtime another holder is inside cannot be handed back"
+        );
+        assert!(
+            torn_down_on.lock().expect("teardown log").is_empty(),
+            "the holder letting go must not have torn the runtime down on its thread"
+        );
+        let windows = DedicatedUiWindowHost::start();
+        state.sweep_retired_engine_plugins(&windows);
+        assert_eq!(
+            *torn_down_on.lock().expect("teardown log"),
+            [windows.thread_id],
+            "the retired runtime must be torn down by the sweep, on the shell's UI thread"
         );
     }
 
