@@ -486,8 +486,9 @@ removes the worktree and deletes the lane's local branch with `git branch -D`;
 Drafts, one-offs, scratch clones and checkouts, dependency installs, and unpublished or secret work
 stay in `<root>/.agents/artifacts/sourdaw/`, outside every checkout, and are not filed. `<root>` is
 the mount point of the drive holding the primary checkout, printed by
-`df -P . | awk 'NR==2{sub(/^([^ ]+ +){5}/,""); print}'` run there; mount points can contain spaces,
-so quote it. When the same command run on `~` prints the same mount point, `<root>` is the home
+`df -P . | awk 'NR==2{match($0, /[0-9]+% +/); print substr($0, RSTART + RLENGTH)}'` run there. It
+reads the text after the capacity column because filesystem names and mount points can contain
+spaces; quote the result. When the same command run on `~` prints the same mount point, `<root>` is the home
 directory. When `<root>` is the primary checkout itself, ask the owner for a directory on that drive
 outside the checkout. Never place this work on another drive or under `~/.agents/artifacts` when
 the checkout's drive differs.
