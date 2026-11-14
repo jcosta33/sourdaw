@@ -42,6 +42,7 @@ describe('full-run lint targets', () => {
         expect(FULL_ESLINT_TARGETS).toContain('src/**/*.{ts,tsx}');
         expect(FULL_ESLINT_TARGETS).toContain('scripts/**/*.ts');
         expect(FULL_ESLINT_TARGETS).toContain('electron/**/*.ts');
+        expect(FULL_ESLINT_TARGETS).toContain('scripts/lint/sourdaw.mjs');
     });
 });
 

@@ -143,7 +143,12 @@ function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process
 }
 
 export const FULL_OXLINT_TARGETS = ['src', 'scripts', 'electron'] as const;
-export const FULL_ESLINT_TARGETS = ['src/**/*.{ts,tsx}', 'scripts/**/*.ts', 'electron/**/*.ts'] as const;
+export const FULL_ESLINT_TARGETS = [
+    'src/**/*.{ts,tsx}',
+    'scripts/**/*.ts',
+    'electron/**/*.ts',
+    'scripts/lint/sourdaw.mjs',
+] as const;
 
 function main(): number {
     try {

@@ -54,19 +54,23 @@ describe('ESLint configuration', () => {
             expect(lint(fixture.valid), fixture.rule).toEqual([]);
         }
     });
-    it('runs both lint engines on the config', () => {
-        const result = spawnSync(process.execPath, ['scripts/runLint.ts', 'eslint.config.mjs'], {
-            cwd: process.cwd(),
-            encoding: 'utf8',
-            env: { ...process.env, npm_config_verify_deps_before_run: 'false' },
-            timeout: 120_000,
-        });
+    it.each(['eslint.config.mjs', 'scripts/lint/sourdaw.mjs'])(
+        'runs both lint engines on %s',
+        (target) => {
+            const result = spawnSync(process.execPath, ['scripts/runLint.ts', target], {
+                cwd: process.cwd(),
+                encoding: 'utf8',
+                env: { ...process.env, npm_config_verify_deps_before_run: 'false' },
+                timeout: 120_000,
+            });
 
-        expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-        expect(result.stdout).toMatch(/lint: oxlint passed/);
-        expect(result.stdout).toMatch(/lint: oxlint-plugins passed/);
-        expect(result.stdout).toMatch(/lint: eslint passed/);
-    }, 130_000);
+            expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+            expect(result.stdout).toMatch(/lint: oxlint passed/);
+            expect(result.stdout).toMatch(/lint: oxlint-plugins passed/);
+            expect(result.stdout).toMatch(/lint: eslint passed/);
+        },
+        130_000
+    );
 
     it('rejects default exports outside the required root config', () => {
         const directory = mkdtempSync(resolve('.eslint-config-regression-'));
