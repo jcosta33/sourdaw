@@ -1,7 +1,7 @@
 import { getChangesMetaSince, getHeads, getMissingDeps } from '@automerge/automerge';
 
 import { getWarpState, trackStore } from '../../src/modules/Arrangement/stores';
-import { executeAppAction } from '../../src/modules/Command/useCases';
+import { executeAppAction, executeAppActionBatch } from '../../src/modules/Command/useCases';
 import { captureCheckpointRoot, getCrdtDoc } from '../../src/modules/CrdtDocument/useCases';
 import { midiStore } from '../../src/modules/MIDI/stores';
 
@@ -91,6 +91,13 @@ export async function seedElasticProjectScale() {
         await executeAppAction(action);
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     };
+    const executeBatch = async (actions: Parameters<typeof executeAppActionBatch>[0]): Promise<void> => {
+        const result = await executeAppActionBatch(actions);
+        if (result.status !== 'committed' || result.actions.length !== actions.length) {
+            throw new Error(`Project-scale arrangement batch did not fully commit: ${result.status}`);
+        }
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    };
     const initial = trackStore.value?.tracks.filter((track) => track.kind === 'audio');
     const sourceTrack = initial?.[0];
     const sourceClip = sourceTrack?.clips.find((clip) => clip.type === 'audio');
@@ -142,11 +149,13 @@ export async function seedElasticProjectScale() {
     const elasticClipIds: string[] = [];
     for (const [trackIndex, trackId] of trackIds.entries()) {
         const audio = trackIndex < elasticProjectScale.audioTracks;
+        const clipActions: Parameters<typeof executeAppAction>[0][] = [];
+        const noteActions: Parameters<typeof executeAppAction>[0][] = [];
         for (let clipIndex = 0; clipIndex < elasticProjectScale.clipsPerTrack; clipIndex++) {
             if (trackIndex === 0 && clipIndex === 0) continue;
             const clipId = `scale-clip-${trackIndex}-${clipIndex}`;
             const length = audio ? sourceLength : 32;
-            await execute({
+            clipActions.push({
                 type: 'addClip',
                 payload: {
                     id: clipId,
@@ -162,7 +171,7 @@ export async function seedElasticProjectScale() {
                 elasticClipIds.push(clipId);
             }
             if (!audio) {
-                await execute({
+                noteActions.push({
                     type: 'addNotes',
                     payload: {
                         clipId,
@@ -175,6 +184,12 @@ export async function seedElasticProjectScale() {
                     },
                 });
             }
+        }
+        // Notes describe and validate their existing clips before the batch runs.
+        // Commit the track's clip batch first, then its bounded note batch.
+        await executeBatch(clipActions);
+        if (noteActions.length > 0) {
+            await executeBatch(noteActions);
         }
         if ((trackIndex + 1) % 4 === 0) progress('clips-and-notes', trackIndex + 1);
     }
