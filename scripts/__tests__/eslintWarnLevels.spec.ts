@@ -5,7 +5,6 @@ import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
-import { lintMigratedRules } from './helpers/lintMigratedRules.ts';
 
 const TRACKED_IN_6486 = 'existing violations remain; promotion or baselining tracked in #6486';
 const SIZE_BASELINE =
@@ -106,11 +105,16 @@ async function loadEslintConfig(): Promise<readonly unknown[]> {
     return [
         ...loaded.default,
         { rules: historicalNames(migrated.rules) },
-        ...migrated.overrides.filter(isRecord).map((entry) => ({
-            files: entry.files,
-            ...(entry.excludeFiles ? { ignores: entry.excludeFiles } : {}),
-            rules: historicalNames(isRecord(entry.rules) ? entry.rules : {}),
-        })),
+        ...migrated.overrides.filter(isRecord).map((entry) => {
+            const config = {
+                files: entry.files,
+                rules: historicalNames(isRecord(entry.rules) ? entry.rules : {}),
+            };
+            if (entry.excludeFiles) {
+                return { ...config, ignores: entry.excludeFiles };
+            }
+            return config;
+        }),
     ];
 }
 
@@ -172,14 +176,4 @@ describe('eslint.config.mjs warn levels', () => {
     ])('reports %j as %j', (configs, expected) => {
         expect(survivingWarnEntries(configs)).toEqual(expected);
     });
-
-    it('fails the lint gate on a new violation of a promoted preset rule', async () => {
-        const result = lintMigratedRules('export const Comment = () => <div>// note</div>;\n', 'src/app/Comment.tsx');
-        expect(
-            result.messages
-                .filter((message) => message.ruleId === '@eslint-react/jsx-no-comment-textnodes')
-                .map((message) => message.severity)
-        ).toEqual(['error']);
-        expect(result.status).toBe(1);
-    }, 60_000);
 });

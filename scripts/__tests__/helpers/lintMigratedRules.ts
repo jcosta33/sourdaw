@@ -8,6 +8,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
 }
 
+// The sequential integration suite owns every caller so another worker cannot
+// remove a workspace fixture while a native TypeScript program is loading it.
 function withLintFixture<Result>(code: string, filename: string, inspect: (fixture: string) => Result): Result {
     const inModule = filename.startsWith('src/modules/Example/');
     const parent =
@@ -32,11 +34,16 @@ function withLintFixture<Result>(code: string, filename: string, inspect: (fixtu
 /** Run the production public-plugin config on a real file with its normal filename policy. */
 export function lintMigratedRules(code: string, filename = 'src/app/example.ts', fix = false) {
     return withLintFixture(code, filename, (fixture) => {
-        const result = spawnSync(
-            resolve('node_modules/.bin/oxlint'),
-            ['--config=.oxlint-plugins.json', '--threads=2', '--format=json', ...(fix ? ['--fix'] : []), fixture],
-            { cwd: process.cwd(), encoding: 'utf8', timeout: 60_000 }
-        );
+        const args = ['--config=.oxlint-plugins.json', '--threads=2', '--format=json'];
+        if (fix) {
+            args.push('--fix');
+        }
+        args.push(fixture);
+        const result = spawnSync(resolve('node_modules/.bin/oxlint'), args, {
+            cwd: process.cwd(),
+            encoding: 'utf8',
+            timeout: 60_000,
+        });
         if (result.error || (result.status !== 0 && result.status !== 1)) {
             throw new Error(`Oxlint did not complete: ${result.error?.message ?? result.stderr}`);
         }
@@ -65,16 +72,17 @@ export function lintMigratedRules(code: string, filename = 'src/app/example.ts',
 
 export function runProductionLint(code: string, filename: string, fix = false) {
     return withLintFixture(code, filename, (fixture) => {
-        const result = spawnSync(
-            process.execPath,
-            ['scripts/runLint.ts', ...(fix ? ['--fix'] : []), relative(process.cwd(), fixture)],
-            {
-                cwd: process.cwd(),
-                encoding: 'utf8',
-                timeout: 120_000,
-                env: { ...process.env, npm_config_verify_deps_before_run: 'false' },
-            }
-        );
+        const args = ['scripts/runLint.ts'];
+        if (fix) {
+            args.push('--fix');
+        }
+        args.push(relative(process.cwd(), fixture));
+        const result = spawnSync(process.execPath, args, {
+            cwd: process.cwd(),
+            encoding: 'utf8',
+            timeout: 120_000,
+            env: { ...process.env, npm_config_verify_deps_before_run: 'false' },
+        });
         if (result.error) {
             throw new Error(`Lint runner did not complete: ${result.error.message}`);
         }
