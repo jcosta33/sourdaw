@@ -117,7 +117,7 @@ Each module may expose **up to four** independently-importable contract surfaces
 <module>/presentations/views/index.ts
 ```
 
-`errors/` stays internal. Cross-module **named types** surface through **`events/index.ts`** or as a **local duplicate** in the consumer — not via `export type` from `useCases/`.
+`errors/` stays internal. Cross-module **named types** surface through **`events/index.ts`** or as a **local duplicate** in the consumer — not via `export type` from `useCases/`. A consumer may also derive a type reachable from `AppAction` (the argument type of `executeAppAction`) with `Extract<AppAction, …>` (ADR 0058). The variant union and snapshot types defined in `events/` are re-exported through `events/index.ts`; model-defined snapshots are not.
 
 ### Contract folder roles
 
@@ -330,7 +330,7 @@ ProjectLoadError
 
 ## 4.3 `events/`
 
-**Events** represent meaningful business occurrences.
+`events/` holds a module's cross-module payload types: events, which represent business occurrences, and app-action variants (ADR 0058).
 
 `events/` also carries a module's app-action variants (`<area>AppActions.ts`, ADR 0058). Those are requests dispatched through `executeAppAction`, not occurrences, and they are not a substitute for use-case calls.
 
@@ -965,7 +965,7 @@ Each contract barrel re-exports only from files **within its own folder**:
 
 ```text
 useCases/index.ts            → business operations (functions only — not use-case type exports)
-events/index.ts              → typed domain event payloads
+events/index.ts              → typed domain event payloads and app-action variants
 stores/index.ts              → shared business-layer state
 presentations/views/index.ts → composable UI entry points (cross-module only via this barrel)
 ```
