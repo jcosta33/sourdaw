@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
     nativeLoadSample: vi.fn(),
     getWaveformPeaks: vi.fn(() => Promise.resolve([])),
     getDroppedWrites: vi.fn(() => Promise.resolve(0)),
-    executeAppAction: vi.fn((_action: unknown) => Promise.resolve()),
+    executeAppAction: vi.fn((_action: unknown, _options?: unknown) => Promise.resolve()),
 }));
 
 // Exhaustive over this spec's graph: the sweep reads `trackStore` and nothing

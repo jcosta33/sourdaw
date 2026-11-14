@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
         vi.fn<(action: AppAction, options?: { signal?: AbortSignal; onCommitted?: () => void }) => Promise<void>>(),
     cancel: vi.fn(),
     notify: vi.fn(),
-    kernel: { execute: undefined as undefined | ((action: AppAction, options?: unknown) => Promise<void>) },
+    kernel: { execute: undefined as undefined | typeof import('#/modules/Command/useCases').executeAppAction },
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notify }));
 

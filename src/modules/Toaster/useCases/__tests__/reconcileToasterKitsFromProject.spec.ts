@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     resolveWriteTarget: vi.fn(),
     controls: { setParam: vi.fn(), setPadParam: vi.fn() },
     writeNative: vi.fn(),
-    executeAppAction: vi.fn((_action: unknown) => Promise.resolve()),
+    executeAppAction: vi.fn((_action: unknown, _options?: unknown) => Promise.resolve()),
 }));
 
 // Exhaustive over this spec's graph: the sweep reads `trackStore`, the preset
