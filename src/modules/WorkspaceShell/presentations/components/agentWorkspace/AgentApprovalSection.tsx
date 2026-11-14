@@ -25,7 +25,7 @@ type MeasuredFigure = { value: number; unit: string } | null;
 
 type MeasuredPreviewTarget = {
     targetId: string;
-    targetKind: string;
+    targetKind: 'master' | 'track' | 'bus';
     targetName: string | null;
     metrics: readonly {
         metricId: string;
