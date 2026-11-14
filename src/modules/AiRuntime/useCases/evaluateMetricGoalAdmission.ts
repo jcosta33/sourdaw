@@ -297,6 +297,16 @@ function observation(
     return figures[0] ?? null;
 }
 
+/**
+ * Whether `to` moved from `from` by at most `tolerance`. Subtracting two binary figures can exceed the
+ * exact decimal difference by a few units in the last place (0.51 − 0.5 is 0.010000000000000009), so a
+ * movement over the tolerance by no more than that rounding is a movement of exactly the tolerance.
+ */
+function movedWithin(from: number, to: number, tolerance: number): boolean {
+    const rounding = 4 * Number.EPSILON * Math.max(Math.abs(from), Math.abs(to), tolerance);
+    return to - from <= tolerance + rounding;
+}
+
 function satisfies(goal: MetricGoal, before: number, after: number, reference: number | undefined): boolean {
     if (goal.relation === 'increase') {
         return after > before;
@@ -305,22 +315,26 @@ function satisfies(goal: MetricGoal, before: number, after: number, reference: n
         return after < before;
     }
     if (goal.relation === 'hold') {
-        return Math.abs(after - before) <= goal.tolerance;
+        return movedWithin(before, after, goal.tolerance) && movedWithin(after, before, goal.tolerance);
     }
     if (goal.relation === 'no-increase') {
-        return after - before <= goal.tolerance;
+        return movedWithin(before, after, goal.tolerance);
     }
     if (goal.relation === 'no-decrease') {
-        return before - after <= goal.tolerance;
+        return movedWithin(after, before, goal.tolerance);
     }
     if (goal.relation === 'target') {
-        return goal.targetValue !== null && Math.abs(after - goal.targetValue) <= goal.tolerance;
+        return (
+            goal.targetValue !== null &&
+            movedWithin(goal.targetValue, after, goal.tolerance) &&
+            movedWithin(after, goal.targetValue, goal.tolerance)
+        );
     }
     if (reference === undefined) {
         return false;
     }
     if (goal.relation === 'match-current') {
-        return Math.abs(after - reference) <= goal.tolerance;
+        return movedWithin(reference, after, goal.tolerance) && movedWithin(after, reference, goal.tolerance);
     }
     if (goal.relation === 'greater-than-current') {
         return after > reference;

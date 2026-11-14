@@ -1,6 +1,6 @@
 import { type PerceptualConstraint } from '../../models/PerceptualConstraint';
 import { type MetricGoal, type ObjectiveMetricId } from '../metricGoalContractTypes';
-import { readMetricHoldTolerance } from '../metricHoldTolerances';
+import { METRIC_HOLD_TOLERANCES } from '../metricHoldTolerances';
 
 /**
  * `hold` keeps a metric within its tolerance either way; a bound lets it move freely one way and by at
@@ -17,8 +17,8 @@ type InvariantMetric = {
 
 /** A bound's tolerance is its metric's hold tolerance, so the two can never disagree. */
 function toleranceOf(metricId: ObjectiveMetricId): number {
-    const entry = readMetricHoldTolerance(metricId);
-    if (entry === null) {
+    const entry = METRIC_HOLD_TOLERANCES[metricId];
+    if (entry === undefined) {
         throw new TypeError(`${metricId} has no versioned hold tolerance.`);
     }
     return entry.value;

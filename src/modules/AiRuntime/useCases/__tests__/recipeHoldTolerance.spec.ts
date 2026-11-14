@@ -4,7 +4,6 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createTrack, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
-import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 
 import { type MeasuredMetricEntry } from '../../models/MeasuredPreview';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
@@ -214,6 +213,10 @@ describe('recipe holds at admission', () => {
         ['low-frequency stereo content just past tolerance up', 0.5, 0.5101, 'blocked'],
         ['low-frequency stereo content just past tolerance down', 0.5, 0.4899, 'blocked'],
         ['low-frequency stereo content moved from zero past tolerance', 0, 0.0101, 'blocked'],
+        ['low-frequency stereo content up by exactly its tolerance', 0.5, 0.51, 'verified'],
+        ['low-frequency stereo content down by exactly its tolerance', 0.5, 0.49, 'verified'],
+        ['low-frequency stereo content from zero by exactly its tolerance', 0, 0.01, 'verified'],
+        ['low-frequency stereo content by exactly its tolerance from a low share', 0.1, 0.11, 'verified'],
     ] as const)('%s', (_label, baseline, preview, status) => {
         const evaluation = wide({ baseline, preview });
         expect(evaluation.status).toBe(status);
@@ -225,6 +228,8 @@ describe('recipe holds at admission', () => {
         ['loses an onset every four seconds, within tolerance', 4, 3.76, 'verified'],
         ['gains more than a quarter onset per second', 4, 4.26, 'blocked'],
         ['loses more than a quarter onset per second', 4, 3.74, 'blocked'],
+        ['gains exactly a quarter onset per second', 4, 4.25, 'verified'],
+        ['loses exactly a quarter onset per second', 4, 3.75, 'verified'],
     ] as const)('holds transient density that %s', (_label, baseline, preview, status) => {
         const evaluation = punchy({ baseline, preview });
         expect(evaluation.status).toBe(status);
@@ -290,7 +295,13 @@ describe('the refusal of a broken recipe hold', () => {
     it('names the metric, target, figures, movement and versioned tolerance with its unit', () => {
         const evaluation = wide({ baseline: 0.5, preview: 0.5123 });
         expect(evaluation.reason).toBe(
-            "The preview breaks the recipe's hold on low-frequency stereo content on “Bass”: it moved from 0.5 to 0.512 ratio, a movement of 0.0123 ratio, beyond its 0.01 ratio tolerance."
+            "The preview breaks the recipe's hold on low-frequency stereo content on “Bass”: it moved from 0.5 to 0.5123 ratio, a movement of 0.0123 ratio, beyond its 0.01 ratio tolerance."
+        );
+    });
+
+    it('prints endpoints that differ by the printed movement, never by the tolerance alone', () => {
+        expect(wide({ baseline: 0.5, preview: 0.5101 }).reason).toContain(
+            'it moved from 0.5 to 0.5101 ratio, a movement of 0.0101 ratio'
         );
     });
 
@@ -300,16 +311,22 @@ describe('the refusal of a broken recipe hold', () => {
     });
 });
 
+type CatalogRecipe = ReturnType<typeof getMixRecipeCatalog>['recipes'][number];
+
+/** The bass-wide recipe rewritten to hold a metric the tolerance table has no entry for. */
+function holdStereoCorrelationOnBassWide(recipe: CatalogRecipe): CatalogRecipe {
+    if (recipe.id !== 'bass-wide') {
+        return recipe;
+    }
+    return { ...recipe, metrics: [{ metric: 'stereoCorrelation', direction: 'hold' }] };
+}
+
 describe('compiling a recipe hold', () => {
     it('refuses a batch whose recipe holds a metric with no versioned hold tolerance, naming it', () => {
         const catalog = getMixRecipeCatalog();
         const stub = {
             ...catalog,
-            recipes: catalog.recipes.map((recipe) =>
-                recipe.id === 'bass-wide'
-                    ? { ...recipe, metrics: [{ metric: 'stereoCorrelation' as const, direction: 'hold' as const }] }
-                    : recipe
-            ),
+            recipes: catalog.recipes.map(holdStereoCorrelationOnBassWide),
         };
         expect(readVibeBatchRecipeGoals({ batch: batchOf('bass-wide'), catalog: stub, range: RANGE })).toEqual({
             status: 'refused',

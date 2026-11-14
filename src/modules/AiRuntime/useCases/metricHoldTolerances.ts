@@ -61,7 +61,7 @@ export const METRIC_HOLD_TOLERANCES: Readonly<Partial<Record<ObjectiveMetricId, 
 };
 
 /** The versioned hold tolerance of a metric, or `null` when none is stated, so no hold on it can be admitted. */
-export function readMetricHoldTolerance(metricId: ObjectiveMetricId): MetricHoldTolerance | null {
+function readMetricHoldTolerance(metricId: ObjectiveMetricId): MetricHoldTolerance | null {
     return METRIC_HOLD_TOLERANCES[metricId] ?? null;
 }
 

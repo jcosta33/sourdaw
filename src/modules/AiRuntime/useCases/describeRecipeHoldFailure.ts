@@ -7,21 +7,30 @@ type Criterion = MetricGoalEvaluation['criteria'][number];
 /** The pair of figures that broke a hold: one target's reading before and after the step or the whole batch. */
 export type HoldViolation = { targetId: string; from: number; to: number };
 
+function rounded(value: number, digits: number): number {
+    return Number(value.toPrecision(digits));
+}
+
 /**
- * The fewest significant digits, three at least, at which the movement prints above the tolerance, so a
- * movement beyond it never prints as equal to it. The figures print at the same precision.
+ * The fewest significant digits, three at least, at which the printed movement is above the tolerance and
+ * the printed endpoints differ by that printed movement, so the sentence never reads as within tolerance.
  */
-function readPrecision(movement: number, tolerance: number): number {
+function readPrecision(violation: HoldViolation, tolerance: number): number {
     for (let digits = 3; digits < 17; digits += 1) {
-        if (Number(movement.toPrecision(digits)) > tolerance) {
+        const movement = rounded(Math.abs(violation.to - violation.from), digits);
+        const printedMovement = rounded(
+            Math.abs(rounded(violation.to, digits) - rounded(violation.from, digits)),
+            digits
+        );
+        if (movement > tolerance && printedMovement === movement) {
             return digits;
         }
     }
     return 17;
 }
 
-function figure(value: number, digits: number): string {
-    return String(Number(value.toPrecision(digits)));
+function readMetricLabel(metricId: string | null): string {
+    return Object.entries(OBJECTIVE_METRIC_LABELS).find(([id]) => id === metricId)?.[1] ?? 'a metric';
 }
 
 /**
@@ -33,11 +42,11 @@ export function describeRecipeHoldFailure(
     violation: HoldViolation,
     nameOf: (targetId: string) => string
 ): string {
-    const metricId = criterion.metricId;
-    const metric = metricId === null ? 'a metric' : OBJECTIVE_METRIC_LABELS[metricId];
     const unit = criterion.unit === 'hertz' ? 'Hz' : (criterion.unit ?? '');
-    const subject = `${metric}${criterion.band === null ? '' : ` (${criterion.band} band)`} on ${nameOf(violation.targetId)}`;
-    const movement = Math.abs(violation.to - violation.from);
-    const digits = readPrecision(movement, criterion.tolerance);
-    return `The preview breaks the recipe's hold on ${subject}: it moved from ${figure(violation.from, digits)} to ${figure(violation.to, digits)} ${unit}, a movement of ${figure(movement, digits)} ${unit}, beyond its ${String(criterion.tolerance)} ${unit} tolerance.`;
+    const subject = `${readMetricLabel(criterion.metricId)}${criterion.band === null ? '' : ` (${criterion.band} band)`} on ${nameOf(violation.targetId)}`;
+    const digits = readPrecision(violation, criterion.tolerance);
+    const from = String(rounded(violation.from, digits));
+    const to = String(rounded(violation.to, digits));
+    const movement = String(rounded(Math.abs(violation.to - violation.from), digits));
+    return `The preview breaks the recipe's hold on ${subject}: it moved from ${from} to ${to} ${unit}, a movement of ${movement} ${unit}, beyond its ${String(criterion.tolerance)} ${unit} tolerance.`;
 }

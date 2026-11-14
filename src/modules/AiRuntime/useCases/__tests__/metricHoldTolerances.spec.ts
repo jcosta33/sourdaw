@@ -15,15 +15,14 @@ import { createPlanningProject } from './planningProjectFixture';
 
 registerDeviceEnginePorts();
 
-const authoredCatalog = await vi.hoisted(async () => {
-    const actual = await import('../../../Arrangement/useCases/getMixRecipeCatalog');
-    return actual.getMixRecipeCatalog;
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return { ...actual, getMixRecipeCatalog: vi.fn(actual.getMixRecipeCatalog) };
 });
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    getMixRecipeCatalog: vi.fn(authoredCatalog),
-}));
+const { getMixRecipeCatalog: authoredCatalog } = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+    '#/modules/Arrangement/useCases'
+);
 
 afterEach(() => {
     vi.mocked(arrangement.getMixRecipeCatalog).mockImplementation(authoredCatalog);
@@ -31,6 +30,16 @@ afterEach(() => {
 
 function isMetricWithEntry(metric: string): metric is keyof typeof METRIC_HOLD_TOLERANCES {
     return Object.hasOwn(METRIC_HOLD_TOLERANCES, metric);
+}
+
+type CatalogRecipe = ReturnType<typeof authoredCatalog>['recipes'][number];
+
+/** The bass-wide recipe rewritten to hold a metric the tolerance table has no entry for. */
+function holdStereoCorrelationOnBassWide(recipe: CatalogRecipe): CatalogRecipe {
+    if (recipe.id !== 'bass-wide') {
+        return recipe;
+    }
+    return { ...recipe, metrics: [{ metric: 'stereoCorrelation', direction: 'hold' }] };
 }
 
 describe('versioned hold tolerances', () => {
@@ -138,11 +147,7 @@ describe('the metric intent catalog compiles recipe holds', () => {
         const catalog = authoredCatalog();
         vi.mocked(arrangement.getMixRecipeCatalog).mockImplementation(() => ({
             ...catalog,
-            recipes: catalog.recipes.map((recipe) =>
-                recipe.id === 'bass-wide'
-                    ? { ...recipe, metrics: [{ metric: 'stereoCorrelation', direction: 'hold' }] }
-                    : recipe
-            ),
+            recipes: catalog.recipes.map(holdStereoCorrelationOnBassWide),
         }));
         const goals = recipeGoals('Make the bass wide')
             .filter((entry) => entry.recipeId === 'bass-wide')
