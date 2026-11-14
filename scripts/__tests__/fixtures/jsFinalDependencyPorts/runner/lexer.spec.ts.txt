@@ -1,0 +1,35 @@
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { expect, it, vi } from 'vitest';
+import { value } from './mock-target';
+vi.mock('./mock-target', () => ({value: () => 'mocked'}));
+it('executes an actual transformed and collected Vitest mock', () => {
+  expect(value()).toBe('mocked');
+});
+it('lexes static attributes, dynamic imports and UTF-16 offsets', async () => {
+  const vitestRequire = createRequire(import.meta.resolve('vitest/package.json'));
+  const lexer = await import(pathToFileURL(vitestRequire.resolve('es-module-lexer')).href);
+  await lexer.init();
+  const code = `// 🎹\nimport data from './data.json' with { type: 'json' };\nexport { value } from './module.js';\nconst later = import('./lazy.js', { with: { type: 'json' } });`;
+  const [imports, exports, , hasModuleSyntax] = lexer.parse(code);
+  expect(hasModuleSyntax).toBe(true);
+  const staticImport = imports.find((item: {specifier?: string}) => item.specifier === './data.json');
+  expect(staticImport.type).toBe('static');
+  expect(code.slice(staticImport.start, staticImport.end)).toBe('./data.json');
+  expect(staticImport.attributes).toEqual([['type','json']]);
+  expect(code.slice(staticImport.attributesStart)).toMatch(/^\{\s*type:/);
+  const dynamic = imports.find((item: {specifier?: string}) => item.specifier === './lazy.js');
+  expect(dynamic.type).toBe('dynamic');
+  expect(code.slice(dynamic.importStart, dynamic.importEnd)).toContain("import('./lazy.js'");
+  expect(exports.some((entry: {name: string}) => entry.name === 'value')).toBe(true);
+});
+it('loads real synchronous ESM and CJS and rejects malformed module syntax', () => {
+  const require = createRequire(import.meta.url);
+  expect(require('../modules/esm.js').value).toBe('esm detected');
+  expect(require('../modules/cjs.js').value).toBe('cjs detected');
+  expect(() => require('../modules/malformed.js')).toThrow(SyntaxError);
+});
+it('external CommonJS requires detected ESM, CommonJS and malformed JavaScript', async () => {
+  const result = await import('runner-fixture');
+  expect(result.default).toEqual({esm:'esm detected', cjs:'cjs detected', malformed:'SyntaxError'});
+});

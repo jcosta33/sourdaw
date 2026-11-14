@@ -9,11 +9,12 @@ const repository = resolve(process.argv[2] ?? join(import.meta.dirname, '../..')
 const manifest = JSON.parse(readFileSync(join(import.meta.dirname, 'jsToolingProvenance.json'), 'utf8'));
 const graph = installedGraph(repository);
 const digest = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
-function inventory(root) {
+function inventory(root, includeNested = false) {
     const files = {};
     function visit(directory) {
         for (const entry of readdirSync(directory, { withFileTypes: true })) {
-            if (entry.name === 'node_modules') continue;
+            if (entry.name === 'node_modules' && !includeNested) continue;
+            if (entry.name === '.bin') continue;
             const file = join(directory, entry.name);
             if (entry.isDirectory()) visit(file);
             else {
@@ -28,9 +29,18 @@ function inventory(root) {
 let files = 0;
 for (const record of manifest.packages) {
     const root = graph.packageRoot(record.name, record.version);
-    assert.deepEqual(inventory(root), record.files, `Complete installed published bytes: ${record.name}`);
+    assert.deepEqual(
+        inventory(root, record.includeNested),
+        record.files,
+        `Complete installed published bytes: ${record.name}`
+    );
     if (record.patch) assert.equal(digest(join(repository, record.patch)), record.patchSha256, record.patch);
     files += Object.keys(record.files).length;
+}
+for (const record of manifest.nestedPackages ?? []) {
+    const root = join(graph.packageRoot(record.parent), record.rootRelative);
+    assert.deepEqual(inventory(root, true), record.files, `Actual published embedded files: ${record.name}`);
+    assert.equal(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version, record.version);
 }
 for (const expected of manifest.edges ?? []) {
     const parent = graph.packageRoot(expected.parent, expected.parentVersion);

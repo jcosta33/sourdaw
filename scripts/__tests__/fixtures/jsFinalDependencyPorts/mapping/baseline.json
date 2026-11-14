@@ -1,0 +1,435 @@
+{
+  "plain": {
+    "code": "const marker = \"🎹\";\nconst value = marker + 1;",
+    "map": {
+      "version": 3,
+      "names": [],
+      "sources": [
+        "input.js"
+      ],
+      "sourcesContent": [
+        "const marker = \"🎹\"; const value = marker + 1;\n"
+      ],
+      "mappings": "AAAA,MAAM,MAAM,GAAG,IAAI;AAAE,MAAM,KAAK,GAAG,MAAM,GAAG,CAAC",
+      "ignoreList": []
+    },
+    "decoded": {
+      "version": 3,
+      "names": [],
+      "sources": [
+        "input.js"
+      ],
+      "sourcesContent": [
+        "const marker = \"🎹\"; const value = marker + 1;\n"
+      ],
+      "mappings": [
+        [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            6,
+            0,
+            0,
+            6
+          ],
+          [
+            12,
+            0,
+            0,
+            12
+          ],
+          [
+            15,
+            0,
+            0,
+            15
+          ],
+          [
+            19,
+            0,
+            0,
+            19
+          ]
+        ],
+        [
+          [
+            0,
+            0,
+            0,
+            21
+          ],
+          [
+            6,
+            0,
+            0,
+            27
+          ],
+          [
+            11,
+            0,
+            0,
+            32
+          ],
+          [
+            14,
+            0,
+            0,
+            35
+          ],
+          [
+            20,
+            0,
+            0,
+            41
+          ],
+          [
+            23,
+            0,
+            0,
+            44
+          ],
+          [
+            24,
+            0,
+            0,
+            45
+          ]
+        ]
+      ],
+      "ignoreList": []
+    },
+    "raw": [
+      {
+        "generated": {
+          "line": 1,
+          "column": 0
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 0
+        }
+      },
+      {
+        "generated": {
+          "line": 1,
+          "column": 6
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 6
+        }
+      },
+      {
+        "generated": {
+          "line": 1,
+          "column": 12
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 12
+        }
+      },
+      {
+        "generated": {
+          "line": 1,
+          "column": 15
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 15
+        }
+      },
+      {
+        "generated": {
+          "line": 1,
+          "column": 19
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 19
+        }
+      },
+      {
+        "generated": {
+          "line": 2,
+          "column": 0
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 21
+        }
+      },
+      {
+        "generated": {
+          "line": 2,
+          "column": 6
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 27
+        }
+      },
+      {
+        "generated": {
+          "line": 2,
+          "column": 11
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 32
+        }
+      },
+      {
+        "generated": {
+          "line": 2,
+          "column": 14
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 35
+        }
+      },
+      {
+        "generated": {
+          "line": 2,
+          "column": 20
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 41
+        }
+      },
+      {
+        "generated": {
+          "line": 2,
+          "column": 23
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 44
+        }
+      },
+      {
+        "generated": {
+          "line": 2,
+          "column": 24
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 45
+        }
+      }
+    ]
+  },
+  "ranges": {
+    "code": "const marker = \"🎹\";const value = marker + 1;",
+    "map": {
+      "version": 3,
+      "names": [],
+      "sources": [
+        "input.js"
+      ],
+      "sourcesContent": [
+        "const marker = \"🎹\"; const value = marker + 1;\n"
+      ],
+      "mappings": "AAAA,mBAAmB,CAAE,wBAAwB",
+      "ignoreList": [],
+      "rangeMappings": "AC"
+    },
+    "decoded": {
+      "version": 3,
+      "names": [],
+      "sources": [
+        "input.js"
+      ],
+      "sourcesContent": [
+        "const marker = \"🎹\"; const value = marker + 1;\n"
+      ],
+      "mappings": [
+        [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            19,
+            0,
+            0,
+            19
+          ],
+          [
+            20,
+            0,
+            0,
+            21
+          ],
+          [
+            44,
+            0,
+            0,
+            45
+          ]
+        ]
+      ],
+      "ignoreList": [],
+      "rangeMappings": [
+        [
+          0,
+          2
+        ]
+      ]
+    },
+    "raw": [
+      {
+        "generated": {
+          "line": 1,
+          "column": 0
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 0
+        }
+      },
+      {
+        "generated": {
+          "line": 1,
+          "column": 19
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 19
+        }
+      },
+      {
+        "generated": {
+          "line": 1,
+          "column": 20
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 21
+        }
+      },
+      {
+        "generated": {
+          "line": 1,
+          "column": 44
+        },
+        "source": "input.js",
+        "original": {
+          "line": 1,
+          "column": 45
+        }
+      }
+    ]
+  },
+  "composed": {
+    "code": "const marker = \"🎹\";\nconst value = marker + 1;",
+    "map": {
+      "version": 3,
+      "names": [],
+      "sources": [
+        "original.js"
+      ],
+      "sourcesContent": [
+        "0123456789value"
+      ],
+      "mappings": "AAAA;AAAA,MAAU",
+      "ignoreList": []
+    },
+    "decoded": {
+      "version": 3,
+      "names": [],
+      "sources": [
+        "original.js"
+      ],
+      "sourcesContent": [
+        "0123456789value"
+      ],
+      "mappings": [
+        [
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            6,
+            0,
+            0,
+            10
+          ]
+        ]
+      ],
+      "ignoreList": []
+    },
+    "raw": [
+      {
+        "generated": {
+          "line": 1,
+          "column": 0
+        },
+        "source": "original.js",
+        "original": {
+          "line": 1,
+          "column": 0
+        }
+      },
+      {
+        "generated": {
+          "line": 2,
+          "column": 0
+        },
+        "source": "original.js",
+        "original": {
+          "line": 1,
+          "column": 0
+        }
+      },
+      {
+        "generated": {
+          "line": 2,
+          "column": 6
+        },
+        "source": "original.js",
+        "original": {
+          "line": 1,
+          "column": 10
+        }
+      }
+    ]
+  },
+  "warnings": [
+    "[BABEL] Note: The code generator has disabled source map ranges for the generated code, because they cannot be used together with `inputSourceMap` yet."
+  ]
+}

@@ -391,11 +391,20 @@ overrides:
   '@oxc-resolver/binding-wasm32-wasi@11.24.2>@emnapi/runtime': 1.11.3
   '@oxc-resolver/binding-wasm32-wasi@11.24.2>@napi-rs/wasm-runtime': 1.2.7
   '@emnapi/core@1.11.3>@emnapi/wasi-threads': 2.2.0
+  vitest@5.1.0>es-module-lexer: 3.0.4
+  vitest@5.1.0>why-is-node-running: 3.2.3
+  '@babel/generator@8.1.2>@jridgewell/gen-mapping': 0.3.13
+  '@babel/generator@8.1.2>@jridgewell/sourcemap-codec': 1.6.0
+  '@babel/generator@8.1.2>@types/jsesc': 3.0.3
+  '@babel/generator@8.1.2>jsesc': 3.1.0
+  dependency-cruiser@18.7.2>commander: 15.1.0
+  electron@45.3.2>@types/node: 26.6.6
 
-packageExtensionsChecksum: sha256-sM7yWF8Nvob0J4BwqZG4SYe19bEZbr6Gc04BIXM50cs=
+packageExtensionsChecksum: sha256-6dzlQCuyEFrP6UXdqPD/7QK48dk8DJgH/+Ej1fwbE5o=
 
 patchedDependencies:
   '@automerge/automerge@3.5.0': ed63cb3f6d8bc6e6211baea077a9d05374fd1c8e87ea57223f85366ae1c4b63c
+  '@babel/generator@8.1.2': d97c8b990e2a7a1889592a5bef0dc0ed82a0b837ff2ff9104d71088bcc7bb7f0
   '@cacheable/memory@2.2.0': bc176725497c62a99d8e3638972a6c1498999880680622a79db1f9a18dbfb99a
   '@cacheable/utils@2.5.0': 82f82c1498532c4180feb556b75b146423339eed204ddaf759b78e8451e2d34f
   '@electron/get@5.1.0': 58a8466e8716d50b125a54cefeb6d9d95389c63d1b23d1e3c43ce97edbb2bfad
@@ -410,6 +419,7 @@ patchedDependencies:
   '@malept/flatpak-bundler@0.4.0': e31b577f86c94b4a13a5a8a2e116292cf4f13dc431d4a0a6531b0352bac8c83f
   '@rolldown/binding-wasm32-wasi@1.3.2': aa73347487b8279fd7ebe0829ee897b418a1483bb8bf7f089edd4ed343212765
   '@rolldown/plugin-babel@0.3.1': d12766bec6ff8bb28b7116caab296fe99ad17e387129ca0f1ff642f27bc29c6b
+  '@tailwindcss/oxide-wasm32-wasi@4.3.5': bd4e35249886fbbcc9b1d5ea573a629c28291425f0396949e010d6460c691fb8
   '@tanstack/eslint-plugin-query@5.107.1': 0015e63f81877c975b3fb39be2b0034c34c67c9b8147f416713eaa664d899b87
   '@tanstack/router-generator@1.168.0': 14e24c3873e125ad611d8080efb1cb3dc9316eb807faae29ebdadd3b51cb9f85
   '@tanstack/router-plugin@1.169.0': 7ee4a5f8e90e323dde34ec7dd96ef5c29353ed618a3ba05855504ab088c51a67
@@ -439,13 +449,14 @@ patchedDependencies:
   cliui@9.0.1: 5848666d9c684b5cc99d612b8cb8bc868029b2247148b41f034591932237f9a6
   cross-spawn@7.0.6: 3fd250804fb3075110eb45c7e026aee291d800e0b95f03278dfe48495cd9f13e
   debug@4.4.3: c1df72bedab53d324c369376a0ef3113f6838f47c7d6a3f2565e90b0d6a9d057
-  dependency-cruiser@18.7.2: a98d28aab8a39976857db4b8dced3ab1ca2571489884829fce0f04869b819857
+  dependency-cruiser@18.7.2: 794f210c8e1b3e897f449c6d55e9b2336894b0ea7515ed8f1f74c25bb98cd7e8
   dmg-builder@26.18.1: 98a0dfc24ce27ab604bceb03c9786b3aaa9e26ecf46ed1d34de32c81be193659
   duplexer2@0.1.4: 4a32f1f53a2ec26c8c6ee4f7c360f41d7cd333ad46239e196ee31734a83aedab
   electron-builder-squirrel-windows@26.18.1: 07cba64b52c6b23d5e86c7f7ca19e76645dc7bb195bb4e7449d2f8904962f854
   electron-builder@26.18.1: 7cc38176837bb1f3eda7eeb4d8d1d452e7792bd89303fb2ce0c099e25abe0734
   electron-publish@26.18.1: a034d45b05897f0958aa8231c5cb02ce9891f46a0d57abac09b2c030ea692037
   electron-winstaller@5.4.4: 99132c8bc60ec2b992b0a23ada8c7f67b7cc5447e18421c4536f159e4811b716
+  electron@45.3.2: 07a5b26f183888a48bad068d4c77b44451760e747bdaea9e50477ae125689360
   eslint-import-resolver-typescript@4.4.5: b62411924fecbe8949198cb52bf88850ee90cd4c1c1547476bf533ea5b6bd55e
   eslint-plugin-import-x@4.18.1: 5d2f2a838637a7d551699733e880cb5bd51eeeef55cf97afdc37e0bbff1a9df0
   eslint-plugin-react-hooks@7.1.1: c928d73ebc9c30a470e3045a1861cbf2ac7b53537c3a446f4c2c858bb3d324e4
@@ -483,6 +494,7 @@ patchedDependencies:
   typescript@7.0.2: 25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43
   unzipper@0.12.5: fa05a2a798967ac2c9e47139f87faf0d3ee18a8011ea94281c65095bdb3140fc
   vite@8.3.8: 6cc463b6722fd9cf293760ffcee557791d83f0d03c4b63ffe0a34238c24870b0
+  vitest@5.1.0: 03da9d7bb5410236f3e7503cecf29c0497c6da458a2edce88df24200b52e3c61
   wav@1.0.2: 0a58b9a290f3c24864e8fea636c46ceb926375e9a5dae9ffc8e2f9fd3bba131f
   wrap-ansi@10.0.2: a0ffd4f8856011fc6dee3189621472c55effc61eeccd3223a35552b2a9a1c773
   yargs@18.2.0: d3e883afaf075021164e8dc4829ad406ac1e1a069bea3321947c16f207f104b1
@@ -653,10 +665,10 @@ importers:
         version: 1.0.0(patch_hash=9f387cf5be6a76be2d2af96c6f44d010b442c787b536c1bdf7916d5e9f009cec)
       dependency-cruiser:
         specifier: ^18.7.2
-        version: 18.7.2(patch_hash=a98d28aab8a39976857db4b8dced3ab1ca2571489884829fce0f04869b819857)
+        version: 18.7.2(patch_hash=794f210c8e1b3e897f449c6d55e9b2336894b0ea7515ed8f1f74c25bb98cd7e8)
       electron:
         specifier: 45.3.2
-        version: 45.3.2(supports-color@11.0.0)
+        version: 45.3.2(patch_hash=07a5b26f183888a48bad068d4c77b44451760e747bdaea9e50477ae125689360)(supports-color@11.0.0)
       electron-builder:
         specifier: ^26.18.1
         version: 26.18.1(patch_hash=7cc38176837bb1f3eda7eeb4d8d1d452e7792bd89303fb2ce0c099e25abe0734)(electron-builder-squirrel-windows@26.18.1)(supports-color@11.0.0)
@@ -734,7 +746,7 @@ importers:
         version: 8.3.8(patch_hash=6cc463b6722fd9cf293760ffcee557791d83f0d03c4b63ffe0a34238c24870b0)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
       vitest:
         specifier: ^5.1.0
-        version: 5.1.0(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(@vitest/coverage-v8@5.1.0)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(patch_hash=6cc463b6722fd9cf293760ffcee557791d83f0d03c4b63ffe0a34238c24870b0)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.1.0(patch_hash=03da9d7bb5410236f3e7503cecf29c0497c6da458a2edce88df24200b52e3c61)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(@vitest/coverage-v8@5.1.0)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(patch_hash=6cc463b6722fd9cf293760ffcee557791d83f0d03c4b63ffe0a34238c24870b0)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       yaml:
         specifier: 2.9.1
         version: 2.9.1
@@ -1259,9 +1271,6 @@ packages:
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
-
-  '@jridgewell/gen-mapping@0.4.0-beta.0':
-    resolution: {integrity: sha512-JdGNkbE4GlNPYQhM0L95fBQr7ctLZJ276QXQLTad4t1oSdnnCI3fDq9DW3BqYAWv8Wc3+HS+4Gsii1oPMCfz1w==}
 
   '@jridgewell/remapping@2.3.5':
     resolution: {integrity: sha512-LI9u/+laYG4Ds1TDKSJW2YPrIlcVYOwi2fUC6xB43lueCjgxV4lffOCZCtYFiH6TNOX+tQKXx97T4IKHbhyHEQ==}
@@ -2821,8 +2830,8 @@ packages:
   '@types/hast@3.0.5':
     resolution: {integrity: sha512-rp/ezSWaD1m44dPKICGhiskI13nVr7qTloFwDa/IYkhhf5nzwP+zIQcIJh3WIFSBOy/H1PzB40jPjMDksN4F+g==}
 
-  '@types/jsesc@2.5.1':
-    resolution: {integrity: sha512-9VN+6yxLOPLOav+7PwjZbxiID2bVaeq0ED4qSQmdQTdjnXJSaCVKTR58t15oqH1H5t8Ng2ZX1SabJVoN9Q34bw==}
+  '@types/jsesc@3.0.3':
+    resolution: {integrity: sha512-YZZ9ZOAiiSVC6KApWd/fTCDTdTOOMiRU4Lq3/VSmXNPse8IvCVOn5kYRRLu900Ub1lTPurVZFI5unEqLDJR7wg==}
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
@@ -2835,9 +2844,6 @@ packages:
 
   '@types/ms@2.1.0':
     resolution: {integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==}
-
-  '@types/node@24.19.2':
-    resolution: {integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==}
 
   '@types/node@26.6.6':
     resolution: {integrity: sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog==}
@@ -3455,10 +3461,6 @@ packages:
   comma-separated-tokens@2.0.3:
     resolution: {integrity: sha512-Fu4hJdvzeylCfQPp9SGWidpzrMs7tTrlu6Vb8XGaRGck8QSNZJJp538Wrb60Lax4fPwR64ViY468OIUTbRlGZg==}
 
-  commander@15.0.0:
-    resolution: {integrity: sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg==}
-    engines: {node: '>=22.12.0'}
-
   commander@15.1.0:
     resolution: {integrity: sha512-cgnQ88TRrWcC7pVq46RzJVRMktu3W2RcbnoidnfBsl1bmDCBwJS/udcIZpKoCrbAYYaCqsz1yZCVIgbIaU3ddQ==}
     engines: {node: '>=22.12.0'}
@@ -3624,9 +3626,6 @@ packages:
   es-errors@1.3.0:
     resolution: {integrity: sha512-Zf5H2Kxt2xjTvbJvP2ZWLEICxA6j+hAmMzIlypy4xcBg1vKVnx89Wy0GbS+kf5cwCVFFzdCFh2XSCFNULS6csw==}
     engines: {node: '>= 0.4'}
-
-  es-module-lexer@2.3.2:
-    resolution: {integrity: sha512-poHGpORABojJJucnV9KbOavETW8lBVnphkW77ER5/BQ5Fz7oXSoCNek7IH3vR5nRjdsEz926ibFYX8KtLQmdyw==}
 
   es-module-lexer@3.0.4:
     resolution: {integrity: sha512-BldNY5mwkVu+cQ5Ymn3e6hB9Sx8XHx4ZevWbiUyZbfKxJxYO27Hf0wfzkxIaD5CAJMaGl3YspKELj0ff/7nCMA==}
@@ -5124,9 +5123,6 @@ packages:
     resolution: {integrity: sha512-t3OptUArewg9OpYGDskTSlxhyLDahfmZ4d36hE44Efb1y3HRLLpzsVqwH+AwBVymP4t7pP71xN+nnduudn2awA==}
     engines: {node: '>=14'}
 
-  undici-types@7.24.6:
-    resolution: {integrity: sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==}
-
   undici-types@8.12.4:
     resolution: {integrity: sha512-GNCQH3MbVGB8OAVAoTiLH8pu4wx5Ni3DWKpnBzGj3WDsi8EwmK0aOVBooNEt+g5YL1eHPxcS9XUTouwFU6j1kQ==}
 
@@ -5366,8 +5362,8 @@ packages:
     engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0}
     hasBin: true
 
-  why-is-node-running@3.2.1:
-    resolution: {integrity: sha512-Tb2FUhB4vUsGQlfSquQLYkApkuPAFQXGFzxWKHHumVz2dK+X1RUm/HnID4+TfIGYJ1kTcwOaCk/buYCEJr6YjQ==}
+  why-is-node-running@3.2.3:
+    resolution: {integrity: sha512-b+aWTM7Zz5Q82TurMbr034vAmyJo2pJFVXzUzuhJK8lP+XI6xUfvzXizZINaERhH3KwybDLt6iqh7pOXaVxjnQ==}
     engines: {node: '>=20.11'}
     hasBin: true
 
@@ -5487,7 +5483,7 @@ snapshots:
   '@babel/core@8.1.2':
     dependencies:
       '@babel/code-frame': 8.0.6
-      '@babel/generator': 8.1.2
+      '@babel/generator': 8.1.2(patch_hash=d97c8b990e2a7a1889592a5bef0dc0ed82a0b837ff2ff9104d71088bcc7bb7f0)
       '@babel/helper-compilation-targets': 8.0.7
       '@babel/helpers': 8.1.2
       '@babel/parser': 8.1.2
@@ -5503,13 +5499,14 @@ snapshots:
       obug: 3.0.0
       verkit: 0.5.0
 
-  '@babel/generator@8.1.2':
+  '@babel/generator@8.1.2(patch_hash=d97c8b990e2a7a1889592a5bef0dc0ed82a0b837ff2ff9104d71088bcc7bb7f0)':
     dependencies:
       '@babel/parser': 8.1.2
       '@babel/types': 8.1.2
-      '@jridgewell/gen-mapping': 0.4.0-beta.0
+      '@jridgewell/gen-mapping': 0.3.13
+      '@jridgewell/sourcemap-codec': 1.6.0
       '@jridgewell/trace-mapping': 0.3.31
-      '@types/jsesc': 2.5.1
+      '@types/jsesc': 3.0.3
       jsesc: 3.1.0
 
   '@babel/helper-compilation-targets@8.0.7':
@@ -5548,7 +5545,7 @@ snapshots:
   '@babel/traverse@8.1.2':
     dependencies:
       '@babel/code-frame': 8.0.6
-      '@babel/generator': 8.1.2
+      '@babel/generator': 8.1.2(patch_hash=d97c8b990e2a7a1889592a5bef0dc0ed82a0b837ff2ff9104d71088bcc7bb7f0)
       '@babel/helper-globals': 8.0.6
       '@babel/parser': 8.1.2
       '@babel/template': 8.1.2
@@ -5920,11 +5917,6 @@ snapshots:
       '@sinclair/typebox': 0.34.52
 
   '@jridgewell/gen-mapping@0.3.13':
-    dependencies:
-      '@jridgewell/sourcemap-codec': 1.6.0
-      '@jridgewell/trace-mapping': 0.3.31
-
-  '@jridgewell/gen-mapping@0.4.0-beta.0':
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
       '@jridgewell/trace-mapping': 0.3.31
@@ -7058,7 +7050,7 @@ snapshots:
   '@tailwindcss/oxide-linux-x64-musl@4.3.5':
     optional: true
 
-  '@tailwindcss/oxide-wasm32-wasi@4.3.5':
+  '@tailwindcss/oxide-wasm32-wasi@4.3.5(patch_hash=bd4e35249886fbbcc9b1d5ea573a629c28291425f0396949e010d6460c691fb8)':
     optional: true
 
   '@tailwindcss/oxide-win32-arm64-msvc@4.3.5':
@@ -7078,7 +7070,7 @@ snapshots:
       '@tailwindcss/oxide-linux-arm64-musl': 4.3.5
       '@tailwindcss/oxide-linux-x64-gnu': 4.3.5
       '@tailwindcss/oxide-linux-x64-musl': 4.3.5
-      '@tailwindcss/oxide-wasm32-wasi': 4.3.5
+      '@tailwindcss/oxide-wasm32-wasi': 4.3.5(patch_hash=bd4e35249886fbbcc9b1d5ea573a629c28291425f0396949e010d6460c691fb8)
       '@tailwindcss/oxide-win32-arm64-msvc': 4.3.5
       '@tailwindcss/oxide-win32-x64-msvc': 4.3.5
 
@@ -7168,7 +7160,7 @@ snapshots:
 
   '@tanstack/router-utils@1.163.0(patch_hash=390f62e7d60e21bc9c0778ab7c3361c2f8feabdd0a794f1bc2bcca8738984ad2)':
     dependencies:
-      '@babel/generator': 8.1.2
+      '@babel/generator': 8.1.2(patch_hash=d97c8b990e2a7a1889592a5bef0dc0ed82a0b837ff2ff9104d71088bcc7bb7f0)
       '@babel/parser': 8.1.2
       '@babel/types': 8.1.2
       ansis: 4.5.0
@@ -7257,7 +7249,7 @@ snapshots:
       picocolors: 1.1.1
       redent: 4.0.0
     optionalDependencies:
-      vitest: 5.1.0(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(@vitest/coverage-v8@5.1.0)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(patch_hash=6cc463b6722fd9cf293760ffcee557791d83f0d03c4b63ffe0a34238c24870b0)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 5.1.0(patch_hash=03da9d7bb5410236f3e7503cecf29c0497c6da458a2edce88df24200b52e3c61)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(@vitest/coverage-v8@5.1.0)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(patch_hash=6cc463b6722fd9cf293760ffcee557791d83f0d03c4b63ffe0a34238c24870b0)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   '@testing-library/react@16.3.3(patch_hash=8a99647b3c931f6a433ede3036ea5947e1308ead2787e9230c9330c18936089b)(@testing-library/dom@10.4.2(patch_hash=63e859682fc1207c93941a62a2d0ac0e1ec881384e7fccdf350c72554d1990bc))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
@@ -7326,7 +7318,7 @@ snapshots:
     dependencies:
       '@types/unist': 3.0.3
 
-  '@types/jsesc@2.5.1': {}
+  '@types/jsesc@3.0.3': {}
 
   '@types/json-schema@7.0.15': {}
 
@@ -7339,10 +7331,6 @@ snapshots:
       '@types/unist': 3.0.3
 
   '@types/ms@2.1.0': {}
-
-  '@types/node@24.19.2':
-    dependencies:
-      undici-types: 7.24.6
 
   '@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd)':
     dependencies:
@@ -7572,7 +7560,7 @@ snapshots:
       obug: 3.0.0
       std-env: 4.3.0
       tinyrainbow: 3.2.0
-      vitest: 5.1.0(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(@vitest/coverage-v8@5.1.0)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(patch_hash=6cc463b6722fd9cf293760ffcee557791d83f0d03c4b63ffe0a34238c24870b0)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 5.1.0(patch_hash=03da9d7bb5410236f3e7503cecf29c0497c6da458a2edce88df24200b52e3c61)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(@vitest/coverage-v8@5.1.0)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(patch_hash=6cc463b6722fd9cf293760ffcee557791d83f0d03c4b63ffe0a34238c24870b0)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   '@vitest/istanbul-lib-coverage@2.1.0': {}
 
@@ -7867,10 +7855,7 @@ snapshots:
 
   comma-separated-tokens@2.0.3: {}
 
-  commander@15.0.0: {}
-
-  commander@15.1.0:
-    optional: true
+  commander@15.1.0: {}
 
   comment-parser@1.4.9: {}
 
@@ -7921,14 +7906,14 @@ snapshots:
 
   delayed-stream@1.0.0: {}
 
-  dependency-cruiser@18.7.2(patch_hash=a98d28aab8a39976857db4b8dced3ab1ca2571489884829fce0f04869b819857):
+  dependency-cruiser@18.7.2(patch_hash=794f210c8e1b3e897f449c6d55e9b2336894b0ea7515ed8f1f74c25bb98cd7e8):
     dependencies:
       acorn: 8.19.0
       acorn-jsx: 5.3.2(acorn@8.19.0)
       acorn-jsx-walk: 2.0.0
       acorn-loose: 8.5.2
       acorn-walk: 8.3.5
-      commander: 15.0.0
+      commander: 15.1.0
       enhanced-resolve: 5.27.0
       esbuild: 0.28.2
       ignore: 7.0.14
@@ -8041,11 +8026,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@45.3.2(supports-color@11.0.0):
+  electron@45.3.2(patch_hash=07a5b26f183888a48bad068d4c77b44451760e747bdaea9e50477ae125689360)(supports-color@11.0.0):
     dependencies:
       '@electron-internal/extract-zip': 1.0.8
       '@electron/get': 5.1.0(patch_hash=58a8466e8716d50b125a54cefeb6d9d95389c63d1b23d1e3c43ce97edbb2bfad)(supports-color@11.0.0)
-      '@types/node': 24.19.2
+      '@types/node': 26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd)
     transitivePeerDependencies:
       - supports-color
 
@@ -8067,8 +8052,6 @@ snapshots:
   es-define-property@1.0.1: {}
 
   es-errors@1.3.0: {}
-
-  es-module-lexer@2.3.2: {}
 
   es-module-lexer@3.0.4: {}
 
@@ -9962,8 +9945,6 @@ snapshots:
 
   unbash@6.0.4: {}
 
-  undici-types@7.24.6: {}
-
   undici-types@8.12.4: {}
 
   undici@8.12.4: {}
@@ -10104,12 +10085,12 @@ snapshots:
       tsx: 4.23.15
       yaml: 2.9.1
 
-  vitest@5.1.0(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(@vitest/coverage-v8@5.1.0)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(patch_hash=6cc463b6722fd9cf293760ffcee557791d83f0d03c4b63ffe0a34238c24870b0)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
+  vitest@5.1.0(patch_hash=03da9d7bb5410236f3e7503cecf29c0497c6da458a2edce88df24200b52e3c61)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(@vitest/coverage-v8@5.1.0)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(patch_hash=6cc463b6722fd9cf293760ffcee557791d83f0d03c4b63ffe0a34238c24870b0)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/mocker': 5.1.0(vite@8.3.8(patch_hash=6cc463b6722fd9cf293760ffcee557791d83f0d03c4b63ffe0a34238c24870b0)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       chai: 6.3.0
-      es-module-lexer: 2.3.2
+      es-module-lexer: 3.0.4
       expect-type: 1.4.0
       magic-string: 1.4.5
       obug: 3.0.0
@@ -10119,7 +10100,7 @@ snapshots:
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
       vite: 8.3.8(patch_hash=6cc463b6722fd9cf293760ffcee557791d83f0d03c4b63ffe0a34238c24870b0)(@types/node@26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd))(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
-      why-is-node-running: 3.2.1
+      why-is-node-running: 3.2.3
     optionalDependencies:
       '@types/node': 26.6.6(patch_hash=ea59250fcab52298afa4c4335a4ac81bd54f3d1db2ff6fe218b759ba1cb51bbd)
       '@vitest/coverage-v8': 5.1.0(vitest@5.1.0)
@@ -10163,7 +10144,7 @@ snapshots:
     dependencies:
       isexe: 4.0.0
 
-  why-is-node-running@3.2.1: {}
+  why-is-node-running@3.2.3: {}
 
   word-wrap@1.2.5: {}
 

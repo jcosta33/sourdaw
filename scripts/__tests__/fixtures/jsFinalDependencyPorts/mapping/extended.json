@@ -1,0 +1,122 @@
+{
+  "code": "// first 🎹\nconst alpha = 1;\n/* second */\nconst beta = alpha + 2;",
+  "map": {
+    "version": 3,
+    "names": [],
+    "sourceRoot": "/src",
+    "sources": [
+      "a.js",
+      "b.js"
+    ],
+    "sourcesContent": [
+      "// first 🎹\nconst alpha = 1;\n",
+      "/* second */\nconst beta = alpha + 2;\n"
+    ],
+    "mappings": "AAAA;eACe;ACDf;sBACsB",
+    "ignoreList": [],
+    "rangeMappings": "A;;A"
+  },
+  "decodedMap": {
+    "version": 3,
+    "names": [],
+    "sourceRoot": "/src",
+    "sources": [
+      "a.js",
+      "b.js"
+    ],
+    "sourcesContent": [
+      "// first 🎹\nconst alpha = 1;\n",
+      "/* second */\nconst beta = alpha + 2;\n"
+    ],
+    "mappings": [
+      [
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      [
+        [
+          15,
+          0,
+          1,
+          15
+        ]
+      ],
+      [
+        [
+          0,
+          1,
+          0,
+          0
+        ]
+      ],
+      [
+        [
+          22,
+          1,
+          1,
+          22
+        ]
+      ]
+    ],
+    "ignoreList": [],
+    "rangeMappings": [
+      [
+        0
+      ],
+      [],
+      [
+        0
+      ]
+    ]
+  },
+  "rawMappings": [
+    {
+      "generated": {
+        "line": 1,
+        "column": 0
+      },
+      "source": "a.js",
+      "original": {
+        "line": 1,
+        "column": 0
+      }
+    },
+    {
+      "generated": {
+        "line": 2,
+        "column": 15
+      },
+      "source": "a.js",
+      "original": {
+        "line": 2,
+        "column": 15
+      }
+    },
+    {
+      "generated": {
+        "line": 3,
+        "column": 0
+      },
+      "source": "b.js",
+      "original": {
+        "line": 1,
+        "column": 0
+      }
+    },
+    {
+      "generated": {
+        "line": 4,
+        "column": 22
+      },
+      "source": "b.js",
+      "original": {
+        "line": 2,
+        "column": 22
+      }
+    }
+  ]
+}

@@ -49,7 +49,8 @@ diff --git a/package.json b/package.json
 @@ -155,7 +155,7 @@
  		"acorn-loose": "8.5.2",
  		"acorn-walk": "8.3.5",
- 		"commander": "15.0.0",
+-		"commander": "15.0.0",
++		"commander": "15.1.0",
 -		"enhanced-resolve": "5.26.0",
 +		"enhanced-resolve": "5.27.0",
  		"ignore": "7.0.14",

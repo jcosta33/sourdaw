@@ -130,6 +130,10 @@ patchedDependencies:
     knip@6.45.1: patches/knip@6.45.1.patch
     '@emnapi/runtime@1.11.3': patches/@emnapi__runtime@1.11.3.patch
     '@rolldown/binding-wasm32-wasi@1.3.2': patches/@rolldown__binding-wasm32-wasi@1.3.2.patch
+    '@babel/generator@8.1.2': patches/@babel__generator@8.1.2.patch
+    vitest@5.1.0: patches/vitest@5.1.0.patch
+    '@tailwindcss/oxide-wasm32-wasi@4.3.5': patches/@tailwindcss__oxide-wasm32-wasi@4.3.5.patch
+    electron@45.3.2: patches/electron@45.3.2.patch
 
 # Upgrade Basic Pitch's whole TensorFlow.js umbrella, which pins its core,
 # converter, CPU and WebGL backends to the same release as the app's WebGPU
@@ -360,6 +364,14 @@ overrides:
     '@oxc-resolver/binding-wasm32-wasi@11.24.2>@emnapi/runtime': 1.11.3
     '@oxc-resolver/binding-wasm32-wasi@11.24.2>@napi-rs/wasm-runtime': 1.2.7
     '@emnapi/core@1.11.3>@emnapi/wasi-threads': 2.2.0
+    vitest@5.1.0>es-module-lexer: 3.0.4
+    vitest@5.1.0>why-is-node-running: 3.2.3
+    '@babel/generator@8.1.2>@jridgewell/gen-mapping': 0.3.13
+    '@babel/generator@8.1.2>@jridgewell/sourcemap-codec': 1.6.0
+    '@babel/generator@8.1.2>@types/jsesc': 3.0.3
+    '@babel/generator@8.1.2>jsesc': 3.1.0
+    dependency-cruiser@18.7.2>commander: 15.1.0
+    electron@45.3.2>@types/node: 26.6.6
 
 minimumReleaseAgeExclude:
     - '@eslint-react/ast@5.30.2'
@@ -407,6 +419,9 @@ minimumReleaseAgeExclude:
     - postcss@8.5.33
 
 packageExtensions:
+    '@babel/generator@8.1.2':
+        dependencies:
+            '@jridgewell/sourcemap-codec': 1.6.0
     debug@4.4.3:
         peerDependencies:
             supports-color: ^11.0.0
