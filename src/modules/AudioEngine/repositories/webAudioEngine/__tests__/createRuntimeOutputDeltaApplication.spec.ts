@@ -35,7 +35,7 @@ function createDelta(targetId: string, appRevision = 0): RuntimeGraphOutputDelta
 function createFixture(initialNodes: FakeTrackNode[]) {
     const revision = createRuntimeGraphRevision();
     const nodes = new Map(initialNodes.map((node) => [node.strip.trackId, node]));
-    const mutateRuntimeGraph = vi.fn(revision.mutate);
+    const mutateRuntimeGraph = vi.spyOn(revision, 'mutate');
     const hasOutputDestination = vi.fn(
         (outputId: string) => outputId === 'master' || outputId === 'hw_out' || nodes.has(outputId)
     );
@@ -43,7 +43,7 @@ function createFixture(initialNodes: FakeTrackNode[]) {
         readRevision: revision.current,
         readProjectRevisionValidator: revision.projectRevisionValidator,
         readTopologyValidator: revision.topologyValidator,
-        mutateRuntimeGraph,
+        mutateRuntimeGraph: revision.mutate,
         readTrackNode: (trackId) => nodes.get(trackId) as unknown as TrackNode | undefined,
         hasOutputDestination,
     };
