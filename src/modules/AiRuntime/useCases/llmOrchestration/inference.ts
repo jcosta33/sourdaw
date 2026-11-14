@@ -80,6 +80,7 @@ import { getBackendChain } from './backendResolution/getBackendChain';
 import { declareHostedTurnDataCategories } from './declareHostedTurnDataCategories';
 import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
 import { getHostedProposalWireToolSchema } from './getHostedProposalWireToolSchema';
+import { readAnsweringStatus } from './readAnsweringStatus';
 
 // The core planning contract and whichever interpretation control this live phase publishes.
 const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
@@ -427,6 +428,8 @@ async function generateLocalToolPlanningOutcome(input: {
     }
     if (!isWebLlmLoaded()) {
         await waitForInference(initWebLlmEngine(undefined, { signal: input.signal }), input.signal);
+        // Loading publishes its progress and then `ready`; the local model now answers the turn.
+        llmStatusStore.set(readAnsweringStatus('webllm'));
     }
     const generatedInference = Promise.resolve<unknown>(
         Reflect.apply(generateWebLlmToolCalls, undefined, [
@@ -560,12 +563,12 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         }
 
         const previousStatus = llmStatusStore.value;
-        llmStatusStore.set({ state: 'generating' });
 
         const failedBackends = new Set<RunnableAiBackend>();
         let lastError: Error | null = null;
 
         for (const backend of chain) {
+            llmStatusStore.set(readAnsweringStatus(backend));
             let admittedAttempt: AdmittedProviderAttempt | null = null;
             let providerSession: ModelProviderSession | null = null;
             let providerSource: ReturnType<typeof createModelProviderStreamWriter> | null = null;

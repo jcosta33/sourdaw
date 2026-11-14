@@ -120,6 +120,21 @@ vi.mock('../../../useCases/settleRetainedSectionRenderManualReview', () => ({
     settleRetainedSectionRenderManualReview: retainedPreviewMocks.settle,
 }));
 
+// The shared comparison's own behaviour is `measuredPreviewAuditionSurfaces.spec.tsx`'s; here, what the card mounts.
+const auditionMock = vi.hoisted(() => vi.fn());
+vi.mock('../MeasuredPreviewAudition', () => ({
+    MeasuredPreviewAudition: (props: { confirmationId: string; surface: string }) => {
+        auditionMock(props);
+        return (
+            <section
+                aria-label="Measured audio comparison"
+                data-confirmation-id={props.confirmationId}
+                data-surface={props.surface}
+            />
+        );
+    },
+}));
+
 vi.mock('../../components/ChatComposer', () => ({
     ChatComposer: ({
         executionMode,
@@ -533,6 +548,77 @@ describe('ChatPanel', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Cancel pending actions' }));
         expect(cancelPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
+    });
+
+    describe('measured comparison on a proposal card', () => {
+        function measuredCardState(): Parameters<typeof usePendingChatState>[0] {
+            return {
+                messages: [
+                    {
+                        id: 'measured-card',
+                        role: 'assistant',
+                        content: 'Make the drums punchier',
+                        timestamp: 1,
+                        isCommandAction: true,
+                        pendingActionConfirmationId: 'measured-confirmation',
+                        pendingActionConfirmationStatus: 'proposed',
+                    },
+                ],
+                isGenerating: false,
+                chatMode: 'prompt',
+                enableReasoning: false,
+            };
+        }
+        function approval(overrides: { status?: string; measuredPreview?: object | null }) {
+            return {
+                confirmationId: 'measured-confirmation',
+                status: 'proposed',
+                canConfirm: true,
+                metricGoals: { status: 'verified', reason: null, criteria: [] },
+                rePreview: { available: false, reason: null },
+                skip: { available: false, reason: null },
+                intentGroups: [{ id: 'gain' }, { id: 'trim' }],
+                measuredPreview: { targets: [] },
+                ...overrides,
+            };
+        }
+
+        it('mounts the shared comparison for every intent group of a measured proposal', () => {
+            usePendingChatState(measuredCardState());
+            metricApprovalMock.mockReturnValue(approval({}));
+
+            render(<ChatPanel />);
+
+            const comparison = screen.getByRole('region', { name: 'Measured audio comparison' });
+            expect(comparison).toHaveAttribute('data-confirmation-id', 'measured-confirmation');
+            expect(comparison).toHaveAttribute('data-surface', 'chat');
+            expect(auditionMock).toHaveBeenLastCalledWith({
+                confirmationId: 'measured-confirmation',
+                selectedIntentGroupIds: ['gain', 'trim'],
+                surface: 'chat',
+            });
+        });
+
+        it.each([
+            { label: 'without a measured preview', overrides: { measuredPreview: null } },
+            { label: 'no longer proposed', overrides: { status: 'invalidated' } },
+        ])('offers no comparison on a card $label', ({ overrides }) => {
+            usePendingChatState(measuredCardState());
+            metricApprovalMock.mockReturnValue(approval(overrides));
+
+            render(<ChatPanel />);
+
+            expect(screen.getByRole('button', { name: 'Confirm pending actions' })).toBeInTheDocument();
+            expect(screen.queryByRole('region', { name: 'Measured audio comparison' })).not.toBeInTheDocument();
+            expect(auditionMock).not.toHaveBeenCalled();
+        });
+    });
+
+    it('shows the shell-supplied route badge in its header while AI is available', () => {
+        render(<ChatPanel routeBadge={<span role="status">Answering with Browser · Pro</span>} />);
+
+        expect(screen.getByRole('status')).toHaveTextContent('Answering with Browser · Pro');
+        expect(screen.queryByText('AI Not Available')).not.toBeInTheDocument();
     });
 
     it('offers Skip batch and Stop run on a vibe batch card, skipping that card on activation', () => {
