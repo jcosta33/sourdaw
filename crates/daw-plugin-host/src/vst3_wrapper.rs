@@ -16,6 +16,7 @@ use crate::traits::{
     signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostMidiEvent,
     HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier,
     PluginHostRequestNotifier, ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
+    MAX_MIDI_EVENTS_PER_BLOCK,
 };
 use crate::vst3_bus_layout::{
     activate_main_audio_bus, negotiate_bus_layout, silent_channel_flags, BusGeometry, BusLayout,
@@ -57,9 +58,6 @@ use crate::clap_wrapper::MAX_BUFFER;
 /// onto. The negotiated bus layout decides how many of them a given plugin
 /// actually reads or writes.
 const CHANNELS: usize = HOST_CHANNELS;
-/// MIDI events forwarded per block. Extra events are dropped rather than
-/// allocated for.
-const MAX_MIDI: usize = 64;
 /// Distinct parameters whose value can reach a plugin in one block.
 const MAX_PARAMETER_QUEUES: usize = 64;
 /// How many deactivate/reactivate/re-query passes one `poll_latency_change`
@@ -264,14 +262,14 @@ where
 
 /// The `inputEvents` list one block hands the plugin.
 struct HostEventList {
-    events: Cell<[Event; MAX_MIDI]>,
+    events: Cell<[Event; MAX_MIDI_EVENTS_PER_BLOCK]>,
     count: Cell<usize>,
 }
 
 impl HostEventList {
     fn new() -> Self {
         Self {
-            events: Cell::new([empty_event(); MAX_MIDI]),
+            events: Cell::new([empty_event(); MAX_MIDI_EVENTS_PER_BLOCK]),
             count: Cell::new(0),
         }
     }
@@ -280,10 +278,14 @@ impl HostEventList {
         self.count.set(0);
     }
 
-    /// Append one note event. RT-safe; drops events past `MAX_MIDI`.
+    /// Append one note event. RT-safe.
+    ///
+    /// The list holds [`MAX_MIDI_EVENTS_PER_BLOCK`], the most the seam hands
+    /// over in one call, so the bound never cuts a caller's events: it only
+    /// stops a caller breaking that contract from writing past the array.
     fn push(&self, event: Event) {
         let count = self.count.get();
-        if count == MAX_MIDI {
+        if count == MAX_MIDI_EVENTS_PER_BLOCK {
             return;
         }
         // SAFETY: `Cell::as_ptr` yields the live array; nothing else aliases it,

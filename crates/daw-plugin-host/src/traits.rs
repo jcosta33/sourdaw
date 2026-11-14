@@ -88,6 +88,17 @@ pub type EditorWindowResizer = Arc<dyn Fn(u32, u32) + Send + Sync>;
 /// answer that cannot be wrong when nothing has been measured.
 pub const DEFAULT_EDITOR_CONTENT_SCALE: f64 = 1.0;
 
+/// The most note events one process call hands a plugin.
+///
+/// Lockstep restatement of `daw_engine::midi_fx::MIDI_EVENT_BUFFER_CAPACITY`,
+/// the engine's per-block event buffer: this crate has no edge to the engine, so
+/// the figure is restated here and `sourdaw-native`'s `host/native_bridge.rs`
+/// welds the pair with a compile-time equality assert, where both are visible.
+/// Every backend sizes its plugin-facing event list from this one number. A
+/// list sized under it drops the tail of a full block — the latest notes, the
+/// note-offs among them — after the slot has already counted them delivered.
+pub const MAX_MIDI_EVENTS_PER_BLOCK: usize = 128;
+
 /// One host-side parameter write waiting to reach a plugin.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct HostParameterUpdate {
@@ -466,6 +477,9 @@ pub trait HostedPluginRuntime: AudioPlugin {
     );
 
     /// Process a block with MIDI and pending host-side parameter writes.
+    ///
+    /// The caller hands at most [`MAX_MIDI_EVENTS_PER_BLOCK`] note events, and
+    /// every one of them reaches the plugin with this block.
     fn process_with_midi_and_parameters(
         &mut self,
         inputs: &[&[f32]],

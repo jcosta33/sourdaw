@@ -20,8 +20,8 @@ use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode, RecordState};
 use daw_engine::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
 use daw_engine::{CaptureFirstInput, CapturePeriodObservation};
 use daw_plugin_host::{
-    HostMidiEvent, HostParameterUpdate, HostTransport, HostedPluginRuntime, HostedRuntime,
-    PluginParameter, ProcessingGate,
+    signal_pending_process_refusal, HostMidiEvent, HostParameterUpdate, HostTransport,
+    HostedPluginRuntime, HostedRuntime, PluginParameter, ProcessingGate,
 };
 use rtrb::Consumer;
 use std::cell::UnsafeCell;
@@ -62,8 +62,12 @@ const _: () = assert!(MAX_BUFFER == daw_plugin_host::clap_wrapper::MAX_BUFFER);
 /// engine can hand over in one call. Sized under it, the packing would drop a
 /// full block's tail — the notes latest in the block, silently and with no
 /// counter — which is the whole reason the figure is taken from the engine
-/// rather than restated here.
+/// rather than restated here. The wrappers below hand the same events to the
+/// plugin from their own preallocated lists, sized by the plugin host's
+/// restatement of this figure; this assert welds that lockstep pair, so a list
+/// sized under the engine's block cannot compile.
 const MAX_MIDI_EVENTS: usize = daw_engine::midi_fx::MIDI_EVENT_BUFFER_CAPACITY;
+const _: () = assert!(MAX_MIDI_EVENTS == daw_plugin_host::traits::MAX_MIDI_EVENTS_PER_BLOCK);
 /// Bounded pending parameter capacity, matched to ClapWrapper's process-event scratch.
 ///
 /// The engine's per-effect stamp window,
@@ -451,6 +455,12 @@ pub struct SharedHostedPlugin<Runtime = HostedRuntime> {
     /// and it is a queue rather than a direct call because the write may arrive
     /// while the audio thread holds the access seam.
     editor_parameter_writes: PendingParameterQueue,
+    /// Note events the slot accepted for this plugin and then lost, because
+    /// they arrived while its retention queue was already full. Written by the
+    /// audio thread, read by the control path.
+    dropped_note_events: AtomicU64,
+    /// How much of `dropped_note_events` the control path has already logged.
+    reported_dropped_note_events: AtomicU64,
 }
 
 // SAFETY: access_state enforces exclusive mutable access to wrapper. The audio
@@ -475,7 +485,42 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             processing,
             pending_parameters: PendingParameterQueue::new(),
             editor_parameter_writes: PendingParameterQueue::new(),
+            dropped_note_events: AtomicU64::new(0),
+            reported_dropped_note_events: AtomicU64::new(0),
         }
+    }
+
+    /// How many note events this plugin has lost to a full retention queue.
+    pub fn dropped_note_events(&self) -> u64 {
+        self.dropped_note_events.load(Ordering::Acquire)
+    }
+
+    /// Count note events lost on the audio thread and raise the hint that
+    /// brings the control path round to say so. One atomic add and one store:
+    /// the audio thread may not print.
+    fn record_dropped_note_events(&self, count: usize) {
+        self.dropped_note_events
+            .fetch_add(count as u64, Ordering::AcqRel);
+        signal_pending_process_refusal();
+    }
+
+    /// Log the note events lost since the last report. Control path only.
+    pub fn report_dropped_note_events(&self, instance_id: &str) {
+        let dropped = self.dropped_note_events();
+        let reported = self
+            .reported_dropped_note_events
+            .swap(dropped, Ordering::AcqRel);
+        if dropped == reported {
+            return;
+        }
+        eprintln!(
+            "[Plugin] '{}' ({}) lost {} note event(s) that arrived while its retention queue \
+             was full ({} in total)",
+            self.name,
+            instance_id,
+            dropped - reported,
+            dropped
+        );
     }
 
     /// Take the wrapper back out of an owner that is being discarded.
@@ -1039,8 +1084,9 @@ impl<Runtime: HostedPluginRuntime> HostedPluginSlot<Runtime> {
     /// the original offset would name a sample inside a block that no longer
     /// exists, and the plugin is entitled to reject an event past its frame
     /// count. The queue is exactly one engine buffer deep, which is everything
-    /// one dispatch can hand over declined; nothing from the scheduler can
-    /// arrive past that bound.
+    /// one dispatch can hand over declined. A second declined block arriving
+    /// while it is still full has nowhere to go: those events are counted on
+    /// the plugin as dropped, because growing the queue would allocate here.
     fn retain_events(&mut self, events: &[MidiNoteEvent]) {
         let room = MAX_MIDI_EVENTS - self.retained_event_count;
         let kept = events.len().min(room);
@@ -1055,6 +1101,10 @@ impl<Runtime: HostedPluginRuntime> HostedPluginSlot<Runtime> {
             };
         }
         self.retained_event_count += kept;
+        let dropped = events.len() - kept;
+        if dropped > 0 {
+            self.plugin.record_dropped_note_events(dropped);
+        }
     }
 }
 
@@ -1187,9 +1237,10 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
                 // runtime consumed nothing. The scheduler has already cleared
                 // the buffer it handed over, so this queue is the events' only
                 // remaining copy — the staged prefix is still exactly what the
-                // retention array holds, and this block's staged events go
-                // back behind it.
-                self.retain_events(&midi_events[..fresh_staged_count]);
+                // retention array holds, and this block's events go back
+                // behind it: the staged ones fit, and any the queue cannot
+                // hold are counted as dropped.
+                self.retain_events(midi_events);
             }
         }
     }
@@ -3243,6 +3294,67 @@ mod tests {
                 (62, 100, 0, true, 0),
             ],
             "each bypassed block's events are delivered once, in arrival order"
+        );
+    }
+
+    /// A full engine block of note-ons, each identified by its velocity.
+    fn full_block_of_held_notes(first_velocity: u8) -> Vec<MidiNoteEvent> {
+        (0..MIDI_EVENT_BUFFER_CAPACITY)
+            .map(|index| engine_note(60, first_velocity + index as u8, 0, true, index as u32))
+            .collect()
+    }
+
+    /// A bypassed block at full capacity fills the retention queue exactly, and
+    /// the first block the plugin receives hands every retained event over,
+    /// oldest first, before anything else.
+    #[test]
+    fn a_full_bypassed_block_is_delivered_whole_once_access_is_released() {
+        let (mut slot, shared, notes) = seam_recording_slot();
+        let held = full_block_of_held_notes(1);
+
+        let control_guard = shared.try_claim_control().expect("a free seam");
+        render_block_with_events(&mut slot, &held);
+        drop(control_guard);
+        render_block_with_events(&mut slot, &[]);
+
+        let identities: Vec<u8> = notes
+            .lock()
+            .expect("the note log")
+            .iter()
+            .map(|note| note.1)
+            .collect();
+        let expected: Vec<u8> = held.iter().map(|note| note.velocity).collect();
+        assert_eq!(identities, expected, "every retained event, in order");
+        assert_eq!(shared.dropped_note_events(), 0, "nothing was dropped");
+    }
+
+    /// The retention queue is one engine block deep. A second bypassed block
+    /// arriving while it is full has nowhere to go, and those events are lost:
+    /// the loss must be counted, never silent.
+    #[test]
+    fn events_a_full_retention_queue_cannot_hold_are_counted_as_dropped() {
+        let (mut slot, shared, notes) = seam_recording_slot();
+        let first = full_block_of_held_notes(1);
+        let overflow = [
+            engine_note(62, 100, 0, true, 0),
+            engine_note(62, 0, 0, false, 5),
+        ];
+
+        let control_guard = shared.try_claim_control().expect("a free seam");
+        render_block_with_events(&mut slot, &first);
+        render_block_with_events(&mut slot, &overflow);
+        drop(control_guard);
+        render_block_with_events(&mut slot, &[]);
+
+        assert_eq!(
+            notes.lock().expect("the note log").len(),
+            MIDI_EVENT_BUFFER_CAPACITY,
+            "the queue delivers the block it holds"
+        );
+        assert_eq!(
+            shared.dropped_note_events(),
+            overflow.len() as u64,
+            "each event the queue could not hold is counted"
         );
     }
 
