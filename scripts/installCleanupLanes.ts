@@ -122,18 +122,19 @@ function xml(value: string): string {
     return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }
 
-export function cleanupPlist(binding: CleanupRuntimeBinding, runtime: string): string {
+export function cleanupPlist(binding: CleanupRuntimeBinding, runtime: string, home: string): string {
     const args = [binding.node, '--no-warnings', '-e', cleanupRuntimeProgram(binding, runtime)];
+    const logs = join(home, 'Library/Logs/Sourdaw/lane-cleanup');
     return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>Label</key><string>${CLEANUP_LABEL}</string>
 <key>ProgramArguments</key><array>${args.map((arg) => `<string>${xml(arg)}</string>`).join('')}</array>
-<key>WorkingDirectory</key><string>${xml(binding.primaryRoot)}</string>
+<key>WorkingDirectory</key><string>${xml(home)}</string>
 <key>EnvironmentVariables</key><dict><key>PATH</key><string>${xml([dirname(binding.git), dirname(binding.gh), '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':'))}</string><key>NODE_OPTIONS</key><string></string><key>NODE_PATH</key><string></string></dict>
 <key>RunAtLoad</key><true/><key>StartInterval</key><integer>300</integer>
-<key>StandardOutPath</key><string>${xml(join(binding.primaryRoot, '.agents/lane-cleanup/worker.log'))}</string>
-<key>StandardErrorPath</key><string>${xml(join(binding.primaryRoot, '.agents/lane-cleanup/worker-error.log'))}</string>
+<key>StandardOutPath</key><string>${xml(join(logs, 'worker.log'))}</string>
+<key>StandardErrorPath</key><string>${xml(join(logs, 'worker-error.log'))}</string>
 </dict></plist>\n`;
 }
 
@@ -204,19 +205,24 @@ function assertExclusiveCleanupLog(path: string): void {
     }
 }
 
-function cleanupLaunchAgents(home: string): string {
-    const agents = join(home, 'Library/LaunchAgents');
+function canonicalManagedDirectory(home: string, components: string[]): string {
     // The selected home is an existing authority anchor, never an alias to adopt or create.
-    for (const path of [home, join(home, 'Library'), agents]) {
-        if (path !== home && lstatSync(path, { throwIfNoEntry: false }) === undefined) {
-            mkdirSync(path, { mode: 0o700 });
-        }
+    const assertCanonical = (path: string) => {
         const stat = lstatSync(path);
         if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(path) !== path) {
             throw new Error('cleanup launchd installation requires canonical home and managed directories');
         }
+    };
+    assertCanonical(home);
+    let path = home;
+    for (const component of components) {
+        path = join(path, component);
+        if (lstatSync(path, { throwIfNoEntry: false }) === undefined) {
+            mkdirSync(path, { mode: 0o700 });
+        }
+        assertCanonical(path);
     }
-    return agents;
+    return path;
 }
 
 type LaunchObservation = { runs: number; lastExitCode: string; executing: boolean };
@@ -255,10 +261,17 @@ function observeFirstLaunch(port: CleanupInstallationPort, service: string): Lau
     }
 }
 
-function launchFailure(observation: LaunchObservation, node: string, primaryRoot: string): string | undefined {
+function launchFailure(
+    observation: LaunchObservation,
+    node: string,
+    primaryRoot: string,
+    home: string
+): string | undefined {
+    const workerError = join(home, 'Library/Logs/Sourdaw/lane-cleanup/worker-error.log');
     const remediation =
-        `Grant ${node} Full Disk Access (or Removable Volumes access for an external volume) ` +
-        'in System Settings > Privacy & Security, then rerun pnpm lane:cleanup:install.';
+        `Inspect launchctl print and the macOS system log for the launchd error; worker output, if any, is at ${workerError}. ` +
+        `Only if the worker reports that ${node} cannot access ${primaryRoot}, grant it Full Disk Access ` +
+        '(or Removable Volumes access for an external volume), then rerun pnpm lane:cleanup:install.';
     if (!isSettled(observation)) {
         return `launchd did not start or finish initializing the cleanup job for ${primaryRoot} within ${CLEANUP_LAUNCH_WAIT_MS / 1000} seconds. ${remediation}`;
     }
@@ -316,7 +329,8 @@ function activateCleanupJob(
     service: string,
     plist: string,
     node: string,
-    root: string
+    root: string,
+    home: string
 ): string | undefined {
     let loaded = false;
     try {
@@ -331,7 +345,7 @@ function activateCleanupJob(
         port.run('/bin/launchctl', ['bootout', service]);
     }
     port.run('/bin/launchctl', ['bootstrap', `gui/${port.uid}`, plist]);
-    return launchFailure(observeFirstLaunch(port, service), node, root);
+    return launchFailure(observeFirstLaunch(port, service), node, root, home);
 }
 
 type CleanupRollback = { service: string; plist: string; previousPlist: string | undefined; runtime: string };
@@ -390,6 +404,11 @@ export function installCleanupLanes(port: CleanupInstallationPort): { plist: str
         }
         return { path, hash: hash(contents) };
     });
+    const agents = canonicalManagedDirectory(port.home, ['Library', 'LaunchAgents']);
+    const logs = canonicalManagedDirectory(port.home, ['Library', 'Logs', 'Sourdaw', 'lane-cleanup']);
+    for (const name of ['worker.log', 'worker-error.log']) {
+        assertExclusiveCleanupLog(join(logs, name));
+    }
     const directory = cleanupDirectory(root);
     const runtimes = join(directory, 'runtimes');
     mkdirSync(runtimes, { recursive: true, mode: 0o700 });
@@ -414,15 +433,14 @@ export function installCleanupLanes(port: CleanupInstallationPort): { plist: str
     writeFileSync(join(runtime, 'package.json'), PACKAGE, { flag: 'wx', mode: 0o600 });
     writeFileSync(join(runtime, 'manifest.json'), `${JSON.stringify(binding)}\n`, { flag: 'wx', mode: 0o600 });
     refreshCleanupLauncher(port, commit, directory);
-    const agents = cleanupLaunchAgents(port.home);
     const plist = join(agents, `${CLEANUP_LABEL}.plist`);
     const previousPlist = readCleanupFile(plist)?.bytes.toString('utf8');
-    atomicWrite(plist, cleanupPlist(binding, runtime));
+    atomicWrite(plist, cleanupPlist(binding, runtime, port.home));
     const service = `gui/${port.uid}/${CLEANUP_LABEL}`;
     const rollback: CleanupRollback = { service, plist, previousPlist, runtime };
     let failure: string | undefined;
     try {
-        failure = activateCleanupJob(port, service, plist, binding.node, root);
+        failure = activateCleanupJob(port, service, plist, binding.node, root, port.home);
     } catch (error) {
         rollBackCleanupJob(port, rollback, error instanceof Error ? error : new Error(String(error)));
     }

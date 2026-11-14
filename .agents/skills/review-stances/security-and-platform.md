@@ -22,21 +22,25 @@ reviewer prompts and tiers are unestablished unless a probe says otherwise. Repo
 2. **Canonical paths, not string prefixes.** Follow canonical paths through existing symlinks and missing tails
    before evaluating a root or grant; check component boundaries and platform spelling behavior. A sibling whose
    name extends an owned root's final component (`<root>-other`) must refuse; a prefix comparison admits it.
-3. **Managed-directory components are admitted before any child is created (#5869).** A symlinked `Library` or
-   `LaunchAgents` could replace an unrelated external plist before launchd inspection. Require an existing
-   canonical home anchor, refuse each parent alias without external child creation or scheduler calls, and
-   preserve an external plist sentinel byte-for-byte; keep canonical directory creation and reinstallation as
-   positive controls. Removing the alias refusal must fail
-   `scripts/__tests__/installCleanupLanes.spec.ts` "refuses an aliased %s before plist writes or scheduler
-   actions".
-4. **A scheduler install must observe its first real launch (#5869).** Runs: author. `launchctl bootstrap` and
-   `launchctl print` prove only registration: with the primary on an external volume, launchd refused the job
-   before it ran (`Unable to open stdout path ... Operation not permitted`) and `print` showed a rising `runs` with
-   `last exit code = 78: EX_CONFIG` while install reported success. The author observes the first RunAtLoad launch
-   (`runs`, `last exit code`) on the actual volume the job must write to, not a temporary directory. The reviewer
-   runs `scripts/__tests__/installCleanupLanes.spec.ts` with `print` stubbed as `runs = 1` with
-   `last exit code = 78: EX_CONFIG` and as `runs = 0` for the whole wait; both require boot-out, plist removal and
-   an error naming the pinned binary and remediation. Deleting the launch observation must fail both.
+3. **Every managed home path component is admitted before creating its child (#5869).** A symlinked `Library` or
+   `LaunchAgents` could replace an unrelated external plist. The same attack at `Logs`, `Sourdaw`, or
+   `lane-cleanup` could redirect launchd's stdout or stderr to foreign data. Require an existing canonical home
+   anchor, refuse each component alias before creating a child beneath it or scheduling, and preserve the foreign
+   sentinel byte-for-byte. Refuse symlinked and hardlinked log files, while retaining ordinary one-link files
+   and previous primary logs. Removing a component or log-file refusal must fail
+   `scripts/__tests__/installCleanupLanes.spec.ts` at the matching alias case.
+4. **The first launch must exercise launchd's pre-exec paths (#5869, #5940).** `launchctl bootstrap` and
+   `launchctl print` prove registration; even a counted run may end at `78: EX_CONFIG` before Node executes.
+   On an external primary, launchd's working directory and stdout/stderr formerly pointed there; the system log
+   showed `Unable to open stdout path ... Operation not permitted`, with no worker log. A fixture whose home and
+   primary are the same path cannot detect that boundary. Use distinct canonical paths and require the plist's
+   working directory and log paths under home, with the verified runtime still reading and running against the
+   primary. Reverting those plist paths must fail `scripts/__tests__/installCleanupLanes.spec.ts` "installs and
+   reinstalls a launchd job". Stub `print` as `runs = 1`, `last exit code = 78: EX_CONFIG` and as `runs = 0`
+   throughout the wait; both must boot out, restore or remove the plist, and direct diagnosis to launchctl/system
+   logs and the home worker log. Recommend Node privacy access only for an observed worker denial, never from 78
+   alone. The stub proves rollback and diagnostics, not actual macOS launch success; after delivery, observe the
+   installed job's first launch on the target machine.
 5. **Selection provenance must reach the byte consumer (issue #5767).** A native-dialog rejection fallback
    returned browser `File.name` strings that the desktop consumer read as native paths; separate mocked
    fallback-name and native-path checks stayed self-consistent. Reject the native opening, drive the real browser
