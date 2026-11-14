@@ -444,8 +444,10 @@ describe('setElasticSensitivity', () => {
         await vi.advanceTimersByTimeAsync(150);
         await expect(pending).resolves.toBeUndefined();
 
-        expect(mocks.notify).toHaveBeenCalledTimes(1);
-        expect(mocks.notify.mock.calls[0]?.[1]).toBe('warning');
+        expect(mocks.notify).toHaveBeenCalledExactlyOnceWith(
+            'Project repair is required before project actions can execute',
+            'warning'
+        );
         expect(logger.error).not.toHaveBeenCalled();
         expect(elasticAudioStore.value?.detected).toBe(false);
     });

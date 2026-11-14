@@ -78,9 +78,10 @@ describe('detectElasticEditorTransients', () => {
         await expect(detectElasticEditorTransients('clip-1', 0.5)).resolves.toBe(false);
 
         expect(mocks.markComplete).not.toHaveBeenCalled();
-        expect(mocks.notify).toHaveBeenCalledTimes(1);
-        expect(mocks.notify.mock.calls[0]?.[1]).toBe('warning');
-        expect(mocks.notify.mock.calls[0]?.[0]).not.toContain('Transient detection');
+        expect(mocks.notify).toHaveBeenCalledExactlyOnceWith(
+            'Project repair is required before project actions can execute',
+            'warning'
+        );
     });
 
     it.each([
