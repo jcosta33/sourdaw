@@ -563,29 +563,30 @@ describe('repository canonical Worker candidate adoption', () => {
         expect(decodeChange(last)).toMatchObject({ actor, seq: 3, deps: getHeads(actual) });
     });
 
-    it('parses privately before separately materializing with native metadata and no incremental apply', async () => {
+    it('applies the native delta to its retained private clone without loading the complete candidate', async () => {
         const original = seed();
         expect(getAuthor(original)).toBeUndefined();
+        vi.mocked(native.clone).mockClear();
         const prepared = plan(original);
+        const retained = vi.mocked(native.clone).mock.results[0]?.value;
+        if (!retained) throw new Error('Expected retained private clone');
         vi.mocked(native.prepareLoad).mockClear();
         await prepared.requestMaterialization!(new AbortController().signal);
-        expect(native.prepareLoad).toHaveBeenCalledExactlyOnceWith(expect.any(Uint8Array), { actor });
-        const pending = vi.mocked(native.prepareLoad).mock.results.at(-1)?.value;
-        if (!pending) {
-            throw new Error('Expected private parsed load');
-        }
-        const materialize = vi.spyOn(pending, 'materialize');
-        expect(materialize).not.toHaveBeenCalled();
+        expect(retained.slot.count).toBe(0);
         vi.mocked(native.load).mockClear();
         vi.mocked(native.decodeChange).mockClear();
         vi.mocked(native.getChanges).mockClear();
         vi.mocked(native.applyChanges).mockClear();
         const candidate = prepared.materialize();
-        expect(materialize).toHaveBeenCalledOnce();
+        expect(native.applyChanges).toHaveBeenCalledExactlyOnceWith(
+            retained,
+            expect.any(Array),
+            expect.objectContaining({ patchCallback: expect.any(Function) })
+        );
+        expect(native.prepareLoad).not.toHaveBeenCalled();
         expect(native.load).not.toHaveBeenCalled();
         expect(native.decodeChange).not.toHaveBeenCalled();
         expect(native.getChanges).not.toHaveBeenCalled();
-        expect(native.applyChanges).not.toHaveBeenCalled();
         expect(repository.getDoc('root')).toBe(original);
         publish(candidate);
         expect(repository.getDoc<Document>('root')?.slot.count).toBe(1);
