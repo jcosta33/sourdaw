@@ -2870,6 +2870,7 @@ const schemaDefinitions = [
             name: 0,
             sectionId: 0,
             color: 0,
+            index: 1,
         },
         required: ['startBeat', 'endBeat', 'name'],
         additionalProperties: false,

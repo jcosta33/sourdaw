@@ -112,6 +112,34 @@ describe('handleAddSection — execute', () => {
     });
 });
 
+describe('handleAddSection — index', () => {
+    it('forwards the index to addSection', () => {
+        mockedAddSection.mockReturnValue(true);
+        handleAddSection.execute({
+            type: 'addSection',
+            payload: { startBeat: 0, endBeat: 4, name: 'X', sectionId: 's1', index: 2 },
+        });
+        expect(mockedAddSection.mock.calls[0]![5]).toBe(2);
+    });
+
+    it.each([
+        { index: undefined, valid: true },
+        { index: 0, valid: true },
+        { index: 3, valid: true },
+        { index: -1, valid: false },
+        { index: 1.5, valid: false },
+        { index: Number.NaN, valid: false },
+        { index: Number.POSITIVE_INFINITY, valid: false },
+    ])('validate returns $valid for index $index', ({ index, valid }) => {
+        expect(
+            handleAddSection.validate({
+                type: 'addSection',
+                payload: { startBeat: 0, endBeat: 4, name: 'X', index },
+            })
+        ).toBe(valid);
+    });
+});
+
 describe('handleAddSection — describe', () => {
     it('returns label with name and beat range', () => {
         const result = handleAddSection.describe({

@@ -4,7 +4,7 @@ import { addSection } from '../../useCases/marker/sectionOperations/addSection';
 import { getMarkerState } from '../../useCases/timelineQueries';
 
 type AddSectionAction = {
-    payload: { startBeat: number; endBeat: number; name: string; sectionId?: string; color?: string };
+    payload: { startBeat: number; endBeat: number; name: string; sectionId?: string; color?: string; index?: number };
 };
 
 // Mirror of handleDuplicateClip's ensureTargetClipId: the inverse needs the
@@ -20,13 +20,18 @@ function ensureSectionId(action: AddSectionAction): string {
 }
 
 export const handleAddSection = createHandler<'addSection'>({
+    // Singleton keeps addSection out of multi-action batches, as it was before it gained a validator.
+    batchExecution: 'singleton',
+    validate: (action) =>
+        action.payload.index === undefined || (Number.isInteger(action.payload.index) && action.payload.index >= 0),
     execute: (action) => {
         const changed = addSection(
             action.payload.startBeat,
             action.payload.endBeat,
             action.payload.name,
             ensureSectionId(action),
-            action.payload.color
+            action.payload.color,
+            action.payload.index
         );
         if (!changed) {
             return { status: 'no-write' };
