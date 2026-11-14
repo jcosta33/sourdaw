@@ -944,7 +944,12 @@ describe('handleRestoreTrack', () => {
             const row = rowWithAlternativeOnlyClip();
             seedCapturedMembers();
             const ownClipLanes = [clipLane('lane-clip-zero', 'clip-zero'), clipLane('lane-alt-only', 'clip-alt-only')];
-            mocks.capturedStores.automationLanes = [...(mocks.capturedStores.automationLanes ?? []), ...ownClipLanes];
+            const existingLanes = mocks.capturedStores.automationLanes;
+            if (existingLanes === null) {
+                mocks.capturedStores.automationLanes = ownClipLanes;
+            } else {
+                mocks.capturedStores.automationLanes = [...existingLanes, ...ownClipLanes];
+            }
             const payload = captureRemoval(row, storeTakeLane());
             vi.clearAllMocks();
 
@@ -1008,11 +1013,12 @@ describe('handleRestoreTrack', () => {
             const base = storeTrackRow();
             const row: Track = {
                 ...base,
-                alternatives: base.alternatives.map((alternative) =>
-                    alternative.id === base.activeAlternativeId
-                        ? { ...alternative, clips: [...alternative.clips, clipOf(removedTrackId, movedClipId)] }
-                        : alternative
-                ),
+                alternatives: base.alternatives.map((alternative) => {
+                    if (alternative.id !== base.activeAlternativeId) {
+                        return alternative;
+                    }
+                    return { ...alternative, clips: [...alternative.clips, clipOf(removedTrackId, movedClipId)] };
+                }),
             };
             const target = TrackDummy.create({
                 id: survivor.id,
@@ -1118,7 +1124,7 @@ describe('handleRestoreTrack', () => {
 
         it('does not create a bus strip for a bus payload refused for its row kind', async () => {
             const payload = captureWithMembers(storeTrackRow());
-            const result = handleRestoreTrack.execute({
+            const result = await handleRestoreTrack.execute({
                 type: 'restoreTrack',
                 payload: { ...payload, trackKind: 'bus' },
             });
