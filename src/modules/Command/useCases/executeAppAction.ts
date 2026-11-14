@@ -21,6 +21,7 @@ import {
     AppActionNotDispatchedError,
 } from '../errors/AppActionExecutionError';
 import { isActionEntry } from '../models/UndoEntry';
+import { undoEntryStoresCommandIdByActionType } from '../models/UndoEntryCommandIdPolicy';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 import {
     registerActionReplayCapability,
@@ -612,9 +613,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                             undoResult.inverseAction ?? null,
                             options?.source ?? 'manual',
                             undoResult.redoAction,
-                            action.type === 'removeClip' || action.type === 'splitClip'
-                                ? command.envelope.commandId
-                                : undefined
+                            undoEntryStoresCommandIdByActionType[action.type] ? command.envelope.commandId : undefined
                         );
                         const previousEntry = undoStore.value?.past.at(-1);
                         if (
