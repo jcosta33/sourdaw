@@ -87,7 +87,7 @@ function renderAudibleImpact(audible: AgentPlanAudibleView, tracks: AgentPlanSec
                     const range = (lineCount.get(lineKey) ?? 0) > 1 ? ` (${rangeLabel})` : '';
                     return (
                         <li
-                            key={`${metric.targetId}-${metric.metricId}-${String(metric.range.startBeat)}-${String(metric.range.endBeat)}`}
+                            key={`${metric.targetId}-${metric.metricId}-${String(metric.range.startBeat)}-${String(metric.range.endBeat)}-${metric.range.sectionId ?? ''}`}
                         >
                             {`${name} ${metric.metricId}${range}: ${formatFigure(metric.baseline)} → ${formatFigure(metric.preview)} (${formatSignedDelta(metric.delta)})`}
                         </li>

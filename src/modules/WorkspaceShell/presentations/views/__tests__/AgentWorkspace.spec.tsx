@@ -784,19 +784,20 @@ describe('AgentWorkspace', () => {
                 preview: { value: -14 + delta, unit: 'LUFS' },
                 delta: { value: delta, unit: 'LU' },
             });
-            setRuns([
+            const runWithChorusDelta = (chorusDelta: number) =>
                 plannedRun({
                     stoppingConditions: [],
                     audible: {
                         status: 'measured',
                         revision: 'revision-1',
                         batchContentHash: 'hash-1',
-                        metrics: [loudness('verse', 1.5), loudness('chorus', 0.8)],
+                        metrics: [loudness('verse', 1.5), loudness('chorus', chorusDelta)],
                     },
-                }),
-            ]);
+                });
+            const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+            setRuns([runWithChorusDelta(0.8)]);
 
-            render(<AgentWorkspace />);
+            const { rerender } = render(<AgentWorkspace />);
 
             const list = screen.getByRole('list', { name: 'Measured audible impact' });
             expect(
@@ -807,6 +808,25 @@ describe('AgentWorkspace', () => {
                 'Master integratedLoudness (beats 0–4, section verse): -14.00 LUFS → -12.50 LUFS (+1.50 LU)',
                 'Master integratedLoudness (beats 0–4, section chorus): -14.00 LUFS → -13.20 LUFS (+0.80 LU)',
             ]);
+
+            act(() => {
+                setRuns([runWithChorusDelta(0.3)]);
+            });
+            rerender(<AgentWorkspace />);
+
+            expect(
+                within(screen.getByRole('list', { name: 'Measured audible impact' }))
+                    .getAllByRole('listitem')
+                    .map((item) => item.textContent)
+            ).toEqual([
+                'Master integratedLoudness (beats 0–4, section verse): -14.00 LUFS → -12.50 LUFS (+1.50 LU)',
+                'Master integratedLoudness (beats 0–4, section chorus): -14.00 LUFS → -13.70 LUFS (+0.30 LU)',
+            ]);
+            const duplicateKeyWarnings = consoleError.mock.calls.filter((call) =>
+                call.some((part) => typeof part === 'string' && part.includes('same key'))
+            );
+            consoleError.mockRestore();
+            expect(duplicateKeyWarnings).toEqual([]);
         });
 
         it('names each measured target as the approval card does and prints each moved figure in its format', () => {
