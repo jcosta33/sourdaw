@@ -316,11 +316,11 @@ mod tests {
     #[test]
     fn an_offline_render_flushes_denormals_and_restores_the_thread_register() {
         use crate::float_mode::test_support::{
-            clear_flush_bits, control_register_probe, read, write, FLUSH,
+            clear_flush_bits, control_register_probe, read_control, write, FLUSH,
         };
 
         let original = clear_flush_bits();
-        let before = read();
+        let before = read_control();
         let mut renderer = OfflineRenderer::new(48_000.0, 4);
         let (probe, readings) = control_register_probe();
         renderer
@@ -341,7 +341,11 @@ mod tests {
             FLUSH,
             "the plugin must process with denormals flushed"
         );
-        assert_eq!(read(), before, "the render restores the thread's register");
+        assert_eq!(
+            read_control(),
+            before,
+            "the render restores the thread's control register"
+        );
         drop(renderer);
         write(original);
     }

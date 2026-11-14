@@ -180,6 +180,27 @@ pub(crate) mod test_support {
 
     pub(crate) use super::register::{read, write, AtomicBits, Bits, FLUSH};
 
+    /// The control portion of a register value: what the guard sets and
+    /// restores, without the sticky exception flags any float operation
+    /// between two reads may raise. MXCSR keeps those flags in bits 0-5.
+    #[cfg(target_arch = "x86_64")]
+    pub(crate) fn control_bits(value: Bits) -> Bits {
+        const STATUS_FLAGS: Bits = 0x3F;
+        value & !STATUS_FLAGS
+    }
+
+    /// The control portion of a register value. FPCR holds controls only; its
+    /// exception flags live in FPSR, which the guard never touches.
+    #[cfg(target_arch = "aarch64")]
+    pub(crate) fn control_bits(value: Bits) -> Bits {
+        value
+    }
+
+    /// The thread's register, control portion only.
+    pub(crate) fn read_control() -> Bits {
+        control_bits(read())
+    }
+
     /// The thread's register with the flush bits cleared and asserted
     /// cleared, returning the original so the test can put it back.
     pub(crate) fn clear_flush_bits() -> Bits {
@@ -256,61 +277,90 @@ pub(crate) mod test_support {
 
 #[cfg(all(test, any(target_arch = "x86_64", target_arch = "aarch64")))]
 mod tests {
-    use super::test_support::{clear_flush_bits, read, set_flush_bits, write, FLUSH};
+    use super::test_support::{clear_flush_bits, read, read_control, set_flush_bits, write, FLUSH};
     use super::FlushDenormals;
     use std::hint::black_box;
 
     #[test]
     fn the_guard_sets_the_flush_bits_and_restores_the_prior_register_on_drop() {
         let original = clear_flush_bits();
-        let before = read();
+        let before = read_control();
 
         let guard = FlushDenormals::engage();
         assert_eq!(read() & FLUSH, FLUSH, "the flush bits are set while held");
         assert_eq!(
-            read() & !FLUSH,
+            read_control() & !FLUSH,
             before & !FLUSH,
             "only the flush bits change"
         );
         drop(guard);
 
-        assert_eq!(read(), before, "dropping restores the exact prior value");
+        assert_eq!(
+            read_control(),
+            before,
+            "dropping restores the exact prior control value"
+        );
         write(original);
     }
 
     #[test]
     fn nested_guards_each_restore_the_register_they_found() {
         let original = clear_flush_bits();
-        let before = read();
+        let before = read_control();
 
         let outer = FlushDenormals::engage();
-        let inside_outer = read();
+        let inside_outer = read_control();
         let inner = FlushDenormals::engage();
-        assert_eq!(read(), inside_outer);
+        assert_eq!(read_control(), inside_outer);
         drop(inner);
         assert_eq!(
-            read(),
+            read_control(),
             inside_outer,
             "the inner guard restores the outer guard's mode, not the thread's original"
         );
         assert_eq!(read() & FLUSH, FLUSH);
         drop(outer);
 
-        assert_eq!(read(), before);
+        assert_eq!(read_control(), before);
         write(original);
     }
 
     #[test]
     fn a_guard_on_a_thread_already_flushing_leaves_it_flushing() {
         let original = set_flush_bits();
-        let before = read();
+        let before = read_control();
 
         drop(FlushDenormals::engage());
 
         assert_eq!(
-            read(),
+            read_control(),
             before,
             "restore puts back the prior value, set bits included"
+        );
+        write(original);
+    }
+
+    /// The input half of the mode: a subnormal operand whose exact product
+    /// is normal comes out +0.0 only when inputs are read as zero (DAZ on x86,
+    /// FZ on aarch64), so output flushing alone cannot pass this.
+    #[test]
+    fn a_subnormal_input_reads_as_zero_only_under_the_guard() {
+        let original = clear_flush_bits();
+
+        let unflushed = black_box(f32::from_bits(1)) * black_box(2f32.powi(30));
+        let flushed = {
+            let _guard = FlushDenormals::engage();
+            black_box(f32::from_bits(1)) * black_box(2f32.powi(30))
+        };
+
+        assert!(
+            unflushed.is_normal(),
+            "without the guard the subnormal input yields a normal product"
+        );
+        assert_eq!(
+            flushed.to_bits(),
+            0.0f32.to_bits(),
+            "under the guard the subnormal input reads as zero"
         );
         write(original);
     }
