@@ -14,7 +14,7 @@ export const handleClearScratchPad = createHandler<'clearScratchPad'>({
         const capturedSections = structuredClone(scratchPadStore.value?.sections ?? []);
         // This command never touches markers. Both sides of the marker guard carry the
         // same live snapshot so the restore still refuses if markers moved out from under
-        // it, but writes them back unchanged rather than discarding an unrelated edit.
+        // it, but leaves them unwritten rather than discarding an unrelated edit.
         const capturedMarkerSections = structuredClone(markerStore.value?.sections ?? []);
         return {
             label: 'Clear Scratch Pad',

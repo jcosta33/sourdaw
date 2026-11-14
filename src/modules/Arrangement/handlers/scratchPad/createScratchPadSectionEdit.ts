@@ -17,7 +17,7 @@ export function isScratchPadEditNoop(project: ScratchPadProjection): boolean {
 }
 
 // The pad edit never touches markers, so both sides of the marker guard carry the same live
-// snapshot: the restore still refuses if markers moved, and writes them back unchanged.
+// snapshot: the restore still refuses if the marker ids moved, and leaves the markers unwritten.
 export function describeScratchPadSectionEdit(label: string, project: ScratchPadProjection): HandlerDescribeResult {
     const capturedSections = structuredClone(readLiveScratchPadSections());
     const producedSections = structuredClone(project(capturedSections));

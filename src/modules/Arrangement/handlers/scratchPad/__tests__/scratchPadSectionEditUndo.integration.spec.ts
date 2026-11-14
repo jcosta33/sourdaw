@@ -13,14 +13,22 @@ import {
     redo,
     registerProductionCommandHandlers,
     resetActionReplayAuthority,
+    revertAction,
     setActionHistoryMetadataPort,
+    syncActionReplayMetadata,
     undo,
 } from '#/modules/Command/useCases';
+import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
+    clearActionHistory,
     createCrdtDoc,
+    markActionHistoryEntryReverted,
+    recordActionHistoryEntries,
+    recordActionHistoryEntry,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
+    subscribeToPublishedActionHistory,
 } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 import {
@@ -168,6 +176,70 @@ describe('scratch pad section edits are undoable', () => {
             await undo({ stepOverConflicts: false });
             expect(padSections()).toEqual(before);
             expect(notifications.map((notification) => notification.message)).toEqual([]);
+        });
+    });
+
+    describe('with a marker section edit reverted out of order from the action history', () => {
+        let unsubscribeFromHistory: () => void = () => undefined;
+
+        beforeEach(() => {
+            setActionHistoryMetadataPort({
+                record: recordActionHistoryEntry,
+                recordBatch: recordActionHistoryEntries,
+                markReverted: markActionHistoryEntryReverted,
+                clear: clearActionHistory,
+            });
+            unsubscribeFromHistory = subscribeToPublishedActionHistory({
+                onHistory: syncActionReplayMetadata,
+                onRootReplaced: resetActionReplayAuthority,
+            });
+        });
+
+        afterEach(() => {
+            unsubscribeFromHistory();
+            unsubscribeFromHistory = () => undefined;
+            clearActionHistory();
+        });
+
+        it('restoring a pad rename leaves a marker name reverted since the capture alone', async () => {
+            const intro = { id: 'sec-intro', startBeat: 0, endBeat: 8, name: 'Intro', color: '#aa0000' };
+            await executeAppAction({
+                type: 'addSection',
+                payload: {
+                    startBeat: intro.startBeat,
+                    endBeat: intro.endBeat,
+                    name: intro.name,
+                    sectionId: intro.id,
+                    color: intro.color,
+                },
+            });
+            await executeAppAction({ type: 'renameSection', payload: { sectionId: intro.id, name: 'Verse' } });
+            await executeAppAction({
+                type: 'renameScratchPadSection',
+                payload: { sectionId: CHORUS.id, name: 'Hook' },
+            });
+            const markerRename = actionHistoryStore.value?.entries.find(
+                (entry) => entry.actionKind === 'renameSection'
+            );
+            if (!markerRename) {
+                throw new Error('Expected the marker rename in the action history');
+            }
+
+            await expect(revertAction(markerRename.id)).resolves.toEqual({ status: 'executed' });
+            expect(markerStore.value?.sections.map((section) => section.name)).toEqual(['Intro']);
+
+            // The revert is itself undoable and sits on top of the stack, so undo the pad rename
+            // through the action history too: it runs the same guarded restore.
+            const padRename = actionHistoryStore.value?.entries.find(
+                (entry) => entry.actionKind === 'renameScratchPadSection'
+            );
+            if (!padRename) {
+                throw new Error('Expected the pad rename in the action history');
+            }
+            await expect(revertAction(padRename.id)).resolves.toEqual({ status: 'executed' });
+
+            expect(padSections()).toEqual([VERSE, CHORUS, BRIDGE]);
+            expect(markerStore.value?.sections.map((section) => section.name)).toEqual(['Intro']);
         });
     });
 

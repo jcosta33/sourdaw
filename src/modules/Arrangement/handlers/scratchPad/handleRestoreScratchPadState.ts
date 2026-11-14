@@ -41,9 +41,13 @@ export const handleRestoreScratchPadState = createHandler<'restoreScratchPadStat
             return { status: 'conflict' };
         }
         // Both collections were diverged from the same forward command, so both writes
-        // land together or neither does — never partially apply.
+        // land together or neither does — never partially apply. A pad-only command carries
+        // equal marker snapshots: the id guard above still applies, but the markers are left
+        // alone, so a field edit made to them since the capture is never overwritten.
         setScratchPadSections(replacementSections);
-        markerStore.set({ ...markerState, sections: replacementMarkerSections });
+        if (!valuesEqual(expectedMarkerSections, replacementMarkerSections)) {
+            markerStore.set({ ...markerState, sections: replacementMarkerSections });
+        }
         return { status: 'written' };
     },
     describe: () => ({ label: 'Restore scratch pad state', inverseAction: null }),
