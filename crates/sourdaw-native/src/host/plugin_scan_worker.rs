@@ -87,6 +87,11 @@ const HELPER_EXITED_UNSUCCESSFULLY_PREFIX: &str = "Plugin scan helper exited uns
 /// The refusal `wait_bounded` returns when the helper child ran past its
 /// bound and was killed.
 const HELPER_TIMED_OUT: &str = "Plugin scan helper timed out";
+/// The refusal `scan_worker` returns when the helper exited cleanly but left
+/// something other than a regular file at its response path, minus the path it
+/// is formatted with. See [`is_process_failure`].
+const HELPER_RESPONSE_TAMPERED_PREFIX: &str =
+    "Plugin scan helper response was not a regular file for ";
 
 /// The leaf worker's exit code for a self-diagnosed refusal to write its
 /// response — a malformed payload, the response exceeding
@@ -115,15 +120,22 @@ const RESPONSE_WRITE_REFUSAL_EXIT_CODE: i32 = 3;
 
 /// Whether an error from [`scan_descriptor_metadata`] or
 /// [`scan_instance_metadata`] is the process-level failure crash quarantine
-/// exists to catch: the helper child exited unsuccessfully, or ran past its
-/// bound and was killed.
+/// exists to catch: the helper child exited unsuccessfully, ran past its bound
+/// and was killed, or left a response that is not a regular file.
+///
+/// The helper itself only ever writes a regular file, so a FIFO, symlink,
+/// device or reparse point at the response path is the plugin's own code
+/// tampering with the helper's output — as much evidence against the binary as
+/// a crash.
 ///
 /// Distinct from a data-level refusal — a malformed response, an oversized
 /// payload, an unregistered format — which says the *read* failed, not that
 /// the binary itself is dangerous to keep re-running. Only a process failure
 /// is evidence worth quarantining a binary over (#2911).
 pub fn is_process_failure(error: &str) -> bool {
-    error.starts_with(HELPER_EXITED_UNSUCCESSFULLY_PREFIX) || error == HELPER_TIMED_OUT
+    error.starts_with(HELPER_EXITED_UNSUCCESSFULLY_PREFIX)
+        || error.starts_with(HELPER_RESPONSE_TAMPERED_PREFIX)
+        || error == HELPER_TIMED_OUT
 }
 
 /// Env var a host sets to describe how a leaf worker process is launched.
@@ -544,6 +556,17 @@ fn scan_worker<T: DeserializeOwned>(
         return Err(no_scan_backend(format));
     }
     let launcher = ScanWorkerCommand::resolve()?;
+    scan_worker_with(&launcher, format, path, plugin_id, timeout, worker_argument)
+}
+
+fn scan_worker_with<T: DeserializeOwned>(
+    launcher: &ScanWorkerCommand,
+    format: PluginFormat,
+    path: &Path,
+    plugin_id: Option<&str>,
+    timeout: Duration,
+    worker_argument: &str,
+) -> Result<T, String> {
     let response_directory = ResponseDirectory::create()?;
     let response_path = response_directory.0.join("metadata.json");
     let mut command = Command::new(&launcher.program);
@@ -567,17 +590,7 @@ fn scan_worker<T: DeserializeOwned>(
     if !status.success() {
         return Err(process_failure_message(path, &status));
     }
-    let mut bytes = Vec::new();
-    OpenOptions::new()
-        .read(true)
-        .open(&response_path)
-        .map_err(|error| format!("Plugin scan helper returned no metadata: {error}"))?
-        .take(MAX_RESPONSE_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| format!("Cannot read plugin scan helper response: {error}"))?;
-    if bytes.len() as u64 > MAX_RESPONSE_BYTES {
-        return Err(oversized_response_error(bytes.len()));
-    }
+    let bytes = read_response_bytes(&response_path, path)?;
     let response: WorkerResponse<T> = serde_json::from_slice(&bytes)
         .map_err(|error| format!("Plugin scan helper returned invalid metadata: {error}"))?;
     if response.worker_pid == std::process::id() {
@@ -585,6 +598,98 @@ fn scan_worker<T: DeserializeOwned>(
     }
     response.result
 }
+/// Read the helper's response, accepting only a regular file that can be read
+/// without blocking.
+///
+/// The plugin runs inside the helper and is handed the response path, so
+/// whatever sits there when the helper exits is untrusted. Every check is made
+/// on the opened descriptor, never on the path, because the plugin — or a
+/// process it forked that outlives the helper — can swap the path between a
+/// check and the open.
+fn read_response_bytes(response_path: &Path, plugin_path: &Path) -> Result<Vec<u8>, String> {
+    let file = open_response(response_path, plugin_path)?;
+    let metadata = file
+        .metadata()
+        .map_err(|error| format!("Cannot read plugin scan helper response: {error}"))?;
+    if !metadata.is_file() || is_reparse_point(&metadata) {
+        return Err(tampered_response_error(plugin_path));
+    }
+    if metadata.len() > MAX_RESPONSE_BYTES {
+        return Err(oversized_response_error(
+            usize::try_from(metadata.len()).unwrap_or(usize::MAX),
+        ));
+    }
+    // The bound stays on the read itself: a forked process can still grow the
+    // file after the size was taken.
+    let mut bytes = Vec::new();
+    file.take(MAX_RESPONSE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("Cannot read plugin scan helper response: {error}"))?;
+    if bytes.len() as u64 > MAX_RESPONSE_BYTES {
+        return Err(oversized_response_error(bytes.len()));
+    }
+    Ok(bytes)
+}
+
+/// Open the response without following a final symlink, and on Unix without
+/// waiting for a FIFO's writer or adopting a terminal an intermediate
+/// directory swap could aim the open at.
+#[cfg(unix)]
+fn open_response(response_path: &Path, plugin_path: &Path) -> Result<fs::File, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_NOCTTY)
+        .open(response_path)
+        .map_err(|error| {
+            if error.raw_os_error() == Some(libc::ELOOP) {
+                return tampered_response_error(plugin_path);
+            }
+            format!("Plugin scan helper returned no metadata: {error}")
+        })
+}
+
+#[cfg(windows)]
+fn open_response(response_path: &Path, _plugin_path: &Path) -> Result<fs::File, String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(response_path)
+        .map_err(|error| format!("Plugin scan helper returned no metadata: {error}"))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn open_response(response_path: &Path, _plugin_path: &Path) -> Result<fs::File, String> {
+    OpenOptions::new()
+        .read(true)
+        .open(response_path)
+        .map_err(|error| format!("Plugin scan helper returned no metadata: {error}"))
+}
+
+/// Whether the opened response is itself a reparse point. Opened with
+/// `FILE_FLAG_OPEN_REPARSE_POINT`, a symlink or junction is not followed, so
+/// its own attributes say what it is.
+#[cfg(windows)]
+fn is_reparse_point(metadata: &fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn is_reparse_point(_metadata: &fs::Metadata) -> bool {
+    false
+}
+
+/// The refusal for a response path the helper's plugin replaced. Fixed text
+/// and the plugin path only: it is stored as a quarantine reason, so it never
+/// carries plugin-originated bytes or OS error text.
+fn tampered_response_error(plugin_path: &Path) -> String {
+    format!("{HELPER_RESPONSE_TAMPERED_PREFIX}{}", plugin_path.display())
+}
+
 fn run_bounded(command: &mut Command, timeout: Duration) -> Result<ExitStatus, String> {
     #[cfg(unix)]
     {
@@ -1155,6 +1260,92 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             "Plugin scan helper exited unsuccessfully for /plugins/Broken.clap"
         ));
         assert!(is_process_failure("Plugin scan helper timed out"));
+        assert!(is_process_failure(&tampered_response_error(Path::new(
+            "/plugins/Hostile.clap"
+        ))));
+    }
+
+    /// A response the stand-in helper `script` leaves behind, read through the
+    /// real `scan_worker` path. Worker arguments arrive as `$1..$n`; the
+    /// response path is the last. The call runs on its own thread with a
+    /// bound, so a read that blocks fails the test instead of hanging it.
+    #[cfg(unix)]
+    fn scan_with_stand_in_helper(script: String) -> Result<Vec<ScannedDescriptor>, String> {
+        let launcher = ScanWorkerCommand {
+            program: PathBuf::from("/bin/sh"),
+            args: vec![
+                "-c".to_string(),
+                format!("eval \"out=\\${{$#}}\"\n{script}"),
+                "sh".to_string(),
+            ],
+            env: BTreeMap::new(),
+        };
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(scan_worker_with::<Vec<ScannedDescriptor>>(
+                &launcher,
+                PluginFormat::Clap,
+                Path::new("/plugins/Stand-in.clap"),
+                None,
+                WORKER_TIMEOUT,
+                WORKER_ARGUMENT,
+            ));
+        });
+        receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the scan must return instead of blocking on the response")
+    }
+
+    /// A response `scan_worker` accepts: a pid that is not this process's.
+    #[cfg(unix)]
+    const VALID_RESPONSE: &str = r#"{"worker_pid":1,"result":{"Ok":[]}}"#;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_healthy_response_is_read() {
+        let result =
+            scan_with_stand_in_helper(format!("printf '%s' '{VALID_RESPONSE}' > \"$out\"\nexit 0"));
+
+        assert_eq!(result, Ok(Vec::new()));
+    }
+
+    /// A FIFO at the response path would block an ordinary open forever, and
+    /// only the plugin could have put it there.
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_response_is_refused_promptly_as_a_process_failure() {
+        let error =
+            scan_with_stand_in_helper("rm -f \"$out\"\nmkfifo \"$out\"\nexit 0".to_string())
+                .expect_err("a FIFO response must be refused");
+
+        assert!(is_process_failure(&error), "{error}");
+    }
+
+    /// The symlink's target is a valid response, so the refusal is the link
+    /// itself and not a parse failure.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_response_is_refused_as_a_process_failure() {
+        let error = scan_with_stand_in_helper(format!(
+            "printf '%s' '{VALID_RESPONSE}' > \"$out.real\"\nln -s \"$out.real\" \"$out\"\nexit 0"
+        ))
+        .expect_err("a symlinked response must be refused");
+
+        assert!(is_process_failure(&error), "{error}");
+    }
+
+    /// An oversized regular file is the helper's limit, not tampering.
+    #[cfg(unix)]
+    #[test]
+    fn an_oversized_response_is_a_limit_refusal_not_a_process_failure() {
+        let error = scan_with_stand_in_helper(format!(
+            "dd if=/dev/zero of=\"$out\" bs=1 count=0 seek={} 2>/dev/null\nexit 0",
+            MAX_RESPONSE_BYTES + 1
+        ))
+        .expect_err("an oversized response must be refused");
+
+        assert!(is_response_limit_refusal(&error), "{error}");
+        assert!(!is_process_failure(&error), "{error}");
     }
 
     /// A real `ExitStatus` for a process that exited with `code`, obtained
