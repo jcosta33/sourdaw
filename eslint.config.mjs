@@ -139,16 +139,19 @@ export default tseslint.config(
     },
     {
         linterOptions: { reportUnusedDisableDirectives: false },
-        // Register moved rule names so their disable comments remain valid in
-        // check mode. Fix mode enables the same canonical settings below.
+        // Keep canonical and historical names available for directive validation.
+        // Only canonical names enable moved rules in the cofix settings below.
         plugins: {
             '@eslint-react': eslintPluginReact,
             '@tanstack/query': eslintPluginQuery,
             '@typescript-eslint': tseslint.plugin,
             'import-x': eslintPluginImport,
             'promise-js': eslintPluginPromise,
+            promise: eslintPluginPromise,
             'jsx-a11y-x-js': eslintPluginJsxA11yX,
+            'jsx-a11y-x': eslintPluginJsxA11yX,
             'react-hooks-js': eslintPluginReactHooks,
+            'react-hooks': eslintPluginReactHooks,
             sourdaw: sourdawPlugin,
             '@stylistic': eslintPluginStylistic,
             '@eslint-community/eslint-comments':

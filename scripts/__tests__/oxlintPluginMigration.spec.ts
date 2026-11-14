@@ -6,10 +6,11 @@ import { clearCaches } from '@typescript-eslint/parser';
 import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
-import { typeQueryLintFixtures } from './helpers/typeQueryLintFixtures.ts';
-import { lintMigratedRules, runProductionLint } from './helpers/lintMigratedRules.ts';
-import { configuredSourdawRules } from './helpers/configuredSourdawRules.ts';
 import { eslintEnvironment } from '../runLint.ts';
+
+import { configuredSourdawRules } from './helpers/configuredSourdawRules.ts';
+import { lintMigratedRules, runProductionLint } from './helpers/lintMigratedRules.ts';
+import { typeQueryLintFixtures } from './helpers/typeQueryLintFixtures.ts';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -218,6 +219,35 @@ describe('production Oxlint public-plugin migration', () => {
         60_000
     );
 
+    it.each([false, true])(
+        'accepts inactive legacy plugin directives (fix=%s)',
+        (fix) => {
+            const input =
+                '// eslint-disable-next-line react-hooks/rules-of-hooks, promise/no-return-wrap, jsx-a11y-x/no-noninteractive-tabindex -- Preserve inactive legacy directives.\n' +
+                'export const value = 1;\n';
+            const result = runProductionLint(input, 'scripts/example.mjs', fix);
+            expect(result.status, result.output).toBe(0);
+            expect(result.text).toBe(input);
+            expect(result.output).toContain('lint: eslint passed');
+            expect(result.output).toContain('lint: oxlint-plugins passed');
+        },
+        180_000
+    );
+
+    it.each([false, true])(
+        'rejects unknown legacy plugin rule directives (fix=%s)',
+        (fix) => {
+            const input =
+                '// eslint-disable-next-line react-hooks/not-a-real-rule -- Unknown rules must remain errors.\n' +
+                'export const value = 1;\n';
+            const result = runProductionLint(input, 'scripts/example.mjs', fix);
+            expect(result.status, result.output).toBe(1);
+            expect(result.output).toContain("Definition for rule 'react-hooks/not-a-real-rule' was not found");
+            expect(result.output).toContain('lint: eslint failed');
+        },
+        180_000
+    );
+
     it.each([
         'scripts/example.mjs',
         'scripts/example.cjs',
@@ -382,6 +412,9 @@ describe('production Oxlint public-plugin migration', () => {
                     rules: config.rules,
                     project: config.languageOptions.parserOptions.project,
                     react: config.settings['react-x'],
+                    legacy: Object.keys(config.plugins).filter(name =>
+                        ['jsx-a11y-x', 'promise', 'react-hooks'].includes(name)
+                    ).sort(),
                 };
             }
             console.log(JSON.stringify(result));
@@ -403,7 +436,15 @@ describe('production Oxlint public-plugin migration', () => {
                     if (!isRecord(config) || !isRecord(config.rules)) {
                         throw new TypeError(`ESLint returned an invalid configuration snapshot for ${target}`);
                     }
-                    return [target, { rules: config.rules, project: config.project, react: config.react }];
+                    return [
+                        target,
+                        {
+                            rules: config.rules,
+                            project: config.project,
+                            react: config.react,
+                            legacy: config.legacy,
+                        },
+                    ];
                 })
             );
         };
@@ -425,6 +466,19 @@ describe('production Oxlint public-plugin migration', () => {
             throw new TypeError('The canonical comment rule has no options');
         }
         for (const target of ['app', 'spec', 'script', 'tool', 'server', 'e2e', 'declaration']) {
+            for (const mode of [check, fix]) {
+                expect(mode[target].legacy, target).toEqual(['jsx-a11y-x', 'promise', 'react-hooks']);
+                const legacyActive = Object.entries(mode[target].rules).filter(([name, setting]) => {
+                    if (!/^(jsx-a11y-x|promise|react-hooks)\//.test(name)) {
+                        return false;
+                    }
+                    if (!Array.isArray(setting)) {
+                        throw new TypeError(`ESLint returned no normalized severity for ${name}`);
+                    }
+                    return setting[0] !== 0;
+                });
+                expect(legacyActive, target).toEqual([]);
+            }
             expect(fix[target].react, target).toEqual(canonical.settings['react-x']);
             expect(fix[target].project, target).toEqual(check[target].project);
             for (const rule of [

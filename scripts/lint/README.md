@@ -20,6 +20,9 @@ Oxlint reserves native plugin names. Public plugin rules therefore use
 `react-hooks-js/`, `promise-js/`, and `jsx-a11y-x-js/` in configurations and inline disable
 comments. The remaining plugin names stay unchanged. ESLint registers these names
 without enabling moved rules in check mode, so the split passes accept each other's suppressions.
+It also retains the historical `react-hooks/`, `promise/`, and `jsx-a11y-x/` plugin
+registrations so directives naming inactive rules remain valid. Those registrations
+enable no legacy rules, and unknown rule names still fail directive validation.
 Unused-disable reporting remains off because neither pass observes all rules.
 
 ESLint remains necessary for `@eslint-react/no-leaked-conditional-rendering`,
