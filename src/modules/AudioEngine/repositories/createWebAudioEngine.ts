@@ -88,7 +88,7 @@ const UNWIRED_USE_CASE_DEVICE_COLLABORATORS: EngineUseCaseCollaborators = {
     },
 };
 
-type NoopMeterNode = {
+export type NoopMeterNode = {
     connect(): void;
     disconnect(): void;
     port: { postMessage(message: unknown): void };
@@ -121,7 +121,7 @@ type ToasterPadBinding = Readonly<{
     padIndex: number;
 }>;
 
-type ToasterPadRoute = ToasterPadBinding & {
+export type ToasterPadRoute = ToasterPadBinding & {
     destinationNode: GainNode | null;
     controls: ToasterDeviceControls | null;
 };
@@ -354,7 +354,102 @@ function createNoopAudioContext(): AudioContext {
     return shim;
 }
 
+/**
+ * Repository-internal view of engine state for repository specs and the
+ * topology test harness. Never exported from a contract barrel. Collections are
+ * the engine's live objects, so mutating one mutates engine state.
+ */
+export type WebAudioEngineInternals = {
+    readonly trackNodes: Map<string, TrackNode>;
+    readonly busNodes: Map<string, BusNode>;
+    readonly sendNodes: Map<string, SendNode>;
+    readonly toasterPadRoutes: Map<string, ToasterPadRoute>;
+    readonly pendingSidechainRoutes: Map<
+        string,
+        { sourceTrackId: string; targetTrackId: string; targetDeviceId: string }
+    >;
+    readonly pendingDevicePromises: Set<Promise<unknown>>;
+    readonly scheduledNodes: AudioScheduledSourceNode[];
+    readonly deviceReadinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
+    readonly masterMeterNode: AudioWorkletNode | NoopMeterNode | undefined;
+    readonly monitorMonoNode: GainNode;
+    readonly monitorDimNode: GainNode;
+    readonly masterStereoSplitter: ChannelSplitterNode;
+    readonly masterStereoTapSink: GainNode;
+    addDeviceToStrip(
+        trackId: string,
+        deviceId: string,
+        deviceType: string,
+        externalInstanceId?: string,
+        precedingDeviceIds?: readonly string[],
+        parameterIds?: readonly string[]
+    ): void;
+    removeDeviceFromStrip(trackId: string, deviceId: string): void;
+    reconnectRoutingForTrack(trackId: string): void;
+    reconcileToasterParent(toasterParentTrackId: string): void;
+    handleDeviceRemoved(trackId: string, device: BuiltinDeviceNode): void;
+    crossfadeSendTap(existing: SendNode, busStrip: BusStrip, preFader: boolean, clampedLevel: number): void;
+    waitForDevices(timeoutMs?: number): Promise<AudioDeviceWaitResult>;
+};
+
 class AudioEngineImpl implements AudioEngine {
+    /**
+     * Builds the internals view of one engine. Fields are read through getters
+     * because initialize() and dispose() reassign several of them. Methods are
+     * bound here, at composition, so a harness that installs them as own
+     * properties of the engine cannot make them call themselves.
+     */
+    static internalsOf(engine: AudioEngineImpl): WebAudioEngineInternals {
+        return {
+            get trackNodes() {
+                return engine.trackNodes;
+            },
+            get busNodes() {
+                return engine.busNodes;
+            },
+            get sendNodes() {
+                return engine.sendNodes;
+            },
+            get toasterPadRoutes() {
+                return engine.toasterPadRoutes;
+            },
+            get pendingSidechainRoutes() {
+                return engine.pendingSidechainRoutes;
+            },
+            get pendingDevicePromises() {
+                return engine.pendingDevicePromises;
+            },
+            get scheduledNodes() {
+                return engine.scheduledNodes;
+            },
+            get deviceReadinessDiagnostics() {
+                return engine.deviceReadinessDiagnostics;
+            },
+            get masterMeterNode() {
+                return engine.masterMeterNode;
+            },
+            get monitorMonoNode() {
+                return engine.monitorMonoNode;
+            },
+            get monitorDimNode() {
+                return engine.monitorDimNode;
+            },
+            get masterStereoSplitter() {
+                return engine.masterStereoSplitter;
+            },
+            get masterStereoTapSink() {
+                return engine.masterStereoTapSink;
+            },
+            addDeviceToStrip: engine.addDeviceToStrip.bind(engine),
+            removeDeviceFromStrip: engine.removeDeviceFromStrip.bind(engine),
+            reconnectRoutingForTrack: engine.reconnectRoutingForTrack.bind(engine),
+            reconcileToasterParent: engine.reconcileToasterParent.bind(engine),
+            handleDeviceRemoved: engine.handleDeviceRemoved.bind(engine),
+            crossfadeSendTap: engine.crossfadeSendTap.bind(engine),
+            waitForDevices: engine.waitForDevices.bind(engine),
+        };
+    }
+
     public context!: AudioContext;
     public masterGainNode!: GainNode;
     public masterAnalyser!: AnalyserNode;
@@ -2055,8 +2150,8 @@ class AudioEngineImpl implements AudioEngine {
         return this.busNodes.get(busId)?.getPeakLevel() ?? 0;
     }
 
-    /** Internal primitive exposed only by the repository-test harness below. */
-    protected addDeviceToStrip(
+    /** Internal primitive reached only through {@link WebAudioEngineInternals}. */
+    public addDeviceToStrip(
         trackId: string,
         deviceId: string,
         deviceType: string,
@@ -2089,8 +2184,8 @@ class AudioEngineImpl implements AudioEngine {
         }
     }
 
-    /** Internal primitive exposed only by the repository-test harness below. */
-    protected removeDeviceFromStrip(trackId: string, deviceId: string): void {
+    /** Internal primitive reached only through {@link WebAudioEngineInternals}. */
+    public removeDeviceFromStrip(trackId: string, deviceId: string): void {
         if (this.fallbackMode) {
             return;
         }
@@ -3000,49 +3095,16 @@ class AudioEngineImpl implements AudioEngine {
     }
 }
 
-/** Test-only shape for low-level rollback fixtures; only the test-only factory overload returns it. */
-export type AudioEngineTopologyTestHarness = AudioEngine & {
-    addDeviceToStrip(
-        trackId: string,
-        deviceId: string,
-        deviceType: string,
-        externalInstanceId?: string,
-        precedingDeviceIds?: readonly string[],
-        parameterIds?: readonly string[]
-    ): void;
-    removeDeviceFromStrip(trackId: string, deviceId: string): void;
-};
-
-class AudioEngineTopologyTestHarnessImpl extends AudioEngineImpl implements AudioEngineTopologyTestHarness {
-    public override addDeviceToStrip(
-        trackId: string,
-        deviceId: string,
-        deviceType: string,
-        externalInstanceId?: string,
-        precedingDeviceIds?: readonly string[],
-        parameterIds?: readonly string[]
-    ): void {
-        super.addDeviceToStrip(trackId, deviceId, deviceType, externalInstanceId, precedingDeviceIds, parameterIds);
-    }
-
-    public override removeDeviceFromStrip(trackId: string, deviceId: string): void {
-        super.removeDeviceFromStrip(trackId, deviceId);
-    }
+export function composeWebAudioEngine(providedContext?: AudioContext): {
+    engine: AudioEngine;
+    internals: WebAudioEngineInternals;
+} {
+    const engine = new AudioEngineImpl(providedContext);
+    return { engine, internals: AudioEngineImpl.internalsOf(engine) };
 }
 
-export function createAudioEngine(providedContext?: AudioContext): AudioEngine;
-/** @internal Repository tests only; production receives the narrower AudioEngine contract. */
-export function createAudioEngine(
-    providedContext: AudioContext | undefined,
-    options: Readonly<{ topologyTestHarness: true }>
-): AudioEngineTopologyTestHarness;
-export function createAudioEngine(
-    providedContext?: AudioContext,
-    options?: Readonly<{ topologyTestHarness: true }>
-): AudioEngine | AudioEngineTopologyTestHarness {
-    return options?.topologyTestHarness
-        ? new AudioEngineTopologyTestHarnessImpl(providedContext)
-        : new AudioEngineImpl(providedContext);
+export function createAudioEngine(providedContext?: AudioContext): AudioEngine {
+    return composeWebAudioEngine(providedContext).engine;
 }
 
 export const audioEngine = createAudioEngine();

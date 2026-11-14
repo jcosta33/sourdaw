@@ -344,7 +344,7 @@ function asAudioContext(ctx: MockAudioContext): AudioContext {
     return ctx as unknown as AudioContext;
 }
 
-function makeFallbackEngine(): AudioEngine {
+function makeFallbackEngine(): AudioEngineTopologyTestHarness {
     class FailingAudioContext {
         constructor() {
             throw new Error('no AudioContext in this environment');
@@ -370,8 +370,8 @@ function makeFallbackEngine(): AudioEngine {
     return fallbackEngine;
 }
 
-function getPendingSidechainRoutes(engine: AudioEngine): Map<string, unknown> {
-    return (engine as unknown as { pendingSidechainRoutes: Map<string, unknown> }).pendingSidechainRoutes;
+function getPendingSidechainRoutes(engine: AudioEngineTopologyTestHarness): Map<string, unknown> {
+    return engine.internals.pendingSidechainRoutes;
 }
 
 type MockTrackNode = {
@@ -387,12 +387,12 @@ type MockTrackNode = {
     strip: { deviceNodes: unknown[] };
 };
 
-function getMockTrackNode(engine: AudioEngine, trackId: string): MockTrackNode {
-    const node = (engine as unknown as { trackNodes: Map<string, MockTrackNode> }).trackNodes.get(trackId);
+function getMockTrackNode(engine: AudioEngineTopologyTestHarness, trackId: string): MockTrackNode {
+    const node = engine.internals.trackNodes.get(trackId);
     if (!node) {
         throw new Error(`expected mock TrackNode for ${trackId}`);
     }
-    return node;
+    return node as unknown as MockTrackNode;
 }
 
 function setPadTrackOutput(
@@ -405,7 +405,7 @@ function setPadTrackOutput(
     engine.setTrackOutput(trackId, outputId, { toasterParentTrackId, padIndex });
 }
 
-function loadToasterPadControls(engine: AudioEngine, toasterParentTrackId: string) {
+function loadToasterPadControls(engine: AudioEngineTopologyTestHarness, toasterParentTrackId: string) {
     const controls = {
         connectPadOutput: vi.fn(),
         disconnectPadOutput: vi.fn(),
@@ -420,8 +420,8 @@ function loadToasterPadControls(engine: AudioEngine, toasterParentTrackId: strin
     return controls;
 }
 
-function getToasterPadRoutes(engine: AudioEngine): Map<string, unknown> {
-    return (engine as unknown as { toasterPadRoutes: Map<string, unknown> }).toasterPadRoutes;
+function getToasterPadRoutes(engine: AudioEngineTopologyTestHarness): Map<string, unknown> {
+    return engine.internals.toasterPadRoutes;
 }
 
 function createRuntimeOutputDelta(appRevision: number): RuntimeGraphOutputDelta {
@@ -1979,9 +1979,7 @@ describe('AudioEngine', () => {
             const firstStrip = engine.ensureTrackStrip('faulting-input');
             const secondStrip = engine.ensureTrackStrip('healthy-input');
             engine.ensureBusStrip('monitor-bus');
-            const bus = (engine as unknown as { busNodes: Map<string, { dispose: Mock }> }).busNodes.get(
-                'monitor-bus'
-            )!;
+            const bus = engine.internals.busNodes.get('monitor-bus') as unknown as { dispose: Mock };
             const scheduled = mockCtx.createOscillator();
             engine.registerScheduledSource(scheduled);
             engine.setSend('healthy-input', 'monitor-bus', 0.5);
@@ -2035,7 +2033,17 @@ describe('AudioEngine', () => {
         it('awaits one context close after a monitor failure and retains that terminal result on repeated disposal', async () => {
             await engine.initialize();
             const graph = createFaultingMonitoredGraph();
-            const master = engine as unknown as {
+            const master = {
+                masterGainNode: engine.masterGainNode,
+                masterMeterNode: engine.internals.masterMeterNode,
+                masterAnalyser: engine.masterAnalyser,
+                monitorMonoNode: engine.internals.monitorMonoNode,
+                monitorDimNode: engine.internals.monitorDimNode,
+                masterStereoSplitter: engine.internals.masterStereoSplitter,
+                masterAnalyserLeft: engine.masterAnalyserLeft,
+                masterAnalyserRight: engine.masterAnalyserRight,
+                masterStereoTapSink: engine.internals.masterStereoTapSink,
+            } as unknown as {
                 masterGainNode: { disconnect: Mock };
                 masterMeterNode: { disconnect: Mock };
                 masterAnalyser: { disconnect: Mock };
@@ -2110,7 +2118,11 @@ describe('AudioEngine', () => {
             async (nodeName) => {
                 await engine.initialize();
                 const graph = createFaultingMonitoredGraph();
-                const nodes = engine as unknown as {
+                const nodes = {
+                    masterGainNode: engine.masterGainNode,
+                    masterMeterNode: engine.internals.masterMeterNode,
+                    masterStereoTapSink: engine.internals.masterStereoTapSink,
+                } as unknown as {
                     masterGainNode: { disconnect: Mock };
                     masterMeterNode: { disconnect: Mock };
                     masterStereoTapSink: { disconnect: Mock };
@@ -2145,9 +2157,7 @@ describe('AudioEngine', () => {
             const firstSend = mockCtx.createGain.mock.results.at(-1)!.value;
             engine.setSend('source-2', 'bus-2', 0.5);
             const secondSend = mockCtx.createGain.mock.results.at(-1)!.value;
-            const buses = Array.from(
-                (engine as unknown as { busNodes: Map<string, { dispose: Mock }> }).busNodes.values()
-            );
+            const buses = Array.from(engine.internals.busNodes.values()) as unknown as { dispose: Mock }[];
             const tracks = ['source-1', 'source-2', 'bus-1', 'bus-2'].map((id) => getMockTrackNode(engine, id));
             const firstBus = buses[0];
             if (!firstBus) {
@@ -2157,8 +2167,7 @@ describe('AudioEngine', () => {
             if (!firstTrack) {
                 throw new Error('Expected the retiring graph to contain a track');
             }
-            const pending = (engine as unknown as { pendingDevicePromises: Set<Promise<unknown>> })
-                .pendingDevicePromises;
+            const pending = engine.internals.pendingDevicePromises;
             pending.add(Promise.withResolvers().promise);
             getPendingSidechainRoutes(engine).set('queued-route', {
                 sourceTrackId: 'source-1',
@@ -2386,8 +2395,8 @@ describe('AudioEngine', () => {
         it('awaits context.close, makes disposal terminal, and releases the transport SAB', async () => {
             await engine.initialize();
             expect(engine.getHealth().workletReady).toBe(true);
-            const masterMeterPort = (engine as unknown as { masterMeterNode: { port: { postMessage: Mock } } })
-                .masterMeterNode.port;
+            const masterMeterPort = (engine.internals.masterMeterNode as unknown as { port: { postMessage: Mock } })
+                .port;
             const lateSource = mockCtx.createOscillator();
 
             await engine.dispose();
@@ -3199,8 +3208,8 @@ describe('AudioEngine', () => {
     // a SAB-backed metering-processor (masterGain → meter → analyser) and point
     // masterMeterBuffer at that SAB, so getMasterPeakLevel reflects real level.
     describe('master meter wiring', () => {
-        function masterMeterSab(eng: AudioEngine): ArrayBuffer {
-            const meterNode = (eng as unknown as { masterMeterNode: { port: { postMessage: Mock } } }).masterMeterNode;
+        function masterMeterSab(eng: AudioEngineTopologyTestHarness): ArrayBuffer {
+            const meterNode = eng.internals.masterMeterNode as unknown as { port: { postMessage: Mock } };
             const initCall = meterNode.port.postMessage.mock.calls.find(
                 (c) => (c[0] as { type?: string })?.type === 'init'
             );
@@ -3211,12 +3220,12 @@ describe('AudioEngine', () => {
         it('inserts a metering-processor into the master chain on initialize', async () => {
             // Before init, no meter node is wired (master nodes are built in the
             // constructor, before any worklet module is loaded).
-            const beforeInit = (engine as unknown as { masterMeterNode?: unknown }).masterMeterNode;
+            const beforeInit = engine.internals.masterMeterNode;
             expect(beforeInit).toBeUndefined();
 
             await engine.initialize();
 
-            const meterNode = (engine as unknown as { masterMeterNode: { connect: Mock } }).masterMeterNode;
+            const meterNode = engine.internals.masterMeterNode as unknown as { connect: Mock };
             expect(meterNode).toBeDefined();
             // Master gain rerouted: disconnected from the analyser, then connected
             // to the meter, which connects to the analyser.
@@ -3487,7 +3496,7 @@ describe('AudioEngine', () => {
             engine.removeBusStrip('busA');
 
             // busB's send survived the sweep.
-            const sends = (engine as unknown as { sendNodes: Map<string, unknown> }).sendNodes;
+            const sends = engine.internals.sendNodes;
             const keys = Array.from(sends.keys());
             expect(keys.some((k) => k.includes('busB'))).toBe(true);
             expect(keys.some((k) => k.includes('busA'))).toBe(false);
