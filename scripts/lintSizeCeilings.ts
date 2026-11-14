@@ -115,7 +115,7 @@ function findStaleExemptions(exemptFiles: readonly string[], baseline: ReadonlyS
 export function describeSizeCeilingViolation(violation: SizeCeilingViolation): string {
     switch (violation.kind) {
         case 'missing-ceiling':
-            return `${violation.path}: baselined with no ceiling in ${SIZE_CEILINGS_PATH}; record ${expectedSizeCeiling(violation.lines)} (it has ${violation.lines} lines).`;
+            return `${violation.path}: baselined with no ceiling in ${SIZE_CEILINGS_PATH}; insert it in sorted position with ${expectedSizeCeiling(violation.lines)} (it has ${violation.lines} lines).`;
         case 'unlisted-ceiling':
             return `${violation.path}: has a ceiling in ${SIZE_CEILINGS_PATH} but is not in eslint.size-baseline.mjs; remove the entry.`;
         case 'exempt-ceiling':

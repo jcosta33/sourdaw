@@ -23,10 +23,11 @@
  * more than 100 above the ceiling the file's current length earns.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
 import {
@@ -239,10 +240,38 @@ describe('expected size ceiling', () => {
     });
 });
 
+describe('countFileLines', () => {
+    let dir = '';
+
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'lint-size-lines-'));
+    });
+
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it.each([
+        { name: 'three terminated lines', content: 'a\nb\nc\n', expected: 3 },
+        { name: 'an unterminated last line', content: 'a\nb\nc', expected: 2 },
+        { name: 'an empty file', content: '', expected: 0 },
+        { name: 'a single newline', content: '\n', expected: 1 },
+    ])('should count $expected newline characters for $name', ({ content, expected }) => {
+        writeFileSync(join(dir, 'file.txt'), content);
+        expect(countFileLines(dir, 'file.txt')).toBe(expected);
+    });
+});
+
 describe('size ceiling violation messages', () => {
     it('should tell the author the overflow and that ceilings are never raised', () => {
         expect(describeSizeCeilingViolation({ kind: 'over-ceiling', path: 'a.ts', lines: 960, ceiling: 950 })).toBe(
             'a.ts: 960 lines exceeds its ceiling of 950 by 10; move code into a new file (new files are held to the size rules) until it has at most 950 lines. Ceilings are never raised.'
+        );
+    });
+
+    it('should say where a missing ceiling goes and what to record', () => {
+        expect(describeSizeCeilingViolation({ kind: 'missing-ceiling', path: 'a.ts', lines: 700 })).toBe(
+            'a.ts: baselined with no ceiling in scripts/lintSizeCeilings.json; insert it in sorted position with 750 (it has 700 lines).'
         );
     });
 
