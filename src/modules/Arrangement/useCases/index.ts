@@ -247,11 +247,7 @@ export { getRecordingMidiAdmission } from './recording/getRecordingMidiAdmission
 
 export { captureArrangementToScratchPad } from './scratchPad/captureCommit/captureArrangementToScratchPad';
 export { commitScratchPadToArrangement } from './scratchPad/captureCommit/commitScratchPadToArrangement';
-export { removeScratchPadSection } from './scratchPad/scratchPadCrud/removeScratchPadSection';
-export { renameScratchPadSection } from './scratchPad/scratchPadCrud/renameScratchPadSection';
-export { setScratchPadSectionColor } from './scratchPad/scratchPadCrud/setScratchPadSectionColor';
 export { clearScratchPad } from './scratchPad/scratchPadCrud/clearScratchPad';
-export { reorderScratchPadSection } from './scratchPad/scratchPadCrud/reorderScratchPadSection';
 
 // ── Toggle Track State ────────────────────────────────────────────────────────
 

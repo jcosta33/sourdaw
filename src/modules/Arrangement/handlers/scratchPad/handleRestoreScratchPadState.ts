@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { markerStore } from '../../stores/markerStore';
 import { scratchPadStore } from '../../stores/scratchPadStore';
@@ -52,15 +53,11 @@ export const handleRestoreScratchPadState = createHandler<'restoreScratchPadStat
         if (!padState || !markerState) {
             return false;
         }
+        // Deep compare: a rename or recolour inverse keeps the id sequence, so comparing ids
+        // alone would call it a no-op and skip the write.
         return (
-            idSequenceMatches(
-                padState.sections.map((section) => section.id),
-                action.payload.replacementSections
-            ) &&
-            idSequenceMatches(
-                markerState.sections.map((section) => section.id),
-                action.payload.replacementMarkerSections
-            )
+            valuesEqual(padState.sections, action.payload.replacementSections) &&
+            valuesEqual(markerState.sections, action.payload.replacementMarkerSections)
         );
     },
     undoable: false,
