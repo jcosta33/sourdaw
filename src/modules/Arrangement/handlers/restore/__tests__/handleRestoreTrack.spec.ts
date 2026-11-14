@@ -4,6 +4,7 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { sanitize_take_lane_store_state } from '../../../stores/takeLaneStore';
 import { sanitizeTrackSnapshot } from '../../../stores/trackStore';
 import { captureTrackRemovalSnapshot } from '../../../useCases/captureTrackRemovalSnapshot';
+import { handleRestoreTracks } from '../../track/restoreTracks';
 import { handleRestoreTrack } from '../handleRestoreTrack';
 
 import type { TakeLane } from '../../../models/TakeLane';
@@ -953,6 +954,145 @@ describe('handleRestoreTrack', () => {
             ]);
             expectRestored({ type: 'restoreTrack', payload }, row);
             expect(mocks.restoreAutomationLanes).toHaveBeenCalledWith(payload.automationLaneSnapshots);
+        });
+
+        function withoutClipKeyedMembers(payload: RestoreTrackPayload): RestoreTrackPayload {
+            return {
+                ...payload,
+                midiNotesByClipId: {},
+                midiCcByClipId: {},
+                midiPitchBendByClipId: {},
+                clipSatellites: [],
+            };
+        }
+
+        function survivorsClipIdOnRow(row: Track): unknown {
+            const clip = requireDefined(row.clips[0], 'a stored clip');
+            return { ...clip, id: survivorClipId };
+        }
+
+        it.each([
+            [
+                'on its live clips, with no member keyed to it',
+                (row: Track) => withExtraClip(row, survivorsClipIdOnRow(row)),
+                withoutClipKeyedMembers,
+            ],
+            [
+                'on its live clips, with MIDI keyed to it',
+                (row: Track) => withExtraClip(row, survivorsClipIdOnRow(row)),
+                (payload: RestoreTrackPayload) => ({
+                    ...withoutClipKeyedMembers(payload),
+                    midiNotesByClipId: { [survivorClipId]: [] },
+                }),
+            ],
+            [
+                'in an inactive alternative',
+                (row: Track) => withExtraAlternativeClip(row, survivorsClipIdOnRow(row)),
+                withoutClipKeyedMembers,
+            ],
+        ])("refuses before any write when the row holds a survivor's live clip id %s", (_label, corrupt, members) => {
+            const payload = captureRemoval(storeTrackRow(), storeTakeLane());
+            const trackSnapshot: unknown = corrupt(storeTrackRow());
+
+            expectNothingWritten({
+                type: 'restoreTrack',
+                payload: members({ ...payload, trackSnapshot: trackSnapshot as RestoreTrackPayload['trackSnapshot'] }),
+            });
+        });
+
+        // The state a cross-track move leaves: the moved clip is live on the
+        // target, and the source's active alternative still holds it in the
+        // stored copy, which only a switch or a create refreshes.
+        it("restores a row whose active alternative's stale copy holds a clip since moved to a survivor", () => {
+            const movedClipId = 'clip-moved';
+            const base = storeTrackRow();
+            const row: Track = {
+                ...base,
+                alternatives: base.alternatives.map((alternative) =>
+                    alternative.id === base.activeAlternativeId
+                        ? { ...alternative, clips: [...alternative.clips, clipOf(removedTrackId, movedClipId)] }
+                        : alternative
+                ),
+            };
+            const target = TrackDummy.create({
+                id: survivor.id,
+                clips: [...survivor.clips, clipOf(survivor.id, movedClipId)],
+            });
+            mocks.capturedStores.midi = {
+                notesByClipId: { [movedClipId]: [{ id: 'note-moved' }] },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            };
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [target, row], selectedTrackId: null, ghostClips: [] });
+            mocks.takeLaneStoreState.value = { lanes: [] };
+            const payload = requireDefined(
+                captureTrackRemovalSnapshot(removedTrackId) ?? undefined,
+                'a removal snapshot'
+            );
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [target], selectedTrackId: null, ghostClips: [] });
+            vi.clearAllMocks();
+            const action: RestoreTrackAction = { type: 'restoreTrack', payload };
+
+            expect(Object.keys(payload.midiNotesByClipId)).toEqual([movedClipId]);
+            expect(handleRestoreTrack.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
+            expect(handleRestoreTrack.execute(action)).toMatchObject({ status: 'written' });
+            expect(mocks.setTrackState.mock.calls[0]?.[0].tracks).toStrictEqual([target, row]);
+        });
+
+        describe('a grouped restore of all tracks', () => {
+            function groupedRow(trackId: string, clipId: string): RestoreTrackPayload {
+                const row = requireDefined(
+                    sanitizeTrackSnapshot({
+                        tracks: [TrackDummy.create({ id: trackId, clips: [clipOf(trackId, clipId)] })],
+                        selectedTrackId: null,
+                    }).tracks[0],
+                    'a projected track row'
+                );
+                return createRestoreTrackAction({
+                    trackId,
+                    trackSnapshot: row,
+                    trackKind: row.kind,
+                    trackParentId: row.parentId,
+                    trackIndex: trackId === 'track-1' ? 1 : 2,
+                }).payload;
+            }
+
+            // Each member reads the state the earlier members wrote.
+            function trackStoreThroughWrites(): () => readonly string[] {
+                let current: TrackStoreState = { tracks: [survivor], selectedTrackId: null, ghostClips: [] };
+                mocks.getTrackStoreState.mockImplementation(() => current);
+                mocks.setTrackState.mockImplementation((next) => {
+                    current = next;
+                });
+                return () => current.tracks.map((track) => track.id);
+            }
+
+            it('restores two tracks holding distinct clips', () => {
+                const trackIds = trackStoreThroughWrites();
+                const result = handleRestoreTracks.execute({
+                    type: 'restoreTracks',
+                    payload: { restores: [groupedRow('track-1', 'clip-a'), groupedRow('track-2', 'clip-b')] },
+                });
+
+                expect(result).toMatchObject({ status: 'written' });
+                expect(trackIds()).toEqual([survivor.id, 'track-1', 'track-2']);
+            });
+
+            it('refuses the member that reuses a clip id an earlier member restored', () => {
+                const trackIds = trackStoreThroughWrites();
+                const result = handleRestoreTracks.execute({
+                    type: 'restoreTracks',
+                    payload: {
+                        restores: [groupedRow('track-1', 'clip-shared'), groupedRow('track-2', 'clip-shared')],
+                    },
+                });
+
+                // The conflict aborts the action's transaction; the second
+                // member itself writes nothing.
+                expect(result).toEqual({ status: 'conflict' });
+                expect(mocks.setTrackState).toHaveBeenCalledOnce();
+                expect(trackIds()).toEqual([survivor.id, 'track-1']);
+            });
         });
 
         it.each([

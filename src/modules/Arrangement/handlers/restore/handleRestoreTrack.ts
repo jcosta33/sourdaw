@@ -7,6 +7,7 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { type TakeLane } from '../../models/TakeLane';
+import { getHeldClips } from '../../models/TrackAlternativeClips';
 import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
@@ -250,15 +251,21 @@ function keysOnlyOwnClips(payload: RestoreTrackPayload, ownClipIds: ReadonlySet<
 // The capture takes every automation lane of the track; a clip lane rides one
 // of the row's clips, since moving a clip carries its lanes to the target track
 // and removing it drops them. The contract type names only the lane's identity,
-// so the captured `clipId` is read from the snapshot itself.
+// so a captured `clipId` is narrowed from the snapshot itself.
 function holdsOnlyOwnAutomationLanes(payload: RestoreTrackPayload, ownClipIds: ReadonlySet<string>): boolean {
-    return payload.automationLaneSnapshots.every((lane) => {
-        const clipId: unknown = Reflect.get(lane, 'clipId');
-        return (
+    return payload.automationLaneSnapshots.every(
+        (lane) =>
             lane.trackId === payload.trackId &&
-            (clipId === undefined || (typeof clipId === 'string' && ownClipIds.has(clipId)))
-        );
-    });
+            (!('clipId' in lane) || (typeof lane.clipId === 'string' && ownClipIds.has(lane.clipId)))
+    );
+}
+
+// A clip id names one clip project-wide: MIDI data and satellites are keyed by
+// it. Both sides count held clips, so the active alternative's stored copy,
+// which a cross-track move leaves stale, never collides with the moved clip.
+function reusesLiveHeldClipId(row: Track, liveTracks: readonly Track[]): boolean {
+    const liveClipIds = new Set(liveTracks.flatMap((track) => getHeldClips(track).map((clip) => clip.id)));
+    return getHeldClips(row).some((clip) => liveClipIds.has(clip.id));
 }
 
 // Every clip a track holds, live or in a stored alternative copy, names that
@@ -329,10 +336,12 @@ function restoreStateMatches(
     context?: HandlerValidationContext
 ): boolean {
     const state = getTrackStoreState();
+    const restored = decodeRestoredRows(action.payload);
     if (
         !state ||
-        !decodeRestoredRows(action.payload) ||
-        state.tracks.some((track) => track.id === action.payload.trackId)
+        !restored ||
+        state.tracks.some((track) => track.id === action.payload.trackId) ||
+        reusesLiveHeldClipId(restored.track, state.tracks)
     ) {
         return false;
     }
