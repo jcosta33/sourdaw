@@ -6,13 +6,14 @@ function isAgentGuidance(path: string): boolean {
 }
 
 /**
- * Rust sources and Cargo manifests reach the browser only as compiled WASM under public/wasm and
+ * Rust sources, maintained vendor consumers and Cargo manifests reach the browser only as compiled WASM under public/wasm and
  * src/modules/AudioEngine/wasm, which are changed paths that select browser coverage themselves;
  * the broad profile's `wasm:verify` fails a Rust change that lacks regenerated artifacts. Other files
  * under crates/ are data a Playwright spec may read directly, so they stay on the product route.
  */
 function isRustCompilerInput(path: string): boolean {
     return (
+        path.startsWith('vendor/rust/') ||
         /^crates\/.+\.rs$/.test(path) ||
         /^crates\/.+\/Cargo\.toml$/.test(path) ||
         path === 'Cargo.toml' ||

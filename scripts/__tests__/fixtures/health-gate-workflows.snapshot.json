@@ -129,7 +129,7 @@
         "if": "${{ github.event.pull_request.draft == false && needs.scope.result == 'success' && fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] != null }}",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
+          "image": "mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -198,6 +198,70 @@
           "browser-ai": "${{ needs.scope.outputs.browser-ai == 'true' }}"
         }
       },
+      "desktop-packaging": {
+        "name": "Desktop packaging (${{ matrix.runner }})",
+        "needs": "scope",
+        "if": "${{ github.event.pull_request.draft == false && needs.scope.result == 'success' && needs.scope.outputs.profile == 'broad' }}",
+        "runs-on": "${{ matrix.runner }}",
+        "timeout-minutes": 90,
+        "strategy": {
+          "fail-fast": false,
+          "matrix": {
+            "runner": [
+              "macos-15",
+              "windows-latest",
+              "ubuntu-24.04"
+            ]
+          }
+        },
+        "defaults": {
+          "run": {
+            "shell": "bash"
+          }
+        },
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "./.github/actions/setup-pnpm",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+            "with": {
+              "node-version": "26.13.1",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Install native build dependencies",
+            "run": "if [ \"$RUNNER_OS\" = Linux ]; then\n  sudo bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- bash -c 'apt-get update && apt-get install -y libasound2-dev libclang-dev clang cmake'\nfi\nrustup show\nclang --version\ncmake --version\n"
+          },
+          {
+            "name": "Build configured desktop packages",
+            "run": "pnpm exec install-electron\npnpm exec vite build\nnode -e \"require('node:fs').rmSync('dist/samples',{recursive:true,force:true})\"\npnpm exec tsc -p electron/tsconfig.build.json\nnode scripts/buildElectronPreload.ts\nnode scripts/buildNativeAddon.ts\npnpm exec electron-builder --config electron-builder.yml --publish never\n"
+          },
+          {
+            "name": "Verify packaged payloads",
+            "run": "node scripts/verifyDesktopContainers.ts"
+          }
+        ]
+      },
       "codeql": {
         "name": "CodeQL",
         "needs": "scope",
@@ -239,7 +303,8 @@
           "e2e-build",
           "validation",
           "affected",
-          "codeql"
+          "codeql",
+          "desktop-packaging"
         ],
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 5,
@@ -252,7 +317,7 @@
               "MATRIX": "${{ needs.scope.outputs.matrix }}",
               "DRAFT": "${{ github.event.pull_request.draft }}"
             },
-            "run": "set -euo pipefail\nif [ \"$DRAFT\" != \"false\" ]; then\n  printf '%s\\n' '::error title=Gate refused::pull request is a draft'\n  exit 1\nfi\nselected=$(printf '%s' \"$MATRIX\" | jq -er '\n  if type != \"object\" or (.include | type) != \"array\" then error(\"invalid E2E plan\")\n  elif all(.include[]; (.id | type) == \"number\" and (.specs | type) == \"array\" and (.specs | length) > 0) then\n    if (.include | length) > 0 then \"success\" else \"skipped\" end\n  else error(\"invalid E2E group\") end')\nprintf '%s' \"$RESULTS\" | jq -e --arg selected \"$selected\" '\n  (keys | sort) == [\"affected\", \"codeql\", \"e2e-build\", \"scope\", \"validation\"] and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  .[\"e2e-build\"].result == $selected and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
+            "run": "set -euo pipefail\nif [ \"$DRAFT\" != \"false\" ]; then\n  printf '%s\\n' '::error title=Gate refused::pull request is a draft'\n  exit 1\nfi\nselected=$(printf '%s' \"$MATRIX\" | jq -er '\n  if type != \"object\" or (.include | type) != \"array\" then error(\"invalid E2E plan\")\n  elif all(.include[]; (.id | type) == \"number\" and (.specs | type) == \"array\" and (.specs | length) > 0) then\n    if (.include | length) > 0 then \"success\" else \"skipped\" end\n  else error(\"invalid E2E group\") end')\nprintf '%s' \"$RESULTS\" | jq -e --arg selected \"$selected\" '\n  (keys | sort) == [\"affected\", \"codeql\", \"desktop-packaging\", \"e2e-build\", \"scope\", \"validation\"] and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  .[\"e2e-build\"].result == $selected and\n  (if .scope.outputs.profile == \"broad\" then .[\"desktop-packaging\"].result == \"success\"\n   elif (.scope.outputs.profile == \"tooling\" or .scope.outputs.profile == \"docs\") then .[\"desktop-packaging\"].result == \"skipped\"\n   else false end) and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
           }
         ]
       }
@@ -289,7 +354,7 @@
         "if": "fromJSON(inputs.matrix).include[0] != null",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
+          "image": "mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -343,7 +408,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.1"
           },
           {
             "name": "Run shard",
@@ -606,7 +671,7 @@
             "uses": "dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d",
             "with": {
               "predicate-quantifier": "some-with-excludes",
-              "filters": "rust:\n  - 'crates/**'\n  - 'Cargo.toml'\n  - 'Cargo.lock'\n  - 'rust-toolchain.toml'\n  - 'scripts/health-gates-server.sh'\n  - 'scripts/health-gates-rust.sh'\n  - 'scripts/ensurePinnedRustToolchain.sh'\n  - '.github/workflows/validation.yml'\n  - '.github/workflows/cargo-dependency-seed.yml'\nserver:\n  - 'server/**'\n  - 'scripts/health-gates-server.sh'\n  - 'package.json'\n  - 'vite.config.ts'\n  - 'scripts/checkVitestCollectionScope.ts'\n  - '.github/workflows/health-gates.yml'\n  - '.github/workflows/nightly.yml'\ne2e:\n  - 'src/**'\n  - 'public/**'\n  - 'tests/e2e/**'\n  - 'playwright.config.ts'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\nweb:\n  - 'src/**'\n  - 'public/**'\n  - 'electron/**'\n  - 'scripts/**'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\n  - 'vite.config.ts'\n  - 'tsconfig*.json'\n# Everything the scopes above do not claim, minus the two places\n# that hold nothing but prose. Repository metadata is machine-read,\n# not documentation: issue templates, the pull-request template and\n# workflow definitions all land here and force the fast lane that\n# polices them. A path nobody has classified lands here too, which\n# is the point — an unknown path costs a full lane rather than\n# silently skipping the checks that would have observed it.\nunclassified:\n  - '**'\n  - '!docs/**'\n  - '!*.md'\n  - '!crates/**'\n  - '!Cargo.toml'\n  - '!Cargo.lock'\n  - '!rust-toolchain.toml'\n  - '!server/**'\n  - '!src/**'\n  - '!public/**'\n  - '!electron/**'\n  - '!scripts/**'\n  - '!tests/e2e/**'\n  - '!package.json'\n  - '!pnpm-lock.yaml'\n  - '!vite.config.ts'\n  - '!playwright.config.ts'\n  - '!tsconfig*.json'\n"
+              "filters": "rust:\n  - 'crates/**'\n  - 'vendor/rust/**'\n  - 'scripts/runRustConsumerFixtures.ts'\n  - 'scripts/__tests__/runRustConsumerFixtures.spec.ts'\n  - 'Cargo.toml'\n  - 'Cargo.lock'\n  - 'rust-toolchain.toml'\n  - 'scripts/health-gates-server.sh'\n  - 'scripts/health-gates-rust.sh'\n  - 'scripts/ensurePinnedRustToolchain.sh'\n  - '.github/workflows/validation.yml'\n  - '.github/workflows/cargo-dependency-seed.yml'\nserver:\n  - 'server/**'\n  - 'scripts/health-gates-server.sh'\n  - 'package.json'\n  - 'vite.config.ts'\n  - 'scripts/checkVitestCollectionScope.ts'\n  - '.github/workflows/health-gates.yml'\n  - '.github/workflows/nightly.yml'\ne2e:\n  - 'src/**'\n  - 'public/**'\n  - 'tests/e2e/**'\n  - 'playwright.config.ts'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\nweb:\n  - 'src/**'\n  - 'public/**'\n  - 'electron/**'\n  - 'scripts/**'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\n  - 'vite.config.ts'\n  - 'tsconfig*.json'\n# Everything the scopes above do not claim, minus the two places\n# that hold nothing but prose. Repository metadata is machine-read,\n# not documentation: issue templates, the pull-request template and\n# workflow definitions all land here and force the fast lane that\n# polices them. A path nobody has classified lands here too, which\n# is the point — an unknown path costs a full lane rather than\n# silently skipping the checks that would have observed it.\nunclassified:\n  - '**'\n  - '!docs/**'\n  - '!*.md'\n  - '!crates/**'\n  - '!vendor/rust/**'\n  - '!Cargo.toml'\n  - '!Cargo.lock'\n  - '!rust-toolchain.toml'\n  - '!server/**'\n  - '!src/**'\n  - '!public/**'\n  - '!electron/**'\n  - '!scripts/**'\n  - '!tests/e2e/**'\n  - '!package.json'\n  - '!pnpm-lock.yaml'\n  - '!vite.config.ts'\n  - '!playwright.config.ts'\n  - '!tsconfig*.json'\n"
             }
           },
           {
@@ -616,7 +681,7 @@
             "uses": "dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d",
             "with": {
               "predicate-quantifier": "some-with-excludes",
-              "filters": "rust:\n  - 'crates/**'\n  - 'Cargo.toml'\n  - 'Cargo.lock'\n  - 'rust-toolchain.toml'\n  - 'scripts/health-gates-server.sh'\n  - 'scripts/health-gates-rust.sh'\n  - 'scripts/ensurePinnedRustToolchain.sh'\n  - '.github/workflows/validation.yml'\n  - '.github/workflows/cargo-dependency-seed.yml'\nserver:\n  - 'server/**'\n  - 'scripts/health-gates-server.sh'\n  - 'package.json'\n  - 'vite.config.ts'\n  - 'scripts/checkVitestCollectionScope.ts'\n  - '.github/workflows/health-gates.yml'\n  - '.github/workflows/nightly.yml'\ne2e:\n  - 'src/**'\n  - 'public/**'\n  - 'tests/e2e/**'\n  - 'playwright.config.ts'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\nweb:\n  - 'src/**'\n  - 'public/**'\n  - 'electron/**'\n  - 'scripts/**'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\n  - 'vite.config.ts'\n  - 'tsconfig*.json'\n# Everything the scopes above do not claim, minus the two places\n# that hold nothing but prose. Repository metadata is machine-read,\n# not documentation: issue templates, the pull-request template and\n# workflow definitions all land here and force the fast lane that\n# polices them. A path nobody has classified lands here too, which\n# is the point — an unknown path costs a full lane rather than\n# silently skipping the checks that would have observed it.\nunclassified:\n  - '**'\n  - '!docs/**'\n  - '!*.md'\n  - '!crates/**'\n  - '!Cargo.toml'\n  - '!Cargo.lock'\n  - '!rust-toolchain.toml'\n  - '!server/**'\n  - '!src/**'\n  - '!public/**'\n  - '!electron/**'\n  - '!scripts/**'\n  - '!tests/e2e/**'\n  - '!package.json'\n  - '!pnpm-lock.yaml'\n  - '!vite.config.ts'\n  - '!playwright.config.ts'\n  - '!tsconfig*.json'\n"
+              "filters": "rust:\n  - 'crates/**'\n  - 'vendor/rust/**'\n  - 'scripts/runRustConsumerFixtures.ts'\n  - 'scripts/__tests__/runRustConsumerFixtures.spec.ts'\n  - 'Cargo.toml'\n  - 'Cargo.lock'\n  - 'rust-toolchain.toml'\n  - 'scripts/health-gates-server.sh'\n  - 'scripts/health-gates-rust.sh'\n  - 'scripts/ensurePinnedRustToolchain.sh'\n  - '.github/workflows/validation.yml'\n  - '.github/workflows/cargo-dependency-seed.yml'\nserver:\n  - 'server/**'\n  - 'scripts/health-gates-server.sh'\n  - 'package.json'\n  - 'vite.config.ts'\n  - 'scripts/checkVitestCollectionScope.ts'\n  - '.github/workflows/health-gates.yml'\n  - '.github/workflows/nightly.yml'\ne2e:\n  - 'src/**'\n  - 'public/**'\n  - 'tests/e2e/**'\n  - 'playwright.config.ts'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\nweb:\n  - 'src/**'\n  - 'public/**'\n  - 'electron/**'\n  - 'scripts/**'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\n  - 'vite.config.ts'\n  - 'tsconfig*.json'\n# Everything the scopes above do not claim, minus the two places\n# that hold nothing but prose. Repository metadata is machine-read,\n# not documentation: issue templates, the pull-request template and\n# workflow definitions all land here and force the fast lane that\n# polices them. A path nobody has classified lands here too, which\n# is the point — an unknown path costs a full lane rather than\n# silently skipping the checks that would have observed it.\nunclassified:\n  - '**'\n  - '!docs/**'\n  - '!*.md'\n  - '!crates/**'\n  - '!vendor/rust/**'\n  - '!Cargo.toml'\n  - '!Cargo.lock'\n  - '!rust-toolchain.toml'\n  - '!server/**'\n  - '!src/**'\n  - '!public/**'\n  - '!electron/**'\n  - '!scripts/**'\n  - '!tests/e2e/**'\n  - '!package.json'\n  - '!pnpm-lock.yaml'\n  - '!vite.config.ts'\n  - '!playwright.config.ts'\n  - '!tsconfig*.json'\n"
             }
           },
           {
@@ -976,7 +1041,7 @@
         "if": "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
+          "image": "mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -1014,7 +1079,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.1"
           },
           {
             "name": "Run offline smoke set",
@@ -1118,7 +1183,7 @@
             "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry\n~/.cargo/git\n",
-              "key": "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}"
+              "key": "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'vendor/rust/fixtures/Cargo.lock', 'vendor/rust/fixtures/bindgen-abi/Cargo.lock', 'vendor/rust/fixtures/loader-lifecycle/Cargo.lock', 'vendor/rust/fixtures/automerge-stable/Cargo.lock', 'vendor/rust/fixtures/automerge-private/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}"
             }
           },
           {
@@ -1133,6 +1198,23 @@
               "CARGO_NET_OFFLINE": "${{ steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}"
             },
             "run": "node --run health:server:full"
+          },
+          {
+            "name": "Install fixture libclang",
+            "if": "needs.decide.outputs.rust == 'true'",
+            "shell": "bash",
+            "timeout-minutes": 30,
+            "run": "set -euo pipefail\nsudo env \"PATH=$PATH\" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- bash -c 'apt-get update && apt-get install -y libclang-dev llvm-dev'\nclang_library_dir=\"$(llvm-config --libdir)\"\ntest -f \"$clang_library_dir/libclang.so\"\nprintf 'LIBCLANG_PATH=%s\\n' \"$clang_library_dir\" >> \"$GITHUB_ENV\"\n"
+          },
+          {
+            "name": "Install the pinned WASI Preview1 standard library",
+            "if": "needs.decide.outputs.rust == 'true'",
+            "run": "rustup target add wasm32-wasip1"
+          },
+          {
+            "name": "Observe native and WASI Rust consumer fixtures",
+            "if": "needs.decide.outputs.rust == 'true'",
+            "run": "node scripts/runRustConsumerFixtures.ts --platform linux --wasi"
           }
         ]
       },
@@ -1169,7 +1251,7 @@
             "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry/index",
-              "key": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}",
+              "key": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', 'vendor/rust/fixtures/Cargo.lock', 'vendor/rust/fixtures/bindgen-abi/Cargo.lock', 'vendor/rust/fixtures/loader-lifecycle/Cargo.lock', 'vendor/rust/fixtures/automerge-stable/Cargo.lock', 'vendor/rust/fixtures/automerge-private/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}",
               "restore-keys": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n"
             }
           },
@@ -1193,6 +1275,15 @@
             "with": {
               "node-version": "26.13.1"
             }
+          },
+          {
+            "name": "Select fixture libclang",
+            "shell": "bash",
+            "run": "set -euo pipefail\nclang_library_dir=\"$(dirname \"$(xcrun --find clang)\")/../lib\"\ntest -f \"$clang_library_dir/libclang.dylib\"\nprintf 'LIBCLANG_PATH=%s\\n' \"$clang_library_dir\" >> \"$GITHUB_ENV\"\n"
+          },
+          {
+            "name": "Observe native Rust consumer fixtures",
+            "run": "node scripts/runRustConsumerFixtures.ts --platform macos"
           },
           {
             "name": "Verify native transport mutation sensitivity",
@@ -1243,8 +1334,8 @@
             "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry/index",
-              "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}",
-              "restore-keys": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n"
+              "key": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', 'vendor/rust/fixtures/Cargo.lock', 'vendor/rust/fixtures/bindgen-abi/Cargo.lock', 'vendor/rust/fixtures/loader-lifecycle/Cargo.lock', 'vendor/rust/fixtures/automerge-stable/Cargo.lock', 'vendor/rust/fixtures/automerge-private/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}",
+              "restore-keys": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n"
             }
           },
           {
@@ -1253,6 +1344,30 @@
               "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
             },
             "run": "cargo test --package daw-core --package daw-dsp --package daw-engine --all-features"
+          },
+          {
+            "name": "Set up Node for Rust consumer fixtures",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+            "with": {
+              "node-version": "26.13.1"
+            }
+          },
+          {
+            "name": "Select fixture libclang",
+            "shell": "pwsh",
+            "run": "$libraryDirectory = 'C:\\Program Files\\LLVM\\bin'\nif (-not (Test-Path \"$libraryDirectory\\libclang.dll\")) { throw 'Actual libclang.dll is required for generated-header ABI proof' }\n\"LIBCLANG_PATH=$libraryDirectory\" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append\n"
+          },
+          {
+            "name": "Compile the Windows native consumer",
+            "env": {
+              "CARGO_BUILD_JOBS": "2",
+              "CARGO_NET_OFFLINE": "false"
+            },
+            "run": "cargo check --locked --package sourdaw-native --features napi-addon"
+          },
+          {
+            "name": "Observe native Rust consumer fixtures",
+            "run": "node scripts/runRustConsumerFixtures.ts --platform windows"
           }
         ]
       },
@@ -2063,7 +2178,7 @@
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
+          "image": "mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -2120,7 +2235,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.1"
           },
           {
             "name": "Run shard",
@@ -2260,7 +2375,7 @@
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
+          "image": "mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -2317,7 +2432,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.1"
           },
           {
             "name": "Run shard with coverage",
@@ -3076,6 +3191,11 @@
           ".github/workflows/validation.yml",
           "scripts/ensurePinnedRustToolchain.sh",
           "Cargo.lock",
+          "vendor/rust/fixtures/Cargo.lock",
+          "vendor/rust/fixtures/bindgen-abi/Cargo.lock",
+          "vendor/rust/fixtures/loader-lifecycle/Cargo.lock",
+          "vendor/rust/fixtures/automerge-stable/Cargo.lock",
+          "vendor/rust/fixtures/automerge-private/Cargo.lock",
           "**/Cargo.toml",
           ".cargo/config.toml",
           "rust-toolchain.toml"
@@ -3125,7 +3245,7 @@
             "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry\n~/.cargo/git\n",
-              "key": "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}"
+              "key": "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'vendor/rust/fixtures/Cargo.lock', 'vendor/rust/fixtures/bindgen-abi/Cargo.lock', 'vendor/rust/fixtures/loader-lifecycle/Cargo.lock', 'vendor/rust/fixtures/automerge-stable/Cargo.lock', 'vendor/rust/fixtures/automerge-private/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}"
             }
           },
           {
@@ -3159,7 +3279,7 @@
             "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry/index",
-              "key": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}",
+              "key": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', 'vendor/rust/fixtures/Cargo.lock', 'vendor/rust/fixtures/bindgen-abi/Cargo.lock', 'vendor/rust/fixtures/loader-lifecycle/Cargo.lock', 'vendor/rust/fixtures/automerge-stable/Cargo.lock', 'vendor/rust/fixtures/automerge-private/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}",
               "restore-keys": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n"
             }
           },

@@ -98,7 +98,7 @@ jobs:
     if: ${{ github.event.pull_request.draft == false && needs.scope.result == 'success' && fromJSON(needs.scope.outputs.matrix || '{"include":[]}').include[0] != null }}
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
+      image: mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579
       options: --init --ipc=host
     defaults:
       run:
@@ -151,6 +151,57 @@ jobs:
       matrix: ${{ needs.scope.outputs.matrix }}
       browser-ai: ${{ needs.scope.outputs.browser-ai == 'true' }}
 
+  desktop-packaging:
+    name: Desktop packaging (${{ matrix.runner }})
+    needs: scope
+    if: ${{ github.event.pull_request.draft == false && needs.scope.result == 'success' && needs.scope.outputs.profile == 'broad' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, windows-latest, ubuntu-24.04]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+        with:
+          package_json_file: package.json
+      - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.1
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install native build dependencies
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- bash -c 'apt-get update && apt-get install -y libasound2-dev libclang-dev clang cmake'
+          fi
+          rustup show
+          clang --version
+          cmake --version
+      - name: Build configured desktop packages
+        run: |
+          pnpm exec install-electron
+          pnpm exec vite build
+          node -e "require('node:fs').rmSync('dist/samples',{recursive:true,force:true})"
+          pnpm exec tsc -p electron/tsconfig.build.json
+          node scripts/buildElectronPreload.ts
+          node scripts/buildNativeAddon.ts
+          pnpm exec electron-builder --config electron-builder.yml --publish never
+      - name: Verify packaged payloads
+        run: node scripts/verifyDesktopContainers.ts
+
   codeql:
     name: CodeQL
     needs: scope
@@ -186,6 +237,7 @@ jobs:
       - validation
       - affected
       - codeql
+      - desktop-packaging
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -207,9 +259,12 @@ jobs:
               if (.include | length) > 0 then "success" else "skipped" end
             else error("invalid E2E group") end')
           printf '%s' "$RESULTS" | jq -e --arg selected "$selected" '
-            (keys | sort) == ["affected", "codeql", "e2e-build", "scope", "validation"] and
+            (keys | sort) == ["affected", "codeql", "desktop-packaging", "e2e-build", "scope", "validation"] and
             .scope.result == "success" and .validation.result == "success" and .affected.result == "success" and
             .["e2e-build"].result == $selected and
+            (if .scope.outputs.profile == "broad" then .["desktop-packaging"].result == "success"
+             elif (.scope.outputs.profile == "tooling" or .scope.outputs.profile == "docs") then .["desktop-packaging"].result == "skipped"
+             else false end) and
             (.scope.outputs.browser == "true" or .scope.outputs.browser == "false") and
             (.scope.outputs["browser-ai"] == "true" or .scope.outputs["browser-ai"] == "false") and
             (if .scope.outputs.codeql == "true" then .codeql.result == "success"

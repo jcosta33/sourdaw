@@ -77,6 +77,9 @@ jobs:
           filters: |
             rust:
               - 'crates/**'
+              - 'vendor/rust/**'
+              - 'scripts/runRustConsumerFixtures.ts'
+              - 'scripts/__tests__/runRustConsumerFixtures.spec.ts'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
@@ -121,6 +124,7 @@ jobs:
               - '!docs/**'
               - '!*.md'
               - '!crates/**'
+              - '!vendor/rust/**'
               - '!Cargo.toml'
               - '!Cargo.lock'
               - '!rust-toolchain.toml'
@@ -156,6 +160,9 @@ jobs:
           filters: |
             rust:
               - 'crates/**'
+              - 'vendor/rust/**'
+              - 'scripts/runRustConsumerFixtures.ts'
+              - 'scripts/__tests__/runRustConsumerFixtures.spec.ts'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
@@ -200,6 +207,7 @@ jobs:
               - '!docs/**'
               - '!*.md'
               - '!crates/**'
+              - '!vendor/rust/**'
               - '!Cargo.toml'
               - '!Cargo.lock'
               - '!rust-toolchain.toml'
@@ -612,7 +620,7 @@ jobs:
     if: github.event.pull_request != null && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
+      image: mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579
       options: --init --ipc=host
     defaults:
       run:
@@ -645,7 +653,7 @@ jobs:
       # resolved package can launch them without per-job apt or binary downloads.
       - name: Verify preinstalled browser runtime
         timeout-minutes: 2
-        run: node scripts/verifyPlaywrightRuntime.ts 1.65.0
+        run: node scripts/verifyPlaywrightRuntime.ts 1.65.1
 
       # No retries: a smoke set that needs a second attempt is not the fast
       # deterministic signal this job exists to give.
@@ -762,7 +770,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}
+          key: cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'vendor/rust/fixtures/Cargo.lock', 'vendor/rust/fixtures/bindgen-abi/Cargo.lock', 'vendor/rust/fixtures/loader-lifecycle/Cargo.lock', 'vendor/rust/fixtures/automerge-stable/Cargo.lock', 'vendor/rust/fixtures/automerge-private/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}
 
       - name: Install server dependencies
         working-directory: server
@@ -777,6 +785,25 @@ jobs:
           CARGO_HTTP_MULTIPLEXING: 'false'
           CARGO_NET_OFFLINE: ${{ steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: node --run health:server:full
+
+      - name: Install fixture libclang
+        if: needs.decide.outputs.rust == 'true'
+        shell: bash
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          sudo env "PATH=$PATH" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- bash -c 'apt-get update && apt-get install -y libclang-dev llvm-dev'
+          clang_library_dir="$(llvm-config --libdir)"
+          test -f "$clang_library_dir/libclang.so"
+          printf 'LIBCLANG_PATH=%s\n' "$clang_library_dir" >> "$GITHUB_ENV"
+
+      - name: Install the pinned WASI Preview1 standard library
+        if: needs.decide.outputs.rust == 'true'
+        run: rustup target add wasm32-wasip1
+
+      - name: Observe native and WASI Rust consumer fixtures
+        if: needs.decide.outputs.rust == 'true'
+        run: node scripts/runRustConsumerFixtures.ts --platform linux --wasi
 
   native-macos:
     name: Native audio backend (macOS)
@@ -837,7 +864,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/registry/index
-          key: cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}
+          key: cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', 'vendor/rust/fixtures/Cargo.lock', 'vendor/rust/fixtures/bindgen-abi/Cargo.lock', 'vendor/rust/fixtures/loader-lifecycle/Cargo.lock', 'vendor/rust/fixtures/automerge-stable/Cargo.lock', 'vendor/rust/fixtures/automerge-private/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}
           restore-keys: |
             cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
 
@@ -864,6 +891,17 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26.13.1
+
+      - name: Select fixture libclang
+        shell: bash
+        run: |
+          set -euo pipefail
+          clang_library_dir="$(dirname "$(xcrun --find clang)")/../lib"
+          test -f "$clang_library_dir/libclang.dylib"
+          printf 'LIBCLANG_PATH=%s\n' "$clang_library_dir" >> "$GITHUB_ENV"
+
+      - name: Observe native Rust consumer fixtures
+        run: node scripts/runRustConsumerFixtures.ts --platform macos
 
       - name: Verify native transport mutation sensitivity
         id: native-mutations
@@ -917,14 +955,35 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/registry/index
-          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', 'vendor/rust/fixtures/Cargo.lock', 'vendor/rust/fixtures/bindgen-abi/Cargo.lock', 'vendor/rust/fixtures/loader-lifecycle/Cargo.lock', 'vendor/rust/fixtures/automerge-stable/Cargo.lock', 'vendor/rust/fixtures/automerge-private/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
+            cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
 
       - name: Test the audio crates
         env:
           CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
+
+      - name: Set up Node for Rust consumer fixtures
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.1
+
+      - name: Select fixture libclang
+        shell: pwsh
+        run: |
+          $libraryDirectory = 'C:\Program Files\LLVM\bin'
+          if (-not (Test-Path "$libraryDirectory\libclang.dll")) { throw 'Actual libclang.dll is required for generated-header ABI proof' }
+          "LIBCLANG_PATH=$libraryDirectory" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Compile the Windows native consumer
+        env:
+          CARGO_BUILD_JOBS: '2'
+          CARGO_NET_OFFLINE: 'false'
+        run: cargo check --locked --package sourdaw-native --features napi-addon
+
+      - name: Observe native Rust consumer fixtures
+        run: node scripts/runRustConsumerFixtures.ts --platform windows
 
   native-typescript-windows:
     name: Native TypeScript cache (Windows)

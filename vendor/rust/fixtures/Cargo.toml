@@ -13,11 +13,22 @@ tracing = "=0.1.44"
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["registry"] }
 visibility = "=0.1.1"
 
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.62.2", features = ["Foundation", "Win32_Foundation", "Win32_Media_Audio"] }
+windows-core = { version = "=0.100.0", features = ["proc-macros"] }
+
 [patch.crates-io]
 cexpr = { path = "../cexpr-0.6.0" }
 num_enum_derive = { path = "../num_enum_derive-0.7.6" }
 tracing-attributes = { path = "../tracing-attributes-0.1.31" }
 visibility = { path = "../visibility-0.1.1" }
+windows = { path = "../windows-0.62.2" }
+windows-implement = { path = "../windows-implement-0.100.0" }
+windows-interface = { path = "../windows-interface-0.100.0" }
+
+[[test]]
+name = "windows_projection_abi"
+path = "windows_projection_abi.rs"
 
 [[test]]
 name = "cexpr_nom8"

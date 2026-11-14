@@ -177,6 +177,12 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         validation: null,
         affected: null,
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
+        'desktop-packaging': [
+            ...SETUP_NODE,
+            'Install native build dependencies',
+            'Build configured desktop packages',
+            'Verify packaged payloads',
+        ],
         gate: ['Require selected checks to succeed'],
     },
     'validation.yml': {
@@ -197,10 +203,15 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Cache Cargo dependencies',
             'Install server dependencies',
             'Server and Rust workspace health gates',
+            'Install fixture libclang',
+            'Install the pinned WASI Preview1 standard library',
+            'Observe native and WASI Rust consumer fixtures',
         ],
         'native-macos': [
             ...NATIVE_MACOS_STEPS,
             'Set up Node for native mutation proof',
+            'Select fixture libclang',
+            'Observe native Rust consumer fixtures',
             'Verify native transport mutation sensitivity',
             'Upload native transport mutation evidence',
         ],
@@ -210,6 +221,10 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Cache cargo build',
             'Cache the cargo registry index',
             'Test the audio crates',
+            'Set up Node for Rust consumer fixtures',
+            'Select fixture libclang',
+            'Compile the Windows native consumer',
+            'Observe native Rust consumer fixtures',
         ],
         'native-parity': [
             'Checkout',
@@ -363,6 +378,11 @@ function pin(workflow: string, job: string, step: string, condition: string): Co
 }
 
 export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
+    ...[
+        'Install fixture libclang',
+        'Install the pinned WASI Preview1 standard library',
+        'Observe native and WASI Rust consumer fixtures',
+    ].map((step) => pin('validation.yml', 'rust', step, "needs.decide.outputs.rust == 'true'")),
     pin('validation.yml', 'native-macos', 'Upload native transport mutation evidence', ALWAYS_EXPRESSION),
     pin('health-gates.yml', 'gate', 'Require selected checks to succeed', ALWAYS_EXPRESSION),
     pin('validation.yml', 'validation-gate', 'Require selected validation jobs to succeed', ALWAYS_EXPRESSION),

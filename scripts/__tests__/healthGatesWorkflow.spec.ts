@@ -62,7 +62,7 @@ const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const INSTALL_DRAIN_SECONDS = 15;
 // Every remaining root apt route must retain the signed-source filter.
 const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
-const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe';
+const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579';
 const BROWSER_RUNTIME_STEP = 'Verify preinstalled browser runtime';
 // The ALSA headers are one small apt install, but `apt-get update` is the slow
 // part on a slow mirror, so the single transaction carries the same 8 minute
@@ -128,9 +128,9 @@ const CARGO_INDEX_KEY_PREFIX = 'cargo-index-';
 const CACHE_ACTION_USES_PREFIX = 'actions/cache@';
 const JOB_SCOPE_EXPRESSION = '${{ github.job }}';
 const CARGO_DEPENDENCY_KEY =
-    "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
+    "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'vendor/rust/fixtures/Cargo.lock', 'vendor/rust/fixtures/bindgen-abi/Cargo.lock', 'vendor/rust/fixtures/loader-lifecycle/Cargo.lock', 'vendor/rust/fixtures/automerge-stable/Cargo.lock', 'vendor/rust/fixtures/automerge-private/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
 const CARGO_INDEX_KEY =
-    "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
+    "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', 'vendor/rust/fixtures/Cargo.lock', 'vendor/rust/fixtures/bindgen-abi/Cargo.lock', 'vendor/rust/fixtures/loader-lifecycle/Cargo.lock', 'vendor/rust/fixtures/automerge-stable/Cargo.lock', 'vendor/rust/fixtures/automerge-private/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
 const CARGO_INDEX_RESTORE = 'cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n';
 const CARGO_DEPENDENCY_PATH = '~/.cargo/registry\n~/.cargo/git\n';
 const CARGO_OFFLINE_EXACT = "${{ steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}";
@@ -194,7 +194,7 @@ const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'brows
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
 const BROWSER_AI_WEBGPU_GLOBAL_SETUP = './firstPaintWarmup.ts';
-const GATE_MEMBERS = ['scope', 'e2e-build', 'validation', 'affected', 'codeql'] as const;
+const GATE_MEMBERS = ['scope', 'e2e-build', 'validation', 'affected', 'codeql', 'desktop-packaging'] as const;
 // Exact and ordered. `Gate` is a required status check, so a leg dropped from
 // this lane stops deciding merges while every check still reads green.
 const VALIDATION_JOBS = [
@@ -1558,6 +1558,11 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
         '.github/workflows/validation.yml',
         'scripts/ensurePinnedRustToolchain.sh',
         'Cargo.lock',
+        'vendor/rust/fixtures/Cargo.lock',
+        'vendor/rust/fixtures/bindgen-abi/Cargo.lock',
+        'vendor/rust/fixtures/loader-lifecycle/Cargo.lock',
+        'vendor/rust/fixtures/automerge-stable/Cargo.lock',
+        'vendor/rust/fixtures/automerge-private/Cargo.lock',
         '**/Cargo.toml',
         '.cargo/config.toml',
         'rust-toolchain.toml',
@@ -2007,6 +2012,97 @@ function assertRequiredCodeQlPermissions(candidate: UnknownRecord): void {
     }
 }
 
+function assertRustConsumerFixtureJobs(candidate: UnknownRecord): void {
+    for (const name of [PATHS_FILTER_FIRST_ATTEMPT_STEP, PATHS_FILTER_RETRY_STEP]) {
+        const options = recordAt(stepNamed(jobAt(candidate, 'decide'), name), 'with');
+        const filters = asRecord(parseDocument(stringAt(options, 'filters')).toJS(), 'fixture scope');
+        const rust = arrayAt(filters, 'rust');
+        if (
+            !rust.includes('vendor/rust/**') ||
+            !rust.includes('scripts/runRustConsumerFixtures.ts') ||
+            !rust.includes('scripts/__tests__/runRustConsumerFixtures.spec.ts') ||
+            !arrayAt(filters, 'unclassified').includes('!vendor/rust/**')
+        ) {
+            throw new Error('both scope filters must claim genuine vendor source and the fixture runner');
+        }
+    }
+    for (const [jobId, platform, name, condition] of [
+        [
+            'rust',
+            'linux --wasi',
+            'Observe native and WASI Rust consumer fixtures',
+            "needs.decide.outputs.rust == 'true'",
+        ],
+        ['native-macos', 'macos', 'Observe native Rust consumer fixtures', undefined],
+        ['native-windows', 'windows', 'Observe native Rust consumer fixtures', undefined],
+    ] as const) {
+        const job = jobAt(candidate, jobId);
+        const step = stepNamed(job, name);
+        if (
+            job['continue-on-error'] !== undefined ||
+            step['continue-on-error'] !== undefined ||
+            step.if !== condition ||
+            step['working-directory'] !== undefined ||
+            step.run !== `node scripts/runRustConsumerFixtures.ts --platform ${platform}`
+        ) {
+            throw new Error(`${jobId} must execute and require its actual Rust consumer fixtures`);
+        }
+        const cacheName = jobId === 'rust' ? 'Cache Cargo dependencies' : 'Cache the cargo registry index';
+        const cacheKey = stringAt(recordAt(stepNamed(job, cacheName), 'with'), 'key');
+        for (const path of [
+            'Cargo.lock',
+            'vendor/rust/fixtures/Cargo.lock',
+            'vendor/rust/fixtures/bindgen-abi/Cargo.lock',
+            'vendor/rust/fixtures/loader-lifecycle/Cargo.lock',
+            'vendor/rust/fixtures/automerge-stable/Cargo.lock',
+            'vendor/rust/fixtures/automerge-private/Cargo.lock',
+        ]) {
+            if (!cacheKey.includes(`'${path}'`))
+                throw new Error(`${jobId} cache must consult every managed fixture lock`);
+        }
+    }
+    const rust = jobAt(candidate, 'rust');
+    const target = stepNamed(rust, 'Install the pinned WASI Preview1 standard library');
+    if (
+        target.run !== 'rustup target add wasm32-wasip1' ||
+        target.if !== "needs.decide.outputs.rust == 'true'" ||
+        target['continue-on-error'] !== undefined
+    )
+        throw new Error('actual WASI std must use the pinned Rust setup');
+    const linuxClang = stepNamed(rust, 'Install fixture libclang');
+    if (
+        linuxClang.if !== "needs.decide.outputs.rust == 'true'" ||
+        !stringAt(linuxClang, 'run').includes('libclang-dev llvm-dev') ||
+        !stringAt(linuxClang, 'run').includes('test -f "$clang_library_dir/libclang.so"')
+    ) {
+        throw new Error('Linux header ABI must require the installed matching libclang');
+    }
+    for (const [jobId, library] of [
+        ['native-macos', 'libclang.dylib'],
+        ['native-windows', 'libclang.dll'],
+    ] as const) {
+        const step = stepNamed(jobAt(candidate, jobId), 'Select fixture libclang');
+        if (
+            step.if !== undefined ||
+            step['continue-on-error'] !== undefined ||
+            !stringAt(step, 'run').includes(library)
+        ) {
+            throw new Error(`${jobId} header ABI must select actual libclang`);
+        }
+    }
+    const windows = jobAt(candidate, 'native-windows');
+    const native = stepNamed(windows, 'Compile the Windows native consumer');
+    if (
+        native.run !== 'cargo check --locked --package sourdaw-native --features napi-addon' ||
+        native.if !== undefined ||
+        native['continue-on-error'] !== undefined ||
+        recordAt(native, 'env').CARGO_NET_OFFLINE !== 'false' ||
+        recordAt(native, 'env').CARGO_BUILD_JOBS !== '2'
+    ) {
+        throw new Error('Windows must compile the real native addon consumer online');
+    }
+}
+
 function assertValidationScopeConditions(candidate: UnknownRecord): void {
     if (jobAt(candidate, 'build').if !== BUILD_CONDITION) {
         throw new Error('the production build must answer to the web scope alone');
@@ -2104,6 +2200,17 @@ function assertJobGraph(set: WorkflowSet): void {
     ) {
         throw new Error('required affected E2E must consume the selected matrix and hardware scope');
     }
+    const desktop = jobAt(health, 'desktop-packaging');
+    if (
+        desktop.needs !== 'scope' ||
+        desktop.if !==
+            "${{ github.event.pull_request.draft == false && needs.scope.result == 'success' && needs.scope.outputs.profile == 'broad' }}" ||
+        JSON.stringify(recordAt(recordAt(desktop, 'strategy'), 'matrix').runner) !==
+            JSON.stringify(['macos-15', 'windows-latest', 'ubuntu-24.04']) ||
+        recordAt(desktop, 'strategy')['fail-fast'] !== false
+    ) {
+        throw new Error('desktop packaging must run all native targets for broad scope');
+    }
     const codeql = jobAt(health, 'codeql');
     if (codeql.needs !== 'scope' || codeql.if !== "needs.scope.outputs.codeql == 'true'") {
         throw new Error('required CodeQL must answer to the selected security scope');
@@ -2115,6 +2222,7 @@ function assertJobGraph(set: WorkflowSet): void {
         throw new Error('validation.yml must hold exactly the pinned job list, in order');
     }
     assertBlockingSuites(set);
+    assertRustConsumerFixtureJobs(set.validation);
     assertNightlySecurityGraph(set.nightly);
     assertNightlyReportCoverage(set);
     assertDeviceWriteBoundaryCensus(set);
@@ -3147,6 +3255,42 @@ describe('health gates workflow contract', () => {
         );
     });
 
+    it('requires actual native Rust and five WASI consumers in selected platform jobs', () => {
+        expect(() => assertRustConsumerFixtureJobs(validationWorkflow)).not.toThrow();
+        for (const jobId of ['rust', 'native-macos', 'native-windows']) {
+            const changed = asRecord(structuredClone(validationWorkflow), 'softened Rust consumers');
+            const name =
+                jobId === 'rust'
+                    ? 'Observe native and WASI Rust consumer fixtures'
+                    : 'Observe native Rust consumer fixtures';
+            stepNamed(jobAt(changed, jobId), name)['continue-on-error'] = true;
+            expect(() => assertRustConsumerFixtureJobs(changed)).toThrow('must execute and require');
+        }
+        const skipped = asRecord(structuredClone(validationWorkflow), 'skipped Windows ABI');
+        stepNamed(jobAt(skipped, 'native-windows'), 'Observe native Rust consumer fixtures').if = 'false';
+        expect(() => assertRustConsumerFixtureJobs(skipped)).toThrow('must execute and require');
+        const oldGraph = asRecord(structuredClone(validationWorkflow), 'root-only fixture cache');
+        const cache = recordAt(stepNamed(jobAt(oldGraph, 'native-windows'), 'Cache the cargo registry index'), 'with');
+        cache.key = "cargo-index-${{ runner.os }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}";
+        expect(() => assertRustConsumerFixtureJobs(oldGraph)).toThrow('every managed fixture lock');
+        const noStd = asRecord(structuredClone(validationWorkflow), 'missing WASI std');
+        stepNamed(jobAt(noStd, 'rust'), 'Install the pinned WASI Preview1 standard library').run = 'rustup show';
+        expect(() => assertRustConsumerFixtureJobs(noStd)).toThrow('actual WASI std');
+        const oldNative = asRecord(structuredClone(validationWorkflow), 'Windows audio-only compile');
+        stepNamed(jobAt(oldNative, 'native-windows'), 'Compile the Windows native consumer').run =
+            'cargo check --package daw-engine';
+        expect(() => assertRustConsumerFixtureJobs(oldNative)).toThrow('real native addon');
+    });
+
+    it('selects Rust for vendor-only and fixture-runner changes in both path filters', () => {
+        for (const name of [PATHS_FILTER_FIRST_ATTEMPT_STEP, PATHS_FILTER_RETRY_STEP]) {
+            const changed = asRecord(structuredClone(validationWorkflow), 'missing vendor scope');
+            const options = recordAt(stepNamed(jobAt(changed, 'decide'), name), 'with');
+            options.filters = stringAt(options, 'filters').replace("  - 'vendor/rust/**'\n", '');
+            expect(() => assertRustConsumerFixtureJobs(changed)).toThrow('both scope filters');
+        }
+    });
+
     it('uses the affected profile to skip app jobs for known tooling and agent documentation', () => {
         const scopeScript = assertScopeContract(validationWorkflow);
         const tooling = runScopeScript(scopeScript, 'pull_request', {
@@ -3566,9 +3710,10 @@ describe('health gates workflow contract', () => {
             JSON.stringify({
                 scope: {
                     result: 'success',
-                    outputs: { matrix, browser: 'true', 'browser-ai': 'false', codeql: 'true' },
+                    outputs: { matrix, browser: 'true', 'browser-ai': 'false', codeql: 'true', profile: 'broad' },
                 },
                 'e2e-build': { result: build },
+                'desktop-packaging': { result: 'success' },
                 validation: { result: validation },
                 affected: { result: affected },
                 codeql: { result: codeql },
@@ -4433,7 +4578,7 @@ describe('health gates workflow contract', () => {
             const candidate = loadWorkflow(file).parsed;
             callers += assertVerifiedPnpmCallers(candidate, file === 'wasm-artifacts.yml');
         }
-        expect(callers).toBe(29);
+        expect(callers).toBe(30);
 
         const oldBootstrap = structuredClone(validationWorkflow);
         stepNamed(jobAt(oldBootstrap, 'lint'), PNPM_SETUP_STEP).uses =
@@ -4685,7 +4830,7 @@ describe('health gates workflow contract', () => {
         const seed = loadWorkflow('cargo-dependency-seed.yml').parsed;
         const graphInputs = ['Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml'];
         const expectedKey =
-            "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
+            "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', 'vendor/rust/fixtures/Cargo.lock', 'vendor/rust/fixtures/bindgen-abi/Cargo.lock', 'vendor/rust/fixtures/loader-lifecycle/Cargo.lock', 'vendor/rust/fixtures/automerge-stable/Cargo.lock', 'vendor/rust/fixtures/automerge-private/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
         const expectedRestore = 'cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n';
         const assertGraphIdentity = (producer: UnknownRecord, consumer: UnknownRecord): void => {
             for (const job of [jobAt(producer, 'native-macos'), jobAt(consumer, 'native-macos')]) {
@@ -5080,9 +5225,16 @@ describe('health gates workflow contract', () => {
             JSON.stringify({
                 scope: {
                     result: overrides.scope ?? 'success',
-                    outputs: { matrix: selectedMatrix, browser: 'true', 'browser-ai': 'false', codeql },
+                    outputs: {
+                        matrix: selectedMatrix,
+                        browser: 'true',
+                        'browser-ai': 'false',
+                        codeql,
+                        profile: 'broad',
+                    },
                 },
                 'e2e-build': { result: overrides['e2e-build'] ?? 'success' },
+                'desktop-packaging': { result: overrides['desktop-packaging'] ?? 'success' },
                 validation: { result: overrides.validation ?? 'success' },
                 affected: { result: overrides.affected ?? 'success' },
                 codeql: { result: overrides.codeql ?? (codeql === 'true' ? 'success' : 'skipped') },
@@ -5091,7 +5243,19 @@ describe('health gates workflow contract', () => {
             runResultsGuard(gateScript, results, { MATRIX: selectedMatrix, DRAFT: draft });
         expect(gateStatus(requiredResults('true'))).toBe(0);
         expect(gateStatus(requiredResults('false'))).toBe(0);
-        for (const dependency of ['scope', 'e2e-build', 'validation', 'affected', 'codeql']) {
+        const docs = requiredResults('false', { 'desktop-packaging': 'skipped' }).replace(
+            '"profile":"broad"',
+            '"profile":"docs"'
+        );
+        expect(gateStatus(docs)).toBe(0);
+        expect(gateStatus(docs.replace('"profile":"docs"', '"profile":"tooling"'))).toBe(0);
+        expect(gateStatus(docs.replace('"profile":"docs"', '"profile":"unknown"'))).not.toBe(0);
+        expect(
+            gateStatus(
+                docs.replace('"desktop-packaging":{"result":"skipped"}', '"desktop-packaging":{"result":"success"}')
+            )
+        ).not.toBe(0);
+        for (const dependency of ['scope', 'e2e-build', 'validation', 'affected', 'codeql', 'desktop-packaging']) {
             for (const result of ['failure', 'cancelled', 'skipped'] as const) {
                 expect(gateStatus(requiredResults('true', { [dependency]: result }))).not.toBe(0);
             }

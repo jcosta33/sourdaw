@@ -152,7 +152,7 @@ describe('graph-backed browser selection', () => {
             writeFileSync(join(root, source), 'export const TunerPanel = "needle";\n');
             writeFileSync(join(root, 'docs/retired.md'), 'retired\n');
             writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
-            writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { baseUrl: '.' } }));
+            writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: {} }));
             writeFileSync(
                 join(root, 'scripts/e2eSuiteOwners.json'),
                 JSON.stringify({
@@ -230,7 +230,7 @@ describe('graph-backed browser selection', () => {
             );
             writeFileSync(
                 join(root, 'tsconfig.json'),
-                JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '#/*': ['src/*'] } } })
+                JSON.stringify({ compilerOptions: { paths: { '#/*': ['./src/*'] } } })
             );
             writeFileSync(
                 join(root, 'scripts/e2eSuiteOwners.json'),
@@ -693,7 +693,7 @@ describe('required affected verification', () => {
             fixtureBrowserCase(root, 'tests/e2e/tuner.spec.ts');
             writeFileSync(
                 join(root, 'tsconfig.json'),
-                JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '#/*': ['src/*'] } } })
+                JSON.stringify({ compilerOptions: { paths: { '#/*': ['./src/*'] } } })
             );
             writeFileSync(
                 join(root, 'scripts/e2eSuiteOwners.json'),
@@ -2361,6 +2361,11 @@ describe('repository tooling selects no browser suite', () => {
         'crates/sourdaw-native/src/lib.rs',
         'crates/daw-dsp/src/filters.rs',
         'crates/daw-dsp/Cargo.toml',
+        'vendor/rust/automerge-0.12.0/src/lib.rs',
+        'vendor/rust/fixtures/Cargo.toml',
+        'vendor/rust/fixtures/automerge-stable/Cargo.lock',
+        'vendor/rust/fixtures/automerge-stable/goldens/document-compressed.am',
+        'vendor/rust/patches/automerge-0.12.0.patch.gz',
         'Cargo.toml',
         'Cargo.lock',
         'rust-toolchain.toml',
@@ -2411,6 +2416,8 @@ describe('repository tooling selects no browser suite', () => {
         '.github/workflows/heavy-gates.yml',
         '.github/workflows/nightly.yaml',
         'cratesx/foo.rs',
+        'vendor/rustx/lib.rs',
+        'vendor/other/fixture.json',
         'src/crates/foo.ts',
         'evidencex/manifest.json',
         'electron/main.ts',
