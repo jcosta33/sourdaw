@@ -237,6 +237,94 @@ describe('handleDiscardCreatedTrack', () => {
         expect(mocks.clearReportedLatency.mock.calls.map(([deviceId]) => deviceId).sort()).toEqual(['dev-a', 'dev-b']);
     });
 
+    it('still unloads and clears every instance when one teardown rejects, then rejects afterCommit', async () => {
+        mocks.removeTrack.mockReturnValue({
+            removed: true,
+            finalizeRuntimeRemoval: mocks.finalizeRuntimeRemoval,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'created',
+                    devices: [
+                        { id: 'dev-a', type: 'external-plugin', externalPluginId: 'p', externalInstanceId: 'p-1' },
+                        { id: 'dev-b', type: 'external-plugin', externalPluginId: 'q', externalInstanceId: 'q-2' },
+                    ],
+                },
+            ],
+        });
+        mocks.unloadPlugin.mockRejectedValueOnce(new Error('host gone')).mockResolvedValueOnce(undefined);
+
+        const result = await handleDiscardCreatedTrack.execute({
+            type: 'discardCreatedTrack',
+            payload: { trackId: 'created' },
+        });
+        if (!result) {
+            throw new Error('Expected a written execution result');
+        }
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+        await expect(result.afterCommit?.()).rejects.toThrow(/p-1/);
+
+        expect(mocks.unloadPlugin.mock.calls.map(([instanceId]) => instanceId)).toEqual(['p-1', 'q-2']);
+        expect(mocks.clearReportedLatency.mock.calls.map(([deviceId]) => deviceId)).toEqual(['dev-a', 'dev-b']);
+        expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 'created' });
+    });
+
+    it('unloads every hosted instance after an ambiguous commit that left the track absent', async () => {
+        mocks.removeTrack.mockReturnValue({
+            removed: true,
+            finalizeRuntimeRemoval: mocks.finalizeRuntimeRemoval,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'created',
+                    devices: [
+                        { id: 'dev-a', type: 'external-plugin', externalPluginId: 'p', externalInstanceId: 'p-1' },
+                        { id: 'dev-b', type: 'external-plugin', externalPluginId: 'q', externalInstanceId: 'q-2' },
+                    ],
+                },
+            ],
+        });
+        mocks.unloadPlugin.mockResolvedValue(undefined);
+
+        const result = await handleDiscardCreatedTrack.execute({
+            type: 'discardCreatedTrack',
+            payload: { trackId: 'created' },
+        });
+        if (!result) {
+            throw new Error('Expected a written execution result');
+        }
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        await result.afterAmbiguousCommit?.();
+
+        expect(mocks.unloadPlugin.mock.calls.map(([instanceId]) => instanceId)).toEqual(['p-1', 'q-2']);
+    });
+
+    it('keeps the hosted instances loaded when an ambiguous commit left the track present', async () => {
+        mocks.removeTrack.mockReturnValue({
+            removed: true,
+            finalizeRuntimeRemoval: mocks.finalizeRuntimeRemoval,
+        });
+        const track = {
+            id: 'created',
+            devices: [{ id: 'dev-a', type: 'external-plugin', externalPluginId: 'p', externalInstanceId: 'p-1' }],
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+        const result = await handleDiscardCreatedTrack.execute({
+            type: 'discardCreatedTrack',
+            payload: { trackId: 'created' },
+        });
+        if (!result) {
+            throw new Error('Expected a written execution result');
+        }
+        await result.afterAmbiguousCommit?.();
+
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+    });
+
     it('requests no plugin unload for a discarded track without hosted plugins', async () => {
         mocks.removeTrack.mockReturnValue({
             removed: true,

@@ -4,10 +4,8 @@ import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
 import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { serializeClipScopedAutomationLanes } from '../../useCases/clip/serializeClipScopedAutomationLanes';
-import {
-    activateCreatedTrackHostedPlugins,
-    collectHostedPluginInstances,
-} from '../../useCases/device/createdTrackHostedPlugins';
+import { activateCreatedTrackHostedPlugins } from '../../useCases/device/activateCreatedTrackHostedPlugins';
+import { collectHostedPluginInstances } from '../../useCases/device/collectHostedPluginInstances';
 import { duplicateTrack } from '../../useCases/duplicateTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 

@@ -21,6 +21,7 @@ import { trackStore } from '../../../stores/trackStore';
 import { ArrangementEventBus, setArrangementEventBus } from '../../../useCases/arrangementEventBus';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { trackTemplateCache } from '../../../useCases/trackTemplate';
+import { handleLoadTrackTemplate } from '../handleLoadTrackTemplate';
 
 class NoopArrangementEventBus extends ArrangementEventBus {
     async emit(): Promise<void> {}
@@ -69,6 +70,8 @@ const noActionHistoryMetadataPort = {
 
 describe('loadTrackTemplate undo/redo integration', () => {
     beforeEach(() => {
+        pluginHostMocks.activateExternalPlugin.mockClear();
+        pluginHostMocks.unloadPlugin.mockClear();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('load track template integration');
         removeCrdtDoc('root');
@@ -160,7 +163,7 @@ describe('loadTrackTemplate undo/redo integration', () => {
         expect(trackStore.value?.tracks).toEqual([]);
     });
 
-    it('activates a template-loaded hosted plugin under a fresh instance and unloads it on undo', async () => {
+    function installHostedTemplate(): void {
         trackTemplateCache.templates = [
             {
                 id: 'tmpl-hosted',
@@ -187,6 +190,10 @@ describe('loadTrackTemplate undo/redo integration', () => {
                 createdAt: 0,
             },
         ];
+    }
+
+    it('activates a template-loaded hosted plugin under a fresh instance and unloads it on undo', async () => {
+        installHostedTemplate();
         pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
         pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
 
@@ -208,5 +215,44 @@ describe('loadTrackTemplate undo/redo integration', () => {
         expect(trackStore.value?.tracks).toEqual([]);
         expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledTimes(1);
         expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledWith(instanceId);
+    });
+
+    it('gives every load of the same template a distinct instance id', async () => {
+        installHostedTemplate();
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-hosted' } },
+            { source: 'manual' }
+        );
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-hosted' } },
+            { source: 'manual' }
+        );
+
+        const instanceIds = trackStore.value!.tracks.map((track) => track.devices[0]!.externalInstanceId);
+        expect(instanceIds).toHaveLength(2);
+        expect(new Set([...instanceIds, 'plugin-abc-live']).size).toBe(3);
+    });
+
+    it('activates the loaded plugin with its committed id and chunk when commit status is ambiguous', async () => {
+        installHostedTemplate();
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+
+        const result = await handleLoadTrackTemplate.execute({
+            type: 'loadTrackTemplate',
+            payload: { templateId: 'tmpl-hosted' },
+        });
+        if (!result?.afterAmbiguousCommit) {
+            throw new Error('Expected an afterAmbiguousCommit effect for a template holding a hosted plugin');
+        }
+        const instanceId = trackStore.value!.tracks[0]!.devices[0]!.externalInstanceId;
+        expect(pluginHostMocks.activateExternalPlugin).not.toHaveBeenCalled();
+
+        await result.afterAmbiguousCommit();
+
+        expect(pluginHostMocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({ pluginId: 'plugin-abc', instanceId, stateChunk: 'c2F2ZWQ=' })
+        );
     });
 });

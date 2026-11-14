@@ -2,10 +2,8 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
 
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
-import {
-    activateCreatedTrackHostedPlugins,
-    collectHostedPluginInstances,
-} from '../../useCases/device/createdTrackHostedPlugins';
+import { activateCreatedTrackHostedPlugins } from '../../useCases/device/activateCreatedTrackHostedPlugins';
+import { collectHostedPluginInstances } from '../../useCases/device/collectHostedPluginInstances';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { loadTrackTemplate } from '../../useCases/loadTrackTemplate';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';

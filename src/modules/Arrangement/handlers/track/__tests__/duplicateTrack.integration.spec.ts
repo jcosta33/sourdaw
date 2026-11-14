@@ -124,6 +124,7 @@ import { LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '#/modules/MIDI/stores';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { ArrangementEventBus, setArrangementEventBus } from '../../../useCases/arrangementEventBus';
+import { handleDuplicateTrack } from '../duplicateTrack';
 
 class NoopArrangementEventBus extends ArrangementEventBus {
     async emit(): Promise<void> {}
@@ -352,5 +353,38 @@ describe('handleDuplicateTrack atomic integration', () => {
         expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledTimes(1);
         expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledWith(copiedInstanceId);
         expect(pluginHostMocks.unloadPlugin).not.toHaveBeenCalledWith('plugin-abc-live');
+    });
+
+    it('gives every duplicate of the same source a distinct instance id', async () => {
+        trackStore.set({ tracks: [hostedPluginSourceTrack()], selectedTrackId: 'track-1', ghostClips: [] });
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+
+        await executeAppAction({ type: 'duplicateTrack', payload: { trackId: 'track-1' } }, { source: 'manual' });
+        await executeAppAction({ type: 'duplicateTrack', payload: { trackId: 'track-1' } }, { source: 'manual' });
+
+        const instanceIds = trackStore.value!.tracks.map((track) => track.devices[0]!.externalInstanceId);
+        expect(instanceIds).toHaveLength(3);
+        expect(new Set(instanceIds).size).toBe(3);
+    });
+
+    it('activates the copy with its committed id and copied chunk when commit status is ambiguous', async () => {
+        trackStore.set({ tracks: [hostedPluginSourceTrack()], selectedTrackId: 'track-1', ghostClips: [] });
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+
+        const result = await handleDuplicateTrack.execute({
+            type: 'duplicateTrack',
+            payload: { trackId: 'track-1', targetTrackId: 'track-dup-ambiguous' },
+        });
+        if (!result?.afterAmbiguousCommit) {
+            throw new Error('Expected an afterAmbiguousCommit effect for a track holding a hosted plugin');
+        }
+        const copiedInstanceId = copyTrack().devices[0]!.externalInstanceId;
+        expect(pluginHostMocks.activateExternalPlugin).not.toHaveBeenCalled();
+
+        await result.afterAmbiguousCommit();
+
+        expect(pluginHostMocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({ pluginId: 'plugin-abc', instanceId: copiedInstanceId, stateChunk: 'c2F2ZWQ=' })
+        );
     });
 });
