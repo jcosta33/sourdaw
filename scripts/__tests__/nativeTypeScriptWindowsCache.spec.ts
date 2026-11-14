@@ -1,8 +1,17 @@
 // @vitest-environment node
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { copyFileSync, existsSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+    copyFileSync,
+    existsSync,
+    readFileSync,
+    renameSync,
+    rmSync,
+    symlinkSync,
+    unlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, win32 } from 'node:path';
 
@@ -119,6 +128,70 @@ describe.runIf(process.platform === 'win32')('native compiler private cache on a
         symlinkSync(join(dirname(originalBinary), 'receipt.json'), receipt, 'file');
         expect(() => getPreparedNativeTypeScriptPath()).toThrow('Prepared locally patched');
     });
+
+    it.each(['root', 'identity', 'binary'])(
+        'refuses the actual prepared %s path replaced by a reparse point',
+        (kind) => {
+            let path = binary;
+            let target = originalBinary;
+            let linkKind: 'file' | 'junction' = 'file';
+            if (kind === 'root') {
+                path = root;
+                target = dirname(dirname(dirname(originalBinary)));
+                linkKind = 'junction';
+            } else if (kind === 'identity') {
+                path = dirname(directory);
+                target = dirname(dirname(originalBinary));
+                linkKind = 'junction';
+            }
+            const backup = `${path}-owned-fixture-backup`;
+            renameSync(path, backup);
+            try {
+                symlinkSync(target, path, linkKind);
+                expect(() => getPreparedNativeTypeScriptPath()).toThrow('Prepared locally patched');
+            } finally {
+                if (existsSync(path)) unlinkSync(path);
+                renameSync(backup, path);
+            }
+        }
+    );
+
+    it('refuses malformed, absent, failed and oversized actual helper results', () => {
+        const isolated = ensurePrivateNativeTypeScriptDirectory(join(root, 'isolated-helper'));
+        writeFileSync(
+            join(isolated, 'windowsCache.mjs'),
+            readFileSync(new URL('../nativeTypeScript/windowsCache.mjs', import.meta.url))
+        );
+        const command =
+            "import {windowsPrivateCache} from './windowsCache.mjs'; windowsPrivateCache({operation:'default-root'}); console.log('unsafe-accepted');";
+        const cases = [
+            { body: 'Write-Output "{}"', error: /Invalid Windows private-cache verification result/u },
+            { body: '', error: /Unexpected end of JSON input/u },
+            { body: 'exit 7', error: /Command failed/u },
+            { body: "[Console]::Out.Write(('x' * 70000))", error: /ENOBUFS|maxBuffer/u },
+        ];
+        for (const fixture of cases) {
+            writeFileSync(join(isolated, 'windows-cache.ps1'), fixture.body);
+            const result = spawnSync(process.execPath, ['--input-type=module', '-e', command], {
+                cwd: isolated,
+                encoding: 'utf8',
+                timeout: 40_000,
+            });
+            expect(result.error).toBeUndefined();
+            expect(result.status).not.toBe(0);
+            expect(result.stderr).toMatch(fixture.error);
+            expect(result.stdout).not.toContain('unsafe-accepted');
+        }
+        unlinkSync(join(isolated, 'windows-cache.ps1'));
+        const absent = spawnSync(process.execPath, ['--input-type=module', '-e', command], {
+            cwd: isolated,
+            encoding: 'utf8',
+            timeout: 40_000,
+        });
+        expect(absent.error).toBeUndefined();
+        expect(absent.status).not.toBe(0);
+        expect(absent.stderr).toContain('ENOENT');
+    }, 180_000);
 
     it('refuses a missing entry and a path outside the private fence', () => {
         expect(() =>

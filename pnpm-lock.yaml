@@ -234,7 +234,7 @@ patchedDependencies:
   '@typescript-eslint/eslint-plugin@8.72.2': a08e5de8204e4d1981806debab998ed3cfb6b37fa397e41ad65a70da34b63a9d
   '@typescript-eslint/parser@8.72.2': e00e1d9322dd80e63668563927075dc3c043d6e8593108b30236599fdecc3cca
   '@typescript-eslint/types@8.72.2': 97557f318dbd7f0a84bcfa6b1332980b45b7b7d84be5eeaed57ccd503d28d727
-  '@typescript-eslint/typescript-estree@8.72.2': 9712beebb57289f025aff439b7a5386498e370784b137632c742a5b3b7163f0f
+  '@typescript-eslint/typescript-estree@8.72.2': 13c18ced7dffc3b4132f19ff3715acf31494827be766187507a8a85e37419f59
   '@typescript-eslint/utils@8.72.2': aff22214c86ae91a65168eec6653358d24d6939019a3cc77fd636029b365f3a7
   babel-dead-code-elimination@2.0.0: daaed4fafcccd0f4cdf645da30b9b7071d01533f2386f05a8c4bbb90e3843999
   babel-plugin-react-compiler@1.0.0: 9f387cf5be6a76be2d2af96c6f44d010b442c787b536c1bdf7916d5e9f009cec
@@ -7877,7 +7877,7 @@ snapshots:
     dependencies:
       '@typescript-eslint/scope-manager': 8.72.2
       '@typescript-eslint/types': 8.72.2(patch_hash=97557f318dbd7f0a84bcfa6b1332980b45b7b7d84be5eeaed57ccd503d28d727)
-      '@typescript-eslint/typescript-estree': 8.72.2(patch_hash=9712beebb57289f025aff439b7a5386498e370784b137632c742a5b3b7163f0f)(supports-color@7.2.0)(typescript@7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43))
+      '@typescript-eslint/typescript-estree': 8.72.2(patch_hash=13c18ced7dffc3b4132f19ff3715acf31494827be766187507a8a85e37419f59)(supports-color@7.2.0)(typescript@7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43))
       '@typescript-eslint/visitor-keys': 8.72.2
       debug: 4.4.3(supports-color@7.2.0)
       eslint: 10.14.0(jiti@2.7.0)(supports-color@7.2.0)
@@ -7892,7 +7892,7 @@ snapshots:
 
   '@typescript-eslint/types@8.72.2(patch_hash=97557f318dbd7f0a84bcfa6b1332980b45b7b7d84be5eeaed57ccd503d28d727)': {}
 
-  '@typescript-eslint/typescript-estree@8.72.2(patch_hash=9712beebb57289f025aff439b7a5386498e370784b137632c742a5b3b7163f0f)(supports-color@7.2.0)(typescript@7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43))':
+  '@typescript-eslint/typescript-estree@8.72.2(patch_hash=13c18ced7dffc3b4132f19ff3715acf31494827be766187507a8a85e37419f59)(supports-color@7.2.0)(typescript@7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43))':
     dependencies:
       '@typescript-eslint/types': 8.72.2(patch_hash=97557f318dbd7f0a84bcfa6b1332980b45b7b7d84be5eeaed57ccd503d28d727)
       '@typescript-eslint/visitor-keys': 8.72.2
@@ -7909,7 +7909,7 @@ snapshots:
       '@eslint-community/eslint-utils': 4.10.1(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))
       '@typescript-eslint/scope-manager': 8.72.2
       '@typescript-eslint/types': 8.72.2(patch_hash=97557f318dbd7f0a84bcfa6b1332980b45b7b7d84be5eeaed57ccd503d28d727)
-      '@typescript-eslint/typescript-estree': 8.72.2(patch_hash=9712beebb57289f025aff439b7a5386498e370784b137632c742a5b3b7163f0f)(supports-color@7.2.0)(typescript@7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43))
+      '@typescript-eslint/typescript-estree': 8.72.2(patch_hash=13c18ced7dffc3b4132f19ff3715acf31494827be766187507a8a85e37419f59)(supports-color@7.2.0)(typescript@7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43))
       eslint: 10.14.0(jiti@2.7.0)(supports-color@7.2.0)
       typescript: 7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43)
     transitivePeerDependencies:
@@ -10862,7 +10862,7 @@ snapshots:
     dependencies:
       '@typescript-eslint/eslint-plugin': 8.72.2(patch_hash=a08e5de8204e4d1981806debab998ed3cfb6b37fa397e41ad65a70da34b63a9d)(@typescript-eslint/parser@8.72.2(patch_hash=e00e1d9322dd80e63668563927075dc3c043d6e8593108b30236599fdecc3cca)(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43)))(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43))
       '@typescript-eslint/parser': 8.72.2(patch_hash=e00e1d9322dd80e63668563927075dc3c043d6e8593108b30236599fdecc3cca)(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43))
-      '@typescript-eslint/typescript-estree': 8.72.2(patch_hash=9712beebb57289f025aff439b7a5386498e370784b137632c742a5b3b7163f0f)(supports-color@7.2.0)(typescript@7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43))
+      '@typescript-eslint/typescript-estree': 8.72.2(patch_hash=13c18ced7dffc3b4132f19ff3715acf31494827be766187507a8a85e37419f59)(supports-color@7.2.0)(typescript@7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43))
       '@typescript-eslint/utils': 8.72.2(patch_hash=aff22214c86ae91a65168eec6653358d24d6939019a3cc77fd636029b365f3a7)(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43))
       eslint: 10.14.0(jiti@2.7.0)(supports-color@7.2.0)
       typescript: 7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43)

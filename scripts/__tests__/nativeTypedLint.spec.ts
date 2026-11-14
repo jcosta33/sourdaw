@@ -127,13 +127,44 @@ async function customStoreMessages(code: string) {
 
 describe('native typed ESLint integration', () => {
     it('keeps JSDoc between JavaScript tokens in comments while retaining JSX whitespace tokens', () => {
-        const code = 'const before = 1;\n/** @type {number} */\nconst after = 2;\n/** @returns {number} */\nfunction read() { return after; }';
+        const code =
+            'const before = 1;\n/** @type {number} */\nconst after = 2;\n/** @returns {number} */\nfunction read() { return after; }';
         const result = parser.parseForESLint(code, { filePath: join(fixtureRoot, 'documented.mjs'), project: false });
-        expect(result.ast.comments?.map(comment => comment.value)).toEqual(['* @type {number} ', '* @returns {number} ']);
-        expect(result.ast.tokens?.map(token => token.value)).toEqual(['const', 'before', '=', '1', ';', 'const', 'after', '=', '2', ';', 'function', 'read', '(', ')', '{', 'return', 'after', ';', '}']);
+        expect(result.ast.comments?.map((comment) => comment.value)).toEqual([
+            '* @type {number} ',
+            '* @returns {number} ',
+        ]);
+        expect(result.ast.tokens?.map((token) => token.value)).toEqual([
+            'const',
+            'before',
+            '=',
+            '1',
+            ';',
+            'const',
+            'after',
+            '=',
+            '2',
+            ';',
+            'function',
+            'read',
+            '(',
+            ')',
+            '{',
+            'return',
+            'after',
+            ';',
+            '}',
+        ]);
         const jsx = 'const view = <div>   <span />tail</div>;';
-        const whitespace = parser.parseForESLint(jsx, { filePath: join(fixtureRoot, 'documented.jsx'), project: false, ecmaFeatures: { jsx: true } });
-        expect(whitespace.ast.tokens?.filter(token => token.type === 'JSXText').map(token => token.value)).toEqual(['   ', 'tail']);
+        const whitespace = parser.parseForESLint(jsx, {
+            filePath: join(fixtureRoot, 'documented.jsx'),
+            project: false,
+            ecmaFeatures: { jsx: true },
+        });
+        expect(whitespace.ast.tokens?.filter((token) => token.type === 'JSXText').map((token) => token.value)).toEqual([
+            '   ',
+            'tail',
+        ]);
         for (const token of whitespace.ast.tokens ?? []) expect(jsx.slice(...token.range)).toBe(token.value);
     });
 
