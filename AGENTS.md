@@ -396,8 +396,9 @@ writer PID. The initial private receipt must be created before Git starts; failu
 refuses the checkpoint. Once Git starts, a diagnostic storage failure does not change its result.
 Receipts contain selected source and index hashes, Git metadata, bounded stderr and a
 stall observation; retain them when a checkpoint fails. They may contain private paths and Git
-output. Set `SOURDAW_CHECKPOINT_DIR` to a private directory outside the worktree to choose their
-location. The watchdog does not stop a stalled writer or prevent Trace2 backpressure. Writer sampling uses a
+output. They default to `~/.agents/artifacts/sourdaw/git-checkpoints`; set `SOURDAW_CHECKPOINT_DIR`
+to a private directory outside the worktree to choose their location, under the artifact workspace
+([Artifacts](#artifacts)) when the checkout's drive is not the home directory's. The watchdog does not stop a stalled writer or prevent Trace2 backpressure. Writer sampling uses a
 best-effort PID and start identity check; the check is not atomic and the process can exit or its
 PID can be reused before sampling. Shared receivers are never sampled. A failed
 syscall pathname requires separately authorized observation arranged before the write; a receipt or
@@ -482,7 +483,15 @@ removes the worktree and deletes the lane's local branch with `git branch -D`;
 
 ## Artifacts
 
-Drafts, one-offs, and unpublished or secret work stay in `~/.agents/artifacts` and are not filed.
+Drafts, one-offs, scratch clones and checkouts, dependency installs, and unpublished or secret work
+stay in `<root>/.agents/artifacts/sourdaw/`, outside every checkout, and are not filed. `<root>` is
+the mount point of the drive holding the primary checkout, printed by
+`df -P . | awk 'NR==2{match($0, /[0-9]+% +/); print substr($0, RSTART + RLENGTH)}'` run there. It
+reads the text after the capacity column because filesystem names and mount points can contain
+spaces; quote the result. When the same command run on `~` prints the same mount point, `<root>` is the home
+directory. When `<root>` is the primary checkout itself, ask the owner for a directory on that drive
+outside the checkout. Never place this work on another drive or under `~/.agents/artifacts` when
+the checkout's drive differs.
 The tracker is public. The issue body is the original; delete any local copy after filing.
 `.agents/specs/` is leftover corpus: do not add files there. Assigned leftover files stay until
 their work is done. Planning handed to future agents lives in GitHub issues, never a plan file.
