@@ -573,7 +573,7 @@ class AudioEngineImpl implements AudioEngine {
         //
         // Guard the allocation with hasSharedArrayBuffer(): without COOP+COEP the
         // global is absent and `new SharedArrayBuffer(...)` throws. This runs at
-        // module load (`export const audioEngine = createAudioEngine()`), so an
+        // module load (`export const audioEngine = composeWebAudioEngine().engine`), so an
         // unguarded throw here aborts the whole module import on a non-isolated
         // page. When SAB is unavailable the views stay null and setTransportInfo
         // no-ops (it already guards on null), so the worklet readers just fall
@@ -3103,8 +3103,4 @@ export function composeWebAudioEngine(providedContext?: AudioContext): {
     return { engine, internals: AudioEngineImpl.internalsOf(engine) };
 }
 
-export function createAudioEngine(providedContext?: AudioContext): AudioEngine {
-    return composeWebAudioEngine(providedContext).engine;
-}
-
-export const audioEngine = createAudioEngine();
+export const audioEngine = composeWebAudioEngine().engine;

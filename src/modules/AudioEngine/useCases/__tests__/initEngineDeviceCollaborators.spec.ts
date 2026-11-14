@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { asAudioNode, createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
-import { audioEngine, createAudioEngine } from '../../repositories/createWebAudioEngine';
+import { audioEngine, composeWebAudioEngine } from '../../repositories/createWebAudioEngine';
 import { captureDeviceParameterRuntimeWriteReceipt } from '../deviceControls/captureDeviceParameterRuntimeWriteReceipt';
 import { applyParams } from '../deviceResolvers/applyParams';
 import { createBuiltinDeviceNode } from '../deviceResolvers/createBuiltinDeviceNode';
@@ -13,7 +13,7 @@ import { clearReportedLatency } from '../latencyCompensation/compensation/clearR
 import { reportLatency } from '../latencyCompensation/compensation/reportLatency';
 
 function engineWithOneControlledDevice() {
-    const engine = createAudioEngine(createMockAudioContext() as unknown as AudioContext);
+    const engine = composeWebAudioEngine(createMockAudioContext() as unknown as AudioContext).engine;
     const node = asAudioNode(createMockAudioNode('gain'));
     const setParam = vi.fn();
     engine.ensureTrackStrip('track-1').deviceNodes.push({

@@ -4,7 +4,7 @@ import { controlRoomStore } from '#/modules/ControlRoom/stores';
 import { getControlRoomHandlers, syncControlRoomMonitoring } from '#/modules/ControlRoom/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
 
-import { createAudioEngine } from '../createWebAudioEngine';
+import { composeWebAudioEngine } from '../createWebAudioEngine';
 
 import type { AudioEngine } from '../../models/AudioEngineState';
 
@@ -271,7 +271,7 @@ function createDrivenEngine(): DrivenEngine {
     const context = new ListeningFixtureContext();
     // The fixture is structurally the BaseAudioContext the engine asks for;
     // this is the same boundary cast every audio fixture here makes.
-    const engine = createAudioEngine(context as unknown as AudioContext);
+    const engine = composeWebAudioEngine(context as unknown as AudioContext).engine;
     // Unity fader so observed amplitudes are exact ratios of the programme.
     (engine.masterGainNode as unknown as FixtureGainNode).gain.value = 1;
     // The real ControlRoom sync, named onto this fixture engine — the app

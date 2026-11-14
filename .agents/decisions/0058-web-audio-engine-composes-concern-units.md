@@ -35,9 +35,9 @@ clock; master section (master chain, meter, control-room insert); scheduled sour
 send routing; sidechain routing; Toaster pad routing; runtime-graph revision and delta application;
 track and bus strips with their device operations; lifecycle; diagnostics.
 
-`createWebAudioEngine.ts` is the composer. `composeWebAudioEngine(providedContext?)` returns
-`{ engine, internals }`, and `createAudioEngine(providedContext?)` returns its `engine`. The
-import-time `audioEngine` instance stays created at module evaluation, because the AudioContext's
+`createWebAudioEngine.ts` is the composer, and `composeWebAudioEngine(providedContext?)` is the
+one function it exports; it returns `{ engine, internals }`. The import-time `audioEngine` is
+`composeWebAudioEngine().engine`, created at module evaluation, because the AudioContext's
 construction time, before any user gesture, decides its autoplay state, and `src/app/bootstrap.ts`
 registers against that instance at import.
 

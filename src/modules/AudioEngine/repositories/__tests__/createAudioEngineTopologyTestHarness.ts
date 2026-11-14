@@ -1,5 +1,6 @@
-import type { AudioEngine } from '../../models/AudioEngineState';
 import { composeWebAudioEngine, type WebAudioEngineInternals } from '../createWebAudioEngine';
+
+import type { AudioEngine } from '../../models/AudioEngineState';
 
 /** The engine itself, carrying its internals and the raw device primitives the topology fixtures drive. */
 export type AudioEngineTopologyTestHarness = AudioEngine &
