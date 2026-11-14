@@ -12,7 +12,9 @@ export const handleRemoveSection = createHandler<'removeSection'>({
         return undefined;
     },
     describe: (action) => {
-        const prev = getMarkerState()?.sections.find((state) => state.id === action.payload.sectionId);
+        const sections = getMarkerState()?.sections ?? [];
+        const index = sections.findIndex((state) => state.id === action.payload.sectionId);
+        const prev = sections[index];
         let label = 'Remove section';
         if (prev) {
             label = `Remove section "${prev.name}" from beat ${String(prev.startBeat)} to beat ${String(prev.endBeat)} (${prev.id})`;
@@ -29,6 +31,7 @@ export const handleRemoveSection = createHandler<'removeSection'>({
                           name: prev.name,
                           sectionId: prev.id,
                           color: prev.color,
+                          index,
                       },
                   }
                 : null,
