@@ -7,6 +7,10 @@ export type NativeTypeScriptIdentity = {
     goVersion: string;
     goModSha256: string;
     goSumSha256: string;
+    sourceArchiveSha256: string;
+    patchedGoModSha256: string;
+    patchedGoSumSha256: string;
+    goModules: readonly { path: string; version: string; sum: string; goModSum: string }[];
     officialRepository: string;
     goFiles: readonly { filename: string; os: string; arch: string; sha256: string }[];
 };
@@ -16,3 +20,7 @@ export declare function nativeTypeScriptCacheRoot(): string;
 export declare function nativeTypeScriptCacheDirectory(identity?: NativeTypeScriptIdentity): string;
 export declare function getPreparedNativeTypeScriptPath(): string;
 export declare function ensurePrivateNativeTypeScriptDirectory(path: string): string;
+export declare function nativeTypeScriptBuildModules(
+    buildInfo: string,
+    identity?: NativeTypeScriptIdentity
+): { path: string; version: string; sum: string }[];

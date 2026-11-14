@@ -22,6 +22,7 @@ import {
     ensurePrivateNativeTypeScriptDirectory,
     getPreparedNativeTypeScriptPath,
     nativeTypeScriptCacheDirectory,
+    nativeTypeScriptIdentity,
 } from '../nativeTypeScript/compiler.mjs';
 
 let root: string;
@@ -54,6 +55,54 @@ afterEach(() => {
 describe.runIf(process.platform !== 'win32')('native compiler private cache on Unix', () => {
     it('accepts the genuine prepared binary and matching original receipt in a private owned fence', () => {
         expect(getPreparedNativeTypeScriptPath()).toBe(binary);
+    });
+
+    it('binds the cache directory to the complete patched graph identity', () => {
+        const identity = nativeTypeScriptIdentity();
+        expect(identity.patchedGoModSha256).not.toBe(identity.goModSha256);
+        expect(identity.patchedGoSumSha256).not.toBe(identity.goSumSha256);
+        expect(nativeTypeScriptCacheDirectory({ ...identity, patchedGoModSha256: identity.goModSha256 })).not.toBe(
+            directory
+        );
+    });
+
+    it('refuses original module hashes presented as the patched build outputs', () => {
+        const path = join(directory, 'receipt.json');
+        const receipt = JSON.parse(readFileSync(path, 'utf8'));
+        receipt.patchedGoModSha256 = receipt.goModSha256;
+        receipt.patchedGoSumSha256 = receipt.goSumSha256;
+        writeFileSync(path, JSON.stringify(receipt));
+        expect(() => getPreparedNativeTypeScriptPath()).toThrow('Prepared locally patched');
+    });
+
+    it('refuses a selected graph change even when that module is absent from the actual binary dependencies', () => {
+        const path = join(directory, 'receipt.json');
+        const receipt = JSON.parse(readFileSync(path, 'utf8'));
+        const module = receipt.goModules.find(
+            (module: { path: string }) =>
+                !receipt.compiledGoModules.some((compiled: { path: string }) => compiled.path === module.path)
+        );
+        expect(module).toBeDefined();
+        if (!module) throw new Error('Expected a tool or test dependency outside this host binary');
+        module.version = 'v0.0.0';
+        writeFileSync(path, JSON.stringify(receipt));
+        expect(() => getPreparedNativeTypeScriptPath()).toThrow('Prepared locally patched');
+    });
+
+    it('refuses the old actual compiler dependency graph with an otherwise matching genuine binary receipt', () => {
+        const path = join(directory, 'receipt.json');
+        const receipt = JSON.parse(readFileSync(path, 'utf8'));
+        const module = receipt.compiledGoModules.find(
+            (module: { path: string }) => module.path === 'github.com/go-json-experiment/json'
+        );
+        expect(module?.version).toBe('v1.27.2');
+        receipt.buildInfo = receipt.buildInfo.replace(
+            '\tgithub.com/go-json-experiment/json\tv1.27.2\t',
+            '\tgithub.com/go-json-experiment/json\tv0.0.0-20260623181947-01eb4420fa68\t'
+        );
+        module.version = 'v0.0.0-20260623181947-01eb4420fa68';
+        writeFileSync(path, JSON.stringify(receipt));
+        expect(() => getPreparedNativeTypeScriptPath()).toThrow('Prepared locally patched');
     });
 
     it('refuses a public executable even when its bytes and receipt are genuine', () => {

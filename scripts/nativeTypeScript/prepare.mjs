@@ -22,6 +22,7 @@ import {
     nativeTypeScriptCacheDirectory,
     nativeTypeScriptCacheRoot,
     nativeTypeScriptIdentity,
+    nativeTypeScriptBuildModules,
     sha256,
 } from './compiler.mjs';
 
@@ -53,6 +54,11 @@ async function prepare() {
             GOWORK: 'off',
             CGO_ENABLED: '0',
             GOFLAGS: '-mod=readonly',
+            GOPROXY: 'https://proxy.golang.org',
+            GOSUMDB: 'sum.golang.org',
+            GOPRIVATE: '',
+            GONOPROXY: 'none',
+            GONOSUMDB: 'none',
             GOMODCACHE: join(stage, 'gomod'),
             GOCACHE: join(stage, 'gocache'),
         });
@@ -137,6 +143,9 @@ async function prepare() {
             throw new Error('Native source tree mismatch');
         const sourceArchive = join(stage, 'upstream-source.tar');
         await run('git', ['archive', '--format=tar', `--output=${sourceArchive}`, identity.upstreamCommit], source);
+        const sourceArchiveSha256 = sha256(readFileSync(sourceArchive));
+        if (sourceArchiveSha256 !== identity.sourceArchiveSha256)
+            throw new Error('Official native source archive does not match its pinned identity');
         const goModSha256 = sha256(readFileSync(join(source, 'go.mod')));
         const goSumSha256 = sha256(readFileSync(join(source, 'go.sum')));
         if (goModSha256 !== identity.goModSha256 || goSumSha256 !== identity.goSumSha256)
@@ -144,17 +153,40 @@ async function prepare() {
         const patch = fileURLToPath(new URL('./compiler.patch', import.meta.url));
         await run('git', ['apply', '--check', patch], source);
         await run('git', ['apply', patch], source);
+        const patchedGoModSha256 = sha256(readFileSync(join(source, 'go.mod')));
+        const patchedGoSumSha256 = sha256(readFileSync(join(source, 'go.sum')));
+        if (patchedGoModSha256 !== identity.patchedGoModSha256 || patchedGoSumSha256 !== identity.patchedGoSumSha256)
+            throw new Error('Patched native source Go module graph does not match its pinned identity');
+        await run(go, ['mod', 'download', 'all'], source);
+        const moduleVerification = await run(go, ['mod', 'verify'], source);
+        if (moduleVerification !== 'all modules verified')
+            throw new Error('Native Go module checksum verification failed');
+        const moduleGraph = await run(
+            go,
+            ['list', '-m', '-f', '{{if not .Main}}{{.Path}}\t{{.Version}}\t{{.Sum}}\t{{.GoModSum}}{{end}}', 'all'],
+            source
+        );
+        const goModules = moduleGraph
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map((line) => {
+                const [path, version, sum, goModSum] = line.split('\t');
+                return { path, version, sum, goModSum };
+            });
+        if (JSON.stringify(goModules) !== JSON.stringify(identity.goModules))
+            throw new Error('Resolved native Go module graph does not match its pinned identity');
         const binaryName = process.platform === 'win32' ? 'tsgo.exe' : 'tsgo';
         const binary = join(stage, binaryName);
         const buildArgs = ['build', '-trimpath', '-o', binary, './cmd/tsgo'];
         await run(go, buildArgs, source);
         if (
-            sha256(readFileSync(join(source, 'go.mod'))) !== goModSha256 ||
-            sha256(readFileSync(join(source, 'go.sum'))) !== goSumSha256
+            sha256(readFileSync(join(source, 'go.mod'))) !== patchedGoModSha256 ||
+            sha256(readFileSync(join(source, 'go.sum'))) !== patchedGoSumSha256
         )
             throw new Error('Building the native compiler changed its pinned Go module graph');
         chmodSync(binary, 0o700);
         const buildInfo = await run(go, ['version', '-m', binary]);
+        const compiledGoModules = nativeTypeScriptBuildModules(buildInfo, identity);
         const probeText = await run(
             process.execPath,
             [
@@ -169,18 +201,23 @@ async function prepare() {
             throw new Error('Native compiler capability probe did not attest awaiting');
 
         const receipt = {
-            schemaVersion: 1,
+            schemaVersion: 2,
             upstreamVersion: identity.upstreamVersion,
             upstreamCommit: identity.upstreamCommit,
             upstreamTree: identity.upstreamTree,
             locallyPatched: true,
+            identitySha256: sha256(JSON.stringify(identity)),
             patchSha256: identity.patchSha256,
             protocol: identity.protocol,
             goVersion: identity.goVersion,
             goArchiveSha256: archive.sha256,
-            sourceArchiveSha256: sha256(readFileSync(sourceArchive)),
+            sourceArchiveSha256,
             goModSha256,
             goSumSha256,
+            patchedGoModSha256,
+            patchedGoSumSha256,
+            goModules,
+            compiledGoModules,
             platform: process.platform,
             arch: process.arch,
             binarySha256: sha256(readFileSync(binary)),

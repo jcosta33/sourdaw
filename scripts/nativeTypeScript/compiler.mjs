@@ -30,9 +30,34 @@ export function nativeTypeScriptCacheRoot() {
 export function nativeTypeScriptCacheDirectory(identity = nativeTypeScriptIdentity()) {
     return join(
         nativeTypeScriptCacheRoot(),
-        `${identity.upstreamCommit}-${identity.patchSha256}-${identity.goVersion}`,
+        `${identity.upstreamCommit}-${sha256(JSON.stringify(identity))}`,
         `${process.platform}-${process.arch}`
     );
+}
+
+// This validates the complete dependency section emitted from the actual built binary.
+// A build may link only part of the selected graph on a particular host.
+export function nativeTypeScriptBuildModules(buildInfo, identity = nativeTypeScriptIdentity()) {
+    if (typeof buildInfo !== 'string' || !buildInfo.split('\n')[0].endsWith(`: ${identity.goVersion}`))
+        throw new Error('Native compiler build information has the wrong Go version');
+    const lines = buildInfo.split(/\r?\n/);
+    if (!lines.includes('\tpath\tgithub.com/microsoft/typescript-go/cmd/tsgo'))
+        throw new Error('Native compiler build information has the wrong program');
+    const modules = [];
+    const seen = new Set();
+    for (const line of lines) {
+        if (line.startsWith('\t=>')) throw new Error('Native compiler build has a replaced Go module');
+        if (!line.startsWith('\tdep\t')) continue;
+        const fields = line.split('\t');
+        const [, , path, version, sum] = fields;
+        const expected = identity.goModules.find((module) => module.path === path);
+        if (fields.length !== 5 || seen.has(path) || !expected || expected.version !== version || expected.sum !== sum)
+            throw new Error('Native compiler build does not match its patched Go module graph');
+        seen.add(path);
+        modules.push({ path, version, sum });
+    }
+    if (modules.length === 0) throw new Error('Native compiler build has no dependency information');
+    return modules;
 }
 
 function requirePrivateCacheEntry(path, kind) {
@@ -104,11 +129,14 @@ export function getPreparedNativeTypeScriptPath() {
             'goVersion',
             'goModSha256',
             'goSumSha256',
+            'sourceArchiveSha256',
+            'patchedGoModSha256',
+            'patchedGoSumSha256',
         ]) {
             if (receipt[field] !== identity[field]) throw new Error(`receipt ${field} mismatch`);
         }
         if (
-            receipt.schemaVersion !== 1 ||
+            receipt.schemaVersion !== 2 ||
             receipt.locallyPatched !== true ||
             receipt.platform !== process.platform ||
             receipt.arch !== process.arch
@@ -125,6 +153,12 @@ export function getPreparedNativeTypeScriptPath() {
                     : process.arch;
         const archive = identity.goFiles.find((file) => file.os === goOS && file.arch === goArch);
         if (!archive || archive.sha256 !== receipt.goArchiveSha256) throw new Error('receipt Go archive mismatch');
+        if (receipt.identitySha256 !== sha256(JSON.stringify(identity))) throw new Error('receipt identity mismatch');
+        if (JSON.stringify(receipt.goModules) !== JSON.stringify(identity.goModules))
+            throw new Error('receipt selected Go module graph mismatch');
+        const compiledGoModules = nativeTypeScriptBuildModules(receipt.buildInfo, identity);
+        if (JSON.stringify(receipt.compiledGoModules) !== JSON.stringify(compiledGoModules))
+            throw new Error('receipt compiled Go module graph mismatch');
         if (receipt.capabilityProbe?.method !== 'getAwaitedType' || receipt.capabilityProbe?.result !== 'void')
             throw new Error('missing real native awaited-type probe');
         if (sha256(readFileSync(binary)) !== receipt.binarySha256) throw new Error('prepared binary hash mismatch');
