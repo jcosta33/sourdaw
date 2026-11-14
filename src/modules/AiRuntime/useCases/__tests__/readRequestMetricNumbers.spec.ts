@@ -242,6 +242,23 @@ describe('a last-commit continuation accounts only for the figure it consumed', 
         );
     });
 
+    it('does not witness a record whose indexed command is another operation setting the landed value', () => {
+        const other = { ...parameterCommand('command-0', 250), operation: 'setTrackGain' };
+        expect(
+            unaccountedNumericRefusal(continuationState(PROMPT), { ...envelope(PROMPT), commands: [other] })
+        ).toEqual(MISSING);
+    });
+
+    it('does not witness a record whose indexed parameter write states its value in another unit', () => {
+        const inDecibels = {
+            ...parameterCommand('command-0', 250),
+            parameterUnits: [{ argument: 'value', unit: 'dB' }],
+        };
+        expect(
+            unaccountedNumericRefusal(continuationState(PROMPT), { ...envelope(PROMPT), commands: [inDecibels] })
+        ).toEqual(MISSING);
+    });
+
     it('does not witness a figure the request states twice', () => {
         const prompt = '50 Hz more, 50 Hz more';
         expect(unaccountedNumericRefusal(continuationState(prompt), continuedEnvelope(prompt, 250, 250))).toMatchObject(

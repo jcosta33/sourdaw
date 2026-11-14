@@ -1397,6 +1397,57 @@ describe('relative to the last commit', () => {
             });
         }
 
+        /**
+         * Adds one more command to the committed recipe's undo group, as a provider command written
+         * beside the adopted expansion would have committed in the same batch.
+         */
+        function commitBesideRecipe(action: { type: string; payload: Record<string, unknown> }, label: string): void {
+            const history = undoHistoryStore.value!;
+            const newest = history.past.at(-1);
+            if (newest?.kind !== 'action') {
+                throw new Error('Expected the newest commit to hold an action entry.');
+            }
+            const beside = { ...newest, label, action: { ...newest.action, ...action } } as typeof newest;
+            undoHistoryStore.set({ ...history, past: [...history.past, beside] });
+        }
+
+        it('refuses to repeat a recipe committed beside a parameter write the recipe did not produce, naming it', async () => {
+            await commitRecipeOnVocals();
+            const current = trackStore.value!;
+            trackStore.set({
+                ...current,
+                tracks: current.tracks.map((track) =>
+                    track.id === 'track-vocals'
+                        ? {
+                              ...track,
+                              devices: [
+                                  {
+                                      id: 'device-provider-eq',
+                                      name: 'EQ',
+                                      type: 'builtin-eq',
+                                      bypassed: false,
+                                      parameterValues: { 'eq-low-freq': 120 },
+                                  },
+                                  ...track.devices,
+                              ],
+                          }
+                        : track
+                ),
+            });
+            commitBesideRecipe(
+                {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'device-provider-eq', paramId: 'eq-low-freq', value: 120 },
+                },
+                'Set EQ Low Freq to 120 Hz'
+            );
+
+            await expectAnsweredWithoutChange(
+                'do the same to the Guitars',
+                'holds "Set EQ Low Freq to 120 Hz", which the recipe'
+            );
+        });
+
         it.each(['do the same to the Guitars', 'Guitars too', 'apply that recipe to the Guitars'])(
             '"%s" expands the committed recipe on Guitars, with devices of its own, asking the provider nothing',
             async (prompt) => {
@@ -1527,6 +1578,9 @@ describe('relative to the last commit', () => {
             ['10% less', -20, -10],
             ['an extra 5%', 30, 35],
             ['20% less', 20, 0],
+            ['20% less', -20, 0],
+            ['10% more', 40, 50],
+            ['another 10%', -40, -50],
         ])('"%s" after a committed pan of %s lands at %s', async (prompt, committedPan, landed) => {
             await commitVocalsPan(committedPan);
             // The musician moves the knob after the commit; the continuation reads the committed pan.
@@ -1541,6 +1595,22 @@ describe('relative to the last commit', () => {
 
             expect(providerCallCount()).toBe(calls);
             expect(getTrack('track-vocals').pan).toBe(landed);
+        });
+
+        it('lands a pan "less" brings back to the centre at positive zero, never negative zero', async () => {
+            await commitVocalsPan(-20);
+
+            const planned = planLastCommitContinuation({
+                prompt: '20% less',
+                context: getProjectContext(),
+                thread: readChatThreadContext(),
+            });
+
+            expect(planned.status).toBe('actions');
+            const [pan] = planned.status === 'actions' ? planned.actions : [];
+            expect(pan?.type).toBe('setTrackPan');
+            const payload: Record<string, unknown> = pan?.payload ?? {};
+            expect(Object.is(payload.pan, 0)).toBe(true);
         });
 
         it('refuses a continuation past the pan limit, naming the room left, never clamping', async () => {

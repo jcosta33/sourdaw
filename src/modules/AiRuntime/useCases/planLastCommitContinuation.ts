@@ -79,9 +79,6 @@ type CommittedBatch = { runId: string; workId: string; revertGroupId: string; co
 /** Names the authority and retained expansions of a recipe repeated from the last commit. */
 const RECIPE_RETARGET_ORIGIN = 'last-commit-recipe';
 
-/** The commands a recipe expansion lowers to; a committed batch holding any other is more than its recipe. */
-const RECIPE_COMMAND_TYPES: ReadonlySet<string> = new Set(['addDevice', 'setDeviceParameter']);
-
 /**
  * The pan field's full scale on either side, as `setTrackPan` declares it ("-50 to 50") and the
  * action bridge holds it. The mixer strip shows that field as it stands (`L20` for -20), and a request
@@ -361,6 +358,11 @@ function sameUnit(left: string, right: string): boolean {
 
 type ContinuedValue = { status: 'value'; value: number } | { status: 'refused'; outcome: LastCommitContinuation };
 
+/** A left pan moved back to the centre computes as -0, which the centre is never stored as. */
+function centredAtPositiveZero(pan: number): number {
+    return pan === 0 ? 0 : pan;
+}
+
 /**
  * The pan a continuation lands on, from the committed pan, never where the knob is now: "another" and
  * "more" move further toward the committed side, "less" back toward the centre. A centred pan has no
@@ -390,7 +392,7 @@ function continuedPan(request: ContinueRequest & { figure: number }, committed: 
                 ),
             };
         }
-        return { status: 'value', value: roundToThousandths(side * (size - request.figure)) };
+        return { status: 'value', value: centredAtPositiveZero(roundToThousandths(side * (size - request.figure))) };
     }
     const limit = formatInUnit(PAN_LIMIT, '%');
     if (size >= PAN_LIMIT) {
@@ -738,6 +740,104 @@ function findRecipeChange(adopted: AdoptedRecipe): string | null {
     return null;
 }
 
+/** The committed command a recipe command pairs with: an insert by its track and device type, a write by device, parameter and value. */
+function pairsWithRecipeCommand(
+    command: CommittedCommand,
+    recipeCommand: ReturnType<typeof readExpandedRecipeCommands>[number],
+    boundDevices: ReadonlyMap<string, string>
+): boolean {
+    if (command.type !== recipeCommand.operation) {
+        return false;
+    }
+    const { payload } = command;
+    const stated = recipeCommand.arguments;
+    if (recipeCommand.operation === 'addDevice') {
+        return (
+            payload.trackId === stated.trackId &&
+            payload.deviceType === stated.deviceType &&
+            typeof payload.deviceId === 'string'
+        );
+    }
+    const deviceId =
+        typeof stated.deviceId === 'string' && stated.deviceId.startsWith('$')
+            ? boundDevices.get(stated.deviceId)
+            : stated.deviceId;
+    return (
+        deviceId !== undefined &&
+        payload.deviceId === deviceId &&
+        payload.paramId === stated.paramId &&
+        payload.value === stated.value
+    );
+}
+
+/**
+ * The adopted recipe expanded again on the committed track as its chain stood before the commit,
+ * without the devices the commit's own inserts added, or the reason it no longer expands there.
+ */
+function readExpandedRecipeCommands(committed: CommittedBatch, adopted: AdoptedRecipe, context: ProjectContext) {
+    const added = new Set(
+        committed.commands.flatMap((command) =>
+            command.type === 'addDevice' && typeof command.payload.deviceId === 'string'
+                ? [command.payload.deviceId]
+                : []
+        )
+    );
+    const before: ProjectContext = {
+        ...context,
+        tracks: context.tracks.map((track) =>
+            track.id === adopted.targetId
+                ? { ...track, devices: track.devices.filter((device) => !added.has(device.id)) }
+                : track
+        ),
+    };
+    const expanded = expandMixRecipe(
+        { recipeId: adopted.recipeId, targetId: adopted.targetId, role: null, values: [] },
+        before,
+        0
+    );
+    return expanded.status === 'expanded' ? expanded.commands : [];
+}
+
+/**
+ * Why the committed batch is not the adopted recipe's expansion alone, or `null` when it is. Nothing
+ * the application records ties a committed command to the recipe that built it, so the recipe is
+ * expanded again on the committed track as it stood before the commit, and every committed command
+ * must pair, in the expansion's order, with exactly one command of it: an insert binding the device
+ * it added, and a write to that device, or to the device an edit step retunes, with the expanded
+ * value. A command that pairs with none is named, so a provider command committed beside the recipe
+ * is never silently left out of the repeat.
+ */
+function findCommandsBesideRecipe(
+    committed: CommittedBatch,
+    adopted: AdoptedRecipe,
+    context: ProjectContext
+): string | null {
+    const recipeCommands = readExpandedRecipeCommands(committed, adopted, context);
+    const unpaired = [...committed.commands];
+    const boundDevices = new Map<string, string>();
+    let complete = recipeCommands.length > 0;
+    for (const recipeCommand of recipeCommands) {
+        const index = unpaired.findIndex((command) => pairsWithRecipeCommand(command, recipeCommand, boundDevices));
+        const paired = unpaired[index];
+        if (paired === undefined) {
+            complete = false;
+            continue;
+        }
+        unpaired.splice(index, 1);
+        if (recipeCommand.binding !== null && typeof paired.payload.deviceId === 'string') {
+            boundDevices.set(`$${recipeCommand.binding}`, paired.payload.deviceId);
+        }
+    }
+    const [beside] = unpaired;
+    if (beside !== undefined) {
+        return `The last committed change holds "${beside.label}", which the recipe "${adopted.title}" does not produce, so it cannot be repeated as the recipe alone.`;
+    }
+    if (!complete) {
+        return `The last committed change no longer reads as the recipe "${adopted.title}" expands on ${trackName(adopted.targetId, context)}, so it cannot be repeated as that recipe.`;
+    }
+    return null;
+}
+
 /**
  * The committed recipe expanded again on each named track, through the one expansion path and
  * against the planning context, so each expansion mints its own devices and never reuses the
@@ -753,19 +853,17 @@ function retargetCommittedRecipe(input: {
     prompt: string;
 }): LastCommitContinuation {
     const { adopted, committed, context } = input;
-    const other = committed.commands.find((command) => !RECIPE_COMMAND_TYPES.has(command.type));
-    if (other !== undefined) {
-        return denied(
-            `The last committed change holds "${other.label}" beside its recipe, so it cannot be repeated as the recipe alone.`
-        );
+    const recipeChange = findRecipeChange(adopted);
+    if (recipeChange !== null) {
+        return denied(recipeChange);
+    }
+    const besideRecipe = findCommandsBesideRecipe(committed, adopted, context);
+    if (besideRecipe !== null) {
+        return denied(besideRecipe);
     }
     const targets = readRetargetTracks(input.request, context);
     if (targets.status === 'refused') {
         return targets.outcome;
-    }
-    const recipeChange = findRecipeChange(adopted);
-    if (recipeChange !== null) {
-        return denied(recipeChange);
     }
     if (targets.ids.includes(adopted.targetId)) {
         return denied(`${trackName(adopted.targetId, context)} already took the last committed change.`);
