@@ -590,6 +590,10 @@ describe('concurrent claims', () => {
                     ...tokenComment(11, TOKEN_STALE),
                     body: `See Claimed by pnpm issue:claim (sourdaw-claim:v1:${TOKEN_STALE}).`,
                 },
+                {
+                    ...tokenComment(12, TOKEN_STALE),
+                    body: `Claimed by pnpm issue:claim (sourdaw-claim:v1:${TOKEN_STALE}). Released by hand.`,
+                },
             ],
         });
 
