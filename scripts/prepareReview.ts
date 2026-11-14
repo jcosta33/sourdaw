@@ -4,13 +4,13 @@ import { dirname, join } from 'node:path';
 import {
     GITHUB_HTTPS_REMOTE,
     REQUIRED_REPOSITORY,
-    gitAuthenticatedArgs,
     parseJson,
     resolvePrimaryRoot,
     spawnCapture,
     spawnCaptureBytes,
     type GhSession,
 } from './githubAppIdentity.ts';
+import { type GitRunner, withIsolatedGitTransport } from './isolatedGitTransport.ts';
 import { fail } from './prContract.ts';
 import {
     readPublicReviewComments,
@@ -368,12 +368,13 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prep
         (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
         cwd
     );
-    const token = session.env.GH_TOKEN ?? '';
-    const git = (args: string[]) =>
-        spawnCapture('git', gitAuthenticatedArgs(token, session.configDir, args), {
-            cwd: primaryRoot,
-            env: session.env,
-        });
+    const repository: GitRunner = {
+        capture: (args) => spawnCapture('git', args, { cwd: primaryRoot, env: session.env }),
+        run: (args) => {
+            spawnCapture('git', args, { cwd: primaryRoot, env: session.env });
+        },
+    };
+    const credential = { token: session.env.GH_TOKEN ?? '', helperDir: session.configDir };
     const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
     return {
         primaryRoot: () => primaryRoot,
@@ -393,7 +394,9 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prep
         reviews: (number) => readPublicReviews(gh, number),
         reviewComments: (number) => readPublicReviewComments(gh, number),
         fetchShas: (baseSha, headSha) => {
-            git(['fetch', '--no-write-fetch-head', GITHUB_HTTPS_REMOTE, baseSha, headSha]);
+            withIsolatedGitTransport(repository, credential, (transport) => {
+                transport.run(['fetch', '--no-write-fetch-head', GITHUB_HTTPS_REMOTE, baseSha, headSha]);
+            });
         },
         mergeBase: (baseSha, headSha) =>
             spawnCapture('git', ['merge-base', baseSha, headSha], {

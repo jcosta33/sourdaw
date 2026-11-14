@@ -33,6 +33,7 @@ import {
     parseGraphqlResponse,
     resolvePrimaryRoot,
     spawnCapture,
+    tokenFreeGitEnv,
     type FileReader,
     type GhSession,
     type GitHubJsonClient,
@@ -622,7 +623,7 @@ export function shellPort(
         readThreads: (pr) => readReviewThreads(pr, gh, fields),
         postConfirmation: (thread, body, clientMutationId) => postConfirmationReply(thread, body, clientMutationId, gh),
         resolve: (thread, clientMutationId) => resolveConfirmedThread(thread, clientMutationId, gh),
-        isAncestor: shellIsAncestor(primaryRoot, session.env),
+        isAncestor: shellIsAncestor(primaryRoot, tokenFreeGitEnv(session.env)),
         log: (message) => {
             console.log(message);
         },
