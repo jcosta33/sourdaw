@@ -88,7 +88,42 @@ function fieldListJson(projectNumber: number): string {
     });
 }
 
-type IssueFixture = { state?: string; ignoreLabelEdit?: boolean };
+type IssueFixture = {
+    state?: string;
+    ignoreLabelEdit?: boolean;
+    timeline?: TimelineEntry[];
+    hideClaimComments?: boolean;
+    commentIds?: number[];
+};
+
+type TimelineEntry = {
+    event: string;
+    id?: number;
+    body?: string;
+    html_url?: string;
+    user?: { node_id: string };
+    label?: { name: string };
+};
+
+const OPERATOR_NODE_ID = 'MDQ6VXNlcjg5NzgyNzA=';
+/** A claim token in the UUID shape the claim comment carries, one hex digit repeated per group. */
+function fixtureToken(digit: string): string {
+    return [8, 4, 4, 4, 12].map((length) => digit.repeat(length)).join('-');
+}
+
+const TOKEN_A = fixtureToken('a');
+const TOKEN_B = fixtureToken('b');
+const TOKEN_STALE = fixtureToken('c');
+
+function tokenComment(id: number, token: string, nodeId: string = OPERATOR_NODE_ID): TimelineEntry {
+    return {
+        event: 'commented',
+        id,
+        body: `Claimed by pnpm issue:claim (sourdaw-claim:v1:${token}).`,
+        html_url: `https://github.com/jcosta33/sourdaw/issues/7#issuecomment-${id}`,
+        user: { node_id: nodeId },
+    };
+}
 
 /** The label edit applies to the fake's own label set, so the claim's read-back observes it. */
 function appliedLabelEdit(labels: string[], args: string[]): string[] {
@@ -97,33 +132,87 @@ function appliedLabelEdit(labels: string[], args: string[]): string[] {
     return [...labels.filter((label) => !removed.includes(label)), ...added.filter((label) => !labels.includes(label))];
 }
 
-function fakeGh(initialLabels: string[], boards: BoardFixture[], issue: IssueFixture = {}) {
-    const calls: string[][] = [];
+function labelEvents(before: string[], after: string[]): TimelineEntry[] {
+    return [
+        ...before.filter((label) => !after.includes(label)).map((name) => ({ event: 'unlabeled', label: { name } })),
+        ...after.filter((label) => !before.includes(label)).map((name) => ({ event: 'labeled', label: { name } })),
+    ];
+}
+
+/**
+ * One shared fake issue that any number of claimers address, each through its own recorded `gh`.
+ * Label edits, claim comments and their deletions land on the same timeline GitHub would return,
+ * so two claims interleaved through it observe each other exactly as two real claimers would.
+ */
+function fakeIssue(initialLabels: string[], boards: BoardFixture[], issue: IssueFixture = {}) {
     let labels = initialLabels;
-    const gh: Gh = (args) => {
-        calls.push(args);
-        if (args[0] === 'issue' && args[1] === 'view') {
-            return JSON.stringify({ labels: labels.map((name) => ({ name })), state: issue.state ?? 'OPEN' });
-        }
-        if (args[0] === 'api') {
-            return boardsGraphql(boards);
-        }
-        if (args[0] === 'project' && args[1] === 'field-list') {
-            return fieldListJson(Number(args[2]));
-        }
-        if (args[0] === 'project' && args[1] === 'item-edit') {
-            return '';
-        }
-        if (args[0] === 'issue' && args[1] === 'edit') {
-            if (issue.ignoreLabelEdit !== true) {
-                labels = appliedLabelEdit(labels, args);
+    let timeline: TimelineEntry[] = issue.timeline ?? [];
+    const preassignedIds = issue.commentIds ?? [];
+    let postedComments = 0;
+    const issueView = (viewed: string[]) =>
+        JSON.stringify({ labels: viewed.map((name) => ({ name })), state: issue.state ?? 'OPEN' });
+
+    function claimer(options: { firstReadBeforeAnyEdit?: boolean } = {}) {
+        const calls: string[][] = [];
+        const firstRead = labels;
+        const gh: Gh = (args) => {
+            calls.push(args);
+            if (args[0] === 'issue' && args[1] === 'view') {
+                const viewsSoFar = calls.filter((call) => call[0] === 'issue' && call[1] === 'view').length;
+                return issueView(options.firstReadBeforeAnyEdit === true && viewsSoFar === 1 ? firstRead : labels);
             }
-            return 'https://github.com/jcosta33/sourdaw/issues/4342';
-        }
-        throw new Error(`unexpected gh call: ${args.join(' ')}`);
-    };
+            if (args[0] === 'issue' && args[1] === 'edit') {
+                if (issue.ignoreLabelEdit !== true) {
+                    const edited = appliedLabelEdit(labels, args);
+                    timeline = [...timeline, ...labelEvents(labels, edited)];
+                    labels = edited;
+                }
+                return 'https://github.com/jcosta33/sourdaw/issues/4342';
+            }
+            if (args[0] === 'api' && args[1] === 'graphql') {
+                return boardsGraphql(boards);
+            }
+            if (args[0] === 'api' && args[1] === '-X' && args[2] === 'POST') {
+                const id = preassignedIds[postedComments] ?? 5000 + postedComments;
+                postedComments += 1;
+                const body = (args[5] ?? '').slice('body='.length);
+                const token = /sourdaw-claim:v1:([0-9a-f-]{36})/.exec(body)?.[1] ?? 'unparsed';
+                timeline = [...timeline, { ...tokenComment(id, token), body }];
+                return JSON.stringify({ id, body });
+            }
+            if (args[0] === 'api' && args[1] === '-X' && args[2] === 'DELETE') {
+                const id = Number(args[3]?.split('/').at(-1));
+                timeline = timeline.filter((entry) => !(entry.event === 'commented' && entry.id === id));
+                return '';
+            }
+            if (args[0] === 'api' && args[1] === '--paginate') {
+                const visible =
+                    issue.hideClaimComments === true ? timeline.filter((e) => e.event !== 'commented') : timeline;
+                return JSON.stringify([visible.slice(0, 2), visible.slice(2)]);
+            }
+            if (args[0] === 'project' && args[1] === 'field-list') {
+                return fieldListJson(Number(args[2]));
+            }
+            if (args[0] === 'project' && args[1] === 'item-edit') {
+                return '';
+            }
+            throw new Error(`unexpected gh call: ${args.join(' ')}`);
+        };
+        return { gh, calls };
+    }
+
+    return { claimer, timeline: () => timeline, labels: () => labels };
+}
+
+function fakeGh(initialLabels: string[], boards: BoardFixture[], issue: IssueFixture = {}) {
+    const shared = fakeIssue(initialLabels, boards, issue);
+    const { gh, calls } = shared.claimer();
     const logs: string[] = [];
-    return { gh, calls, logs };
+    return { gh, calls, logs, timeline: shared.timeline };
+}
+
+function claimComments(timeline: TimelineEntry[]): TimelineEntry[] {
+    return timeline.filter((entry) => entry.event === 'commented');
 }
 
 function callsWith(calls: string[][], head: string[]): string[][] {
@@ -323,6 +412,232 @@ describe('claim tracker issue', () => {
     });
 });
 
+describe('concurrent claims', () => {
+    function itemEdits(...callLists: string[][][]): string[][] {
+        return callLists.flatMap((calls) => callsWith(calls, ['project', 'item-edit']));
+    }
+
+    it('lets only the claim that saw its token alone move the board when both read the labels before either edit', () => {
+        const issue = fakeIssue(['bug', 'status:ready'], [ROADMAP]);
+        const first = issue.claimer();
+        const second = issue.claimer({ firstReadBeforeAnyEdit: true });
+
+        claimTrackerIssue(7, first.gh, () => undefined, TOKEN_A);
+        expect(() => claimTrackerIssue(7, second.gh, () => undefined, TOKEN_B)).toThrow(
+            'issue #7 was claimed concurrently by https://github.com/jcosta33/sourdaw/issues/7#issuecomment-5000; ' +
+                'this claim withdrew its comment and moved no board; ' +
+                'status:active stays on the issue — if no lane holds it, remove the label and claim again'
+        );
+
+        expect(itemEdits(first.calls)).toHaveLength(1);
+        expect(itemEdits(second.calls)).toEqual([]);
+        expect(second.calls).toContainEqual(['api', '-X', 'DELETE', 'repos/jcosta33/sourdaw/issues/comments/5001']);
+        expect(claimComments(issue.timeline()).map((entry) => entry.id)).toEqual([5000]);
+        expect(issue.labels()).toContain('status:active');
+    });
+
+    it('elects one claim when a lower comment id becomes visible after a higher one was read alone', () => {
+        const issue = fakeIssue(['bug', 'status:ready'], [ROADMAP], { commentIds: [5001, 5000] });
+        const first = issue.claimer();
+        const second = issue.claimer({ firstReadBeforeAnyEdit: true });
+
+        claimTrackerIssue(7, first.gh, () => undefined, TOKEN_A);
+        expect(() => claimTrackerIssue(7, second.gh, () => undefined, TOKEN_B)).toThrow(
+            /issue #7 was claimed concurrently by https:\/\/github\.com\/jcosta33\/sourdaw\/issues\/7#issuecomment-5001; /
+        );
+
+        expect(itemEdits(first.calls)).toHaveLength(1);
+        expect(itemEdits(second.calls)).toEqual([]);
+        expect(claimComments(issue.timeline()).map((entry) => entry.id)).toEqual([5001]);
+    });
+
+    it('refuses both claims and moves no board when each reads the timeline holding both tokens', () => {
+        const issue = fakeIssue(['bug', 'status:ready'], [ROADMAP]);
+        const inner = issue.claimer({ firstReadBeforeAnyEdit: true });
+        const outer = issue.claimer();
+        let outerView: string | undefined;
+        let innerError: unknown;
+        const innerGh: Gh = (args) => {
+            if (args[0] === 'api' && args[1] === '-X' && args[2] === 'DELETE') {
+                outerView = outer.gh([
+                    'api',
+                    '--paginate',
+                    '--slurp',
+                    'repos/jcosta33/sourdaw/issues/7/timeline?per_page=100',
+                ]);
+            }
+            return inner.gh(args);
+        };
+        const outerGh: Gh = (args) => {
+            if (args[0] === 'api' && args[1] === '--paginate') {
+                try {
+                    claimTrackerIssue(7, innerGh, () => undefined, TOKEN_B);
+                } catch (error) {
+                    innerError = error;
+                }
+                return outerView ?? outer.gh(args);
+            }
+            return outer.gh(args);
+        };
+
+        expect(() => claimTrackerIssue(7, outerGh, () => undefined, TOKEN_A)).toThrow(
+            /issue #7 was claimed concurrently by https:\/\/github\.com\/jcosta33\/sourdaw\/issues\/7#issuecomment-5001; /
+        );
+
+        expect(String(innerError)).toMatch(
+            /issue #7 was claimed concurrently by https:\/\/github\.com\/jcosta33\/sourdaw\/issues\/7#issuecomment-5000; /
+        );
+        expect(itemEdits(inner.calls, outer.calls)).toEqual([]);
+        expect(claimComments(issue.timeline())).toEqual([]);
+        expect(issue.labels()).toContain('status:active');
+    });
+
+    it('lets the claim that posted first win when it runs entirely inside the other claim', () => {
+        const issue = fakeIssue(['bug', 'status:ready'], [ROADMAP]);
+        const inner = issue.claimer({ firstReadBeforeAnyEdit: true });
+        const outer = issue.claimer();
+        let innerError: unknown;
+        const outerGh: Gh = (args) => {
+            if (args[0] === 'issue' && args[1] === 'edit' && callsWith(inner.calls, ['issue', 'view']).length === 0) {
+                try {
+                    claimTrackerIssue(7, inner.gh, () => undefined, TOKEN_B);
+                } catch (error) {
+                    innerError = error;
+                }
+            }
+            return outer.gh(args);
+        };
+
+        expect(() => claimTrackerIssue(7, outerGh, () => undefined, TOKEN_A)).toThrow(
+            /issue #7 was claimed concurrently by https:\/\/github\.com\/jcosta33\/sourdaw\/issues\/7#issuecomment-5000; /
+        );
+
+        expect(innerError).toBeUndefined();
+        expect(itemEdits(inner.calls)).toHaveLength(1);
+        expect(itemEdits(outer.calls)).toEqual([]);
+        expect(outer.calls).toContainEqual(['api', '-X', 'DELETE', 'repos/jcosta33/sourdaw/issues/comments/5001']);
+        expect(claimComments(issue.timeline()).map((entry) => entry.id)).toEqual([5000]);
+    });
+
+    it('posts the claim token only after the label swap is observed, and decides from the paginated timeline', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP]);
+
+        claimTrackerIssue(7, gh, () => undefined, TOKEN_A);
+
+        const heads = calls.map((call) => call.slice(0, 3).join(' '));
+        expect(heads.slice(0, 5)).toEqual([
+            'issue view 7',
+            'issue edit 7',
+            'issue view 7',
+            'api -X POST',
+            'api --paginate --slurp',
+        ]);
+        expect(calls[3]).toEqual([
+            'api',
+            '-X',
+            'POST',
+            'repos/jcosta33/sourdaw/issues/7/comments',
+            '-f',
+            `body=Claimed by pnpm issue:claim (sourdaw-claim:v1:${TOKEN_A}).`,
+        ]);
+        expect(calls[4]).toEqual([
+            'api',
+            '--paginate',
+            '--slurp',
+            'repos/jcosta33/sourdaw/issues/7/timeline?per_page=100',
+        ]);
+    });
+
+    it('ignores a claim token left before status:active was last removed', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP], {
+            timeline: [
+                tokenComment(10, TOKEN_STALE),
+                { event: 'labeled', label: { name: 'status:active' } },
+                { event: 'unlabeled', label: { name: 'status:active' } },
+            ],
+        });
+
+        claimTrackerIssue(7, gh, () => undefined, TOKEN_A);
+
+        expect(callsWith(calls, ['project', 'item-edit'])).toHaveLength(1);
+        expect(callsWith(calls, ['api', '-X', 'DELETE'])).toEqual([]);
+    });
+
+    it('ignores earlier token comments another account wrote or that only quote a token', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP], {
+            timeline: [
+                tokenComment(10, TOKEN_STALE, 'MDQ6VXNlcjE='),
+                {
+                    ...tokenComment(11, TOKEN_STALE),
+                    body: `See Claimed by pnpm issue:claim (sourdaw-claim:v1:${TOKEN_STALE}).`,
+                },
+            ],
+        });
+
+        claimTrackerIssue(7, gh, () => undefined, TOKEN_A);
+
+        expect(callsWith(calls, ['project', 'item-edit'])).toHaveLength(1);
+    });
+
+    it('refuses behind an earlier operator token posted since the last release and withdraws its own', () => {
+        const { gh, calls, timeline } = fakeGh(['bug', 'status:ready'], [ROADMAP], {
+            timeline: [tokenComment(10, TOKEN_STALE)],
+        });
+
+        expect(() => claimTrackerIssue(7, gh, () => undefined, TOKEN_A)).toThrow(
+            /issue #7 was claimed concurrently by https:\/\/github\.com\/jcosta33\/sourdaw\/issues\/7#issuecomment-10; /
+        );
+        expect(calls.some((call) => call[0] === 'project')).toBe(false);
+        expect(claimComments(timeline()).map((entry) => entry.id)).toEqual([10]);
+    });
+
+    it('withdraws its comment and moves no board when its own token is not on the timeline', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP], { hideClaimComments: true });
+
+        expect(() => claimTrackerIssue(7, gh, () => undefined, TOKEN_A)).toThrow(
+            'issue #7 claim comment was not observed on the timeline; no board was moved; ' +
+                'status:active stays on the issue — if no lane holds it, remove the label and claim again'
+        );
+        expect(calls).toContainEqual(['api', '-X', 'DELETE', 'repos/jcosta33/sourdaw/issues/comments/5000']);
+        expect(calls.some((call) => call[0] === 'project')).toBe(false);
+    });
+
+    it('withdraws its comment when the timeline read fails, and reports a failed withdrawal too', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP]);
+        const timelineFails: Gh = (args) => {
+            if (args[0] === 'api' && args[1] === '--paginate') {
+                throw new Error('HTTP 502');
+            }
+            return gh(args);
+        };
+
+        expect(() => claimTrackerIssue(7, timelineFails, () => undefined, TOKEN_A)).toThrow('HTTP 502');
+        expect(calls).toContainEqual(['api', '-X', 'DELETE', 'repos/jcosta33/sourdaw/issues/comments/5000']);
+
+        const second = fakeGh(['bug', 'status:ready'], [ROADMAP]);
+        const withdrawalFails: Gh = (args) => {
+            if (args[0] === 'api' && args[1] === '-X' && args[2] === 'DELETE') {
+                throw new Error('HTTP 403');
+            }
+            return args[0] === 'api' && args[1] === '--paginate' ? timelineFails(args) : second.gh(args);
+        };
+        expect(() => claimTrackerIssue(7, withdrawalFails, () => undefined, TOKEN_A)).toThrow(
+            'HTTP 502; withdrawing claim comment 5000 also failed: HTTP 403'
+        );
+    });
+
+    it('refuses a malformed timeline instead of deciding the claim', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP]);
+        const malformed: Gh = (args) =>
+            args[0] === 'api' && args[1] === '--paginate' ? JSON.stringify({ message: 'nope' }) : gh(args);
+
+        expect(() => claimTrackerIssue(7, malformed, () => undefined, TOKEN_A)).toThrow(
+            'issue #7 timeline returned malformed data'
+        );
+        expect(calls.some((call) => call[0] === 'project')).toBe(false);
+    });
+});
+
 describe('claim label plan', () => {
     it('removes every other status label so the issue carries exactly one status', () => {
         expect(labelSwapPlan(['status:ready'])).toEqual({ add: ACTIVE_STATUS_LABEL, remove: ['status:ready'] });
@@ -466,9 +781,19 @@ describe('claim cli wiring', () => {
     it('binds the launcher, then authenticates, then hands gh the authenticated session, disposing it last', async () => {
         const order: string[] = [];
         let claimed = false;
+        let claimBody = '';
         const { deps, createGhSessions, authSession } = recordingDeps(order, (args) => {
             if (args[0] === 'issue' && args[1] === 'view') {
                 return JSON.stringify({ labels: claimed ? [{ name: 'status:active' }] : [], state: 'OPEN' });
+            }
+            if (args[0] === 'api' && args[2] === 'POST') {
+                claimBody = (args[5] ?? '').slice('body='.length);
+                return JSON.stringify({ id: 1 });
+            }
+            if (args[0] === 'api' && args[1] === '--paginate') {
+                return JSON.stringify([
+                    [{ event: 'commented', id: 1, body: claimBody, user: { node_id: OPERATOR_NODE_ID } }],
+                ]);
             }
             if (args[0] === 'api') {
                 return boardsGraphql([]);
@@ -482,7 +807,7 @@ describe('claim cli wiring', () => {
 
         await expect(runClaimTrackerIssueCli(['9'], deps)).resolves.toBe(0);
 
-        expect(order).toEqual(['bind', 'authenticate', 'gh', 'gh', 'gh', 'gh', 'dispose']);
+        expect(order).toEqual(['bind', 'authenticate', 'gh', 'gh', 'gh', 'gh', 'gh', 'gh', 'dispose']);
         expect(createGhSessions).toHaveLength(1);
         expect(createGhSessions[0]).toBe(authSession);
     });
