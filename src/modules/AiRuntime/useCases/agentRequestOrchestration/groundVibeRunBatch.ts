@@ -1,24 +1,13 @@
-import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
-import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
-import { digest } from '#/utils/canonicalDigest';
-
 import { type AgentRun, type AgentRunVibeRunBatchSchedule } from '../../models/AgentRun';
 import { type IntentResult } from '../../models/IntentResult';
-import { type ScheduledVibeRunBatch, type VibeRunInitialEvidence } from '../../models/VibeRunPlan';
-import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
-import { readVibeRunInitialReceipt } from '../../validators/readVibeRunInitialReceipt';
-import { getProjectContext } from '../getProjectContext';
+import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
+import { type getProjectContext } from '../getProjectContext';
 import { groundApplicationRecipeBatch } from '../groundApplicationRecipeBatch';
-import { type MetricGoal } from '../metricGoalContractTypes';
-import { objectiveMetricProjection } from '../objectiveMetricProjection';
+import { type VibeBatchValueChoice } from '../vibeRun/chooseVibeBatchValues';
 import { compileVibeBatchMetricState } from '../vibeRun/compileVibeBatchMetricState';
 import { readVibeBatchPairs } from '../vibeRun/readVibeBatchPairs';
-import { readVibeBatchRecipeGoals } from '../vibeRun/readVibeBatchRecipeGoals';
 
-import { readVibeRunBriefDrift } from './readVibeRunBriefDrift';
-
-/** The batches after the brief, which holds position 1 of its run. */
-const FIRST_BATCH_POSITION = 2;
+import { preflightVibeRunBatch } from './preflightVibeRunBatch';
 
 export type GroundedVibeRunBatch =
     | {
@@ -27,121 +16,43 @@ export type GroundedVibeRunBatch =
           context: ReturnType<typeof getProjectContext>;
           revision: string;
           batch: ScheduledVibeRunBatch;
+          /** Where the expanded values came from, which the batch card states per recipe. */
+          valueChoice: VibeBatchValueChoice;
       }
     | { status: 'rejected'; reason: string };
 
-/** A target the plan named that the project no longer lets a recipe change, refused rather than skipped. */
-function readTargetRefusal(batch: ScheduledVibeRunBatch, context: ReturnType<typeof getProjectContext>): string | null {
-    for (const targetId of batch.targetIds) {
-        const track = context.tracks.find((candidate) => candidate.id === targetId);
-        if (track === undefined) {
-            return `its target ${targetId} is no longer in the project`;
-        }
-        if (track.frozen === true) {
-            return `its target “${track.name}” is frozen`;
-        }
+function readPairValues(choice: VibeBatchValueChoice, targetId: string, recipeId: string) {
+    if (choice.source !== 'measurements') {
+        return [];
     }
-    return null;
-}
-
-function readStoredBatch(schedule: AgentRunVibeRunBatchSchedule, position: number) {
-    const plan = readScheduledVibeRunPlan(schedule.serializedPlan);
-    const batch = plan?.batches[position - FIRST_BATCH_POSITION];
-    if (plan === null || batch === undefined || plan.briefRevision !== schedule.briefRevision) {
-        return null;
-    }
-    return { plan, batch };
-}
-
-function readInitialWitnessRefusal(goal: MetricGoal, initial: VibeRunInitialEvidence): string | null {
-    if (goal.source.kind !== 'recipe' || goal.metricId === null || goal.range === null) {
-        return null;
-    }
-    const source = goal.source;
-    const witness = initial.witnesses.find((witness) => witness.id === goal.goalId);
-    const receipt = readVibeRunInitialReceipt(
-        initial.receipts.find((receipt) => receipt.callId === witness?.receiptCallId)
-    );
-    const entry = receipt?.data.targets.find((target) => goal.targetIds.includes(target.targetId))?.measurements[
-        goal.metricId
-    ];
-    if (
-        witness === undefined ||
-        witness.recipeDigest !== source.recipeDigest ||
-        witness.recipeId !== source.recipeId ||
-        witness.expectationIndex !== source.expectationIndex ||
-        witness.metric !== goal.metricId ||
-        witness.band !== goal.band ||
-        digest(witness.range) !== digest(goal.range) ||
-        receipt?.revision !== initial.sourceRevision ||
-        objectiveMetricProjection(goal.metricId, entry, goal.band) === null
-    ) {
-        return 'its initial exact-range recipe witness no longer validates';
-    }
-    return null;
-}
-
-function readInitialEvidenceRefusal(
-    runId: string,
-    batch: ScheduledVibeRunBatch,
-    initial: VibeRunInitialEvidence,
-    catalog: ReturnType<typeof getMixRecipeCatalog>
-): string | null {
-    if (initial.runId !== runId) {
-        return 'its initial measurement belongs to another run';
-    }
-    if (catalog.version !== initial.catalogVersion) {
-        return 'its recipe catalog changed since initial measurement';
-    }
-    const initialGoals = readVibeBatchRecipeGoals({ batch, catalog, range: initial.arrangementRange });
-    if (initialGoals.status === 'refused') {
-        return initialGoals.reason;
-    }
-    for (const goal of initialGoals.goals) {
-        const refusal = readInitialWitnessRefusal(goal, initial);
-        if (refusal !== null) {
-            return refusal;
-        }
-    }
-    return null;
+    return choice.pairs.find((pair) => pair.targetId === targetId && pair.recipeId === recipeId)?.values ?? [];
 }
 
 /**
  * Grounds the vibe-run batch at `position` from the plan the run recorded, against the live project
- * and the brief the plan was read from: every recipe of every target expands with no values, under
- * one application-stated authority, and the batch is held to the request's constraints as they were
- * recorded. A changed brief, a removed or frozen target, or a recipe that no longer expands refuses
- * the batch whole; it is never adapted or shrunk to what still grounds.
+ * and the brief the plan was read from. Every guard of `preflightVibeRunBatch` runs again here, at
+ * the revision the batch grounds at; every recipe of every target then expands with the values the
+ * value choice gave it, or with none (the middle of each authored window) when it kept the catalogue
+ * defaults, under one application-stated authority, and the batch is held to the request's
+ * constraints as they were recorded. A changed brief, a removed or frozen target, or a recipe that no
+ * longer expands refuses the batch whole; it is never adapted or shrunk to what still grounds.
  */
 export function groundVibeRunBatch(
     run: AgentRun,
     schedule: AgentRunVibeRunBatchSchedule,
-    position: number
+    position: number,
+    choice: VibeBatchValueChoice
 ): GroundedVibeRunBatch {
-    const stored = readStoredBatch(schedule, position);
-    if (stored === null) {
-        return { status: 'rejected', reason: 'its stored plan could not be read back' };
+    const preflight = preflightVibeRunBatch(run, schedule, position);
+    if (preflight.status === 'rejected') {
+        return preflight;
     }
-    const { plan, batch } = stored;
-    const revision = settlePendingProjectWritesAndCaptureRevision();
-    const context = getProjectContext();
-    const drift = readVibeRunBriefDrift(schedule, context.productionBrief?.revision ?? null);
-    if (drift !== null) {
-        return { status: 'rejected', reason: drift };
-    }
-    if (plan.schemaVersion === 1) {
-        return { status: 'rejected', reason: 'its legacy plan is unmeasured; request a new measured run' };
-    }
-    const catalog = getMixRecipeCatalog();
-    const initialRefusal = readInitialEvidenceRefusal(run.runId, batch, plan.initial, catalog);
-    if (initialRefusal !== null) {
-        return { status: 'rejected', reason: initialRefusal };
-    }
-    const targetRefusal = readTargetRefusal(batch, context);
-    if (targetRefusal !== null) {
-        return { status: 'rejected', reason: targetRefusal };
-    }
-    const [first, ...rest] = readVibeBatchPairs(batch).map((pair) => ({ ...pair, role: null }));
+    const { batch, context, revision } = preflight;
+    const [first, ...rest] = readVibeBatchPairs(batch).map((pair) => ({
+        ...pair,
+        role: null,
+        values: readPairValues(choice, pair.targetId, pair.recipeId),
+    }));
     if (first === undefined) {
         return { status: 'rejected', reason: 'its stored plan could not be read back' };
     }
@@ -186,6 +97,7 @@ export function groundVibeRunBatch(
         context,
         revision,
         batch,
+        valueChoice: choice,
         result: {
             actions: grounded.grounded.actions,
             metricGoalState: metric.metricGoalState,
@@ -197,7 +109,7 @@ export function groundVibeRunBatch(
             applicationToolReceipts: structuredClone(run.plan?.applicationToolReceipts ?? []),
             terminalMeasurementSettlement: run.plan?.terminalMeasurementSettlement,
             providerKnownTargetIds: grounded.grounded.providerKnownTargetIds,
-            adoptedRecipes: grounded.adoptedRecipes,
+            adoptedRecipes: grounded.adoptedRecipes.map((recipe) => ({ ...recipe, valueSource: choice.source })),
             protectionFacts: grounded.grounded.protectionFacts,
             batchSchedule: { ...planned, position },
         },

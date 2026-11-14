@@ -745,7 +745,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "021fc1d4efe1948863ce3b914dfe75f3bcbb1987a9c01e2834e306e733b938c5"
+                    "digest": "02f48d6c71d9818d9e805b07d9ee7174fea432b8654f7141f5839c672567fd52"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",

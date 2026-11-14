@@ -588,8 +588,14 @@ describe('getAgentApprovalView', () => {
             });
 
             expect(getAgentApprovalView({ confirmationId: 'confirmation-recipes' })?.recipes).toEqual([
-                { ...ADOPTED, targetId: 'track-lead', targetName: 'Lead Vocal' },
-                { recipeId: 'drums-punchy', title: 'Transient lift', targetId: 'track-kick', targetName: 'Kick' },
+                { ...ADOPTED, targetId: 'track-lead', targetName: 'Lead Vocal', valueSourceLabel: null },
+                {
+                    recipeId: 'drums-punchy',
+                    title: 'Transient lift',
+                    targetId: 'track-kick',
+                    targetName: 'Kick',
+                    valueSourceLabel: null,
+                },
             ]);
         });
 
@@ -597,8 +603,29 @@ describe('getAgentApprovalView', () => {
             propose('confirmation-recipe-track-gone', { adoptedRecipes: [{ ...ADOPTED, targetId: 'track-removed' }] });
 
             expect(getAgentApprovalView({ confirmationId: 'confirmation-recipe-track-gone' })?.recipes).toEqual([
-                { ...ADOPTED, targetId: 'track-removed', targetName: null },
+                { ...ADOPTED, targetId: 'track-removed', targetName: null, valueSourceLabel: null },
             ]);
+        });
+
+        // Red when the view stops reading a vibe batch recipe's value source into the words its line shows.
+        it('says where each vibe batch recipe took its values from', () => {
+            propose('confirmation-recipe-sources', {
+                adoptedRecipes: [
+                    { ...ADOPTED, targetId: 'track-lead', valueSource: 'measurements' },
+                    {
+                        recipeId: 'drums-punchy',
+                        title: 'Transient lift',
+                        targetId: 'track-kick',
+                        valueSource: 'catalogue-defaults',
+                    },
+                ],
+            });
+
+            expect(
+                getAgentApprovalView({ confirmationId: 'confirmation-recipe-sources' })?.recipes.map(
+                    (recipe) => recipe.valueSourceLabel
+                )
+            ).toEqual(['values chosen from measurements', 'catalogue defaults']);
         });
 
         it('reports no recipes for a proposal that adopted none', () => {

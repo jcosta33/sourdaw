@@ -65,7 +65,13 @@ type AgentApprovalView = {
         protectedRanges: readonly unknown[];
     };
     risk: { level: string; decision: string; reasons: readonly string[]; requiredTrustMode: string } | null;
-    recipes: readonly { recipeId: string; title: string; targetId: string; targetName: string | null }[];
+    recipes: readonly {
+        recipeId: string;
+        title: string;
+        targetId: string;
+        targetName: string | null;
+        valueSourceLabel: string | null;
+    }[];
     measuredPreview: { targets: readonly MeasuredPreviewTarget[] } | null;
     intentGroups: readonly ApprovalIntentGroup[];
     destructiveChanges: readonly ApprovalDestructiveChange[];
@@ -203,7 +209,7 @@ function renderRecipes(recipes: AgentApprovalView['recipes']): ReactElement | nu
         <ul aria-label="Adopted recipes" className="flex flex-col gap-0.5 text-foreground">
             {recipes.map((recipe, index) => (
                 <li key={`${recipe.recipeId}-${recipe.targetId}-${index}`}>
-                    {`Recipe: ${recipe.title} on ${recipe.targetName ?? 'a track no longer in the project'}`}
+                    {`Recipe: ${recipe.title} on ${recipe.targetName ?? 'a track no longer in the project'}${recipe.valueSourceLabel === null ? '' : ` — ${recipe.valueSourceLabel}`}`}
                 </li>
             ))}
         </ul>
