@@ -140,6 +140,35 @@ describe('handleAddSection — index', () => {
     });
 });
 
+describe('handleAddSection — execute index rule', () => {
+    it.each([{ index: undefined }, { index: 0 }, { index: 2 }, { index: 3 }, { index: 99 }])(
+        'accepts index $index and forwards it',
+        ({ index }) => {
+            mockedAddSection.mockReset();
+            mockedAddSection.mockReturnValue(true);
+            const result = handleAddSection.execute({
+                type: 'addSection',
+                payload: { startBeat: 0, endBeat: 4, name: 'X', sectionId: 's1', index },
+            });
+            expect(result).toBeUndefined();
+            expect(mockedAddSection.mock.calls[0]![5]).toBe(index);
+        }
+    );
+
+    it.each([{ index: -1 }, { index: 1.5 }, { index: Number.NaN }, { index: Number.POSITIVE_INFINITY }])(
+        'refuses index $index as a conflict without writing',
+        ({ index }) => {
+            mockedAddSection.mockReset();
+            const result = handleAddSection.execute({
+                type: 'addSection',
+                payload: { startBeat: 0, endBeat: 4, name: 'X', sectionId: 's1', index },
+            });
+            expect(result).toEqual({ status: 'conflict', reason: expect.any(String) });
+            expect(mockedAddSection).not.toHaveBeenCalled();
+        }
+    );
+});
+
 describe('handleAddSection — describe', () => {
     it('returns label with name and beat range', () => {
         const result = handleAddSection.describe({

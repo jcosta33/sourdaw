@@ -184,6 +184,22 @@ describe('removeSection undo restores section order', () => {
         expect(sectionIds()).toEqual([A.id, B.id, C.id]);
     });
 
+    it.each([{ index: -1 }, { index: 1.5 }, { index: Number.NaN }, { index: Number.POSITIVE_INFINITY }])(
+        'refuses addSection with malformed index $index without writing',
+        async ({ index }) => {
+            await addSections([A, B, C]);
+
+            await expect(
+                executeAppAction({
+                    type: 'addSection',
+                    payload: { startBeat: 24, endBeat: 32, name: 'D', sectionId: D.id, index },
+                })
+            ).rejects.toThrow(/conflicts with current project state/);
+
+            expect(sectionIds()).toEqual([A.id, B.id, C.id]);
+        }
+    );
+
     describe('with an older Clear Scratch Pad on the history', () => {
         async function removeAfterClear(): Promise<ReturnType<typeof structuredClone<typeof scratchPadStore.value>>> {
             await addSections([A, B]);

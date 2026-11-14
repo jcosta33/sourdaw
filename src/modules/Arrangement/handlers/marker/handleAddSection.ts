@@ -19,12 +19,21 @@ function ensureSectionId(action: AddSectionAction): string {
     return sectionId;
 }
 
+const MALFORMED_INDEX_REASON = 'Section slot must be a non-negative integer.';
+
+// executeAppAction (undo/redo replay included) never calls validate, so execute enforces the same rule.
+function isValidSectionIndex(index: number | undefined): boolean {
+    return index === undefined || (Number.isInteger(index) && index >= 0);
+}
+
 export const handleAddSection = createHandler<'addSection'>({
     // Singleton keeps addSection out of multi-action batches, as it was before it gained a validator.
     batchExecution: 'singleton',
-    validate: (action) =>
-        action.payload.index === undefined || (Number.isInteger(action.payload.index) && action.payload.index >= 0),
+    validate: (action) => isValidSectionIndex(action.payload.index),
     execute: (action) => {
+        if (!isValidSectionIndex(action.payload.index)) {
+            return { status: 'conflict', reason: MALFORMED_INDEX_REASON };
+        }
         const changed = addSection(
             action.payload.startBeat,
             action.payload.endBeat,
