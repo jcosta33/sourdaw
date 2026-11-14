@@ -1,3 +1,4 @@
+import { parse } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
@@ -7,6 +8,7 @@ import { compareAgentScopeMeasurements } from '#/modules/AudioAnalysis/useCases'
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
+import { MAX_AUDIBLE_CLAIM_METRICS } from '../../models/AgentRun';
 import {
     type MeasuredMetricDelta,
     type MeasuredPreview,
@@ -18,6 +20,7 @@ import { getPendingActionConfirmation } from '../../stores/pendingActionConfirma
 import { persistPromptActionConfirmation } from '../agentRequestOrchestration/persistPromptActionConfirmation';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
+import { AUDIBLE_CLAIM_TOO_LARGE_REASON } from '../deriveMeasuredAudibleImpact';
 import { digestCommandBatchContent } from '../digestCommandBatchContent';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
@@ -663,13 +666,56 @@ describe('the plan’s audible claim', () => {
         expect(audible().status).toBe('not-claimed');
     });
 
-    it('round-trips through the persisted run codec', () => {
-        proposeCard({ gain: 0.7, preview: previewOf([vocalTarget()]) });
+    /** What a reload reads: the JSON the store wrote, not the in-memory state. */
+    function reloadRunFromStorage(): ReturnType<typeof sanitizeAgentRunState>['runs'][number] | undefined {
+        const written = localStorage.getItem('sourdaw-agent-runs');
+        if (written === null) {
+            throw new Error('The run store wrote nothing.');
+        }
+        return sanitizeAgentRunState(parse(written)).runs.find((run) => run.runId === RUN_ID);
+    }
+
+    it('round-trips a claim over a named section through what the store wrote', () => {
+        proposeCard({
+            gain: 0.7,
+            preview: (bound) => ({
+                ...previewOf([vocalTarget()])(bound),
+                range: { startBeat: 4, endBeat: 8, sectionId: 'chorus' },
+            }),
+        });
         const before = audible();
-        expect(before.status).toBe('measured');
+        if (before.status !== 'measured') {
+            throw new Error('Expected a measured claim.');
+        }
+        expect(before.metrics[0]?.range).toEqual({ startBeat: 4, endBeat: 8, sectionId: 'chorus' });
         persistAgentRunState(readAgentRunState());
-        const hydrated = sanitizeAgentRunState(structuredClone(readAgentRunState()));
-        expect(hydrated.runs.find((run) => run.runId === RUN_ID)?.plan?.expectedImpact.audible).toEqual(before);
+        expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(before);
+    });
+
+    describe('the size of a claim', () => {
+        const manyTargets = (count: number) =>
+            Array.from({ length: count }, (_, index) => vocalTarget({ targetId: `target-${String(index)}` }));
+
+        it('claims exactly the limit and keeps the run across a write and reload', () => {
+            proposeCard({ gain: 0.7, preview: previewOf(manyTargets(MAX_AUDIBLE_CLAIM_METRICS)) });
+            const claim = audible();
+            if (claim.status !== 'measured') {
+                throw new Error(`Expected the claim at the limit, got: ${JSON.stringify(claim)}`);
+            }
+            expect(claim.metrics).toHaveLength(MAX_AUDIBLE_CLAIM_METRICS);
+            persistAgentRunState(readAgentRunState());
+            expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(claim);
+        });
+
+        it('claims nothing past the limit, says why, and keeps the run across a write and reload', () => {
+            proposeCard({ gain: 0.7, preview: previewOf(manyTargets(MAX_AUDIBLE_CLAIM_METRICS + 1)) });
+            expect(audible()).toEqual({ status: 'not-claimed', reason: AUDIBLE_CLAIM_TOO_LARGE_REASON });
+            persistAgentRunState(readAgentRunState());
+            expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual({
+                status: 'not-claimed',
+                reason: AUDIBLE_CLAIM_TOO_LARGE_REASON,
+            });
+        });
     });
 
     it('drops a run whose measured claim is malformed, as it does for other malformed plan fields', () => {

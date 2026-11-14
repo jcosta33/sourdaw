@@ -28,7 +28,7 @@ type AgentPlanAudibleView =
           metrics: ReadonlyArray<{
               targetId: string;
               targetKind: 'master' | 'track' | 'bus';
-              range: { startBeat: number; endBeat: number };
+              range: { startBeat: number; endBeat: number; sectionId: string | null };
               metricId: string;
               baseline: MeasuredFigureView;
               preview: MeasuredFigureView;
@@ -60,9 +60,12 @@ function renderAudibleImpact(audible: AgentPlanAudibleView, tracks: AgentPlanSec
         return <p className="text-xs text-muted-foreground">{`Audible impact ${audible.status}: ${audible.reason}`}</p>;
     }
     const lineCount = new Map<string, number>();
+    const sectionsByBeats = new Map<string, Set<string>>();
     for (const metric of audible.metrics) {
         const key = `${metric.targetId}\u0000${metric.metricId}`;
         lineCount.set(key, (lineCount.get(key) ?? 0) + 1);
+        const beats = `${key}\u0000${formatBeatRange(metric.range)}`;
+        sectionsByBeats.set(beats, (sectionsByBeats.get(beats) ?? new Set()).add(metric.range.sectionId ?? ''));
     }
     return (
         <>
@@ -73,8 +76,15 @@ function renderAudibleImpact(audible: AgentPlanAudibleView, tracks: AgentPlanSec
                         ...metric,
                         targetName: tracks.find((track) => track.id === metric.targetId)?.name ?? null,
                     });
-                    const repeated = (lineCount.get(`${metric.targetId}\u0000${metric.metricId}`) ?? 0) > 1;
-                    const range = repeated ? ` (${formatBeatRange(metric.range)})` : '';
+                    const lineKey = `${metric.targetId}\u0000${metric.metricId}`;
+                    const beats = formatBeatRange(metric.range);
+                    // Equal beats over different sections read alike, so only then is the section named.
+                    const sameBeatsAcrossSections = (sectionsByBeats.get(`${lineKey}\u0000${beats}`)?.size ?? 0) > 1;
+                    let rangeLabel = beats;
+                    if (sameBeatsAcrossSections) {
+                        rangeLabel = `${beats}, section ${metric.range.sectionId ?? 'none'}`;
+                    }
+                    const range = (lineCount.get(lineKey) ?? 0) > 1 ? ` (${rangeLabel})` : '';
                     return (
                         <li
                             key={`${metric.targetId}-${metric.metricId}-${String(metric.range.startBeat)}-${String(metric.range.endBeat)}`}

@@ -746,7 +746,7 @@ describe('AgentWorkspace', () => {
                 metricId: 'integratedLoudness',
                 baseline: { value: -14, unit: 'LUFS' },
                 preview: { value: -14 + delta, unit: 'LUFS' },
-                delta: { value: delta, unit: 'LUFS' },
+                delta: { value: delta, unit: 'LU' },
             });
             setRuns([
                 plannedRun({
@@ -768,8 +768,44 @@ describe('AgentWorkspace', () => {
                     .getAllByRole('listitem')
                     .map((item) => item.textContent)
             ).toEqual([
-                'Master integratedLoudness (beats 0–4): -14.00 LUFS → -12.50 LUFS (+1.50 LUFS)',
-                'Master integratedLoudness (beats 4–8): -14.00 LUFS → -13.20 LUFS (+0.80 LUFS)',
+                'Master integratedLoudness (beats 0–4): -14.00 LUFS → -12.50 LUFS (+1.50 LU)',
+                'Master integratedLoudness (beats 4–8): -14.00 LUFS → -13.20 LUFS (+0.80 LU)',
+            ]);
+        });
+
+        it('tells apart ranges with equal beats over different sections', () => {
+            agentRunControlsMock.list.mockReturnValue([projection()]);
+            const loudness = (sectionId: string | null, delta: number) => ({
+                targetId: 'master-uuid',
+                targetKind: 'master' as const,
+                range: { startBeat: 0, endBeat: 4, sectionId },
+                metricId: 'integratedLoudness',
+                baseline: { value: -14, unit: 'LUFS' },
+                preview: { value: -14 + delta, unit: 'LUFS' },
+                delta: { value: delta, unit: 'LU' },
+            });
+            setRuns([
+                plannedRun({
+                    stoppingConditions: [],
+                    audible: {
+                        status: 'measured',
+                        revision: 'revision-1',
+                        batchContentHash: 'hash-1',
+                        metrics: [loudness('verse', 1.5), loudness('chorus', 0.8)],
+                    },
+                }),
+            ]);
+
+            render(<AgentWorkspace />);
+
+            const list = screen.getByRole('list', { name: 'Measured audible impact' });
+            expect(
+                within(list)
+                    .getAllByRole('listitem')
+                    .map((item) => item.textContent)
+            ).toEqual([
+                'Master integratedLoudness (beats 0–4, section verse): -14.00 LUFS → -12.50 LUFS (+1.50 LU)',
+                'Master integratedLoudness (beats 0–4, section chorus): -14.00 LUFS → -13.20 LUFS (+0.80 LU)',
             ]);
         });
 
@@ -795,7 +831,7 @@ describe('AgentWorkspace', () => {
                                 metricId: 'rms',
                                 baseline: { value: -20.123456789, unit: 'dBFS' },
                                 preview: { value: -17.0000001, unit: 'dBFS' },
-                                delta: { value: 3.123456689, unit: 'dBFS' },
+                                delta: { value: 3.123456689, unit: 'dB' },
                             },
                             {
                                 targetId: 'master-uuid',
@@ -804,7 +840,7 @@ describe('AgentWorkspace', () => {
                                 metricId: 'truePeak',
                                 baseline: { value: -3, unit: 'dBTP' },
                                 preview: { value: -4.5, unit: 'dBTP' },
-                                delta: { value: -1.5, unit: 'dBTP' },
+                                delta: { value: -1.5, unit: 'dB' },
                             },
                             {
                                 targetId: 'bus-uuid',
@@ -829,8 +865,8 @@ describe('AgentWorkspace', () => {
                     .getAllByRole('listitem')
                     .map((item) => item.textContent)
             ).toEqual([
-                'Lead Vocal rms: -20.12 dBFS → -17.00 dBFS (+3.12 dBFS)',
-                'Master truePeak: -3.00 dBTP → -4.50 dBTP (-1.50 dBTP)',
+                'Lead Vocal rms: -20.12 dBFS → -17.00 dBFS (+3.12 dB)',
+                'Master truePeak: -3.00 dBTP → -4.50 dBTP (-1.50 dB)',
                 'bus-uuid crestFactor: 9.00 dB → 9.00 dB (+0.50 dB)',
             ]);
             expect(container.textContent).not.toContain('track-uuid-1');

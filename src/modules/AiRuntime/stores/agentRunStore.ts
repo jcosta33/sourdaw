@@ -22,6 +22,7 @@ import {
     type AgentRunCommittedWork,
     type AgentRunDecision,
     type AgentRunError,
+    MAX_AUDIBLE_CLAIM_METRICS,
     type AgentRunMeasuredAudibleMetric,
     type AgentRunPlan,
     type AgentRunPlanAudibleImpact,
@@ -970,7 +971,7 @@ function readAudibleImpact(value: UnknownRecord): AgentRunPlanAudibleImpact | nu
     }
     const revision = readString(value.revision);
     const batchContentHash = readString(value.batchContentHash);
-    const metrics = readCollection(value.metrics, readMeasuredAudibleMetric);
+    const metrics = readCollection(value.metrics, readMeasuredAudibleMetric, MAX_AUDIBLE_CLAIM_METRICS);
     return revision === null || batchContentHash === null || metrics === null
         ? null
         : { status: 'measured', revision, batchContentHash, metrics };

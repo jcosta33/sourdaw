@@ -491,7 +491,7 @@ function recordAgentRunPlan(input: {
     budgets: AgentRunBudgets;
     plan?: AgentRunPlan;
     /** The measured claim this write itself supplies; every other plan write claims nothing audible. */
-    audibleClaim?: Extract<AgentRunPlan['expectedImpact']['audible'], { status: 'measured' }>;
+    audibleClaim?: AgentRunPlan['expectedImpact']['audible'];
     recordedAt?: number;
 }): AgentRun {
     return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
@@ -535,7 +535,7 @@ function recordAgentRunPlan(input: {
  */
 function withAudibleClaim(
     plan: AgentRunPlan,
-    claim: Extract<AgentRunPlan['expectedImpact']['audible'], { status: 'measured' }> | undefined
+    claim: AgentRunPlan['expectedImpact']['audible'] | undefined
 ): AgentRunPlan {
     if (claim === undefined && plan.expectedImpact.audible.status === 'not-claimed') {
         return plan;

@@ -172,6 +172,9 @@ export type AgentRunMeasuredAudibleMetric = {
     delta: AgentRunMeasuredFigure;
 };
 
+/** The most figures a plan's audible claim lists; the persisted run is refused past it, so a claim never exceeds it. */
+export const MAX_AUDIBLE_CLAIM_METRICS = 256;
+
 /**
  * What the plan says the batch does to the sound: nothing, or the figures of a measurement bound to
  * exactly this batch at this revision.

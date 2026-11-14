@@ -1,17 +1,24 @@
-import { getAgentObjectiveDeltaUnit } from '#/modules/AudioAnalysis/useCases';
-
-import { type AgentRunMeasuredAudibleMetric, type AgentRunPlanAudibleImpact } from '../models/AgentRun';
+import {
+    MAX_AUDIBLE_CLAIM_METRICS,
+    type AgentRunMeasuredAudibleMetric,
+    type AgentRunPlanAudibleImpact,
+} from '../models/AgentRun';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 
 import { bindMeasuredPreviewToBatch } from './bindMeasuredPreviewToBatch';
-import { OBJECTIVE_METRIC_UNITS, objectiveMetricProjection } from './objectiveMetricProjection';
+import {
+    OBJECTIVE_METRIC_CHANGE_UNITS,
+    OBJECTIVE_METRIC_UNITS,
+    objectiveMetricProjection,
+} from './objectiveMetricProjection';
 
 import type { ObjectiveMetricId } from './metricGoalContractTypes';
 
+export const AUDIBLE_CLAIM_TOO_LARGE_REASON =
+    'The measurement moved more figures than a plan can list; the card shows them.';
+
 export const NO_AUDIBLE_CLAIM_REASON =
     'The application plans state changes but does not infer or claim that it listened to audio.';
-
-type MeasuredAudibleImpact = Extract<AgentRunPlanAudibleImpact, { status: 'measured' }>;
 
 type DeriveMeasuredAudibleImpactInput = {
     envelope: Parameters<typeof bindMeasuredPreviewToBatch>[1];
@@ -48,7 +55,7 @@ function measuredEntries(preview: MeasuredPreview): MeasuredEntry[] {
                 delta.delta === 0 ||
                 baseline === null ||
                 previewed === null ||
-                delta.unit !== getAgentObjectiveDeltaUnit(OBJECTIVE_METRIC_UNITS[metricId])
+                delta.unit !== OBJECTIVE_METRIC_CHANGE_UNITS[metricId]
             ) {
                 return [{ key, metric: null }];
             }
@@ -74,9 +81,13 @@ function movedMetrics(preview: MeasuredPreview): AgentRunMeasuredAudibleMetric[]
     return measuredEntries(preview).flatMap((entry) => (entry.metric === null ? [] : [entry.metric]));
 }
 
-function claimOf(preview: MeasuredPreview, metrics: AgentRunMeasuredAudibleMetric[]): MeasuredAudibleImpact | null {
+function claimOf(preview: MeasuredPreview, metrics: AgentRunMeasuredAudibleMetric[]): AgentRunPlanAudibleImpact | null {
     if (metrics.length === 0) {
         return null;
+    }
+    // Never truncated: a list that leaves figures out would claim less than the card shows as moved.
+    if (metrics.length > MAX_AUDIBLE_CLAIM_METRICS) {
+        return { status: 'not-claimed', reason: AUDIBLE_CLAIM_TOO_LARGE_REASON };
     }
     return { status: 'measured', revision: preview.revision, batchContentHash: preview.batchContentHash, metrics };
 }
@@ -102,7 +113,7 @@ function mergeProofMetrics(proofs: readonly MeasuredPreview[]): AgentRunMeasured
  * metric. A preview of another batch or revision never contributes, so a claim never describes a
  * change nobody measured.
  */
-export function deriveMeasuredAudibleImpact(input: DeriveMeasuredAudibleImpactInput): MeasuredAudibleImpact | null {
+export function deriveMeasuredAudibleImpact(input: DeriveMeasuredAudibleImpactInput): AgentRunPlanAudibleImpact | null {
     const snapshot = bindMeasuredPreviewToBatch(input.snapshotPreview, input.envelope);
     if (snapshot !== undefined) {
         return claimOf(snapshot, movedMetrics(snapshot));
