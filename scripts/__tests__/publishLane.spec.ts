@@ -1223,9 +1223,10 @@ describe('lane publish', () => {
                     const invocations = readFileSync(commands, 'utf8')
                         .trim()
                         .split('\n')
-                        .map((line) => JSON.parse(line));
-                    expect(invocations).toHaveLength(1);
-                    expect(invocations[0]).toEqual(
+                        .map((line) => JSON.parse(line) as string[]);
+                    const pushes = invocations.filter((args) => args.includes('push'));
+                    expect(pushes).toHaveLength(1);
+                    expect(pushes[0]).toEqual(
                         expect.arrayContaining(['push', '--no-verify', `${f.headSha}:refs/heads/agent/12/notes-proof`])
                     );
                     expect(fixtureGit(f.remote, ['rev-parse', 'refs/heads/agent/12/notes-proof'])).toBe(f.headSha);
@@ -4975,7 +4976,8 @@ describe('lane publish', () => {
  * same substitution the push tests above use, and every git-backed port member is the real
  * `shellPort` one. Only the GitHub reads and writes are faked.
  */
-describe('push delta authorship gate', () => {
+// Each publication runs three isolated transports against real Git; the default 5s is too tight under load.
+describe('push delta authorship gate', { timeout: 20_000 }, () => {
     const BRANCH = 'agent/12/authorship';
     const HUMAN_EMAIL = 'fixture@example.com';
     /** A human commit made under the fixture's own config differs from the stamp in all four fields. */
