@@ -25,7 +25,6 @@ import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { readExplicitProtections } from '../agentReference/readExplicitProtections';
 import { agentRunLifecycle } from '../agentRunLifecycle';
-import { CANONICAL_ROLE_OPTIONS } from '../canonicalRoleFamilies';
 import { type MeasurementUnitProgress } from '../measureProjectUnit';
 import { type MetricGoal } from '../metricGoalContractTypes';
 import { objectiveMetricProjection } from '../objectiveMetricProjection';
@@ -41,6 +40,8 @@ import { formatVibeFigure } from './formatVibeFigure';
 import { readVibeBatchRecipeGoals } from './readVibeBatchRecipeGoals';
 import { readVibeMetricLabel } from './readVibeMetricLabel';
 import { readVibeRunFitRefusals } from './readVibeRunFitRefusals';
+import { readVibeRunValueChoiceScheduleFit } from './readVibeRunValueChoiceScheduleFit';
+import { withBriefTrackRoles } from './withBriefTrackRoles';
 
 type VibeRunSchedule = Extract<NonNullable<IntentResult['batchSchedule']>, { kind: 'vibe-run' }>;
 
@@ -72,43 +73,6 @@ const UNPLANNED_REASONS: Readonly<Record<VibeRunUnplannedRole['reason'], string>
     'no-expected-deltas': 'no requested character has a measurable recipe for them',
     'target-exceeds-batch-cap': 'their recipes alone expand past one batch',
 };
-
-/**
- * The roles the confirmed brief states, read onto every track that had none, exactly as the project
- * context reads an authored role: one supported role, or `unknown` beside a conflicting or unsupported
- * one. A role the project already gives is never replaced, as the brief itself never replaces one.
- */
-function withBriefTrackRoles(
-    tracks: ProjectContext['tracks'],
-    brief: ProjectContextProductionBrief
-): ProjectContext['tracks'] {
-    return tracks.map((track) => {
-        if (track.canonicalRole?.source === 'authored') {
-            return track;
-        }
-        const roles = brief.trackRoles.filter((entry) => entry.trackId === track.id).map((entry) => entry.role);
-        if (roles.length === 0) {
-            return track;
-        }
-        const supported = roles.every((role) => CANONICAL_ROLE_OPTIONS.some((option) => option === role));
-        if (!supported) {
-            return {
-                ...track,
-                canonicalRole: { role: 'unknown', source: 'authored', evidence: 'unsupported-authored-role' },
-            };
-        }
-        if (new Set(roles).size !== 1) {
-            return {
-                ...track,
-                canonicalRole: { role: 'unknown', source: 'authored', evidence: 'conflicting-authored-roles' },
-            };
-        }
-        return {
-            ...track,
-            canonicalRole: { role: roles[0] ?? 'unknown', source: 'authored', evidence: 'authored-role' },
-        };
-    });
-}
 
 function toScheduledBatch(batch: VibeRunPlan['batches'][number]): ScheduledVibeRunBatch {
     return {
@@ -483,6 +447,14 @@ function completeMeasuredSchedule(input: {
             receipts: input.collected.receipts,
         };
     }
+    const valueChoice = readVibeRunValueChoiceScheduleFit(input.source, plan, input.catalog);
+    if (valueChoice.status === 'refused') {
+        return {
+            status: 'unscheduled',
+            lines: [`No batches were scheduled after the brief: ${valueChoice.reason}.`],
+            receipts: input.collected.receipts,
+        };
+    }
     const schedule = buildSchedule(plan, input.reading);
     return {
         status: 'scheduled',
@@ -495,6 +467,7 @@ function completeMeasuredSchedule(input: {
                 context: input.source.context,
                 total: schedule.total,
             }),
+            ...valueChoice.lines,
             ...evidence.lines,
             ...input.collected.receipts.flatMap((receipt) => receipt.warnings),
             'Initial figures are historical and do not authorize a batch.',
