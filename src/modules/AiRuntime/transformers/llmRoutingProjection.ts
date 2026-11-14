@@ -10,22 +10,26 @@ type RoutingProjectionLookup = {
     readonly [Type in RuntimeActionType]: (context: ProjectContext, action: ActionOf<Type>) => ProjectContext;
 };
 
-const unchangedContext = (context: ProjectContext): ProjectContext => context;
+function unchangedContext(context: ProjectContext): ProjectContext {
+    return context;
+}
 
 function projectAddSidechainRoute(context: ProjectContext, action: ActionOf<'addSidechainRoute'>): ProjectContext {
     const target = findTrack(context, action.payload.targetTrackId);
-    const targetDevice = target
-        ? findSupportedSidechainDevices(target).find(
-              (device) => action.payload.targetDeviceId === undefined || device.id === action.payload.targetDeviceId
-          )
-        : undefined;
+    if (!target) {
+        return context;
+    }
+    const targetDevice = findSupportedSidechainDevices(target).find(
+        (device) => action.payload.targetDeviceId === undefined || device.id === action.payload.targetDeviceId
+    );
     if (!targetDevice) {
         return context;
     }
+    const existingRoutes = context.sidechainRoutes ?? [];
     return {
         ...context,
         sidechainRoutes: [
-            ...(context.sidechainRoutes ?? []),
+            ...existingRoutes,
             {
                 id: `provider-batch:${action.payload.sourceTrackId}:${targetDevice.id}`,
                 sourceTrackId: action.payload.sourceTrackId,
@@ -80,10 +84,11 @@ function projectAddSend(context: ProjectContext, action: ActionOf<'addSend'>): P
             if (track.id !== action.payload.trackId) {
                 return track;
             }
+            const existingSends = track.sends ?? [];
             return {
                 ...track,
                 sends: [
-                    ...(track.sends ?? []),
+                    ...existingSends,
                     {
                         busId: action.payload.busId,
                         level: level.linear,

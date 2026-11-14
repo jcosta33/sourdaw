@@ -58,11 +58,11 @@ import { bridgeMidiToolCall } from './llmActionStrategies/midiStrategy';
 import { bridgeRoutingToolCall } from './llmActionStrategies/routingStrategy';
 import { bridgeTrackToolCall } from './llmActionStrategies/trackStrategy';
 import { bridgeTransportTimelineToolCall } from './llmActionStrategies/transportTimelineStrategy';
-import { applyAcceptedRoutingAction } from './llmRoutingProjection';
 import { getAutomationTransformLaneId } from './llmAutomationTransformLaneId';
 import { getClipTargetIds } from './llmClipTargetIds';
 import { getDeviceBatchTarget } from './llmDeviceBatchTarget';
 import { getClipAutomationLaneIds, getMutationKeys } from './llmMutationKeys';
+import { applyAcceptedRoutingAction } from './llmRoutingProjection';
 import { hasInvalidatingSidechainLifecycleMutation } from './llmSidechainLifecycle';
 import { type ToolCallResult } from './toolCallParser';
 

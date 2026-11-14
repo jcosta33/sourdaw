@@ -24,6 +24,11 @@ const context: ProjectContext = {
     metronomeVolume: 0.5,
     masterGain: 1,
     tracks: [],
+    selectedTrackId: null,
+    selectedClipId: null,
+    selectedClipIds: [],
+    activeView: 'arrange',
+    playheadPosition: 0,
 };
 
 // An action no lookup lists a behaviour for, so every lookup answers its default.
