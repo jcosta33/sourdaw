@@ -1,18 +1,19 @@
 import { createHash } from 'node:crypto';
 import {
-    cpSync,
     chmodSync,
+    cpSync,
     existsSync,
     mkdirSync,
     mkdtempSync,
     readFileSync,
     realpathSync,
-    writeFileSync,
-    symlinkSync,
     rmSync,
+    symlinkSync,
+    writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -23,16 +24,15 @@ import {
     assertRuntimeArchiveBindings,
     buildCommand,
     generationInputsHash,
-    wasmGenerationEnvironment,
     parseBinaryenIdentity,
     parseBuildGeneration,
     qualifyBinaryenArchive,
-    readBuildReceipt,
-    wasmCacheRoot,
     readBoundedArchive,
+    readBuildReceipt,
     validateBuildReceipt,
+    wasmCacheRoot,
+    wasmGenerationEnvironment,
 } from '../binaryenBuild.ts';
-
 import { snapshotImportSpecifiers, trustedLocalImportClosure } from '../trustedGithubWriteBootstrap.ts';
 import { wasmArtifacts } from '../wasm-artifacts.ts';
 
