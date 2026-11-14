@@ -20,7 +20,7 @@ vi.mock('#/modules/Command/useCases', () => ({ resetActionReplayAuthority: vi.fn
 
 vi.stubGlobal(
     'Worker',
-    vi.fn(() => {
+    vi.fn(function WorkerMock() {
         throw new Error('no worker in test');
     })
 );
