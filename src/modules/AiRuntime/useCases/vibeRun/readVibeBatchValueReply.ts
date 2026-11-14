@@ -43,7 +43,7 @@ function readDecline(call: ToolCallResult): VibeBatchValueReply {
     if (typeof reason !== 'string' || reason.trim() === '') {
         return reject(`${VIBE_BATCH_VALUE_KEEP_DEFAULTS_TOOL_NAME}.reason must be a non-empty string`);
     }
-    return { status: 'declined', reason: reason.trim().replace(/\s+/gu, ' ').slice(0, DECLINE_REASON_MAX_CHARS) };
+    return { status: 'declined', reason: reason.trim().replaceAll(/\s+/gu, ' ').slice(0, DECLINE_REASON_MAX_CHARS) };
 }
 
 type PairValuesRead = { status: 'read'; values: VibeBatchChosenValue[] } | { status: 'rejected'; reason: string };

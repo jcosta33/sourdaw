@@ -65,7 +65,13 @@ type AgentApprovalView = {
         protectedRanges: readonly unknown[];
     };
     risk: { level: string; decision: string; reasons: readonly string[]; requiredTrustMode: string } | null;
-    recipes: readonly { recipeId: string; title: string; targetId: string; targetName: string | null }[];
+    recipes: readonly {
+        recipeId: string;
+        title: string;
+        targetId: string;
+        targetName: string | null;
+        valueSourceLabel: string | null;
+    }[];
     measuredPreview: { targets: readonly MeasuredPreviewTarget[] } | null;
     intentGroups: readonly ApprovalIntentGroup[];
     destructiveChanges: readonly ApprovalDestructiveChange[];

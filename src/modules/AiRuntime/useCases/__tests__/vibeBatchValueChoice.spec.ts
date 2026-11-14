@@ -53,7 +53,7 @@ registerSupportingServicePorts();
  */
 type Dialect = 'anthropic' | 'openai' | 'openai-compatible';
 
-const runtimeMocks = vi.hoisted(() => ({ backend: { value: 'cloud' }, dialect: { value: 'anthropic' as string } }));
+const runtimeMocks = vi.hoisted(() => ({ backend: { value: 'cloud' }, dialect: { value: 'anthropic' } }));
 const planning = vi.hoisted(() => ({
     original: null as null | typeof import('../llmOrchestration/inference').generateToolPlanningOutcome,
 }));
@@ -254,66 +254,81 @@ function readUserJson(value: unknown): Record<string, unknown> | null {
     return null;
 }
 
+type AnsweredReply = Exclude<Reply, { status: number }>;
+
+/** The Anthropic Messages content blocks for a reply: one text block, or one `tool_use` block per call. */
+function anthropicContent(reply: AnsweredReply): unknown[] {
+    if ('text' in reply) {
+        return [{ type: 'text', text: reply.text }];
+    }
+    return reply.calls.map((call, index) => ({
+        type: 'tool_use',
+        id: `toolu_${String(index)}`,
+        name: encodeWireToolName(call.name),
+        input: call.arguments,
+    }));
+}
+
+/** The OpenAI Responses output items for a reply: one message item, or one `function_call` item per call. */
+function openAiResponsesOutput(reply: AnsweredReply): unknown[] {
+    if ('text' in reply) {
+        return [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: reply.text }] }];
+    }
+    return reply.calls.map((call, index) => ({
+        type: 'function_call',
+        id: `fc_${String(index)}`,
+        call_id: `call_${String(index)}`,
+        name: encodeWireToolName(call.name),
+        arguments: JSON.stringify(call.arguments),
+    }));
+}
+
+/** The Chat Completions assistant message for a reply: text content, or `tool_calls` with null content. */
+function chatCompletionsMessage(reply: AnsweredReply): unknown {
+    if ('text' in reply) {
+        return { role: 'assistant', content: reply.text };
+    }
+    return {
+        role: 'assistant',
+        content: null,
+        tool_calls: reply.calls.map((call, index) => ({
+            id: `call_${String(index)}`,
+            type: 'function',
+            function: { name: encodeWireToolName(call.name), arguments: JSON.stringify(call.arguments) },
+        })),
+    };
+}
+
 function encodeReply(dialect: string, reply: Reply): { status: number; body: string } {
     if ('status' in reply) {
         return { status: reply.status, body: '{"error":{"message":"overloaded"}}' };
     }
     const usage = { input: 900, output: 120 };
     if (dialect === 'anthropic') {
-        const content =
-            'text' in reply
-                ? [{ type: 'text', text: reply.text }]
-                : reply.calls.map((call, index) => ({
-                      type: 'tool_use',
-                      id: `toolu_${String(index)}`,
-                      name: encodeWireToolName(call.name),
-                      input: call.arguments,
-                  }));
         return {
             status: 200,
             body: JSON.stringify({
                 id: 'msg_values',
                 type: 'message',
                 role: 'assistant',
-                content,
+                content: anthropicContent(reply),
                 stop_reason: 'text' in reply ? 'end_turn' : 'tool_use',
                 usage: { input_tokens: usage.input, output_tokens: usage.output },
             }),
         };
     }
     if (dialect === 'openai') {
-        const output =
-            'text' in reply
-                ? [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: reply.text }] }]
-                : reply.calls.map((call, index) => ({
-                      type: 'function_call',
-                      id: `fc_${String(index)}`,
-                      call_id: `call_${String(index)}`,
-                      name: encodeWireToolName(call.name),
-                      arguments: JSON.stringify(call.arguments),
-                  }));
         return {
             status: 200,
             body: JSON.stringify({
                 id: 'resp_values',
                 status: 'completed',
-                output,
+                output: openAiResponsesOutput(reply),
                 usage: { input_tokens: usage.input, output_tokens: usage.output },
             }),
         };
     }
-    const message =
-        'text' in reply
-            ? { role: 'assistant', content: reply.text }
-            : {
-                  role: 'assistant',
-                  content: null,
-                  tool_calls: reply.calls.map((call, index) => ({
-                      id: `call_${String(index)}`,
-                      type: 'function',
-                      function: { name: encodeWireToolName(call.name), arguments: JSON.stringify(call.arguments) },
-                  })),
-              };
+    const message = chatCompletionsMessage(reply);
     return {
         status: 200,
         body: JSON.stringify({
@@ -385,23 +400,25 @@ function drumsChoice(values: unknown[] = DRUMS_CHOICE): Reply {
 /** Each parameter write of the card, on the track whose added device it writes. */
 function parameterWrites(card: Confirmation) {
     const trackOfDevice = new Map(
-        card.actions.flatMap((action) =>
-            action.type === 'addDevice' && action.payload.deviceId !== undefined
-                ? [[action.payload.deviceId, action.payload.trackId] as const]
-                : []
-        )
+        card.actions.flatMap((action) => {
+            if (action.type !== 'addDevice' || action.payload.deviceId === undefined) {
+                return [];
+            }
+            return [[action.payload.deviceId, action.payload.trackId] as const];
+        })
     );
-    return card.actions.flatMap((action) =>
-        action.type === 'setDeviceParameter'
-            ? [
-                  {
-                      paramId: action.payload.paramId,
-                      value: action.payload.value,
-                      trackId: trackOfDevice.get(action.payload.deviceId) ?? null,
-                  },
-              ]
-            : []
-    );
+    return card.actions.flatMap((action) => {
+        if (action.type !== 'setDeviceParameter') {
+            return [];
+        }
+        return [
+            {
+                paramId: action.payload.paramId,
+                value: action.payload.value,
+                trackId: trackOfDevice.get(action.payload.deviceId) ?? null,
+            },
+        ];
+    });
 }
 
 /** The drums-warm window middles; an insert leaves out a write equal to what the new EQ starts at. */
@@ -556,12 +573,15 @@ describe('hosted value choice for a vibe batch', () => {
         ]);
         const text = JSON.stringify(body);
         expect(text).not.toMatch(/contentAddress|frameCount|sampleRate|"samples"/u);
-        const longestArray = (value: unknown): number =>
-            Array.isArray(value)
-                ? Math.max(value.length, ...value.map(longestArray))
-                : isRecord(value)
-                  ? Math.max(0, ...Object.values(value).map(longestArray))
-                  : 0;
+        const longestArray = (value: unknown): number => {
+            if (Array.isArray(value)) {
+                return Math.max(value.length, ...value.map(longestArray));
+            }
+            if (isRecord(value)) {
+                return Math.max(0, ...Object.values(value).map(longestArray));
+            }
+            return 0;
+        };
         expect(longestArray(user)).toBeLessThan(16);
     });
 
