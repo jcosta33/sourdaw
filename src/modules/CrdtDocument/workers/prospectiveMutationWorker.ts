@@ -19,7 +19,10 @@ self.onmessage = async (event: MessageEvent<unknown>): Promise<void> => {
         await initializeWasm(wasmUrl);
         const result = materializeProspectiveMutation(data);
         const response: ProspectiveMutationWorkerResponse = { status: 'complete', ...result };
-        self.postMessage(response, [result.bytes.buffer]);
+        self.postMessage(
+            response,
+            result.changes.map((bytes) => bytes.buffer)
+        );
     } catch (error) {
         const response: ProspectiveMutationWorkerResponse = {
             status: 'failed',

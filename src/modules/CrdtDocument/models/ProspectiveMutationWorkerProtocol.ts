@@ -10,7 +10,7 @@ export type ProspectiveMutationWorkerRequest = {
 };
 
 export type ProspectiveMutationWorkerResult = {
-    readonly bytes: Uint8Array<ArrayBuffer>;
+    readonly changes: Uint8Array<ArrayBuffer>[];
     readonly heads: readonly string[];
 };
 
