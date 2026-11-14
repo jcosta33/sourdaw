@@ -207,6 +207,7 @@ describe('checkBarrelMockCoverage — Vite-erased type-only module edges', () =>
     }
 
     it.each([
+        ['a declaration-level type import', "import type { PreviewHandle } from './Bridge';"],
         ['an all-inline type import', "import { type PreviewHandle } from './Bridge';"],
         ['an all-inline type re-export', "export { type PreviewHandle } from './Bridge';"],
     ])('%s is erased and does not make its downstream mock key reachable', async (_label, edge) => {

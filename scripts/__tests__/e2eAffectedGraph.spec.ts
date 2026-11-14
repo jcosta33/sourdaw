@@ -1,10 +1,19 @@
+// @vitest-environment node
+
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { completeRuntimeGraph, loadAffectedE2e, selectAffectedE2e, type SourceNode } from '../e2eAffectedGraph';
+import {
+    completeRuntimeGraph,
+    loadAffectedE2e,
+    loadRuntimeGraph,
+    offPageSources,
+    selectAffectedE2e,
+    type SourceNode,
+} from '../e2eAffectedGraph';
 
 const observedGraphs = vi.hoisted(() => new Array<string>());
 const observedRoots = vi.hoisted(() => new Array<string>());
@@ -262,6 +271,24 @@ describe('affected E2E graph', () => {
                 'public runtime asset imports product source'
             );
         });
+        const bridge = 'config/runtime/bridge.ts';
+        const bridged: SourceNode[] = [
+            ...nodes.map((node) => (node.source === asset ? { ...node, dependencies: [{ resolved: bridge }] } : node)),
+            { source: bridge, dependencies: [{ resolved: TUNER }] },
+        ];
+        withRuntimeSources(
+            bridged,
+            {
+                [loader]: source,
+                [asset]: "import '../../config/runtime/bridge';",
+                [bridge]: `import '../../${TUNER}';`,
+            },
+            (root) => {
+                expect(() => completeRuntimeGraph(root, bridged)).toThrow(
+                    'public runtime asset imports product source: config/runtime/bridge.ts'
+                );
+            }
+        );
         withRuntimeSources(nodes, { [loader]: source, [asset]: 'export const decoder = import(template);' }, (root) => {
             expect(selectCompleted(root, nodes)).toMatchObject({ kind: 'full' });
         });
@@ -279,7 +306,7 @@ describe('affected E2E graph', () => {
     });
 
     it.each(['explicit', 'implicit', 'inherited'])(
-        'rejects shadowed imports and qualified Workers in the installed graph loader (%s baseUrl)',
+        'rejects shadowed imports and qualified Workers in the installed graph loader (%s alias declaration)',
         async (baseUrl) => {
             observedGraphs.length = 0;
             observedRoots.length = 0;
@@ -314,7 +341,7 @@ describe('affected E2E graph', () => {
                     writeFileSync(
                         join(root, 'config/base.json'),
                         JSON.stringify({
-                            compilerOptions: { baseUrl: '..', paths: aliases },
+                            compilerOptions: { paths: { '#/*': ['../src/*'] } },
                         })
                     );
                     writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ extends: './config/base.json' }));
@@ -323,7 +350,9 @@ describe('affected E2E graph', () => {
                         join(root, 'tsconfig.json'),
                         JSON.stringify({
                             compilerOptions:
-                                baseUrl === 'explicit' ? { baseUrl: '.', paths: aliases } : { paths: aliases },
+                                baseUrl === 'explicit'
+                                    ? { paths: { '#/*': [join(root, 'src/*')] } }
+                                    : { paths: aliases },
                         })
                     );
                 }
@@ -386,7 +415,7 @@ describe('affected E2E graph', () => {
                 }
                 mkdirSync(join(root, 'scripts'));
                 writeFileSync(join(root, 'scripts/e2eSuiteOwners.json'), JSON.stringify(manifest));
-                const config = { compilerOptions: { baseUrl: '.', paths: { '#/*': ['./src/*'] } } };
+                const config = { compilerOptions: { paths: { '#/*': ['./src/*'] } } };
                 writeFileSync(join(root, 'tsconfig.json'), JSON.stringify(config));
                 writeFileSync(join(shadow, 'tsconfig.json'), JSON.stringify(config));
                 expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
@@ -422,10 +451,11 @@ describe('affected E2E graph', () => {
         30_000
     );
 
-    it('refuses inherited implicit alias bases before a shadow graph can narrow selection', async () => {
+    it('resolves inherited implicit aliases from their real declaring base before narrowing', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-inherited-alias-base-'));
         observedGraphs.length = 0;
         observedRoots.length = 0;
+        observedRoots.push(root);
         const sources = {
             [TUNER]: 'export const tuner = true;',
             [SHELL]: "import '../../../Tuner/presentations/components/TunerDisplay';",
@@ -450,13 +480,63 @@ describe('affected E2E graph', () => {
             );
             expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
                 kind: 'full',
-                reason: 'TypeScript alias declaring base is not preserved by the dependency resolver',
+                reason: 'shared or uncurated consumer: config/src/target.ts',
             });
-            expect(observedGraphs).toEqual([]);
+            expect(observedGraphs).toHaveLength(1);
+            expect(observedDependencies('src/entry.ts')).toEqual(['config/src/target.ts']);
+            expect(observedDependencies('config/src/target.ts')).toEqual([TUNER]);
+            writeFileSync(join(root, 'config/src/target.ts'), 'export const target = true;');
+            expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
+                kind: 'narrow',
+                specs: [MIXED_SPEC, NEW_SPEC, TUNER_SPEC],
+                browserAi: false,
+                owners: ['Tuner'],
+            });
+            expect(observedGraphs).toHaveLength(2);
+            expect(observedDependencies('src/entry.ts')).toEqual(['config/src/target.ts']);
+            expect(observedDependencies('config/src/target.ts')).toEqual([]);
+            writeFileSync(
+                join(root, 'config/src/target.ts'),
+                'export const target = () => import(globalThis.runtimeModule);'
+            );
+            expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
+                kind: 'full',
+                reason: 'opaque runtime dependency: config/src/target.ts',
+            });
+            expect(observedGraphs).toHaveLength(3);
+            expect(observedDependencies('src/entry.ts')).toEqual(['config/src/target.ts']);
+            writeFileSync(
+                join(root, 'src/entry.ts'),
+                "import worker from '#/target?worker'; export const target = worker;"
+            );
+            writeFileSync(join(root, 'config/src/target.ts'), "export { tuner as target } from './shared';");
+            writeFileSync(join(root, 'config/src/shared.ts'), `export { tuner } from '../../${TUNER}';`);
+            const runtime = await loadRuntimeGraph(root);
+            expect(runtime.kind).toBe('graph');
+            if (runtime.kind !== 'graph') throw new Error(runtime.reason);
+            expect([...offPageSources(runtime)]).toEqual(
+                expect.arrayContaining(['config/src/target.ts', 'config/src/shared.ts', TUNER])
+            );
+            expect(observedGraphs).toHaveLength(4);
+            expect(observedDependencies('src/entry.ts')).toEqual(['config/src/target.ts']);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
     }, 30_000);
+
+    it('refuses a resolved runtime script outside the requested root before parsing it', () => {
+        const parent = mkdtempSync(join(tmpdir(), 'sourdaw-runtime-root-boundary-'));
+        const root = join(parent, 'requested');
+        try {
+            mkdirSync(root);
+            writeFileSync(join(parent, 'sibling.ts'), 'export const sibling = true;');
+            expect(() => completeRuntimeGraph(root, [{ source: '../sibling.ts', dependencies: [] }])).toThrow(
+                'runtime graph source leaves requested root: ../sibling.ts'
+            );
+        } finally {
+            rmSync(parent, { recursive: true, force: true });
+        }
+    });
 
     it.each(['missing', 'malformed', 'invalid', 'missing-extends'])(
         'fails closed before graph traversal for %s TypeScript configuration',

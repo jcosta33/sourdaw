@@ -5,7 +5,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import ts from 'typescript';
+import * as ts from 'typescript/unstable/ast';
+
+import { readNativeSource, requireNativeSyntax } from './nativeTypeScript.ts';
 
 import {
     FAUST_SOURCE_ARCHIVE,
@@ -220,13 +222,7 @@ function lockHasExactResolution(lock: string, component: Component): boolean {
 }
 
 function hasRuntimeImport(path: string, specifier: string): boolean {
-    const source = ts.createSourceFile(
-        path,
-        readFileSync(path, 'utf8'),
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TS
-    );
+    const source = requireNativeSyntax(readNativeSource(path, readFileSync(path, 'utf8')));
     return source.statements.some((statement) => {
         if (
             !ts.isImportDeclaration(statement) ||
@@ -239,7 +235,7 @@ function hasRuntimeImport(path: string, specifier: string): boolean {
         if (clause === undefined) {
             return true;
         }
-        if (clause.isTypeOnly) {
+        if (clause.phaseModifier === ts.SyntaxKind.TypeKeyword) {
             return false;
         }
         if (clause.name !== undefined || clause.namedBindings === undefined) {

@@ -172,6 +172,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  dependency-cruiser@18.7.2>enhanced-resolve: 5.27.0
   '@typescript-eslint/eslint-plugin@8.72.2>typescript:peer': 7.0.2
   '@typescript-eslint/parser@8.72.2>typescript:peer': 7.0.2
   '@typescript-eslint/typescript-estree@8.72.2>typescript:peer': 7.0.2
@@ -220,6 +221,8 @@ overrides:
   tldts@: 7.5.2
   tldts-core@: 7.5.2
 
+packageExtensionsChecksum: sha256-WSJU88dWx1mpNHGhi7/5AF76jsVes7GB9aDp1gYsCJ8=
+
 patchedDependencies:
   '@automerge/automerge@3.5.0': ed63cb3f6d8bc6e6211baea077a9d05374fd1c8e87ea57223f85366ae1c4b63c
   '@eslint-react/core@5.30.2': 7903c5b9cac3970db46edf0d5d7b024c319406af18dfa3ec4fe192b589bea70e
@@ -238,6 +241,7 @@ patchedDependencies:
   '@typescript-eslint/utils@8.72.2': aff22214c86ae91a65168eec6653358d24d6939019a3cc77fd636029b365f3a7
   babel-dead-code-elimination@2.0.0: daaed4fafcccd0f4cdf645da30b9b7071d01533f2386f05a8c4bbb90e3843999
   babel-plugin-react-compiler@1.0.0: 9f387cf5be6a76be2d2af96c6f44d010b442c787b536c1bdf7916d5e9f009cec
+  dependency-cruiser@18.7.2: a98d28aab8a39976857db4b8dced3ab1ca2571489884829fce0f04869b819857
   eslint-plugin-react-hooks@7.1.1: 1c7686be180c98417e19b46af2f2fb14014a17209ae51aa4faec63e55df734d8
   eslint-plugin-react-jsx@5.30.2: e1256224fffbf1cfc42a4acf8655c3828df5b8219733078719e50739410bb928
   eslint-plugin-react-x@5.30.2: f0e62c7879962cbd9bf82577be1c30b6706c1e7b9daebfc5b5a7d12d29dabde2
@@ -412,7 +416,7 @@ importers:
         version: 1.0.0(patch_hash=9f387cf5be6a76be2d2af96c6f44d010b442c787b536c1bdf7916d5e9f009cec)
       dependency-cruiser:
         specifier: ^18.7.2
-        version: 18.7.2
+        version: 18.7.2(patch_hash=a98d28aab8a39976857db4b8dced3ab1ca2571489884829fce0f04869b819857)
       electron:
         specifier: 45.3.2
         version: 45.3.2(supports-color@7.2.0)
@@ -3589,10 +3593,6 @@ packages:
 
   end-of-stream@1.4.5:
     resolution: {integrity: sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg==}
-
-  enhanced-resolve@5.26.0:
-    resolution: {integrity: sha512-9vhedylFonb2YGogzUKX6+Ja72gOJbN1QHAqdrvqLwhdl/QWbKopzoUC9EbQNVsAns/bx/4uyqalrQAoy1IByw==}
-    engines: {node: '>=10.13.0'}
 
   enhanced-resolve@5.27.0:
     resolution: {integrity: sha512-Do6BB2xzlcc/odFg+XEYyneAx4T/WfywO71yw9ePS2tVfRsf7JVR4mUeELadIeHzixkzbG5DpluiEFPi2WGfYQ==}
@@ -8523,7 +8523,7 @@ snapshots:
 
   delayed-stream@1.0.0: {}
 
-  dependency-cruiser@18.7.2:
+  dependency-cruiser@18.7.2(patch_hash=a98d28aab8a39976857db4b8dced3ab1ca2571489884829fce0f04869b819857):
     dependencies:
       acorn: 8.19.0
       acorn-jsx: 5.3.2(acorn@8.19.0)
@@ -8531,7 +8531,8 @@ snapshots:
       acorn-loose: 8.5.2
       acorn-walk: 8.3.5
       commander: 15.0.0
-      enhanced-resolve: 5.26.0
+      enhanced-resolve: 5.27.0
+      esbuild: 0.28.2
       ignore: 7.0.14
       interpret: 3.1.1
       is-installed-globally: 1.0.1
@@ -8542,6 +8543,7 @@ snapshots:
       safe-regex: 2.1.1
       semver: 7.8.6
       tsconfig-paths-webpack-plugin: 4.2.0
+      typescript: 7.0.2(patch_hash=25a8f52822327fb45214455325454dfdc18965c57cad905eddf71077478aeb43)
       watskeburt: 6.0.0
 
   dequal@2.0.3: {}
@@ -8668,11 +8670,6 @@ snapshots:
   end-of-stream@1.4.5:
     dependencies:
       once: 1.4.0
-
-  enhanced-resolve@5.26.0:
-    dependencies:
-      graceful-fs: 4.2.12
-      tapable: 2.3.4
 
   enhanced-resolve@5.27.0:
     dependencies:

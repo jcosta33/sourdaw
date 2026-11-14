@@ -1,7 +1,11 @@
+// @vitest-environment node
+
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import ts from 'typescript';
+import * as ts from 'typescript/unstable/ast';
+
+import { readNativeSource, requireNativeSyntax } from '../nativeTypeScript';
 import { describe, expect, it } from 'vitest';
 
 import { isSourdawE2eServeMode } from '../e2eServerIdentity.ts';
@@ -18,7 +22,7 @@ const repositoryRoot = resolve(import.meta.dirname, '../..');
 
 function parseSource(relativePath: string): ts.SourceFile {
     const absolutePath = join(repositoryRoot, relativePath);
-    return ts.createSourceFile(absolutePath, readFileSync(absolutePath, 'utf8'), ts.ScriptTarget.Latest);
+    return requireNativeSyntax(readNativeSource(absolutePath, readFileSync(absolutePath, 'utf8')));
 }
 
 // forEachChild, never getChildren: see e2eServerIdentityWiring.spec.ts.

@@ -3,8 +3,6 @@ import { join, relative, resolve } from 'node:path';
 
 import {
     type BindingName,
-    createSourceFile,
-    forEachChild,
     isClassDeclaration,
     isClassExpression,
     isArrayLiteralExpression,
@@ -17,7 +15,7 @@ import {
     isNamedImports,
     isOmittedExpression,
     isObjectLiteralExpression,
-    isParameter,
+    isParameterDeclaration,
     isPropertyAssignment,
     isSatisfiesExpression,
     isVariableStatement,
@@ -27,10 +25,10 @@ import {
     isVariableDeclaration,
     type Node,
     type SourceFile,
-    ScriptKind,
-    ScriptTarget,
-} from 'typescript';
+} from 'typescript/unstable/ast';
 import { describe, expect, it } from 'vitest';
+
+import { readNativeSource, requireNativeSyntax } from '../../../../../scripts/nativeTypeScript';
 
 function source(path: string): string {
     return readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -93,7 +91,7 @@ function stringArrayLiteralElements(file: SourceFile, name: string): string[] {
                 initializer = initializer.expression;
             }
             if (!initializer || !isArrayLiteralExpression(initializer)) {
-                throw new Error(`${name} is not an array literal in ${file.fileName}`);
+                throw new Error(`${name} is not an array literal in ${relative(process.cwd(), file.fileName)}`);
             }
             const strings = initializer.elements.filter(isStringLiteral).map((element) => element.text);
             if (strings.length !== initializer.elements.length) {
@@ -103,25 +101,24 @@ function stringArrayLiteralElements(file: SourceFile, name: string): string[] {
                 // groups joined by `...` is an ordinary refactor, and it would
                 // hide whatever lives in the groups that were not read.
                 throw new Error(
-                    `${name} in ${file.fileName} holds ${initializer.elements.length} elements but only ` +
+                    `${name} in ${relative(process.cwd(), file.fileName)} holds ${initializer.elements.length} elements but only ` +
                         `${strings.length} are string literals; this reader would silently skip the rest`
                 );
             }
             if (found) {
-                throw new Error(`${name} is declared more than once in ${file.fileName}`);
+                throw new Error(`${name} is declared more than once in ${relative(process.cwd(), file.fileName)}`);
             }
             found = strings;
         }
     }
     if (!found) {
-        throw new Error(`${name} is not a top-level array literal in ${file.fileName}`);
+        throw new Error(`${name} is not a top-level array literal in ${relative(process.cwd(), file.fileName)}`);
     }
     return found;
 }
 
 function parsedSource(path: string): SourceFile {
-    const scriptKind = path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS;
-    return createSourceFile(path, source(path), ScriptTarget.Latest, true, scriptKind);
+    return requireNativeSyntax(readNativeSource(path, source(path)));
 }
 
 function bindingNameContains(name: BindingName, binding: string): boolean {
@@ -132,7 +129,7 @@ function bindingNameContains(name: BindingName, binding: string): boolean {
 }
 
 function declarationBindingName(node: Node): BindingName | undefined {
-    if (isParameter(node) || isVariableDeclaration(node)) {
+    if (isParameterDeclaration(node) || isVariableDeclaration(node)) {
         return node.name;
     }
     if (
@@ -153,7 +150,7 @@ function assertImportIsUnshadowed(file: SourceFile, binding: string): void {
         return name !== undefined && bindingNameContains(name, binding);
     });
     if (declarations.length > 0) {
-        throw new Error(`Imported binding ${binding} is shadowed in ${file.fileName}`);
+        throw new Error(`Imported binding ${binding} is shadowed in ${relative(process.cwd(), file.fileName)}`);
     }
 }
 
@@ -178,7 +175,7 @@ function importedBinding(file: SourceFile, modulePath: string, exportedName: str
             return element.name.text;
         }
     }
-    throw new Error(`Missing ${exportedName} import from ${modulePath} in ${file.fileName}`);
+    throw new Error(`Missing ${exportedName} import from ${modulePath} in ${relative(process.cwd(), file.fileName)}`);
 }
 
 function visit(root: Node, predicate: (node: Node) => boolean): Node[] {
@@ -187,7 +184,7 @@ function visit(root: Node, predicate: (node: Node) => boolean): Node[] {
         if (predicate(node)) {
             found.push(node);
         }
-        forEachChild(node, walk);
+        node.forEachChild(walk);
     }
     walk(root);
     return found;
@@ -235,12 +232,11 @@ const LEGACY_ACTIONS = ['createVcaGroup', 'assignToVca', 'removeFromVca', 'setVc
 
 describe('VCA activation quarantine', () => {
     it('rejects imported liveness bindings shadowed by executable declarations', () => {
-        const shadowed = createSourceFile(
-            'shadowed.ts',
-            "import { writer } from './writer'; function invoke(writer: () => void) { writer(); }",
-            ScriptTarget.Latest,
-            true,
-            ScriptKind.TS
+        const shadowed = requireNativeSyntax(
+            readNativeSource(
+                'shadowed.ts',
+                "import { writer } from './writer'; function invoke(writer: () => void) { writer(); }"
+            )
         );
 
         expect(() => importedBinding(shadowed, './writer', 'writer')).toThrow(

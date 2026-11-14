@@ -407,6 +407,21 @@ describe('LGPL runtime provenance', () => {
         expect(validateLgplRuntimeProvenance(root, contract)).toContain('faustwasm: lock resolution drifted');
     });
 
+    it.each([
+        "import type { Encoder } from '@breezystack/lamejs';",
+        "import { type Encoder } from '@breezystack/lamejs';",
+    ])('rejects an erased integration import: %s', (source) => {
+        const { root, contract } = fixture();
+        write(root, 'src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts', source);
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain('lamejs: integration import drifted');
+        write(
+            root,
+            'src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts',
+            "import { Encoder, type Config } from '@breezystack/lamejs';"
+        );
+        expect(validateLgplRuntimeProvenance(root, contract)).toEqual([]);
+    });
+
     it('rejects an import name left only as inert text', () => {
         const { root, contract } = fixture();
         write(

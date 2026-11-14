@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import {
     existsSync,
     lstatSync,
@@ -16,7 +18,9 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
 import { cruise } from 'dependency-cruiser';
-import { parseJsonConfigFileContent, readConfigFile, resolveModuleName, sys } from 'typescript';
+import { isStringLiteralLikeNode } from 'typescript/unstable/ast';
+
+import { withNativeConfiguredProject } from '../nativeTypeScript';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -236,18 +240,32 @@ describe('check-dependency-boundaries', () => {
         'resolves the real Basic Pitch loader import with %s compiler options',
         (configName) => {
             const root = resolve(import.meta.dirname, '../..');
-            const config = readConfigFile(join(root, configName), sys.readFile);
-            expect(config.error).toBeUndefined();
-            const parsed = parseJsonConfigFileContent(config.config, sys, root);
-            expect(parsed.errors).toEqual([]);
             const loader = join(root, 'src/modules/AudioAnalysis/repositories/loadBasicPitchModel.ts');
-            const result = resolveModuleName('virtual:sourdaw-basic-pitch-model', loader, parsed.options, sys);
-            expect(result.resolvedModule?.resolvedFileName).toBe(
-                join(root, 'src/modules/AudioAnalysis/repositories/basicPitchModel.d.ts')
-            );
-            expect(
-                resolveModuleName('virtual:sourdaw-basic-pitch-modell', loader, parsed.options, sys).resolvedModule
-            ).toBeUndefined();
+            const probe = join(dirname(loader), '.native-module-resolution-probe.ts');
+            for (const specifier of ['virtual:sourdaw-basic-pitch-model', 'virtual:sourdaw-basic-pitch-modell']) {
+                const text = `import * as probe from ${JSON.stringify(specifier)}; export { probe };`;
+                withNativeConfiguredProject(join(root, configName), [{ path: probe, text }], (project) => {
+                    const source = project.program.getSourceFile(probe);
+                    if (!source) throw new Error('Native module resolution probe was not loaded');
+                    const literal = source.imports.find(
+                        (node) => isStringLiteralLikeNode(node) && node.text === specifier
+                    );
+                    if (!literal) throw new Error('Native module resolution probe has no import literal');
+                    const symbol = project.checker.getSymbolAtLocation(literal);
+                    const targets =
+                        symbol?.declarations.map((handle) => handle.resolve()?.getSourceFile().fileName) ?? [];
+                    if (specifier === 'virtual:sourdaw-basic-pitch-model') {
+                        expect(targets).toContain(
+                            join(root, 'src/modules/AudioAnalysis/repositories/basicPitchModel.d.ts')
+                        );
+                    } else {
+                        expect(targets).toEqual([]);
+                        expect(
+                            project.program.getSemanticDiagnostics(probe).some((diagnostic) => diagnostic.code === 2307)
+                        ).toBe(true);
+                    }
+                });
+            }
         }
     );
 
@@ -927,6 +945,11 @@ describe('check-dependency-boundaries', () => {
 
         try {
             repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-tauri-types-'));
+            mkdirSync(join(repositoryRoot, 'src/utils'), { recursive: true });
+            writeFileSync(
+                join(repositoryRoot, 'src/utils/desktopBridge.ts'),
+                'export type TauriChannel<T> = { payload: T };\n'
+            );
             const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
             const repositoryDirectory = join(moduleDirectory, 'repositories');
             const useCaseDirectory = join(moduleDirectory, 'useCases');
@@ -1020,7 +1043,7 @@ describe('check-dependency-boundaries', () => {
                     vendorFinding('src/modules/Foo/repositories/jsdoc.js', 4),
                 ])
             );
-            expect(vendorFindings).toHaveLength(17);
+            expect(vendorFindings, JSON.stringify(vendorFindings)).toHaveLength(17);
             expect(vendorFindings).not.toEqual(
                 expect.arrayContaining([vendorFinding('src/modules/Foo/repositories/alias.ts', 6)])
             );
@@ -1574,6 +1597,9 @@ describe('check-dependency-boundaries', () => {
                     'export interface CallableHandler {',
                     '    (args: InvokeArgs): void;',
                     '}',
+                    'export interface DefaultHandler {',
+                    '    <T = InvokeArgs>(): void;',
+                    '}',
                     'export interface ConstructHandler {',
                     '    new (): InvokeResult;',
                     '}',
@@ -1591,6 +1617,12 @@ describe('check-dependency-boundaries', () => {
                     "import type { Seed } from './seed.js';",
                     'export const callableHandler: CallableHandler = () => undefined;',
                     'export type SeededResult = Seed;',
+                ],
+                'default-external.ts': [
+                    "import type { DefaultHandler } from 'vendorlib';",
+                    "import type { Seed } from './seed.js';",
+                    'export const defaultHandler: DefaultHandler = () => undefined;',
+                    'export type SeededDefault = Seed;',
                 ],
                 'construct-external.ts': [
                     "import type { ConstructHandler } from 'vendorlib';",
@@ -1613,8 +1645,9 @@ describe('check-dependency-boundaries', () => {
                 'consume-external-signatures.ts': [
                     "import { callableHandler } from '../repositories/callable-external';",
                     "import { ConstructHandlerImpl } from '../repositories/construct-external';",
+                    "import { defaultHandler } from '../repositories/default-external';",
                     "import { libNamedCallable } from '../repositories/callable-lib-named';",
-                    'export const consumed = [callableHandler, ConstructHandlerImpl, libNamedCallable];',
+                    'export const consumed = [callableHandler, ConstructHandlerImpl, defaultHandler, libNamedCallable];',
                 ],
             });
 
@@ -1622,13 +1655,14 @@ describe('check-dependency-boundaries', () => {
                 reason.includes('Tauri vendor type')
             );
 
-            // Each of the three reaches `InvokeArgs`/`InvokeResult` only through a call or construct
-            // signature: two through `vendorlib`'s own declaration, one through a repository file
+            // Each callable or constructor reaches `InvokeArgs`/`InvokeResult` only through a call or construct
+            // signature or its type-parameter default: three through `vendorlib`'s own declaration, one through a repository file
             // whose name matches the TypeScript lib pattern.
             expect(vendorFindings).toEqual([
                 vendorFinding('src/modules/Foo/repositories/callable-external.ts', 3),
                 vendorFinding('src/modules/Foo/repositories/callable-lib-named.ts', 2),
                 vendorFinding('src/modules/Foo/repositories/construct-external.ts', 3),
+                vendorFinding('src/modules/Foo/repositories/default-external.ts', 3),
             ]);
         } finally {
             if (repositoryRoot) {

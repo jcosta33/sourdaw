@@ -1,7 +1,9 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { posix, relative, resolve } from 'node:path';
 
-import ts from 'typescript';
+import * as ts from 'typescript/unstable/ast';
+
+import { readNativeSources, requireNativeSyntax } from './nativeTypeScript.ts';
 
 import { cruiseFileGraph } from './e2eFileGraph.ts';
 import { testSideModuleKind, type TestSideRoute } from './e2eTestSideRoute.ts';
@@ -155,17 +157,16 @@ export function selectTestSideSpecs(
     return routes;
 }
 
-function literalTexts(file: string, source: string): string[] {
-    const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+function literalTexts(parsed: ts.SourceFile): string[] {
     const texts: string[] = [];
     const visit = (node: ts.Node): void => {
         if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
             return;
         }
-        if (ts.isStringLiteralLike(node) || ts.isTemplateLiteralToken(node)) {
+        if (ts.isStringLiteralLikeNode(node) || ts.isTemplateLiteralToken(node)) {
             texts.push(node.text);
         }
-        ts.forEachChild(node, visit);
+        node.forEachChild(visit);
     };
     visit(parsed);
     return texts;
@@ -173,13 +174,18 @@ function literalTexts(file: string, source: string): string[] {
 
 function pathReferences(root: string, files: readonly string[]): PathReference[] {
     const references: PathReference[] = [];
-    for (const file of files) {
-        const source = readFileSync(resolve(root, file), 'utf8');
+    const contents = files.map((file) => ({ path: file, text: readFileSync(resolve(root, file), 'utf8') }));
+    const parsed = readNativeSources(contents.filter((file) => /\.(?:[cm]?[jt]sx?)$/.test(file.path)));
+    for (const { path: file, text: source } of contents) {
         if (!/\.(?:[cm]?[jt]sx?)$/.test(file)) {
             references.push({ file, text: source });
             continue;
         }
-        for (const text of literalTexts(file, source)) {
+        const input = parsed.get(file);
+        if (!input) {
+            throw new Error(`Native source snapshot omitted ${file}`);
+        }
+        for (const text of literalTexts(requireNativeSyntax(input))) {
             references.push({ file, text });
         }
     }

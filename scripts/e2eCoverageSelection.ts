@@ -1,7 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
-import ts from 'typescript';
+import { transformSync } from 'esbuild';
+import * as ts from 'typescript/unstable/ast';
+import { DiagnosticCategory } from 'typescript/unstable/sync';
+
+import { withNativeSourceReader, type NativeSourceReader } from './nativeTypeScript.ts';
 
 import { offPageSources, selectsBrowserAi } from './e2eAffectedGraph.ts';
 import { COVERAGE_MAP_FORMAT, type CoverageMap } from './e2eCoverageMap.ts';
@@ -159,8 +163,9 @@ function isFunctionWithBody(node: ts.Node): node is ts.FunctionLikeDeclaration &
 
 function hasDeclareModifier(node: ts.Node): boolean {
     return (
-        ts.canHaveModifiers(node) &&
-        (ts.getModifiers(node) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword)
+        'modifierFlags' in node &&
+        typeof node.modifierFlags === 'number' &&
+        (node.modifierFlags & ts.ModifierFlags.Ambient) !== 0
     );
 }
 
@@ -170,7 +175,7 @@ function isTypeOnlyDeclaration(node: ts.Node): boolean {
         return true;
     }
     if (ts.isImportDeclaration(node)) {
-        return node.importClause?.isTypeOnly === true;
+        return node.importClause?.phaseModifier === ts.SyntaxKind.TypeKeyword;
     }
     if (ts.isExportDeclaration(node) || ts.isImportEqualsDeclaration(node)) {
         return node.isTypeOnly;
@@ -184,27 +189,38 @@ function isJsDoc(node: ts.Node): boolean {
 }
 
 function syntaxErrorsIn(path: string, text: string): number {
-    const output = ts.transpileModule(text, {
-        fileName: path,
-        reportDiagnostics: true,
-        compilerOptions: { jsx: ts.JsxEmit.Preserve, target: ts.ScriptTarget.Latest },
-    });
-    return output.diagnostics?.length ?? 0;
+    try {
+        // Only diagnostics are consumed. Original native AST ranges and text remain authoritative.
+        transformSync(text, {
+            sourcefile: path,
+            loader: path.endsWith('.tsx') ? 'tsx' : 'ts',
+            jsx: 'preserve',
+            target: 'esnext',
+            legalComments: 'inline',
+            sourcemap: false,
+        });
+        return 0;
+    } catch {
+        return 1;
+    }
 }
 
 // Leaf tokens keep their exact source text, so string and template contents count while
 // comments and whitespace, which are trivia between tokens, do not. Node entry and exit markers
 // make the comparison structural: a line break that automatic semicolon insertion turns into a
 // different parse changes the tree even when the leaves stay the same.
-function tokenStreams(path: string, text: string): TokenStreams {
+function tokenStreams(path: string, text: string, reader: NativeSourceReader): TokenStreams {
     if (text.includes('\0')) {
         throw new Error('is binary');
     }
     if (syntaxErrorsIn(path, text) > 0) {
         throw new Error('does not parse');
     }
-    const kind = path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-    const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, kind);
+    const parsed = reader.read(path, text);
+    if (parsed.diagnostics.some((diagnostic) => diagnostic.category === DiagnosticCategory.Error)) {
+        throw new Error('does not parse');
+    }
+    const source = parsed.source;
     const full: Token[] = [];
     const outside: Token[] = [];
     const emit = (token: Token, isOutside: boolean): void => {
@@ -213,24 +229,41 @@ function tokenStreams(path: string, text: string): TokenStreams {
             outside.push(token);
         }
     };
+    const emitGap = (start: number, end: number, isOutside: boolean): void => {
+        const scanner = ts.createScanner(true, source.languageVariant, source.text, start, end - start);
+        for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFile; kind = scanner.scan()) {
+            emit({ role: 'leaf', kind, text: scanner.getTokenText(), pos: scanner.getTokenStart() }, isOutside);
+        }
+    };
     const visit = (node: ts.Node, isOutside: boolean): void => {
-        const children = node.getChildren(source);
+        const children: ts.Node[] = [];
+        node.forEachChild((child) => {
+            children.push(child);
+        });
         const pos = node.getStart(source);
-        if (children.length === 0) {
+        if (children.length === 0 && node.kind <= ts.SyntaxKind.LastToken) {
             emit({ role: 'leaf', kind: node.kind, text: node.getText(source), pos }, isOutside);
             return;
         }
         emit({ role: 'enter', kind: node.kind, text: '', pos }, isOutside);
+        let cursor = pos;
         for (const child of children) {
-            if (isJsDoc(child) || isTypeOnlyDeclaration(child) || child.kind === ts.SyntaxKind.EndOfFileToken) {
+            const childStart = child.getStart(source);
+            if (childStart < cursor || child.end < childStart || child.end > node.end) {
+                throw new Error('native source child ranges overlap or leave their parent');
+            }
+            emitGap(cursor, childStart, isOutside);
+            cursor = child.end;
+            if (isJsDoc(child) || isTypeOnlyDeclaration(child) || child.kind === ts.SyntaxKind.EndOfFile) {
                 continue;
             }
             const isBody = isFunctionWithBody(node) && child === node.body;
             if (isBody && isOutside) {
-                outside.push({ role: 'body', kind: child.kind, text: '', pos: child.getStart(source) });
+                outside.push({ role: 'body', kind: child.kind, text: '', pos: childStart });
             }
             visit(child, isOutside && !isBody);
         }
+        emitGap(cursor, node.end, isOutside);
         emit({ role: 'exit', kind: node.kind, text: '', pos: node.end }, isOutside);
     };
     visit(source, true);
@@ -285,8 +318,17 @@ type FileVerdict = { kind: 'body' | 'inert' } | { kind: 'outside'; reason: strin
  * comment on either side, is outside, located by line for diagnosis.
  */
 export function classifyChange(path: string, baseText: string, headText: string): FileVerdict {
-    const base = tokenStreams(path, baseText);
-    const head = tokenStreams(path, headText);
+    return withNativeSourceReader((reader) => classifyWithNativeReader(path, baseText, headText, reader));
+}
+
+function classifyWithNativeReader(
+    path: string,
+    baseText: string,
+    headText: string,
+    reader: NativeSourceReader
+): FileVerdict {
+    const base = tokenStreams(path, baseText, reader);
+    const head = tokenStreams(path, headText, reader);
     const annotationAt = annotationLine(baseText, headText);
     if (annotationAt !== null) {
         return { kind: 'outside', reason: `build annotation comment present at ${annotationAt}` };
@@ -353,9 +395,9 @@ function driftSince(path: string, map: CoverageMap, sources: CoverageSources, ba
     return { kind: 'drifted', mapBlob };
 }
 
-function changeVerdict(path: string, sources: CoverageSources): FileVerdict | string {
+function changeVerdict(path: string, sources: CoverageSources, reader: NativeSourceReader): FileVerdict | string {
     try {
-        return classifyChange(path, sources.baseText(path), sources.headText(path));
+        return classifyWithNativeReader(path, sources.baseText(path), sources.headText(path), reader);
     } catch (error) {
         return `${path}: ${error instanceof Error ? error.message : 'cannot be classified'}`;
     }
@@ -367,7 +409,8 @@ function driftVerdict(
     path: string,
     mapBlob: string | null,
     recorded: boolean,
-    sources: CoverageSources
+    sources: CoverageSources,
+    reader: NativeSourceReader
 ): NarrowVerdict | string {
     const prefix = `${path}: changed since the coverage map commit`;
     try {
@@ -375,7 +418,7 @@ function driftVerdict(
         if (text === undefined) {
             return `${prefix}, and the map version is unavailable`;
         }
-        const verdict = classifyChange(path, text, sources.headText(path));
+        const verdict = classifyWithNativeReader(path, text, sources.headText(path), reader);
         return verdict.kind === 'outside' ? `${prefix}: ${verdict.reason}` : verdict;
     } catch (error) {
         return `${prefix}: ${error instanceof Error ? error.message : 'cannot be classified'}`;
@@ -383,7 +426,12 @@ function driftVerdict(
 }
 
 /** The PR's own change combined with the drift since the map: any outside change keeps the full suite. */
-function fileVerdict(path: string, map: CoverageMap, sources: CoverageSources): NarrowVerdict | string {
+function fileVerdict(
+    path: string,
+    map: CoverageMap,
+    sources: CoverageSources,
+    reader: NativeSourceReader
+): NarrowVerdict | string {
     const baseBlob = sources.baseBlob(path);
     if (baseBlob === null) {
         return `${path}: new since the merge-base`;
@@ -392,7 +440,7 @@ function fileVerdict(path: string, map: CoverageMap, sources: CoverageSources): 
     if (drift.kind === 'stale') {
         return drift.reason;
     }
-    const own = changeVerdict(path, sources);
+    const own = changeVerdict(path, sources, reader);
     if (typeof own === 'string') {
         return own;
     }
@@ -402,7 +450,7 @@ function fileVerdict(path: string, map: CoverageMap, sources: CoverageSources): 
     if (drift.kind === 'none') {
         return own;
     }
-    const sinceMap = driftVerdict(path, drift.mapBlob, path in map.files, sources);
+    const sinceMap = driftVerdict(path, drift.mapBlob, path in map.files, sources, reader);
     if (typeof sinceMap === 'string') {
         return sinceMap;
     }
@@ -434,34 +482,36 @@ export function selectCoverageSpecs(input: CoverageSelectionInput): CoverageSele
         return { kind: 'full', reason: `runtime graph unavailable: ${input.runtime.reason}` };
     }
     const { map } = input.map;
-    const available = new Set(input.availableSpecs.filter((spec) => spec !== SMOKE_SPEC));
-    const extras = extraSpecs(map, available);
-    const paths: PathSelection[] = [];
-    for (const { path } of input.changes) {
-        if (!input.runtime.sources.has(path)) {
-            return { kind: 'full', reason: `${path}: absent from the runtime graph` };
+    return withNativeSourceReader((reader) => {
+        const available = new Set(input.availableSpecs.filter((spec) => spec !== SMOKE_SPEC));
+        const extras = extraSpecs(map, available);
+        const paths: PathSelection[] = [];
+        for (const { path } of input.changes) {
+            if (!input.runtime.sources.has(path)) {
+                return { kind: 'full', reason: `${path}: absent from the runtime graph` };
+            }
+            if (input.runtime.offPage.has(path)) {
+                return {
+                    kind: 'full',
+                    reason: `${path}: loaded by a worker or audio worklet, which page coverage cannot see`,
+                };
+            }
+            const verdict = fileVerdict(path, map, input.sources, reader);
+            if (typeof verdict === 'string') {
+                return { kind: 'full', reason: verdict };
+            }
+            const fileSpecs =
+                verdict.kind === 'body' ? (map.files[path]?.specs ?? []).map((index) => map.specs[index]!) : [];
+            const specs = [...new Set([...fileSpecs.filter((spec) => available.has(spec)), ...extras])].sort();
+            paths.push({
+                path,
+                specs,
+                browserAi: selectsBrowserAi(specs),
+                reason: describeSelection(verdict.kind, fileSpecs.length, extras.length, map.commit),
+            });
         }
-        if (input.runtime.offPage.has(path)) {
-            return {
-                kind: 'full',
-                reason: `${path}: loaded by a worker or audio worklet, which page coverage cannot see`,
-            };
-        }
-        const verdict = fileVerdict(path, map, input.sources);
-        if (typeof verdict === 'string') {
-            return { kind: 'full', reason: verdict };
-        }
-        const fileSpecs =
-            verdict.kind === 'body' ? (map.files[path]?.specs ?? []).map((index) => map.specs[index]!) : [];
-        const specs = [...new Set([...fileSpecs.filter((spec) => available.has(spec)), ...extras])].sort();
-        paths.push({
-            path,
-            specs,
-            browserAi: selectsBrowserAi(specs),
-            reason: describeSelection(verdict.kind, fileSpecs.length, extras.length, map.commit),
-        });
-    }
-    return { kind: 'specs', paths };
+        return { kind: 'specs', paths };
+    });
 }
 
 function git(root: string, args: string[]): string {

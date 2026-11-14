@@ -1,0 +1,929 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -19,7 +19,7 @@
+ 	"author": "Sander Verweij (https://sverweij.github.io)",
+ 	"contributors": [
+ 		"0xflotus (https://github.com/0xflotus)",
+-		"Álvaro Cuesta (https://github.com/alvaro-cuesta)",
++		"\u00c1lvaro Cuesta (https://github.com/alvaro-cuesta)",
+ 		"Arpit Jain (https://github.com/arpitjain099)",
+ 		"anna (https://github.com/annamooseity)",
+ 		"Bastian Hess (https://github.com/bashess)",
+@@ -29,7 +29,7 @@
+ 		"Creative Ataraxia (https://github.com/Creative-Ataraxia)",
+ 		"cunzaizhuyi (https://github.com/cunzaizhuyi)",
+ 		"Daniel Edholm Ignat (https://github.com/dignite)",
+-		"Daniel Rodríguez Rivero (https://danielorodriguez.com)",
++		"Daniel Rodr\u00edguez Rivero (https://danielorodriguez.com)",
+ 		"davidparkagoda (https://github.com/davidparkagoda)",
+ 		"Dmytro Kurovskyi (https://github.com/kurovskyiii)",
+ 		"electrovir (https://github.com/electrovir)",
+@@ -42,7 +42,7 @@
+ 		"Ivan (https://github.com/Winner95)",
+ 		"Jeremy Magland (https://github.com/magland)",
+ 		"Jessica Kerr (https://jessitron.com)",
+-		"João Ribeiro (https://github.com/JonnyBGod)",
++		"Jo\u00e3o Ribeiro (https://github.com/JonnyBGod)",
+ 		"Jon Lauridsen (https://jonlauridsen.com)",
+ 		"Joshua T (https://github.com/radiantly)",
+ 		"KenjiroKubota (https://github.com/kubotak-is)",
+@@ -55,7 +55,7 @@
+ 		"Millicent Billette (https://github.com/1000i100)",
+ 		"Nick Ribal (https://github.com/elektronik2k5)",
+ 		"Quentin de Metz (https://github.com/quentindemetz)",
+-		"Radosław Kłos (https://klos.dev)",
++		"Rados\u0142aw K\u0142os (https://klos.dev)",
+ 		"Richard Musiol (https://github.com/neelance)",
+ 		"Roy Swinkels (https://github.com/donroyco)",
+ 		"Samuel Gunter (https://github.com/Samathingamajig)",
+@@ -68,7 +68,7 @@
+ 		"Valentin Semirulnik (https://github.com/7rulnik)",
+ 		"Yohannes (https://github.com/Johannes7549)",
+ 		"Yuanhai He (https://bestmike007.com)",
+-		"정건우 (https://www.zigae.com/)"
++		"\uc815\uac74\uc6b0 (https://www.zigae.com/)"
+ 	],
+ 	"type": "module",
+ 	"license": "MIT",
+@@ -155,7 +155,7 @@
+ 		"acorn-loose": "8.5.2",
+ 		"acorn-walk": "8.3.5",
+ 		"commander": "15.0.0",
+-		"enhanced-resolve": "5.26.0",
++		"enhanced-resolve": "5.27.0",
+ 		"ignore": "7.0.14",
+ 		"interpret": "3.1.1",
+ 		"is-installed-globally": "1.0.1",
+@@ -166,7 +166,9 @@
+ 		"safe-regex": "2.1.1",
+ 		"semver": "7.8.6",
+ 		"tsconfig-paths-webpack-plugin": "4.2.0",
+-		"watskeburt": "6.0.0"
++		"watskeburt": "6.0.0",
++		"typescript": "7.0.2",
++		"esbuild": "0.28.2"
+ 	},
+ 	"engines": {
+ 		"node": "^22||^24||>=26"
+diff --git a/src/config-utl/extract-ts-config.mjs b/src/config-utl/extract-ts-config.mjs
+--- a/src/config-utl/extract-ts-config.mjs
++++ b/src/config-utl/extract-ts-config.mjs
+@@ -1,74 +1,20 @@
+-import { dirname, resolve } from "node:path";
+-import tryImport from "#utl/try-import.mjs";
+-import meta from "#meta.cjs";
++import { resolve } from 'node:path';
++import { API, DiagnosticCategory } from 'typescript/unstable/sync';
+ 
+-const typescript = await tryImport(
+-	"typescript",
+-	meta.supportedTranspilers.typescript,
+-);
+-
+-const FORMAT_DIAGNOSTICS_HOST = {
+-	getCanonicalFileName(pFileName) {
+-		let lReturnValue = pFileName.toLowerCase();
+-
+-		// depends on the platform which branch is taken, hence the c8 ignore
+-		/* c8 ignore start */
+-		if (typescript?.sys?.useCaseSensitiveFileNames ?? false) {
+-			lReturnValue = pFileName;
+-		}
+-		/* c8 ignore stop */
+-		return lReturnValue;
+-	},
+-	getCurrentDirectory() {
+-		return process.cwd();
+-	},
+-	getNewLine() {
+-		return "\n";
+-	},
+-};
+-
+-/**
+- * Reads the file with name `pTSConfigFileName` and returns its parsed
+- * contents as an object
+- *
+- * Silently fails if a supported version of the typescript compiler isn't available
+- *
+- * @param {string} pTSConfigFileName
+- * @returns {import("typescript").ParsedCommandLine} tsconfig as an object
+- * @throws {Error} when the tsconfig is invalid/ has errors
+- * @throws {TypeError} when the tsconfig is unreadable
+- */
+-export default function extractTSConfig(pTSConfigFileName) {
+-	let lReturnValue = {};
+-
+-	if (typescript) {
+-		const lConfig = typescript.readConfigFile(
+-			pTSConfigFileName,
+-			typescript.sys.readFile,
+-		);
+-
+-		if (typeof lConfig.error !== "undefined") {
+-			throw new TypeError(
+-				typescript.formatDiagnostics([lConfig.error], FORMAT_DIAGNOSTICS_HOST),
+-			);
+-		}
+-		lReturnValue = typescript.parseJsonConfigFileContent(
+-			lConfig.config,
+-			typescript.sys,
+-			dirname(resolve(pTSConfigFileName)),
+-			{},
+-			resolve(pTSConfigFileName),
+-		);
+-
+-		if (lReturnValue.errors.length > 0) {
+-			throw new Error(
+-				typescript.formatDiagnostics(
+-					lReturnValue.errors,
+-					FORMAT_DIAGNOSTICS_HOST,
+-				),
+-			);
+-		}
+-	}
+-
+-	return lReturnValue;
++export default function extractTSConfig(fileName) {
++    const config = resolve(fileName);
++    const api = new API();
++    let snapshot;
++    try {
++        const parsed = api.parseConfigFile(config);
++        snapshot = api.updateSnapshot({ openProjects: [config] });
++        const project = snapshot.getProject(config);
++        if (!project) throw new Error(`Native TypeScript config did not open: ${config}`);
++        const errors = [...project.program.getConfigFileParsingDiagnostics(), ...project.program.getProgramDiagnostics()]
++            .filter((item) => item.category === DiagnosticCategory.Error);
++        if (errors.length) throw new Error(errors.map((item) => item.text).join('\n'));
++        return parsed;
++    } finally {
++        try { snapshot?.dispose(); } finally { api.close(); }
++    }
+ }
+diff --git a/src/extract/acorn/parse.mjs b/src/extract/acorn/parse.mjs
+--- a/src/extract/acorn/parse.mjs
++++ b/src/extract/acorn/parse.mjs
+@@ -1,6 +1,5 @@
+ import { readFileSync } from "node:fs";
+ import { Parser as acornParser, parse as acornParse } from "acorn";
+-import { parse as acornLooseParse } from "acorn-loose";
+ import acornJsx from "acorn-jsx";
+ import transpile from "../transpile/index.mjs";
+ import getExtension from "#utl/get-extension.mjs";
+@@ -8,7 +7,7 @@
+ /** @type acorn.Options */
+ const ACORN_OPTIONS = {
+ 	sourceType: "module",
+-	ecmaVersion: 11,
++	ecmaVersion: "latest",
+ };
+ const TSCONFIG_CONSTANTS = {
+ 	PRESERVE_JSX: 1,
+@@ -30,8 +29,7 @@
+ export function getASTFromSource(pFileRecord, pTranspileOptions) {
+ 	const lJavaScriptSource = transpile(pFileRecord, pTranspileOptions);
+ 
+-	try {
+-		if (needsJSXTreatment(pFileRecord, pTranspileOptions)) {
++	if (needsJSXTreatment(pFileRecord, pTranspileOptions)) {
+ 			return acornJsxParser.parse(lJavaScriptSource, {
+ 				...ACORN_OPTIONS,
+ 				// @ts-expect-error because ...
+@@ -43,12 +41,7 @@
+ 			});
+ 		}
+ 
+-		// ecmaVersion 11 necessary for acorn to understand dynamic imports
+-		// explicitly passing ecmaVersion is recommended from acorn 8
+ 		return acornParse(lJavaScriptSource, ACORN_OPTIONS);
+-	} catch {
+-		return acornLooseParse(lJavaScriptSource, ACORN_OPTIONS);
+-	}
+ }
+ 
+ /**
+@@ -56,7 +49,7 @@
+  * file name. It obtains this by (1) transpiling the contents of the file
+  * into javascript (if necessary) (2) parsing it.
+  *
+- * If parsing fails we fall back to acorn's 'loose' parser
++ * Parsing failures propagate; an incomplete graph cannot authorize narrowing
+  *
+  * Subsequent calls for the same file name will return the result from a cache.
+  *
+diff --git a/src/extract/index.mjs b/src/extract/index.mjs
+--- a/src/extract/index.mjs
++++ b/src/extract/index.mjs
+@@ -1,3 +1,4 @@
++import { withNativeSyntaxSession } from './tsc/native-session.mjs';
+ import extractDependencies from "./extract-dependencies.mjs";
+ import extractStats from "./extract-stats.mjs";
+ import gatherInitialSources from "./gather-initial-sources.mjs";
+@@ -147,8 +148,10 @@
+ 	pResolveOptions,
+ 	pTranspileOptions,
+ ) {
++	return withNativeSyntaxSession(() => {
+ 	clearCaches();
+ 
++	try {
+ 	const lReturnValue = extractFileDirectoryArray(
+ 		pFileDirectoryArray,
+ 		pCruiseOptions,
+@@ -160,6 +163,7 @@
+ 			removeExcludedDynamicDependencies(pModule, pCruiseOptions.exclude),
+ 		);
+ 	pResolveOptions.fileSystem.purge();
+-	clearCaches();
+ 	return lReturnValue;
++	} finally { clearCaches(); }
++	});
+ }
+diff --git a/src/extract/transpile/babel-wrap.mjs b/src/extract/transpile/babel-wrap.mjs
+--- a/src/extract/transpile/babel-wrap.mjs
++++ b/src/extract/transpile/babel-wrap.mjs
+@@ -8,11 +8,10 @@
+ 
+ 	version: () => `@babel/core@${babel.version}`,
+ 
+-	transpile: (pSource, pFileName, pTranspileOptions = {}) =>
+-		babel.transformSync(pSource, {
+-			...(pTranspileOptions.babelConfig || {}),
+-			// Some babel plugins assume a piece of source to have a filename.
+-			// See https://github.com/sverweij/dependency-cruiser/issues/410
+-			filename: pFileName,
+-		}).code,
++    transpile: (source, fileName, options = {}) => {
++        if (!babel) throw new Error('Configured Babel transformer is unavailable or unsupported');
++        const result = babel.transformSync(source, { ...(options.babelConfig ?? {}), filename: fileName });
++        if (!result || typeof result.code !== 'string') throw new Error('Configured Babel transformer produced no source');
++        return result.code;
++    },
+ };
+diff --git a/src/extract/transpile/index.mjs b/src/extract/transpile/index.mjs
+--- a/src/extract/transpile/index.mjs
++++ b/src/extract/transpile/index.mjs
+@@ -102,6 +102,7 @@
+ 	if (lWrapper.isAvailable()) {
+ 		return lWrapper.transpile(source, filename, pTranspilerOptions);
+ 	} else {
++        if (pTranspilerOptions?.babelConfig && Object.keys(pTranspilerOptions.babelConfig).length > 0) throw new Error('Configured Babel transformer is unavailable or unsupported');
+ 		return source;
+ 	}
+ }
+diff --git a/src/extract/transpile/typescript-wrap.mjs b/src/extract/transpile/typescript-wrap.mjs
+--- a/src/extract/transpile/typescript-wrap.mjs
++++ b/src/extract/transpile/typescript-wrap.mjs
+@@ -1,72 +1,61 @@
+-import { resolve } from "node:path";
+-import tryImport from "#utl/try-import.mjs";
+-import meta from "#meta.cjs";
++import { readFileSync } from 'node:fs';
++import { findPackageJSON } from 'node:module';
++import { resolve } from 'node:path';
++import { transformSync, version } from 'esbuild';
++import { ScriptTarget } from 'typescript/unstable/ast';
++import { ModuleKind } from 'typescript/unstable/sync';
+ 
+-const typescript = await tryImport(
+-	"typescript",
+-	meta.supportedTranspilers.typescript,
+-);
++// Actual 7.0.2 core/compileroptions.go JsxEmit values; ReactNative and React differ from TS6.
++const JSX_MODES = [undefined, 'preserve', 'react-native', 'react', 'react-jsx', 'react-jsxdev'];
+ 
+-// This RE matches
+-// - filename.d.ts (, .cts, .mts), but also
+-// - filename.d.something.ts (, .cts., .mts).
+-// That second one seems a bit odd, but it _is_ possible; see for instance
+-// https://www.typescriptlang.org/tsconfig/#allowArbitraryExtensions
+-// (and I guess, but haven't seen this confirmed in the field or documentation
+-// that it could be possible to have a declaration file variant of
+-// https://www.typescriptlang.org/tsconfig/#moduleSuffixes)
+-const DECLARATION_FILE_RE = /[.]d([.][^./\\]+)?([.][cm]?ts)$/;
+-
+-function getCompilerOptions(pFlavor, pTSConfig) {
+-	const lCompilerOptions = {};
+-
+-	if (pFlavor === "tsx") {
+-		lCompilerOptions.jsx = "react";
+-	}
+-
+-	if (pFlavor === "esm") {
+-		// see https://www.typescriptlang.org/docs/handbook/esm-node.html
+-		lCompilerOptions.module = "nodenext";
+-		// when we're doing something with esm (so cts, mts extensions) we can
+-		// assume TypeScript >=4.7 - which supports target es2022 - which should
+-		// be easier (and hence we assume faster) to transpile
+-		lCompilerOptions.target = "es2022";
+-	}
+-
+-	return {
+-		// target: "es2022" should also be OK - but we don't know which version of
+-		// the TypeScript compiler we're using, so for we keep this for backwards
+-		// compatibility.
+-		target: "es2015",
+-		...lCompilerOptions,
+-		...(pTSConfig?.options ?? {}),
+-	};
++function enumName(value, names, fallback) {
++    if (value === undefined) return fallback;
++    const name = typeof value === 'number' ? names[value] : value;
++    if (typeof name !== 'string') throw new Error(`Unsupported native compiler option: ${value}`);
++    return name.toLowerCase() === 'latest' ? 'esnext' : name.toLowerCase();
+ }
+ 
+-function getTranspilableFileName(pFileName) {
+-	if (typeof pFileName !== "string") {
+-		return undefined;
+-	}
+-	// Declaration files (.d.ts, .d.mts, .d.cts, .d.css.ts) get their
+-	// non-declaration name, because TypeScript emits nothing for a declaration
+-	// file and throws "Debug Failure. Output generation failed".
+-	return resolve(pFileName).replace(DECLARATION_FILE_RE, "$1$2");
++function moduleFormat(module, fileName) {
++    if (module === 'commonjs') return 'cjs';
++    if (['es2015', 'es2020', 'es2022', 'esnext', 'preserve'].includes(module)) return undefined;
++    if (['node16', 'node18', 'node20', 'nodenext'].includes(module)) {
++        if (/\.[cm]ts$/.test(fileName)) return fileName.endsWith('.cts') ? 'cjs' : 'esm';
++        const manifest = findPackageJSON(fileName);
++        const type = manifest ? JSON.parse(readFileSync(manifest, 'utf8')).type : undefined;
++        return type === 'module' ? 'esm' : 'cjs';
++    }
++    throw new Error(`Native cruise transform does not support module ${module}`);
+ }
+ 
+-export default function typescriptWrap(pFlavor) {
+-	return {
+-		isAvailable: () => typescript !== false,
+-
+-		version: () => `typescript@${typescript.version}`,
+-
+-		transpile: (pSource, pFileName, pTranspileOptions = {}) =>
+-			typescript.transpileModule(pSource, {
+-				...(pTranspileOptions.tsConfig || {}),
+-				fileName: getTranspilableFileName(pFileName),
+-				compilerOptions: getCompilerOptions(
+-					pFlavor,
+-					pTranspileOptions.tsConfig || {},
+-				),
+-			}).outputText,
+-	};
++export default function typescriptWrap(flavor) {
++    return {
++        isAvailable: () => true,
++        version: () => `esbuild@${version} (native TypeScript 7 syntax)`,
++        transpile: (source, fileName = '$internal-file-name.ts', options = {}) => {
++            const compiler = options.tsConfig?.options ?? {};
++            if (compiler.emitDecoratorMetadata) throw new Error('Native cruise transform cannot emit decorator metadata');
++            const target = enumName(compiler.target, ScriptTarget, flavor === 'esm' ? 'es2022' : 'es2015');
++            const module = enumName(compiler.module, ModuleKind, flavor === 'esm' ? 'nodenext' : 'esnext');
++            const jsxMode = typeof compiler.jsx === 'number' ? JSX_MODES[compiler.jsx] : compiler.jsx ?? (flavor === 'tsx' ? 'react' : 'preserve');
++            if (!['preserve', 'react-native', 'react', 'react-jsx', 'react-jsxdev'].includes(jsxMode)) throw new Error(`Unsupported native JSX mode: ${compiler.jsx}`);
++            const name = resolve(fileName).replace(/[.]d([.][^./\\]+)?([.][cm]?ts)$/, '$1$2');
++            return transformSync(source, {
++                sourcefile: name,
++                loader: name.endsWith('.jsx') ? 'jsx' : name.endsWith('.tsx') ? 'tsx' : 'ts',
++                format: moduleFormat(module, name),
++                target,
++                jsx: jsxMode === 'preserve' || jsxMode === 'react-native' ? 'preserve' : jsxMode.startsWith('react-jsx') ? 'automatic' : 'transform',
++                jsxDev: jsxMode === 'react-jsxdev',
++                jsxFactory: compiler.jsxFactory,
++                jsxFragment: compiler.jsxFragmentFactory,
++                jsxImportSource: compiler.jsxImportSource,
++                legalComments: 'inline',
++                tsconfigRaw: { compilerOptions: {
++                    experimentalDecorators: compiler.experimentalDecorators,
++                    useDefineForClassFields: compiler.useDefineForClassFields,
++                    verbatimModuleSyntax: compiler.verbatimModuleSyntax,
++                } },
++            }).code;
++        },
++    };
+ }
+diff --git a/src/extract/tsc/extract-typescript-deps.mjs b/src/extract/tsc/extract-typescript-deps.mjs
+--- a/src/extract/tsc/extract-typescript-deps.mjs
++++ b/src/extract/tsc/extract-typescript-deps.mjs
+@@ -2,34 +2,20 @@
+ /* eslint-disable unicorn/prevent-abbreviations */
+ /* eslint-disable max-lines */
+ /* eslint-disable no-inline-comments */
+-import tryImport from "#utl/try-import.mjs";
+-import meta from "#meta.cjs";
+-
+-/**
+- * @import typescript, {Node} from "typescript"
+- */
+-
+-/** @type {typescript} */
+-const typescript = await tryImport(
+-	"typescript",
+-	meta.supportedTranspilers.typescript,
+-);
+-
+-const INTERESTING_NODE_KINDS = typescript
+-	? new Set([
+-			typescript.SyntaxKind.CallExpression,
+-			typescript.SyntaxKind.ExportDeclaration,
+-			typescript.SyntaxKind.ImportDeclaration,
+-			typescript.SyntaxKind.ImportEqualsDeclaration,
+-			typescript.SyntaxKind.LastTypeNode,
+-		])
+-	: /* c8 ignore next 1 */
+-		new Set();
++import * as ast from 'typescript/unstable/ast';
++
++const INTERESTING_NODE_KINDS = new Set([
++			ast.SyntaxKind.CallExpression,
++			ast.SyntaxKind.ExportDeclaration,
++			ast.SyntaxKind.ImportDeclaration,
++			ast.SyntaxKind.ImportEqualsDeclaration,
++			ast.SyntaxKind.ImportType,
++		]);
+ 
+ function isTypeOnlyImport(pStatement) {
+ 	return (
+ 		pStatement.importClause &&
+-		(pStatement.importClause.isTypeOnly ||
++		(pStatement.importClause.phaseModifier === ast.SyntaxKind.TypeKeyword ||
+ 			(pStatement.importClause.namedBindings &&
+ 				pStatement.importClause.namedBindings.elements &&
+ 				pStatement.importClause.namedBindings.elements.every(
+@@ -69,7 +55,7 @@
+  * @returns {Node[]} - the node's statements, flattened over module blocks
+  */
+ function getModuleBlock(pStatement) {
+-	if (pStatement.kind !== typescript.SyntaxKind.ModuleDeclaration) {
++	if (pStatement.kind !== ast.SyntaxKind.ModuleDeclaration) {
+ 		return null;
+ 	}
+ 
+@@ -78,11 +64,11 @@
+ 	// the block.
+ 	let lBody = pStatement.body;
+ 
+-	while (lBody?.kind === typescript.SyntaxKind.ModuleDeclaration) {
++	while (lBody?.kind === ast.SyntaxKind.ModuleDeclaration) {
+ 		lBody = lBody.body;
+ 	}
+ 
+-	return lBody?.kind === typescript.SyntaxKind.ModuleBlock ? lBody : null;
++	return lBody?.kind === ast.SyntaxKind.ModuleBlock ? lBody : null;
+ }
+ 
+ function getStatements(pAST, pDetectImportsInAmbientModules) {
+@@ -113,7 +99,7 @@
+ 	return getStatements(pAST, pDetectImportsInAmbientModules)
+ 		.filter(
+ 			(pStatement) =>
+-				pStatement.kind === typescript.SyntaxKind.ImportDeclaration &&
++				pStatement.kind === ast.SyntaxKind.ImportDeclaration &&
+ 				pStatement.moduleSpecifier,
+ 		)
+ 		.map((pStatement) => ({
+@@ -137,7 +123,7 @@
+ 	return getStatements(pAST, pDetectImportsInAmbientModules)
+ 		.filter(
+ 			(pStatement) =>
+-				pStatement.kind === typescript.SyntaxKind.ExportDeclaration &&
++				pStatement.kind === ast.SyntaxKind.ExportDeclaration &&
+ 				pStatement.moduleSpecifier,
+ 		)
+ 		.map((pStatement) => ({
+@@ -165,7 +151,7 @@
+ 	return getStatements(pAST, pDetectImportsInAmbientModules)
+ 		.filter(
+ 			(pStatement) =>
+-				pStatement.kind === typescript.SyntaxKind.ImportEqualsDeclaration &&
++				pStatement.kind === ast.SyntaxKind.ImportEqualsDeclaration &&
+ 				pStatement.moduleReference &&
+ 				pStatement.moduleReference.expression &&
+ 				pStatement.moduleReference.expression.text,
+@@ -185,6 +171,15 @@
+  * @param {Node} pAST - typescript syntax tree
+  * @returns {{module: string, moduleSystem: string}[]} - 'tripple slash' dependencies
+  */
++function amdDependenciesInSource(source) {
++    return (ast.getLeadingCommentRanges(source.text, 0) ?? []).flatMap((range) => {
++        const comment = source.text.slice(range.pos, range.end);
++        const directive = /^\/\/\/\s*<amd-dependency\s+([^>]*)\/?>/.exec(comment);
++        const path = directive && /\bpath\s*=\s*(['"])(.*?)\1/.exec(directive[1]);
++        return path ? [{ path: path[2] }] : [];
++    });
++}
++
+ function extractTripleSlashDirectives(pAST) {
+ 	return pAST.referencedFiles
+ 		.map((pReference) => ({
+@@ -208,7 +203,7 @@
+ 			})),
+ 		)
+ 		.concat(
+-			pAST.amdDependencies.map((pReference) => ({
++			amdDependenciesInSource(pAST).map((pReference) => ({
+ 				module: pReference.path,
+ 				moduleSystem: "tsd",
+ 				exoticallyRequired: false,
+@@ -226,37 +221,19 @@
+ 	return (
+ 		lFirstArgument &&
+ 		// "thing" or 'thing'
+-		(lFirstArgument.kind === typescript.SyntaxKind.StringLiteral ||
++		(lFirstArgument.kind === ast.SyntaxKind.StringLiteral ||
+ 			// `thing`
+-			lFirstArgument.kind === typescript.SyntaxKind.FirstTemplateToken)
+-	);
+-}
+-
+-function isRequireCallExpression(pASTNode) {
+-	if (
+-		pASTNode.kind === typescript.SyntaxKind.CallExpression &&
+-		pASTNode.expression
+-	) {
+-		/*
+-		 * from typescript 5.0.0 the `originalKeywordKind` attribute is deprecated
+-		 * and from 5.2.0 it will be gone. However, in typescript < 5.0.0 (still used
+-		 * heavily IRL) it's the only way to get it - hence this test for the
+-		 * existence of the * identifierToKeywordKind function
+-		 */
+-		const lSyntaxKind = typescript.identifierToKeywordKind
+-			? typescript.SyntaxKind[
+-					typescript.identifierToKeywordKind(pASTNode.expression)
+-				]
+-			: /* c8 ignore next 1 */
+-				typescript.SyntaxKind[pASTNode.expression.originalKeywordKind];
+-		return lSyntaxKind === "RequireKeyword" && firstArgumentIsAString(pASTNode);
+-	}
+-	return false;
++			lFirstArgument.kind === ast.SyntaxKind.NoSubstitutionTemplateLiteral)
++	);
++}
++
++function isRequireCallExpression(node) {
++    return ast.isCallExpression(node) && ast.isIdentifier(node.expression) && node.expression.text === 'require' && firstArgumentIsAString(node);
+ }
+ 
+ function isSingleExoticRequire(pASTNode, pString) {
+ 	return (
+-		pASTNode.kind === typescript.SyntaxKind.CallExpression &&
++		pASTNode.kind === ast.SyntaxKind.CallExpression &&
+ 		pASTNode.expression &&
+ 		pASTNode.expression.text === pString &&
+ 		firstArgumentIsAString(pASTNode)
+@@ -266,16 +243,16 @@
+ /* eslint complexity:0 */
+ function isCompositeExoticRequire(pASTNode, pObjectName, pPropertyName) {
+ 	return (
+-		pASTNode.kind === typescript.SyntaxKind.CallExpression &&
++		pASTNode.kind === ast.SyntaxKind.CallExpression &&
+ 		pASTNode.expression &&
+ 		pASTNode.expression.kind ===
+-			typescript.SyntaxKind.PropertyAccessExpression &&
++			ast.SyntaxKind.PropertyAccessExpression &&
+ 		pASTNode.expression.expression &&
+-		pASTNode.expression.expression.kind === typescript.SyntaxKind.Identifier &&
+-		pASTNode.expression.expression.escapedText === pObjectName &&
++		pASTNode.expression.expression.kind === ast.SyntaxKind.Identifier &&
++		pASTNode.expression.expression.text === pObjectName &&
+ 		pASTNode.expression.name &&
+-		pASTNode.expression.name.kind === typescript.SyntaxKind.Identifier &&
+-		pASTNode.expression.name.escapedText === pPropertyName &&
++		pASTNode.expression.name.kind === ast.SyntaxKind.Identifier &&
++		pASTNode.expression.name.text === pPropertyName &&
+ 		firstArgumentIsAString(pASTNode)
+ 	);
+ }
+@@ -287,26 +264,26 @@
+ 	pPropertyName,
+ ) {
+ 	return (
+-		pASTNode.kind === typescript.SyntaxKind.CallExpression &&
++		pASTNode.kind === ast.SyntaxKind.CallExpression &&
+ 		pASTNode.expression &&
+ 		pASTNode.expression.kind ===
+-			typescript.SyntaxKind.PropertyAccessExpression &&
++			ast.SyntaxKind.PropertyAccessExpression &&
+ 		pASTNode.expression.expression &&
+ 		pASTNode.expression.expression.kind ===
+-			typescript.SyntaxKind.PropertyAccessExpression &&
++			ast.SyntaxKind.PropertyAccessExpression &&
+ 		// globalThis
+ 		pASTNode.expression.expression.expression &&
+ 		pASTNode.expression.expression.expression.kind ===
+-			typescript.SyntaxKind.Identifier &&
+-		pASTNode.expression.expression.expression.escapedText === pObjectName1 &&
++			ast.SyntaxKind.Identifier &&
++		pASTNode.expression.expression.expression.text === pObjectName1 &&
+ 		// process
+ 		pASTNode.expression.expression.name.kind ===
+-			typescript.SyntaxKind.Identifier &&
+-		pASTNode.expression.expression.name.escapedText === pObjectName2 &&
++			ast.SyntaxKind.Identifier &&
++		pASTNode.expression.expression.name.text === pObjectName2 &&
+ 		// getBuiltinModule
+ 		pASTNode.expression.name &&
+-		pASTNode.expression.name.kind === typescript.SyntaxKind.Identifier &&
+-		pASTNode.expression.name.escapedText === pPropertyName &&
++		pASTNode.expression.name.kind === ast.SyntaxKind.Identifier &&
++		pASTNode.expression.name.text === pPropertyName &&
+ 		firstArgumentIsAString(pASTNode)
+ 	);
+ }
+@@ -321,22 +298,22 @@
+ 
+ function isDynamicImportExpression(pASTNode) {
+ 	return (
+-		pASTNode.kind === typescript.SyntaxKind.CallExpression &&
++		pASTNode.kind === ast.SyntaxKind.CallExpression &&
+ 		pASTNode.expression &&
+-		pASTNode.expression.kind === typescript.SyntaxKind.ImportKeyword &&
++		pASTNode.expression.kind === ast.SyntaxKind.ImportKeyword &&
+ 		firstArgumentIsAString(pASTNode)
+ 	);
+ }
+ 
+ function isTypeImport(pASTNode) {
+ 	return (
+-		pASTNode.kind === typescript.SyntaxKind.LastTypeNode &&
++		pASTNode.kind === ast.SyntaxKind.ImportType &&
+ 		pASTNode.argument &&
+-		pASTNode.argument.kind === typescript.SyntaxKind.LiteralType &&
++		pASTNode.argument.kind === ast.SyntaxKind.LiteralType &&
+ 		((pASTNode.argument.literal &&
+-			pASTNode.argument.literal.kind === typescript.SyntaxKind.StringLiteral) ||
++			pASTNode.argument.literal.kind === ast.SyntaxKind.StringLiteral) ||
+ 			pASTNode.argument.literal.kind ===
+-				typescript.SyntaxKind.FirstTemplateToken)
++				ast.SyntaxKind.NoSubstitutionTemplateLiteral)
+ 	);
+ }
+ 
+@@ -344,9 +321,9 @@
+ 	return pJSDocTags
+ 		.filter(
+ 			(pTag) =>
+-				pTag.tagName.escapedText === "import" &&
++				pTag.tagName.text === "import" &&
+ 				pTag.moduleSpecifier &&
+-				pTag.moduleSpecifier.kind === typescript.SyntaxKind.StringLiteral &&
++				pTag.moduleSpecifier.kind === ast.SyntaxKind.StringLiteral &&
+ 				pTag.moduleSpecifier.text,
+ 		)
+ 		.map((pTag) => ({
+@@ -360,41 +337,21 @@
+ function isJSDocImport(pTypeNode) {
+ 	// import('./hello.mjs') within jsdoc
+ 	return (
+-		pTypeNode?.kind === typescript.SyntaxKind.LastTypeNode &&
+-		pTypeNode.argument?.kind === typescript.SyntaxKind.LiteralType &&
+-		pTypeNode.argument?.literal?.kind === typescript.SyntaxKind.StringLiteral &&
++		pTypeNode?.kind === ast.SyntaxKind.ImportType &&
++		pTypeNode.argument?.kind === ast.SyntaxKind.LiteralType &&
++		pTypeNode.argument?.literal?.kind === ast.SyntaxKind.StringLiteral &&
+ 		pTypeNode.argument.literal.text
+ 	);
+ }
+ 
+-const IGNORABLE_JSDOC_KEYS = new Set([
+-	"parent",
+-	"pos",
+-	"end",
+-	"flags",
+-	"emitNode",
+-	"modifierFlagsCache",
+-	"transformFlags",
+-	"id",
+-	"flowNode",
+-	"symbol",
+-	"original",
+-]);
+-
+-export function walkJSDoc(pObject, pCollection = new Set()) {
+-	if (isJSDocImport(pObject)) {
+-		pCollection.add(pObject.argument.literal.text);
+-	} else if (Array.isArray(pObject)) {
+-		for (const lValue of pObject) {
+-			walkJSDoc(lValue, pCollection);
+-		}
+-	} else if (typeof pObject === "object") {
+-		for (const lKey in pObject) {
+-			if (!IGNORABLE_JSDOC_KEYS.has(lKey) && pObject[lKey]) {
+-				walkJSDoc(pObject[lKey], pCollection);
+-			}
+-		}
+-	}
++export function walkJSDoc(node, collection = new Set()) {
++    if (!node) return;
++    if (Array.isArray(node)) {
++        for (const child of node) walkJSDoc(child, collection);
++        return;
++    }
++    if (isJSDocImport(node)) collection.add(node.argument.literal.text);
++    node.forEachChild((child) => { walkJSDoc(child, collection); });
+ }
+ 
+ export function getJSDocImports(pTagNode) {
+@@ -408,8 +365,8 @@
+ 	return pJSDocTags
+ 		.filter(
+ 			(pTag) =>
+-				pTag.tagName.escapedText !== "import" &&
+-				pTag.typeExpression?.kind === typescript.SyntaxKind.FirstJSDocNode,
++				pTag.tagName.text !== "import" &&
++				pTag.typeExpression?.kind === ast.SyntaxKind.JSDocTypeExpression,
+ 		)
+ 		.flatMap((pTag) => getJSDocImports(pTag))
+ 		.map((pImportName) => ({
+@@ -484,7 +441,7 @@
+ 	// strictly speaking checking whether kind is CallExpression is not necessary as
+ 	// the functions inside the loop will do that as well. However, it saves quite a
+ 	// of computation when the list of exotic require strings is not empty
+-	if (pASTNode.kind === typescript.SyntaxKind.CallExpression) {
++	if (pASTNode.kind === ast.SyntaxKind.CallExpression) {
+ 		for (const lExoticRequireString of pExoticRequireStrings) {
+ 			if (isExoticRequire(pASTNode, lExoticRequireString)) {
+ 				pResult.push({
+@@ -555,8 +512,7 @@
+ 			);
+ 		}
+ 
+-		typescript.forEachChild(
+-			pASTNode,
++		pASTNode.forEachChild(
+ 			walk(
+ 				pResult,
+ 				pExoticRequireStrings,
+@@ -606,8 +562,7 @@
+ 	pDetectProcessBuiltinModuleCalls,
+ 	pDetectImportsInAmbientModules,
+ ) {
+-	return typescript
+-		? extractImports(pTypeScriptAST, pDetectImportsInAmbientModules)
++	return extractImports(pTypeScriptAST, pDetectImportsInAmbientModules)
+ 				.concat(extractExports(pTypeScriptAST, pDetectImportsInAmbientModules))
+ 				.concat(
+ 					extractImportEquals(pTypeScriptAST, pDetectImportsInAmbientModules),
+@@ -621,6 +576,5 @@
+ 						pDetectProcessBuiltinModuleCalls,
+ 					),
+ 				)
+-				.map((pModule) => ({ dynamic: false, ...pModule }))
+-		: /* c8 ignore next */ [];
+-}
++				.map((pModule) => ({ dynamic: false, ...pModule }));
++}
+diff --git a/src/extract/tsc/native-session.mjs b/src/extract/tsc/native-session.mjs
+new file mode 100644
+--- /dev/null
++++ b/src/extract/tsc/native-session.mjs
+@@ -0,0 +1,54 @@
++import { randomUUID } from 'node:crypto';
++import { resolve } from 'node:path';
++import { API, DiagnosticCategory } from 'typescript/unstable/sync';
++import { createVirtualFileSystem } from 'typescript/unstable/fs';
++
++let active;
++
++/** Extraction is synchronous: one native project owns every source requested during this operation. */
++export function withNativeSyntaxSession(operation) {
++    const previous = active;
++    const config = resolve(process.cwd(), `.native-cruise-${randomUUID()}.json`);
++    const virtual = createVirtualFileSystem({ [config]: '{}' });
++    let api;
++    let snapshot;
++    let current;
++    active = (fileName, source) => {
++        api ??= new API({ fs: virtual });
++        snapshot?.dispose();
++        if (current && current !== fileName) virtual.removeFile(current);
++        virtual.writeFile(fileName, source);
++        virtual.writeFile(config, JSON.stringify({
++            compilerOptions: {
++                allowJs: true, noLib: true, noResolve: true, noCheck: true, noEmit: true,
++                jsx: 'preserve', target: 'esnext', module: 'esnext', types: [],
++            },
++            files: [fileName],
++        }));
++        snapshot = api.updateSnapshot({
++            openProjects: current ? undefined : [config],
++            fileChanges: { changed: [config, ...(current === fileName ? [fileName] : [])], created: current !== fileName ? [fileName] : [], deleted: current && current !== fileName ? [current] : [] },
++        });
++        current = fileName;
++        const project = snapshot.getProject(config);
++        const file = project?.program.getSourceFile(fileName);
++        if (!file || file.text !== source) throw new Error(`Native cruise parser omitted input: ${fileName}`);
++        const errors = [
++            ...project.program.getConfigFileParsingDiagnostics(),
++            ...project.program.getProgramDiagnostics(),
++            ...project.program.getSyntacticDiagnostics(fileName),
++        ].filter((item) => item.category === DiagnosticCategory.Error);
++        if (errors.length) throw new Error(errors.map((item) => `${fileName}: ${item.text}`).join('\n'));
++        return file;
++    };
++    try { return operation(); }
++    finally {
++        active = previous;
++        try { snapshot?.dispose(); } finally { api?.close(); }
++    }
++}
++
++export function parseNativeSource(fileName, source) {
++    const file = resolve(fileName);
++    return active ? active(file, source) : withNativeSyntaxSession(() => active(file, source));
++}
+diff --git a/src/extract/tsc/parse.mjs b/src/extract/tsc/parse.mjs
+--- a/src/extract/tsc/parse.mjs
++++ b/src/extract/tsc/parse.mjs
+@@ -1,15 +1,9 @@
+ import { readFileSync } from "node:fs";
+ import transpile from "../transpile/index.mjs";
+-import tryImport from "#utl/try-import.mjs";
+-import meta from "#meta.cjs";
+ import getExtension from "#utl/get-extension.mjs";
+ 
+-/** @type {import('typescript')} */
+-const typescript = await tryImport(
+-	"typescript",
+-	meta.supportedTranspilers.typescript,
+-);
+-/** @type {Map<string, any>} */
++import { parseNativeSource } from './native-session.mjs';
++/** @type {Map<string, import("typescript/unstable/ast").SourceFile>} */
+ const CACHE = new Map();
+ 
+ /**
+@@ -26,12 +20,9 @@
+ 		lSource = transpile(pFileRecord, pTranspileOptions);
+ 	}
+ 
+-	return typescript.createSourceFile(
+-		pFileRecord.filename || "$internal-file-name",
+-		lSource,
+-		typescript.ScriptTarget.Latest,
+-		false,
+-	);
++    const fileName = pFileRecord.filename || '$internal-file-name.ts';
++    const parseName = pFileRecord.extension === '.vue' ? `${fileName}.ts` : fileName;
++    return parseNativeSource(parseName, lSource);
+ }
+ 
+ /**
+@@ -64,7 +55,7 @@
+  * @returns {boolean} - true if the typescript compiler is available,
+  *                     false in all other cases
+  */
+-export const isAvailable = () => typescript !== false;
++export const isAvailable = () => true;
+ 
+ export function clearCache() {
+ 	CACHE.clear();
+diff --git a/src/main/resolve-options/normalize.mjs b/src/main/resolve-options/normalize.mjs
+--- a/src/main/resolve-options/normalize.mjs
++++ b/src/main/resolve-options/normalize.mjs
+@@ -1,4 +1,6 @@
+ import fs from "node:fs";
++import { isAbsolute } from "node:path";
++import extractTSConfig from "../../config-utl/extract-ts-config.mjs";
+ import enhancedResolve from "enhanced-resolve";
+ import { scannableExtensions } from "#extract/transpile/meta.mjs";
+ import {
+@@ -80,11 +82,18 @@
+ 	if (pResolveOptions.tsConfig) {
+ 		const { default: TsConfigPathsPlugin } =
+ 			await import("tsconfig-paths-webpack-plugin");
++        if (process.env.TS_NODE_PROJECT || process.env.TS_NODE_BASEURL) throw new Error('Caller TypeScript alias override prevents proving the requested configuration');
++        const nativeConfig = extractTSConfig(pResolveOptions.tsConfig);
++        const paths = nativeConfig.options.paths;
++        const hasPaths = paths && typeof paths === 'object' && Object.keys(paths).length > 0;
++        const declaringBase = nativeConfig.options.pathsBasePath;
++        if (hasPaths && (typeof declaringBase !== 'string' || !isAbsolute(declaringBase))) throw new Error('Native TypeScript alias declaration origin is unavailable');
+ 		lResolveOptions.plugins = pushPlugin(
+ 			lResolveOptions.plugins,
+ 			// @ts-expect-error TS2351 "TsConfPathsPlugin is not constructable" - is unjustified
+ 			new TsConfigPathsPlugin({
+ 				configFile: pResolveOptions.tsConfig,
++                ...(hasPaths ? { baseUrl: declaringBase } : {}),
+ 				// TsConfigPathsPlugin doesn't (can't) read enhanced-resolve's
+ 				// list of extensions, and the default it uses for extensions
+ 				// so we do it ourselves - either with the extensions passed
+diff --git a/src/meta.cjs b/src/meta.cjs
+--- a/src/meta.cjs
++++ b/src/meta.cjs
+@@ -5,13 +5,13 @@
+ 		node: "^22||^24||>=26",
+ 	},
+ 	supportedTranspilers: {
+-		babel: ">=7.0.0 <8.0.0",
++		babel: ">=8.0.0 <9.0.0",
+ 		"coffee-script": ">=1.0.0 <2.0.0",
+ 		coffeescript: ">=1.0.0 <3.0.0",
+ 		livescript: ">=1.0.0 <2.0.0",
+ 		svelte: ">=3.0.0 <6.0.0",
+ 		swc: ">=1.0.0 <2.0.0",
+-		typescript: ">=2.0.0 <7.0.0",
++		typescript: ">=7.0.2 <8.0.0",
+ 		"vue-template-compiler": ">=2.0.0 <3.0.0",
+ 		"@vue/compiler-sfc": ">=3.0.0 <4.0.0",
+ 	},

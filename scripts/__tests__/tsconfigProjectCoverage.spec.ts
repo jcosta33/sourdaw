@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /**
  * Guard: every spec vitest collects must live inside a tsconfig project.
  *
@@ -29,9 +31,9 @@
  */
 
 import { readdirSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 
-import { flattenDiagnosticMessageText, parseJsonConfigFileContent, readConfigFile, sys } from 'typescript';
+import { readNativeConfiguration } from '../nativeTypeScript';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = resolve(import.meta.dirname, '../..');
@@ -60,13 +62,7 @@ function collectSpecFiles(relativeRoot: string): string[] {
 /** Absolute file list a tsconfig project resolves to, `extends` chain included. */
 function projectFiles(configFileName: string): Set<string> {
     const configPath = join(repoRoot, configFileName);
-    const read = readConfigFile(configPath, sys.readFile);
-    if (read.error) {
-        throw new Error(
-            `Could not read ${configFileName}: ${flattenDiagnosticMessageText(read.error.messageText, ' ')}`
-        );
-    }
-    const parsed = parseJsonConfigFileContent(read.config, sys, dirname(configPath));
+    const parsed = readNativeConfiguration(configPath);
     return new Set(parsed.fileNames.map((fileName) => resolve(fileName)));
 }
 

@@ -39,6 +39,7 @@ allowBuilds:
 # must not reload when that editor socket disconnects. Keep the browser control
 # in e2eHmrDisconnectBoundary.spec.ts when updating or removing this patch.
 patchedDependencies:
+    dependency-cruiser@18.7.2: patches/dependency-cruiser@18.7.2.patch
     'eslint-plugin-react-jsx@5.30.2': patches/eslint-plugin-react-jsx@5.30.2.patch
     'eslint-plugin-react-x@5.30.2': patches/eslint-plugin-react-x@5.30.2.patch
     '@eslint-react/core@5.30.2': patches/@eslint-react__core@5.30.2.patch
@@ -69,6 +70,7 @@ patchedDependencies:
 # worker. Overriding core alone leaves incompatible backend kernels. Keep the
 # complete cohort together; bundled-model inference checks its actual runtime.
 overrides:
+    dependency-cruiser@18.7.2>enhanced-resolve: 5.27.0
     # These exact consumer forks use native7 AST/project/checker APIs. The
     # declarations mirror the source patches; removed edges belong to unused
     # upstream Program/watch/rule loaders, admitted by scoped rule validation.
@@ -160,3 +162,9 @@ minimumReleaseAgeExclude:
     - mdast-util-to-hast@13.2.2
     - node-releases@2.0.64
     - tapable@2.3.4
+
+packageExtensions:
+    dependency-cruiser@18.7.2:
+        dependencies:
+            typescript: 7.0.2
+            esbuild: 0.28.2

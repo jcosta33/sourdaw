@@ -3,7 +3,9 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 
-import ts from 'typescript';
+import * as ts from 'typescript/unstable/ast';
+
+import { readNativeSource, requireNativeSyntax } from '../nativeTypeScript';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { playwrightExtensionPattern, playwrightTestDir } from '../vitestCollectionPatterns';
@@ -36,7 +38,7 @@ function namesRunnerValue(elements: ts.NodeArray<ts.ImportSpecifier | ts.ExportS
 /** Whether an import declaration binds a runtime `test` or `expect`, by name or through the whole module. */
 function importBindsRunnerValue(declaration: ts.ImportDeclaration): boolean {
     const clause = declaration.importClause;
-    if (clause === undefined || clause.isTypeOnly) {
+    if (clause === undefined || clause.phaseModifier === ts.SyntaxKind.TypeKeyword) {
         return false;
     }
     if (clause.name !== undefined) {
@@ -83,13 +85,13 @@ function isRunnerBypass(node: ts.Node): boolean {
  * any `require` or dynamic `import()` of it.
  */
 function runnerBypasses(text: string, fileName: string): string[] {
-    const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true);
+    const sourceFile = requireNativeSyntax(readNativeSource(fileName, text));
     const bypasses: string[] = [];
     const visit = (node: ts.Node): void => {
         if (isRunnerBypass(node)) {
             bypasses.push(node.getText(sourceFile));
         }
-        ts.forEachChild(node, visit);
+        node.forEachChild(visit);
     };
     visit(sourceFile);
     return bypasses;
