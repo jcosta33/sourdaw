@@ -89,12 +89,12 @@ a new action must join.
    becomes one record keyed by every `AppActionType`. Use a mapped type, so each entry receives its
    narrowed action and an action without an entry fails to compile. The record lives in the module
    that owns the concern, Command included for kernel concerns.
-   - When an existing owner-provided handler capability already expresses the concern (for example
-     `materializeCommandArguments`), the concern uses that capability instead of a second table.
-   - A record that would pass the line ceiling is split into per-owner partial records, composed with
-     `satisfies` against the full mapped type.
-   - Narrowing is not a table and stays. That covers a handler narrowing its own action, and code
-     narrowing to one specific action that it builds or consumes by contract.
+    - When an existing owner-provided handler capability already expresses the concern (for example
+      `materializeCommandArguments`), the concern uses that capability instead of a second table.
+    - A record that would pass the line ceiling is split into per-owner partial records, composed with
+      `satisfies` against the full mapped type.
+    - Narrowing is not a table and stays. That covers a handler narrowing its own action, and code
+      narrowing to one specific action that it builds or consumes by contract.
 
 8. **Partial programs.** TypeScript programs that do not include all of `src` (the scripts and e2e
    projects) include the owners' `events/*AppActions.ts` files, or avoid naming `AppAction`. They
