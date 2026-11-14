@@ -14,7 +14,6 @@ import {
 
 import { AgentApprovalSection } from '../components/agentWorkspace/AgentApprovalSection';
 import { AgentComparisonSection } from '../components/agentWorkspace/AgentComparisonSection';
-import { AgentPlanPanel } from '../components/agentWorkspace/AgentPlanPanel';
 import { AgentProgressSection } from '../components/agentWorkspace/AgentProgressSection';
 import { AgentRouteSection } from '../components/agentWorkspace/AgentRouteSection';
 import { AgentRunControlsSection } from '../components/agentWorkspace/AgentRunControlsSection';
@@ -25,6 +24,7 @@ import { useAgentChangeComparisonController } from '../hooks/useAgentChangeCompa
 import { useAgentWorkspaceFocusDispatch } from '../hooks/useAgentWorkspaceFocusDispatch';
 import { useAgentWorkspaceRunSelection } from '../hooks/useAgentWorkspaceRunSelection';
 
+import { AgentPlanPanel } from './AgentPlanPanel';
 import { AgentReferenceControls } from './AgentReferenceControls';
 
 function renderApprovalAudition(input: Parameters<typeof MeasuredPreviewAudition>[0]): ReactElement {
