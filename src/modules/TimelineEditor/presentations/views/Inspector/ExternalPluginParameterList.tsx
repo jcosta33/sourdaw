@@ -95,6 +95,7 @@ const ParameterRow = ({ instanceId, row, onAnnounce }: ParameterRowProps): React
                         role="switch"
                         aria-label={row.name}
                         checked={value - row.min >= 0.5}
+                        aria-checked={value - row.min >= 0.5}
                         onChange={(event) => edit(event.target.checked ? row.max : row.min)}
                     />
                 )}
@@ -118,12 +119,30 @@ const ParameterRow = ({ instanceId, row, onAnnounce }: ParameterRowProps): React
     );
 };
 
+/**
+ * The marker is read from plain module memory, which React's compiler cannot see change, so the
+ * caller keys this by the marker store's version: a mark or clear remounts it and re-reads the marker.
+ */
+const RestoreFailureNotice = ({ instanceId }: { instanceId: string }): ReactElement | null => {
+    if (!hasUnresolvedExternalPluginRestoreFailure(instanceId)) {
+        return null;
+    }
+    return (
+        <div role="status">
+            <MetaText>
+                This plugin&apos;s saved state could not be restored. Changes made here will not be saved with the
+                project until its saved state is replaced.
+            </MetaText>
+        </div>
+    );
+};
+
 export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterListProps): ReactElement => {
     const scanState = useStore(pluginScanStore, defaultPluginScanState);
     const activationState = useStore(externalPluginActivationStore, defaultExternalPluginActivationState);
     const parameterState = useStore(externalPluginParameterStore, defaultExternalPluginParameterState);
     // The marker set is plain module memory; the store's version is the render signal for it.
-    useStore(externalPluginRestoreFailureStore, defaultExternalPluginRestoreFailureState);
+    const restoreFailure = useStore(externalPluginRestoreFailureStore, defaultExternalPluginRestoreFailureState);
     const [query, setQuery] = useState('');
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [announcement, setAnnouncement] = useState('');
@@ -178,14 +197,7 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
 
     return (
         <Stack gap={2} className="px-1" data-testid="external-plugin-parameters">
-            {hasUnresolvedExternalPluginRestoreFailure(instanceId) && (
-                <div role="status">
-                    <MetaText>
-                        This plugin&apos;s saved state could not be restored. Changes made here will not be saved with
-                        the project until its saved state is replaced.
-                    </MetaText>
-                </div>
-            )}
+            <RestoreFailureNotice key={restoreFailure.version} instanceId={instanceId} />
             <DawSearchInput
                 value={query}
                 onChange={changeQuery}

@@ -6,6 +6,7 @@ import {
     defaultExternalPluginParameterState,
     defaultExternalPluginRestoreFailureState,
     defaultPluginScanState,
+    type ExternalPluginActivationStatus,
     type ExternalPluginParameter,
     externalPluginActivationStore,
     externalPluginParameterStore,
@@ -66,6 +67,14 @@ const seed = (
     } = {}
 ): void => {
     const { status = 'active', message, scanParameters, snapshot = true, format = 'clap' } = options;
+    const scannedParameters: Pick<ScannedPlugin, 'parameters'> = {};
+    if (scanParameters) {
+        scannedParameters.parameters = scanParameters;
+    }
+    const activation: ExternalPluginActivationStatus = { status: status === 'none' ? 'active' : status };
+    if (message) {
+        activation.message = message;
+    }
     pluginScanStore.set({
         ...defaultPluginScanState,
         scannedPlugins: [
@@ -82,16 +91,25 @@ const seed = (
                 num_outputs: 2,
                 num_parameters: parameters.length,
                 has_custom_ui: true,
-                ...(scanParameters ? { parameters: scanParameters } : {}),
+                ...scannedParameters,
             },
         ],
     });
     externalPluginActivationStore.set({
-        byInstanceId: status === 'none' ? {} : { [INSTANCE_ID]: { status, ...(message ? { message } : {}) } },
+        byInstanceId: status === 'none' ? {} : { [INSTANCE_ID]: activation },
     });
     externalPluginParameterStore.set({
         byInstanceId: snapshot ? { [INSTANCE_ID]: { engineAttached: true, parameters } } : {},
     });
+};
+
+/** The promise the nth call to the edit stub returned. */
+const sentPromise = (index: number): Promise<void> => {
+    const result = mockEdit.mock.results[index];
+    if (!result) {
+        throw new Error(`The edit stub was not called ${String(index + 1)} times.`);
+    }
+    return result.value;
 };
 
 const moveStoreValue = (id: number, name: string, value: number): void => {
@@ -173,11 +191,11 @@ describe('ExternalPluginParameterList', () => {
     it('holds the requested value while the send is in flight and builds the next nudge on it', async () => {
         const settle: Array<{ reject: (error: Error) => void; promise: Promise<void> }> = [];
         mockEdit.mockImplementation(() => {
-            let reject: (error: Error) => void = () => {};
-            const promise = new Promise<void>((_resolve, rejectPromise) => {
-                reject = rejectPromise;
+            let rejectSend: (error: Error) => void = () => {};
+            const promise = new Promise<void>((_resolve, reject) => {
+                rejectSend = reject;
             });
-            settle.push({ reject, promise });
+            settle.push({ reject: rejectSend, promise });
             return promise;
         });
         seed([parameter({ id: 7, name: 'Decay', value: 0.25 })]);
@@ -212,11 +230,11 @@ describe('ExternalPluginParameterList', () => {
     it('keeps the newer pending value when an older send is accepted first', async () => {
         const sends: Array<{ resolve: () => void; promise: Promise<void> }> = [];
         mockEdit.mockImplementation(() => {
-            let resolve: () => void = () => {};
-            const promise = new Promise<void>((resolvePromise) => {
-                resolve = resolvePromise;
+            let resolveSend: () => void = () => {};
+            const promise = new Promise<void>((resolve) => {
+                resolveSend = resolve;
             });
-            sends.push({ resolve, promise });
+            sends.push({ resolve: resolveSend, promise });
             return promise;
         });
         seed([parameter({ id: 7, name: 'Decay', value: 0.25 })]);
@@ -408,7 +426,7 @@ describe('ExternalPluginParameterList', () => {
 
         await act(async () => {
             fireEvent.change(screen.getByRole('slider', { name: 'Decay' }), { target: { value: '0.75' } });
-            await (mockEdit.mock.results[0]?.value as Promise<void>).catch(() => {});
+            await sentPromise(0).catch(() => {});
         });
 
         const row = screen.getByTestId('external-parameter-7');
@@ -427,7 +445,7 @@ describe('ExternalPluginParameterList', () => {
 
         await act(async () => {
             fireEvent.change(screen.getByRole('slider', { name: 'Decay' }), { target: { value: '0.75' } });
-            await (mockEdit.mock.results[0]?.value as Promise<void>).catch(() => {});
+            await sentPromise(0).catch(() => {});
         });
         expect(screen.getByTestId('parameter-announcements')).toBe(region);
         expect(region).toHaveTextContent('Decay: The plugin refused this change.');
@@ -435,7 +453,7 @@ describe('ExternalPluginParameterList', () => {
 
         await act(async () => {
             fireEvent.change(screen.getByRole('slider', { name: 'Decay' }), { target: { value: '0.8' } });
-            await (mockEdit.mock.results[1]?.value as Promise<void>);
+            await sentPromise(1);
         });
         expect(screen.queryByText('The plugin refused this change.')).not.toBeInTheDocument();
         expect(region).toHaveTextContent('');
@@ -445,6 +463,22 @@ describe('ExternalPluginParameterList', () => {
         mockHasRestoreFailure.mockReturnValue(true);
         seed([parameter({ id: 7, name: 'Decay' })]);
         render(<ExternalPluginParameterList device={device} />);
+
+        expect(screen.getByText(/will not be saved with the project/)).toBeInTheDocument();
+    });
+
+    it('shows the restore warning without remounting when the failure is marked while the list is open', () => {
+        seed([parameter({ id: 7, name: 'Decay' })]);
+        render(<ExternalPluginParameterList device={device} />);
+        expect(screen.queryByText(/will not be saved with the project/)).not.toBeInTheDocument();
+
+        // The marker set is plain memory; production announces a change by bumping the store's version.
+        act(() => {
+            mockHasRestoreFailure.mockReturnValue(true);
+            externalPluginRestoreFailureStore.update((state) => ({
+                version: (state ?? defaultExternalPluginRestoreFailureState).version + 1,
+            }));
+        });
 
         expect(screen.getByText(/will not be saved with the project/)).toBeInTheDocument();
     });

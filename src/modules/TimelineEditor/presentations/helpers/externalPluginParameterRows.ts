@@ -40,13 +40,26 @@ function classify(
     return 'stepped';
 }
 
+/** A wider range needs fewer decimals to tell neighbouring settings apart. */
+function fractionDigitsForSpan(span: number): number {
+    const magnitude = Math.abs(span);
+    if (magnitude >= 1000) {
+        return 0;
+    }
+    if (magnitude >= 100) {
+        return 1;
+    }
+    if (magnitude >= 10) {
+        return 2;
+    }
+    return 3;
+}
+
 function formatNumber(value: number, kind: ExternalPluginParameterControlKind, span: number): string {
     if (kind !== 'continuous' || Number.isInteger(value)) {
         return String(Math.round(value));
     }
-    const magnitude = Math.abs(span);
-    const digits = magnitude >= 1000 ? 0 : magnitude >= 100 ? 1 : magnitude >= 10 ? 2 : 3;
-    return value.toFixed(digits);
+    return value.toFixed(fractionDigitsForSpan(span));
 }
 
 /** A value of this row as a plain number, with the unit the row carries when it has one. */

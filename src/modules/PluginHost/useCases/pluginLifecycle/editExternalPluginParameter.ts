@@ -40,6 +40,12 @@ function findParameter(instanceId: string, parameterId: number): ExternalPluginP
     );
 }
 
+function rejectAll(waiters: readonly Waiter[], error: unknown): void {
+    for (const waiter of waiters) {
+        waiter.reject(error);
+    }
+}
+
 function clampToRange(parameter: ExternalPluginParameter, value: number): number {
     return Math.min(parameter.maxValue, Math.max(parameter.minValue, value));
 }
@@ -62,16 +68,10 @@ async function drain(instanceId: string, parameterId: number, first: PendingSend
             const parameter = findParameter(instanceId, parameterId);
             if (!parameter) {
                 const gone = new Error(`Plugin instance ${instanceId} no longer has parameter ${String(parameterId)}.`);
-                for (const waiter of current.waiters) {
-                    waiter.reject(gone);
-                }
+                rejectAll(current.waiters, gone);
                 // Anything queued behind a vanished parameter has nowhere to go either.
-                if (slot.pending) {
-                    for (const waiter of slot.pending.waiters) {
-                        waiter.reject(gone);
-                    }
-                    slot.pending = null;
-                }
+                rejectAll(slot.pending?.waiters ?? [], gone);
+                slot.pending = null;
                 return;
             }
             const value = clampToRange(parameter, current.value);
@@ -79,9 +79,7 @@ async function drain(instanceId: string, parameterId: number, first: PendingSend
             try {
                 await setPluginParameter({ instanceId, paramId: parameterId, value });
             } catch (error: unknown) {
-                for (const waiter of current.waiters) {
-                    waiter.reject(error);
-                }
+                rejectAll(current.waiters, error);
                 current = slot.pending;
                 slot.pending = null;
                 continue;
@@ -125,7 +123,7 @@ async function drain(instanceId: string, parameterId: number, first: PendingSend
 export function editExternalPluginParameter(input: EditExternalPluginParameterInput): Promise<void> {
     const { instanceId, parameterId } = input;
     if (!Number.isFinite(input.value)) {
-        return Promise.reject(new Error(`Refused a non-finite value for plugin parameter ${String(parameterId)}.`));
+        return Promise.reject(new TypeError(`Refused a non-finite value for plugin parameter ${String(parameterId)}.`));
     }
     if (!findParameter(instanceId, parameterId)) {
         return Promise.reject(new Error(`Plugin instance ${instanceId} has no parameter ${String(parameterId)}.`));
@@ -135,7 +133,9 @@ export function editExternalPluginParameter(input: EditExternalPluginParameterIn
         const waiter: Waiter = { resolve, reject };
         const slot = slots.get(`${instanceId}|${String(parameterId)}`);
         if (slot) {
-            slot.pending = { value: input.value, waiters: [...(slot.pending?.waiters ?? []), waiter] };
+            const queued: Waiter[] = slot.pending ? [...slot.pending.waiters] : [];
+            queued.push(waiter);
+            slot.pending = { value: input.value, waiters: queued };
             return;
         }
         void drain(instanceId, parameterId, { value: input.value, waiters: [waiter] });
