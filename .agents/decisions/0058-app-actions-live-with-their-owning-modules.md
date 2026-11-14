@@ -71,17 +71,21 @@ a new action must join.
    together with a transitional key declared in the same interface. `events/` is the cross-module
    type surface for action variants, as it is for event payloads, because §3.3 of
    `docs/architecture/03-typescript-module.md` names `events/index.ts` the canonical cross-module
-   named-type surface. The variant union and the snapshot types defined in `events/` are
-   re-exported through `events/index.ts`, like any event payload. Model-defined snapshots are not
-   re-exported (`no-models-repos-transformers-in-index`).
+   named-type surface. A variant union or an events-defined snapshot type is re-exported through
+   `events/index.ts` only when another module consumes it by name, like any event payload.
+   `AppAction` is composed through the registry augmentation, not through the barrels. The
+   augmentation file needs no barrel entry to join the union, because every program's include
+   reaches it (decision 8). Model-defined snapshots are not re-exported
+   (`no-models-repos-transformers-in-index`).
 
 3. **Ownership oracle.** An action belongs to the module whose `get<Module>Handlers` map registers
    its handler. That set is the one `getProductionCommandHandlerMaps` returns.
 
 4. **Payload and snapshot types.** A snapshot type is defined by the module that owns its concept,
-   in that module's `events/` file when only non-pure layers need it by name. When the owner's own
-   pure layers (`models/`, `services/`, `transformers/`, `validators/`) need it, it is defined in the
-   owner's `models/`, and the `events/` file references it. Other modules never import a snapshot by
+   in that module's `events/` file when no layer that may not import `events/` needs it by name.
+   Decision 1 names those layers: `models/`, `services/`, `transformers/`, `validators/` and
+   `repositories/`. When any of them needs it, it is defined in the owner's `models/`, and the
+   `events/` file references it. Other modules never import a snapshot by
    a deep path. A consumer in a pure layer, and any consumer of a model-defined snapshot, derives the
    type from its action, for example `Extract<AppAction, { type: 'restoreTrack' }>['payload']['track']`.
    `AppAction` is the argument type of `executeAppAction`, the callable contract every module
@@ -111,8 +115,9 @@ a new action must join.
    `src/modules/Command/useCases/versionedCommandArgumentKeys.ts` as whole files, to pin the
    GrandBoule device-state action shape. So any edit to either file moves the digest. Every slice
    that edits a pinned file restamps (`pnpm release:restamp:tracked-set`), and a slice that moves a
-   pinned variant also repoints the set to the variant's new file. The agent evidence
-   manifest does not move.
+   pinned variant also repoints the set to the variant's new file. The same slice updates the
+   independent path list and fixture in `scripts/__tests__/checkReleaseInventory.spec.ts`, which
+   asserts that list equals the production digest. The agent evidence manifest does not move.
 
 7. **Per-action behaviour is one exhaustive lookup per concern.** Code that derives a property of
    each action by enumerating action types with a default branch is a lookup table. Examples are a
@@ -167,7 +172,7 @@ request.
   lives and whether it stays the dispatch contract. 0058 replaces 0007's stated `AppAction`
   location, so 0007 is marked superseded in part. `AppAction` stays the canonical dispatch
   contract, composed over the domain-free registry in `src/utils/handlerContract.ts`. The
-  `models/AppAction.ts` location in 0007 is no longer current. 0007 is immutable and is not edited.
+  `models/AppAction.ts` location in 0007 is no longer current. Only 0007's status line is marked superseded in part. Its body is unchanged.
 - Extends 0006 (contract barrels) and 0011 (one language, one owner). Supersedes 0007's `AppAction` location clause.
 
 ## Deferred

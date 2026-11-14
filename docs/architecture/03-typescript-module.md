@@ -117,7 +117,7 @@ Each module may expose **up to four** independently-importable contract surfaces
 <module>/presentations/views/index.ts
 ```
 
-`errors/` stays internal. Cross-module **named types** surface through **`events/index.ts`** or as a **local duplicate** in the consumer — not via `export type` from `useCases/`. A consumer may also derive a type reachable from `AppAction` (the argument type of `executeAppAction`) with `Extract<AppAction, …>` (ADR 0058). The variant union and snapshot types defined in `events/` are re-exported through `events/index.ts`; model-defined snapshots are not.
+`errors/` stays internal. Cross-module **named types** surface through **`events/index.ts`** or as a **local duplicate** in the consumer — not via `export type` from `useCases/`. A consumer may also derive a type reachable from `AppAction` (the argument type of `executeAppAction`) with `Extract<AppAction, …>` (ADR 0058). A variant union or an events-defined snapshot type is re-exported through `events/index.ts` only when another module consumes it by name; model-defined snapshots are not. `AppAction` is composed through the registry augmentation, which needs no barrel entry.
 
 ### Contract folder roles
 
@@ -128,7 +128,7 @@ Each module may expose **up to four** independently-importable contract surfaces
 | `stores/`              | shared business/read state                                                           | `#/modules/<M>/stores`                                                                                                                 |
 | `presentations/views/` | composable UI entry points                                                           | `#/modules/<M>/presentations/views`                                                                                                    |
 
-Modules with no events do not need an `events/index.ts`. Modules with no cross-module views do not need a `presentations/views/index.ts`.
+A module needs an `events/index.ts` only when its `events/` holds something another module consumes: an event payload, an app-action variant or a snapshot. Modules with no cross-module views do not need a `presentations/views/index.ts`.
 
 ## 3.2 Private internals
 
@@ -174,7 +174,7 @@ ModuleName/
     trackStore.ts
     ...
   events/
-    index.ts        ← re-exports from events/** only (if module emits events)
+    index.ts        ← re-exports from events/** only (if another module consumes an event payload, app-action variant or snapshot)
     ...
   presentations/
     views/
@@ -449,9 +449,9 @@ Acceptable type exports from a module's public surface:
 | `events/` event payloads                                                                                   | **Yes.** Re-export via the `events/index.ts` barrel as `export type { FooEvent } from './...'`. This is the canonical shared-type surface across modules.                                                                                                                                                                                                                                                                                                      |
 | `stores/` store value types                                                                                | **Yes.** A `Store<T>` instance is part of the public contract; the `T` shape is naturally part of that. Re-export the store's value type via the `stores/index.ts` barrel if needed.                                                                                                                                                                                                                                                                           |
 | `useCases/` local types                                                                                    | **Intra-module only.** The `useCases/index.ts` barrel re-exports functions and constants only — never `export type` (`no-usecase-type-exports-on-index`). Other modules use `ReturnType<typeof fn>` / `Parameters<typeof fn>` or define a local shape. If a use-case input/output type genuinely must be shared cross-module, model it as a typed payload in `events/` (exported via `events/index.ts`) — never a deep import of `#/modules/<X>/useCases/...`. |
-| `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Never.** Not from any contract barrel, not from a use case file, not from anywhere.                                                                                                                                                                                                                                                                                                                                                                          |
+| `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Never.** Not from any contract barrel, not from a use case file, not from anywhere. The one route is deriving a type reachable from `AppAction` (the argument type of `executeAppAction`) with `Extract<AppAction, …>` (ADR 0058).                                                                                                                                                                                                                           |
 
-The hard rule: **cross-module type consumption goes through `events/index.ts` (typed payloads), or through `ReturnType` / `Parameters` / a local shape on the consumer — or it does not happen.** A use case file is allowed to declare and export types that describe its own contract, but it is never a back door for promoting model, repository, or other private types to a cross-module surface, and `useCases/index.ts` never re-exports them.
+The hard rule: **cross-module type consumption goes through `events/index.ts` (typed payloads), through `ReturnType` / `Parameters` / a local shape on the consumer, or through `Extract<AppAction, …>` for types reachable from `AppAction` (ADR 0058) — or it does not happen.** A use case file is allowed to declare and export types that describe its own contract, but it is never a back door for promoting model, repository, or other private types to a cross-module surface, and `useCases/index.ts` never re-exports them.
 
 ---
 
