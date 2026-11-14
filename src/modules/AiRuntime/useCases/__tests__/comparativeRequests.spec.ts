@@ -325,10 +325,12 @@ describe('actual current-preview comparison approval', () => {
         }
         expect(getAgentApprovalView({ confirmationId })?.canConfirm).toBe(false);
         agentRunLifecycle.transitionPhase({ runId, phase: 'waiting-for-approval' });
-        expect(await confirmPendingChatActions({ confirmationId })).toMatchObject({
+        const refused = await confirmPendingChatActions({ confirmationId });
+        expect(refused).toMatchObject({
             status: 'failed',
             reason: expect.stringMatching(/objective|metric|measure/u),
         });
+        expect(refused).not.toMatchObject({ reason: 'The approved trust mode or risk policy no longer matches.' });
         expect(trackStore.value).toEqual(before.tracks);
         expect(undoHistoryStore.value).toEqual(before.undo);
         expect(captureProjectRevision()).toBe(before.revision);
@@ -2151,5 +2153,51 @@ describe('request figures across a refinement chain', () => {
         expect(metricGoalStateCodec(JSON.stringify(refined))).toEqual(refined);
         expect(metricGoalStateCodec(JSON.stringify({ ...persisted, refinedRequests: [1] }))).toBeNull();
         expect(metricGoalStateCodec(JSON.stringify({ ...persisted, refinedRequests: 'Raise Drums' }))).toBeNull();
+    });
+});
+
+describe('a request that states no objective confirms without a measured preview', () => {
+    const drums = () => trackStore.value?.tracks.find((track) => track.id === 'drums');
+
+    it.each([
+        {
+            name: 'an exact gain figure',
+            runId: 'confirmable-gain',
+            prompt: 'Set Drums to -6 dB',
+            commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', gainDb: -6 } }],
+            landed: () => expect(drums()?.gain).toBeCloseTo(10 ** (-6 / 20), 4),
+        },
+        {
+            name: 'a rename',
+            runId: 'confirmable-rename',
+            prompt: 'Rename Drums to Lead',
+            commands: [{ name: 'renameTrack', arguments: { trackId: 'drums', name: 'Lead' } }],
+            landed: () => expect(drums()?.name).toBe('Lead'),
+        },
+    ])('executes $name on Confirm and writes nothing before it', async ({ prompt, runId, commands, landed }) => {
+        const before = structuredClone(trackStore.value);
+        const card = await proposeLiteralCard({ prompt, runId, commands });
+        expect(trackStore.value).toEqual(before);
+        expect(getAgentApprovalView({ confirmationId: card.confirmationId })?.canConfirm).toBe(true);
+        expect(await confirmPendingChatActions({ confirmationId: card.confirmationId })).toEqual({
+            status: 'executed',
+        });
+        landed();
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+
+    it('admits a literal mute at Confirm: nothing about metrics or risk policy refuses it', async () => {
+        const card = await proposeLiteralCard({
+            prompt: 'Mute Drums',
+            runId: 'confirmable-mute',
+            commands: [{ name: 'muteTrack', arguments: { trackId: 'drums', muted: true } }],
+        });
+        expect(getAgentApprovalView({ confirmationId: card.confirmationId })?.canConfirm).toBe(true);
+        const outcome = await confirmPendingChatActions({ confirmationId: card.confirmationId });
+        // The jsdom audio context cannot realize a mute, so execution may fail in the engine; what this
+        // pins is that admission itself accepted the batch without a measured preview.
+        expect(outcome).not.toMatchObject({
+            reason: expect.stringMatching(/objective|metric|measure|risk policy|trust mode/iu),
+        });
     });
 });

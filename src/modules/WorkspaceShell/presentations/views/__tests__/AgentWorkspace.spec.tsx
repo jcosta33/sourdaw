@@ -672,6 +672,110 @@ describe('AgentWorkspace', () => {
         expect(container.textContent).not.toContain('secret');
     });
 
+    describe('plan stopping conditions and audible claim', () => {
+        function plannedRun(overrides: {
+            stoppingConditions: string[];
+            audible: NonNullable<ReturnType<typeof run>['plan']>['expectedImpact']['audible'];
+        }) {
+            return run({
+                plan: {
+                    summary: 'Gain',
+                    commandIds: [],
+                    serializedBatchIdentity: null,
+                    revision: null,
+                    classification: 'simple',
+                    showPlanPanel: true,
+                    objective: 'Raise the vocal',
+                    interpretedConstraints: [],
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    steps: [],
+                    expectedImpact: { project: [], audible: overrides.audible },
+                    capabilities: [],
+                    risks: [],
+                    approvalPoints: [],
+                    validationStrategy: [],
+                    stoppingConditions: overrides.stoppingConditions,
+                    alternatives: [],
+                    needsUserDecision: false,
+                },
+            });
+        }
+
+        it('lists the plan stopping conditions under their own label', () => {
+            agentRunControlsMock.list.mockReturnValue([projection()]);
+            setRuns([
+                plannedRun({
+                    stoppingConditions: ['Stop if the project revision changes', 'Stop if a render fails'],
+                    audible: { status: 'not-claimed', reason: 'No render' },
+                }),
+            ]);
+
+            render(<AgentWorkspace />);
+
+            const list = screen.getByRole('list', { name: 'Stopping conditions' });
+            expect(
+                within(list)
+                    .getAllByRole('listitem')
+                    .map((item) => item.textContent)
+            ).toEqual(['Stop if the project revision changes', 'Stop if a render fails']);
+        });
+
+        it('renders no stopping-conditions list or placeholder when the plan has none', () => {
+            agentRunControlsMock.list.mockReturnValue([projection()]);
+            setRuns([plannedRun({ stoppingConditions: [], audible: { status: 'not-claimed', reason: 'No render' } })]);
+
+            const { container } = render(<AgentWorkspace />);
+
+            expect(screen.queryByRole('list', { name: 'Stopping conditions' })).not.toBeInTheDocument();
+            expect(container.textContent).not.toMatch(/Stopping conditions/u);
+            expect(screen.getByText('Audible impact not-claimed: No render')).toBeInTheDocument();
+        });
+
+        it('renders each moved metric of a measured claim in the approval card figure format', () => {
+            agentRunControlsMock.list.mockReturnValue([projection()]);
+            setRuns([
+                plannedRun({
+                    stoppingConditions: [],
+                    audible: {
+                        status: 'measured',
+                        revision: 'revision-1',
+                        batchContentHash: 'hash-1',
+                        metrics: [
+                            {
+                                targetId: 'vocal',
+                                metricId: 'rms',
+                                baseline: { value: -20.123456789, unit: 'dBFS' },
+                                preview: { value: -17.0000001, unit: 'dBFS' },
+                                delta: { value: 3.123456689, unit: 'dBFS' },
+                            },
+                            {
+                                targetId: 'vocal',
+                                metricId: 'truePeak',
+                                baseline: { value: -3, unit: 'dBTP' },
+                                preview: { value: -4.5, unit: 'dBTP' },
+                                delta: { value: -1.5, unit: 'dBTP' },
+                            },
+                        ],
+                    },
+                }),
+            ]);
+
+            render(<AgentWorkspace />);
+
+            expect(screen.getByText('Audible impact measured')).toBeInTheDocument();
+            const list = screen.getByRole('list', { name: 'Measured audible impact' });
+            expect(
+                within(list)
+                    .getAllByRole('listitem')
+                    .map((item) => item.textContent)
+            ).toEqual([
+                'vocal rms: -20.12 dBFS → -17.00 dBFS (+3.12 dBFS)',
+                'vocal truePeak: -3.00 dBTP → -4.50 dBTP (-1.50 dBTP)',
+            ]);
+            expect(screen.queryByText(/Audible impact not-claimed/u)).not.toBeInTheDocument();
+        });
+    });
+
     it('announces phase in a polite live region and a terminal outcome in an alert', () => {
         agentRunControlsMock.list.mockReturnValue([projection()]);
         agentRunControlsMock.get.mockReturnValue(projection({ phase: 'running' }));

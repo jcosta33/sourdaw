@@ -3,6 +3,8 @@ import { type ReactElement, type ReactNode, useState } from 'react';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
+import { formatFigure, formatSignedDelta } from './measuredFigureText';
+
 type ApprovalIntentGroup = {
     id: string;
     summary: string;
@@ -243,16 +245,11 @@ function renderPreviousProposalDiff(diff: AgentApprovalView['previousProposalDif
     );
 }
 
-function formatFigure(figure: MeasuredFigure): string {
-    return figure === null ? 'n/a' : `${figure.value.toFixed(2)} ${figure.unit}`;
-}
-
 function formatMeasuredMetric(metric: MeasuredPreviewTarget['metrics'][number]): string {
     if (metric.delta === null) {
         return `${metric.metricId}: not comparable (${metric.incomparableReason ?? 'unavailable'})`;
     }
-    const sign = metric.delta.value > 0 ? '+' : '';
-    return `${metric.metricId}: ${formatFigure(metric.baseline)} → ${formatFigure(metric.preview)} (${sign}${metric.delta.value.toFixed(2)} ${metric.delta.unit})`;
+    return `${metric.metricId}: ${formatFigure(metric.baseline)} → ${formatFigure(metric.preview)} (${formatSignedDelta(metric.delta)})`;
 }
 
 function measuredTargetName(target: MeasuredPreviewTarget): string {

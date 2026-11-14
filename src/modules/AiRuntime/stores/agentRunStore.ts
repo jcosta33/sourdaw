@@ -22,7 +22,9 @@ import {
     type AgentRunCommittedWork,
     type AgentRunDecision,
     type AgentRunError,
+    type AgentRunMeasuredAudibleMetric,
     type AgentRunPlan,
+    type AgentRunPlanAudibleImpact,
     type AgentRunPendingEffect,
     type AgentRunPendingEffectContinuation,
     type AgentRunPendingEffectRecovery,
@@ -914,6 +916,45 @@ function readWorkLease(value: unknown): AgentRunWorkLease | null {
     };
 }
 
+function readMeasuredFigure(value: unknown): { value: number; unit: string } | null {
+    if (!isRecord(value) || typeof value.value !== 'number' || !Number.isFinite(value.value)) {
+        return null;
+    }
+    const unit = readString(value.unit);
+    return unit === null ? null : { value: value.value, unit };
+}
+
+function readMeasuredAudibleMetric(value: unknown): AgentRunMeasuredAudibleMetric | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+    const targetId = readString(value.targetId);
+    const metricId = readString(value.metricId);
+    const baseline = readMeasuredFigure(value.baseline);
+    const preview = readMeasuredFigure(value.preview);
+    const delta = readMeasuredFigure(value.delta);
+    return targetId === null || metricId === null || baseline === null || preview === null || delta === null
+        ? null
+        : { targetId, metricId, baseline, preview, delta };
+}
+
+/** A plan claims nothing audible, or the measured figures of one batch; any other shape is malformed. */
+function readAudibleImpact(value: UnknownRecord): AgentRunPlanAudibleImpact | null {
+    if (value.status === 'not-claimed') {
+        const reason = readString(value.reason);
+        return reason === null ? null : { status: 'not-claimed', reason };
+    }
+    if (value.status !== 'measured') {
+        return null;
+    }
+    const revision = readString(value.revision);
+    const batchContentHash = readString(value.batchContentHash);
+    const metrics = readCollection(value.metrics, readMeasuredAudibleMetric);
+    return revision === null || batchContentHash === null || metrics === null
+        ? null
+        : { status: 'measured', revision, batchContentHash, metrics };
+}
+
 function readCollection<TItem>(
     value: unknown,
     readItem: (candidate: unknown) => TItem | null,
@@ -1534,10 +1575,7 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
         isRecord(value.expectedImpact) && isRecord(value.expectedImpact.audible)
             ? {
                   project: readStringArray(value.expectedImpact.project),
-                  audible:
-                      value.expectedImpact.audible.status === 'not-claimed'
-                          ? { status: 'not-claimed' as const, reason: readString(value.expectedImpact.audible.reason) }
-                          : null,
+                  audible: readAudibleImpact(value.expectedImpact.audible),
               }
             : null;
     const capabilities = readCollection(
@@ -1595,7 +1633,6 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
         expectedImpact === null ||
         expectedImpact.project === null ||
         expectedImpact.audible === null ||
-        expectedImpact.audible.reason === null ||
         capabilities === null ||
         risks === null ||
         approvalPoints === null ||
@@ -1630,7 +1667,7 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
               steps,
               expectedImpact: {
                   project: expectedImpact.project,
-                  audible: { status: 'not-claimed', reason: expectedImpact.audible.reason },
+                  audible: expectedImpact.audible,
               },
               capabilities: capabilities as AgentRunPlan['capabilities'],
               risks,

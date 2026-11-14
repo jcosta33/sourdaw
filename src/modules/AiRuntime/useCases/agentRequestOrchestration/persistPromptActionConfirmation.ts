@@ -13,7 +13,9 @@ import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
+import { deriveMeasuredAudibleImpact } from '../deriveMeasuredAudibleImpact';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 
 import type { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
@@ -91,28 +93,40 @@ function failUnretainedProposal(input: PersistPromptActionConfirmationInput): vo
     });
 }
 
+/**
+ * Binds the run's plan to the card just persisted: its metric-goal state, and the audible claim of
+ * the measurement bound to this exact batch. A plan whose earlier claim the new card does not
+ * repeat is rewritten too, so the claim never outlives its measurement.
+ */
 function recordConfirmationMetricGoalPlan(
     input: PersistPromptActionConfirmationInput,
     confirmation: NonNullable<ReturnType<typeof proposePendingActionConfirmation>>
 ): void {
     const run = agentRunLifecycle.get(input.runId);
-    if (run?.plan !== null && run?.plan !== undefined && confirmation.approvalSnapshot.metricGoalState !== undefined) {
-        agentRunLifecycle.recordPlan({
-            runId: input.runId,
-            summary: run.plan.summary,
-            commandIds: input.parsedCommandBatch.envelope.commands.map((command) => command.commandId),
-            serializedBatchIdentity: input.parsedCommandBatch.envelope.idempotencyKey,
-            revision: input.projectRevision,
-            scope: run.scope,
-            grants: run.grants,
-            budgets: run.budgets,
-            plan: {
-                ...run.plan,
-                metricGoalState: confirmation.approvalSnapshot.metricGoalState,
-                revision: input.projectRevision,
-            },
-        });
+    if (run?.plan === null || run?.plan === undefined) {
+        return;
     }
+    const { metricGoalState, measuredPreview } = confirmation.approvalSnapshot;
+    const claim = deriveMeasuredAudibleImpact({
+        envelope: input.parsedCommandBatch.envelope,
+        snapshotPreview: measuredPreview,
+        proofPreviews: metricGoalStateCodec(metricGoalState)?.proofs.map((proof) => proof.preview) ?? [],
+    });
+    if (metricGoalState === undefined && claim === null && run.plan.expectedImpact.audible.status === 'not-claimed') {
+        return;
+    }
+    agentRunLifecycle.recordPlan({
+        runId: input.runId,
+        summary: run.plan.summary,
+        commandIds: input.parsedCommandBatch.envelope.commands.map((command) => command.commandId),
+        serializedBatchIdentity: input.parsedCommandBatch.envelope.idempotencyKey,
+        revision: input.projectRevision,
+        scope: run.scope,
+        grants: run.grants,
+        budgets: run.budgets,
+        plan: { ...run.plan, metricGoalState, revision: input.projectRevision },
+        audibleClaim: claim ?? undefined,
+    });
 }
 
 export function persistPromptActionConfirmation(input: PersistPromptActionConfirmationInput): string | null {

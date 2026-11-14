@@ -157,9 +157,29 @@ export type AgentRunPlanStep = {
     description: string;
 };
 
+/** A scalar figure exactly as the measurement reported it, with the unit its metric definition fixes. */
+export type AgentRunMeasuredFigure = { value: number; unit: string };
+
+/** One metric a measured preview moved: its figures before and after the batch and the compared change. */
+export type AgentRunMeasuredAudibleMetric = {
+    targetId: string;
+    metricId: string;
+    baseline: AgentRunMeasuredFigure;
+    preview: AgentRunMeasuredFigure;
+    delta: AgentRunMeasuredFigure;
+};
+
+/**
+ * What the plan says the batch does to the sound: nothing, or the figures of a measurement bound to
+ * exactly this batch at this revision.
+ */
+export type AgentRunPlanAudibleImpact =
+    | { status: 'not-claimed'; reason: string }
+    | { status: 'measured'; revision: string; batchContentHash: string; metrics: AgentRunMeasuredAudibleMetric[] };
+
 export type AgentRunPlanExpectedImpact = {
     project: string[];
-    audible: { status: 'not-claimed'; reason: string };
+    audible: AgentRunPlanAudibleImpact;
 };
 
 export type AgentRunPlanCapability = {
