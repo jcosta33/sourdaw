@@ -1965,11 +1965,26 @@ describe('generateToolPlanningOutcome', () => {
         // Production appends the creative interpretation schema to that list on every run.
         const productionSchemas = [...schemas, jointInterpretationSchema()];
 
-        await expect(generateToolPlanningOutcome('system', 'plan a command', productionSchemas)).resolves.toMatchObject(
-            {
-                status: 'complete',
-            }
-        );
+        // A kept workflow capability makes the request workflow-shaped, the offer the budget is the
+        // ceiling for.
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'plan a command',
+                productionSchemas,
+                undefined,
+                'plan a command',
+                undefined,
+                undefined,
+                undefined,
+                AUTO_TOOL_CHOICE,
+                undefined,
+                'plan a command',
+                { keptCapabilityIds: ['drum-routing'] }
+            )
+        ).resolves.toMatchObject({
+            status: 'complete',
+        });
 
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
         const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
@@ -2068,8 +2083,12 @@ describe('generateToolPlanningOutcome', () => {
             const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
 
             // These tools are mandatory (#4371), so they ride every prompt, and the budget still leaves
-            // the one prompt-selected slot, which keeps project.discover for these prompts.
-            expect(advertisedNames).toHaveLength(35);
+            // the one prompt-selected slot, which keeps project.discover for these prompts. No workflow
+            // capability grounds these requests, so no workflow action tool is offered.
+            expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET - WORKFLOW_ACTION_TOOL_NAMES.size);
+            for (const workflowActionToolName of WORKFLOW_ACTION_TOOL_NAMES) {
+                expect(advertisedNames).not.toContain(workflowActionToolName);
+            }
             expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
             expect(advertisedNames).toContain(RECIPE_DISCOVERY_TOOL_NAME);
             expect(advertisedNames).toContain(RECIPE_EXPANSION_TOOL_NAME);
