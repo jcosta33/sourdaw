@@ -60,6 +60,13 @@ function dropGrooveRevision(action: ActionOf<'extractGroove'>): AppAction {
     return { type: 'extractGroove', payload: { clipId, templateId, sourceName, subdivision } };
 }
 
+// A reverted section removal records a slot that belongs to the section list it was recorded
+// against, so replay appends like a fresh public request.
+function dropRecordedSectionIndex(action: ActionOf<'addSection'>): AppAction {
+    delete action.payload.index;
+    return action;
+}
+
 /** Clears what a recorded gesture captured that a replay must recompute against today's project. */
 export const macroReplayPayloadResetByActionType: {
     readonly [Type in AppActionType]: (action: ActionOf<Type>) => AppAction;
@@ -160,7 +167,7 @@ export const macroReplayPayloadResetByActionType: {
     addMarker: keepRecordedPayload,
     removeMarker: keepRecordedPayload,
     setMarkerColor: keepRecordedPayload,
-    addSection: keepRecordedPayload,
+    addSection: dropRecordedSectionIndex,
     removeSection: keepRecordedPayload,
     renameSection: keepRecordedPayload,
     renameMarker: keepRecordedPayload,
