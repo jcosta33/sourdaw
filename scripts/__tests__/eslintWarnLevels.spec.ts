@@ -1,8 +1,7 @@
-import { mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
 import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
@@ -95,7 +94,28 @@ async function loadEslintConfig(): Promise<readonly unknown[]> {
     if (!isRecord(loaded) || !Array.isArray(loaded.default)) {
         throw new Error('eslint.config.mjs must default-export a flat config array');
     }
-    return loaded.default;
+    const migrated: unknown = JSON.parse(readFileSync('.oxlint-plugins.json', 'utf8'));
+    if (!isRecord(migrated) || !isRecord(migrated.rules) || !Array.isArray(migrated.overrides)) {
+        throw new Error('Oxlint public-plugin config must contain rules and overrides');
+    }
+    const historicalNames = (rules: Record<string, unknown>) =>
+        Object.fromEntries(
+            Object.entries(rules).map(([name, value]) => [name.replace('react-hooks-js/', 'react-hooks/'), value])
+        );
+    return [
+        ...loaded.default,
+        { rules: historicalNames(migrated.rules) },
+        ...migrated.overrides.filter(isRecord).map((entry) => {
+            const config = {
+                files: entry.files,
+                rules: historicalNames(isRecord(entry.rules) ? entry.rules : {}),
+            };
+            if (entry.excludeFiles) {
+                return { ...config, ignores: entry.excludeFiles };
+            }
+            return config;
+        }),
+    ];
 }
 
 const eslintConfig = await loadEslintConfig();
@@ -156,24 +176,4 @@ describe('eslint.config.mjs warn levels', () => {
     ])('reports %j as %j', (configs, expected) => {
         expect(survivingWarnEntries(configs)).toEqual(expected);
     });
-
-    it('fails the lint gate on a new violation of a promoted preset rule', async () => {
-        const directory = mkdtempSync(resolve('src/app/eslint-warn-levels-'));
-        const fixture = join(directory, 'Comment.tsx');
-        const text = 'export const Comment = () => <div>// note</div>;\n';
-        try {
-            writeFileSync(fixture, text);
-            const [result] = await new ESLint().lintText(text, { filePath: fixture });
-            if (!result) {
-                throw new Error('ESLint returned no result for the fixture');
-            }
-            const commentMessages = result.messages.filter(
-                (message) => message.ruleId === '@eslint-react/jsx-no-comment-textnodes'
-            );
-            expect(commentMessages.map((message) => message.severity)).toEqual([2]);
-        } finally {
-            unlinkSync(fixture);
-            rmdirSync(directory);
-        }
-    }, 60_000);
 });

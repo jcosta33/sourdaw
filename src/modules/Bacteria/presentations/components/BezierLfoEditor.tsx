@@ -161,7 +161,7 @@ export const BezierLfoEditor = ({
     // parent re-render even when nothing visible changed.
     useEffect(() => {
         draw();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks-js/exhaustive-deps
     }, [points, width, height, tempoSync]);
 
     const handlePointerDown = (e: React.PointerEvent): void => {

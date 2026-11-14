@@ -143,7 +143,12 @@ function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process
 }
 
 export const FULL_OXLINT_TARGETS = ['src', 'scripts', 'electron'] as const;
-export const FULL_ESLINT_TARGETS = ['src/**/*.{ts,tsx}', 'scripts/**/*.ts', 'electron/**/*.ts'] as const;
+export const FULL_ESLINT_TARGETS = [
+    'src/**/*.{ts,tsx}',
+    'scripts/**/*.ts',
+    'electron/**/*.ts',
+    'scripts/lint/sourdaw.mjs',
+] as const;
 
 function main(): number {
     try {
@@ -154,11 +159,26 @@ function main(): number {
         runStep('oxlint', [
             'exec',
             'oxlint',
+            // Focused JS tooling can be intentionally excluded from this pass
+            // while remaining covered by the public plugins and ESLint.
+            '--no-error-on-unmatched-pattern',
             '--quiet',
             `--threads=${lintThreads()}`,
             '--format=agent',
             ...(options.fix ? ['--fix'] : []),
             ...targets,
+        ]);
+        // The public JS rules retain the former ESLint targets and ignores.
+        // The native pass intentionally excludes some JS tooling and TS debt.
+        runStep('oxlint-plugins', [
+            'exec',
+            'oxlint',
+            '--config=.oxlint-plugins.json',
+            '--quiet',
+            `--threads=${lintThreads()}`,
+            '--format=agent',
+            ...(options.fix ? ['--fix'] : []),
+            ...eslintTargets,
         ]);
         runStep('eslint', buildEslintArgv(options, eslintTargets), eslintEnvironment(process.env));
         return 0;

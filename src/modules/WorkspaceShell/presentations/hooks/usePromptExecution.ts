@@ -174,7 +174,7 @@ export const usePromptExecution = (): PromptExecutionState => {
 
     // ── Reset dismissed tags when selection changes ─────────────────────
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- Resets UI state when selection changes; no cascade risk since deps are external
+        // eslint-disable-next-line react-hooks-js/set-state-in-effect -- Resets UI state when selection changes; no cascade risk since deps are external
         setDismissedTags(new Set());
     }, [selectedTrackId, selectedClipId, selectedClipIds]);
 
@@ -195,7 +195,7 @@ export const usePromptExecution = (): PromptExecutionState => {
     // ── Fuzzy search on input change ────────────────────────────────────
     useEffect(() => {
         if (approval || isProcessing) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional state clear on mode/focus change; no cascade risk
+            // eslint-disable-next-line react-hooks-js/set-state-in-effect -- Intentional state clear on mode/focus change; no cascade risk
             setFuzzyResults([]);
             return;
         }

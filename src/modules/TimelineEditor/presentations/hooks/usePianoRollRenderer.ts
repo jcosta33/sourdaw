@@ -431,10 +431,10 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
 
         rafId = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(rafId);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks-js/exhaustive-deps
     }, []); // Intentionally empty — all deps are read via refs inside the loop.
 
-    // eslint-disable-next-line react-hooks/refs -- returning stable draw() ref is intentional; value is set once in useEffect
+    // eslint-disable-next-line react-hooks-js/refs -- returning stable draw() ref is intentional; value is set once in useEffect
     return drawFnRef.current;
 };
 
