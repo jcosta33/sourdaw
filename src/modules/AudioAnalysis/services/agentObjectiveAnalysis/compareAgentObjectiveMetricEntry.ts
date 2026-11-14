@@ -6,13 +6,8 @@ import {
     type AgentObjectiveMetricValue,
 } from '../../models/AgentObjectiveAnalysisTypes';
 
-/**
- * The unit a difference between two figures of `unit` is stated in: a difference between two loudness
- * figures is loudness units, not LUFS, and between two level figures decibels.
- */
-export function getAgentObjectiveDeltaUnit(unit: AgentObjectiveMetricUnit): AgentObjectiveDeltaUnit;
-export function getAgentObjectiveDeltaUnit(unit: string): string;
-export function getAgentObjectiveDeltaUnit(unit: string): string {
+/** A difference between two loudness figures is loudness units, not LUFS. */
+function deltaUnit(unit: AgentObjectiveMetricUnit): AgentObjectiveDeltaUnit {
     if (unit === 'LUFS') {
         return 'LU';
     }
@@ -56,9 +51,5 @@ export function compareAgentObjectiveMetricEntry(
     if (!isScalar(candidate.value) || !isScalar(baseline.value) || candidate.unit !== baseline.unit) {
         return { status: 'incomparable', reason: 'non-scalar' };
     }
-    return {
-        status: 'compared',
-        delta: candidate.value - baseline.value,
-        unit: getAgentObjectiveDeltaUnit(candidate.unit),
-    };
+    return { status: 'compared', delta: candidate.value - baseline.value, unit: deltaUnit(candidate.unit) };
 }
