@@ -37,6 +37,7 @@ function movedMetrics(preview: MeasuredPreview): AgentRunMeasuredAudibleMetric[]
             return [
                 {
                     targetId: target.targetId,
+                    targetKind: target.targetKind,
                     metricId,
                     baseline,
                     preview: previewed,

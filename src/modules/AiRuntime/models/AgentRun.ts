@@ -163,6 +163,7 @@ export type AgentRunMeasuredFigure = { value: number; unit: string };
 /** One metric a measured preview moved: its figures before and after the batch and the compared change. */
 export type AgentRunMeasuredAudibleMetric = {
     targetId: string;
+    targetKind: 'master' | 'track' | 'bus';
     metricId: string;
     baseline: AgentRunMeasuredFigure;
     preview: AgentRunMeasuredFigure;

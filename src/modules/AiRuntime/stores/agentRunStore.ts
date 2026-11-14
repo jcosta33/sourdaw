@@ -929,13 +929,22 @@ function readMeasuredAudibleMetric(value: unknown): AgentRunMeasuredAudibleMetri
         return null;
     }
     const targetId = readString(value.targetId);
+    const targetKind =
+        value.targetKind === 'master' || value.targetKind === 'track' || value.targetKind === 'bus'
+            ? value.targetKind
+            : null;
     const metricId = readString(value.metricId);
     const baseline = readMeasuredFigure(value.baseline);
     const preview = readMeasuredFigure(value.preview);
     const delta = readMeasuredFigure(value.delta);
-    return targetId === null || metricId === null || baseline === null || preview === null || delta === null
+    return targetId === null ||
+        targetKind === null ||
+        metricId === null ||
+        baseline === null ||
+        preview === null ||
+        delta === null
         ? null
-        : { targetId, metricId, baseline, preview, delta };
+        : { targetId, targetKind, metricId, baseline, preview, delta };
 }
 
 /** A plan claims nothing audible, or the measured figures of one batch; any other shape is malformed. */

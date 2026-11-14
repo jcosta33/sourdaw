@@ -123,6 +123,7 @@ function movedFiguresOnCard(confirmationId: string) {
             return [
                 {
                     targetId: target.targetId,
+                    targetKind: target.targetKind,
                     metricId: metric.metricId,
                     baseline: metric.baseline,
                     preview: metric.preview,

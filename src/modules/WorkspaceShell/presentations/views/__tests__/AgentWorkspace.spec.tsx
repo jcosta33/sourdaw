@@ -1,7 +1,7 @@
 import { type ComponentProps } from 'react';
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import {
     agentChangeComparisonStore,
@@ -9,6 +9,8 @@ import {
     aiActionHistoryStore,
     pendingActionConfirmationStore,
 } from '#/modules/AiRuntime/stores';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { type AgentApprovalSection } from '../../components/agentWorkspace/AgentApprovalSection';
 import { AgentWorkspace } from '../AgentWorkspace';
@@ -673,6 +675,10 @@ describe('AgentWorkspace', () => {
     });
 
     describe('plan stopping conditions and audible claim', () => {
+        afterEach(() => {
+            trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        });
+
         function plannedRun(overrides: {
             stoppingConditions: string[];
             audible: NonNullable<ReturnType<typeof run>['plan']>['expectedImpact']['audible'];
@@ -731,7 +737,12 @@ describe('AgentWorkspace', () => {
             expect(screen.getByText('Audible impact not-claimed: No render')).toBeInTheDocument();
         });
 
-        it('renders each moved metric of a measured claim in the approval card figure format', () => {
+        it('names each measured target as the approval card does and prints each moved figure in its format', () => {
+            trackStore.set({
+                tracks: [createTrack({ id: 'track-uuid-1', name: 'Lead Vocal', kind: 'audio' })],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
             agentRunControlsMock.list.mockReturnValue([projection()]);
             setRuns([
                 plannedRun({
@@ -742,25 +753,35 @@ describe('AgentWorkspace', () => {
                         batchContentHash: 'hash-1',
                         metrics: [
                             {
-                                targetId: 'vocal',
+                                targetId: 'track-uuid-1',
+                                targetKind: 'track',
                                 metricId: 'rms',
                                 baseline: { value: -20.123456789, unit: 'dBFS' },
                                 preview: { value: -17.0000001, unit: 'dBFS' },
                                 delta: { value: 3.123456689, unit: 'dBFS' },
                             },
                             {
-                                targetId: 'vocal',
+                                targetId: 'master-uuid',
+                                targetKind: 'master',
                                 metricId: 'truePeak',
                                 baseline: { value: -3, unit: 'dBTP' },
                                 preview: { value: -4.5, unit: 'dBTP' },
                                 delta: { value: -1.5, unit: 'dBTP' },
+                            },
+                            {
+                                targetId: 'bus-uuid',
+                                targetKind: 'bus',
+                                metricId: 'crestFactor',
+                                baseline: { value: 9, unit: 'dB' },
+                                preview: { value: 9, unit: 'dB' },
+                                delta: { value: 0.5, unit: 'dB' },
                             },
                         ],
                     },
                 }),
             ]);
 
-            render(<AgentWorkspace />);
+            const { container } = render(<AgentWorkspace />);
 
             expect(screen.getByText('Audible impact measured')).toBeInTheDocument();
             const list = screen.getByRole('list', { name: 'Measured audible impact' });
@@ -769,9 +790,12 @@ describe('AgentWorkspace', () => {
                     .getAllByRole('listitem')
                     .map((item) => item.textContent)
             ).toEqual([
-                'vocal rms: -20.12 dBFS → -17.00 dBFS (+3.12 dBFS)',
-                'vocal truePeak: -3.00 dBTP → -4.50 dBTP (-1.50 dBTP)',
+                'Lead Vocal rms: -20.12 dBFS → -17.00 dBFS (+3.12 dBFS)',
+                'Master truePeak: -3.00 dBTP → -4.50 dBTP (-1.50 dBTP)',
+                'bus-uuid crestFactor: 9.00 dB → 9.00 dB (+0.50 dB)',
             ]);
+            expect(container.textContent).not.toContain('track-uuid-1');
+            expect(container.textContent).not.toContain('master-uuid');
             expect(screen.queryByText(/Audible impact not-claimed/u)).not.toBeInTheDocument();
         });
     });

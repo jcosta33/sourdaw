@@ -3,7 +3,7 @@ import { type ReactElement, type ReactNode, useState } from 'react';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
-import { formatFigure, formatSignedDelta } from './measuredFigureText';
+import { formatFigure, formatSignedDelta, measuredTargetName } from './measuredFigureText';
 
 type ApprovalIntentGroup = {
     id: string;
@@ -250,13 +250,6 @@ function formatMeasuredMetric(metric: MeasuredPreviewTarget['metrics'][number]):
         return `${metric.metricId}: not comparable (${metric.incomparableReason ?? 'unavailable'})`;
     }
     return `${metric.metricId}: ${formatFigure(metric.baseline)} → ${formatFigure(metric.preview)} (${formatSignedDelta(metric.delta)})`;
-}
-
-function measuredTargetName(target: MeasuredPreviewTarget): string {
-    if (target.targetName !== null) {
-        return target.targetName;
-    }
-    return target.targetKind === 'master' ? 'Master' : target.targetId;
 }
 
 /** Each measured target's figures before and after the proposal, with the signed change and its unit. */

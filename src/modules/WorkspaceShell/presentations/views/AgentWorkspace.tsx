@@ -14,7 +14,7 @@ import {
 
 import { AgentApprovalSection } from '../components/agentWorkspace/AgentApprovalSection';
 import { AgentComparisonSection } from '../components/agentWorkspace/AgentComparisonSection';
-import { AgentPlanSection } from '../components/agentWorkspace/AgentPlanSection';
+import { AgentPlanPanel } from '../components/agentWorkspace/AgentPlanPanel';
 import { AgentProgressSection } from '../components/agentWorkspace/AgentProgressSection';
 import { AgentRouteSection } from '../components/agentWorkspace/AgentRouteSection';
 import { AgentRunControlsSection } from '../components/agentWorkspace/AgentRunControlsSection';
@@ -105,7 +105,7 @@ export const AgentWorkspace = ({ requestedRun = null }: { requestedRun?: { runId
                 </Stack>
                 <Stack gap={3} grow className="min-h-0 min-w-0 overflow-y-auto p-3 [&>*]:shrink-0">
                     <AgentRunSummary run={selectedRun} headingRef={summaryHeadingRef} />
-                    <AgentPlanSection plan={selectedRun?.plan ?? null} />
+                    <AgentPlanPanel plan={selectedRun?.plan ?? null} />
                     <AgentProgressSection progress={projection} />
                     <AgentRunDecisionPanel />
                     <AgentApprovalSection

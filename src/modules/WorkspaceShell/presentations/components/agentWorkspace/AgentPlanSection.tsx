@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 
 import { Stack } from '#/components/layout';
 
-import { formatFigure, formatSignedDelta } from './measuredFigureText';
+import { formatFigure, formatSignedDelta, measuredTargetName } from './measuredFigureText';
 
 /**
  * The interpreted plan only. Provider reasoning is never part of this contract
@@ -27,6 +27,7 @@ type AgentPlanAudibleView =
           status: 'measured';
           metrics: ReadonlyArray<{
               targetId: string;
+              targetKind: 'master' | 'track' | 'bus';
               metricId: string;
               baseline: MeasuredFigureView;
               preview: MeasuredFigureView;
@@ -36,6 +37,8 @@ type AgentPlanAudibleView =
 
 type AgentPlanSectionProps = {
     plan: AgentPlanView | null;
+    /** The live tracks, which name a measured target the way the approval card does. */
+    tracks: ReadonlyArray<{ id: string; name: string }>;
 };
 
 function renderTextList(label: string, items: readonly string[]): ReactElement {
@@ -51,7 +54,7 @@ function renderTextList(label: string, items: readonly string[]): ReactElement {
     );
 }
 
-function renderAudibleImpact(audible: AgentPlanAudibleView): ReactElement {
+function renderAudibleImpact(audible: AgentPlanAudibleView, tracks: AgentPlanSectionProps['tracks']): ReactElement {
     if (audible.status === 'not-claimed') {
         return <p className="text-xs text-muted-foreground">{`Audible impact ${audible.status}: ${audible.reason}`}</p>;
     }
@@ -61,7 +64,7 @@ function renderAudibleImpact(audible: AgentPlanAudibleView): ReactElement {
             <ul aria-label="Measured audible impact" className="list-inside list-disc text-xs text-foreground">
                 {audible.metrics.map((metric) => (
                     <li key={`${metric.targetId}-${metric.metricId}`}>
-                        {`${metric.targetId} ${metric.metricId}: ${formatFigure(metric.baseline)} → ${formatFigure(metric.preview)} (${formatSignedDelta(metric.delta)})`}
+                        {`${measuredTargetName({ ...metric, targetName: tracks.find((track) => track.id === metric.targetId)?.name ?? null })} ${metric.metricId}: ${formatFigure(metric.baseline)} → ${formatFigure(metric.preview)} (${formatSignedDelta(metric.delta)})`}
                     </li>
                 ))}
             </ul>
@@ -69,7 +72,7 @@ function renderAudibleImpact(audible: AgentPlanAudibleView): ReactElement {
     );
 }
 
-export const AgentPlanSection = ({ plan }: AgentPlanSectionProps): ReactElement => {
+export const AgentPlanSection = ({ plan, tracks }: AgentPlanSectionProps): ReactElement => {
     if (plan === null) {
         return (
             <Stack as="section" gap={1} aria-label="Plan">
@@ -90,7 +93,7 @@ export const AgentPlanSection = ({ plan }: AgentPlanSectionProps): ReactElement 
                 ))}
             </ol>
             {renderTextList('Expected impact', plan.expectedImpact.project)}
-            {renderAudibleImpact(plan.expectedImpact.audible)}
+            {renderAudibleImpact(plan.expectedImpact.audible, tracks)}
             {renderTextList('Risks', plan.risks)}
             {plan.stoppingConditions.length === 0 ? null : (
                 <ul aria-label="Stopping conditions" className="list-inside list-disc text-xs text-foreground">
