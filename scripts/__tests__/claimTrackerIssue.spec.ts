@@ -565,6 +565,23 @@ describe('concurrent claims', () => {
         expect(callsWith(calls, ['api', '-X', 'DELETE'])).toEqual([]);
     });
 
+    it('starts the token window at the last release when the issue was claimed and released twice', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP], {
+            timeline: [
+                tokenComment(10, TOKEN_STALE),
+                { event: 'unlabeled', label: { name: 'status:active' } },
+                tokenComment(11, fixtureToken('d')),
+                { event: 'labeled', label: { name: 'status:active' } },
+                { event: 'unlabeled', label: { name: 'status:active' } },
+            ],
+        });
+
+        claimTrackerIssue(7, gh, () => undefined, TOKEN_A);
+
+        expect(callsWith(calls, ['project', 'item-edit'])).toHaveLength(1);
+        expect(callsWith(calls, ['api', '-X', 'DELETE'])).toEqual([]);
+    });
+
     it('ignores earlier token comments another account wrote or that only quote a token', () => {
         const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP], {
             timeline: [
