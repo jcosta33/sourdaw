@@ -42,6 +42,7 @@ import {
     type AgentDataCategory,
     REMOTE_TEXT_AGENT_DATA_CATEGORIES,
 } from '../../models/AgentDataPolicy';
+import { containsSampleData, MAX_BAND_VALUES, parseEncodedJson } from '../../__tests__/hostedSampleDataDetector';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type AnalysisMeasureRead } from '../../models/AnalysisMeasureRead';
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
@@ -200,8 +201,6 @@ const SHORT_RANGE = { startBeat: 0, endBeat: 8 };
 const LONG_RANGE = { startBeat: 0, endBeat: 400 };
 /** Beats 300 to 400: 50 measured seconds that end 200 seconds into the project. */
 const LATE_RANGE = { startBeat: 300, endBeat: 400 };
-/** What the wire may carry per band map: one number for each of the seven frequency bands. */
-const MAX_BAND_VALUES = 7;
 
 type SubgraphRequest = { renderTracks: readonly Track[]; abortSignal?: AbortSignal };
 
@@ -1301,43 +1300,6 @@ describe('a measurement is local numeric evidence for the data policy', () => {
         ]);
     });
 });
-
-/** A body that is, or carries as keys or encoded text, anything other than the figures a receipt reports. */
-const AUDIO_KEY = /^(samples?|pcm|audio|buffer|channeldata)$/iu;
-const BASE64_BLOB = /^[A-Za-z0-9+/]{256,}={0,2}$/u;
-const INDEX_KEY = /^\d+$/u;
-
-function parseEncodedJson(value: string): unknown {
-    if (!/^\s*[[{]/u.test(value)) {
-        return value;
-    }
-    try {
-        return JSON.parse(value) as unknown;
-    } catch {
-        return value;
-    }
-}
-
-function containsSampleData(value: unknown): boolean {
-    if (ArrayBuffer.isView(value)) {
-        return true;
-    }
-    if (typeof value === 'string') {
-        const decoded = parseEncodedJson(value);
-        return decoded === value ? BASE64_BLOB.test(value) : containsSampleData(decoded);
-    }
-    if (Array.isArray(value)) {
-        const isNumberSeries = value.length > MAX_BAND_VALUES && value.every((entry) => typeof entry === 'number');
-        return isNumberSeries || value.some(containsSampleData);
-    }
-    if (typeof value === 'object' && value !== null) {
-        const entries = Object.entries(value);
-        // A typed array serializes as an object keyed by index.
-        const isIndexedSeries = entries.length > MAX_BAND_VALUES && entries.every(([key]) => INDEX_KEY.test(key));
-        return isIndexedSeries || entries.some(([key, entry]) => AUDIO_KEY.test(key) || containsSampleData(entry));
-    }
-    return false;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

@@ -5,6 +5,7 @@ import { registerSupportingServicePorts } from '#/app/registerSupportingServiceP
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
+import { containsSampleData } from '../../__tests__/hostedSampleDataDetector';
 import {
     BRIEF_ROUTE,
     DRUMS_ID,
@@ -487,7 +488,8 @@ afterEach(() => {
 });
 
 describe('hosted value choice for a vibe batch', () => {
-    // Red when the batch expands at its window middles instead of the values the reply chose.
+    // Red when the batch expands at its window middles instead of the values the reply chose, or when the
+    // real request the builder sends on this dialect carries sample data.
     it.each<Dialect>(['anthropic', 'openai', 'openai-compatible'])(
         'expands the %s reply’s in-window values into the proposed batch',
         async (dialect) => {
@@ -497,6 +499,7 @@ describe('hosted value choice for a vibe batch', () => {
 
             const card = requireOnlyProposedCard();
             expect(valueBodies).toHaveLength(1);
+            expect(valueBodies.map(containsSampleData)).toEqual([false]);
             expect(parameterWrites(card)).toEqual(
                 DRUMS_CHOICE.map((choice) => ({ paramId: choice.paramId, value: choice.value, trackId: DRUMS_ID }))
             );
@@ -662,13 +665,15 @@ describe('falling back to catalogue defaults', () => {
         expect(cardContent(card)).toContain(reasonLine);
     });
 
-    // Red when a refused reply is not corrected once, or the correction does not carry its reason.
+    // Red when a refused reply is not corrected once, the correction does not carry its reason, or either
+    // real request carries sample data.
     it('corrects a refused reply once, quoting the refusal, and applies the corrected values', async () => {
         const card = await proposeDrumsWith(({ index }) =>
             index === 0 ? drumsChoice([...DRUMS_CHOICE.slice(1)]) : drumsChoice()
         );
 
         expect(valueBodies).toHaveLength(2);
+        expect(valueBodies.map(containsSampleData)).toEqual([false, false]);
         const correction = valueBodies[1] === undefined ? null : userMessageOf(valueBodies[1]);
         expect(correction).toMatchObject({
             rejection: 'choices[0].values is missing eq-low-freq of step 0',
