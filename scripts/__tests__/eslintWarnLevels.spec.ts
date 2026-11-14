@@ -184,9 +184,25 @@ describe('eslint.config.mjs warn levels', () => {
             }
             const isVoid = (message: { ruleId: string | null }) => message.ruleId === 'no-void';
             return {
-                reported: result.messages.filter(isVoid).map((message) => message.severity),
-                suppressed: result.suppressedMessages.filter(isVoid).length,
+                observed: {
+                    reported: result.messages.filter(isVoid).map((message) => message.severity),
+                    suppressed: result.suppressedMessages.filter(isVoid).length,
+                },
+                // Every message ESLint returned, so a mismatch shows what it did report.
+                context: JSON.stringify({
+                    messages: result.messages.map((message) => `${message.ruleId}@${message.line}`),
+                    suppressedMessages: result.suppressedMessages.map((message) => message.ruleId),
+                }),
             };
+        };
+        const expectVoidSeverities = async (
+            eslint: ESLint,
+            text: string,
+            filePath: string,
+            expected: { reported: number[]; suppressed: number }
+        ) => {
+            const { observed, context } = await voidSeverities(eslint, text, filePath);
+            expect(observed, `${filePath}: ${context}`).toEqual(expected);
         };
         try {
             writeFileSync(
@@ -195,9 +211,9 @@ describe('eslint.config.mjs warn levels', () => {
             );
             const eslint = new ESLint({ applySuppressions: true, suppressionsLocation: suppressionsFile });
 
-            expect(await voidSeverities(eslint, oneVoid, suppressed)).toEqual({ reported: [], suppressed: 1 });
-            expect(await voidSeverities(eslint, twoVoids, suppressed)).toEqual({ reported: [2, 2], suppressed: 0 });
-            expect(await voidSeverities(eslint, oneVoid, unrecorded)).toEqual({ reported: [2], suppressed: 0 });
+            await expectVoidSeverities(eslint, oneVoid, suppressed, { reported: [], suppressed: 1 });
+            await expectVoidSeverities(eslint, twoVoids, suppressed, { reported: [2, 2], suppressed: 0 });
+            await expectVoidSeverities(eslint, oneVoid, unrecorded, { reported: [2], suppressed: 0 });
         } finally {
             rmSync(directory, { recursive: true, force: true });
         }
