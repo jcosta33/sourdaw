@@ -6,8 +6,6 @@ import {
 } from '#/infra/audioContext/audioLatencyProfile';
 import { logger } from '#/infra/logger/appLogger';
 import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
-import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
-import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { runAllAsyncEffects, runAllEffects } from '#/utils/runEffects';
 
@@ -47,7 +45,9 @@ import { addCountByType } from './webAudioEngine/addCountByType';
 import { addDeviceResources } from './webAudioEngine/addDeviceResources';
 import { countDeviceRuntimeResources } from './webAudioEngine/countDeviceRuntimeResources';
 import { createEmptyGraphSlotResourcesByLoadState } from './webAudioEngine/createEmptyGraphSlotResourcesByLoadState';
+import { createMasterSection, type MasterMeterNode, type MasterSection } from './webAudioEngine/createMasterSection';
 import { createNoopAudioContext } from './webAudioEngine/createNoopAudioContext';
+import { createScheduledSources, type ScheduledSources } from './webAudioEngine/createScheduledSources';
 import { createTransportClock, type TransportClock } from './webAudioEngine/createTransportClock';
 import { getChromePlaybackStats } from './webAudioEngine/getChromePlaybackStats';
 import { readPlaybackStats } from './webAudioEngine/readPlaybackStats';
@@ -94,12 +94,6 @@ const UNWIRED_USE_CASE_DEVICE_COLLABORATORS: EngineUseCaseCollaborators = {
     clearReportedLatency: () => {
         throw refuseUnwiredDeviceCollaborator('clearReportedLatency');
     },
-};
-
-export type NoopMeterNode = {
-    connect(): void;
-    disconnect(): void;
-    port: { postMessage(message: unknown): void };
 };
 
 type SidechainConnection = {
@@ -218,7 +212,7 @@ export type WebAudioEngineInternals = {
     readonly pendingDevicePromises: Set<Promise<unknown>>;
     readonly scheduledNodes: AudioScheduledSourceNode[];
     readonly deviceReadinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
-    readonly masterMeterNode: AudioWorkletNode | NoopMeterNode | undefined;
+    readonly masterMeterNode: MasterMeterNode | undefined;
     readonly monitorMonoNode: GainNode;
     readonly monitorDimNode: GainNode;
     readonly masterStereoSplitter: ChannelSplitterNode;
@@ -267,25 +261,25 @@ class AudioEngineImpl implements AudioEngine {
                 return engine.pendingDevicePromises;
             },
             get scheduledNodes() {
-                return engine.scheduledNodes;
+                return engine.scheduledSources.nodes();
             },
             get deviceReadinessDiagnostics() {
                 return engine.deviceReadinessDiagnostics;
             },
             get masterMeterNode() {
-                return engine.masterMeterNode;
+                return engine.master.meterNode();
             },
             get monitorMonoNode() {
-                return engine.monitorMonoNode;
+                return engine.master.monitorMonoNode;
             },
             get monitorDimNode() {
-                return engine.monitorDimNode;
+                return engine.master.monitorDimNode;
             },
             get masterStereoSplitter() {
-                return engine.masterStereoSplitter;
+                return engine.master.stereoSplitter;
             },
             get masterStereoTapSink() {
-                return engine.masterStereoTapSink;
+                return engine.master.stereoTapSink;
             },
             addDeviceToStrip: engine.addDeviceToStrip.bind(engine),
             removeDeviceFromStrip: engine.removeDeviceFromStrip.bind(engine),
@@ -298,52 +292,27 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public context!: AudioContext;
-    public masterGainNode!: GainNode;
-    public masterAnalyser!: AnalyserNode;
-    /**
-     * Stereo analysis tap: {@link masterAnalyser}'s pass-through output fans
-     * out through `masterStereoSplitter` into one analyser per channel. Kept
-     * off `masterGainNode` deliberately — {@link wireMasterMeter} disconnects
-     * `masterGainNode` wholesale on every (re-)initialize, which would drop a
-     * tap rooted there. Rooting on `masterAnalyser` instead survives that
-     * rewiring untouched.
-     */
-    private masterStereoSplitter!: ChannelSplitterNode;
-    public masterAnalyserLeft!: AnalyserNode;
-    public masterAnalyserRight!: AnalyserNode;
-    /**
-     * The control-room listening insert, sitting strictly downstream of the
-     * programme: masterAnalyser (and through it the fader, the master meter and
-     * the stereo analysis tap) carries the mix itself, so a monitoring gesture
-     * changes what the musician hears and nothing an export, an offline render
-     * or a meter reads. `monitorMonoNode` folds the feed to mono by the Web
-     * Audio channel-count idiom — an explicit single-channel count downmixes
-     * stereo per the speakers interpretation, (L+R)/2, and the mono result
-     * upmixes back onto both output channels; 'max' returns it to pass-through.
-     * `monitorDimNode` is the dim attenuation.
-     */
-    private monitorMonoNode!: GainNode;
-    private monitorDimNode!: GainNode;
-    /**
-     * The programme reaches the listening output through this edge, and its
-     * connection is the exclusive-preview gate. A gain write made now cannot
-     * reach the frame `currentTime` names when its quotient sits above that
-     * frame (Chromium clamps it to `currentTime` and applies it a sample late),
-     * whereas a disconnect or connect takes effect from the first frame of the
-     * next render quantum, suspended or running.
-     */
-    private previewProgrammeGate!: GainNode;
+    /** The master chain, its meter tap and the control-room listening insert. */
+    private master!: MasterSection;
+
+    public get masterGainNode(): GainNode {
+        return this.master.gainNode;
+    }
+
+    public get masterAnalyser(): AnalyserNode {
+        return this.master.analyser;
+    }
+
+    public get masterAnalyserLeft(): AnalyserNode {
+        return this.master.analyserLeft;
+    }
+
+    public get masterAnalyserRight(): AnalyserNode {
+        return this.master.analyserRight;
+    }
+
     private previewProgrammeOpen = true;
     private previewRestoration: Promise<void> | null = null;
-    /**
-     * Silent (gain 0) sink the stereo tap analysers connect through to the
-     * destination. Web Audio only pulls nodes with a path to the destination,
-     * so a dead-end analyser branch never processes a render quantum — routing
-     * it through a zero-gain node keeps it live without adding anything to the
-     * audible mix.
-     */
-    private masterStereoTapSink!: GainNode;
-    public masterMeterNode: AudioWorkletNode | NoopMeterNode | undefined;
 
     private trackNodes = new Map<string, TrackNode>();
     /** Tracks the native engine currently carries audibly; see
@@ -366,16 +335,7 @@ class AudioEngineImpl implements AudioEngine {
         string,
         { sourceTrackId: string; targetTrackId: string; targetDeviceId: string }
     >();
-    private scheduledNodes: AudioScheduledSourceNode[] = [];
-    /**
-     * View onto the master metering-processor's SAB, or `null` when no meter tap
-     * is wired (before initialize(), after a failed initialize(), after dispose(),
-     * in fallback mode, or without AudioWorklet/SharedArrayBuffer). `null` is load
-     * bearing: {@link getMasterPeakLevel} returns it verbatim so callers can tell
-     * "no measurement" apart from "measured silence". It must never be an inert
-     * buffer nothing writes — that reads back as a plausible 0.
-     */
-    private masterMeterBuffer: Float32Array | null = null;
+    private readonly scheduledSources: ScheduledSources;
     private pendingDevicePromises = new Set<Promise<unknown>>();
     private withheldDeviceNotices = new Set<string>();
     private workletReady = false;
@@ -428,44 +388,7 @@ class AudioEngineImpl implements AudioEngine {
                     latencyHint: this.latencyHint ?? getAudioContextLatencyHint(DEFAULT_AUDIO_LATENCY_PROFILE),
                     sampleRate: 48_000,
                 });
-            this.masterGainNode = this.context.createGain();
-            this.masterGainNode.gain.value = 0.8;
-
-            this.masterAnalyser = this.context.createAnalyser();
-            this.masterAnalyser.fftSize = 256;
-            this.masterAnalyser.smoothingTimeConstant = 0.8;
-
-            this.monitorMonoNode = this.context.createGain();
-            this.monitorDimNode = this.context.createGain();
-            this.previewProgrammeGate = this.context.createGain();
-
-            this.masterGainNode.connect(this.masterAnalyser);
-            // The listening leg runs through the control-room insert; the
-            // programme (everything upstream of this edge) stays untouched by it.
-            this.masterAnalyser.connect(this.previewProgrammeGate);
-            this.previewProgrammeGate.connect(this.monitorMonoNode);
-            this.monitorMonoNode.connect(this.monitorDimNode);
-            this.monitorDimNode.connect(this.context.destination);
-
-            // Genuine stereo tap: branch off masterAnalyser's pass-through output
-            // (it forwards audio unchanged; only its own analysis reads are
-            // down-mixed to mono) into a ChannelSplitterNode(2), then one analyser
-            // per channel. Route both through a silent sink to the destination so
-            // they are pulled every render quantum without touching the mix.
-            this.masterStereoSplitter = this.context.createChannelSplitter(2);
-            this.masterAnalyserLeft = this.context.createAnalyser();
-            this.masterAnalyserLeft.fftSize = 256;
-            this.masterAnalyserRight = this.context.createAnalyser();
-            this.masterAnalyserRight.fftSize = 256;
-            this.masterStereoTapSink = this.context.createGain();
-            this.masterStereoTapSink.gain.value = 0;
-
-            this.masterAnalyser.connect(this.masterStereoSplitter);
-            this.masterStereoSplitter.connect(this.masterAnalyserLeft, 0);
-            this.masterStereoSplitter.connect(this.masterAnalyserRight, 1);
-            this.masterAnalyserLeft.connect(this.masterStereoTapSink);
-            this.masterAnalyserRight.connect(this.masterStereoTapSink);
-            this.masterStereoTapSink.connect(this.context.destination);
+            this.master = createMasterSection({ context: this.context, mode: 'live' });
         } catch (error) {
             logger.warn(`Failed to create AudioContext: ${error}`);
             notifyUser(
@@ -475,6 +398,13 @@ class AudioEngineImpl implements AudioEngine {
             this.fallbackMode = true;
             this.setupNoopContext();
         }
+
+        this.scheduledSources = createScheduledSources({
+            readContext: () => this.context,
+            readMasterGain: () => this.master.gainNode,
+            assertActive: () => this.assertActive(),
+            isFallback: () => this.fallbackMode,
+        });
 
         this.adjustmentRuntime = createAdjustmentLayerRuntime({
             getContext: () => this.context ?? null,
@@ -486,21 +416,7 @@ class AudioEngineImpl implements AudioEngine {
 
     private setupNoopContext() {
         this.context = createNoopAudioContext();
-        this.masterGainNode = this.context.createGain();
-        this.masterGainNode.gain.value = 0;
-        this.monitorMonoNode = this.context.createGain();
-        this.monitorDimNode = this.context.createGain();
-        this.previewProgrammeGate = this.context.createGain();
-        this.masterMeterNode = {
-            connect: () => {},
-            disconnect: () => {},
-            port: { postMessage: () => {} },
-        };
-        this.masterAnalyser = this.context.createAnalyser();
-        this.masterStereoSplitter = this.context.createChannelSplitter(2);
-        this.masterAnalyserLeft = this.context.createAnalyser();
-        this.masterAnalyserRight = this.context.createAnalyser();
-        this.masterStereoTapSink = this.context.createGain();
+        this.master = createMasterSection({ context: this.context, mode: 'fallback' });
     }
 
     private assertActive(): void {
@@ -883,68 +799,9 @@ class AudioEngineImpl implements AudioEngine {
         // constructor — the master nodes are built before any worklet module is
         // loaded (initialize() runs later), exactly like the per-track meter
         // which is built once metering-processor is available.
-        this.wireMasterMeter();
+        this.master.wireMeter();
         this.workletReady = true;
         this.lastInitError = null;
-    }
-
-    /**
-     * Insert a SAB-backed metering-processor into the master chain so
-     * getMasterPeakLevel reflects real output level. Mirrors the per-track meter
-     * wiring in {@link TrackNode}: a 4-byte SharedArrayBuffer holds one peak the
-     * worklet writes (Math.max across the block) and the UI read-and-resets.
-     *
-     * Chain before: masterGainNode → masterAnalyser → destination.
-     * Chain after:  masterGainNode → masterMeterNode → masterAnalyser → destination.
-     * The metering-processor passes audio straight through, so the audible signal
-     * is unchanged — it only taps the peak. Idempotent: a second initialize()
-     * (e.g. after dispose()) replaces the existing meter node rather than
-     * stacking a second tap.
-     */
-    private wireMasterMeter(): void {
-        // `this.fallbackMode` is deliberately *not* tested here. initialize()
-        // returns early on fallback, before loadWorklets() — the sole caller of
-        // this method — so the disjunct could only ever evaluate false, and a
-        // branch with one reachable verdict is not a guard. Fallback mode reaches
-        // the same verdict by construction instead: setupNoopContext never assigns
-        // masterMeterBuffer, so it stays null and getMasterPeakLevel reports
-        // unavailable. That path is guarded separately (fallbackMode spec, M9).
-        if (typeof AudioWorkletNode === 'undefined' || !hasSharedArrayBuffer()) {
-            // No worklet support or no SAB: there is no tap to read. Clear the
-            // buffer so getMasterPeakLevel reports `null` ("unavailable") rather
-            // than a fabricated 0 — which the status bar renders as "-∞ dB",
-            // indistinguishable from a silent mix while audio is playing
-            // (ADR 0012: a downgrade must never be silent).
-            this.masterMeterBuffer = null;
-            logger.warn(
-                '[audio-engine] master meter not wired ' +
-                    `(AudioWorkletNode=${String(typeof AudioWorkletNode !== 'undefined')}, ` +
-                    `SharedArrayBuffer=${String(hasSharedArrayBuffer())}) — ` +
-                    'the master level readout reports unavailable until it is.'
-            );
-            return;
-        }
-        // Tear down a previously-wired meter node so a re-initialize does not
-        // leave a stale tap summing into the analyser.
-        const previous = this.masterMeterNode;
-        if (previous && typeof AudioWorkletNode !== 'undefined' && previous instanceof AudioWorkletNode) {
-            try {
-                previous.disconnect();
-            } catch {
-                // already disconnected
-            }
-        }
-
-        const meterSab = new SharedArrayBuffer(4);
-        const meterNode = new AudioWorkletNode(this.context, 'metering-processor');
-        meterNode.port.postMessage({ type: 'init', sab: meterSab });
-        this.masterMeterNode = meterNode;
-        this.masterMeterBuffer = new Float32Array(meterSab);
-
-        // Re-route the master chain through the meter node.
-        this.masterGainNode.disconnect();
-        this.masterGainNode.connect(meterNode);
-        meterNode.connect(this.masterAnalyser);
     }
 
     public getHealth(): AudioEngineHealth {
@@ -1062,7 +919,7 @@ class AudioEngineImpl implements AudioEngine {
             }
         }
 
-        const masterMeterWorklets = this.masterMeterNode instanceof AudioWorkletNode ? 1 : 0;
+        const masterMeterWorklets = this.master.meterNode() instanceof AudioWorkletNode ? 1 : 0;
         const adjustmentDiagnostics = this.adjustmentRuntime.getDiagnostics();
         processorLifecycle.unmanaged += adjustmentDiagnostics.audioWorkletProcessors;
         const graphAudioWorkletProcessors =
@@ -1100,7 +957,7 @@ class AudioEngineImpl implements AudioEngine {
                 adjustmentLayerAudioWorkletProcessors: adjustmentDiagnostics.audioWorkletProcessors,
             },
             runtime: {
-                trackedAudioScheduledSources: this.scheduledNodes.length,
+                trackedAudioScheduledSources: this.scheduledSources.nodes().length,
                 processorLifecycle,
             },
         };
@@ -1150,34 +1007,21 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return;
         }
-        this.masterGainNode.gain.setTargetAtTime(
-            Math.max(0, Math.min(FADER_MAX_GAIN, value)),
-            this.context.currentTime,
-            0.01
-        );
+        this.master.setGain(value);
     }
 
     public getMasterGain(): number {
         if (this.fallbackMode) {
             return 0;
         }
-        return this.masterGainNode.gain.value;
+        return this.master.getGain();
     }
 
     public setControlRoomMonitoring(monitoring: ControlRoomMonitoring): void {
         if (this.fallbackMode) {
             return;
         }
-        if (monitoring.monoActive) {
-            // Explicit single-channel count + speakers interpretation is the
-            // spec's (L+R)/2 fold; the mono result upmixes onto both outputs.
-            this.monitorMonoNode.channelCount = 1;
-            this.monitorMonoNode.channelCountMode = 'explicit';
-            this.monitorMonoNode.channelInterpretation = 'speakers';
-        } else {
-            this.monitorMonoNode.channelCountMode = 'max';
-        }
-        this.monitorDimNode.gain.setTargetAtTime(Math.max(0, monitoring.dimGain), this.context.currentTime, 0.01);
+        this.master.setControlRoomMonitoring(monitoring);
     }
 
     public getState(): AudioEngineState {
@@ -1196,7 +1040,7 @@ class AudioEngineImpl implements AudioEngine {
             isReady: this.context.state === 'running' || this.workletReady,
             sampleRate: this.context.sampleRate,
             state: this.context.state,
-            masterGain: this.masterGainNode.gain.value,
+            masterGain: this.master.gainNode.gain.value,
             currentTime: this.context.currentTime,
             baseLatency: this.context.baseLatency ?? 0,
             outputLatency: this.context.outputLatency ?? 0,
@@ -1691,7 +1535,7 @@ class AudioEngineImpl implements AudioEngine {
         }
         return new TrackNode(trackId, {
             context: this.context,
-            masterGainNode: this.masterGainNode,
+            masterGainNode: this.master.gainNode,
             getBusGainNode: (id) => this.busNodes.get(id)?.strip.gainNode,
             getTrackGainNode: (id) => this.trackNodes.get(id)?.strip.gainNode,
             getSendsForTrack: (tId) =>
@@ -1910,15 +1754,7 @@ class AudioEngineImpl implements AudioEngine {
      * status bar show "-∞ dB" over a mix that was audibly playing.
      */
     public getMasterPeakLevel(): number | null {
-        if (!this.masterMeterBuffer) {
-            return null;
-        }
-        // Read-and-reset of a single f32, deliberately without Atomics (audit
-        // RT-9) — same scalar-meter exception as TrackNode.getPeakLevel.
-        // Rationale in the module header of worklets/meteringProcessor.ts.
-        const peak = this.masterMeterBuffer[0]!;
-        this.masterMeterBuffer[0] = 0;
-        return peak;
+        return this.master.readPeak();
     }
 
     private ensureBusStripInGraph(busId: string): RuntimeGraphMutation<BusStrip> {
@@ -2514,51 +2350,18 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public scheduleOscillator(frequency: number, startTime: number, duration: number, gain = 0.3): void {
-        this.assertActive();
-        if (this.fallbackMode) {
-            return;
-        }
-        const osc = this.context.createOscillator();
-        const env = this.context.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = frequency;
-        env.gain.setValueAtTime(0, startTime);
-        env.gain.linearRampToValueAtTime(gain, startTime + 0.005);
-        env.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-        osc.connect(env);
-        env.connect(this.masterGainNode);
-        osc.start(startTime);
-        osc.stop(startTime + duration);
-        this.scheduledNodes.push(osc);
-        osc.onended = () => {
-            const idx = this.scheduledNodes.indexOf(osc);
-            if (idx >= 0) {
-                this.scheduledNodes.splice(idx, 1);
-            }
-            env.disconnect();
-        };
+        this.scheduledSources.scheduleOscillator(frequency, startTime, duration, gain);
     }
 
     public scheduleClick(time: number, accent: boolean, volume = 1): void {
-        const freq = accent ? 1500 : 1000;
-        const dur = accent ? 0.04 : 0.03;
-        const baseVol = accent ? 0.4 : 0.25;
-        this.scheduleOscillator(freq, time, dur, baseVol * volume);
+        this.scheduledSources.scheduleClick(time, accent, volume);
     }
 
     public stopAllScheduled(): void {
         if (this.fallbackMode) {
             return;
         }
-        const now = this.context.currentTime;
-        for (const node of [...this.scheduledNodes]) {
-            try {
-                node.stop(now);
-            } catch {
-                // ignore
-            }
-        }
-        this.scheduledNodes.length = 0;
+        this.scheduledSources.stopAll();
 
         // Release held notes on every device that can hold one, through the
         // generic `controller.allNotesOff` every instrument descriptor already
@@ -2582,22 +2385,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public registerScheduledSource(node: AudioScheduledSourceNode): void {
-        this.assertActive();
-        if (this.fallbackMode) {
-            return;
-        }
-        // Built-in synth and kit voices are bare oscillators written straight
-        // into the strip; the scheduled path discarded the handle, so a stop or
-        // a panic could not silence them and they rang on for the rest of their
-        // programmed duration (audit MD-6). Tracking them here puts them under
-        // the same `stopAllScheduled` sweep as the metronome.
-        this.scheduledNodes.push(node);
-        node.addEventListener('ended', () => {
-            const index = this.scheduledNodes.indexOf(node);
-            if (index >= 0) {
-                this.scheduledNodes.splice(index, 1);
-            }
-        });
+        this.scheduledSources.register(node);
     }
 
     public beginAudioPreviewIntent() {
@@ -2616,7 +2404,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public get audioPreviewOutput(): AudioNode {
-        return this.monitorMonoNode;
+        return this.master.monitorMonoNode;
     }
 
     public setAudioPreviewProgrammeSuppressed(suppressed: boolean): void {
@@ -2628,9 +2416,9 @@ class AudioEngineImpl implements AudioEngine {
             return;
         }
         if (open) {
-            this.previewProgrammeGate.connect(this.monitorMonoNode);
+            this.master.previewProgrammeGate.connect(this.master.monitorMonoNode);
         } else {
-            this.previewProgrammeGate.disconnect(this.monitorMonoNode);
+            this.master.previewProgrammeGate.disconnect(this.master.monitorMonoNode);
         }
         this.previewProgrammeOpen = open;
     }
@@ -2852,23 +2640,7 @@ class AudioEngineImpl implements AudioEngine {
                 runAllEffects([
                     () => this.postShutdownToWorklets(),
                     () => this.resetGraph(),
-                    () => this.masterGainNode.disconnect(),
-                    () => {
-                        const meter = this.masterMeterNode;
-                        this.masterMeterNode = undefined;
-                        this.masterMeterBuffer = null;
-                        if (typeof AudioWorkletNode !== 'undefined' && meter instanceof AudioWorkletNode) {
-                            meter.disconnect();
-                        }
-                    },
-                    () => this.masterAnalyser.disconnect(),
-                    () => this.previewProgrammeGate.disconnect(),
-                    () => this.monitorMonoNode.disconnect(),
-                    () => this.monitorDimNode.disconnect(),
-                    () => this.masterStereoSplitter.disconnect(),
-                    () => this.masterAnalyserLeft.disconnect(),
-                    () => this.masterAnalyserRight.disconnect(),
-                    () => this.masterStereoTapSink.disconnect(),
+                    ...this.master.disposeEffects(),
                     () => this.transportClock.release(),
                 ]),
             () => this.context.close(),
@@ -2878,9 +2650,7 @@ class AudioEngineImpl implements AudioEngine {
     private postShutdownToWorklets(): void {
         const shutdown = { type: 'shutdown' as const };
         const hasWorkletNode = typeof AudioWorkletNode !== 'undefined';
-        if (hasWorkletNode && this.masterMeterNode instanceof AudioWorkletNode) {
-            this.masterMeterNode.port.postMessage(shutdown);
-        }
+        this.master.postShutdown(shutdown);
         for (const [, trackNode] of this.trackNodes) {
             trackNode.strip.meterNode?.port.postMessage(shutdown);
             for (const dn of trackNode.strip.deviceNodes) {
