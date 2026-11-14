@@ -2770,9 +2770,18 @@ export default tseslint.config(
 
     // ─── Preset warn promotions ──────────────────────────────────────────────
     // The lint gate runs ESLint with --quiet, which skips warn rules entirely,
-    // so a preset rule left at warn enforces nothing. These have no violations.
+    // so a preset rule left at warn enforces nothing. Every preset warn rule is
+    // promoted here; existing violations are recorded per file and rule in
+    // eslint-suppressions.json, which only shrinks (docs/07-conventions.md).
     {
         rules: {
+            '@eslint-react/exhaustive-deps': 'error',
+            '@eslint-react/naming-convention-context-name': 'error',
+            '@eslint-react/naming-convention-ref-name': 'error',
+            '@eslint-react/no-array-index-key': 'error',
+            '@eslint-react/set-state-in-effect': 'error',
+            '@eslint-react/use-state': 'error',
+            'react-hooks/exhaustive-deps': 'error',
             '@eslint-react/dom-no-dangerously-set-innerhtml': 'error',
             '@eslint-react/dom-no-script-url': 'error',
             '@eslint-react/dom-no-unsafe-iframe-sandbox': 'error',
@@ -2934,8 +2943,8 @@ export default tseslint.config(
             // assertions (`['--x' as string]`); ESLint enforces it.
             'no-useless-computed-key': 'error',
             // Oxlint's no-void treats `() => void x` as an allowed statement;
-            // ESLint enforces the warn on expression-position `void`.
-            'no-void': ['warn', { allowAsStatement: true }],
+            // ESLint enforces expression-position `void`.
+            'no-void': ['error', { allowAsStatement: true }],
 
             // ── Code style not covered by oxlint ─────────────────────────────
             '@stylistic/spaced-comment': [
@@ -3120,12 +3129,13 @@ export default tseslint.config(
             // Interactive roles must be focusable
             'jsx-a11y-x/interactive-supports-focus': 'error',
 
-            // React Compiler/purity allowances
-            'react-hooks/refs': 'warn',
+            // React Compiler/purity rules; existing violations are recorded in
+            // eslint-suppressions.json.
+            'react-hooks/refs': 'error',
             'react-hooks/purity': 'error',
             '@eslint-react/purity': 'error',
-            'react-hooks/set-state-in-effect': 'warn',
-            '@eslint-react/set-state-in-effect': 'warn',
+            'react-hooks/set-state-in-effect': 'error',
+            '@eslint-react/set-state-in-effect': 'error',
             '@eslint-react/unsupported-syntax': 'error',
 
             // Prevent leaked JSX conditions
@@ -3186,7 +3196,7 @@ export default tseslint.config(
             'src/modules/Command/stores/undoSessionMirror.ts',
         ],
         rules: {
-            'no-restricted-syntax': ['warn', ...directStorageRestrictions],
+            'no-restricted-syntax': ['error', ...directStorageRestrictions],
         },
     },
     {

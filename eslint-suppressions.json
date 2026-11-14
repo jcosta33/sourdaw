@@ -1,0 +1,939 @@
+{
+  "scripts/__tests__/resourceGuardStorage.spec.ts": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "scripts/__tests__/viteBuildFaustWorkletRegistration.spec.ts": {
+    "@eslint-react/naming-convention-context-name": {
+      "count": 2
+    }
+  },
+  "src/app/__tests__/prospectiveMutationWorkerAssets.spec.ts": {
+    "@eslint-react/naming-convention-context-name": {
+      "count": 1
+    }
+  },
+  "src/components/daw/Fader.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 4
+    }
+  },
+  "src/components/daw/RotaryKnob.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 3
+    }
+  },
+  "src/components/daw/ValueField.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 2
+    }
+  },
+  "src/components/daw/visualizers/DelayTaps.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 2
+    }
+  },
+  "src/components/daw/visualizers/EQCurve.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/components/daw/visualizers/FilterResponse.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/components/ui/DragResizeHandle.tsx": {
+    "react-hooks/refs": {
+      "count": 2
+    }
+  },
+  "src/infra/dialogService/useFocusEachRequest.ts": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/modules/AiRuntime/presentations/components/mixAnalysis/MixAnalysisSections.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 2
+    }
+  },
+  "src/modules/AiRuntime/presentations/hooks/useClipAudition.ts": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/modules/AiRuntime/presentations/hooks/useVoiceRecording.ts": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 2
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "src/modules/AiRuntime/presentations/views/AiActionHistoryPanel.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 2
+    },
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/AiRuntime/presentations/views/MeasuredPreviewAudition.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/modules/AiRuntime/presentations/views/RetainedSectionRenderManualReview.tsx": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/AiRuntime/transformers/promptParser/__tests__/selectedClipReference.spec.ts": {
+    "@eslint-react/naming-convention-context-name": {
+      "count": 2
+    }
+  },
+  "src/modules/AiRuntime/useCases/__tests__/aiWorkflowCommandCheckpointRuntime.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts": {
+    "@eslint-react/naming-convention-context-name": {
+      "count": 2
+    }
+  },
+  "src/modules/AiRuntime/useCases/__tests__/creativeInterpretationCatalog.spec.ts": {
+    "@eslint-react/naming-convention-context-name": {
+      "count": 20
+    }
+  },
+  "src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/AiRuntime/useCases/__tests__/promptInterpretationRouting.spec.ts": {
+    "@eslint-react/naming-convention-context-name": {
+      "count": 13
+    }
+  },
+  "src/modules/AiRuntime/useCases/__tests__/stampProcessingOnlyParameterPolicy.spec.ts": {
+    "@eslint-react/naming-convention-context-name": {
+      "count": 4
+    }
+  },
+  "src/modules/AiRuntime/useCases/agentReference/__tests__/resolveWorkflowTrackIds.spec.ts": {
+    "@eslint-react/naming-convention-context-name": {
+      "count": 1
+    }
+  },
+  "src/modules/AiRuntime/useCases/executePromptActionGroup.ts": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/Arrangement/presentations/views/ArrangementBar.tsx": {
+    "react-hooks/refs": {
+      "count": 1
+    }
+  },
+  "src/modules/Arrangement/presentations/views/BeatRulerBar.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/refs": {
+      "count": 2
+    }
+  },
+  "src/modules/Arrangement/presentations/views/ClipContextMenu.tsx": {
+    "no-void": {
+      "count": 2
+    }
+  },
+  "src/modules/Arrangement/presentations/views/MiniMasterSpectrum.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/modules/Arrangement/presentations/views/TimelineClipNavigator.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    },
+    "react-hooks/refs": {
+      "count": 2
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/Arrangement/presentations/views/TrackContextMenu.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 2
+    },
+    "react-hooks/refs": {
+      "count": 1
+    }
+  },
+  "src/modules/Arrangement/presentations/views/TrackListView.tsx": {
+    "no-void": {
+      "count": 2
+    }
+  },
+  "src/modules/Arrangement/presentations/views/__tests__/TimelineClipNavigator.spec.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/modules/AudioEngine/presentations/views/AudioDevicePicker.tsx": {
+    "@eslint-react/set-state-in-effect": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/AudioEngine/presentations/views/MidiDevicePicker.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/modules/AudioEngine/presentations/views/PluginBrowser.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    },
+    "@eslint-react/use-state": {
+      "count": 1
+    }
+  },
+  "src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationExportFamilyScopeLaw.spec.ts": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/AudioEngine/repositories/offlineScheduler/__tests__/singlePointClipLaneWindowHold.spec.ts": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/AudioRendering/presentations/views/ExportDialog.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "@eslint-react/set-state-in-effect": {
+      "count": 4
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/refs": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/Automation/presentations/views/ModulationMatrix.tsx": {
+    "@eslint-react/set-state-in-effect": {
+      "count": 1
+    },
+    "no-void": {
+      "count": 4
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/Bacteria/presentations/components/BezierLfoEditor.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/modules/Bacteria/presentations/components/CrossoverDisplay.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/modules/Bacteria/presentations/components/ModulationDock.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/Bacteria/presentations/components/NodeGraphEditor.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 2
+    }
+  },
+  "src/modules/Bacteria/presentations/components/SpectralBinEditor.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/refs": {
+      "count": 2
+    }
+  },
+  "src/modules/Bacteria/presentations/components/SpectrumAnalyzer.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/modules/Bacteria/presentations/components/StepSequencerEditor.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/refs": {
+      "count": 2
+    }
+  },
+  "src/modules/Bacteria/presentations/components/XYMorphPad.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx": {
+    "no-void": {
+      "count": 3
+    }
+  },
+  "src/modules/Command/repositories/createLocalStorageCommandBatchIdempotencyRepository.ts": {
+    "no-restricted-syntax": {
+      "count": 8
+    }
+  },
+  "src/modules/ContentBrowser/presentations/views/Sidebar.tsx": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/ControlSurface/presentations/views/HardwareMappingManager.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 4
+    }
+  },
+  "src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx": {
+    "no-void": {
+      "count": 3
+    }
+  },
+  "src/modules/CrdtDocument/repositories/__tests__/branchStateHarness.ts": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/modules/Crumbs/presentations/components/PadGrid.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 3
+    }
+  },
+  "src/modules/Crust/presentations/components/CrustGainStrip.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 2
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/modules/Crust/presentations/components/CrustWaveformDisplay.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 6
+    },
+    "react-hooks/refs": {
+      "count": 1
+    }
+  },
+  "src/modules/Crust/presentations/hooks/useCrustParameterGesture.ts": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/modules/Crust/presentations/views/CrustPanel.tsx": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    },
+    "@eslint-react/set-state-in-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/Fermenter/presentations/components/FmSection.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/Fermenter/presentations/components/MacroMatrixEditor.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/Fermenter/presentations/components/SignalFlowView.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/modules/Fermenter/presentations/components/XYPad.tsx": {
+    "react-hooks/refs": {
+      "count": 1
+    }
+  },
+  "src/modules/Fermenter/presentations/views/FermenterPanel.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/modules/Gluten/presentations/components/GlutenCurve.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 2
+    }
+  },
+  "src/modules/GrandBoule/presentations/components/PianoModel3D.tsx": {
+    "react-hooks/refs": {
+      "count": 4
+    }
+  },
+  "src/modules/GrandBoule/presentations/components/SpectralWaterfall.tsx": {
+    "react-hooks/refs": {
+      "count": 1
+    }
+  },
+  "src/modules/GrandBoule/presentations/components/StringVibrationView.tsx": {
+    "react-hooks/refs": {
+      "count": 1
+    }
+  },
+  "src/modules/Grinder/presentations/views/GrinderPanel.tsx": {
+    "no-void": {
+      "count": 3
+    }
+  },
+  "src/modules/Levain/presentations/components/MicBlendSlider.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/Levain/presentations/views/LevainPanel.tsx": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/MIDI/repositories/readLegacyChordTrackStorage.ts": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/modules/MIDI/repositories/webMidi/persistInputId.ts": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/modules/MIDI/repositories/webMidi/readPersistedInputId.ts": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/modules/MIDI/useCases/webMidiInput/__tests__/panicLiveNotes.spec.ts": {
+    "no-void": {
+      "count": 4
+    }
+  },
+  "src/modules/MIDI/useCases/webMidiInput/handleWebMidiCC.ts": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/Metering/presentations/views/SpatialPanner.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 10
+    }
+  },
+  "src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 4
+    },
+    "no-void": {
+      "count": 6
+    }
+  },
+  "src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 4
+    },
+    "@eslint-react/use-state": {
+      "count": 1
+    }
+  },
+  "src/modules/MixerConsole/presentations/views/Mixer/MasterGainControl.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 3
+    },
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/Onboarding/presentations/views/OnboardingTour.tsx": {
+    "@eslint-react/set-state-in-effect": {
+      "count": 2
+    }
+  },
+  "src/modules/Onboarding/useCases/isOnboardingCompleted.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/modules/Onboarding/useCases/markOnboardingCompleted.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/modules/Project/presentations/views/ArrangementSelector.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    },
+    "@eslint-react/set-state-in-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/Project/presentations/views/TemplateChooser.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/Project/repositories/project/readProjectJson.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/modules/Project/repositories/project/removeProjectJson.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/modules/Proof/presentations/components/ProofEqCurve.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/Proof/presentations/views/ProofPanel.tsx": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/ProofChamber/presentations/components/SignalFlowDiagram.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx": {
+    "react-hooks/refs": {
+      "count": 2
+    }
+  },
+  "src/modules/ProofChamber/presentations/views/__tests__/proofChamberAlgorithmGating.spec.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/PunchRecording/presentations/views/PunchRecordingControls.tsx": {
+    "@eslint-react/set-state-in-effect": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "no-void": {
+      "count": 4
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/refs": {
+      "count": 1
+    }
+  },
+  "src/modules/SampleLibrary/repositories/libraryPersistence/persistSamples.ts": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/modules/SampleLibrary/repositories/libraryPersistence/restoreLibrary.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/modules/SampleLibrary/useCases/seedFactoryLibrary.ts": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/modules/SessionLauncher/presentations/views/LoopStationPanel.tsx": {
+    "@eslint-react/set-state-in-effect": {
+      "count": 2
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 2
+    }
+  },
+  "src/modules/Setlist/presentations/views/SetlistPanel.tsx": {
+    "@eslint-react/set-state-in-effect": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/hooks/useDeviceParameterGesture.ts": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 3
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/hooks/usePianoRollRenderer.ts": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/ArrangeView.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 2
+    },
+    "react-hooks/refs": {
+      "count": 4
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/AutomationLane/CCLane.tsx": {
+    "react-hooks/refs": {
+      "count": 2
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/AutomationLane/NotePropertyLane.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/AutomationLane/PitchBendLane.tsx": {
+    "react-hooks/refs": {
+      "count": 5
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/AutomationView.tsx": {
+    "react-hooks/refs": {
+      "count": 3
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneRow.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 4
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/ClipView.tsx": {
+    "@eslint-react/use-state": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    },
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    },
+    "react-hooks/refs": {
+      "count": 2
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx": {
+    "no-void": {
+      "count": 2
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "@eslint-react/set-state-in-effect": {
+      "count": 2
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/refs": {
+      "count": 2
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx": {
+    "@eslint-react/set-state-in-effect": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/Inspector/TakesSection.tsx": {
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/Inspector/TrackRoleSection.tsx": {
+    "@eslint-react/use-state": {
+      "count": 1
+    },
+    "no-void": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinLufsMeterLayout.tsx": {
+    "@eslint-react/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/Inspector/layouts/ChorusLayout.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/Inspector/layouts/LufsMeterLayout.tsx": {
+    "@eslint-react/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/TempoEditor.tsx": {
+    "react-hooks/refs": {
+      "count": 26
+    }
+  },
+  "src/modules/TimelineEditor/presentations/views/Timeline/ScratchPadView.tsx": {
+    "no-void": {
+      "count": 3
+    }
+  },
+  "src/modules/Toaster/presentations/components/PadGrid.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    },
+    "@eslint-react/use-state": {
+      "count": 1
+    }
+  },
+  "src/modules/Toaster/presentations/components/PadMixer.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/modules/Toaster/presentations/components/StepSequencer.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/components/SourdawLogo.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 3
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentRunHistorySection.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 1
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/hooks/usePreviewAudio.ts": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 1
+    },
+    "@eslint-react/set-state-in-effect": {
+      "count": 6
+    },
+    "@eslint-react/use-state": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/views/AppShell.tsx": {
+    "@eslint-react/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/views/PromptBar.tsx": {
+    "no-void": {
+      "count": 1
+    },
+    "react-hooks/refs": {
+      "count": 11
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/views/Transport/PanelToggles.tsx": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 2
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/views/Transport/UndoRedoButtons.tsx": {
+    "no-void": {
+      "count": 2
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/views/TransportBar.tsx": {
+    "@eslint-react/set-state-in-effect": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx": {
+    "@eslint-react/exhaustive-deps": {
+      "count": 3
+    },
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 3
+    },
+    "@eslint-react/use-state": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 3
+    }
+  },
+  "src/modules/Yeast/presentations/components/StepPatternEditor.tsx": {
+    "@eslint-react/no-array-index-key": {
+      "count": 1
+    }
+  },
+  "src/modules/Yeast/presentations/hooks/useYeastParamActions.ts": {
+    "@eslint-react/naming-convention-ref-name": {
+      "count": 4
+    },
+    "@eslint-react/use-state": {
+      "count": 1
+    }
+  }
+}

@@ -795,6 +795,7 @@ file in the same change.
 - **Nesting depth**: Control-flow blocks nest at most 4 deep; deeper nesting buries the happy path and calls for the guard clauses and early returns covered under _Prefer explicit control flow_. ([`max-depth`](https://eslint.org/docs/latest/rules/max-depth))
 - **Cyclomatic complexity**: A function's cyclomatic complexity stays at most 20; past that, its branching cannot be reasoned about or tested exhaustively and should be split. ([`complexity`](https://eslint.org/docs/latest/rules/complexity))
 - **Burn-down baseline**: Files that already exceed one of the four limits above are listed in `eslint.size-baseline.mjs`, which holds those files to `warn` instead of `error` so they keep reporting without failing the build. A file leaves the list only once it complies with all four rules; no file is ever added.
+- **Suppressed violations**: Every other ESLint rule is configured at `error`. Violations that predate a rule's promotion are recorded per file and rule in `eslint-suppressions.json`, ESLint's native bulk-suppressions file, which the lint gate reads. A file that gains one violation beyond its recorded count fails, as does any violation in a file the record does not name. The record only shrinks: after fixing a suppressed violation, run ESLint on the file with `--prune-suppressions` (the gate fails until the count matches), and never regenerate it with `--suppress-all` or `--suppress-rule` to admit a new violation.
 
 ### Parameter patterns
 
