@@ -2,8 +2,9 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import * as githubAppIdentity from '../githubAppIdentity.ts';
 import { AUTHOR_BOT_NODE_ID, GITHUB_HTTPS_REMOTE, spawnCapture } from '../githubAppIdentity.ts';
 import { shellPort } from '../publishReview.ts';
 import { writeLaneStack, type LaneStack } from '../stackedLanes.ts';
@@ -215,6 +216,43 @@ describe('real shell approval context', () => {
 });
 
 describe('real shell live review comparison', () => {
+    it('threads an explicit raw capture through shellPort without decoding or falling back', () => {
+        const f = fixture();
+        const patch = Buffer.from([0xff, 0xfe, 0x0a]);
+        const captureBytes = vi.fn<typeof githubAppIdentity.spawnCaptureBytes>().mockReturnValue(patch);
+        const session = { configDir: f.root, env: {}, dispose: () => undefined };
+        try {
+            const port = shellPort(
+                session,
+                f.root,
+                (command, args, options) => {
+                    if (command === 'gh') {
+                        return JSON.stringify(f.live);
+                    }
+                    if (args.includes('fetch')) {
+                        return '';
+                    }
+                    return spawnCapture(command, args, options);
+                },
+                undefined,
+                undefined,
+                captureBytes
+            );
+            expect(port.liveReviewComparison?.(42, f.head).patch).toBe(patch);
+            expect(captureBytes).toHaveBeenCalledExactlyOnceWith('git', ['diff', `${f.base}...${f.head}`], {
+                cwd: f.root,
+                env: session.env,
+                maxBufferBytes: 512 * 1024 * 1024,
+            });
+            captureBytes.mockImplementationOnce(() => {
+                throw new Error('raw capture refused');
+            });
+            expect(() => port.liveReviewComparison?.(42, f.head)).toThrow('raw capture refused');
+        } finally {
+            removeFixture(f.root);
+        }
+    });
+
     function compare(f: ReturnType<typeof fixture>) {
         const port = shellPort(
             { configDir: f.root, env: {}, dispose: () => undefined },
@@ -237,17 +275,24 @@ describe('real shell live review comparison', () => {
 
     it('reads the merge base, patch and numstat from git objects, against a stack parent base too', () => {
         const f = fixture();
+        const captureBytes = vi.spyOn(githubAppIdentity, 'spawnCaptureBytes');
         try {
             f.live.baseRefName = 'agent/parent';
             f.live.baseRefOid = f.advancedMain;
             const live = compare(f);
             expect(live.mergeBase).toBe(f.base);
-            expect(live.patch).toBe(
-                spawnCapture('git', ['diff', `${f.base}...${f.head}`], { cwd: f.root, trim: false })
+            expect(live.patch).toEqual(
+                Buffer.from(spawnCapture('git', ['diff', `${f.base}...${f.head}`], { cwd: f.root, trim: false }))
             );
-            expect(live.patch).toContain('+++ b/child');
+            expect(live.patch.toString()).toContain('+++ b/child');
             expect(live.numstat.toString('utf8')).toBe('1\t0\tchild\0');
+            expect(captureBytes).toHaveBeenCalledExactlyOnceWith('git', ['diff', `${f.base}...${f.head}`], {
+                cwd: f.root,
+                env: {},
+                maxBufferBytes: 512 * 1024 * 1024,
+            });
         } finally {
+            captureBytes.mockRestore();
             removeFixture(f.root);
         }
     });
