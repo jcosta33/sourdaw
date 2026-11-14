@@ -55,9 +55,13 @@ function namesRemovedPoint(
     if (action.payload.laneId !== lane.id) {
         return namesContentOnly(action, lane, identifiers, scope);
     }
-    const target = action.payload.pointId
-        ? lane.points.find((point) => point.id === action.payload.pointId)
-        : lane.points[action.payload.pointIndex];
+    const { pointId, pointIndex } = action.payload;
+    let target: ProductionBriefAutomationLane['points'][number] | undefined;
+    if (pointId) {
+        target = lane.points.find((point) => point.id === pointId);
+    } else {
+        target = lane.points[pointIndex];
+    }
     return Boolean(target && target.beat >= scope.startBeat && target.beat < scope.endBeat);
 }
 

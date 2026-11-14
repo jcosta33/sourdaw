@@ -92,7 +92,9 @@ function adjustmentLayerOverlapsRange(
 }
 
 function lanePoints(lane: ProductionBriefAutomationLane) {
-    return [...lane.points, ...(lane.trimPoints ?? []), ...(lane.ghostPoints ?? [])];
+    const trimPoints = lane.trimPoints ?? [];
+    const ghostPoints = lane.ghostPoints ?? [];
+    return [...lane.points, ...trimPoints, ...ghostPoints];
 }
 
 function automationLaneOverlapsRange(lane: ProductionBriefAutomationLane, scope: ProductionBriefRangeScope): boolean {

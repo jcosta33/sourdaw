@@ -139,9 +139,10 @@ function updatedChordEvent(
     if (chordEventOverlapsRange(current, scope)) {
         return true;
     }
-    return action.payload.duration !== undefined
-        ? chordEventOverlapsRange({ ...current, duration: action.payload.duration }, scope)
-        : false;
+    if (action.payload.duration === undefined) {
+        return false;
+    }
+    return chordEventOverlapsRange({ ...current, duration: action.payload.duration }, scope);
 }
 
 function removedChordEvent(
