@@ -513,6 +513,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     commandBatchPreviewPort: { setProvider: noop, setRecoveryProvider: noop },
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
     commandProjectDivergencePort: { setProvider: noop },
+    createUserAppActionRefusalEpisodes: () => ({ execute: noop, end: noop, endAll: noop }),
     executeAppAction: noop,
     executeUserAppAction: executeUserAppActionBinding,
     getExecutableAppActionGroundingCatalog: getExecutableAppActionGroundingCatalogMock,

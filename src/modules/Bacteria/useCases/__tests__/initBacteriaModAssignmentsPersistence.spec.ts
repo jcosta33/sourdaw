@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn(),
-    notifyUser: vi.fn(),
     pushUndoEntry: vi.fn(),
     hydrateBacteriaModAssignmentsFromProject: vi.fn(
         (_deviceId: string) => null as ReturnType<typeof hydrateBacteriaModAssignmentsFromProject>
@@ -14,15 +13,16 @@ const mocks = vi.hoisted(() => ({
 // this spec never exercises (Automation, ElasticAudio), and ElasticAudio reaches
 // `executeUserAppAction`; the barrel-mock coverage check needs both named here
 // even though no test calls them.
-vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
-// The episodes factory is the real one, dispatching through the same mocked executeAppAction.
-vi.mock('#/modules/Command/useCases/executeAppAction', () => ({ executeAppAction: mocks.executeAppAction }));
-
-vi.mock('#/modules/Command/useCases', async () => ({
-    ...(await vi.importActual<typeof import('#/modules/Command/useCases/createUserAppActionRefusalEpisodes')>(
-        '#/modules/Command/useCases/createUserAppActionRefusalEpisodes'
-    )),
+vi.mock('#/modules/Command/useCases', () => ({
+    // The persistence init dispatches through its episodes object; route it to the captured door so
+    // these cases observe the committed action. Refusal handling is pinned in the refusal spec.
+    createUserAppActionRefusalEpisodes: () => ({
+        execute: (_key: string, action: unknown, options?: unknown) => mocks.executeAppAction(action, options),
+        end: vi.fn(),
+        endAll: vi.fn(),
+    }),
     describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     commitUndoEntry: vi.fn(),
     createUndoEntry: vi.fn(),
     getExecutableAppActionEffect: vi.fn(() => null),
@@ -36,7 +36,6 @@ vi.mock('../hydrateBacteriaModAssignmentsFromProject', () => ({
 }));
 
 import { trackStore } from '#/modules/Arrangement/stores';
-import { AppActionConflictError } from '#/modules/Command/errors/AppActionExecutionError';
 
 import { type BacteriaModAssignment } from '../../models/BacteriaPatch';
 import {
@@ -183,29 +182,5 @@ describe('initBacteriaModAssignmentsPersistence', () => {
             },
             { skipMacroRecording: true }
         );
-    });
-
-    it('tells the user once for a sweep of refused routing edits and leaves no unhandled rejection', async () => {
-        const unhandled: unknown[] = [];
-        const record = (reason: unknown): void => {
-            unhandled.push(reason);
-        };
-        process.on('unhandledRejection', record);
-        try {
-            mocks.executeAppAction.mockRejectedValue(new AppActionConflictError('setDeviceState'));
-            setBacteriaModAssignments(DEVICE_ID, [row()]);
-            for (let step = 1; step <= 6; step++) {
-                setBacteriaModAssignments(DEVICE_ID, [row({ amount: step / 10 })]);
-            }
-            await vi.waitFor(() => expect(mocks.notifyUser).toHaveBeenCalledTimes(1));
-            await new Promise((resolve) => setTimeout(resolve, 20));
-
-            expect(mocks.executeAppAction).toHaveBeenCalledTimes(6);
-            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
-            expect(mocks.notifyUser.mock.calls[0]?.[1]).toBe('warning');
-            expect(unhandled).toEqual([]);
-        } finally {
-            process.off('unhandledRejection', record);
-        }
     });
 });

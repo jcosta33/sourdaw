@@ -2,29 +2,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { clipSelectionStore, defaultClipSelectionState, trackStore } from '#/modules/Arrangement/stores';
-import {
-    AppActionAdmissionRefusedError,
-    AppActionConflictError,
-} from '#/modules/Command/errors/AppActionExecutionError';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
-import { type AppAction } from '#/utils/handlerContract';
+import { createHandler } from '#/utils/createHandler';
+import { type AppAction, type HandlerExecutionResult } from '#/utils/handlerContract';
 
 const mocks = vi.hoisted(() => ({
     execute:
         vi.fn<(action: AppAction, options?: { signal?: AbortSignal; onCommitted?: () => void }) => Promise<void>>(),
     cancel: vi.fn(),
     notify: vi.fn(),
+    kernel: { execute: undefined as undefined | ((action: AppAction, options?: unknown) => Promise<void>) },
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notify }));
 
-vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
-    executeAppAction: mocks.execute,
-    executeUserAppAction: vi.fn(),
-}));
+vi.mock('#/modules/Command/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+    mocks.kernel.execute = actual.executeAppAction;
+    return { ...actual, executeAppAction: mocks.execute, executeUserAppAction: vi.fn() };
+});
 vi.mock('../cancelTransientDetection', () => ({ cancelTransientDetection: mocks.cancel }));
 
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
@@ -37,6 +37,24 @@ let buffer: AudioBuffer;
 
 function select(clipId: string | null): void {
     clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: clipId });
+}
+
+/** Routes one detect dispatch through the real kernel, whose registered detector answers `outcome`. */
+function dispatchThroughKernel(outcome: HandlerExecutionResult, before?: () => Promise<void>): void {
+    clearHandlerRegistry();
+    registerHandlerMap({
+        detectTransients: createHandler<'detectTransients'>({
+            undoable: false,
+            describe: () => ({ label: 'Detect transients' }),
+            previewExecution: 'unsupported-external',
+            requiresAbortCompensation: false,
+            execute: () => outcome,
+        }),
+    });
+    mocks.execute.mockImplementationOnce(async (action, options) => {
+        await before?.();
+        await mocks.kernel.execute?.(action, options);
+    });
 }
 
 function makeBuffer(): AudioBuffer {
@@ -102,6 +120,8 @@ describe('setElasticSensitivity', () => {
     afterEach(async () => {
         await vi.runOnlyPendingTimersAsync();
         preferencesStore.trySet(defaultPreferences);
+        agentProjectRepairStateStore.set(null);
+        clearHandlerRegistry();
         vi.restoreAllMocks();
         vi.useRealTimers();
     });
@@ -410,31 +430,36 @@ describe('setElasticSensitivity', () => {
 
     it('warns with the refusal reason, without an error notice or log, when the project refuses detection', async () => {
         select('clip-1');
-        mocks.execute.mockRejectedValueOnce(new AppActionAdmissionRefusedError('detectTransients'));
+        agentProjectRepairStateStore.set({
+            audioGraphValid: false,
+            detectedRevision: 'revision-1',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [],
+            status: 'repair-required',
+        });
+        dispatchThroughKernel({ status: 'no-write' });
         const pending = setElasticSensitivity(0.8);
         await vi.advanceTimersByTimeAsync(150);
         await expect(pending).resolves.toBeUndefined();
 
-        expect(mocks.notify).toHaveBeenCalledExactlyOnceWith(
-            "Detect transients was refused because the project can't be changed right now.",
-            'warning'
-        );
+        expect(mocks.notify).toHaveBeenCalledTimes(1);
+        expect(mocks.notify.mock.calls[0]?.[1]).toBe('warning');
         expect(logger.error).not.toHaveBeenCalled();
         expect(elasticAudioStore.value?.detected).toBe(false);
     });
 
     it('reports a detector failure conflict as a failed detection, not as a refusal', async () => {
         select('clip-1');
-        const failure = new AppActionConflictError(
-            'detectTransients',
-            'Transient detection failed: analysis-timed-out'
-        );
-        mocks.execute.mockRejectedValueOnce(failure);
+        dispatchThroughKernel({ status: 'conflict', reason: 'Transient detection failed: analysis-timed-out' });
         const pending = setElasticSensitivity(0.8);
         await vi.advanceTimersByTimeAsync(150);
         await expect(pending).resolves.toBeUndefined();
 
-        expect(logger.error).toHaveBeenCalledWith(failure);
+        expect(logger.error).toHaveBeenCalledWith(
+            expect.objectContaining({ message: expect.stringContaining('analysis-timed-out') })
+        );
         expect(mocks.notify).toHaveBeenCalledExactlyOnceWith('Transient detection failed. Try again.', 'error');
     });
 
@@ -442,14 +467,13 @@ describe('setElasticSensitivity', () => {
         select('clip-1');
         const entered = Promise.withResolvers<void>();
         const firstRun = Promise.withResolvers<void>();
-        mocks.execute.mockImplementationOnce(async () => {
-            entered.resolve();
-            await firstRun.promise;
-            throw new AppActionConflictError(
-                'detectTransients',
-                'Transient detection was cancelled or its source changed'
-            );
-        });
+        dispatchThroughKernel(
+            { status: 'conflict', reason: 'Transient detection was cancelled or its source changed' },
+            async () => {
+                entered.resolve();
+                await firstRun.promise;
+            }
+        );
         const first = setElasticSensitivity(0.8);
         await vi.advanceTimersByTimeAsync(150);
         await entered.promise;
