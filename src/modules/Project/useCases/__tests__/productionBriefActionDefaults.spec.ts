@@ -68,4 +68,37 @@ describe('production brief admission of an action no scope rule singles out', ()
 
         expect(doesProductionBriefAllowActionBatch(actions)).toBe(false);
     });
+
+    it('is allowed when its type is unknown and its payload names no clip and no beat', () => {
+        const actions: AppAction[] = JSON.parse('[{"type":"noSuchAction","payload":{}}]');
+
+        expect(doesProductionBriefAllowActionBatch(actions)).toBe(true);
+    });
+
+    it('is allowed when its type is an inherited object name and its payload is empty', () => {
+        const actions: AppAction[] = JSON.parse('[{"type":"constructor","payload":{}}]');
+
+        expect(doesProductionBriefAllowActionBatch(actions)).toBe(true);
+    });
+
+    it('is allowed under an object-scoped brief when its type is unknown and its payload is empty', () => {
+        const current = projectStore.value!;
+        projectStore.set({
+            ...current,
+            productionBrief: {
+                ...current.productionBrief,
+                locks: [
+                    {
+                        id: 'lock-object',
+                        scope: { kind: 'object', objectType: 'clip', objectId: 'clip-locked' },
+                        statement: 'Keep this clip',
+                        createdAt: 112,
+                    },
+                ],
+            },
+        });
+        const actions: AppAction[] = JSON.parse('[{"type":"toString","payload":{}}]');
+
+        expect(doesProductionBriefAllowActionBatch(actions)).toBe(true);
+    });
 });

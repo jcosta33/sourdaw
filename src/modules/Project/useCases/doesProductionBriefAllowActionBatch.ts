@@ -14,7 +14,9 @@ import { projectStore } from '../stores/projectStore';
 import { collectProtectedScopes } from './collectProtectedScopes';
 import { isProjectWideScope } from './isProjectWideScope';
 import { automationReferenceByActionType } from './productionBriefScope/automationReferenceByActionType';
+import { automationReferenceRules } from './productionBriefScope/automationReferenceRules';
 import { indirectMutationByActionType } from './productionBriefScope/indirectMutationByActionType';
+import { indirectMutationRules } from './productionBriefScope/indirectMutationRules';
 import {
     type ActionOf,
     footprintQueries,
@@ -23,6 +25,7 @@ import {
     type ProductionBriefRangeScope,
 } from './productionBriefScope/productionBriefFootprint';
 import { rangeOverlapByActionType } from './productionBriefScope/rangeOverlapByActionType';
+import { rangeOverlapRules } from './productionBriefScope/rangeOverlapRules';
 
 const { collectActionStrings, valueOverlapsRange, intervalOverlapsRange } = footprintQueries;
 
@@ -41,11 +44,24 @@ function captureProductionBriefActionFootprint(actions: readonly AppAction[]): P
     };
 }
 
+// Actions reach this check from persisted batches, macros and model output, so `type` can be a string
+// no table holds or an inherited object name such as `constructor`. Only an own entry counts.
+function ownValue<Key extends string, Value>(
+    table: { readonly [Name in Key]: Value },
+    key: Key,
+    fallback: Value
+): Value {
+    return Object.hasOwn(table, key) ? table[key] : fallback;
+}
+
 function specificRangeOverlap<Type extends AppActionType>(
     action: ActionOf<Type>,
     scope: ProductionBriefRangeScope,
     footprint: ProductionBriefActionFootprint
 ): boolean {
+    if (!Object.hasOwn(rangeOverlapByActionType, action.type)) {
+        return rangeOverlapRules.none();
+    }
     return rangeOverlapByActionType[action.type](action, scope, footprint);
 }
 
@@ -55,6 +71,9 @@ function laneReferenceOverlap<Type extends AppActionType>(
     identifiers: ReadonlySet<string>,
     scope: ProductionBriefRangeScope
 ): boolean {
+    if (!Object.hasOwn(automationReferenceByActionType, action.type)) {
+        return automationReferenceRules.namesLaneOrContent(action, lane, identifiers, scope);
+    }
     return automationReferenceByActionType[action.type](action, lane, identifiers, scope);
 }
 
@@ -63,6 +82,9 @@ function indirectlyMutatesObject<Type extends AppActionType>(
     objectId: string,
     footprint: ProductionBriefActionFootprint
 ): boolean {
+    if (!Object.hasOwn(indirectMutationByActionType, action.type)) {
+        return indirectMutationRules.none();
+    }
     return indirectMutationByActionType[action.type](action, objectId, footprint);
 }
 
@@ -99,7 +121,8 @@ function actionOverlapsRange(
     footprint: ProductionBriefActionFootprint
 ): boolean {
     return (
-        (!carriesClipRelativeBeatsByActionType[action.type] && valueOverlapsRange(action.payload, scope)) ||
+        (!ownValue(carriesClipRelativeBeatsByActionType, action.type, false) &&
+            valueOverlapsRange(action.payload, scope)) ||
         referencedClipOverlapsRange(action, scope, footprint) ||
         referencedAutomationOverlapsRange(action, scope, footprint) ||
         referencedMarkerOrSectionOverlapsRange(action, scope, footprint) ||
@@ -154,16 +177,16 @@ function doesProductionBriefAllowActionFootprint(footprint: ProductionBriefActio
     // or an authorized replay), and the project-data repair changes no musical
     // content — a lock protects content, not the reconciliation that lets a
     // broken document be edited again.
-    // An action type absent from the route table reads `undefined` and stays on the scope-checked path.
+    // An action type absent from the route table stays on the scope-checked path.
     const isAdmittedRoute = (action: AppAction): boolean => {
-        const route = productionBriefRouteByActionType[action.type];
+        const route = ownValue(productionBriefRouteByActionType, action.type, 'content');
         return route === 'brief' || route === 'repair';
     };
     if (!brief || actions.every(isAdmittedRoute)) {
         return true;
     }
 
-    if (actions.some((action) => productionBriefRouteByActionType[action.type] === 'brief')) {
+    if (actions.some((action) => ownValue(productionBriefRouteByActionType, action.type, 'content') === 'brief')) {
         return false;
     }
 
@@ -176,7 +199,9 @@ function doesProductionBriefAllowActionFootprint(footprint: ProductionBriefActio
     const protectedScopes = collectProtectedScopes(brief).map((protection) => protection.scope);
     if (
         protectedScopes.length > 0 &&
-        projectActions.some((action) => productionBriefRefusalByActionType[action.type] === 'any-scope')
+        projectActions.some(
+            (action) => ownValue(productionBriefRefusalByActionType, action.type, 'none') === 'any-scope'
+        )
     ) {
         return false;
     }
@@ -189,10 +214,14 @@ function doesProductionBriefAllowActionFootprint(footprint: ProductionBriefActio
             return projectActions.every((action) => !actionOverlapsRange(action, scope, footprint));
         }
         if (scope.kind === 'track') {
-            if (projectActions.some((action) => productionBriefRefusalByActionType[action.type] === 'track-scope')) {
+            if (
+                projectActions.some(
+                    (action) => ownValue(productionBriefRefusalByActionType, action.type, 'none') === 'track-scope'
+                )
+            ) {
                 return false;
             }
-            if (projectActions.some((action) => globalTimeMutatesTrackByActionType[action.type])) {
+            if (projectActions.some((action) => ownValue(globalTimeMutatesTrackByActionType, action.type, false))) {
                 return false;
             }
             const ownedIds = trackOwnedIds(scope.trackId, footprint);
