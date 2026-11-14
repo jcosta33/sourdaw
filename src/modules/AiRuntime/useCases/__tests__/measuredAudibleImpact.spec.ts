@@ -465,6 +465,28 @@ describe('the plan’s audible claim', () => {
         expect(claim.metrics.map((metric) => metric.metricId)).toEqual(['truePeak', 'crestFactor']);
     });
 
+    it('does not claim a figure stated in a unit other than its metric definition even when the change unit is right', () => {
+        proposeCard({
+            gain: 0.7,
+            preview: previewOf([
+                vocalTarget({
+                    baseline: { rms: entry('dB', -20), truePeak: entry('dBTP', -3), crestFactor: entry('dB', 9) },
+                    preview: { rms: entry('dB', -17), truePeak: entry('dBTP', -2), crestFactor: entry('dB', 8) },
+                    deltas: {
+                        rms: compared('dB', 3),
+                        truePeak: compared('dB', 1),
+                        crestFactor: compared('dB', -1),
+                    },
+                }),
+            ]),
+        });
+        const claim = audible();
+        if (claim.status !== 'measured') {
+            throw new Error('The metrics with matching figure units are still claimed.');
+        }
+        expect(claim.metrics.map((metric) => metric.metricId)).toEqual(['truePeak', 'crestFactor']);
+    });
+
     it('claims loudness, true peak and rms changes in the units the real comparison reports', () => {
         const baseline = {
             integratedLoudness: entry('LUFS', -14),
