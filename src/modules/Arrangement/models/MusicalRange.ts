@@ -502,7 +502,7 @@ export function getMusicalRangeInputs(
 ): readonly MusicalRangeInput[] {
     if (reference.section !== undefined) {
         const inputs = namedPlaceInputs(reference.section, sources);
-        return reference.barsBefore === undefined ? inputs : [...inputs, 'meter'];
+        return reference.barsBefore === undefined ? inputs : [...inputs, 'meter', 'arrangement-end'];
     }
     if (isStated(reference.startBar) || isStated(reference.endBar)) {
         return ['meter', 'arrangement-end'];

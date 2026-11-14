@@ -518,6 +518,48 @@ describe('musical range resolution', () => {
             });
         });
 
+        it('reads a section that starts within the grid tolerance of a bar line as opening that bar', () => {
+            // In 4/4 beat 8 opens bar 3; 1e-12 later is the same bar line to the meter's grid tolerance.
+            const nearBarLine = [{ id: 'section-near', name: 'Near', startBeat: 8 + 1e-12, endBeat: 20 }];
+
+            expect(resolveIn(nearBarLine, { section: 'Near', barsBefore: 2 })).toMatchObject({
+                kind: 'resolved',
+                startBeat: 0,
+                endBeat: 8,
+            });
+        });
+
+        it('refuses a section that starts 1e-7 past a bar line as inside that bar', () => {
+            const pastBarLine = [{ id: 'section-past', name: 'Past', startBeat: 8 + 1e-7, endBeat: 20 }];
+
+            expect(resolveIn(pastBarLine, { section: 'Past', barsBefore: 2 })).toMatchObject({
+                kind: 'invalid-range',
+                reason: expect.stringMatching(/"Past".*inside bar 3/u) as unknown,
+            });
+        });
+
+        it.each([
+            ['Bar 9 Drop', 'in Bar 9 Drop', 100, 116],
+            ['Bar 9', 'in Bar 9', 100, 116],
+        ])('reads a section named "%s" as the section, not as bar 9', async (name, phrase, startBeat, endBeat) => {
+            const context = {
+                ...projectWithTwoChoruses(),
+                sections: [
+                    { id: 'section-intro', name: 'Intro', startBeat: 0, endBeat: 100 },
+                    { id: 'section-bar-named', name, startBeat, endBeat },
+                ],
+            };
+            scriptDip(name);
+            const result = await parsePromptToActions({
+                prompt: `Dip the Lead Vocal by 6 dB ${phrase} with 0.5 beat ramps in and out.`,
+                context,
+                projectRevision: `revision-${name}`,
+            });
+
+            expect(result.planningOutcome, JSON.stringify(result)).toEqual({ kind: 'proposal' });
+            expect(result.actions).toMatchObject([{ payload: { startBeat, endBeat } }]);
+        });
+
         it('proposes the bars before the second chorus with the beats the application derives', async () => {
             // The second chorus opens at beat 112, bar 29 in 4/4: the last four bars before it are bars 25–28.
             scriptDipRange({ section: 'second chorus', barsBefore: 4 });

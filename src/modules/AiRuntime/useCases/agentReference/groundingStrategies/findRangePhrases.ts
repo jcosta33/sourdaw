@@ -160,14 +160,18 @@ function findSectionRanges(text: string, context: ProjectContext): RangePhrase[]
  * refuses them. A section connector another form already read is not read again.
  */
 export function findRangePhrases(text: string, context: ProjectContext): StatedRangePhrase[] {
+    const sections = findSectionRanges(text, context);
+    // A section whose name opens like a bar ("Bar 9 Drop") answers its own connector, so the section
+    // reading wins and a single bar stands only where no place answers.
+    const singleBars = findSingleBars(text, context).filter(
+        (bar) => !sections.some((section) => section.start === bar.start)
+    );
     const numeric: StatedRangePhrase[] = [
-        ...findSingleBars(text, context),
+        ...singleBars,
         ...findBarsBefore(text, context),
         ...findNumericRanges(text, BAR_RANGE_PATTERN, (startBar, endBar) => ({ startBar, endBar }), context),
         ...findNumericRanges(text, BEAT_RANGE_PATTERN, (startBeat, endBeat) => ({ startBeat, endBeat }), context),
     ];
-    const sections = findSectionRanges(text, context).filter(
-        (section) => !numeric.some((phrase) => phrase.start === section.start)
-    );
-    return [...numeric, ...sections].sort((left, right) => left.start - right.start);
+    const unclaimedSections = sections.filter((section) => !numeric.some((phrase) => phrase.start === section.start));
+    return [...numeric, ...unclaimedSections].sort((left, right) => left.start - right.start);
 }
