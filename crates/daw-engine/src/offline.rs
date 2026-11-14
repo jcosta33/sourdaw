@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn an_offline_render_flushes_denormals_and_restores_the_thread_register() {
         use crate::float_mode::test_support::{
-            clear_flush_bits, control_register_probe, read_control, write, FLUSH,
+            clear_flush_bits, control_bits, control_register_probe, read_control, write, FLUSH,
         };
 
         let original = clear_flush_bits();
@@ -337,9 +337,9 @@ mod tests {
             "the probe must have processed a block"
         );
         assert_eq!(
-            readings.last_seen() & FLUSH,
-            FLUSH,
-            "the plugin must process with denormals flushed"
+            control_bits(readings.last_seen()),
+            before | FLUSH,
+            "the plugin must process with only the flush bits added to the prior control value"
         );
         assert_eq!(
             read_control(),

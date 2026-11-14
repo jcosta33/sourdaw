@@ -201,20 +201,42 @@ pub(crate) mod test_support {
         control_bits(read())
     }
 
+    /// Round toward zero: a valid control field the thread does not hold by
+    /// default, so a guard that writes the flush bits alone, or a restore that
+    /// drops other control fields, is visible. MXCSR RC is bits 14:13.
+    #[cfg(target_arch = "x86_64")]
+    const ROUND_TOWARD_ZERO: Bits = 0b11 << 13;
+
+    /// Round toward zero, as above. FPCR RMode is bits 23:22.
+    #[cfg(target_arch = "aarch64")]
+    const ROUND_TOWARD_ZERO: Bits = 0b11 << 22;
+
+    /// Writes `start` with round-toward-zero added and asserts the field took.
+    fn write_start(start: Bits) {
+        write(start | ROUND_TOWARD_ZERO);
+        assert_eq!(
+            read() & ROUND_TOWARD_ZERO,
+            ROUND_TOWARD_ZERO,
+            "the non-default rounding field must start set"
+        );
+    }
+
     /// The thread's register with the flush bits cleared and asserted
-    /// cleared, returning the original so the test can put it back.
+    /// cleared and a non-default rounding field set, returning the original so
+    /// the test can put it back.
     pub(crate) fn clear_flush_bits() -> Bits {
         let original = read();
-        write(original & !FLUSH);
+        write_start(original & !FLUSH);
         assert_eq!(read() & FLUSH, 0, "the flush bits must start cleared");
         original
     }
 
-    /// The thread's register with the flush bits set and asserted set,
-    /// returning the original so the test can put it back.
+    /// The thread's register with the flush bits set and asserted set and a
+    /// non-default rounding field set, returning the original so the test can
+    /// put it back.
     pub(crate) fn set_flush_bits() -> Bits {
         let original = read();
-        write(original | FLUSH);
+        write_start(original | FLUSH);
         assert_eq!(read() & FLUSH, FLUSH, "the flush bits must start set");
         original
     }
@@ -287,11 +309,10 @@ mod tests {
         let before = read_control();
 
         let guard = FlushDenormals::engage();
-        assert_eq!(read() & FLUSH, FLUSH, "the flush bits are set while held");
         assert_eq!(
-            read_control() & !FLUSH,
-            before & !FLUSH,
-            "only the flush bits change"
+            read_control(),
+            before | FLUSH,
+            "while held, only the flush bits are added to the prior control value"
         );
         drop(guard);
 
@@ -310,6 +331,7 @@ mod tests {
 
         let outer = FlushDenormals::engage();
         let inside_outer = read_control();
+        assert_eq!(inside_outer, before | FLUSH);
         let inner = FlushDenormals::engage();
         assert_eq!(read_control(), inside_outer);
         drop(inner);

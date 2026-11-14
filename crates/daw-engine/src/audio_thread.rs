@@ -5067,7 +5067,9 @@ mod capture_render_tests {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     #[test]
     fn the_render_callback_flushes_denormals_and_restores_the_thread_register() {
-        use crate::float_mode::test_support::{clear_flush_bits, read_control, write, FLUSH};
+        use crate::float_mode::test_support::{
+            clear_flush_bits, control_bits, read_control, write, FLUSH,
+        };
 
         let original = clear_flush_bits();
         let before = read_control();
@@ -5075,9 +5077,9 @@ mod capture_render_tests {
         let readings = render_one_callback_through_a_register_probe();
 
         assert_eq!(
-            readings.last_seen() & FLUSH,
-            FLUSH,
-            "the plugin must process with denormals flushed"
+            control_bits(readings.last_seen()),
+            before | FLUSH,
+            "the plugin must process with only the flush bits added to the prior control value"
         );
         assert_eq!(
             read_control(),
@@ -5090,14 +5092,16 @@ mod capture_render_tests {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     #[test]
     fn the_render_callback_leaves_a_thread_already_flushing_flushing() {
-        use crate::float_mode::test_support::{read_control, set_flush_bits, write, FLUSH};
+        use crate::float_mode::test_support::{
+            control_bits, read_control, set_flush_bits, write, FLUSH,
+        };
 
         let original = set_flush_bits();
         let before = read_control();
 
         let readings = render_one_callback_through_a_register_probe();
 
-        assert_eq!(readings.last_seen() & FLUSH, FLUSH);
+        assert_eq!(control_bits(readings.last_seen()), before | FLUSH);
         assert_eq!(
             read_control(),
             before,
