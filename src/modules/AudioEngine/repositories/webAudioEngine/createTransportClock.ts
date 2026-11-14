@@ -71,7 +71,7 @@ function allocateTransportViews(): TransportViews | null {
     //
     // Guard the allocation with hasSharedArrayBuffer(): without COOP+COEP the
     // global is absent and `new SharedArrayBuffer(...)` throws. This runs at
-    // module load (`export const audioEngine = createAudioEngine()`), so an
+    // module load (`export const audioEngine = composeWebAudioEngine().engine`), so an
     // unguarded throw here aborts the whole module import on a non-isolated
     // page. When SAB is unavailable the views stay null and write no-ops, so
     // the worklet readers just fall back to their default transport — no torn
