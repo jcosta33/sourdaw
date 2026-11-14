@@ -1,6 +1,6 @@
 # Lint engine ownership
 
-`scripts/runLint.ts` runs the existing native `.oxlintrc.json` pass, the public JavaScript
+For checks, `scripts/runLint.ts` runs the existing native `.oxlintrc.json` pass, the public JavaScript
 plugins in `.oxlint-plugins.json`, then the retained `eslint.config.mjs` pass. The plugin
 and final ESLint passes retain the previous ESLint targets and ignore set, with
 `scripts/lint/sourdaw.mjs` explicitly added to their full targets. The native pass
@@ -19,7 +19,7 @@ dynamic expressions.
 Oxlint reserves native plugin names. Public plugin rules therefore use
 `react-hooks-js/`, `promise-js/`, and `jsx-a11y-x-js/` in configurations and inline disable
 comments. The remaining plugin names stay unchanged. ESLint registers these names
-without enabling moved rules, so the split passes accept each other's suppressions.
+without enabling moved rules in check mode, so the split passes accept each other's suppressions.
 Unused-disable reporting remains off because neither pass observes all rules.
 
 ESLint remains necessary for `@eslint-react/no-leaked-conditional-rendering`,
@@ -33,10 +33,18 @@ TypeScript and Node resolver functions. Core rules retain their ESLint implement
 and the existing size baseline rather than assuming that a similarly named native
 rule has identical semantics.
 
-Prettier stays last in the ESLint pass with the core and import-order fixers. Their
-shared fix iterations must observe the final formatted line counts: a compact
-function can pass a size limit and exceed it once formatted. Splitting those fixes
-would require another convergence mechanism merely to move formatting between engines.
+For `--fix`, the native Oxlint pass runs first, then ESLint owns all remaining fixes
+in one existing fix loop. The runner explicitly selects this mode before loading
+ESLint's config; checks clear inherited fix intent and use a separate content cache.
+ESLint reads the canonical moved rules, settings, and ordered filename overrides
+from `.oxlint-plugins.json`, retaining its parser and type-checking exclusions.
+Prettier stays last alongside core, import-order, and public-plugin fixers. Formatting
+can move a nested diagnostic beyond a next-line suppression, expose a comment that
+needs another fix, or expand a compact function beyond its size limit. The shared
+loop fixes exposed comments and reports remaining violations on the final text.
+After that loop succeeds, the public-plugin Oxlint pass checks the final bytes without
+fixing them. This preserves its CommonJS parser and missing/unsupported-target
+admission contracts while ESLint remains the last writer.
 
 The React plugin consumes `settings['react-x']`, which still detects the installed
 React version. Hooks consumes `settings['react-hooks']`, and the accessibility fork

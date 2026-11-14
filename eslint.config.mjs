@@ -3,6 +3,8 @@
 // @ts-check
 // Oxlint executes supported public JS plugins in .oxlint-plugins.json.
 // These rules retain ESLint's parser services, resolver functions or core semantics.
+import { readFileSync } from 'node:fs';
+
 import eslintPluginComments from '@eslint-community/eslint-plugin-eslint-comments/configs';
 import eslintPluginReact from '@eslint-react/eslint-plugin';
 import eslintPluginStylistic from '@stylistic/eslint-plugin';
@@ -18,6 +20,84 @@ import tseslint from 'typescript-eslint';
 
 import { sizeBaselineFiles } from './eslint.size-baseline.mjs';
 import sourdawPlugin from './scripts/lint/sourdaw.mjs';
+
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+function isRecord(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** @param {unknown} value @returns {value is import('eslint').Linter.Severity | import('eslint').Linter.StringSeverity} */
+function isSeverity(value) {
+    return value === 0 || value === 1 || value === 2 || value === 'off' || value === 'warn' || value === 'error';
+}
+
+/** @param {unknown} value @param {string} location @returns {import('eslint').Linter.RulesRecord} */
+function movedFixRules(value, location) {
+    if (!isRecord(value)) {
+        throw new TypeError(`Invalid moved lint rules at ${location}`);
+    }
+    /** @type {import('eslint').Linter.RulesRecord} */
+    const rules = {};
+    for (const [name, setting] of Object.entries(value)) {
+        if (isSeverity(setting)) {
+            rules[name] = setting;
+            continue;
+        }
+        if (Array.isArray(setting) && isSeverity(setting[0])) {
+            /** @type {unknown[]} */
+            const options = setting.slice(1);
+            rules[name] = [setting[0], ...options];
+            continue;
+        }
+        throw new TypeError(`Invalid moved lint severity at ${location}.${name}`);
+    }
+    return rules;
+}
+
+/** @param {unknown} value @param {string} location @returns {string[]} */
+function movedFixPatterns(value, location) {
+    if (!Array.isArray(value) || !value.every((pattern) => typeof pattern === 'string')) {
+        throw new TypeError(`Invalid moved lint file patterns at ${location}`);
+    }
+    return value;
+}
+
+/** @returns {import('@typescript-eslint/utils').TSESLint.FlatConfig.Config[]} */
+function movedFixConfig() {
+    if (process.env.SOURDAW_LINT_COFIX !== '1') {
+        return [];
+    }
+    /** @type {unknown} */
+    const config = JSON.parse(readFileSync(new URL('./.oxlint-plugins.json', import.meta.url), 'utf8'));
+    if (!isRecord(config) || !isRecord(config.settings) || !Array.isArray(config.overrides)) {
+        throw new TypeError('Invalid moved lint configuration in .oxlint-plugins.json');
+    }
+    /** @type {import('@typescript-eslint/utils').TSESLint.FlatConfig.Config[]} */
+    const configs = [{ settings: config.settings, rules: movedFixRules(config.rules, 'rules') }];
+    for (const [index, override] of config.overrides.entries()) {
+        if (!isRecord(override)) {
+            throw new TypeError(`Invalid moved lint override at overrides[${index}]`);
+        }
+        for (const field of Object.keys(override)) {
+            if (!['files', 'excludeFiles', 'env', 'rules'].includes(field)) {
+                throw new TypeError(`Unsupported moved lint override field at overrides[${index}].${field}`);
+            }
+        }
+        if (override.rules === undefined) {
+            continue;
+        }
+        /** @type {import('@typescript-eslint/utils').TSESLint.FlatConfig.Config} */
+        const entry = {
+            files: movedFixPatterns(override.files, `overrides[${index}].files`),
+            rules: movedFixRules(override.rules, `overrides[${index}].rules`),
+        };
+        if (override.excludeFiles !== undefined) {
+            entry.ignores = movedFixPatterns(override.excludeFiles, `overrides[${index}].excludeFiles`);
+        }
+        configs.push(entry);
+    }
+    return configs;
+}
 
 /** @type {import('@typescript-eslint/utils').TSESLint.FlatConfig.Config[]} */
 const sizeBaselineConfig = [];
@@ -60,7 +140,7 @@ export default tseslint.config(
     {
         linterOptions: { reportUnusedDisableDirectives: false },
         // Register moved rule names so their disable comments remain valid in
-        // this pass. Only .oxlint-plugins.json enables their implementations.
+        // check mode. Fix mode enables the same canonical settings below.
         plugins: {
             '@eslint-react': eslintPluginReact,
             '@tanstack/query': eslintPluginQuery,
@@ -365,6 +445,7 @@ export default tseslint.config(
             complexity: 'off',
         },
     },
+    ...movedFixConfig(),
     {
         files: ['tests/e2e/**/*.ts'],
         rules: {

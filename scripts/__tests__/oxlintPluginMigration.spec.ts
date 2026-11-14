@@ -9,6 +9,11 @@ import { describe, expect, it } from 'vitest';
 import { typeQueryLintFixtures } from './helpers/typeQueryLintFixtures.ts';
 import { lintMigratedRules, runProductionLint } from './helpers/lintMigratedRules.ts';
 import { configuredSourdawRules } from './helpers/configuredSourdawRules.ts';
+import { eslintEnvironment } from '../runLint.ts';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 const cases = [
     ...typeQueryLintFixtures,
@@ -267,6 +272,37 @@ describe('production Oxlint public-plugin migration', () => {
         expect(result.output).toContain('max-lines-per-function');
     }, 180_000);
 
+    it('rejects hook violations exposed when formatting moves them beyond a next-line suppression', () => {
+        const input =
+            "import { useState } from 'react';\n\n" +
+            '// eslint-disable-next-line react-hooks-js/rules-of-hooks, @eslint-react/rules-of-hooks -- Controlled suppression scope probe.\n' +
+            'export function useExample(ready: boolean) { if (ready) { useState(0); } }\n';
+        const filename = 'src/modules/Example/presentations/hooks/useExample.tsx';
+        const fixed = runProductionLint(input, filename, true);
+        expect(fixed.text).toContain('    if (ready) {\n        useState(0);\n    }');
+        const checked = runProductionLint(fixed.text, filename);
+        for (const result of [fixed, checked]) {
+            expect(result.status, result.output).toBe(1);
+            expect(result.output).toMatch(/@eslint-react(?:\/|\()rules-of-hooks/);
+            expect(result.output).toMatch(/react-hooks-js(?:\/|\()rules-of-hooks/);
+        }
+    }, 180_000);
+
+    it('fixes comment violations exposed when formatting moves them beyond a next-line suppression', () => {
+        const input =
+            '// eslint-disable-next-line @stylistic/spaced-comment -- Controlled suppression scope probe.\n' +
+            'export function example() { /*comment*/ return 1; }\n';
+        const filename = 'src/modules/Example/presentations/hooks/useExample.tsx';
+        const fixed = runProductionLint(input, filename, true);
+        expect(fixed.status, fixed.output).toBe(0);
+        expect(fixed.text).toBe(
+            '// eslint-disable-next-line @stylistic/spaced-comment -- Controlled suppression scope probe.\n' +
+                'export function example() {\n    /* comment */ return 1;\n}\n'
+        );
+        const checked = runProductionLint(fixed.text, filename);
+        expect(checked.status, checked.output).toBe(0);
+    }, 180_000);
+
     it('keeps migrated comment fixes and suppression valid after final formatting', () => {
         const input = '//comment\n// eslint-disable-next-line sourdaw/no-enum\nexport enum Fruit{Apple}\n';
         const fixed = runProductionLint(input, 'scripts/example.ts', true);
@@ -325,6 +361,106 @@ describe('production Oxlint public-plugin migration', () => {
         expect(plugins).not.toContain('no-rest-destructuring');
     });
 
+    it('reuses canonical moved settings in cofix mode without changing retained or parser scopes', () => {
+        const query = `
+            import { ESLint } from 'eslint';
+            const eslint = new ESLint();
+            const targets = {
+                app: 'src/app/App.tsx',
+                spec: 'src/app/__tests__/App.spec.tsx',
+                script: 'scripts/runLint.ts',
+                tool: 'scripts/example.mjs',
+                server: 'server/example.ts',
+                e2e: 'tests/e2e/example.ts',
+                declaration: 'src/app/example.d.ts',
+            };
+            const result = {};
+            for (const [name, filename] of Object.entries(targets)) {
+                const config = await eslint.calculateConfigForFile(filename);
+                if (!config) throw new Error('Missing config for ' + filename);
+                result[name] = {
+                    rules: config.rules,
+                    project: config.languageOptions.parserOptions.project,
+                    react: config.settings['react-x'],
+                };
+            }
+            console.log(JSON.stringify(result));
+        `;
+        const inspect = (fix: boolean) => {
+            const result = spawnSync(process.execPath, ['--input-type=module', '-e', query], {
+                cwd: process.cwd(),
+                encoding: 'utf8',
+                timeout: 60_000,
+                env: eslintEnvironment(process.env, fix),
+            });
+            expect(result.status, result.stdout + result.stderr).toBe(0);
+            const configs: unknown = JSON.parse(result.stdout);
+            if (!isRecord(configs)) {
+                throw new TypeError('ESLint did not return configuration snapshots');
+            }
+            return Object.fromEntries(
+                Object.entries(configs).map(([target, config]) => {
+                    if (!isRecord(config) || !isRecord(config.rules)) {
+                        throw new TypeError(`ESLint returned an invalid configuration snapshot for ${target}`);
+                    }
+                    return [target, { rules: config.rules, project: config.project, react: config.react }];
+                })
+            );
+        };
+        const check = inspect(false);
+        const fix = inspect(true);
+        const canonical: unknown = JSON.parse(readFileSync('.oxlint-plugins.json', 'utf8'));
+        if (!isRecord(canonical) || !isRecord(canonical.settings) || !Array.isArray(canonical.overrides)) {
+            throw new TypeError('The canonical plugin configuration is incomplete');
+        }
+        const stylistic = canonical.overrides.find(
+            (entry: unknown) =>
+                isRecord(entry) && isRecord(entry.rules) && entry.rules['@stylistic/spaced-comment'] !== undefined
+        );
+        if (!isRecord(stylistic) || !isRecord(stylistic.rules)) {
+            throw new TypeError('The canonical plugin configuration has no comment rule');
+        }
+        const commentSetting = stylistic.rules['@stylistic/spaced-comment'];
+        if (!Array.isArray(commentSetting)) {
+            throw new TypeError('The canonical comment rule has no options');
+        }
+        for (const target of ['app', 'spec', 'script', 'tool', 'server', 'e2e', 'declaration']) {
+            expect(fix[target].react, target).toEqual(canonical.settings['react-x']);
+            expect(fix[target].project, target).toEqual(check[target].project);
+            for (const rule of [
+                '@eslint-react/no-leaked-conditional-rendering',
+                '@tanstack/query/no-rest-destructuring',
+                '@tanstack/query/no-void-query-fn',
+                '@typescript-eslint/naming-convention',
+                'import-x/order',
+                'max-lines',
+                'prettier/prettier',
+            ]) {
+                expect(fix[target].rules[rule], `${target}: ${rule}`).toEqual(check[target].rules[rule]);
+            }
+            if (target === 'tool') {
+                expect(fix[target].rules['@stylistic/spaced-comment'], target).toBeUndefined();
+            } else {
+                expect(fix[target].rules['@stylistic/spaced-comment'], target).toEqual([2, ...commentSetting.slice(1)]);
+            }
+            expect(check[target].rules['@stylistic/spaced-comment']).toBeUndefined();
+        }
+        expect(fix.app.rules['sourdaw/no-type-assertion-escape']).toEqual([2]);
+        expect(fix.spec.rules['sourdaw/no-type-assertion-escape']).toEqual([0]);
+        expect(fix.tool.rules['sourdaw/no-enum']).toBeUndefined();
+        expect(fix.tool.rules['@eslint-react/no-leaked-conditional-rendering']).toEqual([0]);
+        const naming = fix.tool.rules['@typescript-eslint/naming-convention'];
+        if (!Array.isArray(naming)) {
+            throw new TypeError('ESLint returned no naming-convention setting for JavaScript tooling');
+        }
+        expect(naming[0]).toBe(0);
+        expect(fix.app.rules['react-hooks-js/purity']).toEqual([2]);
+        expect(fix.app.rules['react-hooks-js/refs']).toEqual([1]);
+        expect(fix.server.project).toBe('./server/tsconfig.json');
+        expect(fix.e2e.project).toBe('./tsconfig.e2e.json');
+        expect(fix.tool.project).toBe(false);
+    }, 130_000);
+
     it.each(['eslint.config.mjs', 'scripts/lint/sourdaw.mjs'])(
         'runs both lint engines on %s',
         (target) => {
@@ -369,28 +505,54 @@ describe('production Oxlint public-plugin migration', () => {
         }
     });
 
-    it('rejects missing, unmatched, unsupported and partially missing production targets', () => {
-        const directory = mkdtempSync(resolve('scripts/lint-targets-'));
-        const valid = join(directory, 'valid.ts');
-        const missing = join(directory, 'missing.ts');
-        const unsupported = join(directory, 'example.rs');
-        try {
-            writeFileSync(valid, 'export const value = 1;\n');
-            writeFileSync(unsupported, 'fn main() {}\n');
-            for (const targets of [[missing], [join(directory, 'absent/**/*.ts')], [unsupported], [valid, missing]]) {
-                const result = spawnSync(process.execPath, ['scripts/runLint.ts', ...targets], {
-                    cwd: process.cwd(),
-                    encoding: 'utf8',
-                    timeout: 120_000,
-                    env: { ...process.env, npm_config_verify_deps_before_run: 'false' },
-                });
-                expect(result.status, result.stdout + result.stderr).toBe(1);
+    it.each([false, true])(
+        'rejects missing, unmatched, unsupported and partially missing targets (fix=%s)',
+        (fix) => {
+            const directory = mkdtempSync(resolve('scripts/lint-targets-'));
+            const valid = join(directory, 'valid.ts');
+            const missing = join(directory, 'missing.ts');
+            const unsupported = join(directory, 'example.rs');
+            try {
+                writeFileSync(valid, 'export const value = 1;\n');
+                writeFileSync(unsupported, 'fn main() {}\n');
+                for (const targets of [
+                    [missing],
+                    [join(directory, 'absent/**/*.ts')],
+                    [unsupported],
+                    [valid, missing],
+                ]) {
+                    const args = ['scripts/runLint.ts'];
+                    if (fix) {
+                        args.push('--fix');
+                    }
+                    args.push(...targets);
+                    const result = spawnSync(process.execPath, args, {
+                        cwd: process.cwd(),
+                        encoding: 'utf8',
+                        timeout: 120_000,
+                        env: { ...process.env, npm_config_verify_deps_before_run: 'false' },
+                    });
+                    expect(result.status, result.stdout + result.stderr).toBe(1);
+                }
+            } finally {
+                unlinkSync(valid);
+                unlinkSync(unsupported);
+                rmdirSync(directory);
             }
-        } finally {
-            unlinkSync(valid);
-            unlinkSync(unsupported);
-            rmdirSync(directory);
-        }
+        },
+        180_000
+    );
+
+    it('validates CommonJS parser admission after ESLint finishes fixing', () => {
+        const invalid = runProductionLint('export const value = 1;\n', 'scripts/example.cjs', true);
+        expect(invalid.status, invalid.output).toBe(1);
+        expect(invalid.output).toContain('lint: eslint passed');
+        expect(invalid.output).toMatch(/lint: eslint passed[^]*lint: oxlint-plugins started/);
+        expect(invalid.output).toContain('lint: oxlint-plugins failed');
+        const valid = runProductionLint('module.exports = { value: 1 };\n', 'scripts/example.cjs', true);
+        expect(valid.status, valid.output).toBe(0);
+        expect(valid.output).toMatch(/lint: eslint passed[^]*lint: oxlint-plugins passed/);
+        expect(valid.text).toBe('module.exports = { value: 1 };\n');
     }, 180_000);
 
     it('applies the production Oxlint custom rules to invalid and valid TypeScript', () => {
