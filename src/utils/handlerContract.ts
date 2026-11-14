@@ -1372,7 +1372,7 @@ type GeneratedMidiReplayOperation =
  */
 export type AutomationRecordingPolicy = 'suppressed';
 
-export type AppAction =
+type LegacyAppAction =
     | {
           type: 'importStemSet';
           payload: {
@@ -2071,13 +2071,6 @@ export type AppAction =
               expectedPreFader?: boolean;
           };
       }
-    | { type: 'setWorkspaceMode'; payload: { mode: 'arrange' | 'clip' } }
-    | { type: 'openPreferencesDialog'; payload?: undefined }
-    | { type: 'openMixer'; payload?: undefined }
-    | { type: 'closeMixer'; payload?: undefined }
-    | { type: 'toggleSidebar'; payload?: undefined }
-    | { type: 'toggleInspector'; payload?: undefined }
-    | { type: 'toggleChatPanel'; payload?: undefined }
     | { type: 'setTrackInput'; payload: { trackId: string; inputId: string | null } }
     | {
           /** Guarded inverse and redo of `setTrackInput`. Replaying the captured prior
@@ -2088,11 +2081,6 @@ export type AppAction =
            *  Emitted only by the `setTrackInput` handler's `describe()`. */
           type: 'restoreTrackInput';
           payload: { trackId: string; expected: string | null; replacement: string | null };
-      }
-    | { type: 'setEditingTool'; payload: { tool: string } }
-    | {
-          type: 'setMarqueeSelection';
-          payload: { selection: { startBeat: number; endBeat: number; trackIds: string[] } | null };
       }
     | { type: 'addMarker'; payload: { beat: number; name: string; markerId?: string; color?: string } }
     | { type: 'removeMarker'; payload: { markerId: string } }
@@ -2504,7 +2492,6 @@ export type AppAction =
               expectedFadeOutBeats?: number;
           };
       }
-    | { type: 'importMidiFile'; payload?: undefined }
     | { type: 'normalizeClip'; payload: { clipId: string; mode?: 'peak' | 'rms' | 'lufs'; targetDb?: number } }
     | {
           type: 'reverseClip';
@@ -2765,13 +2752,6 @@ export type AppAction =
           payload: { trackId: string; expected: boolean; replacement: boolean };
       }
     | { type: 'setTrackHeight'; payload: { trackId: string; height: number } }
-    | { type: 'setSnapValue'; payload: { value: number } }
-    | { type: 'zoomToFit'; payload?: undefined }
-    | { type: 'zoomToSelection'; payload?: undefined }
-    | { type: 'exportProject'; payload?: undefined }
-    | { type: 'saveProject'; payload?: undefined }
-    | { type: 'newProject'; payload?: undefined }
-    | { type: 'importAudioFile'; payload?: undefined }
     | { type: 'exportMidi'; payload: { clipId: string } }
     | { type: 'foldTrack'; payload: { trackId: string; folded: boolean } }
     | { type: 'groupTracks'; payload: { trackIds: string[]; name: string } }
@@ -3311,8 +3291,6 @@ export type AppAction =
           type: 'restoreMidiLearnMappings';
           payload: { expected: MidiLearnMappingsActionSnapshot; replacement: MidiLearnMappingsActionSnapshot };
       }
-    | { type: 'toggleScratchPad'; payload?: undefined }
-    | { type: 'captureScratchPad'; payload?: undefined }
     | { type: 'commitScratchPad'; payload?: undefined }
     | { type: 'clearScratchPad'; payload?: undefined }
     | {
@@ -3611,6 +3589,17 @@ export type AppAction =
       };
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
+
+/**
+ * Open registry of app-action variants. Each owning module adds a key from its `events/`
+ * folder; `legacy` holds the variants not yet moved.
+ */
+// eslint-disable-next-line @typescript-eslint/consistent-type-definitions -- declaration-merging target: a type alias cannot merge
+export interface AppActionRegistry {
+    legacy: LegacyAppAction;
+}
+
+export type AppAction = AppActionRegistry[keyof AppActionRegistry];
 
 export type AppActionType = AppAction['type'];
 
