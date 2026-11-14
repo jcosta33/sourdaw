@@ -1,4 +1,4 @@
-import { readBarStartBeat } from '#/modules/Transport/stores';
+import { readBarAtBeat, readBarStartBeat } from '#/modules/Transport/stores';
 
 import {
     resolveMusicalRangeReference,
@@ -26,5 +26,6 @@ export function readMusicalRange({ range }: ReadMusicalRangeInput): MusicalRange
         markers: markerStore.value?.markers ?? [],
         tracks: trackStore.value?.tracks ?? [],
         barStartBeat: (bar) => readBarStartBeat({ bar }),
+        barAtBeat: (beat) => readBarAtBeat({ beat }),
     });
 }

@@ -143,8 +143,8 @@ function isBarNumber(value: unknown): value is number {
 }
 
 /**
- * A range stated in exactly one form: a section reference, a bar range with both
- * ends, or a beat range with both ends. Whether it ends after it starts is the
+ * A range stated in exactly one form: a section reference, a section with the bars
+ * before it, a bar range with both ends, or a beat range with both ends. Whether it ends after it starts is the
  * resolver's to say, with the reason, rather than a bare shape refusal here.
  */
 function isMusicalRangeReference(value: unknown): boolean {
@@ -153,6 +153,9 @@ function isMusicalRangeReference(value: unknown): boolean {
     }
     if (hasExactKeys(value, ['section'])) {
         return isNonEmptyString(value.section);
+    }
+    if (hasExactKeys(value, ['section', 'barsBefore'])) {
+        return isNonEmptyString(value.section) && isBarNumber(value.barsBefore);
     }
     if (hasExactKeys(value, ['startBar', 'endBar'])) {
         return isBarNumber(value.startBar) && isBarNumber(value.endBar);
