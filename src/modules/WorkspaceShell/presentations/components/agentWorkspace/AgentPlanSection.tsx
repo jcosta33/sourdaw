@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 
 import { Stack } from '#/components/layout';
 
-import { formatFigure, formatSignedDelta, measuredTargetName } from './measuredFigureText';
+import { formatBeatRange, formatFigure, formatSignedDelta, measuredTargetName } from './measuredFigureText';
 
 /**
  * The interpreted plan only. Provider reasoning is never part of this contract
@@ -28,6 +28,7 @@ type AgentPlanAudibleView =
           metrics: ReadonlyArray<{
               targetId: string;
               targetKind: 'master' | 'track' | 'bus';
+              range: { startBeat: number; endBeat: number };
               metricId: string;
               baseline: MeasuredFigureView;
               preview: MeasuredFigureView;
@@ -58,15 +59,30 @@ function renderAudibleImpact(audible: AgentPlanAudibleView, tracks: AgentPlanSec
     if (audible.status === 'not-claimed') {
         return <p className="text-xs text-muted-foreground">{`Audible impact ${audible.status}: ${audible.reason}`}</p>;
     }
+    const lineCount = new Map<string, number>();
+    for (const metric of audible.metrics) {
+        const key = `${metric.targetId}\u0000${metric.metricId}`;
+        lineCount.set(key, (lineCount.get(key) ?? 0) + 1);
+    }
     return (
         <>
             <p className="text-xs text-muted-foreground">Audible impact measured</p>
             <ul aria-label="Measured audible impact" className="list-inside list-disc text-xs text-foreground">
-                {audible.metrics.map((metric) => (
-                    <li key={`${metric.targetId}-${metric.metricId}`}>
-                        {`${measuredTargetName({ ...metric, targetName: tracks.find((track) => track.id === metric.targetId)?.name ?? null })} ${metric.metricId}: ${formatFigure(metric.baseline)} → ${formatFigure(metric.preview)} (${formatSignedDelta(metric.delta)})`}
-                    </li>
-                ))}
+                {audible.metrics.map((metric) => {
+                    const name = measuredTargetName({
+                        ...metric,
+                        targetName: tracks.find((track) => track.id === metric.targetId)?.name ?? null,
+                    });
+                    const repeated = (lineCount.get(`${metric.targetId}\u0000${metric.metricId}`) ?? 0) > 1;
+                    const range = repeated ? ` (${formatBeatRange(metric.range)})` : '';
+                    return (
+                        <li
+                            key={`${metric.targetId}-${metric.metricId}-${String(metric.range.startBeat)}-${String(metric.range.endBeat)}`}
+                        >
+                            {`${name} ${metric.metricId}${range}: ${formatFigure(metric.baseline)} → ${formatFigure(metric.preview)} (${formatSignedDelta(metric.delta)})`}
+                        </li>
+                    );
+                })}
             </ul>
         </>
     );

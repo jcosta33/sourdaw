@@ -22,3 +22,8 @@ export function formatSignedDelta(delta: Figure): string {
     const sign = delta.value > 0 ? '+' : '';
     return `${sign}${delta.value.toFixed(2)} ${delta.unit}`;
 }
+
+/** A measured beat range as the approval card's criteria state it. */
+export function formatBeatRange(range: { startBeat: number; endBeat: number }): string {
+    return `beats ${String(range.startBeat)}–${String(range.endBeat)}`;
+}

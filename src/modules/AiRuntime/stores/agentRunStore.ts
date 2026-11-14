@@ -924,6 +924,16 @@ function readMeasuredFigure(value: unknown): { value: number; unit: string } | n
     return unit === null ? null : { value: value.value, unit };
 }
 
+function readMeasuredRange(value: unknown): { startBeat: number; endBeat: number; sectionId: string | null } | null {
+    if (!isRecord(value) || typeof value.startBeat !== 'number' || typeof value.endBeat !== 'number') {
+        return null;
+    }
+    const sectionId = readNullableString(value.sectionId);
+    return !Number.isFinite(value.startBeat) || !Number.isFinite(value.endBeat) || sectionId === undefined
+        ? null
+        : { startBeat: value.startBeat, endBeat: value.endBeat, sectionId };
+}
+
 function readMeasuredAudibleMetric(value: unknown): AgentRunMeasuredAudibleMetric | null {
     if (!isRecord(value)) {
         return null;
@@ -934,6 +944,7 @@ function readMeasuredAudibleMetric(value: unknown): AgentRunMeasuredAudibleMetri
             ? value.targetKind
             : null;
     const metricId = readString(value.metricId);
+    const range = readMeasuredRange(value.range);
     const baseline = readMeasuredFigure(value.baseline);
     const preview = readMeasuredFigure(value.preview);
     const delta = readMeasuredFigure(value.delta);
@@ -944,7 +955,7 @@ function readMeasuredAudibleMetric(value: unknown): AgentRunMeasuredAudibleMetri
         preview === null ||
         delta === null
         ? null
-        : { targetId, targetKind, metricId, baseline, preview, delta };
+        : { targetId, targetKind, range, metricId, baseline, preview, delta };
 }
 
 /** A plan claims nothing audible, or the measured figures of one batch; any other shape is malformed. */

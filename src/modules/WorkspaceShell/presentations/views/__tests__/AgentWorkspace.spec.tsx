@@ -737,6 +737,42 @@ describe('AgentWorkspace', () => {
             expect(screen.getByText('Audible impact not-claimed: No render')).toBeInTheDocument();
         });
 
+        it('names the range of each line when one metric of a target was measured over several', () => {
+            agentRunControlsMock.list.mockReturnValue([projection()]);
+            const loudness = (startBeat: number, endBeat: number, delta: number) => ({
+                targetId: 'master-uuid',
+                targetKind: 'master' as const,
+                range: { startBeat, endBeat, sectionId: null },
+                metricId: 'integratedLoudness',
+                baseline: { value: -14, unit: 'LUFS' },
+                preview: { value: -14 + delta, unit: 'LUFS' },
+                delta: { value: delta, unit: 'LUFS' },
+            });
+            setRuns([
+                plannedRun({
+                    stoppingConditions: [],
+                    audible: {
+                        status: 'measured',
+                        revision: 'revision-1',
+                        batchContentHash: 'hash-1',
+                        metrics: [loudness(0, 4, 1.5), loudness(4, 8, 0.8)],
+                    },
+                }),
+            ]);
+
+            render(<AgentWorkspace />);
+
+            const list = screen.getByRole('list', { name: 'Measured audible impact' });
+            expect(
+                within(list)
+                    .getAllByRole('listitem')
+                    .map((item) => item.textContent)
+            ).toEqual([
+                'Master integratedLoudness (beats 0–4): -14.00 LUFS → -12.50 LUFS (+1.50 LUFS)',
+                'Master integratedLoudness (beats 4–8): -14.00 LUFS → -13.20 LUFS (+0.80 LUFS)',
+            ]);
+        });
+
         it('names each measured target as the approval card does and prints each moved figure in its format', () => {
             trackStore.set({
                 tracks: [createTrack({ id: 'track-uuid-1', name: 'Lead Vocal', kind: 'audio' })],
@@ -755,6 +791,7 @@ describe('AgentWorkspace', () => {
                             {
                                 targetId: 'track-uuid-1',
                                 targetKind: 'track',
+                                range: { startBeat: 0, endBeat: 4, sectionId: null },
                                 metricId: 'rms',
                                 baseline: { value: -20.123456789, unit: 'dBFS' },
                                 preview: { value: -17.0000001, unit: 'dBFS' },
@@ -763,6 +800,7 @@ describe('AgentWorkspace', () => {
                             {
                                 targetId: 'master-uuid',
                                 targetKind: 'master',
+                                range: { startBeat: 0, endBeat: 4, sectionId: null },
                                 metricId: 'truePeak',
                                 baseline: { value: -3, unit: 'dBTP' },
                                 preview: { value: -4.5, unit: 'dBTP' },
@@ -771,6 +809,7 @@ describe('AgentWorkspace', () => {
                             {
                                 targetId: 'bus-uuid',
                                 targetKind: 'bus',
+                                range: { startBeat: 0, endBeat: 4, sectionId: null },
                                 metricId: 'crestFactor',
                                 baseline: { value: 9, unit: 'dB' },
                                 preview: { value: 9, unit: 'dB' },

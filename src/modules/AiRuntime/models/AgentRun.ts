@@ -164,6 +164,8 @@ export type AgentRunMeasuredFigure = { value: number; unit: string };
 export type AgentRunMeasuredAudibleMetric = {
     targetId: string;
     targetKind: 'master' | 'track' | 'bus';
+    /** The beat range the figures were measured over. */
+    range: { startBeat: number; endBeat: number; sectionId: string | null };
     metricId: string;
     baseline: AgentRunMeasuredFigure;
     preview: AgentRunMeasuredFigure;

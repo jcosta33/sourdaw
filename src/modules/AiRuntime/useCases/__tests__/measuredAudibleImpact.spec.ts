@@ -186,6 +186,7 @@ function audible(): AudibleClaim {
 
 function movedFiguresFromApprovalCard(confirmationId: string) {
     const view = getAgentApprovalView({ confirmationId });
+    const range = view?.measuredPreview?.range;
     return (view?.measuredPreview?.targets ?? []).flatMap((target) =>
         target.metrics.flatMap((metric) => {
             if (
@@ -200,6 +201,7 @@ function movedFiguresFromApprovalCard(confirmationId: string) {
                 {
                     targetId: target.targetId,
                     targetKind: target.targetKind,
+                    range,
                     metricId: metric.metricId,
                     baseline: metric.baseline,
                     preview: metric.preview,
@@ -270,6 +272,7 @@ describe('the plan’s audible claim', () => {
         expect(claim.metrics[0]).toEqual({
             targetId: 'vocal',
             targetKind: 'track',
+            range: { startBeat: 0, endBeat: 4, sectionId: null },
             metricId: 'rms',
             baseline: { value: -20.123456789, unit: 'dBFS' },
             preview: { value: -17.0000001, unit: 'dBFS' },
@@ -291,6 +294,7 @@ describe('the plan’s audible claim', () => {
             {
                 targetId: 'vocal',
                 targetKind: 'track',
+                range: { startBeat: 0, endBeat: 4, sectionId: null },
                 metricId: 'rms',
                 baseline: { value: -20.123456789, unit: 'dBFS' },
                 preview: { value: -17.0000001, unit: 'dBFS' },
@@ -307,7 +311,6 @@ describe('the plan’s audible claim', () => {
             preview: { rms: entry('dBFS', rmsPreview) },
             deltas: { rms: compared('dBFS', delta) },
         });
-        const heldMaster = masterTarget(-14, 0);
         const vocalRms = (previewDb: number, delta: number): MeasuredPreviewTarget =>
             vocalTarget({
                 preview: { rms: entry('dBFS', previewDb) },
@@ -318,14 +321,15 @@ describe('the plan’s audible claim', () => {
             const card = proposeCard({
                 gain: 0.7,
                 preview: previewOf([vocalTarget()]),
-                proofPreviews: [previewOf([vocalTarget()]), previewOf([heldMaster])],
+                // A later proof of the same batch moves different figures; the card never showed them.
+                proofPreviews: [previewOf([vocalTarget()]), previewOf([vocalRms(-10, 10.123456789)])],
             });
             const claim = audible();
             if (claim.status !== 'measured') {
                 throw new Error(`Expected the card's measurement to be claimed, got: ${JSON.stringify(claim)}`);
             }
             expect(claim.metrics).toEqual(movedFiguresFromApprovalCard(card.confirmationId));
-            expect(claim.metrics.length).toBeGreaterThan(0);
+            expect(claim.metrics.map((metric) => metric.delta.value)).toEqual([3.123456689]);
         });
 
         it('lists metrics of different targets from different proofs when the card has no snapshot preview', () => {
@@ -360,6 +364,51 @@ describe('the plan’s audible claim', () => {
             expect(claim.metrics[0]?.preview).toEqual({ value: -15.5, unit: 'dBFS' });
             expect(claim.metrics[0]?.delta).toEqual({ value: 4.5, unit: 'dBFS' });
             expect(claim.metrics[1]?.preview).toEqual({ value: -2.25, unit: 'dBTP' });
+        });
+
+        const loudness = (delta: MeasuredMetricDelta, previewLufs: number): MeasuredPreviewTarget => ({
+            targetId: 'master',
+            targetKind: 'master',
+            baseline: { integratedLoudness: entry('LUFS', -14) },
+            preview: { integratedLoudness: entry('LUFS', previewLufs) },
+            deltas: { integratedLoudness: delta },
+        });
+        const over = (
+            range: MeasuredPreview['range'],
+            targets: readonly MeasuredPreviewTarget[]
+        ): ((bound: { revision: string; batchContentHash: string }) => MeasuredPreview) => {
+            return (bound) => ({ ...previewOf(targets)(bound), range });
+        };
+        const R1 = { startBeat: 0, endBeat: 4, sectionId: null };
+        const R2 = { startBeat: 4, endBeat: 8, sectionId: 'chorus' };
+
+        it.each([
+            ['held', compared('LUFS', 0)],
+            ['incomparable', { status: 'incomparable', reason: 'The renders cannot be compared.' } as const],
+        ])('lets a later proof that measures the metric as %s replace an earlier moved figure', (_name, later) => {
+            proposeCard({
+                gain: 0.7,
+                proofPreviews: [over(R1, [loudness(compared('LUFS', 1.5), -12.5)]), over(R1, [loudness(later, -14)])],
+            });
+            expect(audible().status).toBe('not-claimed');
+        });
+
+        it('lists one metric measured over different ranges once per range, each with its range', () => {
+            proposeCard({
+                gain: 0.7,
+                proofPreviews: [
+                    over(R1, [loudness(compared('LUFS', 1.5), -12.5)]),
+                    over(R2, [loudness(compared('LUFS', 0.8), -13.2)]),
+                ],
+            });
+            const claim = audible();
+            if (claim.status !== 'measured') {
+                throw new Error('Expected both ranges to be claimed.');
+            }
+            expect(claim.metrics.map((metric) => [metric.range, metric.delta.value])).toEqual([
+                [R1, 1.5],
+                [R2, 0.8],
+            ]);
         });
 
         it('never claims from a proof of another batch', () => {
@@ -401,6 +450,24 @@ describe('the plan’s audible claim', () => {
             throw new Error('The metrics with matching units are still claimed.');
         }
         expect(claim.metrics.map((metric) => metric.metricId)).toEqual(['truePeak', 'crestFactor']);
+    });
+
+    it('does not claim a change whose own unit disagrees with the metric definition', () => {
+        proposeCard({
+            gain: 0.7,
+            preview: previewOf([
+                vocalTarget({
+                    baseline: { rms: entry('dBFS', -20), truePeak: entry('dBTP', -3) },
+                    preview: { rms: entry('dBFS', -17), truePeak: entry('dBTP', -2) },
+                    deltas: { rms: compared('LUFS', 3), truePeak: compared('dBTP', 1) },
+                }),
+            ]),
+        });
+        const claim = audible();
+        if (claim.status !== 'measured') {
+            throw new Error('The metric whose change unit matches is still claimed.');
+        }
+        expect(claim.metrics.map((metric) => metric.metricId)).toEqual(['truePeak']);
     });
 
     it('claims nothing when every compared metric held', () => {

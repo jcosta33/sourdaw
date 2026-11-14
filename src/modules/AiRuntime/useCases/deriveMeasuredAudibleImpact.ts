@@ -23,29 +23,53 @@ function isObjectiveMetricId(metricId: string): metricId is ObjectiveMetricId {
     return Object.hasOwn(OBJECTIVE_METRIC_UNITS, metricId);
 }
 
-function movedMetrics(preview: MeasuredPreview): AgentRunMeasuredAudibleMetric[] {
+type MeasuredEntry = { key: string; metric: AgentRunMeasuredAudibleMetric | null };
+
+/**
+ * Every compared or incomparable entry a preview measured, keyed by target, metric and range. An
+ * entry that did not move, cannot be compared or has a figure or change in another unit than its
+ * metric definition fixes carries no metric, but still counts as that measurement's answer.
+ */
+function measuredEntries(preview: MeasuredPreview): MeasuredEntry[] {
+    const { startBeat, endBeat, sectionId } = preview.range;
+    const range = { startBeat, endBeat, sectionId };
     return preview.targets.flatMap((target) =>
-        Object.entries(target.deltas).flatMap(([metricId, delta]) => {
-            if (delta?.status !== 'compared' || delta.delta === 0 || !isObjectiveMetricId(metricId)) {
+        Object.entries(target.deltas).flatMap(([metricId, delta]): MeasuredEntry[] => {
+            if (delta === undefined || !isObjectiveMetricId(metricId)) {
                 return [];
             }
+            const key = [target.targetId, metricId, startBeat, endBeat, sectionId ?? ''].join('\u0000');
             const baseline = objectiveMetricProjection(metricId, target.baseline[metricId]);
             const previewed = objectiveMetricProjection(metricId, target.preview[metricId]);
-            if (baseline === null || previewed === null || delta.unit !== OBJECTIVE_METRIC_UNITS[metricId]) {
-                return [];
+            if (
+                delta.status !== 'compared' ||
+                delta.delta === 0 ||
+                baseline === null ||
+                previewed === null ||
+                delta.unit !== OBJECTIVE_METRIC_UNITS[metricId]
+            ) {
+                return [{ key, metric: null }];
             }
             return [
                 {
-                    targetId: target.targetId,
-                    targetKind: target.targetKind,
-                    metricId,
-                    baseline,
-                    preview: previewed,
-                    delta: { value: delta.delta, unit: delta.unit },
+                    key,
+                    metric: {
+                        targetId: target.targetId,
+                        targetKind: target.targetKind,
+                        range,
+                        metricId,
+                        baseline,
+                        preview: previewed,
+                        delta: { value: delta.delta, unit: delta.unit },
+                    },
                 },
             ];
         })
     );
+}
+
+function movedMetrics(preview: MeasuredPreview): AgentRunMeasuredAudibleMetric[] {
+    return measuredEntries(preview).flatMap((entry) => (entry.metric === null ? [] : [entry.metric]));
 }
 
 function claimOf(preview: MeasuredPreview, metrics: AgentRunMeasuredAudibleMetric[]): MeasuredAudibleImpact | null {
@@ -55,15 +79,18 @@ function claimOf(preview: MeasuredPreview, metrics: AgentRunMeasuredAudibleMetri
     return { status: 'measured', revision: preview.revision, batchContentHash: preview.batchContentHash, metrics };
 }
 
-/** Metrics of every bound proof, a later proof replacing an earlier figure of the same target and metric. */
+/**
+ * The latest bound proof's answer for each target, metric and range comes first, a held or
+ * incomparable answer included, and only then are the metrics that moved kept.
+ */
 function mergeProofMetrics(proofs: readonly MeasuredPreview[]): AgentRunMeasuredAudibleMetric[] {
-    const latest = new Map<string, AgentRunMeasuredAudibleMetric>();
+    const latest = new Map<string, AgentRunMeasuredAudibleMetric | null>();
     for (const proof of proofs) {
-        for (const metric of movedMetrics(proof)) {
-            latest.set(`${metric.targetId}\u0000${metric.metricId}`, metric);
+        for (const entry of measuredEntries(proof)) {
+            latest.set(entry.key, entry.metric);
         }
     }
-    return [...latest.values()];
+    return [...latest.values()].flatMap((metric) => (metric === null ? [] : [metric]));
 }
 
 /**
