@@ -106,6 +106,9 @@ describe('.oxlintrc.json warn levels', () => {
             const baselines = baselineOverridesOf(config, rule);
             expect(baselines).toHaveLength(1);
             const [baseline] = baselines;
+            if (!baseline) {
+                throw new Error(`no burn-down baseline for ${rule}`);
+            }
             const files = baselineFilesOf(baseline);
             expect(files.length).toBeGreaterThan(0);
             expect(files).toEqual([...new Set(files)].sort());
