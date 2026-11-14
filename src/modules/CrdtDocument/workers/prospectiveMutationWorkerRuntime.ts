@@ -27,7 +27,7 @@ export function materializeProspectiveMutation(request: unknown): ProspectiveMut
             throw new Error('Prospective mutation candidate has missing dependencies');
         }
         return {
-            changes: getChangesSince(document, input.heads).map((bytes) => Uint8Array.from(bytes)),
+            changes: getChangesSince(document, [...input.heads]).map((bytes) => Uint8Array.from(bytes)),
             heads: getHeads(document),
         };
     } finally {

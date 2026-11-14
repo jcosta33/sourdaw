@@ -52,7 +52,7 @@ export function requestProspectiveMutation(
                 'changes' in data &&
                 Array.isArray(data.changes) &&
                 data.changes.length <= 1 &&
-                data.changes.every(
+                Array.from(data.changes).every(
                     (bytes: unknown): bytes is Uint8Array<ArrayBuffer> =>
                         bytes instanceof Uint8Array &&
                         bytes.buffer instanceof ArrayBuffer &&
@@ -62,7 +62,7 @@ export function requestProspectiveMutation(
                 ) &&
                 'heads' in data &&
                 Array.isArray(data.heads) &&
-                data.heads.every(
+                Array.from(data.heads).every(
                     (head: unknown): head is string => typeof head === 'string' && /^[a-f0-9]{64}$/.test(head)
                 ) &&
                 new Set(data.heads).size === data.heads.length

@@ -89,7 +89,7 @@ function response(request: ProspectiveMutationWorkerRequest): ProspectiveMutatio
     );
     try {
         return {
-            changes: getChangesSince(candidate, request.heads).map((bytes) => Uint8Array.from(bytes)),
+            changes: getChangesSince(candidate, [...request.heads]).map((bytes) => Uint8Array.from(bytes)),
             heads: getHeads(candidate),
         };
     } finally {
@@ -400,7 +400,7 @@ describe('repository canonical Worker candidate adoption', () => {
                 ).newDoc;
                 try {
                     return {
-                        changes: getChangesSince(candidate, request.heads).map((bytes) => Uint8Array.from(bytes)),
+                        changes: getChangesSince(candidate, [...request.heads]).map((bytes) => Uint8Array.from(bytes)),
                         heads: getHeads(candidate),
                     };
                 } finally {
@@ -744,7 +744,7 @@ describe('repository canonical Worker candidate adoption', () => {
                 });
                 try {
                     return {
-                        changes: getChangesSince(changed, request.heads).map((bytes) => Uint8Array.from(bytes)),
+                        changes: getChangesSince(changed, [...request.heads]).map((bytes) => Uint8Array.from(bytes)),
                         heads: getHeads(changed),
                     };
                 } finally {
@@ -1116,7 +1116,7 @@ describe('repository canonical Worker candidate adoption', () => {
                         );
                     }
                     return {
-                        changes: getChangesSince(candidate, request.heads).map((bytes) => Uint8Array.from(bytes)),
+                        changes: getChangesSince(candidate, [...request.heads]).map((bytes) => Uint8Array.from(bytes)),
                         heads: getHeads(candidate),
                     };
                 } finally {
@@ -1139,7 +1139,7 @@ describe('repository canonical Worker candidate adoption', () => {
                 }
                 try {
                     return {
-                        changes: getChangesSince(candidate, request.heads).map((bytes) => Uint8Array.from(bytes)),
+                        changes: getChangesSince(candidate, [...request.heads]).map((bytes) => Uint8Array.from(bytes)),
                         heads: getHeads(candidate),
                     };
                 } finally {

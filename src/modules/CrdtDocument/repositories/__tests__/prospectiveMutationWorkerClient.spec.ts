@@ -82,6 +82,8 @@ describe('prospective mutation Worker ownership', () => {
 
     it.each([
         { changes: Uint8Array.of(1), heads: [] },
+        { changes: new Array(1), heads: [] },
+        { changes: [], heads: new Array(1) },
         { changes: [new Uint8Array()], heads: [] },
         { changes: [Uint8Array.of(1), Uint8Array.of(2)], heads: [] },
         { changes: [Uint8Array.of(1)], heads: ['invalid'] },
