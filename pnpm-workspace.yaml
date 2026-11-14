@@ -39,6 +39,8 @@ allowBuilds:
 # must not reload when that editor socket disconnects. Keep the browser control
 # in e2eHmrDisconnectBoundary.spec.ts when updating or removing this patch.
 patchedDependencies:
+    '@mlc-ai/web-llm@0.2.88': patches/@mlc-ai__web-llm@0.2.88.patch
+    'parse-entities@4.0.2': patches/parse-entities@4.0.2.patch
     dependency-cruiser@18.7.2: patches/dependency-cruiser@18.7.2.patch
     'eslint-plugin-react-jsx@5.30.2': patches/eslint-plugin-react-jsx@5.30.2.patch
     'eslint-plugin-react-x@5.30.2': patches/eslint-plugin-react-x@5.30.2.patch
@@ -140,6 +142,13 @@ patchedDependencies:
 # worker. Overriding core alone leaves incompatible backend kernels. Keep the
 # complete cohort together; bundled-model inference checks its actual runtime.
 overrides:
+    # Published consumers accept these current APIs and declarations. The native
+    # parser has no public route to its former project-service minimatch loader.
+    '@mlc-ai/web-llm@0.2.88>@types/chrome': 0.3.7
+    'parse-entities@4.0.2>@types/unist': 3.0.3
+    '@typescript-eslint/typescript-estree@8.72.2>minimatch': '-'
+    dependency-cruiser@18.7.2>rechoir: 1.0.0
+    knip@6.45.1>strip-json-comments: 5.1.0
     dependency-cruiser@18.7.2>enhanced-resolve: 5.27.0
     # These exact consumer forks use native7 AST/project/checker APIs. The
     # declarations mirror the source patches; removed edges belong to unused
@@ -417,6 +426,11 @@ minimumReleaseAgeExclude:
     - eslint@10.15.0
     - '@stylistic/eslint-plugin@6.0.0'
     - postcss@8.5.33
+    - '@playwright/test@1.65.1'
+    - lucide-react@1.73.0
+    - playwright-core@1.65.1
+    - playwright@1.65.1
+    - strip-json-comments@5.1.0
 
 packageExtensions:
     '@babel/generator@8.1.2':

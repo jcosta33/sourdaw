@@ -1,4 +1,5 @@
 diff --git a/lib/config/config-loader.js b/lib/config/config-loader.js
+index edf9c61..551ab5a 100644
 --- a/lib/config/config-loader.js
 +++ b/lib/config/config-loader.js
 @@ -11,7 +11,7 @@
@@ -11,9 +12,10 @@ diff --git a/lib/config/config-loader.js b/lib/config/config-loader.js
  const debug = require("debug")("eslint:config-loader");
  const { FlatConfigArray } = require("./flat-config-array");
 diff --git a/lib/config/config.js b/lib/config/config.js
+index 723fe30..5c72722 100644
 --- a/lib/config/config.js
 +++ b/lib/config/config.js
-@@ -56,7 +56,7 @@
+@@ -56,7 +56,7 @@ const validators = new WeakMap();
   * `ajv` pulls in a large dependency graph (~40 modules) that's only needed
   * once a rule's options actually need schema validation, so it's constructed
   * lazily instead of eagerly at module load time.
@@ -22,7 +24,7 @@ diff --git a/lib/config/config.js b/lib/config/config.js
   */
  let ajv;
  
-@@ -66,7 +66,7 @@
+@@ -66,7 +66,7 @@ let ajv;
  
  /**
   * Gets the shared ajv instance, constructing it on first use.
@@ -31,7 +33,7 @@ diff --git a/lib/config/config.js b/lib/config/config.js
   */
  function getAjv() {
  	if (!ajv) {
-@@ -432,7 +432,9 @@
+@@ -432,7 +432,9 @@ function getOrCreateValidator(rule, ruleId) {
  			const schema = getRuleOptionsSchema(rule);
  
  			if (schema) {
@@ -43,6 +45,7 @@ diff --git a/lib/config/config.js b/lib/config/config.js
  		} catch (err) {
  			throw new InvalidRuleOptionsSchemaError(ruleId, err);
 diff --git a/lib/linter/apply-disable-directives.js b/lib/linter/apply-disable-directives.js
+index 845f7ee..b5afbb2 100644
 --- a/lib/linter/apply-disable-directives.js
 +++ b/lib/linter/apply-disable-directives.js
 @@ -18,7 +18,7 @@
@@ -55,9 +58,10 @@ diff --git a/lib/linter/apply-disable-directives.js b/lib/linter/apply-disable-d
  
  /**
 diff --git a/lib/rule-tester/rule-tester.js b/lib/rule-tester/rule-tester.js
+index 60047f0..7b92337 100644
 --- a/lib/rule-tester/rule-tester.js
 +++ b/lib/rule-tester/rule-tester.js
-@@ -168,11 +168,11 @@
+@@ -168,11 +168,11 @@ const hasOwnProperty = Function.call.bind(Object.hasOwnProperty);
  
  /**
   * Gets the shared ajv instance, constructing it on first use.
@@ -71,7 +75,7 @@ diff --git a/lib/rule-tester/rule-tester.js b/lib/rule-tester/rule-tester.js
  	}
  	return ajv;
  }
-@@ -1262,15 +1262,14 @@
+@@ -1262,15 +1262,14 @@ class RuleTester {
  			if (schema) {
  				const ajvInstance = getAjv();
  
@@ -90,7 +94,7 @@ diff --git a/lib/rule-tester/rule-tester.js b/lib/rule-tester/rule-tester.js
  
  							return `\t${field}: ${error.message}`;
  						})
-@@ -1289,7 +1288,7 @@
+@@ -1289,7 +1288,7 @@ class RuleTester {
  				 * the schema is compiled here separately from checking for `validateSchema` errors.
  				 */
  				try {
@@ -100,6 +104,7 @@ diff --git a/lib/rule-tester/rule-tester.js b/lib/rule-tester/rule-tester.js
  					throw new Error(
  						`Schema for rule ${ruleName} is invalid: ${err.message}`,
 diff --git a/lib/rules/no-warning-comments.js b/lib/rules/no-warning-comments.js
+index 8f1a7c3..9dfc0c6 100644
 --- a/lib/rules/no-warning-comments.js
 +++ b/lib/rules/no-warning-comments.js
 @@ -5,7 +5,7 @@
@@ -112,6 +117,7 @@ diff --git a/lib/rules/no-warning-comments.js b/lib/rules/no-warning-comments.js
  
  const CHAR_LIMIT = 40;
 diff --git a/lib/rules/spaced-comment.js b/lib/rules/spaced-comment.js
+index cb2a978..fde3ef6 100644
 --- a/lib/rules/spaced-comment.js
 +++ b/lib/rules/spaced-comment.js
 @@ -5,7 +5,7 @@
@@ -124,6 +130,7 @@ diff --git a/lib/rules/spaced-comment.js b/lib/rules/spaced-comment.js
  
  //------------------------------------------------------------------------------
 diff --git a/lib/rules/utils/ast-utils.js b/lib/rules/utils/ast-utils.js
+index 69fc30e..1d7e22b 100644
 --- a/lib/rules/utils/ast-utils.js
 +++ b/lib/rules/utils/ast-utils.js
 @@ -12,7 +12,7 @@
@@ -136,6 +143,7 @@ diff --git a/lib/rules/utils/ast-utils.js b/lib/rules/utils/ast-utils.js
  	breakableTypePattern,
  	createGlobalLinebreakMatcher,
 diff --git a/lib/shared/ajv.js b/lib/shared/ajv.js
+index 5c5c41b..a40f9ac 100644
 --- a/lib/shared/ajv.js
 +++ b/lib/shared/ajv.js
 @@ -1,34 +1,26 @@
@@ -186,7 +194,7 @@ diff --git a/lib/shared/ajv.js b/lib/shared/ajv.js
 +        unicodeRegExp: false,
 +        rejectIgnoredDefaults: false,
 +        allowIgnoredAdditionalItems: true,
-+        ignoreKeywordsWithRef: true,
++        ignoreRefSiblings: true,
 +        ...additionalOptions,
 +    });
 +    addFormats(ajv, { keywords: false, formats: [
@@ -197,6 +205,7 @@ diff --git a/lib/shared/ajv.js b/lib/shared/ajv.js
  };
 diff --git a/lib/shared/prepare-rule-schema.js b/lib/shared/prepare-rule-schema.js
 new file mode 100644
+index 0000000..be0152d
 --- /dev/null
 +++ b/lib/shared/prepare-rule-schema.js
 @@ -0,0 +1,41 @@
@@ -243,6 +252,7 @@ new file mode 100644
 +};
 diff --git a/lib/shared/schema-error-path.js b/lib/shared/schema-error-path.js
 new file mode 100644
+index 0000000..694669b
 --- /dev/null
 +++ b/lib/shared/schema-error-path.js
 @@ -0,0 +1,16 @@

@@ -659,15 +659,15 @@ writeFileSync(join(directory,'index.js'),${JSON.stringify(downloader)});`;
     it('keeps the authenticated official bootstrap byte pin and composite runtime immutable', () => {
         const directory = join(repository, '.github/actions/setup-pnpm');
         const manifest: unknown = JSON.parse(readFileSync(join(directory, 'bootstrap/package.json'), 'utf8'));
-        expect(manifest).toEqual({ name: 'sourdaw-pnpm-bootstrap', private: true, dependencies: { pnpm: '12.20.0' } });
+        expect(manifest).toEqual({ name: 'sourdaw-pnpm-bootstrap', private: true, dependencies: { pnpm: '12.21.0' } });
         const lock: unknown = JSON.parse(readFileSync(join(directory, 'bootstrap/package-lock.json'), 'utf8'));
         expect(lock).toMatchObject({
             packages: {
                 'node_modules/pnpm': {
-                    version: '12.20.0',
-                    resolved: 'https://registry.npmjs.org/pnpm/-/pnpm-12.20.0.tgz',
+                    version: '12.21.0',
+                    resolved: 'https://registry.npmjs.org/pnpm/-/pnpm-12.21.0.tgz',
                     integrity:
-                        'sha512-bMx0mXzO9OZ5mXiOGNv7+lg+KoSWaGaNtHB7aoMGZi9HFW5lAjKphb0+wkz5NkwaoVTTflHteqxiwc0eOvyAww==',
+                        'sha512-Zv2CeO4ok1zpUXktNDZ/869cQyonVkRYIwKVM4NbjaUpu+C+UTCv1W7QcT+4eJ5Hutgtk71a4v5UsVVi1idu8A==',
                 },
             },
         });
@@ -695,15 +695,15 @@ writeFileSync(join(directory,'index.js'),${JSON.stringify(downloader)});`;
         );
         for (const target of targets) {
             expect(packageLock.packages[`node_modules/@pnpm/exe.${target}`]).toMatchObject({
-                version: '12.20.0',
-                resolved: `https://registry.npmjs.org/@pnpm/exe.${target}/-/exe.${target}-12.20.0.tgz`,
+                version: '12.21.0',
+                resolved: `https://registry.npmjs.org/@pnpm/exe.${target}/-/exe.${target}-12.21.0.tgz`,
                 integrity: expect.stringMatching(/^sha512-[A-Za-z0-9+/]+={0,2}$/),
                 optional: true,
             });
         }
         expect(readFileSync(join(repository, '.node-version'), 'utf8').trim()).toBe('26.13.1');
         expect(JSON.parse(readFileSync(join(repository, 'package.json'), 'utf8'))).toMatchObject({
-            packageManager: 'pnpm@12.20.0',
+            packageManager: 'pnpm@12.21.0',
             engines: { node: '>=26.13.1 <27' },
         });
         const action: unknown = parseDocument(readFileSync(join(directory, 'action.yml'), 'utf8')).toJS();

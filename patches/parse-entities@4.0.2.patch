@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -31,7 +31,7 @@
+     "index.js"
+   ],
+   "dependencies": {
+-    "@types/unist": "^2.0.0",
++    "@types/unist": "^3.0.3",
+     "character-entities-legacy": "^3.0.0",
+     "character-reference-invalid": "^2.0.0",
+     "decode-named-character-reference": "^1.0.0",

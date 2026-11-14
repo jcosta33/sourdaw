@@ -1,5 +1,5 @@
 diff --git a/dist/ast-converter.js b/dist/ast-converter.js
-index 34407594638335eb6565b4f07cc047a180d75a7e..5442688901a220d2d36e3001a1da2af9e7b4c2da 100644
+index 3440759..5442688 100644
 --- a/dist/ast-converter.js
 +++ b/dist/ast-converter.js
 @@ -6,14 +6,6 @@ const convert_comments_1 = require("./convert-comments");
@@ -18,7 +18,7 @@ index 34407594638335eb6565b4f07cc047a180d75a7e..5442688901a220d2d36e3001a1da2af9
       * Recursively convert the TypeScript AST into an ESTree-compatible AST
       */
 diff --git a/dist/check-modifiers.js b/dist/check-modifiers.js
-index 6509ac89c6ade65cfff8ab25836e98184bafb56d..a97d6a2f1e4c107e6c4299ef5e32d075a8b043b4 100644
+index 6509ac8..a97d6a2 100644
 --- a/dist/check-modifiers.js
 +++ b/dist/check-modifiers.js
 @@ -34,7 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
@@ -99,7 +99,7 @@ index 6509ac89c6ade65cfff8ab25836e98184bafb56d..a97d6a2f1e4c107e6c4299ef5e32d075
              throw (0, node_utils_1.createError)(modifier, `'${ts.tokenToString(modifier.kind)}' modifier cannot appear on class elements of this kind.`);
          }
 diff --git a/dist/check-syntax-errors.js b/dist/check-syntax-errors.js
-index 08141bdca94bf205f18349da113e5f8cf2d59c9c..09ee9d13fbe04b565986625ee0c367a28404b829 100644
+index 08141bd..09ee9d1 100644
 --- a/dist/check-syntax-errors.js
 +++ b/dist/check-syntax-errors.js
 @@ -34,7 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
@@ -147,7 +147,7 @@ index 08141bdca94bf205f18349da113e5f8cf2d59c9c..09ee9d13fbe04b565986625ee0c367a2
                  if (body == null || body.kind === SyntaxKind.ModuleDeclaration) {
                      throw (0, node_utils_1.createError)(node.body ?? node, 'Expected a valid module body');
 diff --git a/dist/convert-comments.js b/dist/convert-comments.js
-index 4dfdaae67d6bfc27ef5a61b01112014f39ed3d73..814c551d41b5cfe0c62a7ecde451c02b8258e37f 100644
+index 4dfdaae..814c551 100644
 --- a/dist/convert-comments.js
 +++ b/dist/convert-comments.js
 @@ -34,8 +34,8 @@ var __importStar = (this && this.__importStar) || (function () {
@@ -162,7 +162,7 @@ index 4dfdaae67d6bfc27ef5a61b01112014f39ed3d73..814c551d41b5cfe0c62a7ecde451c02b
  const ts_estree_1 = require("./ts-estree");
  /**
 diff --git a/dist/convert.d.ts b/dist/convert.d.ts
-index d029a83e6bd9756d2bad4c0e7764bb4f1d000582..9b58da847cc39c5fc2f1085ebb54bf7249e9f749 100644
+index d029a83..9b58da8 100644
 --- a/dist/convert.d.ts
 +++ b/dist/convert.d.ts
 @@ -1,4 +1,4 @@
@@ -172,7 +172,7 @@ index d029a83e6bd9756d2bad4c0e7764bb4f1d000582..9b58da847cc39c5fc2f1085ebb54bf72
  import type { ParserWeakMap, ParserWeakMapESTreeToTSNode } from './parser-options';
  import type { SemanticOrSyntacticError } from './semantic-or-syntactic-errors';
 diff --git a/dist/convert.js b/dist/convert.js
-index fbe58c993eacdd3f61043ddcf051165f0cd7163b..47b943d8c4589878ed4f0d35bc21fe95fa344ba7 100644
+index fbe58c9..47b943d 100644
 --- a/dist/convert.js
 +++ b/dist/convert.js
 @@ -37,7 +37,7 @@ exports.Converter = void 0;
@@ -407,7 +407,7 @@ index fbe58c993eacdd3f61043ddcf051165f0cd7163b..47b943d8c4589878ed4f0d35bc21fe95
 \ No newline at end of file
 +//# sourceMappingURL=convert.js.map
 diff --git a/dist/create-program/getScriptKind.d.ts b/dist/create-program/getScriptKind.d.ts
-index 331cee7700ecdb29905b5c6570e38d101619d161..5e22e2221d43a98f18e3d3886cb3c16870eab7e3 100644
+index 331cee7..5e22e22 100644
 --- a/dist/create-program/getScriptKind.d.ts
 +++ b/dist/create-program/getScriptKind.d.ts
 @@ -1,3 +1,3 @@
@@ -416,7 +416,7 @@ index 331cee7700ecdb29905b5c6570e38d101619d161..5e22e2221d43a98f18e3d3886cb3c168
  export declare function getScriptKind(filePath: string, jsx: boolean): ts.ScriptKind;
  export declare function getLanguageVariant(scriptKind: ts.ScriptKind): ts.LanguageVariant;
 diff --git a/dist/create-program/getScriptKind.js b/dist/create-program/getScriptKind.js
-index 1796e1c2fa274b158e10092db12c50b01b0df792..7ba878c8a2ad45def7f9bea11a20cbb0b6638373 100644
+index 1796e1c..7ba878c 100644
 --- a/dist/create-program/getScriptKind.js
 +++ b/dist/create-program/getScriptKind.js
 @@ -39,7 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
@@ -458,7 +458,7 @@ index 1796e1c2fa274b158e10092db12c50b01b0df792..7ba878c8a2ad45def7f9bea11a20cbb0
          default:
              // unknown extension, force typescript to ignore the file extension, and respect the user's setting
 diff --git a/dist/createParserServices.d.ts b/dist/createParserServices.d.ts
-index 685ef30d8e6052b757eb4fd1edbe6f3b9a7183c4..c90846bb45bb08857e4e7d42545a4f10a621a900 100644
+index 685ef30..c90846b 100644
 --- a/dist/createParserServices.d.ts
 +++ b/dist/createParserServices.d.ts
 @@ -1,4 +1,12 @@
@@ -479,7 +479,7 @@ index 685ef30d8e6052b757eb4fd1edbe6f3b9a7183c4..c90846bb45bb08857e4e7d42545a4f10
 +type NativeMaps = Pick<NativeParserServices, 'esTreeNodeToTSNodeMap' | 'tsNodeToESTreeNodeMap'>;
 +export declare function createParserServices(astMaps: NativeMaps, lease: NativeLease): NativeParserServices;
 diff --git a/dist/createParserServices.js b/dist/createParserServices.js
-index 1d207727057f172351acdcce09577396eef4bcee..baee357163d5095bed9b8281e06cbe5fece07547 100644
+index 1d20772..baee357 100644
 --- a/dist/createParserServices.js
 +++ b/dist/createParserServices.js
 @@ -1,34 +1,40 @@
@@ -553,7 +553,7 @@ index 1d207727057f172351acdcce09577396eef4bcee..baee357163d5095bed9b8281e06cbe5f
 -//# sourceMappingURL=createParserServices.js.map
 \ No newline at end of file
 diff --git a/dist/getImportClausePhaseModifier.js b/dist/getImportClausePhaseModifier.js
-index 88a6c27da3d05059b21031f14f2b12b7f43764a4..6d4afeed01be49b80974f6b0420c2ed6e85562a2 100644
+index 88a6c27..6d4afee 100644
 --- a/dist/getImportClausePhaseModifier.js
 +++ b/dist/getImportClausePhaseModifier.js
 @@ -1,57 +1,9 @@
@@ -622,7 +622,7 @@ index 88a6c27da3d05059b21031f14f2b12b7f43764a4..6d4afeed01be49b80974f6b0420c2ed6
 \ No newline at end of file
 +exports.getImportClausePhaseModifier = getImportClausePhaseModifier;
 diff --git a/dist/getModifiers.d.ts b/dist/getModifiers.d.ts
-index 481dfaa02595c697cae122af4cfee58cee14677d..e425a2540267d86162f23a449a207f5a1ca3d5f5 100644
+index 481dfaa..e425a25 100644
 --- a/dist/getModifiers.d.ts
 +++ b/dist/getModifiers.d.ts
 @@ -1,3 +1,3 @@
@@ -631,7 +631,7 @@ index 481dfaa02595c697cae122af4cfee58cee14677d..e425a2540267d86162f23a449a207f5a
  export declare function getModifiers(node: ts.Node | null | undefined, includeIllegalModifiers?: boolean): ts.Modifier[] | undefined;
  export declare function getDecorators(node: ts.Node | null | undefined, includeIllegalDecorators?: boolean): ts.Decorator[] | undefined;
 diff --git a/dist/getModifiers.js b/dist/getModifiers.js
-index a5d358a6806724eb4b26603d488703bd78b41884..a430f68bd585e71abd4ec9669bae9561b778362d 100644
+index a5d358a..a430f68 100644
 --- a/dist/getModifiers.js
 +++ b/dist/getModifiers.js
 @@ -1,75 +1,4 @@
@@ -715,7 +715,7 @@ index a5d358a6806724eb4b26603d488703bd78b41884..a430f68bd585e71abd4ec9669bae9561
 +exports.getModifiers = node => node?.modifiers?.filter(modifier => !isDecorator(modifier));
 +exports.getDecorators = node => node?.modifiers?.filter(isDecorator);
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index 9a294fac880e5e3f436b1d0a0288e08bdbe57196..1a7472768dbf8b72db3e328a00042a399f8a284d 100644
+index 9a294fa..1a74727 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
 @@ -1,7 +1,8 @@
@@ -730,7 +730,7 @@ index 9a294fac880e5e3f436b1d0a0288e08bdbe57196..1a7472768dbf8b72db3e328a00042a39
  export { TSError } from './node-utils';
  export { type AST, parse, parseAndGenerateServices, type ParseAndGenerateServicesResult, } from './parser';
 diff --git a/dist/index.js b/dist/index.js
-index 23cd64aff8cdf3fa8bc548ea441d87c553d85efc..f5feec921a12fcb3352eab9ea5794b9ba10c856c 100644
+index 23cd64a..f5feec9 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -15,12 +15,11 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
@@ -751,9 +751,9 @@ index 23cd64aff8cdf3fa8bc548ea441d87c553d85efc..f5feec921a12fcb3352eab9ea5794b9b
  __exportStar(require("./getModifiers"), exports);
  var node_utils_1 = require("./node-utils");
  Object.defineProperty(exports, "TSError", { enumerable: true, get: function () { return node_utils_1.TSError; } });
-diff --git b/dist/native-comments.LICENSE b/dist/native-comments.LICENSE
+diff --git a/dist/native-comments.LICENSE b/dist/native-comments.LICENSE
 new file mode 100644
-index 0000000000000000000000000000000000000000..08520a1e2740fb6923f63950220ad3c50d16399e
+index 0000000..08520a1
 --- /dev/null
 +++ b/dist/native-comments.LICENSE
 @@ -0,0 +1,20 @@
@@ -777,9 +777,9 @@ index 0000000000000000000000000000000000000000..08520a1e2740fb6923f63950220ad3c5
 +CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 +TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 +SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-diff --git b/dist/native-comments.js b/dist/native-comments.js
+diff --git a/dist/native-comments.js b/dist/native-comments.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..aa8f6b6f75e8a749f8ba402d99fd2c98b56357d2
+index 0000000..aa8f6b6
 --- /dev/null
 +++ b/dist/native-comments.js
 @@ -0,0 +1,67 @@
@@ -850,9 +850,9 @@ index 0000000000000000000000000000000000000000..aa8f6b6f75e8a749f8ba402d99fd2c98
 +}
 +
 +exports.iterateComments = iterateComments;
-diff --git b/dist/native-module-kind.js b/dist/native-module-kind.js
+diff --git a/dist/native-module-kind.js b/dist/native-module-kind.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..843475e60f80b5778e0657822ffe81790e57552b
+index 0000000..843475e
 --- /dev/null
 +++ b/dist/native-module-kind.js
 @@ -0,0 +1,15 @@
@@ -871,9 +871,9 @@ index 0000000000000000000000000000000000000000..843475e60f80b5778e0657822ffe8179
 +    throw new Error('Native module declaration keyword could not be identified');
 +}
 +exports.nativeModuleKind = nativeModuleKind;
-diff --git b/dist/native-parser-services.d.ts b/dist/native-parser-services.d.ts
+diff --git a/dist/native-parser-services.d.ts b/dist/native-parser-services.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..55e3a7739676fda736ab3d8c04f5dea8d65eee73
+index 0000000..55e3a77
 --- /dev/null
 +++ b/dist/native-parser-services.d.ts
 @@ -0,0 +1,34 @@
@@ -911,18 +911,18 @@ index 0000000000000000000000000000000000000000..55e3a7739676fda736ab3d8c04f5dea8
 +    tsNodeToESTreeNodeMap: WeakMap<Node, TSESTree.Node>;
 +};
 +export type NativeParserServices = NativeParserServicesWithTypeInformation | NativeParserServicesWithoutTypeInformation;
-diff --git b/dist/native-session.js b/dist/native-session.js
+diff --git a/dist/native-session.js b/dist/native-session.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..7164f5f8bcb707e227c11a129fe51a3717b689d4
+index 0000000..8f78fbe
 --- /dev/null
 +++ b/dist/native-session.js
-@@ -0,0 +1,257 @@
+@@ -0,0 +1,263 @@
 +'use strict';
 +const { resolve, dirname, basename, relative, sep, isAbsolute, join } = require('node:path');
 +const { existsSync, readFileSync, readdirSync, statSync } = require('node:fs');
 +const { API, DiagnosticCategory } = require('typescript/unstable/sync');
 +const { createError } = require('./node-utils');
-+const { globSync } = require('tinyglobby');
++const { globSync, isDynamicPattern } = require('tinyglobby');
 +
 +// Native sessions and source overlays are runtime state owned here. Each
 +// active typed lint traversal owns its own independently released snapshot.
@@ -940,19 +940,25 @@ index 0000000000000000000000000000000000000000..7164f5f8bcb707e227c11a129fe51a37
 +        }
 +        throw new Error(`No tsconfig.json found for ${filePath}`);
 +    }
-+    const patterns = options.project ? [].concat(options.project) : [];
++    const patterns = options.project ? [].concat(options.project).filter(pattern => typeof pattern === 'string') : [];
++    const ignoredFolders = (options.projectFolderIgnoreList ?? ['**/node_modules/**'])
++        .filter(folder => typeof folder === 'string');
++    // Explicit configs precede glob matches, as in the published project resolver.
 +    const paths = new Set();
-+    for (const pattern of patterns) {
-+        if (typeof pattern !== 'string') throw new TypeError('project must contain tsconfig paths');
-+        if (/[*?{[\]]/.test(pattern)) {
-+            for (const match of globSync(pattern, { cwd, absolute: true, onlyFiles: true })) paths.add(match);
-+        } else {
-+            const path = resolve(cwd, pattern);
-+            if (!existsSync(path)) throw new Error(`Project configuration does not exist: ${path}`);
-+            paths.add(path);
-+        }
++    for (const pattern of patterns.filter(pattern => !isDynamicPattern(pattern))) {
++        const path = resolve(cwd, pattern);
++        if (!existsSync(path)) throw new Error(`Project configuration does not exist: ${path}`);
++        paths.add(path);
 +    }
-+    if (patterns.length && !paths.size) throw new Error('Project patterns matched no configurations');
++    for (const pattern of patterns.filter(pattern => isDynamicPattern(pattern))) {
++        for (const match of globSync(pattern, {
++            cwd,
++            absolute: true,
++            onlyFiles: true,
++            expandDirectories: false,
++            ignore: ignoredFolders,
++        })) paths.add(match);
++    }
 +    return [...paths];
 +}
 +
@@ -1174,9 +1180,9 @@ index 0000000000000000000000000000000000000000..7164f5f8bcb707e227c11a129fe51a37
 +process.once('beforeExit', clearNativeSessions);
 +exports.acquireNativeSource = acquireNativeSource;
 +exports.clearNativeSessions = clearNativeSessions;
-diff --git b/dist/native-tokens.js b/dist/native-tokens.js
+diff --git a/dist/native-tokens.js b/dist/native-tokens.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..adcfe14c68d7c07b4fe4444858e1d93fa561f0a5
+index 0000000..adcfe14
 --- /dev/null
 +++ b/dist/native-tokens.js
 @@ -0,0 +1,24 @@
@@ -1205,7 +1211,7 @@ index 0000000000000000000000000000000000000000..adcfe14c68d7c07b4fe4444858e1d93f
 +}
 +exports.nativeTokens = nativeTokens;
 diff --git a/dist/node-utils.d.ts b/dist/node-utils.d.ts
-index 60f7f40e02a6d65e6c556accc05c041bc0005ef6..976076aa35c813da2ca7f5807919562be60eb11e 100644
+index 60f7f40..976076a 100644
 --- a/dist/node-utils.d.ts
 +++ b/dist/node-utils.d.ts
 @@ -1,4 +1,4 @@
@@ -1226,7 +1232,7 @@ index 60f7f40e02a6d65e6c556accc05c041bc0005ef6..976076aa35c813da2ca7f5807919562b
   * Returns true if the node is an optional chain node
   */
 diff --git a/dist/node-utils.js b/dist/node-utils.js
-index 19b7dcc773c58c81e46ae680f4dc865130b31ea6..df6b4ba8f0d14e981f94a5716f0c0ab72b57c763 100644
+index 19b7dcc..df6b4ba 100644
 --- a/dist/node-utils.js
 +++ b/dist/node-utils.js
 @@ -71,7 +71,7 @@ exports.isValidAssignmentTarget = isValidAssignmentTarget;
@@ -1344,7 +1350,7 @@ index 19b7dcc773c58c81e46ae680f4dc865130b31ea6..df6b4ba8f0d14e981f94a5716f0c0ab7
      return (!!node &&
          node.kind === SyntaxKind.Identifier &&
 diff --git a/dist/parser-options.d.ts b/dist/parser-options.d.ts
-index 1d52c5438b473ebbaa78de70dee4637b997d911c..c1e43d43f0c6c5e09f6418d1416091a5b0e152a1 100644
+index 1d52c54..c1e43d4 100644
 --- a/dist/parser-options.d.ts
 +++ b/dist/parser-options.d.ts
 @@ -1,5 +1,5 @@
@@ -1386,7 +1392,7 @@ index 1d52c5438b473ebbaa78de70dee4637b997d911c..c1e43d43f0c6c5e09f6418d1416091a5
 +export type ParserServicesWithoutTypeInformation = NativeParserServicesWithoutTypeInformation;
 +export type ParserServices = NativeParserServices;
 diff --git a/dist/parser.d.ts b/dist/parser.d.ts
-index 91588c937be1f22cacd0fca222740159c37090f7..4d9811e707494a94ce17d45af91a51e5b14d930c 100644
+index 91588c9..4d9811e 100644
 --- a/dist/parser.d.ts
 +++ b/dist/parser.d.ts
 @@ -1,4 +1,3 @@
@@ -1401,7 +1407,7 @@ index 91588c937be1f22cacd0fca222740159c37090f7..4d9811e707494a94ce17d45af91a51e5
 -export declare function parseAndGenerateServices<T extends TSESTreeOptions = TSESTreeOptions>(code: string | ts.SourceFile, tsestreeOptions: T): ParseAndGenerateServicesResult<T>;
 +export declare function parseAndGenerateServices<T extends TSESTreeOptions = TSESTreeOptions>(code: string, tsestreeOptions: T): ParseAndGenerateServicesResult<T>;
 diff --git a/dist/parser.js b/dist/parser.js
-index b803d4d802d7b5f9f829aed4d10ae2ca61eacc71..b7659d5d7abd50f879f91a8b69cb1fbbae92c7db 100644
+index b803d4d..b7659d5 100644
 --- a/dist/parser.js
 +++ b/dist/parser.js
 @@ -1,290 +1,26 @@
@@ -1720,7 +1726,7 @@ index b803d4d802d7b5f9f829aed4d10ae2ca61eacc71..b7659d5d7abd50f879f91a8b69cb1fbb
 +exports.clearDefaultProjectMatchedFiles = clearNativeSessions;
 +exports.clearParseAndGenerateServicesCalls = clearNativeSessions;
 diff --git a/dist/ts-estree/estree-to-ts-node-types.d.ts b/dist/ts-estree/estree-to-ts-node-types.d.ts
-index 0b05666ed6d15210e23e7c4c8908c2f5c534b16a..a49124b8d358bdca5911f0d8d260e1fba0a2aaaa 100644
+index 0b05666..a49124b 100644
 --- a/dist/ts-estree/estree-to-ts-node-types.d.ts
 +++ b/dist/ts-estree/estree-to-ts-node-types.d.ts
 @@ -1,6 +1,5 @@
@@ -1765,7 +1771,7 @@ index 0b05666ed6d15210e23e7c4c8908c2f5c534b16a..a49124b8d358bdca5911f0d8d260e1fb
 -export type TSESTreeToTSNode<T extends TSESTree.Node = TSESTree.Node> = Extract<ts.Token<ts.SyntaxKind.ImportKeyword | ts.SyntaxKind.NewKeyword> | TSNode, EstreeToTsNodeTypes[T['type']]>;
 +export type TSESTreeToTSNode<T extends TSESTree.Node = TSESTree.Node> = EstreeToTsNodeTypes[T['type']];
 diff --git a/dist/ts-estree/ts-nodes.d.ts b/dist/ts-estree/ts-nodes.d.ts
-index 3eb4d8d14ac019fb18d97a9b77e34c54544fa16a..e02c818ca6226666450d5b8e4f49d11bf7310b62 100644
+index 3eb4d8d..e02c818 100644
 --- a/dist/ts-estree/ts-nodes.d.ts
 +++ b/dist/ts-estree/ts-nodes.d.ts
 @@ -1,17 +1,3 @@
@@ -1790,7 +1796,7 @@ index 3eb4d8d14ac019fb18d97a9b77e34c54544fa16a..e02c818ca6226666450d5b8e4f49d11b
 +export type TSToken = Token;
 +export type TSNode = Node;
 diff --git a/dist/use-at-your-own-risk.js b/dist/use-at-your-own-risk.js
-index eda04f003033434bf95fe70b9912ee27e5bd875e..d6d20b4a42844c1f0e737d9e900d270ce1f9db10 100644
+index eda04f0..d6d20b4 100644
 --- a/dist/use-at-your-own-risk.js
 +++ b/dist/use-at-your-own-risk.js
 @@ -25,6 +25,7 @@ __exportStar(require("./getModifiers"), exports);
@@ -1805,3 +1811,15 @@ index eda04f003033434bf95fe70b9912ee27e5bd875e..d6d20b4a42844c1f0e737d9e900d270c
 +    throw new Error('TS6 filesystem canonicalization is unavailable: use native project file identity');
 +};
 +//# sourceMappingURL=use-at-your-own-risk.js.map
+diff --git a/package.json b/package.json
+index f788cbf..7a40953 100644
+--- a/package.json
++++ b/package.json
+@@ -48,7 +48,6 @@
+     "@typescript-eslint/types": "8.72.2",
+     "@typescript-eslint/visitor-keys": "8.72.2",
+     "debug": "^4.4.3",
+-    "minimatch": "^10.2.2",
+     "semver": "^7.7.3",
+     "tinyglobby": "^0.2.15",
+     "ts-api-utils": "^2.5.0"
