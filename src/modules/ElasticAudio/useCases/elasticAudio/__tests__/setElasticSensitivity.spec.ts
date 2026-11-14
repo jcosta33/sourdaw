@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { clipSelectionStore, defaultClipSelectionState, trackStore } from '#/modules/Arrangement/stores';
-import { AppActionConflictError } from '#/modules/Command/errors/AppActionExecutionError';
+import {
+    AppActionAdmissionRefusedError,
+    AppActionConflictError,
+} from '#/modules/Command/errors/AppActionExecutionError';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
@@ -407,7 +410,7 @@ describe('setElasticSensitivity', () => {
 
     it('warns with the refusal reason, without an error notice or log, when the project refuses detection', async () => {
         select('clip-1');
-        mocks.execute.mockRejectedValueOnce(new AppActionConflictError('detectTransients'));
+        mocks.execute.mockRejectedValueOnce(new AppActionAdmissionRefusedError('detectTransients'));
         const pending = setElasticSensitivity(0.8);
         await vi.advanceTimersByTimeAsync(150);
         await expect(pending).resolves.toBeUndefined();
@@ -418,6 +421,47 @@ describe('setElasticSensitivity', () => {
         );
         expect(logger.error).not.toHaveBeenCalled();
         expect(elasticAudioStore.value?.detected).toBe(false);
+    });
+
+    it('reports a detector failure conflict as a failed detection, not as a refusal', async () => {
+        select('clip-1');
+        const failure = new AppActionConflictError(
+            'detectTransients',
+            'Transient detection failed: analysis-timed-out'
+        );
+        mocks.execute.mockRejectedValueOnce(failure);
+        const pending = setElasticSensitivity(0.8);
+        await vi.advanceTimersByTimeAsync(150);
+        await expect(pending).resolves.toBeUndefined();
+
+        expect(logger.error).toHaveBeenCalledWith(failure);
+        expect(mocks.notify).toHaveBeenCalledExactlyOnceWith('Transient detection failed. Try again.', 'error');
+    });
+
+    it('stays silent when a newer gesture aborts the in-flight run and the detector reports it cancelled', async () => {
+        select('clip-1');
+        const entered = Promise.withResolvers<void>();
+        const firstRun = Promise.withResolvers<void>();
+        mocks.execute.mockImplementationOnce(async () => {
+            entered.resolve();
+            await firstRun.promise;
+            throw new AppActionConflictError(
+                'detectTransients',
+                'Transient detection was cancelled or its source changed'
+            );
+        });
+        const first = setElasticSensitivity(0.8);
+        await vi.advanceTimersByTimeAsync(150);
+        await entered.promise;
+
+        const second = setElasticSensitivity(0.4);
+        firstRun.resolve();
+        await first;
+        await vi.advanceTimersByTimeAsync(150);
+        await second;
+
+        expect(mocks.notify).not.toHaveBeenCalled();
+        expect(logger.error).not.toHaveBeenCalled();
     });
 
     it('reports unexpected detection failure and settles without a rejected fire-and-forget promise', async () => {

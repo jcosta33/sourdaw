@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AppActionConflictError } from '#/modules/Command/errors/AppActionExecutionError';
+import {
+    AppActionAdmissionRefusedError,
+    AppActionConflictError,
+} from '#/modules/Command/errors/AppActionExecutionError';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 
 const mocks = vi.hoisted(() => ({
@@ -44,8 +47,8 @@ describe('detectElasticEditorTransients', () => {
         expect(mocks.notify).not.toHaveBeenCalled();
     });
 
-    it('resolves false, tells the user why and does not mark completion on a refused project', async () => {
-        mocks.execute.mockRejectedValueOnce(new AppActionConflictError('detectTransients'));
+    it('resolves false, tells the user why and does not mark completion when the project refuses the mutation', async () => {
+        mocks.execute.mockRejectedValueOnce(new AppActionAdmissionRefusedError('detectTransients'));
 
         await expect(detectElasticEditorTransients('clip-1', 0.5)).resolves.toBe(false);
 
@@ -54,6 +57,18 @@ describe('detectElasticEditorTransients', () => {
             "Detect transients was refused because the project can't be changed right now.",
             'warning'
         );
+    });
+
+    it.each([
+        'Transient detection was cancelled or its source changed',
+        'Transient detection failed: analysis-timed-out',
+    ])('rejects the detector conflict %j without a refusal warning', async (reason) => {
+        const conflict = new AppActionConflictError('detectTransients', reason);
+        mocks.execute.mockRejectedValueOnce(conflict);
+
+        await expect(detectElasticEditorTransients('clip-1', 0.5)).rejects.toBe(conflict);
+        expect(mocks.notify).not.toHaveBeenCalled();
+        expect(mocks.markComplete).not.toHaveBeenCalled();
     });
 
     it('still rejects a failure that is not a refusal', async () => {

@@ -16,6 +16,7 @@ import {
 } from '#/utils/handlerContract';
 
 import {
+    AppActionAdmissionRefusedError,
     AppActionCommittedError,
     AppActionConflictError,
     AppActionNotDispatchedError,
@@ -311,12 +312,12 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             // The repair action itself is the one admitted route through this
             // gate while it holds; everything else is still refused.
             if (getProjectMutationAdmissionFailure(action)) {
-                throw new AppActionConflictError(action.type);
+                throw new AppActionAdmissionRefusedError(action.type);
             }
 
             const production_brief_admission = productionBriefAdmissionPort.capture([action]);
             if (!production_brief_admission.allowsCurrent()) {
-                throw new AppActionConflictError(action.type);
+                throw new AppActionAdmissionRefusedError(action.type);
             }
 
             options?.observeMaterializedAction?.(structuredClone(action));
