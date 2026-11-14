@@ -15,7 +15,7 @@ function remapAutomationPointSnapshots(
     );
 }
 
-function leaveReferencesUnmapped(): void {
+export function leaveReferencesUnmapped(): void {
     // The action names no id a replay re-mints.
 }
 

@@ -436,6 +436,9 @@ const extraTargetsByActionType: {
 };
 
 function getExtraTargetIds<Type extends AppActionType>(action: ActionOf<Type>): readonly string[] {
+    if (!Object.hasOwn(extraTargetsByActionType, action.type)) {
+        return noExtraTargets();
+    }
     return extraTargetsByActionType[action.type](action);
 }
 

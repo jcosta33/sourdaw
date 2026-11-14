@@ -608,6 +608,9 @@ function materializeForActionType<Type extends AppActionType>(
     action: ActionOf<Type>,
     defaults: CommandApplicationDefaults
 ): MaterializedCommandApplicationIds {
+    if (!Object.hasOwn(applicationIdMaterializerByActionType, action.type)) {
+        return { action, applicationAssignedIds: [] };
+    }
     return applicationIdMaterializerByActionType[action.type](action, defaults);
 }
 

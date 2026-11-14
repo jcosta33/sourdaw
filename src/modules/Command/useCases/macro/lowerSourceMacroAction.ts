@@ -451,6 +451,9 @@ function lowerAction<Type extends AppActionType>(
     action: ActionOf<Type>,
     tempoIds: ReadonlyMap<string, string>
 ): AppAction {
+    if (!Object.hasOwn(lowerByActionType, action.type)) {
+        return cloneForReplay(action);
+    }
     return lowerByActionType[action.type](action, tempoIds);
 }
 

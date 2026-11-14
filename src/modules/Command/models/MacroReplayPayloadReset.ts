@@ -2,7 +2,7 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
-function keepRecordedPayload(action: AppAction): AppAction {
+export function keepRecordedPayload(action: AppAction): AppAction {
     return action;
 }
 

@@ -1,15 +1,16 @@
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
-import { macroGeneratedIdByActionType } from '../../models/MacroGeneratedId';
+import { macroGeneratedIdByActionType, noGeneratedId } from '../../models/MacroGeneratedId';
 import {
     type MacroReplayCreate,
     macroReplayCreateByActionType,
+    notAGeneratedCreate,
     type MacroReplayReads,
 } from '../../models/MacroReplayCreate';
 import { type MacroReplayIdMappings } from '../../models/MacroReplayIdMappings';
-import { macroReplayPayloadResetByActionType } from '../../models/MacroReplayPayloadReset';
-import { macroReplayRemapByActionType } from '../../models/MacroReplayRemap';
+import { keepRecordedPayload, macroReplayPayloadResetByActionType } from '../../models/MacroReplayPayloadReset';
+import { leaveReferencesUnmapped, macroReplayRemapByActionType } from '../../models/MacroReplayRemap';
 import { macroStore } from '../../stores/macroStore';
 import { executeAppAction } from '../executeAppAction';
 import { generateGroupId } from '../generateGroupId';
@@ -58,10 +59,17 @@ async function executeGeneratedCreate(
 }
 
 function lookupRemap<Type extends AppActionType>(action: ActionOf<Type>, mappings: MacroReplayIdMappings): void {
+    if (!Object.hasOwn(macroReplayRemapByActionType, action.type)) {
+        leaveReferencesUnmapped();
+        return;
+    }
     macroReplayRemapByActionType[action.type](action, mappings);
 }
 
 function lookupGeneratedId<Type extends AppActionType>(action: ActionOf<Type>): string | undefined {
+    if (!Object.hasOwn(macroGeneratedIdByActionType, action.type)) {
+        return noGeneratedId();
+    }
     return macroGeneratedIdByActionType[action.type](action);
 }
 
@@ -69,10 +77,16 @@ function lookupCreate<Type extends AppActionType>(
     action: ActionOf<Type>,
     mappings: MacroReplayIdMappings
 ): MacroReplayCreate | null {
+    if (!Object.hasOwn(macroReplayCreateByActionType, action.type)) {
+        return notAGeneratedCreate();
+    }
     return macroReplayCreateByActionType[action.type](action, mappings);
 }
 
 function lookupPayloadReset<Type extends AppActionType>(action: ActionOf<Type>): AppAction {
+    if (!Object.hasOwn(macroReplayPayloadResetByActionType, action.type)) {
+        return keepRecordedPayload(action);
+    }
     return macroReplayPayloadResetByActionType[action.type](action);
 }
 

@@ -429,6 +429,9 @@ const seedMaterializerByActionType: {
 };
 
 function materializeSeed<Type extends AppActionType>(action: ActionOf<Type>): SeedMaterialization {
+    if (!Object.hasOwn(seedMaterializerByActionType, action.type)) {
+        return leaveSeedUnminted(action);
+    }
     return seedMaterializerByActionType[action.type](action);
 }
 

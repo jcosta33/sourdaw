@@ -18,7 +18,7 @@ export type MacroReplayCreate = {
     remember: (recordedId: string, generatedId: string, reads: MacroReplayReads) => void;
 };
 
-function notAGeneratedCreate(): MacroReplayCreate | null {
+export function notAGeneratedCreate(): MacroReplayCreate | null {
     return null;
 }
 

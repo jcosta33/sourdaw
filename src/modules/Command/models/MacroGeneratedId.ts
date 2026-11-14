@@ -2,7 +2,7 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
-function noGeneratedId(): string | undefined {
+export function noGeneratedId(): string | undefined {
     return undefined;
 }
 
