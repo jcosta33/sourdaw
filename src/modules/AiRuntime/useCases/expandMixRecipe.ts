@@ -342,15 +342,14 @@ export function expandMixRecipe(
             `recipe "${recipe.id}" expands to ${String(commands.length)} commands, above the ${String(RECIPE_EXPANSION_MAX_COMMANDS)} one expansion may add to a batch.`
         );
     }
+    const adopted: AdoptedRecipe = { recipeId: recipe.id, title: recipe.title, targetId: target.id };
+    if (recipe.origin !== undefined) {
+        adopted.presetVersion = recipe.origin.presetVersion;
+    }
     return {
         status: 'expanded',
         catalogVersion: catalog.version,
-        recipe: {
-            recipeId: recipe.id,
-            title: recipe.title,
-            targetId: target.id,
-            ...(recipe.origin === undefined ? {} : { presetVersion: recipe.origin.presetVersion }),
-        },
+        recipe: adopted,
         commands,
         values,
     };

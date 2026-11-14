@@ -110,6 +110,7 @@ import { getCompiledTransformTargetIds } from './getCompiledTransformTargetIds';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
 import { type ProjectContext } from './getProjectContext';
 import { groundCompiledCommandBatch } from './groundCompiledCommandBatch';
+import { type ContinuedFigure } from './lastCommitContinuation/lastCommitOutcome';
 import { getBackendChain } from './llmOrchestration/backendResolution/getBackendChain';
 import {
     generateToolPlanningOutcome,
@@ -122,7 +123,7 @@ import { type MeasurementUnitProgress } from './measureProjectUnit';
 import { type MetricRequestAuthority, type MetricGoalState } from './metricGoalContractTypes';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { planAnswerSuggestion } from './planAnswerSuggestion';
-import { type ContinuedFigure, planLastCommitContinuation } from './planLastCommitContinuation';
+import { planLastCommitContinuation } from './planLastCommitContinuation';
 import { prepareAnswerInterpretationCatalog } from './prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpretationCatalog';
 import { prepareMetricIntentCatalog } from './prepareMetricIntentCatalog';

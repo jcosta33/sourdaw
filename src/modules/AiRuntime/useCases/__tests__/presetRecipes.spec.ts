@@ -585,7 +585,9 @@ describe('preset recipes', () => {
             const undiscoveredIds = new Set(undiscovered.map((preset) => preset.id));
             return {
                 undiscovered,
-                unaccounted: [...undiscoveredIds].filter((id) => !Object.hasOwn(CHAIN_PRESET_EXCLUSIONS, id)).sort(),
+                unaccounted: Array.from(undiscoveredIds)
+                    .filter((id) => !Object.hasOwn(CHAIN_PRESET_EXCLUSIONS, id))
+                    .sort(),
                 staleExclusions: Object.keys(CHAIN_PRESET_EXCLUSIONS)
                     .filter((id) => !undiscoveredIds.has(id))
                     .sort(),

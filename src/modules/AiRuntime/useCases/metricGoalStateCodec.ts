@@ -398,6 +398,13 @@ function batchBinding(binding: unknown): boolean {
     );
 }
 
+/** An optional list of at most one batch's entries, each passing its own check. */
+function optionalBatchList(value: unknown, check: (entry: unknown) => boolean): boolean {
+    return (
+        value === undefined || (Array.isArray(value) && value.length <= MAX_LLM_ACTIONS_PER_BATCH && value.every(check))
+    );
+}
+
 function state(entry: unknown, metricIds: readonly string[]): entry is MetricGoalState {
     return (
         record(entry) &&
@@ -407,14 +414,8 @@ function state(entry: unknown, metricIds: readonly string[]): entry is MetricGoa
             ['nativeLiteralUses', 'lastCommitContinuations', 'refinedRequests']
         ) &&
         (entry.refinedRequests === undefined || strings(entry.refinedRequests)) &&
-        (entry.lastCommitContinuations === undefined ||
-            (Array.isArray(entry.lastCommitContinuations) &&
-                entry.lastCommitContinuations.length <= MAX_LLM_ACTIONS_PER_BATCH &&
-                entry.lastCommitContinuations.every(lastCommitContinuation))) &&
-        (entry.nativeLiteralUses === undefined ||
-            (Array.isArray(entry.nativeLiteralUses) &&
-                entry.nativeLiteralUses.length <= MAX_LLM_ACTIONS_PER_BATCH &&
-                entry.nativeLiteralUses.every(nativeLiteralUse))) &&
+        optionalBatchList(entry.lastCommitContinuations, lastCommitContinuation) &&
+        optionalBatchList(entry.nativeLiteralUses, nativeLiteralUse) &&
         entry.schemaVersion === 1 &&
         Array.isArray(entry.authorities) &&
         entry.authorities.every((authorityEntry: unknown) => authority(authorityEntry, metricIds)) &&

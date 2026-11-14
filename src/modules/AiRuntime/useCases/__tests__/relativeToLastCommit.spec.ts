@@ -43,9 +43,9 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { readLastCommitRequest } from '../../transformers/readLastCommitRequest';
 import { revertThreadCommit } from '../agentRequestOrchestration/revertThreadCommit';
-import { proposeAnswerSuggestion } from '../aiPanelActions/proposeAnswerSuggestion';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
+import { proposeAnswerSuggestion } from '../aiPanelActions/proposeAnswerSuggestion';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { expandMixRecipe } from '../expandMixRecipe';
@@ -281,6 +281,13 @@ function getTrack(id: string): Track {
         throw new Error(`Expected track ${id}`);
     }
     return track;
+}
+
+/** Rewrites one track in the store, as an edit made outside the planner would. */
+function updateTrack(id: string, update: (track: Track) => Track): void {
+    const current = trackStore.value!;
+    const tracks = current.tracks.map((track) => (track.id === id ? update(track) : track));
+    trackStore.set({ ...current, tracks });
 }
 
 function decibelsOf(trackId: string): number {
@@ -1384,17 +1391,19 @@ describe('relative to the last commit', () => {
             const state = pendingActionConfirmationStore.value!;
             pendingActionConfirmationStore.set({
                 ...state,
-                confirmations: state.confirmations.map((confirmation) =>
-                    confirmation.approvalSnapshot.adoptedRecipes === undefined
-                        ? confirmation
-                        : {
-                              ...confirmation,
-                              approvalSnapshot: {
-                                  ...confirmation.approvalSnapshot,
-                                  adoptedRecipes: rewrite(confirmation.approvalSnapshot.adoptedRecipes),
-                              },
-                          }
-                ),
+                confirmations: state.confirmations.map((confirmation) => {
+                    const { approvalSnapshot } = confirmation;
+                    if (approvalSnapshot.adoptedRecipes === undefined) {
+                        return confirmation;
+                    }
+                    return {
+                        ...confirmation,
+                        approvalSnapshot: {
+                            ...approvalSnapshot,
+                            adoptedRecipes: rewrite(approvalSnapshot.adoptedRecipes),
+                        },
+                    };
+                }),
             });
         }
 
@@ -1414,27 +1423,19 @@ describe('relative to the last commit', () => {
 
         it('refuses to repeat a recipe committed beside a parameter write the recipe did not produce, naming it', async () => {
             await commitRecipeOnVocals();
-            const current = trackStore.value!;
-            trackStore.set({
-                ...current,
-                tracks: current.tracks.map((track) =>
-                    track.id === 'track-vocals'
-                        ? {
-                              ...track,
-                              devices: [
-                                  {
-                                      id: 'device-provider-eq',
-                                      name: 'EQ',
-                                      type: 'builtin-eq',
-                                      bypassed: false,
-                                      parameterValues: { 'eq-low-freq': 120 },
-                                  },
-                                  ...track.devices,
-                              ],
-                          }
-                        : track
-                ),
-            });
+            updateTrack('track-vocals', (track) => ({
+                ...track,
+                devices: [
+                    {
+                        id: 'device-provider-eq',
+                        name: 'EQ',
+                        type: 'builtin-eq',
+                        bypassed: false,
+                        parameterValues: { 'eq-low-freq': 120 },
+                    },
+                    ...track.devices,
+                ],
+            }));
             commitBesideRecipe(
                 {
                     type: 'setDeviceParameter',
@@ -1467,9 +1468,10 @@ describe('relative to the last commit', () => {
                     return [entry];
                 }
                 const value = values[paramId];
-                return value === null || value === undefined
-                    ? []
-                    : [{ ...entry, action: { ...entry.action, payload: { ...payload, value } } } as typeof entry];
+                if (value === null || value === undefined) {
+                    return [];
+                }
+                return [{ ...entry, action: { ...entry.action, payload: { ...payload, value } } } as typeof entry];
             });
             undoHistoryStore.set({ ...history, past });
         }
@@ -1574,15 +1576,11 @@ describe('relative to the last commit', () => {
 
         it('refuses a frozen named track, naming it', async () => {
             await commitRecipeOnVocals();
-            const current = trackStore.value!;
-            trackStore.set({
-                ...current,
-                tracks: current.tracks.map((track) =>
-                    track.id === 'track-guitars'
-                        ? { ...track, frozen: true, freezeState: { status: 'unfrozen' as const } }
-                        : track
-                ),
-            });
+            updateTrack('track-guitars', (track) => ({
+                ...track,
+                frozen: true,
+                freezeState: { status: 'unfrozen' as const },
+            }));
 
             await expectAnsweredWithoutChange('do the same to the Guitars', 'Guitars is frozen');
             expect(getTrack('track-guitars').devices).toEqual([]);
@@ -1754,15 +1752,10 @@ describe('relative to the last commit', () => {
             scriptProvider([[VOCALS_DOWN_3_DB]]);
             await commitVocalsDown3Db();
             rewriteCommittedAction({ type: 'setDeviceParameter', payload: { deviceId: device.id, paramId, value } });
-            const current = trackStore.value!;
-            trackStore.set({
-                ...current,
-                tracks: current.tracks.map((track) =>
-                    track.id === 'track-vocals'
-                        ? { ...track, devices: [{ ...device, parameterValues: { [paramId]: value } }] }
-                        : track
-                ),
-            });
+            updateTrack('track-vocals', (track) => ({
+                ...track,
+                devices: [{ ...device, parameterValues: { [paramId]: value } }],
+            }));
         }
 
         function parameterOf(deviceId: string, paramId: string): number | undefined {
