@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { mockExecuteUserAppAction, mockUndo, mockRedo, mockCopy, mockCut, mockSelectAll, mockDeselectAll } = vi.hoisted(
     () => ({
         mockExecuteUserAppAction: vi.fn().mockResolvedValue(undefined),
-        mockUndo: vi.fn().mockResolvedValue(undefined),
-        mockRedo: vi.fn().mockResolvedValue(undefined),
+        mockUndo: vi.fn().mockResolvedValue({ headConsumed: false }),
+        mockRedo: vi.fn().mockResolvedValue({ headConsumed: false }),
         mockCopy: vi.fn(),
         mockCut: vi.fn(),
         mockSelectAll: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock('../../deselectAllClips', () => ({ deselectAllClips: mockDeselectAll }))
 
 import { editCommands } from '../EditCommands';
 
-function runAction(id: string): void {
+function runAction(id: string, onCommitted?: () => void): void {
     const cmd = editCommands.find((c) => c.id === id);
     if (!cmd) {
         throw new Error(`Command ${id} not found`);
@@ -34,7 +34,7 @@ function runAction(id: string): void {
     if (typeof cmd.action !== 'function') {
         throw new TypeError(`Command ${id} action is not callable`);
     }
-    cmd.action();
+    cmd.action(onCommitted);
 }
 
 describe('editCommands', () => {
@@ -50,6 +50,20 @@ describe('editCommands', () => {
     it('redo calls the redo function', () => {
         runAction('redo');
         expect(mockRedo).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['undo', 'redo'])('passes the successful-outcome observer to %s', (id) => {
+        const onCommitted = vi.fn();
+        runAction(id, onCommitted);
+        expect(id === 'undo' ? mockUndo : mockRedo).toHaveBeenCalledWith({ onCommitted });
+        expect(onCommitted).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])('records copy only when copySelectedClip returns %s', (copied) => {
+        mockCopy.mockReturnValueOnce(copied);
+        const onCommitted = vi.fn();
+        runAction('copy-clip', onCommitted);
+        expect(onCommitted).toHaveBeenCalledTimes(copied ? 1 : 0);
     });
 
     it('copy-clip calls copySelectedClip', () => {

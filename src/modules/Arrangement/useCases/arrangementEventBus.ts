@@ -1,11 +1,9 @@
 import { Container } from '#/infra/di/Container';
 
-import type { TrackAddedPayload } from '../events/TrackAddedEvent';
 import type { TrackRemovedPayload } from '../events/TrackRemovedEvent';
 import type { TrackSelectionChangedPayload } from '../events/TrackSelectionChangedEvent';
 
 type ArrangementEvents = {
-    'track.added': TrackAddedPayload;
     'track.removed': TrackRemovedPayload;
     'track.selectionChanged': TrackSelectionChangedPayload;
 };

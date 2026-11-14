@@ -33,6 +33,8 @@
 //! here and applies identically to every window, so it shifts the absolute
 //! ratios down and cancels out of the early-to-late difference.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::ProofChamberInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

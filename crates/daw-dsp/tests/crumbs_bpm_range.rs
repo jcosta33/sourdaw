@@ -13,6 +13,8 @@
 //! periodicity precisely on the excluded lag and a weaker competitor at half
 //! it.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::crumbs::analysis::bpm::estimate_bpm;
 
 /// The onset config's own default rate. `estimate_bpm` derives its lag range

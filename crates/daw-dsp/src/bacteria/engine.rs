@@ -15,10 +15,11 @@ use super::granular::GranularProcessor;
 use super::hilbert::HilbertShifter;
 use super::lofi::LofiProcessor;
 use super::modulation::{EnvelopeFollower, Lfo, LfoShape, LorenzAttractor};
-use super::params::{db_to_linear, linear_to_db, SmoothedParam};
+use super::params::{linear_to_db, SmoothedParam};
 use super::stft::StftProcessor;
 use super::waveshaper::CustomWaveshaper;
 use crate::params::MIX;
+use crate::primitives::db_to_linear;
 use crate::primitives::oversample::OversamplingChain;
 
 const MAX_BANDS: usize = 6;
@@ -1432,8 +1433,8 @@ impl BacteriaEngine {
         }
 
         // Step sequencer steps: "stepSeqVal_N"
-        if name.starts_with("stepSeqVal_") {
-            if let Ok(idx) = name[11..].parse::<usize>() {
+        if let Some(step) = name.strip_prefix("stepSeqVal_") {
+            if let Ok(idx) = step.parse::<usize>() {
                 self.step_seq.set_step(idx, value);
             }
             return;

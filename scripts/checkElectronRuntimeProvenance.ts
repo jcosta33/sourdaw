@@ -9,6 +9,7 @@ import { parseDocument } from 'yaml';
 
 import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from './electronRuntimeContract.ts';
 import { afterExtract } from './flipElectronFuses.ts';
+import { parsePnpmLock } from './pnpmLock.ts';
 
 type ElectronManifest = ElectronRuntimeContract;
 
@@ -31,21 +32,18 @@ function lockedElectronVersion(locked: string | undefined, version: string): boo
 }
 
 function lockHasExactElectron(lock: string, contract: ElectronRuntimeContract): boolean {
-    const document = parseDocument(lock, { uniqueKeys: true });
-    if (document.errors.length > 0) {
+    try {
+        const parsed = parsePnpmLock(lock).application;
+        const dependency = parsed.importers?.['.']?.devDependencies?.electron;
+        const resolution = parsed.packages?.[`electron@${contract.version}`]?.resolution;
+        return (
+            dependency?.specifier === contract.specifier &&
+            lockedElectronVersion(dependency?.version, contract.version) &&
+            resolution?.integrity === contract.integrity
+        );
+    } catch {
         return false;
     }
-    const parsed = document.toJS() as {
-        importers?: Record<string, { devDependencies?: Record<string, { specifier?: string; version?: string }> }>;
-        packages?: Record<string, { resolution?: { integrity?: string } }>;
-    };
-    const dependency = parsed.importers?.['.']?.devDependencies?.electron;
-    const resolution = parsed.packages?.[`electron@${contract.version}`]?.resolution;
-    return (
-        dependency?.specifier === contract.specifier &&
-        lockedElectronVersion(dependency?.version, contract.version) &&
-        resolution?.integrity === contract.integrity
-    );
 }
 
 function hasMarkers(value: string, markers: readonly string[]): boolean {

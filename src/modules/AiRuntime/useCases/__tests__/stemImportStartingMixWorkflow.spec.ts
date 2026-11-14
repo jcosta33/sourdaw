@@ -1499,22 +1499,6 @@ describe('stem import and starting mix workflow', () => {
         expect(receipt?.content).not.toContain('manual repair required');
     });
 
-    it('reconciles a transient track-added event failure before reporting a clean commit', async () => {
-        mocks.arrangementEventEmit.mockRejectedValueOnce(new Error('transient track-added event failure'));
-        await sendChatMessage(IMPORT_CONTROL_PROMPT);
-        const confirmation = getPendingActionConfirmation(confirmationId());
-
-        await expect(confirmPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
-            status: 'executed',
-        });
-
-        expect(mocks.arrangementEventEmit).toHaveBeenCalledTimes(8);
-        const receipt = chatStore.value?.messages.find(
-            (message) => message.pendingActionConfirmationId === confirmation?.id
-        );
-        expect(receipt?.content).not.toContain('follow-up warning');
-    });
-
     it('cleans staged resources when Command rejects unexpectedly before a status result', async () => {
         await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());

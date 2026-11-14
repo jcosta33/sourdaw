@@ -72,7 +72,6 @@ type NotificationEvents = {
  *  through the DI-injected Arrangement bus; the fixture registers a bare one so
  *  the effects run without a bootstrapped app shell. */
 type ArrangementTrackEvents = {
-    'track.added': { trackId: string; name: string; kind: string };
     'track.removed': { trackId: string };
     'track.selectionChanged': { trackId: string | null; previousTrackId: string | null };
 };

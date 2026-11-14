@@ -581,11 +581,13 @@ export function createModelStorageRequestHandler({
             } catch (error) {
                 try {
                     if (moved && session.abortController.signal.aborted) {
-                        await session.directory.removeEntry(session.fileName).catch((removeError: unknown) => {
+                        try {
+                            await session.directory.removeEntry(session.fileName);
+                        } catch (removeError) {
                             if (!isNotFoundError(removeError)) {
                                 throw removeError;
                             }
-                        });
+                        }
                     }
                 } finally {
                     await releaseWriteSession(request.writeId, session, true);

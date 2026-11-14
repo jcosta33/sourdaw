@@ -4,7 +4,6 @@
 // ── Track ────────────────────────────────────────────────────────────────────
 
 export { addTrack } from './addTrack';
-export { addTrackWithDeferredAddedEvent } from './addTrackWithDeferredAddedEvent';
 export { setArrangementEventBus } from './arrangementEventBus';
 export { createTrack } from './createTrack';
 export { normalizeTrack } from './normalizeTrack';
@@ -30,7 +29,7 @@ export { getEligibleDeviceParameterValues } from './getEligibleDeviceParameterVa
 export { hydrateTracksForProject } from './hydrateTracksForProject';
 export { projectTrackToLiveStrip } from './projectTrackToLiveStrip';
 export { restoreTrackSnapshot } from './restoreTrackSnapshot';
-export { restoreTrackAtIndexWithDeferredAddedEvent } from './restoreTrackAtIndexWithDeferredAddedEvent';
+export { restoreTrackAtIndex } from './restoreTrackAtIndex';
 export { restoreMarkerSnapshot } from './restoreMarkerSnapshot';
 export { restoreArrangementMetadataSnapshot } from './restoreArrangementMetadataSnapshot';
 export { setTrackState } from './setTrackState';
@@ -291,6 +290,9 @@ export { hasVariationLanes } from './hasVariationLanes';
 export { getAlternativeClips } from './getAlternativeClips';
 export { getHeldClips } from './getHeldClips';
 export { getTimelineSurfaceMinimumHeight } from './getTimelineSurfaceMinimumHeight';
+export { getTimelineHorizontalContentWidth } from './getTimelineHorizontalContentWidth';
+export { restoreTimelineWorkingView } from './projectWorkingView';
+export { resetTimelineWorkingView } from './resetTimelineWorkingView';
 export { scrollTimelineViewportFromWheel } from './scrollTimelineViewportFromWheel';
 export { scrollTimelineViewportHorizontallyFromWheel } from './scrollTimelineViewportHorizontallyFromWheel';
 export { setTimelineHorizontalScrollbarScrollX } from './setTimelineHorizontalScrollbarScrollX';
@@ -343,6 +345,9 @@ export { getMixRecipeCatalog } from './getMixRecipeCatalog';
 
 export { getArrangementHandlers } from './getArrangementHandlers';
 export { setDeviceState } from './device/setDeviceState';
+export { applyDevicePatchState } from './device/applyDevicePatchState';
+export { getPlannedDevicePatchState } from './device/getPlannedDevicePatchState';
+export { captureDevicePatchCommitValidation } from './device/captureDevicePatchCommitValidation';
 export { getSongStructureHandlers } from './getSongStructureHandlers';
 export { initStalenessDetection } from './freezeBounce/initStalenessDetection';
 export { isImportedStemSetApplied } from './stemImport/isImportedStemSetApplied';

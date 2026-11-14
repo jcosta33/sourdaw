@@ -21,10 +21,16 @@ function createInternalReplayContract(
         | 'restoreDrawnClip'
         | 'restoreMidiClipNotes'
         | 'restoreAutomationPointPresence'
+        | 'removeTrackGainAutomationRange'
+        | 'removeSendAutomationRange'
+        | 'removeSendAutomationRanges'
+        | 'removeAutomationLane'
+        | 'restoreAutomationLanePoints'
         | 'restoreTimeOperationState'
         | 'restoreCompRegionInterval'
         | 'restoreTempoEdit'
-        | 'restoreTempoMapEdit',
+        | 'restoreTempoMapEdit'
+        | 'deleteGrooveTemplate',
     operationVersion: number,
     ownerValidation: 'optional' | 'required'
 ): SessionActionContract {
@@ -86,13 +92,6 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
             validateArguments: (payload: unknown) => validateVersionedCommandArguments('deleteTime', payload),
             validateEntry: (entry) => getHandlerByType('deleteTime')?.validateSessionEntry?.(entry) === true,
         },
-        {
-            actionType: 'stripSilence',
-            operationVersion: 1,
-            role: 'forward',
-            validateArguments: (payload: unknown) => validateVersionedCommandArguments('stripSilence', payload),
-            validateEntry: (entry) => getHandlerByType('stripSilence')?.validateSessionEntry?.(entry) === true,
-        },
         createInternalReplayContract('discardCreatedTrack', 1, 'optional'),
         createInternalReplayContract('discardDuplicatedClip', 1, 'optional'),
         createInternalReplayContract('discardDrawnClip', 1, 'optional'),
@@ -106,9 +105,16 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('restoreDrawnClip', 1, 'optional'),
         createInternalReplayContract('restoreMidiClipNotes', 1, 'required'),
         createInternalReplayContract('restoreAutomationPointPresence', 1, 'required'),
+        createInternalReplayContract('removeTrackGainAutomationRange', 1, 'required'),
+        createInternalReplayContract('removeSendAutomationRange', 1, 'required'),
+        createInternalReplayContract('removeSendAutomationRanges', 1, 'required'),
+        createInternalReplayContract('removeAutomationLane', 1, 'required'),
+        createInternalReplayContract('restoreAutomationLanePoints', 1, 'required'),
         createInternalReplayContract('restoreTimeOperationState', 1, 'required'),
         createInternalReplayContract('restoreCompRegionInterval', 1, 'required'),
         createInternalReplayContract('restoreTempoEdit', 1, 'required'),
         createInternalReplayContract('restoreTempoMapEdit', 1, 'required'),
+        // The guarded inverse of extractGroove; the extraction's own entry validator binds it.
+        createInternalReplayContract('deleteGrooveTemplate', 1, 'optional'),
     ];
 }

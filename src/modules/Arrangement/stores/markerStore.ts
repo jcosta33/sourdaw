@@ -83,7 +83,7 @@ function is_valid_marker(value: unknown): value is Marker {
     );
 }
 
-function is_valid_arrangement_section(value: unknown): value is ArrangementSection {
+export function is_valid_arrangement_section(value: unknown): value is ArrangementSection {
     return (
         value !== null &&
         typeof value === 'object' &&

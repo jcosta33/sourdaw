@@ -105,7 +105,6 @@ impl Clap909Engine {
         );
 
         let mut burst_out = 0.0_f32;
-        let tail_out;
 
         if !self.bursts_done {
             // Burst amplitudes diminish: 1.0, 0.85, 0.65, 0.9 (final is loudest = "TAA")
@@ -134,7 +133,7 @@ impl Clap909Engine {
             }
         }
 
-        tail_out = if self.bursts_done {
+        let tail_out = if self.bursts_done {
             let out = bpf_out * self.tail_env;
             self.tail_env *= self.tail_decay_coeff;
             if self.tail_env < 1e-5 {
@@ -154,9 +153,8 @@ impl Clap909Engine {
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
-        match name {
-            DECAY => self.decay = value.clamp(0.0, 1.0),
-            _ => {}
+        if name == DECAY {
+            self.decay = value.clamp(0.0, 1.0);
         }
     }
 }

@@ -7,6 +7,9 @@ export const LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS = 32;
 /** The failure code of a local planning request that does not fit the local model's context window. */
 export const LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE = 'local-context-window-exceeded';
 
+/** The failure code of a local planning request made on a local model that does not plan. */
+export const LOCAL_PLANNER_REQUIRED_FAILURE_CODE = 'local-planner-required';
+
 /**
  * Counts the tokens a text costs the local model. The budget reads tokens only through this port,
  * so the conservative estimate it ships with can be replaced by the model's own tokenizer.

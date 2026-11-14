@@ -2049,7 +2049,9 @@ describe('pull-request supersession', () => {
             writeFileSync(lineagePath, JSON.stringify(repairedLineage));
             const nativeSerialize = withPullRequestMutationLock;
             const dispose = vi.fn();
-            vi.spyOn(githubIdentity, 'originMainBlob').mockReturnValue(undefined);
+            vi.spyOn(githubIdentity, 'originMainBlob').mockReturnValue(
+                readFileSync(join(import.meta.dirname, '../supersedePullRequest.ts'), 'utf8')
+            );
             vi.spyOn(githubIdentity, 'resolvePrimaryRoot').mockReturnValue(root);
             vi.spyOn(githubIdentity, 'authenticateRole').mockResolvedValue({
                 credentials: { appId: 'fixture', installationId: 'fixture', privateKey: '', sourcePath: root },

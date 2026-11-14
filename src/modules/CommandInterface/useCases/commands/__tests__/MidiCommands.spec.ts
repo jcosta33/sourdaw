@@ -5,7 +5,8 @@ import { executeUserAppAction } from '#/modules/Command/useCases';
 import { midiCommands } from '../MidiCommands';
 
 vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('../../selectionHelpers/getSelectedClipId', () => ({ getSelectedClipId: vi.fn() }));
+vi.mock('../../selectionHelpers/getSelectedClipId', () => ({ getSelectedClipId: vi.fn(() => 'clip-1') }));
+vi.mock('../../selectionHelpers/getSelectedClipIdOfType', () => ({ getSelectedClipIdOfType: vi.fn() }));
 
 const CLIP_SCOPED_COMMAND_IDS = [
     'quantize-notes',
@@ -29,8 +30,8 @@ function runAction(id: string): void {
 describe('midiCommands', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
-        const { getSelectedClipId } = await import('../../selectionHelpers/getSelectedClipId');
-        vi.mocked(getSelectedClipId).mockReturnValue('clip-1');
+        const { getSelectedClipIdOfType } = await import('../../selectionHelpers/getSelectedClipIdOfType');
+        vi.mocked(getSelectedClipIdOfType).mockReturnValue('clip-1');
     });
 
     it('exposes the MIDI editing commands under the MIDI category', () => {
@@ -126,10 +127,23 @@ describe('midiCommands', () => {
     });
 
     it('dispatches nothing for any clip-scoped command when no clip is selected', async () => {
-        const { getSelectedClipId } = await import('../../selectionHelpers/getSelectedClipId');
-        vi.mocked(getSelectedClipId).mockReturnValue(null);
+        const { getSelectedClipIdOfType } = await import('../../selectionHelpers/getSelectedClipIdOfType');
+        vi.mocked(getSelectedClipIdOfType).mockReturnValue(null);
 
         for (const id of CLIP_SCOPED_COMMAND_IDS) {
+            runAction(id);
+        }
+
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+    });
+
+    it('blocks every clip-scoped MIDI command when the selected clip is audio', async () => {
+        const { getSelectedClipIdOfType } = await import('../../selectionHelpers/getSelectedClipIdOfType');
+        vi.mocked(getSelectedClipIdOfType).mockImplementation((type) => (type === 'audio' ? 'clip-1' : null));
+
+        for (const id of CLIP_SCOPED_COMMAND_IDS) {
+            const command = midiCommands.find((candidate) => candidate.id === id);
+            expect(command?.getInapplicabilityReason?.()).toBe('Select a MIDI clip first.');
             runAction(id);
         }
 

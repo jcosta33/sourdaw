@@ -1,4 +1,5 @@
 import("stdfaust.lib");
+cs = library("sourdaw-current-sound.lib");
 freq = hslider("freq", 440, 20, 12000, 0.01);
 gain = hslider("gain", 0.5, 0, 1, 0.01);
 gate = button("gate");
@@ -8,10 +9,10 @@ dec = hslider("decay", 0.3, 0.01, 5, 0.01);
 sus = hslider("sustain", 0.6, 0, 1, 0.01);
 rel = hslider("release", 0.5, 0.01, 10, 0.01);
 // 4 waveforms: sine → triangle → saw → square
-w1 = os.osc(freq);
-w2 = os.triangle(freq);
-w3 = os.sawtooth(freq);
-w4 = os.square(freq);
+w1 = cs.osc(freq);
+w2 = cs.triangle(freq);
+w3 = cs.sawtooth(freq);
+w4 = cs.square(freq);
 // Segment crossfade: morph 0..0.33 = w1↔w2, 0.33..0.66 = w2↔w3, 0.66..1 = w3↔w4
 seg = morph * 3;
 s1 = min(1, max(0, 1 - seg));

@@ -153,7 +153,7 @@ function runtimePorts() {
         CI: 'true',
         GITHUB_ACTIONS: 'true',
         GITHUB_WORKSPACE: context.workspace,
-        VITEST_MAX_WORKERS: '4',
+        VITEST_MAX_WORKERS: '2',
         TMPDIR: context.temp,
         TMP: context.temp,
         TEMP: context.temp,

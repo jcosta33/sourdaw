@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
     settle: vi.fn(),
     settleSafely: vi.fn(),
     transitionPhase: vi.fn(),
+    removeChatMessage: vi.fn(),
     updateChatMessage: vi.fn(),
 }));
 
@@ -98,6 +99,7 @@ vi.mock('../../../repositories/webLlm/getActiveModelId', () => ({ getActiveModel
 
 vi.mock('../../../stores/chatStore', () => ({
     appendChatMessage: mocks.appendChatMessage,
+    removeChatMessage: mocks.removeChatMessage,
     setActiveAborter: mocks.setActiveAborter,
     setChatGenerating: mocks.setChatGenerating,
     updateChatMessage: mocks.updateChatMessage,

@@ -48,6 +48,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import {
+    getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
     isValidMidiTimeStateRestorePlan,
     prepareMidiGlobalTimeTransaction,
@@ -182,6 +183,7 @@ describe('completed command metadata and audio source admission', () => {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getMidiGrooveHandlers(),
             getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),

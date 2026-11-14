@@ -1,6 +1,7 @@
 import { type getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 import { collectProtectedScopes, isProjectWideScope } from '#/modules/Project/useCases';
+import { digest } from '#/utils/canonicalDigest';
 
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type ProjectContext, type ProjectContextSection, type ProjectContextTrack } from '../models/ProjectContext';
@@ -19,6 +20,7 @@ import {
     type VibeRunUnplannedRole,
     type VibeRunVerificationRange,
 } from '../models/VibeRunPlan';
+import { isSilentVibeRunCell } from '../validators/isSilentVibeRunCell';
 
 import { resolveRoleFamily } from './canonicalRoleFamilies';
 import { countRecipeExpansionCommands } from './countRecipeExpansionCommands';
@@ -49,6 +51,8 @@ type PlannableTarget = {
     recipes: readonly MixRecipe[];
     expectedDeltas: readonly VibeRunExpectedDelta[];
     commandCount: number;
+    /** Required ranges the target is silent over; never every one of them. */
+    silentRanges: readonly VibeRunVerificationRange[];
 };
 
 type SectionBaseline = { status: 'none' } | { status: 'conflict' } | { status: 'found'; baseline: VibeRunBaseline };
@@ -267,27 +271,48 @@ function readBatchBaselines(
     return { baselines, baselineConflicts };
 }
 
+/** The figures each exact-range measurement holds for one target; one candidate is the only one that stands. */
+function readExactRangeFigures(
+    measurements: readonly VibeRunMeasurement[],
+    targetId: string,
+    range: VibeRunVerificationRange
+): VibeRunMeasurement['targets'][number]['measurements'][] {
+    const exact = measurements.filter(
+        (measurement) =>
+            measurement.range.startBeat === range.startBeat &&
+            measurement.range.endBeat === range.endBeat &&
+            measurement.range.sectionId === range.sectionId
+    );
+    const targets = exact.flatMap((measurement) =>
+        measurement.targets.filter((candidate) => candidate.targetId === targetId)
+    );
+    return targets.map((candidate) => candidate.measurements);
+}
+
+function readSilentRanges(
+    input: PlanWholeProjectVibeRunInput,
+    targetId: string,
+    expectedDeltas: readonly VibeRunExpectedDelta[]
+): VibeRunVerificationRange[] {
+    return (input.requiredRanges ?? []).filter((range) =>
+        isSilentVibeRunCell(readExactRangeFigures(input.measurements, targetId, range), expectedDeltas)
+    );
+}
+
 function readRangeRefusals(
     input: PlanWholeProjectVibeRunInput,
     target: VibeRunBatch['targets'][number],
     role: SemanticCommandListRoleFamily,
     range: VibeRunVerificationRange
 ): VibeRunPlan['coverageRefusals'] {
-    const candidates = input.measurements
-        .filter(
-            (measurement) =>
-                measurement.range.startBeat === range.startBeat &&
-                measurement.range.endBeat === range.endBeat &&
-                measurement.range.sectionId === range.sectionId
-        )
-        .flatMap((measurement) => measurement.targets.filter((candidate) => candidate.targetId === target.targetId));
+    const candidates = readExactRangeFigures(input.measurements, target.targetId, range);
     const refusals: VibeRunPlan['coverageRefusals'][number][] = [];
     for (const delta of target.expectedDeltas) {
         const metric = getAgentMeasurementMetricIds().find((metric) => metric === delta.metric);
         if (
             candidates.length !== 1 ||
             metric === undefined ||
-            objectiveMetricProjection(metric, candidates[0]?.measurements[delta.metric], delta.band) === null
+            objectiveMetricProjection(metric, candidates[0]?.[delta.metric], delta.band) === null
         ) {
             refusals.push({
                 targetId: target.targetId,
@@ -304,6 +329,7 @@ function readRangeRefusals(
     }
     return refusals;
 }
+
 function readCoverageRefusals(
     input: PlanWholeProjectVibeRunInput,
     batches: readonly VibeRunBatch[]
@@ -312,11 +338,55 @@ function readCoverageRefusals(
     for (const batch of batches) {
         for (const target of batch.targets) {
             for (const range of input.requiredRanges ?? []) {
-                refusals.push(...readRangeRefusals(input, target, batch.objective.role, range));
+                const silent = batch.silentRanges.some(
+                    (cell) => cell.targetId === target.targetId && digest(cell.range) === digest(range)
+                );
+                if (!silent) {
+                    refusals.push(...readRangeRefusals(input, target, batch.objective.role, range));
+                }
             }
         }
     }
     return refusals;
+}
+
+/**
+ * Sorts one role's tracks into the targets a batch may carry and those it may not: no applicable
+ * recipe, recipes past one batch, or silent over every required range.
+ */
+function classifyRoleTracks(
+    input: PlanWholeProjectVibeRunInput,
+    roleTracks: readonly ProjectContextTrack[],
+    rolePlanRecipes: readonly MixRecipe[]
+) {
+    const plannable: PlannableTarget[] = [];
+    const oversizedTargetIds: string[] = [];
+    const excludedTargets: VibeRunExcludedTarget[] = [];
+    const silentTargets: VibeRunPlan['silentTargets'][number][] = [];
+    for (const track of roleTracks) {
+        const recipes = rolePlanRecipes.filter((recipe) => canApplyEditSteps(recipe, track));
+        const commandCount = recipes.reduce((total, recipe) => total + countRecipeExpansionCommands(recipe), 0);
+        if (recipes.length === 0) {
+            excludedTargets.push({ targetId: track.id, reason: 'no-applicable-recipe' });
+            continue;
+        }
+        if (commandCount > MAX_LLM_ACTIONS_PER_BATCH) {
+            oversizedTargetIds.push(track.id);
+            continue;
+        }
+        const expectedDeltas = readExpectedDeltas(recipes);
+        const silentRanges = readSilentRanges(input, track.id, expectedDeltas);
+        if (silentRanges.length > 0 && silentRanges.length === input.requiredRanges?.length) {
+            excludedTargets.push({ targetId: track.id, reason: 'silent' });
+            silentTargets.push({
+                targetId: track.id,
+                metrics: [...new Set(expectedDeltas.map((delta) => delta.metric))],
+            });
+            continue;
+        }
+        plannable.push({ id: track.id, recipes, expectedDeltas, commandCount, silentRanges });
+    }
+    return { plannable, oversizedTargetIds, excludedTargets, silentTargets };
 }
 
 /**
@@ -330,7 +400,9 @@ function readCoverageRefusals(
  * families run in the selector vocabulary's order, which puts sources before the groups that carry
  * them and the master last. A batch is bounded by the commands its recipes expand to over its
  * targets, never by its target count. A family no requested character has a measurable recipe for,
- * and a target whose recipes alone pass the cap, are reported, not planned. The plan reads baselines
+ * and a target whose recipes alone pass the cap, are reported, not planned. A target silent over a
+ * required range has no goal there and its batch lists the range; one silent over every required range
+ * is excluded as `silent`. Anything short of silence over a range still refuses it. The plan reads baselines
  * the caller already measured; it renders nothing and writes nothing.
  */
 export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): VibeRunPlan {
@@ -339,6 +411,7 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
         protectedIds.add(targetId);
     }
     const excludedTargets: VibeRunExcludedTarget[] = [];
+    const silentTargets: VibeRunPlan['silentTargets'][number][] = [];
     const tracksByRole = new Map<SemanticCommandListRoleFamily, ProjectContextTrack[]>();
     for (const track of input.context.tracks) {
         const reason = findExclusion(track, protectedIds);
@@ -370,23 +443,13 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
             unplannedRoles.push({ role, reason: 'no-expected-deltas', targetIds: roleTracks.map((track) => track.id) });
             continue;
         }
-        const plannable: PlannableTarget[] = [];
-        const oversizedTargetIds: string[] = [];
-        for (const track of roleTracks) {
-            const recipes = rolePlanRecipes.filter((recipe) => canApplyEditSteps(recipe, track));
-            const commandCount = recipes.reduce((total, recipe) => total + countRecipeExpansionCommands(recipe), 0);
-            if (recipes.length === 0) {
-                excludedTargets.push({ targetId: track.id, reason: 'no-applicable-recipe' });
-            } else if (commandCount > MAX_LLM_ACTIONS_PER_BATCH) {
-                oversizedTargetIds.push(track.id);
-            } else {
-                plannable.push({ id: track.id, recipes, expectedDeltas: readExpectedDeltas(recipes), commandCount });
-            }
+        const classified = classifyRoleTracks(input, roleTracks, rolePlanRecipes);
+        excludedTargets.push(...classified.excludedTargets);
+        silentTargets.push(...classified.silentTargets);
+        if (classified.oversizedTargetIds.length > 0) {
+            unplannedRoles.push({ role, reason: 'target-exceeds-batch-cap', targetIds: classified.oversizedTargetIds });
         }
-        if (oversizedTargetIds.length > 0) {
-            unplannedRoles.push({ role, reason: 'target-exceeds-batch-cap', targetIds: oversizedTargetIds });
-        }
-        for (const group of packWithinCommandCap(plannable, input.maxTargetsPerBatch)) {
+        for (const group of packWithinCommandCap(classified.plannable, input.maxTargetsPerBatch)) {
             const targetIds = group.map((target) => target.id);
             const ordinal = batches.length + 1;
             const { baselines, baselineConflicts } = readBatchBaselines(input.measurements, group, sections);
@@ -413,6 +476,9 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
                 baselines,
                 unmeasuredTargetIds: targetIds.filter((targetId) => !measuredTargetIds.has(targetId)),
                 baselineConflicts,
+                silentRanges: group.flatMap((target) =>
+                    target.silentRanges.map((range) => ({ targetId: target.id, range }))
+                ),
             });
         }
     }
@@ -424,6 +490,7 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
         coverageRefusals,
         batches,
         excludedTargets,
+        silentTargets,
         unplannedRoles,
     };
 }

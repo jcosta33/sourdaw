@@ -66,6 +66,15 @@ export const QUIETER_SCOPE_PHRASES: readonly string[] = [
 
 export const LOUDER_SCOPE_PHRASES: readonly string[] = ['boost', 'higher', 'hotter', 'louder', 'raise', 'turn up'];
 
+/**
+ * Range-automation verbs that move a level for a stretch of time: "dip the Vocals by 6 dB in the
+ * chorus" lowers, "lift the Drum Bus by 1.5 dB" raises. They sign a figure here only; the
+ * refinement grammar reads its own closed direction list.
+ */
+const QUIETER_RANGE_VERBS: readonly string[] = ['dip', 'duck'];
+
+const LOUDER_RANGE_VERBS: readonly string[] = ['lift'];
+
 function namesPhrase(normalizedScope: string, phrase: string): boolean {
     return ` ${normalizedScope} `.includes(` ${phrase} `);
 }
@@ -106,8 +115,12 @@ function getFollowingWord(maskedScope: string, unitEnd: number): string {
  * directions, and neither figure in it is signed by the scope alone.
  */
 function getScopeSign(normalizedScope: string): number | null {
-    const lowers = QUIETER_SCOPE_PHRASES.some((phrase) => namesPhrase(normalizedScope, phrase));
-    const raises = LOUDER_SCOPE_PHRASES.some((phrase) => namesPhrase(normalizedScope, phrase));
+    const lowers = [...QUIETER_SCOPE_PHRASES, ...QUIETER_RANGE_VERBS].some((phrase) =>
+        namesPhrase(normalizedScope, phrase)
+    );
+    const raises = [...LOUDER_SCOPE_PHRASES, ...LOUDER_RANGE_VERBS].some((phrase) =>
+        namesPhrase(normalizedScope, phrase)
+    );
     if (lowers === raises) {
         return null;
     }

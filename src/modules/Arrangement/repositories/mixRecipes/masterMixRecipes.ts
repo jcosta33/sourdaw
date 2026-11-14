@@ -271,7 +271,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
         ],
         metrics: [
             { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' },
-            { metric: 'interTrackMasking', direction: 'decrease' },
+            { metric: 'rms', direction: 'decrease' },
         ],
         source: 'When every source contributes a little energy between 250 Hz and 400 Hz the sum reads muddy even though no track does, and that is the only case a master cut answers honestly. A moderate Q clears the region without notching out the body of the mix.',
     },
@@ -300,7 +300,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
         ],
         metrics: [
             { metric: 'frequencyBandEnergy', band: 'bass', direction: 'increase' },
-            { metric: 'busHeadroom', direction: 'decrease' },
+            { metric: 'truePeak', direction: 'increase' },
         ],
         source: 'Low-frequency energy consumes more headroom per decibel than any other band, so the master lift stays under 2.5 dB and the headroom cost is stated as an expected consequence. The broad bell above the shelf fills the region between weight and body without adding a resonance.',
     },

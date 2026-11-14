@@ -128,6 +128,44 @@ describe('handleRestoreScratchPadState', () => {
         expect(markerStore.value?.sections).toEqual(liveMarkerSections);
     });
 
+    it('returns conflict and writes nothing when a replacement pad section carries only its id', () => {
+        const liveMarkerSections = [markerSection('m1', 0)];
+        markerStore.set({ markers: [], sections: liveMarkerSections });
+
+        const result = handleRestoreScratchPadState.execute({
+            type: 'restoreScratchPadState',
+            payload: {
+                expectedSections: [],
+                replacementSections: [padSection('whole', 0), { id: 'bare' }],
+                expectedMarkerSections: liveMarkerSections,
+                replacementMarkerSections: liveMarkerSections,
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(scratchPadStore.value?.sections).toEqual([]);
+        expect(markerStore.value?.sections).toEqual(liveMarkerSections);
+    });
+
+    it('returns conflict and writes nothing when a replacement marker section carries only its id', () => {
+        const liveMarkerSections = [markerSection('m1', 0)];
+        markerStore.set({ markers: [], sections: liveMarkerSections });
+
+        const result = handleRestoreScratchPadState.execute({
+            type: 'restoreScratchPadState',
+            payload: {
+                expectedSections: [],
+                replacementSections: [padSection('whole', 0)],
+                expectedMarkerSections: liveMarkerSections,
+                replacementMarkerSections: [markerSection('m2', 8), { id: 'bare-marker' }],
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(scratchPadStore.value?.sections).toEqual([]);
+        expect(markerStore.value?.sections).toEqual(liveMarkerSections);
+    });
+
     it('isNoop is true when both replacement collections already match live state', () => {
         const sections = [padSection('a', 0)];
         const markerSections = [markerSection('m1', 0)];

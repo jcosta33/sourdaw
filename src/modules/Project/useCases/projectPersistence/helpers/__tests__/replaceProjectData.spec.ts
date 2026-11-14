@@ -58,7 +58,7 @@ const {
     mockNotifyUser: vi.fn(),
     mockProjectStore: {
         value: null as Record<string, unknown> | null,
-        set: vi.fn(),
+        set: vi.fn<(state: Record<string, unknown>) => void>(),
     },
     mockProjectLoadFailureStore: {
         value: null as Record<string, unknown> | null,
@@ -140,7 +140,10 @@ vi.mock('../resetModuleStoresToDefault', () => ({ resetModuleStoresToDefault: mo
 vi.mock('../verifyAudioBufferReferences', () => ({ verifyAudioBufferReferences: mockVerifyAudioBufferReferences }));
 
 import { createDefaultProductionBrief } from '../../../../models/ProductionBrief';
+import { captureProjectTransitionAuthority } from '../../captureProjectTransitionAuthority';
+import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
 import { replaceProjectData } from '../replaceProjectData';
+import { runProjectLoadTransaction } from '../runProjectLoadTransaction';
 import { unsavedClosedTakes } from '../unsavedClosedTakes';
 
 import type { HydratableProjectData, HydratableProjectTrack } from '../isHydratableProjectData';
@@ -191,6 +194,7 @@ function makeTransaction(overrides: Partial<ProjectLoadTransaction> = {}): Proje
     return {
         prepare: () => Promise.resolve(true),
         activate: () => true,
+        abandon: vi.fn(),
         canActivate: () => true,
         isCurrent: () => true,
         signal,
@@ -201,6 +205,7 @@ function makeTransaction(overrides: Partial<ProjectLoadTransaction> = {}): Proje
 describe('replaceProjectData', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockProjectStore.set.mockReset();
         mockProjectStore.value = null;
         mockImportCachedAudioBuffers.mockResolvedValue({ publish: vi.fn(), persist: () => Promise.resolve(true) });
         mockPrepareCachedAudioBuffersFromIdb.mockResolvedValue({
@@ -243,6 +248,61 @@ describe('replaceProjectData', () => {
             transaction: makeTransaction({ activate: () => false }),
         });
         expect(result.status).toBe('aborted');
+    });
+
+    it('settles a real prepared replacement withdrawn before activation', async () => {
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
+        const active = runProjectLoadTransaction();
+        expect(await active.prepare()).toBe(true);
+        expect(active.activate()).toBe(true);
+        const oldAuthority = captureProjectTransitionAuthority();
+        const retainedProject = { name: 'Retained', initialized: true, loading: false };
+        mockProjectStore.value = retainedProject;
+        let proceed = true;
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: async () => {
+                proceed = false;
+            },
+        });
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: runProjectLoadTransaction(),
+            shouldProceed: () => proceed,
+        });
+        expect(result.status).toBe('aborted');
+        expect(mockResetCrdtProject).not.toHaveBeenCalled();
+        expect(mockProjectStore.value).toBe(retainedProject);
+        expect(oldAuthority.isCurrent()).toBe(false);
+        expect(captureProjectTransitionAuthority().isCurrent()).toBe(true);
+    });
+
+    it('restores retained loading flags after a real replacement preparation rejects', async () => {
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
+        const active = runProjectLoadTransaction();
+        expect(await active.prepare()).toBe(true);
+        expect(active.activate()).toBe(true);
+        const oldAuthority = captureProjectTransitionAuthority();
+        mockProjectStore.value = { name: 'Retained', initialized: true, loading: false };
+        mockProjectStore.set.mockImplementation((state) => {
+            mockProjectStore.value = state;
+        });
+        const failure = new Error('collaboration shutdown rejected');
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: async () => {
+                throw failure;
+            },
+        });
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: runProjectLoadTransaction(),
+        });
+        expect(result.status).toBe('aborted');
+        expect(mockResetCrdtProject).not.toHaveBeenCalled();
+        expect(mockProjectStore.value).toMatchObject({ name: 'Retained', initialized: true, loading: false });
+        expect(oldAuthority.isCurrent()).toBe(false);
+        expect(captureProjectTransitionAuthority().isCurrent()).toBe(true);
     });
 
     it('does not switch project authority after an external discard authority is revoked during preparation', async () => {

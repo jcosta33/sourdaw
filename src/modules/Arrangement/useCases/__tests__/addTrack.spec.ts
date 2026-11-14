@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { addTrack } from '../addTrack';
@@ -15,31 +13,24 @@ vi.mock('../../repositories/track/setTrackState', () => ({
     setTrackState: vi.fn<typeof setTrackState>(),
 }));
 
-const mockEventBus = {
-    emit: vi.fn(),
-};
-
 function createTrackState(overrides: Partial<TrackState> = {}): TrackState {
     return { tracks: [], selectedTrackId: null, ghostClips: [], ...overrides };
 }
 
 describe('addTrack', () => {
     beforeEach(() => {
-        injectDependencies(addTrack, { eventBus: mockEventBus });
         vi.mocked(getTrackState).mockReset();
         vi.mocked(setTrackState).mockReset();
-        mockEventBus.emit.mockReset();
     });
 
-    it('should return null and not emit when track state is missing', () => {
+    it('should return null and not write when track state is missing', () => {
         vi.mocked(getTrackState).mockReturnValue(null);
 
         expect(addTrack({ name: 'Drums', kind: 'audio' })).toBeNull();
-        expect(mockEventBus.emit).not.toHaveBeenCalled();
         expect(setTrackState).not.toHaveBeenCalled();
     });
 
-    it('should append track, select it by default, and emit track.added', () => {
+    it('should append track and select it by default', () => {
         vi.mocked(getTrackState).mockReturnValue(createTrackState());
 
         const result = addTrack({ name: 'Lead', kind: 'midi' });
@@ -50,24 +41,7 @@ describe('addTrack', () => {
             selectedTrackId: result!.id,
             ghostClips: [],
         });
-        expect(mockEventBus.emit).toHaveBeenCalledWith(
-            'track.added',
-            expect.objectContaining({ name: 'Lead', kind: 'midi', trackId: result!.id })
-        );
-    });
-
-    it('should append track without emitting when the added event is suppressed', () => {
-        vi.mocked(getTrackState).mockReturnValue(createTrackState());
-
-        const result = addTrack({ name: 'Lead copy', kind: 'midi', suppressAddedEvent: true });
-
-        expect(result).not.toBeNull();
-        expect(setTrackState).toHaveBeenCalledWith({
-            tracks: [result],
-            selectedTrackId: result!.id,
-            ghostClips: [],
-        });
-        expect(mockEventBus.emit).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ name: 'Lead', kind: 'midi' });
     });
 
     it('should append track without changing selection when selection is disabled', () => {
@@ -81,9 +55,6 @@ describe('addTrack', () => {
             selectedTrackId: 'track-existing',
             ghostClips: [],
         });
-        expect(mockEventBus.emit).toHaveBeenCalledWith(
-            'track.added',
-            expect.objectContaining({ name: 'Master', kind: 'master', trackId: result!.id })
-        );
+        expect(result).toMatchObject({ name: 'Master', kind: 'master' });
     });
 });

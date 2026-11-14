@@ -41,13 +41,10 @@ test.describe('Command Palette', () => {
     test('Enter selects and runs the top match after the cursor hovered a now-filtered-out option', async ({
         page,
     }) => {
-        // Regression guard for the hover/keyboard-nav desync: hovering an option in
-        // the full (unfiltered) list bumped selectedIndex high; filtering the list
-        // down then left that index out of range, so the Enter handler's
-        // `results[selectedIndex]` guard was undefined and Enter silently did
-        // nothing — the palette stayed open and the command never ran. The contract
-        // proven here is the part the bug broke: after hover + filter the top match
-        // is the active selection and pressing Enter runs it and closes the palette.
+        // Observe the transport control fed by transport.metronomeEnabled, so
+        // closing the palette without dispatching cannot satisfy this case.
+        const metronome = page.getByRole('button', { name: 'Metronome', exact: true });
+        await expect(metronome).toHaveAttribute('aria-pressed', 'false');
         const isMac = await page.evaluate(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0);
         await page.keyboard.press(isMac ? 'Meta+K' : 'Control+K');
 
@@ -57,18 +54,18 @@ test.describe('Command Palette', () => {
         const input = palette.getByPlaceholder(/Type a command/i);
         await expect(input).toBeFocused();
 
-        // With an empty query the full catalog is listed. Move the pointer onto a
-        // deep-in-the-list option so the keyboard selection index is bumped high.
-        const hoverTarget = palette.getByRole('option', { name: /Toggle Metronome/i });
+        // With an empty query a small discovery set is listed. Move the pointer
+        // beyond the first suggestion so the keyboard selection index is bumped.
+        const hoverTarget = palette.getByRole('option', { name: /Add Audio Track/i });
         await expect(hoverTarget).toBeVisible();
         await hoverTarget.hover();
 
         // Now filter the list down so the previously hovered index is out of range
         // for the new, shorter results.
-        await input.fill('Add Audio Track');
+        await input.fill('Toggle Metronome');
 
         // The top match must be the active selection — not a stale hovered index.
-        const topMatch = palette.getByRole('option', { name: /Add Audio Track/i });
+        const topMatch = palette.getByRole('option', { name: /Toggle Metronome/i });
         await expect(topMatch).toBeVisible();
         await expect(topMatch).toHaveAttribute('aria-selected', 'true');
 
@@ -76,5 +73,6 @@ test.describe('Command Palette', () => {
         // selection and close the palette (the bug left it open).
         await page.keyboard.press('Enter');
         await expect(palette).not.toBeVisible();
+        await expect(metronome).toHaveAttribute('aria-pressed', 'true');
     });
 });

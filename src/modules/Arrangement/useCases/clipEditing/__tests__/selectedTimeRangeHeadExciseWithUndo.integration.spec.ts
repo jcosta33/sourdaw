@@ -36,6 +36,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import {
+    getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
     isValidMidiTimeStateRestorePlan,
     prepareMidiGlobalTimeTransaction,
@@ -83,6 +84,7 @@ function hydrateProductionContracts(): void {
         getAutomationHandlers(),
         getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
         getMidiNoteTransformHandlers(),
+        getMidiGrooveHandlers(),
         getProjectHandlers(),
         getTransportHandlers(),
         getYeastHandlers(),

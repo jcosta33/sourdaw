@@ -472,7 +472,7 @@ describe('deferred seek scheduler ownership', () => {
         const seek = executePlayheadSeek(16);
         const failure = new Error('original flush failed');
         const outcome = seek.then(
-            () => undefined,
+            (committed) => committed,
             (error: unknown) => error
         );
         expect(mockReposition).toHaveBeenCalledExactlyOnceWith({ positionSeconds: 8 });
@@ -505,7 +505,7 @@ describe('deferred seek scheduler ownership', () => {
         } else {
             flush.resolve();
         }
-        expect(await outcome).toBe(reject ? failure : undefined);
+        expect(await outcome).toBe(reject ? failure : false);
 
         expect(schedulerSession.worker).toBe(successor.worker);
         expect(schedulerSession.generation).toBe(successor.generation);
@@ -560,6 +560,21 @@ describe('deferred seek scheduler ownership', () => {
         expect(schedulerSession.worker).not.toBe(worker);
     });
 
+    it('declines completion when Stop takes ownership during the post-position panic', async () => {
+        const panic = deferredFlush();
+        mockPanicYeast.mockReturnValueOnce(panic.promise);
+        const seek = executePlayheadSeek(16);
+        await vi.waitFor(() => expect(playheadPositionRef.current).toBe(16));
+        const seekGeneration = schedulerSession.generation;
+
+        await stopPlayback();
+        expect(schedulerSession.generation).toBeGreaterThan(seekGeneration);
+        panic.resolve();
+
+        expect(await seek).toBe(false);
+        expect(transportStore.value?.isPlaying).toBe(false);
+    });
+
     it.each([false, true])('finishes a parked or paused seek (wasPlaying=%s)', async (wasPlaying) => {
         const flush = deferredFlush();
         mockStopActiveRecording.mockReturnValueOnce(flush.promise);
@@ -584,18 +599,18 @@ describe('deferred seek scheduler ownership', () => {
         await seek;
     });
 
-    it('lets two deferred seeks from one owner finish in flush order', async () => {
+    it('lets the latest deferred seek from one owner commit', async () => {
         const firstFlush = deferredFlush();
         const secondFlush = deferredFlush();
         mockStopActiveRecording.mockReturnValueOnce(firstFlush.promise).mockReturnValueOnce(secondFlush.promise);
         const firstSeek = executePlayheadSeek(16);
         const secondSeek = executePlayheadSeek(24);
         firstFlush.resolve();
-        await firstSeek;
-        expect(playheadPositionRef.current).toBe(16);
+        expect(await firstSeek).toBe(false);
+        expect(playheadPositionRef.current).toBe(4);
         const firstWorker = schedulerSession.worker;
         secondFlush.resolve();
-        await secondSeek;
+        expect(await secondSeek).toBe(true);
         expect(playheadPositionRef.current).toBe(24);
         expect(transportStore.value?.playheadPosition).toBe(24);
         expect(schedulerSession.worker).not.toBe(firstWorker);

@@ -1,6 +1,6 @@
 import { automationStore } from '#/modules/Automation/stores';
-import { executeUserAppAction } from '#/modules/Command/useCases';
 
+import { executeCommandAction } from '../executeCommandAction';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 
 /** Automation commands — scale, invert, thin automation points. */
@@ -10,10 +10,17 @@ export const automationCommands: CallableCommandEntry[] = [
         label: 'Scale Automation',
         description: 'Scale automation values by a factor',
         category: 'Automation',
-        action: () => {
+        getInapplicabilityReason: (context) =>
+            (context?.hasAutomationLane ?? !!automationStore.value?.lanes[0])
+                ? null
+                : 'Create an automation lane first.',
+        action: (onCommitted?: () => void) => {
             const lane = automationStore.value?.lanes[0];
             if (lane) {
-                void executeUserAppAction({ type: 'scaleAutomation', payload: { laneId: lane.id, factor: 1.2 } });
+                void executeCommandAction(onCommitted, {
+                    type: 'scaleAutomation',
+                    payload: { laneId: lane.id, factor: 1.2 },
+                });
             }
         },
     },
@@ -22,10 +29,14 @@ export const automationCommands: CallableCommandEntry[] = [
         label: 'Invert Automation',
         description: 'Invert automation values around the center',
         category: 'Automation',
-        action: () => {
+        getInapplicabilityReason: (context) =>
+            (context?.hasAutomationLane ?? !!automationStore.value?.lanes[0])
+                ? null
+                : 'Create an automation lane first.',
+        action: (onCommitted?: () => void) => {
             const lane = automationStore.value?.lanes[0];
             if (lane) {
-                void executeUserAppAction({ type: 'invertAutomation', payload: { laneId: lane.id } });
+                void executeCommandAction(onCommitted, { type: 'invertAutomation', payload: { laneId: lane.id } });
             }
         },
     },
@@ -34,10 +45,14 @@ export const automationCommands: CallableCommandEntry[] = [
         label: 'Thin Automation Points',
         description: 'Reduce automation point density while preserving shape',
         category: 'Automation',
-        action: () => {
+        getInapplicabilityReason: (context) =>
+            (context?.hasAutomationLane ?? !!automationStore.value?.lanes[0])
+                ? null
+                : 'Create an automation lane first.',
+        action: (onCommitted?: () => void) => {
             const lane = automationStore.value?.lanes[0];
             if (lane) {
-                void executeUserAppAction({ type: 'thinAutomation', payload: { laneId: lane.id } });
+                void executeCommandAction(onCommitted, { type: 'thinAutomation', payload: { laneId: lane.id } });
             }
         },
     },

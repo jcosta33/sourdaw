@@ -1345,7 +1345,6 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                         : 'border-border-hairline bg-surface-panel hover:border-border hover:bg-surface-raised'
                                                 }`}
                                                 onClick={() => toggleFormat(freq.value)}
-                                                aria-pressed={active}
                                                 role="checkbox"
                                                 aria-checked={active}
                                                 disabled={exporting}

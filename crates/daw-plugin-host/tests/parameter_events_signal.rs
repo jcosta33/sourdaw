@@ -5,6 +5,8 @@
 //! flag. This test binary is its own process, so nothing else touches the flag
 //! here. Keep this file to that one assertion.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_plugin_host::{
     take_pending_parameter_events_signal, PluginParameterEvent, PluginParameterEventQueue,
 };

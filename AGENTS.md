@@ -177,8 +177,8 @@ from `review.json`, `risk-plan.json`, and live facts. A fresh plan-carrying publ
 before any remote write unless its draws cover the plan's floor of distinct stances — one for
 `docs-only` and `test-only`, two for `small` (product code under `src/` only), otherwise three, or
 every stance the plan's classes earn when they earn fewer. Every fresh publication also checks
-each draw's declared `tier`, including effective draws reused from an unpublished historical
-dossier: only `economy` and `standard` pass, and `strongest` metadata refuses a fresh publication.
+each draw's declared `tier`, and `review.json` must carry the draws itself: an unpublished
+`dossier.json` never supplies them. Only `economy` and `standard` pass, and `strongest` metadata refuses a fresh publication.
 The script does not check model names against the cost ceiling; choosing a permitted model for
 each draw is the orchestrator's duty, and the script enforces only the declared tier and author
 diversity (`scripts/reviewerModelDiversity.ts`).
@@ -192,7 +192,8 @@ replaying and verifying.
 A pull request whose public history holds `REVIEW_ROUND_FREEZE_THRESHOLD` (ten, in
 `scripts/reviewRoundEscalation.ts`) reviewer `REQUEST_CHANGES` rounds is frozen: `review:publish`
 refuses every fresh reviewer publication on it, approve or request changes, and no caller document
-lifts the freeze. Respin the change as one consolidated pull request and close the frozen one with
+lifts the freeze. A dismissed reviewer `REQUEST_CHANGES` review that owns an inline comment still
+counts. Respin the change as one consolidated pull request and close the frozen one with
 `pr:supersede` once the replacement merges. `review:repair` and `review:confirm` stay open so
 unresolved threads remain resolvable. `review:prepare` logs
 `review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` on every run, adds
@@ -212,8 +213,10 @@ or raw session-transcript markers. Private reviewer prose belongs nowhere in the
 A lane that adds credential-shaped or armored-key fixtures composes them at runtime from their parts;
 the pull-request diff secret scan is a required gate and matches those literals in source.
 
-A bundle with no `risk-plan.json` retains its legacy shape, but fresh publications still meet the
-reviewer cost and diversity rules. Historical review and acceptance documents stay readable
+A bundle with no `risk-plan.json` is admitted for fresh publication and for delivery only when its
+pull request was opened before risk plans began (`PLANLESS_REVIEW_BUNDLE_CUTOVER` in
+`scripts/reviewPublicationBinding.ts`); any later one must re-run `review:prepare`. Admitted legacy
+bundles still meet the reviewer cost and diversity rules. Historical review and acceptance documents stay readable
 unchanged; exact published replay and recovery do not re-run fresh model eligibility, and
 `review:accept` takes no dossier.
 
@@ -221,6 +224,7 @@ Post validated blockers BEFORE repair: publish a `REQUEST_CHANGES` review agains
 head, then dispatch repairs. The author pushes the fixed head and records each repair through
 `review:repair`, leaving the thread open; the reviewer App, a distinct identity, resolves only the
 threads whose recorded repair validates through `review:confirm`, and a refusal resolves nothing.
+Both act only on threads whose root comment the reviewer App or the owner wrote.
 `review:resolve` is retired and refuses all resolutions. Never repair first and approve in
 one motion: the public record must retain the reviewer identity's findings against the original
 head and the author identity's fixing pushes and repair records. Orchestrator judgement lives in its
@@ -306,8 +310,9 @@ isolation, leaked state, or environment); fix it, open a lane, or file it. Green
 failure like weakened tests. DAW concurrency and scheduling make flakes likely real timing defects.
 For a pull request blocked by a filed failure, use the
 [failed-Gate recovery procedure](./.agents/skills/delivery-orchestration/SKILL.md#recovering-a-blocked-gate);
-a retry never authorizes delivery. Keep that rule yourself: GitHub's ruleset counts the newest run
-of `Gate`, so a green retry satisfies the ruleset.
+a retry never authorizes delivery. GitHub's ruleset counts the newest run of `Gate`, so a green
+retry satisfies the ruleset; `deliver` itself refuses a head on which any non-draft `health-gates.yml`
+attempt failed, and the remedy is a new push.
 
 ## Map
 
@@ -381,7 +386,24 @@ your lane. Claim the work when you open the lane: `pnpm issue:claim <issue>` swa
 `status:active` and moves its board items to In progress; `lane:open` prints the command. The
 issue-bound and issueless procedures are in [delivery-orchestration]. Lane worktrees carry the
 author App's git commit identity (stamped at `lane:open`, restamped by `pnpm lane:identity`), and
-`lane:publish` refuses lane-owned commits authored otherwise — commits the resolved bases (origin/main and any stack parent head) already reach are not the lane's to author.
+`lane:publish` refuses lane-owned commits whose author or committer is not that stamped identity —
+it checks recorded git identity, not who wrote a commit — and commits the resolved bases (origin/main and any stack parent head) already reach are not the lane's to author.
+
+For owned staging and checkpoint commits, run `node scripts/gitCheckpoint.ts add -- <paths>` or
+`node scripts/gitCheckpoint.ts commit <git arguments>` from the lane. The command runs Git once
+with its ordinary environment and hooks, streams stderr, and prints a private receipt location and
+writer PID. The initial private receipt must be created before Git starts; failure to create it
+refuses the checkpoint. Once Git starts, a diagnostic storage failure does not change its result.
+Receipts contain selected source and index hashes, Git metadata, bounded stderr and a
+stall observation; retain them when a checkpoint fails. They may contain private paths and Git
+output. They default to `~/.agents/artifacts/sourdaw/git-checkpoints`; set `SOURDAW_CHECKPOINT_DIR`
+to a private directory outside the worktree to choose their location, under the artifact workspace
+([Artifacts](#artifacts)) when the checkout's drive is not the home directory's. The watchdog does not stop a stalled writer or prevent Trace2 backpressure. Writer sampling uses a
+best-effort PID and start identity check; the check is not atomic and the process can exit or its
+PID can be reused before sampling. Shared receivers are never sampled. A failed
+syscall pathname requires separately authorized observation arranged before the write; a receipt or
+later trace cannot recover it. Do not retry an unchanged failure or change a shared daemon to collect
+evidence.
 
 A lane records its authoring model when opened: `--model <model>`, the lowercase public name of
 the model itself, keeping every qualifier that distinguishes capability or edition within the
@@ -440,23 +462,40 @@ exact previously installed approved blob; local launcher edits and staged change
 the sole tracked-primary installation exception; every other primary edit survives. The installed
 job performs no dependency install. The worker preserves common Git `info/exclude` entries while
 excluding only its operational namespace when the primary's tracked ignore rules are older. Inspect
-`pnpm lane:cleanup --status` from a current checkout,
-the records and `worker*.log` in that directory, and
-`launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` for job status. The worker can run directly
+`pnpm lane:cleanup --status` from a current checkout, the records and historical logs in that
+directory, `~/Library/Logs/Sourdaw/lane-cleanup/worker.log` and `worker-error.log` for current
+worker output, and `launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` plus the macOS system log
+for launchd initialization failures. The job starts with the canonical home as its working directory
+and opens its logs on that volume before Node accesses the primary checkout. Grant the pinned Node
+binary Removable Volumes access for an external primary only when the macOS privacy log identifies
+its denial; use Full Disk Access only when that denial requires it. The worker can run directly
 where process inspection is available; the scheduler installer explicitly requires macOS.
 
 Run `pnpm lane:remove <path>` outside the lane; its author lock remains until removal succeeds.
 Removal requires a clean lane holding exactly one PR's head whose work reached `main`, either
-merged directly or through `pr:supersede`'s receipt naming a merged replacement. Other closed PRs
+merged directly or through `pr:supersede`'s receipt naming a merged replacement; a receipt stops
+counting once the old PR is reopened at or after it. Removal and `lane:prune` never treat
+credential-shaped ignored files (`.env*`, `*.pem`, `*.key`, SSH keys, `.npmrc` and the like) as
+disposable, except inside `node_modules`. Other closed PRs
 are abandonments: use `lane:strand` to preserve their unlanded work. It refuses open PRs or
-uncommitted work and records the abandoned tip in the primary checkout for recovery; it refuses
-to overwrite a same-lane receipt with a different head. After writing the receipt it removes the
-worktree and deletes the lane's local branch with `git branch -D`; the receipt is the recovery
-route. `lane:remove` leaves the local branch: delete it after removal.
+uncommitted work, pins the abandoned tip at `refs/sourdaw/strands/<lane>` before writing the receipt
+or removing anything, and records it, with that ref, in a receipt in the primary checkout. It refuses
+when that ref or a same-lane receipt already records a different head; a retry at the same head
+reuses both. After writing the receipt it
+removes the worktree and deletes the lane's local branch with `git branch -D`;
+`git branch <name> refs/sourdaw/strands/<lane>` revives the work. `lane:remove` leaves the local branch: delete it after removal.
 
 ## Artifacts
 
-Drafts, one-offs, and unpublished or secret work stay in `~/.agents/artifacts` and are not filed.
+Drafts, one-offs, scratch clones and checkouts, dependency installs, and unpublished or secret work
+stay in `<root>/.agents/artifacts/sourdaw/`, outside every checkout, and are not filed. `<root>` is
+the mount point of the drive holding the primary checkout, printed by
+`df -P . | awk 'NR==2{match($0, /[0-9]+% +/); print substr($0, RSTART + RLENGTH)}'` run there. It
+reads the text after the capacity column because filesystem names and mount points can contain
+spaces; quote the result. When the same command run on `~` prints the same mount point, `<root>` is the home
+directory. When `<root>` is the primary checkout itself, ask the owner for a directory on that drive
+outside the checkout. Never place this work on another drive or under `~/.agents/artifacts` when
+the checkout's drive differs.
 The tracker is public. The issue body is the original; delete any local copy after filing.
 `.agents/specs/` is leftover corpus: do not add files there. Assigned leftover files stay until
 their work is done. Planning handed to future agents lives in GitHub issues, never a plan file.
@@ -572,13 +611,15 @@ last push, resolved threads, and `Gate` on the PR head. It is non-strict: unrela
 movement requires no merge; take `main` only for real conflicts or mergeability, and the new head
 then requires fresh `Gate` and review.
 
-Dismissing stale reviews on push, requiring approval of the last push, and the one-approval count
-are ruleset configuration, and only the trusted ruleset command, `pnpm ruleset:harden`, may change
-them. It is a dry run that prints the planned change unless `--apply` is passed. It plans against
-the live ruleset, refuses a change outside the approved field set — stale-review dismissal,
-last-push approval, and `required_approving_review_count` = 1 — or one that adds a required
-context, captures the live ruleset's canonical bytes as the rollback before writing, applies as the
-verified orchestrator User, and reads back, failing unless all three controls are shown. It has no
+Dismissing stale reviews on push, requiring approval of the last push, the one-approval count, and
+the source the required `Gate` check must come from are ruleset configuration, and only the trusted
+ruleset command, `pnpm ruleset:harden`, may change them. It is a dry run that prints the planned
+change unless `--apply` is passed. It plans against the live ruleset, refuses a change outside the
+approved set — stale-review dismissal, last-push approval, `required_approving_review_count` = 1,
+and `Gate` pinned to GitHub Actions, `integration_id` 15368, so no other identity's check or status
+named `Gate` satisfies it — or one that adds a required context, captures the live ruleset's
+canonical bytes as the rollback before writing, applies as the verified orchestrator User, and
+reads back, failing unless all four are shown. It has no
 throwaway-ruleset mode; the canary evidence #3002 requires for such a change is a live pull request
 — a red `Gate` blocking a merge, fresh approvals required after each push, unresolved threads
 blocking, and reviewer App confirmations resolving threads. Read the live ruleset rather than
@@ -665,8 +706,10 @@ only when it depends on that lane's change. A head waiting on CI or review does 
 a new lane; merge each as soon as its Gate and approval allow. If reviewers cannot attack a diff
 whole, reassess its scope under Delegation before review.
 A finished change waits only on its GitHub review. Enable hooks: `git config core.hooksPath .githooks`.
-The `commit-msg` hook refuses a subject that is not `type(scope)!: subject` or is longer than 100
-characters.
+The `commit-msg` hook refuses what `lane:publish` refuses in a subject: one that is not
+`type(scope)!: subject` with a pull-request title type (so neither `style`, `revert` nor a
+`Revert "..."` subject), carries a control character or an issue-closing reference, or is longer
+than 100 characters.
 
 ## Safety
 

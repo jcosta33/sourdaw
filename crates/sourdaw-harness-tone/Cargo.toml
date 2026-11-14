@@ -22,3 +22,6 @@ clap-sys = "0.5"
 
 [dev-dependencies]
 daw-plugin-host = { path = "../daw-plugin-host" }
+
+[lints]
+workspace = true

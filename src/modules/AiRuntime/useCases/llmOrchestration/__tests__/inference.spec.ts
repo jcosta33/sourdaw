@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
 
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
@@ -10,6 +11,7 @@ import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../../models/CreativeInter
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
 import { type HostedTurnHistory } from '../../../models/HostedTurnHistory';
 import { LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS } from '../../../models/LocalPlanningBudget';
+import { DEFAULT_WEBLLM_MODEL_ID } from '../../../models/ModelInfo';
 import { type ModelProviderResult } from '../../../models/ModelProviderProtocol';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
@@ -1822,7 +1824,7 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({
             state: 'ready',
             backend: 'webllm',
-            modelId: 'Qwen3-4B-q4f16_1-MLC',
+            modelId: DEFAULT_WEBLLM_MODEL_ID,
         });
     });
 
@@ -1980,7 +1982,7 @@ describe('generateToolPlanningOutcome', () => {
         // The mandatory set (workflow selector, the application tools including the five planning
         // tools #4371 made mandatory, every workflow action tool) leaves one free slot under the
         // WebLLM budget, and it goes to the first non-mandatory catalog tool.
-        expect(advertisedNames).toHaveLength(37);
+        expect(advertisedNames).toHaveLength(35);
         expect(new Set(advertisedNames)).toEqual(
             new Set([
                 'selectWorkflowCapability',
@@ -2014,9 +2016,7 @@ describe('generateToolPlanningOutcome', () => {
                 'createDrumPreviewBranches',
                 'copyMidiArticulations',
                 'addAdjustmentRegion',
-                'automateSendRange',
-                'automateTrackGainRange',
-                'automateSendRanges',
+                'automateParameterRange',
                 'renderProjectSections',
                 CREATIVE_INTERPRETATION_TOOL_NAME,
                 'project.discover',
@@ -2026,26 +2026,23 @@ describe('generateToolPlanningOutcome', () => {
         expect(advertisedNames).not.toContain('agent.capabilities');
     });
 
-    it('shows the provider the registry-bounded schemas for the automation range tools', () => {
+    it('shows the provider the registry-bounded schema for the automation range tool and none of the retired ones', () => {
         const schemas = getPlanningProviderToolSchemas();
 
         // ADR 0042: the provider-visible schema must state the bounds the application enforces,
         // carried by the executableAppActionRegistry definitions, not a parallel unbounded copy.
-        const trackGainProperties = schemas.find((tool) => tool.function.name === 'automateTrackGainRange')?.function
-            .parameters.properties;
-        if (!trackGainProperties) {
-            throw new Error('automateTrackGainRange schema is unavailable');
-        }
-        expect(trackGainProperties.gainDb).toMatchObject({ type: 'number', exclusiveMinimum: 0, maximum: 6 });
-        expect(trackGainProperties.trackIds).toMatchObject({ minItems: 1, uniqueItems: true });
-
-        const sendRangeProperties = schemas.find((tool) => tool.function.name === 'automateSendRange')?.function
-            .parameters.properties;
-        if (!sendRangeProperties) {
-            throw new Error('automateSendRange schema is unavailable');
-        }
-        expect(sendRangeProperties.reductionDb).toMatchObject({ type: 'number', exclusiveMinimum: 0, maximum: 60 });
-        expect(sendRangeProperties.trackIds).toMatchObject({ minItems: 1, uniqueItems: true });
+        const rangeSchema = schemas.find((tool) => tool.function.name === 'automateParameterRange');
+        expect(rangeSchema).toEqual(
+            getExecutableAppActionToolSchemas().find((tool) => tool.function.name === 'automateParameterRange')
+        );
+        expect(rangeSchema?.function.parameters.required).toEqual(
+            expect.arrayContaining(['trackId', 'parameterId', 'range'])
+        );
+        expect(
+            schemas.filter((tool) =>
+                ['automateTrackGainRange', 'automateSendRange', 'automateSendRanges'].includes(tool.function.name)
+            )
+        ).toEqual([]);
     });
 
     it.each([
@@ -2072,7 +2069,7 @@ describe('generateToolPlanningOutcome', () => {
 
             // These tools are mandatory (#4371), so they ride every prompt, and the budget still leaves
             // the one prompt-selected slot, which keeps project.discover for these prompts.
-            expect(advertisedNames).toHaveLength(37);
+            expect(advertisedNames).toHaveLength(35);
             expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
             expect(advertisedNames).toContain(RECIPE_DISCOVERY_TOOL_NAME);
             expect(advertisedNames).toContain(RECIPE_EXPANSION_TOOL_NAME);

@@ -64,7 +64,9 @@ function describeRangeTarget(payload: ParameterRangePayload): string {
 function describeRangeSpan(payload: ParameterRangePayload): string {
     const { range } = payload;
     let asked = `beats ${String(range.startBeat)}–${String(range.endBeat)}`;
-    if (range.section !== undefined) {
+    if (range.section !== undefined && range.barsBefore !== undefined) {
+        asked = `the ${String(range.barsBefore)} ${range.barsBefore === 1 ? 'bar' : 'bars'} before "${range.section}"`;
+    } else if (range.section !== undefined) {
         asked = `"${range.section}"`;
     } else if (range.startBar !== undefined) {
         asked = `bars ${String(range.startBar)}–${String(range.endBar)}`;

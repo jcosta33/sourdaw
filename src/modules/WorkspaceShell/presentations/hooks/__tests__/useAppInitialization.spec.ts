@@ -108,6 +108,10 @@ const soloModeSync = vi.hoisted(() => ({ unsubscribe: vi.fn() }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     syncSoloModePreference: vi.fn(() => soloModeSync.unsubscribe),
 }));
+const projectWorkingViewPersistence = vi.hoisted(() => ({ unsubscribe: vi.fn() }));
+vi.mock('#/modules/WorkspaceShell/useCases/initProjectWorkingViewPersistence', () => ({
+    initProjectWorkingViewPersistence: vi.fn(() => projectWorkingViewPersistence.unsubscribe),
+}));
 const mockPreferencesValueHolder: { current: Record<string, unknown> | null } = { current: { uiScale: 1 } };
 const preferenceListeners = vi.hoisted(() => new Set<() => void>());
 // Mock the preferences store the hook imports from #/modules/Preferences/stores,

@@ -1,40 +1,10 @@
 import { renderHook } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
-import { importMidiFile } from '#/modules/Arrangement/useCases';
-import { undo, redo } from '#/modules/Command/useCases';
-import { captureProjectTransitionAuthority, saveProject, newProject } from '#/modules/Project/useCases';
-import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { setWorkspaceEventBus, type WorkspaceEventBus } from '../../../useCases/workspaceEventBus';
 import { useAppEventHandlers } from '../useAppEventHandlers';
-
-vi.mock('#/modules/Arrangement/useCases', () => ({ importMidiFile: vi.fn() }));
-vi.mock('#/modules/Command/useCases', () => ({ undo: vi.fn(), redo: vi.fn(), executeUserAppAction: vi.fn() }));
-const projectEpoch = vi.hoisted(() => {
-    let epoch = 0;
-    const makeAuthority = () => {
-        const capturedEpoch = epoch;
-        return { isCurrent: () => epoch === capturedEpoch };
-    };
-    return {
-        advance: () => {
-            epoch += 1;
-        },
-        capture: vi.fn(makeAuthority),
-        currentAuthority: makeAuthority,
-        reset: () => {
-            epoch = 0;
-        },
-    };
-});
-vi.mock('#/modules/Project/useCases', () => ({
-    saveProject: vi.fn(),
-    newProject: vi.fn(),
-    captureProjectTransitionAuthority: projectEpoch.capture,
-}));
-vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
 
 // A minimal in-process bus: `on` records the handler keyed by event name so
 // tests can fire it directly, mirroring how the real DI-backed bus dispatches.
@@ -64,22 +34,14 @@ describe('useAppEventHandlers', () => {
     let bus: ReturnType<typeof createFakeEventBus>;
     let onOpenExport: ReturnType<typeof vi.fn<() => void>>;
     let onOpenPreferences: ReturnType<typeof vi.fn<() => void>>;
-    let reloadSpy: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
-        projectEpoch.reset();
         bus = createFakeEventBus();
         setWorkspaceEventBus(bus);
         onOpenExport = vi.fn<() => void>();
         onOpenPreferences = vi.fn<() => void>();
-        reloadSpy = vi.fn();
-        vi.stubGlobal('location', { ...window.location, reload: reloadSpy });
-    });
-
-    afterEach(() => {
-        vi.unstubAllGlobals();
     });
 
     it('forwards dialog.openExport to the onOpenExport callback', () => {
@@ -100,91 +62,15 @@ describe('useAppEventHandlers', () => {
         expect(onOpenExport).not.toHaveBeenCalled();
     });
 
-    it('saves the project on project.save', () => {
-        renderHook(() => useAppEventHandlers({ onOpenExport, onOpenPreferences }));
-
-        bus.fire('project.save');
-
-        expect(vi.mocked(saveProject)).toHaveBeenCalledTimes(1);
-    });
-
-    it('undoes on command.undo and redoes on command.redo', () => {
-        renderHook(() => useAppEventHandlers({ onOpenExport, onOpenPreferences }));
-
-        bus.fire('command.undo');
-        bus.fire('command.redo');
-
-        expect(vi.mocked(undo)).toHaveBeenCalledTimes(1);
-        expect(vi.mocked(redo)).toHaveBeenCalledTimes(1);
-    });
-
-    it('imports the MIDI file when midi.import carries a file', () => {
-        renderHook(() => useAppEventHandlers({ onOpenExport, onOpenPreferences }));
-        const file = new File(['midi'], 'song.mid');
-
-        bus.fire('midi.import', { file });
-
-        expect(vi.mocked(importMidiFile)).toHaveBeenCalledWith(file, { shouldContinue: expect.any(Function) });
-        const options = vi.mocked(importMidiFile).mock.calls[0]?.[1];
-        projectEpoch.advance();
-        expect(options?.shouldContinue()).toBe(false);
-        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
-
-        const successorFile = new File(['midi-b'], 'successor.mid');
-        bus.fire('midi.import', { file: successorFile });
-        const successorOptions = vi.mocked(importMidiFile).mock.calls[1]?.[1];
-        expect(successorOptions?.shouldContinue()).toBe(true);
-        expect(vi.mocked(importMidiFile).mock.calls.map(([imported]) => imported)).toEqual([file, successorFile]);
-        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(2);
-    });
-
-    it('does not import when midi.import carries no file', () => {
-        renderHook(() => useAppEventHandlers({ onOpenExport, onOpenPreferences }));
-
-        bus.fire('midi.import', { file: undefined });
-
-        expect(vi.mocked(importMidiFile)).not.toHaveBeenCalled();
-    });
-
-    it('creates a new project and reloads when the user confirms project.new', async () => {
-        vi.mocked(confirmUser).mockResolvedValue(true);
-        renderHook(() => useAppEventHandlers({ onOpenExport, onOpenPreferences }));
-
-        bus.fire('project.new');
-        await vi.waitFor(() => {
-            expect(vi.mocked(newProject)).toHaveBeenCalledTimes(1);
-        });
-
-        expect(vi.mocked(confirmUser)).toHaveBeenCalledWith(
-            expect.objectContaining({ title: 'New project', variant: 'danger' })
-        );
-        expect(reloadSpy).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not create a new project when the user cancels project.new', async () => {
-        vi.mocked(confirmUser).mockResolvedValue(false);
-        renderHook(() => useAppEventHandlers({ onOpenExport, onOpenPreferences }));
-
-        bus.fire('project.new');
-        await vi.waitFor(() => {
-            expect(vi.mocked(confirmUser)).toHaveBeenCalledTimes(1);
-        });
-
-        expect(vi.mocked(newProject)).not.toHaveBeenCalled();
-        expect(reloadSpy).not.toHaveBeenCalled();
-    });
-
     it('unsubscribes every listener on unmount so later events are inert', () => {
         const { unmount } = renderHook(() => useAppEventHandlers({ onOpenExport, onOpenPreferences }));
 
         unmount();
         bus.fire('dialog.openExport');
-        bus.fire('project.save');
-        bus.fire('command.undo');
+        bus.fire('dialog.openPreferences');
 
         expect(onOpenExport).not.toHaveBeenCalled();
-        expect(vi.mocked(saveProject)).not.toHaveBeenCalled();
-        expect(vi.mocked(undo)).not.toHaveBeenCalled();
+        expect(onOpenPreferences).not.toHaveBeenCalled();
     });
 
     it('re-subscribes when the callbacks change identity', () => {

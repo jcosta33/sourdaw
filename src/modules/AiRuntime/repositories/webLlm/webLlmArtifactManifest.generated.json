@@ -12,7 +12,7 @@
       "wasmSource": {
         "origin": "https://raw.githubusercontent.com",
         "repository": "mlc-ai/binary-mlc-llm-libs",
-        "revision": "025bcaf3780fa8254f5e5efd3bfea0a5397248f4"
+        "revision": "146ed9cd4b4062e967b017fd2291f7106b50599f"
       },
       "engine": {
         "contextWindowSize": 4096,
@@ -275,12 +275,12 @@
         {
           "kind": "model-library",
           "source": "wasm",
-          "path": "web-llm-models/v0_2_84/base/Qwen3-1.7B-q4f16_1_cs1k-webgpu.wasm",
-          "sizeBytes": 5566554,
-          "sha256": "8161aaa4b40bccf19fcedb2f2e8c221eb9efb72d2198681f1958c9c1e05a682f"
+          "path": "web-llm-models/v0_2_87/base/Qwen3-1.7B-q4f16_1_cs1k-webgpu.wasm",
+          "sizeBytes": 6589747,
+          "sha256": "363f4dbb789f0518e52295d1f4685d2d61feae4ac4e2a6a95621e4af29450bd7"
         }
       ],
-      "artifactSetDigest": "932ad158daa0d6814a50c5fb6aa85f88c3d3892a58a0dc20d47ff0b9e6e0b255"
+      "artifactSetDigest": "a8c02294f8d3c23e7ff2a9174d3a575e7809c7463870b6e23d2d6e6f1dac7991"
     },
     {
       "modelId": "Qwen3-4B-q4f16_1-MLC",
@@ -292,7 +292,7 @@
       "wasmSource": {
         "origin": "https://raw.githubusercontent.com",
         "repository": "mlc-ai/binary-mlc-llm-libs",
-        "revision": "025bcaf3780fa8254f5e5efd3bfea0a5397248f4"
+        "revision": "146ed9cd4b4062e967b017fd2291f7106b50599f"
       },
       "engine": {
         "contextWindowSize": 4096,
@@ -863,12 +863,12 @@
         {
           "kind": "model-library",
           "source": "wasm",
-          "path": "web-llm-models/v0_2_84/base/Qwen3-4B-q4f16_1_cs1k-webgpu.wasm",
-          "sizeBytes": 5847049,
-          "sha256": "a986a53c92579714eb7ec36856004f5fb75272c9f69091f14eb6b2086eea4440"
+          "path": "web-llm-models/v0_2_87/base/Qwen3-4B-q4f16_1_cs1k-webgpu.wasm",
+          "sizeBytes": 6874869,
+          "sha256": "2afc399ed01d8ae641beac0528567c8ce22e8c9c7203ba0827c44e13c62be99c"
         }
       ],
-      "artifactSetDigest": "2438f2a6b58372e12ca0aa949443a49ca7b6060ad3e7971aed0d56b49a35195f"
+      "artifactSetDigest": "2e136079f88bb3aea4289642db64fef8d77a0cb4c503ca6ca90a4030e0b75756"
     },
     {
       "modelId": "Qwen3-8B-q4f16_1-MLC",
@@ -880,7 +880,7 @@
       "wasmSource": {
         "origin": "https://raw.githubusercontent.com",
         "repository": "mlc-ai/binary-mlc-llm-libs",
-        "revision": "025bcaf3780fa8254f5e5efd3bfea0a5397248f4"
+        "revision": "146ed9cd4b4062e967b017fd2291f7106b50599f"
       },
       "engine": {
         "contextWindowSize": 4096,
@@ -1724,12 +1724,12 @@
         {
           "kind": "model-library",
           "source": "wasm",
-          "path": "web-llm-models/v0_2_84/base/Qwen3-8B-q4f16_1_cs1k-webgpu.wasm",
-          "sizeBytes": 5855792,
-          "sha256": "bf6384d9b30d6ae1eca567c65a893284ae2228fd57a432c3b795d06a803d9b72"
+          "path": "web-llm-models/v0_2_87/base/Qwen3-8B-q4f16_1_cs1k-webgpu.wasm",
+          "sizeBytes": 6875765,
+          "sha256": "3a8d51dc4315f056b6cffc1b8828b1a5e13d29fe096da3bf19096ac637985b81"
         }
       ],
-      "artifactSetDigest": "7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb"
+      "artifactSetDigest": "5121d9a5818d4693e0b0f2dc55f2982ece120b875c955203e4650a9269ad6d2a"
     }
   ]
 }

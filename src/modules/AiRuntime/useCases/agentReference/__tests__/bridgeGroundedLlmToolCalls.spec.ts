@@ -277,9 +277,7 @@ describe('compiler graph alignment', () => {
     });
 });
 
-describe('automateTrackGainRange grounding', () => {
-    const NAMED_LIFT = { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 };
-    const DRUM_BUS_LIFT = { ...NAMED_LIFT, trackIds: ['bus-drums'] };
+describe('automateParameterRange gain range grounding', () => {
     const CHORUS_SECTIONS = [
         { id: 'section-chorus-one', name: 'Chorus One', startBeat: 32, endBeat: 48 },
         { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
@@ -294,12 +292,21 @@ describe('automateTrackGainRange grounding', () => {
         { id: 'section-chorus', name: 'Chorus', startBeat: 32, endBeat: 48 },
         { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
     ];
-    const SHAPE_REASON = 'Gain lift request must state only its buses, one dB figure and one whole existing section';
+    const BOTH_BUSES = ['bus-drums', 'bus-bass'];
+    const DRUM_BUS = ['bus-drums'];
 
-    function groundBusGainRange(
+    type ProviderCalls = Parameters<typeof bridgeGroundedLlmToolCalls>[0]['calls'];
+
+    function liftCalls(trackIds: readonly string[], section = 'Chorus Two', deltaDb = 1.5): ProviderCalls {
+        return trackIds.map((trackId) => ({
+            name: 'automateParameterRange',
+            arguments: { trackId, parameterId: 'gain', range: { section }, deltaDb },
+        }));
+    }
+
+    function groundGainRange(
         prompt: string,
-        arguments_: Record<string, unknown> = NAMED_LIFT,
-        otherTracks: readonly ProjectContext['tracks'][number][] = [],
+        calls: ProviderCalls,
         sections: readonly { id: string; name: string; startBeat: number; endBeat: number }[] = CHORUS_SECTIONS
     ) {
         const drumBus = createTrack({ id: 'bus-drums', name: 'Drum Bus', kind: 'bus' });
@@ -309,10 +316,10 @@ describe('automateTrackGainRange grounding', () => {
             ...projectContext,
             automationLanes: [],
             sections: [...sections],
-            tracks: [drumBus, bassBus, leadVocal, ...otherTracks, master],
+            tracks: [drumBus, bassBus, leadVocal, master],
         };
         return bridge(
-            [{ name: 'automateTrackGainRange', arguments: arguments_ }],
+            calls,
             prompt,
             busContext,
             [],
@@ -320,48 +327,39 @@ describe('automateTrackGainRange grounding', () => {
         );
     }
 
+    function asActions(calls: ProviderCalls) {
+        return calls.map((call) => ({ type: call.name, payload: call.arguments }));
+    }
+
+    const RANGE_MISMATCH = 'Provider value range does not match the user request';
+    const UNGROUNDED = 'Provider action is not grounded in the user request';
+
+    /** Every call refused for one reason. A list the shared-list reading cannot read is not grounded. */
+    function refusedAs(calls: ProviderCalls, reason: string) {
+        return { actions: [], rejections: calls.map((call, index) => ({ index, name: call.name, reason })) };
+    }
+
     it.each([
-        { prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two', arguments_: NAMED_LIFT },
-        { prompt: 'Lift Drum Bus and Bass Bus in Chorus Two by 1.5 dB', arguments_: NAMED_LIFT },
-        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two', arguments_: DRUM_BUS_LIFT },
-        { prompt: 'Lift Drum Bus in Chorus Two by 1.5 dB', arguments_: DRUM_BUS_LIFT },
-    ])('grounds "$prompt" through its ordinary target rule', ({ prompt, arguments_ }) => {
-        expect(groundBusGainRange(prompt, arguments_)).toEqual({
-            actions: [{ type: 'automateTrackGainRange', payload: arguments_ }],
-            rejections: [],
-        });
-    });
+        { prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two', trackIds: BOTH_BUSES },
+        { prompt: 'Lift Drum Bus and Bass Bus in Chorus Two by 1.5 dB', trackIds: BOTH_BUSES },
+        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two', trackIds: DRUM_BUS },
+        { prompt: 'Lift Drum Bus in Chorus Two by 1.5 dB', trackIds: DRUM_BUS },
+    ])('grounds "$prompt" through its ordinary target rule', ({ prompt, trackIds }) => {
+        const calls = liftCalls(trackIds);
 
-    // The lift stays bus-only: a named audio track grounds as a reference and is refused as no bus.
-    it('refuses a named audio track beside a bus', () => {
-        const bass = createTrack({ id: 'track-bass', name: 'Bass' });
-
-        expect(
-            groundBusGainRange(
-                'Lift Bass and Drum Bus by 1.5 dB in Chorus Two',
-                { ...NAMED_LIFT, trackIds: ['track-bass', 'bus-drums'] },
-                [bass]
-            )
-        ).toEqual({
-            actions: [],
-            rejections: [
-                {
-                    index: 0,
-                    name: 'automateTrackGainRange',
-                    reason: 'Expected every bus to have gain headroom, enabled automation, and no existing gain lane',
-                },
-            ],
-        });
+        expect(groundGainRange(prompt, calls)).toEqual({ actions: asActions(calls), rejections: [] });
     });
 
     it.each([
-        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two', arguments_: DRUM_BUS_LIFT },
-        { prompt: 'Lift Drum Bus in Chorus Two by 1.5 dB', arguments_: DRUM_BUS_LIFT },
-        { prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two', arguments_: NAMED_LIFT },
-        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus', arguments_: { ...DRUM_BUS_LIFT, sectionName: 'Chorus' } },
-    ])('grounds "$prompt" beside a section whose name the other contains', ({ prompt, arguments_ }) => {
-        expect(groundBusGainRange(prompt, arguments_, [], CHORUS_AND_CHORUS_TWO_SECTIONS)).toEqual({
-            actions: [{ type: 'automateTrackGainRange', payload: arguments_ }],
+        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two', trackIds: DRUM_BUS, section: 'Chorus Two' },
+        { prompt: 'Lift Drum Bus in Chorus Two by 1.5 dB', trackIds: DRUM_BUS, section: 'Chorus Two' },
+        { prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two', trackIds: BOTH_BUSES, section: 'Chorus Two' },
+        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus', trackIds: DRUM_BUS, section: 'Chorus' },
+    ])('grounds "$prompt" beside a section whose name the other contains', ({ prompt, trackIds, section }) => {
+        const calls = liftCalls(trackIds, section);
+
+        expect(groundGainRange(prompt, calls, CHORUS_AND_CHORUS_TWO_SECTIONS)).toEqual({
+            actions: asActions(calls),
             rejections: [],
         });
     });
@@ -370,29 +368,24 @@ describe('automateTrackGainRange grounding', () => {
         {
             case: 'the contained section for a request naming the longer one',
             prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two',
-            arguments_: { ...DRUM_BUS_LIFT, sectionName: 'Chorus' },
+            section: 'Chorus',
         },
         {
             case: 'the longer section for a request naming the contained one',
             prompt: 'Lift Drum Bus by 1.5 dB in Chorus',
-            arguments_: DRUM_BUS_LIFT,
+            section: 'Chorus Two',
         },
         {
             case: 'one section for a request naming both apart',
             prompt: 'Lift Drum Bus by 1.5 dB in Chorus and Chorus Two',
-            arguments_: DRUM_BUS_LIFT,
+            section: 'Chorus Two',
         },
-    ])('refuses $case', ({ prompt, arguments_ }) => {
-        expect(groundBusGainRange(prompt, arguments_, [], CHORUS_AND_CHORUS_TWO_SECTIONS)).toEqual({
-            actions: [],
-            rejections: [
-                {
-                    index: 0,
-                    name: 'automateTrackGainRange',
-                    reason: 'Provider value sectionName does not match the user request',
-                },
-            ],
-        });
+    ])('refuses $case', ({ prompt, section }) => {
+        const calls = liftCalls(DRUM_BUS, section);
+
+        expect(groundGainRange(prompt, calls, CHORUS_AND_CHORUS_TWO_SECTIONS)).toEqual(
+            refusedAs(calls, RANGE_MISMATCH)
+        );
     });
 
     // Names are ranked by the words the request matches, never their raw length: "Chorus ***" matches
@@ -405,135 +398,122 @@ describe('automateTrackGainRange grounding', () => {
         const PROMPT = 'Lift Drum Bus by 1.5 dB in Chorus B';
 
         it('grounds the section whose whole name the request states', () => {
-            expect(
-                groundBusGainRange(PROMPT, { ...DRUM_BUS_LIFT, sectionName: 'Chorus B' }, [], SYMBOL_SECTIONS)
-            ).toEqual({
-                actions: [
-                    {
-                        type: 'automateTrackGainRange',
-                        payload: { trackIds: ['bus-drums'], sectionName: 'Chorus B', gainDb: 1.5 },
-                    },
-                ],
+            const calls = liftCalls(DRUM_BUS, 'Chorus B');
+
+            expect(groundGainRange(PROMPT, calls, SYMBOL_SECTIONS)).toEqual({
+                actions: asActions(calls),
                 rejections: [],
             });
         });
 
         it('refuses the section whose name the request states only in part', () => {
-            expect(
-                groundBusGainRange(PROMPT, { ...DRUM_BUS_LIFT, sectionName: 'Chorus ***' }, [], SYMBOL_SECTIONS)
-            ).toEqual({
-                actions: [],
-                rejections: [
-                    {
-                        index: 0,
-                        name: 'automateTrackGainRange',
-                        reason: 'Provider value sectionName does not match the user request',
-                    },
-                ],
-            });
+            const calls = liftCalls(DRUM_BUS, 'Chorus ***');
+
+            expect(groundGainRange(PROMPT, calls, SYMBOL_SECTIONS)).toEqual(refusedAs(calls, RANGE_MISMATCH));
         });
     });
 
-    // Without a "Chorus Two" section the shared reading still takes the "Chorus" the text contains,
-    // so the lift's own shape is what holds the section to the one the request names in whole.
+    // Without a "Chorus Two" section the request names no section the project holds whole: a single
+    // track's range is refused, and a list closing on no range phrase is not read as a list.
     it.each([
-        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two', arguments_: { ...DRUM_BUS_LIFT, sectionName: 'Chorus' } },
-        { prompt: 'Lift Drum Bus in Chorus Two by 1.5 dB', arguments_: { ...DRUM_BUS_LIFT, sectionName: 'Chorus' } },
-        {
-            prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two',
-            arguments_: { ...NAMED_LIFT, sectionName: 'Chorus' },
-        },
-        {
-            prompt: 'Lift Drum Bus and Bass Bus in Chorus Two by 1.5 dB',
-            arguments_: { ...NAMED_LIFT, sectionName: 'Chorus' },
-        },
-    ])('refuses "$prompt" as the shorter section it only contains', ({ prompt, arguments_ }) => {
-        expect(groundBusGainRange(prompt, arguments_, [], VERSE_AND_CHORUS_SECTIONS)).toEqual({
-            actions: [],
-            rejections: [{ index: 0, name: 'automateTrackGainRange', reason: SHAPE_REASON }],
-        });
+        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two', trackIds: DRUM_BUS, reason: RANGE_MISMATCH },
+        { prompt: 'Lift Drum Bus in Chorus Two by 1.5 dB', trackIds: DRUM_BUS, reason: RANGE_MISMATCH },
+        { prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two', trackIds: BOTH_BUSES, reason: UNGROUNDED },
+        { prompt: 'Lift Drum Bus and Bass Bus in Chorus Two by 1.5 dB', trackIds: BOTH_BUSES, reason: RANGE_MISMATCH },
+    ])('refuses "$prompt" as the shorter section it only contains', ({ prompt, trackIds, reason }) => {
+        const calls = liftCalls(trackIds, 'Chorus');
+
+        expect(groundGainRange(prompt, calls, VERSE_AND_CHORUS_SECTIONS)).toEqual(refusedAs(calls, reason));
     });
 
-    // One call lifts every member over the whole section, so a qualifier narrowing either is refused
-    // for a single bus and for a list alike.
+    // One call changes its track over the whole range it names, so a qualifier narrowing that range
+    // is refused for a single bus and for a list alike.
     it.each([
         {
             prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two, but not in the first half',
-            arguments_: DRUM_BUS_LIFT,
-            reason: SHAPE_REASON,
+            trackIds: DRUM_BUS,
+            reason: RANGE_MISMATCH,
         },
         {
             prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two except the last bar',
-            arguments_: DRUM_BUS_LIFT,
-            reason: SHAPE_REASON,
+            trackIds: DRUM_BUS,
+            reason: RANGE_MISMATCH,
         },
         {
-            // The list reading already refuses a clause naming no other track beside the list.
             prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two, but not in the first half',
-            arguments_: NAMED_LIFT,
-            reason: 'Provider action is not grounded in the user request',
+            trackIds: BOTH_BUSES,
+            reason: UNGROUNDED,
         },
         {
             prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two except the last bar',
-            arguments_: NAMED_LIFT,
-            reason: SHAPE_REASON,
+            trackIds: BOTH_BUSES,
+            reason: UNGROUNDED,
         },
-    ])('refuses the qualified lift "$prompt"', ({ prompt, arguments_, reason }) => {
-        expect(groundBusGainRange(prompt, arguments_)).toEqual({
-            actions: [],
-            rejections: [{ index: 0, name: 'automateTrackGainRange', reason }],
-        });
+    ])('refuses the qualified lift "$prompt"', ({ prompt, trackIds, reason }) => {
+        const calls = liftCalls(trackIds);
+
+        expect(groundGainRange(prompt, calls)).toEqual(refusedAs(calls, reason));
     });
 
-    // No project shape stands in for the request any more (#4372): only the literal lift grounds.
     it.each([
         {
             case: 'the retired vibe phrase naming both buses',
             prompt: 'Make the Drum Bus and Bass Bus hit harder in Chorus Two',
-            arguments_: NAMED_LIFT,
-            reason: 'Provider action is not grounded in the user request',
+            calls: liftCalls(BOTH_BUSES),
+            reason: UNGROUNDED,
         },
         {
             case: 'a paraphrase naming no bus',
             prompt: 'Lift the rhythm section in the second chorus a touch — vocals, tempo map, and the master chain must stay untouched.',
-            arguments_: NAMED_LIFT,
-            reason: 'Target trackIds is not grounded in the user request',
+            calls: liftCalls(BOTH_BUSES),
+            reason: UNGROUNDED,
         },
         {
             case: 'a section the project does not hold',
             prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in the Bridge',
-            arguments_: { ...NAMED_LIFT, sectionName: 'Bridge' },
-            reason: 'Provider value sectionName does not match the user request',
+            calls: liftCalls(BOTH_BUSES, 'Bridge'),
+            reason: UNGROUNDED,
         },
         {
             case: 'no figure',
             prompt: 'Lift Drum Bus and Bass Bus in Chorus Two',
-            arguments_: NAMED_LIFT,
-            reason: 'Provider value gainDb does not match the user request',
+            calls: liftCalls(BOTH_BUSES),
+            reason: UNGROUNDED,
         },
         {
             case: 'a figure the request does not state',
             prompt: 'Lift Drum Bus and Bass Bus by 2 dB in Chorus Two',
-            arguments_: NAMED_LIFT,
-            reason: 'Provider value gainDb does not match the user request',
+            calls: liftCalls(BOTH_BUSES),
+            reason: 'Provider value deltaDb does not match the user request',
         },
         {
             case: 'a later clause singling a member out',
             prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two, but not the Bass Bus',
-            arguments_: NAMED_LIFT,
-            reason: 'Provider action is not grounded in the user request',
+            calls: liftCalls(BOTH_BUSES),
+            reason: UNGROUNDED,
         },
         {
             case: 'a bus the request does not name',
             prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two',
-            arguments_: NAMED_LIFT,
-            reason: 'Provider target trackIds does not match the exactly grounded project references',
+            calls: liftCalls(BOTH_BUSES),
+            reason: UNGROUNDED,
         },
-    ])('refuses $case', ({ prompt, arguments_, reason }) => {
-        expect(groundBusGainRange(prompt, arguments_)).toEqual({
-            actions: [],
-            rejections: [{ index: 0, name: 'automateTrackGainRange', reason }],
-        });
+    ])('refuses $case', ({ prompt, calls, reason }) => {
+        expect(groundGainRange(prompt, calls)).toEqual(refusedAs(calls, reason));
+    });
+
+    // The retired tool is no longer offered, so a provider naming it is refused and never grounded.
+    it('refuses a call to the retired automateTrackGainRange', () => {
+        const calls = [
+            {
+                name: 'automateTrackGainRange',
+                arguments: { trackIds: BOTH_BUSES, sectionName: 'Chorus Two', gainDb: 1.5 },
+            },
+        ];
+
+        expect(groundGainRange('Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two', calls)).toEqual(
+            refusedAs(calls, UNGROUNDED)
+        );
     });
 });
 
@@ -1114,8 +1094,16 @@ describe('section references beside a section whose name the other contains', ()
     const CHORUS = { id: 'section-chorus', name: 'Chorus', startBeat: 16, endBeat: 32 };
     const CHORUS_TWO = { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 48, endBeat: 64 };
     const VERSE = { id: 'section-verse', name: 'Verse', startBeat: 0, endBeat: 16 };
-    const SEND_LOWER = { trackIds: ['track-lead-vocal'], busId: 'bus-hall', reductionDb: 3 };
+    const SEND_DUCK = { trackId: 'track-lead-vocal', parameterId: 'send:bus-hall', deltaDb: -3 };
     const SEND_PROMPT = 'Lower send from Lead Vocal to Hall by 3 dB in Chorus Two';
+
+    function sendDuck(section: string) {
+        return { name: 'automateParameterRange', arguments: { ...SEND_DUCK, range: { section } } };
+    }
+
+    function sendDuckAction(section: string) {
+        return { type: 'automateParameterRange', payload: { ...SEND_DUCK, range: { section } } };
+    }
 
     function groundSectionCall(
         call: Parameters<typeof bridgeGroundedLlmToolCalls>[0]['calls'][number],
@@ -1151,14 +1139,14 @@ describe('section references beside a section whose name the other contains', ()
             action: { type: 'renameSection', payload: { sectionId: 'section-chorus-two', name: 'Outro' } },
         },
         {
-            call: { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus Two' } },
+            call: sendDuck('Chorus Two'),
             prompt: SEND_PROMPT,
-            action: { type: 'automateSendRange', payload: { ...SEND_LOWER, sectionName: 'Chorus Two' } },
+            action: sendDuckAction('Chorus Two'),
         },
         {
-            call: { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus' } },
+            call: sendDuck('Chorus'),
             prompt: 'Lower send from Lead Vocal to Hall by 3 dB in Chorus',
-            action: { type: 'automateSendRange', payload: { ...SEND_LOWER, sectionName: 'Chorus' } },
+            action: sendDuckAction('Chorus'),
         },
     ])('grounds "$prompt" for the section it names in whole', ({ call, prompt, action }) => {
         expect(groundSectionCall(call, prompt)).toEqual({ actions: [action], rejections: [] });
@@ -1167,9 +1155,9 @@ describe('section references beside a section whose name the other contains', ()
     it.each([
         {
             case: 'the contained section for a send request naming the longer one',
-            call: { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus' } },
+            call: sendDuck('Chorus'),
             prompt: SEND_PROMPT,
-            argument: 'sectionName',
+            argument: 'range',
         },
         {
             case: 'the contained section for a removal naming the longer one',
@@ -1179,15 +1167,15 @@ describe('section references beside a section whose name the other contains', ()
         },
         {
             case: 'one section for a send request naming two apart',
-            call: { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus Two' } },
+            call: sendDuck('Chorus Two'),
             prompt: 'Lower send from Lead Vocal to Hall by 3 dB in Chorus Two or Verse',
-            argument: 'sectionName',
+            argument: 'range',
         },
         {
             case: 'one section for a send request naming a section and the one it contains apart',
-            call: { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus Two' } },
+            call: sendDuck('Chorus Two'),
             prompt: 'Lower send from Lead Vocal to Hall by 3 dB in Chorus or Chorus Two',
-            argument: 'sectionName',
+            argument: 'range',
         },
     ])('refuses $case', ({ call, prompt, argument }) => {
         expect(groundSectionCall(call, prompt)).toEqual({
@@ -1200,46 +1188,32 @@ describe('section references beside a section whose name the other contains', ()
 
     // The project holds no "Chorus Two", so the request names no section the call can take whole.
     it('refuses a send request naming a section the project lacks', () => {
-        expect(
-            groundSectionCall(
-                { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus Two' } },
-                SEND_PROMPT,
-                [CHORUS, VERSE]
-            )
-        ).toEqual({
+        expect(groundSectionCall(sendDuck('Chorus Two'), SEND_PROMPT, [CHORUS, VERSE])).toEqual({
             actions: [],
             rejections: [
                 {
                     index: 0,
-                    name: 'automateSendRange',
-                    reason: 'Provider value sectionName does not match the user request',
+                    name: 'automateParameterRange',
+                    reason: 'Provider value range does not match the user request',
                 },
             ],
         });
     });
 
-    // Two sections sharing one name leave the request naming neither alone.
-    it('refuses a send request naming a name two sections share', () => {
+    // Two sections sharing one name leave the request naming neither alone. The range write's own state
+    // guard asks which one is meant, so the bridge leaves the shared name to it.
+    it('leaves a name two sections share to the range write, which asks which one', () => {
         expect(
-            groundSectionCall(
-                { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus Two' } },
-                SEND_PROMPT,
-                [CHORUS, CHORUS_TWO, { ...CHORUS_TWO, id: 'section-chorus-two-again', startBeat: 64, endBeat: 80 }]
-            )
-        ).toEqual({
-            actions: [],
-            rejections: [
-                {
-                    index: 0,
-                    name: 'automateSendRange',
-                    reason: 'Provider value sectionName does not match the user request',
-                },
-            ],
-        });
+            groundSectionCall(sendDuck('Chorus Two'), SEND_PROMPT, [
+                CHORUS,
+                CHORUS_TWO,
+                { ...CHORUS_TWO, id: 'section-chorus-two-again', startBeat: 64, endBeat: 80 },
+            ])
+        ).toEqual({ actions: [sendDuckAction('Chorus Two')], rejections: [] });
     });
 
     // A name is as long as the words the request matches: "Chorus ***" matches only "Chorus", so beside
-    // "Chorus B" it is the shorter name, and a send, which no shape check of its own backs, reads it so.
+    // "Chorus B" it is the shorter name.
     describe('beside a name longer only in symbols', () => {
         const SYMBOL_SECTIONS = [
             { id: 'section-chorus-stars', name: 'Chorus ***', startBeat: 16, endBeat: 32 },
@@ -1248,35 +1222,46 @@ describe('section references beside a section whose name the other contains', ()
         const PROMPT = 'Lower send from Lead Vocal to Hall by 3 dB in Chorus B';
 
         it('grounds the section whose whole name the request states', () => {
-            expect(
-                groundSectionCall(
-                    { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus B' } },
-                    PROMPT,
-                    SYMBOL_SECTIONS
-                )
-            ).toEqual({
-                actions: [{ type: 'automateSendRange', payload: { ...SEND_LOWER, sectionName: 'Chorus B' } }],
+            expect(groundSectionCall(sendDuck('Chorus B'), PROMPT, SYMBOL_SECTIONS)).toEqual({
+                actions: [sendDuckAction('Chorus B')],
                 rejections: [],
             });
         });
 
         it('refuses the section whose name the request states only in part', () => {
-            expect(
-                groundSectionCall(
-                    { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus ***' } },
-                    PROMPT,
-                    SYMBOL_SECTIONS
-                )
-            ).toEqual({
+            expect(groundSectionCall(sendDuck('Chorus ***'), PROMPT, SYMBOL_SECTIONS)).toEqual({
                 actions: [],
                 rejections: [
                     {
                         index: 0,
-                        name: 'automateSendRange',
-                        reason: 'Provider value sectionName does not match the user request',
+                        name: 'automateParameterRange',
+                        reason: 'Provider value range does not match the user request',
                     },
                 ],
             });
+        });
+    });
+
+    // The retired tool is no longer offered, so a provider naming it is refused and never grounded.
+    it('refuses a call to the retired automateSendRange', () => {
+        expect(
+            groundSectionCall(
+                {
+                    name: 'automateSendRange',
+                    arguments: {
+                        trackIds: ['track-lead-vocal'],
+                        busId: 'bus-hall',
+                        sectionName: 'Chorus Two',
+                        reductionDb: 3,
+                    },
+                },
+                'Lower send from Lead Vocal to Hall by 3 dB in Chorus Two'
+            )
+        ).toEqual({
+            actions: [],
+            rejections: [
+                { index: 0, name: 'automateSendRange', reason: 'Provider action is not grounded in the user request' },
+            ],
         });
     });
 });

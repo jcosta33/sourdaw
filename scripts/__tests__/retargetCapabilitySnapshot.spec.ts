@@ -301,6 +301,7 @@ const disposePath = ${JSON.stringify(disposePath)};
 export function capture(command, args, options = {}) {
     if (command === 'git') {
         if (args.join(' ') === 'rev-parse --verify origin/main^{commit}') return sha;
+        if (args.join(' ') === 'rev-parse --verify --quiet ' + sha + '^{commit}') return sha;
         if (args[0] === 'cat-file' && args[1] === '-e' && args[2]?.startsWith(sha + ':')) {
             readFileSync(join(root, args[2].slice(sha.length + 1)), 'utf8');
             return '';

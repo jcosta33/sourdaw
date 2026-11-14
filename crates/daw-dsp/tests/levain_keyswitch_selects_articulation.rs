@@ -8,6 +8,8 @@
 //! which articulation layer a note actually plays. Keyswitches are baseline
 //! orchestral-sampler behaviour.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::levain::LevainInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

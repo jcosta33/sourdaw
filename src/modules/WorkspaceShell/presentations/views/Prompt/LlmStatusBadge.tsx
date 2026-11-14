@@ -16,7 +16,13 @@ import {
     hostedLlmProviderStatusStore,
     type LlmEngineStatus,
 } from '#/modules/AiRuntime/stores';
-import { resolveBackend, unloadEngine, WEBLLM_MODELS, getActiveModelId } from '#/modules/AiRuntime/useCases';
+import {
+    DEFAULT_WEBLLM_MODEL,
+    resolveBackend,
+    unloadEngine,
+    WEBLLM_MODELS,
+    getActiveModelId,
+} from '#/modules/AiRuntime/useCases';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 
 type LlmStatusBadgeProps = {
@@ -32,6 +38,12 @@ type BadgeModelInfo = {
     ramUsage: string;
     parameterCount: string;
 };
+
+const REFUSAL_LABELS = {
+    'shader-f16-unavailable': 'Needs shader-f16',
+    'insufficient-storage': 'Not enough storage',
+    'gpu-memory': 'Not enough GPU memory',
+} as const;
 
 const TIER_COLORS = {
     cloud: 'border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]',
@@ -99,7 +111,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
             parameterCount: 'Hosted',
         };
     } else {
-        modelInfo = WEBLLM_MODELS.find((message) => message.id === selectedModelId) ?? WEBLLM_MODELS[1]!;
+        modelInfo = WEBLLM_MODELS.find((message) => message.id === selectedModelId) ?? DEFAULT_WEBLLM_MODEL;
     }
 
     if (backend === 'none') {
@@ -126,9 +138,6 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 
     // ── Idle: model selector + load button ─────────────────────────────────
     if (status.state === 'idle') {
-        const loadButtonLabel = (): string =>
-            `Download & Load ${WEBLLM_MODELS.find((message) => message.id === selectedModelId)?.displayName ?? 'Model'}`;
-
         return (
             <Popover open={showPanel} onOpenChange={setShowPanel}>
                 <PopoverTrigger asChild>
@@ -149,73 +158,18 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                     aria-label="AI Model Setup"
                     className="daw-floating-surface w-[260px] p-0 overflow-y-auto rounded-xl"
                 >
-                    <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
-                        <Row justify="between" gap={2}>
-                            <Row gap={1.5}>
-                                <Sparkles className="size-3 text-primary" aria-hidden="true" />
-                                <span className="text-xs font-semibold text-foreground">AI Model</span>
-                            </Row>
-                            <DawMicroBadge rounded="full" className={TIER_COLORS[tierKey]}>
-                                {backendLabel}
-                            </DawMicroBadge>
-                        </Row>
-                    </div>
-
-                    <Stack gap={1.5} className="px-2 py-2">
-                        {backend === 'webllm' ? (
-                            <>
-                                {WEBLLM_MODELS.map((model) => (
-                                    <ModelOption
-                                        key={model.id}
-                                        model={model}
-                                        isSelected={model.id === selectedModelId}
-                                        onSelect={() => setSelectedModelId(model.id)}
-                                    />
-                                ))}
-                            </>
-                        ) : (
-                            <div className="px-1 py-1">
-                                <p className="text-[10px] text-muted-foreground leading-relaxed">
-                                    {modelInfo.description}
-                                </p>
-                                <Row align="stretch" gap={3} className="mt-1.5 text-[10px] text-muted-foreground">
-                                    <Row as="span" gap={1} className="inline-flex">
-                                        <Download className="size-3 opacity-60" aria-hidden="true" />
-                                        {modelInfo.downloadSize}
-                                    </Row>
-                                    <Row as="span" gap={1} className="inline-flex">
-                                        <Cpu className="size-3 opacity-60" aria-hidden="true" />
-                                        {modelInfo.ramUsage}
-                                    </Row>
-                                </Row>
-                            </div>
-                        )}
-
-                        {backend === 'cloud' ? (
-                            <p className="px-1 py-1 text-[10px] text-muted-foreground">
-                                Configured credentials are verified on the first request.
-                            </p>
-                        ) : (
-                            <>
-                                {backend === 'webllm' ? (
-                                    <p className="px-1 text-[10px] text-muted-foreground leading-relaxed">
-                                        Downloads and verifies this model for private use in this browser.
-                                    </p>
-                                ) : null}
-                                <Button
-                                    size="sm"
-                                    className="w-full text-xs h-7 mt-1"
-                                    onClick={() => {
-                                        setShowPanel(false);
-                                        onLoad(backend === 'webllm' ? selectedModelId : undefined);
-                                    }}
-                                >
-                                    <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
-                                    {loadButtonLabel()}
-                                </Button>
-                            </>
-                        )}
-                    </Stack>
+                    <ModelSetupPanel
+                        backend={backend}
+                        backendLabel={backendLabel}
+                        tierKey={tierKey}
+                        modelInfo={modelInfo}
+                        selectedModelId={selectedModelId}
+                        onSelectModel={setSelectedModelId}
+                        onLoad={(modelId) => {
+                            setShowPanel(false);
+                            onLoad(modelId);
+                        }}
+                    />
                 </PopoverContent>
             </Popover>
         );
@@ -298,6 +252,45 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
         );
     }
 
+    // ── Refused: this machine cannot run the model ─────────────────────────
+    if (status.refusal !== undefined && backend === 'webllm') {
+        return (
+            <Popover open={showPanel} onOpenChange={setShowPanel}>
+                <PopoverTrigger asChild>
+                    <Button
+                        variant="outline"
+                        size="xs"
+                        type="button"
+                        className="h-6 gap-1 px-2 text-[10px] font-medium border-destructive/30 text-destructive/80 hover:text-destructive hover:bg-destructive/10"
+                        title={status.message}
+                    >
+                        {REFUSAL_LABELS[status.refusal.reason]}
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                    align="end"
+                    sideOffset={8}
+                    aria-label="AI Model Refused"
+                    className="daw-floating-surface w-[260px] p-0 overflow-y-auto rounded-xl"
+                >
+                    <ModelSetupPanel
+                        backend={backend}
+                        backendLabel={backendLabel}
+                        tierKey={tierKey}
+                        modelInfo={modelInfo}
+                        selectedModelId={selectedModelId}
+                        refusalMessage={status.message}
+                        onSelectModel={setSelectedModelId}
+                        onLoad={(modelId) => {
+                            setShowPanel(false);
+                            onLoad(modelId);
+                        }}
+                    />
+                </PopoverContent>
+            </Popover>
+        );
+    }
+
     // ── Error ───────────────────────────────────────────────────────────────
     return (
         <Button
@@ -310,6 +303,104 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
         >
             {backend === 'webllm' ? 'Retry Model Download' : 'AI Error — retry'}
         </Button>
+    );
+};
+
+// ── Model setup panel ───────────────────────────────────────────────────
+
+type ModelSetupPanelProps = {
+    backend: 'cloud' | 'webllm' | 'none';
+    backendLabel: string;
+    tierKey: 'cloud' | 'webllm';
+    modelInfo: BadgeModelInfo;
+    selectedModelId: string;
+    /** The sentence saying why the last load was refused, shown above the chooser. */
+    refusalMessage?: string;
+    onSelectModel: (modelId: string) => void;
+    onLoad: (modelId?: string) => void;
+};
+
+const ModelSetupPanel = ({
+    backend,
+    backendLabel,
+    tierKey,
+    modelInfo,
+    selectedModelId,
+    refusalMessage,
+    onSelectModel,
+    onLoad,
+}: ModelSetupPanelProps): ReactElement => {
+    const selectedName = WEBLLM_MODELS.find((message) => message.id === selectedModelId)?.displayName ?? 'Model';
+    return (
+        <>
+            <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
+                <Row justify="between" gap={2}>
+                    <Row gap={1.5}>
+                        <Sparkles className="size-3 text-primary" aria-hidden="true" />
+                        <span className="text-xs font-semibold text-foreground">AI Model</span>
+                    </Row>
+                    <DawMicroBadge rounded="full" className={TIER_COLORS[tierKey]}>
+                        {backendLabel}
+                    </DawMicroBadge>
+                </Row>
+            </div>
+
+            <Stack gap={1.5} className="px-2 py-2">
+                {refusalMessage === undefined ? null : (
+                    <p role="alert" className="px-1 text-[10px] text-destructive leading-relaxed">
+                        {refusalMessage}
+                    </p>
+                )}
+                {backend === 'webllm' ? (
+                    <>
+                        {WEBLLM_MODELS.map((model) => (
+                            <ModelOption
+                                key={model.id}
+                                model={model}
+                                isSelected={model.id === selectedModelId}
+                                onSelect={() => onSelectModel(model.id)}
+                            />
+                        ))}
+                    </>
+                ) : (
+                    <div className="px-1 py-1">
+                        <p className="text-[10px] text-muted-foreground leading-relaxed">{modelInfo.description}</p>
+                        <Row align="stretch" gap={3} className="mt-1.5 text-[10px] text-muted-foreground">
+                            <Row as="span" gap={1} className="inline-flex">
+                                <Download className="size-3 opacity-60" aria-hidden="true" />
+                                {modelInfo.downloadSize}
+                            </Row>
+                            <Row as="span" gap={1} className="inline-flex">
+                                <Cpu className="size-3 opacity-60" aria-hidden="true" />
+                                {modelInfo.ramUsage}
+                            </Row>
+                        </Row>
+                    </div>
+                )}
+
+                {backend === 'cloud' ? (
+                    <p className="px-1 py-1 text-[10px] text-muted-foreground">
+                        Configured credentials are verified on the first request.
+                    </p>
+                ) : (
+                    <>
+                        {backend === 'webllm' ? (
+                            <p className="px-1 text-[10px] text-muted-foreground leading-relaxed">
+                                Downloads and verifies this model for private use in this browser.
+                            </p>
+                        ) : null}
+                        <Button
+                            size="sm"
+                            className="w-full text-xs h-7 mt-1"
+                            onClick={() => onLoad(backend === 'webllm' ? selectedModelId : undefined)}
+                        >
+                            <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
+                            {`Download & Load ${selectedName}`}
+                        </Button>
+                    </>
+                )}
+            </Stack>
+        </>
     );
 };
 

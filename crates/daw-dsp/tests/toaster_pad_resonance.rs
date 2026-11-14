@@ -18,6 +18,8 @@
 //! guard that would have let this ship, which is why it is called out rather
 //! than left to inference.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::f32::consts::TAU;
 
 use daw_dsp::primitives::hz_from_normalized_cutoff;

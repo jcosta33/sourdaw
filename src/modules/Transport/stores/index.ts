@@ -22,5 +22,6 @@ export { readTempoAtBeat } from './readTempoAtBeat';
 export { readSecondsAtBeat } from './readSecondsAtBeat';
 export { readBeatAtSamples } from './readBeatAtSamples';
 export { readBarStartBeat } from './readBarStartBeat';
+export { readBarAtBeat } from './readBarAtBeat';
 export { readNextPhysicalBarBoundary } from './readNextPhysicalBarBoundary';
 export { readTempoMapEditTargets } from './readTempoMapEditTargets';

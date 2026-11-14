@@ -6,6 +6,7 @@ pub mod cutoff;
 pub mod db;
 pub mod denormal;
 pub mod lifecycle;
+pub mod one_pole;
 pub mod oversample;
 pub mod pitch;
 pub mod resonance;
@@ -15,11 +16,12 @@ pub mod time_stretch;
 pub use cutoff::{
     hz_from_normalized_cutoff, normalized_cutoff_from_hz, CUTOFF_HZ_MAX, CUTOFF_HZ_MIN,
 };
-pub use db::LINEAR_TO_DB_FLOOR;
+pub use db::{db_to_linear, LINEAR_TO_DB_FLOOR};
 pub use denormal::{
     flush_denormal, flush_denormal_f64, flush_denormal_in_place, DENORMAL_THRESHOLD,
 };
 pub use lifecycle::{ProcessLifecycle, TailLength};
+pub use one_pole::{pole_from_ms, pole_from_samples};
 pub use resonance::{
     normalized_resonance_from_q, q_from_normalized_resonance, RESONANCE_Q_MAX, RESONANCE_Q_MIN,
 };

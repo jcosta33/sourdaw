@@ -1,6 +1,6 @@
 //! Attack/release smoothing filters for gain reduction envelope.
 
-use crate::primitives::flush_denormal;
+use crate::primitives::{flush_denormal, pole_from_ms};
 
 /// Branching smooth filter (Giannoulis et al.)
 /// Applies separate one-pole coefficients for attack vs release.
@@ -55,7 +55,24 @@ impl BranchingSmoother {
         if ms <= 0.0 {
             0.0
         } else {
-            (-1.0 / (ms * 0.001 * sample_rate)).exp()
+            pole_from_ms(ms, sample_rate)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BranchingSmoother;
+
+    /// Zero and negative times are a coefficient of 0.0: the smoother jumps to
+    /// its target in one sample.
+    #[test]
+    fn smoother_time_at_or_below_zero_is_a_coefficient_of_zero() {
+        assert_eq!(BranchingSmoother::ms_to_coeff(0.0, 48_000.0), 0.0);
+        assert_eq!(BranchingSmoother::ms_to_coeff(-1.0, 48_000.0), 0.0);
+        assert_eq!(
+            BranchingSmoother::ms_to_coeff(5.0, 48_000.0).to_bits(),
+            0x3f7e_ef80
+        );
     }
 }

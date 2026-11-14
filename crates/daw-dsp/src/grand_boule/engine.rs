@@ -1522,9 +1522,7 @@ mod tests {
         engine.note_off(60);
         // Voice should still be Active (not Releasing) because the pedal is down.
         let stages: Vec<_> = engine.voices.iter().map(|v| v.stage()).collect();
-        assert!(stages
-            .iter()
-            .any(|s| *s == super::super::voice::VoiceStage::Active));
+        assert!(stages.contains(&super::super::voice::VoiceStage::Active));
     }
 
     #[test]

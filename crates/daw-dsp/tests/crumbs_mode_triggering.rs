@@ -11,6 +11,8 @@
 //! that only asked "did `trigger_params` get called" would stay green through a
 //! `trigger` that discarded the result, which is the shape of the defect.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::sync::Arc;
 
 use daw_dsp::crumbs::engine::CrumbsEngine;

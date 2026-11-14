@@ -1,7 +1,8 @@
 import { copySelectedClip } from '#/modules/Arrangement/useCases';
-import { executeUserAppAction, redo, undo } from '#/modules/Command/useCases';
+import { redo, undo } from '#/modules/Command/useCases';
 
 import { deselectAllClips } from '../deselectAllClips';
+import { executeCommandAction } from '../executeCommandAction';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { selectAllClips } from '../selectAllClips';
 
@@ -13,8 +14,8 @@ export const editCommands: CallableCommandEntry[] = [
         description: 'Undo last action',
         category: 'Edit',
         shortcut: '⌘Z',
-        action: () => {
-            void undo();
+        action: (onCommitted?: () => void) => {
+            void undo({ onCommitted });
         },
     },
     {
@@ -23,8 +24,8 @@ export const editCommands: CallableCommandEntry[] = [
         description: 'Redo last undone action',
         category: 'Edit',
         shortcut: '⌘⇧Z',
-        action: () => {
-            void redo();
+        action: (onCommitted?: () => void) => {
+            void redo({ onCommitted });
         },
     },
     {
@@ -33,8 +34,10 @@ export const editCommands: CallableCommandEntry[] = [
         description: 'Copy the selected clip',
         category: 'Edit',
         shortcut: '⌘C',
-        action: () => {
-            copySelectedClip();
+        action: (onCommitted?: () => void) => {
+            if (copySelectedClip()) {
+                onCommitted?.();
+            }
         },
     },
     {
@@ -43,11 +46,11 @@ export const editCommands: CallableCommandEntry[] = [
         description: 'Cut the selected clip',
         category: 'Edit',
         shortcut: '⌘X',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             // Dispatch the app action so the cut inherits handleCutClip's capture
             // and lands in undo history; calling cutSelectedClip() directly would
             // retire a comped clip's takes with nothing to restore them from.
-            void executeUserAppAction({ type: 'cutClip' });
+            void executeCommandAction(onCommitted, { type: 'cutClip' });
         },
     },
     {
@@ -56,11 +59,11 @@ export const editCommands: CallableCommandEntry[] = [
         description: 'Paste clip at playhead',
         category: 'Edit',
         shortcut: '⌘V',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             // Dispatch the app action so the paste lands in undo history
             // (#4618); calling pasteClip() directly writes with nothing to
             // undo, exactly as the cut above once did.
-            void executeUserAppAction({ type: 'pasteClip' });
+            void executeCommandAction(onCommitted, { type: 'pasteClip' });
         },
     },
     {
@@ -69,8 +72,9 @@ export const editCommands: CallableCommandEntry[] = [
         description: 'Select every clip on the timeline',
         category: 'Edit',
         shortcut: '⌘A',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             selectAllClips();
+            onCommitted?.();
         },
     },
     {
@@ -84,8 +88,9 @@ export const editCommands: CallableCommandEntry[] = [
         // is `Escape` (context-dependent: `transport.stopPlayback` clears the
         // active selection before stopping transport), which can't be honestly
         // labelled here as a single Deselect-All keycap.
-        action: () => {
+        action: (onCommitted?: () => void) => {
             deselectAllClips();
+            onCommitted?.();
         },
     },
 ];

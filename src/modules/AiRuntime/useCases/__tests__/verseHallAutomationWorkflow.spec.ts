@@ -58,27 +58,26 @@ const PROMPT = 'Lower every vocal send to the Hall by 3 dB only in verse two.';
 
 type ProviderCall = { name: string; arguments: Record<string, unknown> };
 
-type AutomateSendRangeProviderCall = {
-    name: 'automateSendRange';
+type SendRideProviderCall = {
+    name: 'automateParameterRange';
     arguments: {
-        trackIds: [string, string];
-        busId: string;
-        sectionName: string;
-        reductionDb: number;
+        trackId: string;
+        parameterId: 'send:bus-hall';
+        range: { section: string };
+        deltaDb: number;
     };
 };
 
-const providerPlan: [AutomateSendRangeProviderCall] = [
-    {
-        name: 'automateSendRange',
-        arguments: {
-            trackIds: ['track-lead-vocal', 'track-backing-vocal'],
-            busId: 'bus-hall',
-            sectionName: 'Verse Two',
-            reductionDb: 3,
-        },
-    },
-];
+function sendRide(trackId: string): SendRideProviderCall {
+    return {
+        name: 'automateParameterRange',
+        arguments: { trackId, parameterId: 'send:bus-hall', range: { section: 'Verse Two' }, deltaDb: -3 },
+    };
+}
+
+// The retired `automateSendRange` drew this ride as one call over the vocal set; the provider now
+// draws it as one range write per vocal send.
+const providerPlan: SendRideProviderCall[] = [sendRide('track-lead-vocal'), sendRide('track-backing-vocal')];
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -172,16 +171,8 @@ function getCommandBatchScope(plan: readonly ProviderCall[]): {
 } {
     const targetIds = new Set<string>();
     for (const call of plan) {
-        const trackIds = call.arguments.trackIds;
-        if (isUnknownArray(trackIds)) {
-            for (const trackId of trackIds) {
-                if (typeof trackId === 'string') {
-                    targetIds.add(trackId);
-                }
-            }
-        }
-        if (typeof call.arguments.busId === 'string') {
-            targetIds.add(call.arguments.busId);
+        if (typeof call.arguments.trackId === 'string') {
+            targetIds.add(call.arguments.trackId);
         }
     }
     return {
@@ -203,7 +194,7 @@ function asCommandBatchProposal(plan: readonly ProviderCall[]): ProviderCall[] {
                     objective: 'Lower exactly the admitted vocal sends to Hall by 3 dB in Verse Two.',
                     constraints: ['Leave sends outside Verse Two unchanged.'],
                     scope: getCommandBatchScope(plan),
-                    capabilityIds: ['automateSendRange'],
+                    capabilityIds: ['automateParameterRange'],
                     assetIds: [],
                     alternatives: [],
                     validationStrategy: ['Validate the exact vocal tracks, Hall bus, section, and 3 dB reduction.'],
@@ -218,7 +209,7 @@ function catalogDiscoveryPlan(): ProviderCall[] {
     return [
         {
             name: 'agent.catalog.discover',
-            arguments: { category: 'command', names: ['automateSendRange'] },
+            arguments: { category: 'command', names: ['automateParameterRange'] },
         },
     ];
 }
@@ -301,11 +292,11 @@ function assertDiscoveredCommandSchema(receipts: readonly unknown[]): void {
         (item) =>
             isRecord(item) &&
             isRecord(item.function) &&
-            item.function.name === 'automateSendRange' &&
+            item.function.name === 'automateParameterRange' &&
             isRecord(item.function.parameters)
     );
     if (!schema) {
-        throw new TypeError('Expected disclosed automateSendRange command schema');
+        throw new TypeError('Expected disclosed automateParameterRange command schema');
     }
 }
 
@@ -443,30 +434,46 @@ function getSendLanes() {
     return automationStore.value?.lanes.filter((lane) => lane.parameterId === 'send:bus-hall') ?? [];
 }
 
+/**
+ * Each vocal's Hall send held 3 dB down across Verse Two. The retired `automateSendRange` drew this
+ * as step points at the section bounds; the range write draws coincident linear points at each
+ * bound, which jump at the same beats, so every sampled value is unchanged.
+ */
+function expectRangeRide(trackId: string, level: number) {
+    const lowered = expect.closeTo(level * 10 ** (-3 / 20), 12);
+    const point = (beat: number, value: unknown) => ({
+        id: expect.any(String),
+        beat,
+        value,
+        curve: 'linear',
+        tension: 0,
+    });
+    return expect.objectContaining({
+        trackId,
+        parameterName: 'Send: Hall',
+        points: [point(16, level), point(16, lowered), point(32, lowered), point(32, level)],
+    });
+}
+
 function expectExactAutomation(): void {
-    const factor = 10 ** (-3 / 20);
     expect(getSendLanes()).toEqual([
-        expect.objectContaining({
-            id: 'auto-send-track-lead-vocal-bus-hall',
-            trackId: 'track-lead-vocal',
-            parameterName: 'Send: Hall',
-            points: [
-                { beat: 0, value: 0.5, curve: 'step', tension: 0 },
-                { beat: 16, value: 0.5 * factor, curve: 'step', tension: 0 },
-                { beat: 32, value: 0.5, curve: 'step', tension: 0 },
-            ],
-        }),
-        expect.objectContaining({
-            id: 'auto-send-track-backing-vocal-bus-hall',
-            trackId: 'track-backing-vocal',
-            parameterName: 'Send: Hall',
-            points: [
-                { beat: 0, value: 0.25, curve: 'step', tension: 0 },
-                { beat: 16, value: 0.25 * factor, curve: 'step', tension: 0 },
-                { beat: 32, value: 0.25, curve: 'step', tension: 0 },
-            ],
-        }),
+        expectRangeRide('track-lead-vocal', 0.5),
+        expectRangeRide('track-backing-vocal', 0.25),
     ]);
+}
+
+function sendRideAction(trackId: string) {
+    return {
+        type: 'automateParameterRange',
+        payload: {
+            trackId,
+            parameterId: 'send:bus-hall',
+            range: { section: 'Verse Two' },
+            deltaDb: -3,
+            startBeat: 16,
+            endBeat: 32,
+        },
+    };
 }
 
 describe('verse Hall send automation workflow', () => {
@@ -564,24 +571,8 @@ describe('verse Hall send automation workflow', () => {
 
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(confirmation?.actions).toEqual([
-            {
-                type: 'automateSendRange',
-                payload: {
-                    trackIds: ['track-lead-vocal', 'track-backing-vocal'],
-                    busId: 'bus-hall',
-                    busName: 'Hall',
-                    sectionName: 'Verse Two',
-                    sectionId: 'section-verse-two',
-                    startBeat: 16,
-                    endBeat: 32,
-                    reductionDb: 3,
-                    expectedSends: [
-                        { trackId: 'track-lead-vocal', level: 0.5, preFader: false },
-                        { trackId: 'track-backing-vocal', level: 0.25, preFader: true },
-                    ],
-                    expectedSection: { name: 'Verse Two', startBeat: 16, endBeat: 32 },
-                },
-            },
+            sendRideAction('track-lead-vocal'),
+            sendRideAction('track-backing-vocal'),
         ]);
     });
 
@@ -602,15 +593,17 @@ describe('verse Hall send automation workflow', () => {
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(confirmation).toMatchObject({
             executionMode: 'atomic',
-            risk: { level: 'authority-sensitive' },
+            risk: { level: 'broad-reversible' },
         });
         const proposal = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(proposal?.content).toContain('Lower sends to "Hall" (bus-hall) by 3 dB only in Verse Two beats 16–32');
-        expect(proposal?.content).toContain('"Lead Vocal" (track-lead-vocal) 0.5→');
-        expect(proposal?.content).toContain('"Backing Vocal" (track-backing-vocal) 0.25→');
-        expect(proposal?.content).toContain('Risk: authority-sensitive');
+        for (const name of ['"Lead Vocal" (track-lead-vocal)', '"Backing Vocal" (track-backing-vocal)']) {
+            expect(proposal?.content).toContain(
+                `Automate track ${name} send:bus-hall by -3 dB across "Verse Two" (beats 16–32)`
+            );
+        }
+        expect(proposal?.content).toContain('Approval risk: broad-reversible');
         const revisionBefore = captureProjectRevision();
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
@@ -624,8 +617,9 @@ describe('verse Hall send automation workflow', () => {
             throw new Error('Expected the committed lead-vocal send lane');
         }
         expect(getAutomationValueAtBeat(leadLane.id, 15.999)).toBe(0.5);
-        expect(getAutomationValueAtBeat(leadLane.id, 16)).toBe(0.5 * 10 ** (-3 / 20));
-        expect(getAutomationValueAtBeat(leadLane.id, 31.999)).toBe(0.5 * 10 ** (-3 / 20));
+        // The range write converts the decibel figure through its own gain law: one ulp from this product.
+        expect(getAutomationValueAtBeat(leadLane.id, 16)).toBeCloseTo(0.5 * 10 ** (-3 / 20), 12);
+        expect(getAutomationValueAtBeat(leadLane.id, 31.999)).toBeCloseTo(0.5 * 10 ** (-3 / 20), 12);
         expect(getAutomationValueAtBeat(leadLane.id, 32)).toBe(0.5);
         expect(trackStore.value?.tracks).toEqual(tracksBefore);
         expect(markerStore.value?.sections).toEqual(sectionsBefore);
@@ -640,21 +634,21 @@ describe('verse Hall send automation workflow', () => {
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
         expect(receipt?.content).toContain('Outcome: committed');
-        expect(receipt?.content).toContain(
-            'Affected IDs: track-lead-vocal, track-backing-vocal, bus-hall, section-verse-two'
-        );
-        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toHaveLength(1);
-        expect(undoStore.value?.past).toHaveLength(1);
+        expect(receipt?.content).toContain('Affected IDs: bus-hall, track-lead-vocal\n');
+        expect(receipt?.content).toContain('Affected IDs: bus-hall, track-backing-vocal\n');
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toHaveLength(2);
+        expect(undoStore.value?.past).toHaveLength(2);
 
+        // The two rides are one batch, so one undo and one redo move both.
         await undo();
         expect(getSendLanes()).toEqual([]);
         expect(trackStore.value?.tracks).toEqual(tracksBefore);
-        expect(undoStore.value?.future).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(2);
 
         await redo();
         expectExactAutomation();
         expect(trackStore.value?.tracks).toEqual(tracksBefore);
-        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.past).toHaveLength(2);
     });
 
     it('grounds the hosted OpenAI-compatible fixture to the same normalized action and terminal lanes', async () => {
@@ -670,17 +664,10 @@ describe('verse Hall send automation workflow', () => {
         expect(providerRequest).toContain('verse two');
         expect(providerRequest).not.toContain('section-verse-two');
         const confirmation = getPendingActionConfirmation(getConfirmationId());
-        expect(confirmation?.actions[0]).toMatchObject({
-            type: 'automateSendRange',
-            payload: {
-                trackIds: ['track-lead-vocal', 'track-backing-vocal'],
-                busId: 'bus-hall',
-                sectionId: 'section-verse-two',
-                startBeat: 16,
-                endBeat: 32,
-                reductionDb: 3,
-            },
-        });
+        expect(confirmation?.actions).toEqual([
+            sendRideAction('track-lead-vocal'),
+            sendRideAction('track-backing-vocal'),
+        ]);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
             status: 'executed',
@@ -695,15 +682,7 @@ describe('verse Hall send automation workflow', () => {
 
     it('rejects provider enlargement beyond every track whose name and Hall send match vocal', async () => {
         runtimeMocks.generateWebLlmCompletion.mockImplementation(
-            createTurnTrackedWebLlmResponder((): ProviderCall[] => [
-                {
-                    ...providerPlan[0],
-                    arguments: {
-                        ...providerPlan[0].arguments,
-                        trackIds: [...providerPlan[0].arguments.trackIds, 'track-spoken-word'],
-                    },
-                },
-            ])
+            createTurnTrackedWebLlmResponder((): ProviderCall[] => [...providerPlan, sendRide('track-spoken-word')])
         );
         const tracksBefore = structuredClone(trackStore.value?.tracks);
 
@@ -855,6 +834,6 @@ describe('verse Hall send automation workflow', () => {
         automationStore.set(committed);
         await undo();
         expect(getSendLanes()).toEqual([]);
-        expect(undoStore.value?.future).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(2);
     });
 });

@@ -34,7 +34,6 @@ import { type AppAction } from '#/utils/handlerContract';
 // nameless addTrack is named by the track owner, once, before it is recorded.
 
 type ArrangementTrackEvents = {
-    'track.added': { trackId: string; name: string; kind: string };
     'track.removed': { trackId: string };
     'track.selectionChanged': { trackId: string | null; previousTrackId: string | null };
 };

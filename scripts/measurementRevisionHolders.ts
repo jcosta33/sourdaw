@@ -7,7 +7,7 @@ export type BranchRevisionReader = {
     baseBranchTip: () => RemoteBranch;
     branchHoldsRevision: (branch: RemoteBranch, revision: string) => boolean;
 };
-export type BranchClass = 'protected' | 'unlisted' | 'open' | 'unpublished' | 'moved' | 'spent';
+export type BranchClass = 'protected' | 'unlisted' | 'open' | 'unpublished' | 'moved' | 'unmerged' | 'spent';
 
 type Gh = (args: string[]) => string;
 

@@ -2,9 +2,9 @@
 
 ## Desktop runtime
 
-Desktop builds bundle [Electron 45.2.3](https://github.com/electron/electron/tree/d0a18d02058b21ff292e25d5f53f00bd120f2f61)
+Desktop builds bundle [Electron 45.3.1](https://github.com/electron/electron/tree/3025e0491e87674c112f7a7d2646292c0efa4599)
 under the MIT license. That release embeds
-[Chromium 156.0.8078.80](https://chromium.googlesource.com/chromium/src/+/fb096c0011f9d50f0a264a9376420cdea9c421e3)
+[Chromium 156.0.8078.96](https://chromium.googlesource.com/chromium/src/+/2ad9b7f5a86846e0b264090723a6a78964bb84c4)
 and [Node v24.22.2](https://github.com/nodejs/node/tree/f7f273a9bb6445f6f7fb6349105e7532972045fb).
 Its media runtime includes
 [FFmpeg](https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/9db86ce5b5b454dfc96c435f9f0723012980c37f)
@@ -16,24 +16,34 @@ Chromium, Node, FFmpeg, and bundled-component notice file as `electron-LICENSES.
 
 ## LGPL runtimes
 
-Sourdaw uses two LGPL packages without source modifications. FaustWasm runtime files are copied
-byte-for-byte from its package. Vite bundles lamejs into Sourdaw's application code.
+Sourdaw uses two LGPL runtime packages without modifying their distributed executable bytes.
+FaustWasm compiler files are copied byte-for-byte from its package. Vite bundles lamejs into the application.
 
-| Component | Version | License           | Source                                                                                                                                                                                                              |
-| --------- | ------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| FaustWasm | 0.18.5  | LGPL-2.1-or-later | [wrapper](https://github.com/grame-cncm/faustwasm/archive/ba611eaeefcb41f935cab1481ea9580b470ae8eb.tar.gz), [compiler](https://github.com/grame-cncm/faust/archive/ada86ab32fe875f5d1d028c3a99f17e3a83e0ad8.tar.gz) |
-| lamejs    | 1.2.7   | LGPL-3.0-only     | [source](https://github.com/gideonstele/lamejs/archive/1fb0ef5fa177413107e2e107d054a9b994e3f79c.tar.gz)                                                                                                             |
+| Component | Version | License           | Source                                                                                                                                                                                                                                                                                                     |
+| --------- | ------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FaustWasm | 0.20.2  | LGPL-2.1-or-later | [wrapper corresponding source](./faustwasm-0.20.2-corresponding-source.tar.gz), [compiler](https://github.com/grame-cncm/faust/archive/21884a6d63713ff99dca2fef95c33aecaedfe643.tar.gz), [libraries](https://github.com/grame-cncm/faustlibraries/archive/42fab480c778df7bad5c6b620ca4fd005b2bfe9b.tar.gz) |
+| lamejs    | 1.2.7   | LGPL-3.0-only     | [source](https://github.com/gideonstele/lamejs/archive/1fb0ef5fa177413107e2e107d054a9b994e3f79c.tar.gz)                                                                                                                                                                                                    |
 
-FaustWasm's `COPYING.txt` grants LGPL-2.1-or-later despite the package metadata naming LGPL-3.0.
-Its notice is preserved. lamejs declares LGPL-3.0. The upstream notices and complete license texts
-are beside this file.
+FaustWasm 0.20.2 declares the deprecated metadata identifier LGPL-2.1. Its retained `COPYING.txt`
+explicitly grants LGPL version 2.1 or, at your option, any later version. lamejs declares LGPL-3.0.
+The original notices and complete license texts are beside this file.
 
-FaustWasm's package source is pinned by npm `gitHead`. The bundled compiler identifies itself as
-2.89.2; the matching Faust version commit is pinned, but a reproducible rebuild has not yet proven
-that exact compiler commit produced the binary.
+The registry records FaustWasm gitHead `4403c779a3e92af4e4f44b5abda98b3ac5fa57d9`, whose upstream
+archive was unavailable when this source package was prepared. We do not claim another upstream
+commit is that release. The shipped `public/legal/faustwasm-0.20.2-corresponding-source.tar.gz`
+is an explicitly labeled Sourdaw reconstruction: verified preferred source from the published package,
+unchanged upstream source from 0.20.1, and reconstructed mono/poly/FFT entrypoints and build script.
+Its editable TypeScript and pinned recipe reproduced all three released worklet strings and the main
+ESM wrapper byte-for-byte in two fresh builds on macOS arm64. Source hashes, exact executable hashes,
+all 55 bundled library source files and their attribution are included. Other-platform execution has
+not been established by that proof; its lock provisions the recipient platform's build tool.
 
-See [SOURCES.json](./SOURCES.json) for exact package, source, and file identities. See
-[RELINKING.md](./RELINKING.md) to replace either library and rebuild Sourdaw.
+The bundled compiler identifies itself as 2.90.19. Its matching version commit and exact libraries
+revision are pinned above; a reproducible compiler WASM rebuild has not established which compiler
+source commit produced that binary. Wrapper reconstruction does not claim a compiler binary rebuild.
+
+See [SOURCES.json](./SOURCES.json) for exact package, source and file identities, and
+[RELINKING.md](./RELINKING.md) to modify, replace and rebuild either library.
 
 ## JavaScript and Rust dependencies
 
@@ -50,6 +60,12 @@ whose corresponding source is available from those same crates.io package versio
 runtime notices below remain authoritative for their narrower component closures.
 
 ## Adapted DSP source
+
+The stock Faust oscillator, filter and reverb definitions in `src/helpers/faustCurrentSound.lib`
+are adapted from faustlibraries revision `36661b5efd702e0e21b3ad49864e10201aecc602`. Exact upstream
+file hashes and the selected function closure are retained in `faustCurrentSound.sources.json`.
+Attribution and the LGPL Faust exception / STK 4.3 terms are distributed in
+[FAUST-CURRENT-SOUND-NOTICE.txt](./FAUST-CURRENT-SOUND-NOTICE.txt).
 
 `crates/daw-dsp/src/toaster/engines/kick_808.rs` adapts mi-plaits-dsp-rs at commit
 `6d3f7a5b84b25ec45d66c9f6be7109474690d795` under the MIT license. Copyright (c) 2022 Oliver
@@ -78,6 +94,18 @@ Sourdaw does not bundle or redistribute those artifacts; the user's browser down
 pinned bytes directly from Magenta only after an explicit download action and verifies them before
 publication or use.
 
+## WebLLM SDK notices
+
+WebLLM's SDK dependency metadata selects @mlc-ai/web-runtime 0.28.0-dev2,
+@mlc-ai/web-tokenizers 0.1.6, and @mlc-ai/web-xgrammar 0.1.27. Their authenticated npm archives
+omit standalone license and NOTICE files; the dependency report retains hash-pinned metadata and
+canonical Apache-2.0 terms. Separately sourced upstream notices, relevant bundled third-party terms,
+and the runtime archive's own notice headers are retained in [MLC-WEB-NOTICES.txt](./MLC-WEB-NOTICES.txt).
+The runtime package has no published source revision; [Apache-TVM/NOTICE](./Apache-TVM/NOTICE)
+preserves independently observed identical TVM notice bytes, not a source-version claim for that
+package. These records preserve observed attribution and do not establish reproducible SDK
+compilation or a complete embedded build-input genealogy.
+
 ## WebLLM Qwen models
 
 Web and desktop builds can download three pinned MLC-format Qwen models for browser-local WebLLM
@@ -88,22 +116,24 @@ source/license chain. The Apache-2.0 text and attribution record are in
 [Apache-2.0.txt](./Apache-2.0.txt) and [Qwen-NOTICE.txt](./Qwen-NOTICE.txt).
 
 The admitted WebGPU modules come from
-[binary-mlc-llm-libs at `025bcaf3780fa8254f5e5efd3bfea0a5397248f4`](https://github.com/mlc-ai/binary-mlc-llm-libs/tree/025bcaf3780fa8254f5e5efd3bfea0a5397248f4/web-llm-models/v0_2_84/base).
-The merged upstream record names MLC-LLM `2008fe8343e1f40ef89ee57b9287aebcf1b86c98`
-and Apache TVM `bc1a904ec1ad89454ee6577d66cde1268b8f6bc8` as their source revisions. MLC-LLM's
-exact notice and TVM's exact root license, notice, and full referenced license/notice trees are in
+[binary-mlc-llm-libs at `146ed9cd4b4062e967b017fd2291f7106b50599f`](https://github.com/mlc-ai/binary-mlc-llm-libs/tree/146ed9cd4b4062e967b017fd2291f7106b50599f/web-llm-models/v0_2_87/base).
+The merged upstream PR168 names MLC-LLM `44fd06d04f22c87820e205b0f2b2e5e6a1f6ca85`
+and Apache TVM `e345029cedf0be76a087fcad9c89a97bed4f7204` as their source revisions.
+TVM pins TIRx `198a04573ea44e060c1087c8223cf082c64a6c03`, which pins TVM FFI
+`6628c464e3b824d09c9cf65ac0c6c24f973f6d56`. The FFI distribution directory below
+is an attribution namespace; its upstream source is nested through TIRx.
+Their exact notices, licenses and referenced legal texts are retained in:
+
 [MLC-LLM-NOTICE.txt](./MLC-LLM-NOTICE.txt),
 [Apache-TVM/NOTICE](./Apache-TVM/NOTICE), [Apache-TVM/LICENSE](./Apache-TVM/LICENSE),
-[Apache-TVM/licenses/LICENSE.blockingconcurrentqueue.txt](./Apache-TVM/licenses/LICENSE.blockingconcurrentqueue.txt),
-[Apache-TVM/licenses/LICENSE.builtin_fp16.txt](./Apache-TVM/licenses/LICENSE.builtin_fp16.txt),
-[Apache-TVM/licenses/LICENSE.concurrentqueue.txt](./Apache-TVM/licenses/LICENSE.concurrentqueue.txt),
 [Apache-TVM/licenses/LICENSE.cutlass.txt](./Apache-TVM/licenses/LICENSE.cutlass.txt),
 [Apache-TVM/licenses/LICENSE.cutlass_fpA_intB_gemm.txt](./Apache-TVM/licenses/LICENSE.cutlass_fpA_intB_gemm.txt),
-[Apache-TVM/licenses/LICENSE.l2_cache_flush.txt](./Apache-TVM/licenses/LICENSE.l2_cache_flush.txt),
 [Apache-TVM/licenses/LICENSE.libflash_attn.txt](./Apache-TVM/licenses/LICENSE.libflash_attn.txt),
-[Apache-TVM/licenses/LICENSE.rang.txt](./Apache-TVM/licenses/LICENSE.rang.txt),
 [Apache-TVM/licenses/LICENSE.tensorrt_llm.txt](./Apache-TVM/licenses/LICENSE.tensorrt_llm.txt),
 [Apache-TVM/licenses/LICENSE.vllm.txt](./Apache-TVM/licenses/LICENSE.vllm.txt),
+[Apache-TVM/3rdparty/tvm-tirx/NOTICE](./Apache-TVM/3rdparty/tvm-tirx/NOTICE),
+[Apache-TVM/3rdparty/tvm-tirx/LICENSE](./Apache-TVM/3rdparty/tvm-tirx/LICENSE),
+[Apache-TVM/3rdparty/tvm-tirx/licenses/LICENSE.builtin_fp16.txt](./Apache-TVM/3rdparty/tvm-tirx/licenses/LICENSE.builtin_fp16.txt),
 [Apache-TVM/3rdparty/tvm-ffi/NOTICE](./Apache-TVM/3rdparty/tvm-ffi/NOTICE),
 [Apache-TVM/3rdparty/tvm-ffi/LICENSE](./Apache-TVM/3rdparty/tvm-ffi/LICENSE),
 [Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt](./Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt),
@@ -113,9 +143,11 @@ and [Apache-TVM/3rdparty/tvm-ffi/licenses/NOTICE.pytorch.txt](./Apache-TVM/3rdpa
 
 The exact downloaded model and WebAssembly bytes remain pinned and verified before storage or
 inference. This admission does not claim hermetic reproduction: the upstream conversions do not map
-to base-checkpoint revisions, and the binary merge record lacks the exact emsdk revision, resolved
-build configuration, and build log. Binary byte identity and the named MLC-LLM/TVM source revisions
-are proven; the exact Qwen source/license chain and complete build-input provenance are not.
+to base-checkpoint revisions, and PR168 lacks the exact emsdk revision, resolved build configuration,
+and build log. MLC's default TVM submodule differs from the publisher-named TVM checkout; the source
+supports an explicit TVM_SOURCE_DIR, but the actual builder environment is not attested. Binary byte
+identity, publisher-named MLC-LLM/TVM sources and the nested TIRx/FFI source pins are proven; the exact
+Qwen source/license chain and complete build-input provenance are not.
 
 ## Plugin interfaces
 

@@ -7,6 +7,11 @@
 //! today; the seam stays shell-agnostic so a second shell would link these
 //! same bodies rather than re-implement them.
 
+#![cfg_attr(
+    test,
+    allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
+)]
+
 pub mod commands;
 pub mod events;
 pub mod host;

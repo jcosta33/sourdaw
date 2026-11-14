@@ -250,9 +250,7 @@ mod platform {
     }
 
     unsafe fn function_pointer(bundle: CFBundleRef, name: &[u8]) -> Option<*mut c_void> {
-        let Some(symbol) = symbol_name(name) else {
-            return None;
-        };
+        let symbol = symbol_name(name)?;
         let pointer = CFBundleGetFunctionPointerForName(bundle, symbol);
         CFRelease(symbol as CFTypeRef);
         if pointer.is_null() {

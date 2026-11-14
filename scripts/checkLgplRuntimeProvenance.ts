@@ -6,14 +6,23 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import ts from 'typescript';
-import { parseDocument } from 'yaml';
+
+import {
+    FAUST_SOURCE_ARCHIVE,
+    FAUST_SOURCE_SHA256,
+    validateFaustCorrespondingSource,
+} from './faustCorrespondingSource.ts';
+import { parsePnpmLock } from './pnpmLock.ts';
 
 type Source = {
     id: string;
     repository: string;
     revision: string;
     version?: string;
-    relationship: 'npm-gitHead' | 'embedded-version-match';
+    relationship:
+        'npm-gitHead' | 'embedded-version-match' | 'embedded-library-match' | 'reconstructed-corresponding-source';
+    archiveSha256?: string;
+    upstreamRevisionAvailable?: false;
     archive: string;
 };
 
@@ -61,6 +70,9 @@ type RequiredComponent = {
             revision: string;
             version?: string;
             relationship: Source['relationship'];
+            archive?: string;
+            archiveSha256?: string;
+            upstreamRevisionAvailable?: false;
         }
     >;
     integration?: Component['integration'];
@@ -71,25 +83,27 @@ export type LgplRuntimeContract = Readonly<Record<string, RequiredComponent>>;
 const REQUIRED_COMPONENTS: LgplRuntimeContract = {
     faustwasm: {
         package: '@grame/faustwasm',
-        version: '0.18.5',
-        specifier: '0.18.5',
-        integrity: 'sha512-mJhyTMv1b6V+ICm/XKcNgOFtxJVX4nAIrTDLqJdB5PW6xTIMeJtNHkUBIg+RlWMrbs0QhGYYBVsq22Y6e87v3w==',
+        version: '0.20.2',
+        specifier: '0.20.2',
+        integrity: 'sha512-Xtr5w73+3SVfXDA7HMATxQJy5wjfDRH10b6nHv1iximJQz4vnOh9D1f5z+l2kFKmuo5ZzkIOx9y5WI2/vtEI7w==',
         repository: 'https://github.com/grame-cncm/faustwasm',
-        revision: 'ba611eaeefcb41f935cab1481ea9580b470ae8eb',
+        revision: '4403c779a3e92af4e4f44b5abda98b3ac5fa57d9',
         distribution: 'copied-byte-for-byte',
-        packageLicense: 'LGPL-3.0',
+        packageLicense: 'LGPL-2.1',
         license: 'LGPL-2.1-or-later',
         licenseFiles: {
             'public/legal/faustwasm-COPYING.txt':
-                'sha256:587bc956e3703e11aa8f4350193d6f5e37b497d84a552abdbe348b48e542d5a1',
+                'sha256:5af8efd745a8c91bf99443662e85708866807dc2e01b08045f338d63e2839916',
         },
         packageFiles: {
-            'COPYING.txt': 'sha256:c747ba23f84a8b47ebc6007bf536215b3ceeab6bfa2f803cab422a512e3f1ed3',
+            'COPYING.txt': 'sha256:5af8efd745a8c91bf99443662e85708866807dc2e01b08045f338d63e2839916',
             'libfaust-wasm/libfaust-wasm.data':
-                'sha256:12e89b91e9b9fce899b1cdf6f62fdea18d95ce1ae63a69a61d76c3d365e52050',
-            'libfaust-wasm/libfaust-wasm.js': 'sha256:73b9ee9ba0368f8a52d1e5feeeaee528930e38420acc9ea65b1198b480ed9e25',
+                'sha256:7f338f4d5006608241c875c38363348d42f9aeed5cbfa5cbb63828e5d4f912ed',
+            'libfaust-wasm/libfaust-wasm.js': 'sha256:82b9fe95a126afab27ccd8bdc0ac9f6c7191db569fef3d1b59cb873508797acc',
             'libfaust-wasm/libfaust-wasm.wasm':
-                'sha256:b81cd9c08c5d230a193194286974a5403d0ca6c9fb2768987af8defca6527202',
+                'sha256:b047d7c2dd1e77392ee352a95db9df4bd81458c5ca58ccc67631476fe4b59573',
+            'dist/esm/index.js': 'sha256:aab25a0e405586b6ce614788f2edc473d7241d523f2a61fbf020ada14655ff1a',
+            'dist/esm/index.js.map': 'sha256:89378855b7ec759a894a947844618f530670f60b451f1337b559f04f68986bd4',
         },
         shippedFiles: {
             'public/faust/libfaust-wasm.data': 'libfaust-wasm/libfaust-wasm.data',
@@ -99,14 +113,22 @@ const REQUIRED_COMPONENTS: LgplRuntimeContract = {
         sources: {
             faustwasm: {
                 repository: 'https://github.com/grame-cncm/faustwasm',
-                revision: 'ba611eaeefcb41f935cab1481ea9580b470ae8eb',
-                relationship: 'npm-gitHead',
+                revision: '4403c779a3e92af4e4f44b5abda98b3ac5fa57d9',
+                relationship: 'reconstructed-corresponding-source',
+                archive: 'public/legal/faustwasm-0.20.2-corresponding-source.tar.gz',
+                archiveSha256: '7a6f0939e8905e40b7733f8e17cf5c806f3c89fb6c5291985dcc6deb883b3682',
+                upstreamRevisionAvailable: false,
             },
             'faust-core': {
                 repository: 'https://github.com/grame-cncm/faust',
-                revision: 'ada86ab32fe875f5d1d028c3a99f17e3a83e0ad8',
-                version: '2.89.2',
+                revision: '21884a6d63713ff99dca2fef95c33aecaedfe643',
+                version: '2.90.19',
                 relationship: 'embedded-version-match',
+            },
+            'faust-libraries': {
+                repository: 'https://github.com/grame-cncm/faustlibraries',
+                revision: '42fab480c778df7bad5c6b620ca4fd005b2bfe9b',
+                relationship: 'embedded-library-match',
             },
         },
     },
@@ -183,21 +205,18 @@ function sameRecord(actual: Record<string, string>, expected: Record<string, str
 }
 
 function lockHasExactResolution(lock: string, component: Component): boolean {
-    const document = parseDocument(lock, { uniqueKeys: true });
-    if (document.errors.length > 0) {
+    try {
+        const parsed = parsePnpmLock(lock).application;
+        const dependency = parsed.importers?.['.']?.dependencies?.[component.package];
+        const resolution = parsed.packages?.[`${component.package}@${component.version}`]?.resolution;
+        return (
+            dependency?.specifier === component.specifier &&
+            dependency.version === component.version &&
+            resolution?.integrity === component.integrity
+        );
+    } catch {
         return false;
     }
-    const parsed = document.toJS() as {
-        importers?: Record<string, { dependencies?: Record<string, { specifier?: string; version?: string }> }>;
-        packages?: Record<string, { resolution?: { integrity?: string } }>;
-    };
-    const dependency = parsed.importers?.['.']?.dependencies?.[component.package];
-    const resolution = parsed.packages?.[`${component.package}@${component.version}`]?.resolution;
-    return (
-        dependency?.specifier === component.specifier &&
-        dependency.version === component.version &&
-        resolution?.integrity === component.integrity
-    );
 }
 
 function hasRuntimeImport(path: string, specifier: string): boolean {
@@ -319,7 +338,9 @@ export function validateLgplRuntimeProvenance(
                 source.revision !== contract.revision ||
                 source.version !== contract.version ||
                 source.relationship !== contract.relationship ||
-                source.archive !== `${contract.repository}/archive/${contract.revision}.tar.gz`
+                source.archive !== (contract.archive ?? `${contract.repository}/archive/${contract.revision}.tar.gz`) ||
+                source.archiveSha256 !== contract.archiveSha256 ||
+                source.upstreamRevisionAvailable !== contract.upstreamRevisionAvailable
             ) {
                 errors.push(`${component.id}: ${id} source identity drifted`);
             }
@@ -340,7 +361,10 @@ export function validateLgplRuntimeProvenance(
             errors.push(`${component.id}: package is not installed`);
             continue;
         }
-        const installedPackage = readJson<{ version?: string; license?: string }>(installedPackagePath);
+        const installedPackage = readJson<{ name?: string; version?: string; license?: string }>(installedPackagePath);
+        if (installedPackage.name !== component.package) {
+            errors.push(`${component.id}: installed package identity drifted`);
+        }
         if (installedPackage.version !== component.version) {
             errors.push(`${component.id}: installed version drifted`);
         }
@@ -372,7 +396,21 @@ export function validateLgplRuntimeProvenance(
             errors.push(`${component.id}: package source revision is missing`);
         }
         for (const source of component.sources) {
-            if (!/^[0-9a-f]{40}$/.test(source.revision) || !source.archive.includes(source.revision)) {
+            const reconstructed = source.relationship === 'reconstructed-corresponding-source';
+            if (reconstructed) {
+                if (
+                    source.archive !== FAUST_SOURCE_ARCHIVE ||
+                    source.archiveSha256 !== FAUST_SOURCE_SHA256 ||
+                    source.upstreamRevisionAvailable !== false
+                ) {
+                    errors.push(`${component.id}: corresponding source identity drifted`);
+                }
+                errors.push(...validateFaustCorrespondingSource(root));
+            }
+            if (
+                !/^[0-9a-f]{40}$/.test(source.revision) ||
+                (!reconstructed && !source.archive.includes(source.revision))
+            ) {
                 errors.push(`${component.id}: source is not pinned to its revision`);
             }
             if (!directions.includes(source.archive)) {
@@ -425,7 +463,10 @@ export async function validateLgplSourceAvailability(root: string): Promise<stri
     const manifest = readJson<Provenance>(resolve(root, 'public/legal/SOURCES.json'));
     const errors: string[] = [];
     for (const component of manifest.components) {
-        const npmSource = component.sources.find((source) => source.relationship === 'npm-gitHead');
+        const npmSource = component.sources.find(
+            (source) =>
+                source.relationship === 'npm-gitHead' || source.relationship === 'reconstructed-corresponding-source'
+        );
         try {
             const packageName = component.package.replace('/', '%2F');
             const response = await fetch(`https://registry.npmjs.org/${packageName}/${component.version}`);
@@ -444,6 +485,10 @@ export async function validateLgplSourceAvailability(root: string): Promise<stri
         }
 
         for (const source of component.sources) {
+            if (source.relationship === 'reconstructed-corresponding-source') {
+                errors.push(...validateFaustCorrespondingSource(root));
+                continue;
+            }
             try {
                 const response = await fetch(source.archive, { method: 'HEAD', redirect: 'follow' });
                 if (!response.ok) {

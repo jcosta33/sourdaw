@@ -155,6 +155,7 @@ export async function replaceProjectData({
                 markOutgoingProjectDirtyAfterAbort();
             }
         }
+        transaction.abandon();
         return { status: 'aborted' };
     }
 

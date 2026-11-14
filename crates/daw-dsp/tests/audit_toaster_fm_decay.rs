@@ -8,6 +8,8 @@
 //! Decay reads. The factory "Metallic Grain" kit ships FM pads at decay 0.1
 //! ("FM Zap") and 0.7 ("FM Bell"), which the arm maps to 0.218 s and 1.406 s.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::toaster::engine::ToasterEngine;
 
 const FRAMES: usize = 128;

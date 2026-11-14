@@ -35,6 +35,12 @@ describe('runProjectLoadTransaction — launch race', () => {
         vi.clearAllMocks();
     });
 
+    it('refuses an edit capability before any project has activated', async () => {
+        await loadFreshMachinery();
+        const { projectTransitionEpoch } = await import('../../../../stores/projectTransitionEpoch');
+        expect(projectTransitionEpoch.captureEditAuthority().isCurrent()).toBe(false);
+    });
+
     it('does not let a boot restore created mid-flight supersede the user template transition', async () => {
         const { runProjectLoadTransaction } = await loadFreshMachinery();
 

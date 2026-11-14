@@ -18,6 +18,7 @@
 //! reason `reverb_process_rt.rs` splits per algorithm.
 
 #![cfg(debug_assertions)]
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
 
 use assert_no_alloc::{assert_no_alloc, AllocDisabler};
 use proof_chamber::fdn::FdnReverb;

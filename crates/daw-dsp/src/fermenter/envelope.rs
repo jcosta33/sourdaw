@@ -104,5 +104,20 @@ fn time_to_coeff(time_s: f32, sample_rate: f32) -> f32 {
     if samples < 1.0 {
         return 1.0;
     }
-    1.0 - (-1.0 / samples).exp()
+    1.0 - crate::primitives::pole_from_samples(samples)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::time_to_coeff;
+
+    /// Under one sample the envelope stage completes in a single tick (1.0);
+    /// otherwise it is the complement of the pole, `1 - e^(-1/samples)`.
+    #[test]
+    fn stage_time_under_one_sample_is_instant_and_otherwise_the_pole_complement() {
+        assert_eq!(time_to_coeff(0.0, 48_000.0), 1.0);
+        assert_eq!(time_to_coeff(-1.0, 48_000.0), 1.0);
+        assert_eq!(time_to_coeff(1.0e-5, 48_000.0), 1.0);
+        assert_eq!(time_to_coeff(0.001, 48_000.0).to_bits(), 0x3ca8_e6c0);
+    }
 }

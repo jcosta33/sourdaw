@@ -1,25 +1,8 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import { DEFAULT_PATCH, type FermenterPatch } from '../models/FermenterPatch';
+import { cloneFermenterPatch, fermenterPatchesEqual, fromFermenterDeviceState } from '../models/FermenterPatchState';
 import { fermenterStore, loadFermenterPatch } from '../stores/fermenterStore';
-
-function isPatchUnchanged(currentInstance: unknown, currentPatch: FermenterPatch, patch: FermenterPatch): boolean {
-    if (currentInstance === undefined) {
-        return false;
-    }
-    if (patch.name !== currentPatch.name) {
-        return false;
-    }
-    if (!patch.macros.every((v, i) => v === currentPatch.macros[i])) {
-        return false;
-    }
-    return (Object.keys(DEFAULT_PATCH) as (keyof FermenterPatch)[]).every((key) => {
-        if (key === 'macros' || key === 'macroMappings') {
-            return true;
-        }
-        return patch[key] === currentPatch[key];
-    });
-}
 
 function applyParameterValues(
     patch: FermenterPatch,
@@ -42,11 +25,10 @@ function applyParameterValues(
 }
 
 /**
- * Hydrate the Fermenter session state store from project parameter values.
- *
- * Ensures that when a project is opened, the Fermenter panel displays the
- * persisted patch that the Web Audio synth engine is currently playing,
- * preventing defaults from overwriting the saved sound on knob adjustments.
+ * Hydrate the Fermenter session state store from project truth. Whole-patch
+ * snapshots restore names and nested mappings; numeric values remain the overlay
+ * for continuous parameter and macro writes. Legacy projects retain their
+ * original macro-seeding behaviour until their first whole-patch commit.
  */
 export function hydrateFermenterFromProject(deviceId: string): FermenterPatch | null {
     const tracks = trackStore.value?.tracks;
@@ -61,30 +43,29 @@ export function hydrateFermenterFromProject(deviceId: string): FermenterPatch | 
 
     const currentInstance = (fermenterStore.value ?? {})[deviceId];
     const currentPatch = currentInstance?.patch ?? DEFAULT_PATCH;
-
-    const patch: FermenterPatch = {
-        ...currentPatch,
-        // Undo of a first discrete selection removes its leaf, restoring the default.
-        oscEngine: Object.hasOwn(device.parameterValues ?? {}, 'oscEngine')
-            ? currentPatch.oscEngine
-            : DEFAULT_PATCH.oscEngine,
-        filterModel: Object.hasOwn(device.parameterValues ?? {}, 'filterModel')
-            ? currentPatch.filterModel
-            : DEFAULT_PATCH.filterModel,
-        filterMode: Object.hasOwn(device.parameterValues ?? {}, 'filterMode')
-            ? currentPatch.filterMode
-            : DEFAULT_PATCH.filterMode,
-        macros: [...currentPatch.macros],
-        macroMappings: currentPatch.macroMappings ? [...currentPatch.macroMappings] : undefined,
-    };
-
+    const persistedPatch = fromFermenterDeviceState(device.deviceState);
     const isUnseeded = currentInstance === undefined;
-    if (device.parameterValues) {
-        applyParameterValues(patch, device.parameterValues, isUnseeded);
+    const patch = cloneFermenterPatch(persistedPatch ?? currentPatch);
+    if (!persistedPatch) {
+        const parameterValues = device.parameterValues ?? {};
+        // Undo of a first discrete selection removes its leaf, restoring the default.
+        if (!Object.hasOwn(parameterValues, 'oscEngine')) {
+            patch.oscEngine = DEFAULT_PATCH.oscEngine;
+        }
+        if (!Object.hasOwn(parameterValues, 'filterModel')) {
+            patch.filterModel = DEFAULT_PATCH.filterModel;
+        }
+        if (!Object.hasOwn(parameterValues, 'filterMode')) {
+            patch.filterMode = DEFAULT_PATCH.filterMode;
+        }
     }
 
-    if (!isPatchUnchanged(currentInstance, currentPatch, patch)) {
-        loadFermenterPatch(deviceId, patch);
+    if (device.parameterValues) {
+        applyParameterValues(patch, device.parameterValues, persistedPatch === null && isUnseeded);
+    }
+
+    if (isUnseeded || !fermenterPatchesEqual(currentPatch, patch)) {
+        loadFermenterPatch(deviceId, cloneFermenterPatch(patch));
     }
     return patch;
 }

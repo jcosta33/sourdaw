@@ -1,4 +1,5 @@
 import("stdfaust.lib");
+cs = library("sourdaw-current-sound.lib");
 width = hslider("width", 100, 0, 200, 1) / 100.0;
 mono_freq = hslider("mono_bass", 0, 0, 500, 1);
 mid(l, r) = (l + r) * 0.5;
@@ -11,5 +12,5 @@ process(l, r) = m + s * width, m - s * width
 with {
     m = mid(l, r);
     s_raw = side(l, r);
-    s = ba.if(mono_freq > 0, s_raw : fi.highpass(1, max(1.0, mono_freq)), s_raw);
+    s = ba.if(mono_freq > 0, s_raw : cs.highpass(1, max(1.0, mono_freq)), s_raw);
 };

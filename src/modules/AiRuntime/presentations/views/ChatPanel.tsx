@@ -1,6 +1,19 @@
 import { type ReactElement, type CSSProperties, useState, useRef, useEffect, useId, type KeyboardEvent } from 'react';
 
-import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap, Check, RotateCw } from 'lucide-react';
+import {
+    X,
+    Trash2,
+    Bot,
+    User,
+    ChevronRight,
+    ChevronDown,
+    Zap,
+    Check,
+    RotateCw,
+    SkipForward,
+    Square,
+    Undo2,
+} from 'lucide-react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Row, Stack } from '#/components/layout';
@@ -27,6 +40,7 @@ import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentR
 import { selectPreparedStemImportManualRepairs } from '../../stores/selectPreparedStemImportManualRepairs';
 import { proposeAnswerSuggestion } from '../../useCases/aiPanelActions/proposeAnswerSuggestion';
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
+import { agentRunCancellation } from '../../useCases/cancelAgentRun';
 import { cancelPendingChatActions } from '../../useCases/cancelPendingChatActions';
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
 import { getAgentApprovalView } from '../../useCases/getAgentApprovalView';
@@ -34,8 +48,10 @@ import { agentRunControls } from '../../useCases/getAgentRunControlProjection';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
 import { recoverAgentRunPendingEffects } from '../../useCases/recoverAgentRunPendingEffects';
 import { reproposePendingChatActions } from '../../useCases/reproposePendingChatActions';
+import { revertVibeRun } from '../../useCases/revertVibeRun';
 import { selectRetainedSectionRenderManualReviews } from '../../useCases/selectRetainedSectionRenderManualReviews';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
+import { skipPendingVibeBatch } from '../../useCases/skipPendingVibeBatch';
 import { AgentRunDecisionControls } from '../components/AgentRunDecisionControls';
 import { AnswerEvidenceDisclosure } from '../components/AnswerEvidenceDisclosure';
 import { ChatComposer } from '../components/ChatComposer';
@@ -103,6 +119,7 @@ type ChatMessageItemProps = {
     onConfirmPendingActions: (confirmationId: string) => void;
     onCancelPendingActions: (confirmationId: string) => void;
     onProposeSuggestion: (messageId: string) => void;
+    onStopRun: (runId: string) => void;
 };
 
 const ChatMessageItem = ({
@@ -111,6 +128,7 @@ const ChatMessageItem = ({
     onConfirmPendingActions,
     onCancelPendingActions,
     onProposeSuggestion,
+    onStopRun,
 }: ChatMessageItemProps): ReactElement => {
     let msgIcon = <User className="size-3" />;
     if (msg.isCommandAction) {
@@ -145,6 +163,10 @@ const ChatMessageItem = ({
     }
     const retryableFollowUpId =
         msg.pendingActionFollowUpStatus === 'retryable' ? msg.pendingActionConfirmationId : undefined;
+    const { stoppableRunId } = msg;
+    // A vibe-run batch card offers Skip, and its Cancel stops the whole run, so it says so.
+    const skipAvailable = approval?.skip.available === true;
+    const revertRunId = msg.vibeRunRevert?.runId;
 
     return (
         <div className={cn('flex w-full flex-col', msg.role === 'user' ? 'items-end' : 'items-start')}>
@@ -188,6 +210,20 @@ const ChatMessageItem = ({
                         </Button>
                     </Row>
                 ) : null}
+                {stoppableRunId === undefined ? null : (
+                    <Row gap={2} className="mt-2">
+                        <Button
+                            size="xs"
+                            variant="ghost"
+                            onClick={() => onStopRun(stoppableRunId)}
+                            aria-label="Stop measuring"
+                            className="h-7 gap-1.5 text-[11px]"
+                        >
+                            <Square className="size-3 fill-current" />
+                            Stop
+                        </Button>
+                    </Row>
+                )}
                 {approval === null ? null : (
                     <div aria-label="Metric goal verification">
                         <p>{`Objective verification: ${approval.metricGoals.status}`}</p>
@@ -212,15 +248,29 @@ const ChatMessageItem = ({
                             <Check className="size-3" />
                             Confirm
                         </Button>
+                        {skipAvailable ? (
+                            <Button
+                                size="xs"
+                                variant="ghost"
+                                onClick={() => {
+                                    void skipPendingVibeBatch({ confirmationId: pendingConfirmationId });
+                                }}
+                                aria-label="Skip batch"
+                                className="h-7 gap-1.5 text-[11px]"
+                            >
+                                <SkipForward className="size-3" />
+                                Skip batch
+                            </Button>
+                        ) : null}
                         <Button
                             size="xs"
                             variant="ghost"
                             onClick={() => onCancelPendingActions(pendingConfirmationId)}
-                            aria-label="Cancel pending actions"
+                            aria-label={skipAvailable ? 'Stop run' : 'Cancel pending actions'}
                             className="h-7 gap-1.5 text-[11px]"
                         >
                             <X className="size-3" />
-                            Cancel
+                            {skipAvailable ? 'Stop run' : 'Cancel'}
                         </Button>
                         <Button
                             size="xs"
@@ -235,6 +285,28 @@ const ChatMessageItem = ({
                         </Button>
                     </Row>
                 ) : null}
+                {revertRunId === undefined ? null : (
+                    <Stack gap={1} className="mt-3 border-t border-emerald-500/20 pt-2">
+                        <p className="text-[11px] text-muted-foreground">
+                            Revert run undoes every applied batch together; the production brief stays as written.
+                        </p>
+                        <Row gap={2}>
+                            <Button
+                                size="xs"
+                                variant="secondary"
+                                onClick={() => {
+                                    void revertVibeRun({ runId: revertRunId });
+                                }}
+                                aria-label="Revert run"
+                                disabled={isGenerating}
+                                className="h-7 gap-1.5 text-[11px]"
+                            >
+                                <Undo2 className="size-3" />
+                                Revert run
+                            </Button>
+                        </Row>
+                    </Stack>
+                )}
                 {retryableFollowUpId ? (
                     <Row gap={2} className="mt-3 border-t border-emerald-500/20 pt-2">
                         <Button
@@ -373,6 +445,10 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         void cancelPendingChatActions({ confirmationId });
     };
 
+    const handleStopRun = (runId: string): void => {
+        void agentRunCancellation.cancel({ runId, reason: 'Cancelled by user' });
+    };
+
     const handleResumeDecision = async (runId: string, alternativeId: string): Promise<void> => {
         const decisionRun = decisionRuns.find((run) => run.runId === runId);
         if (decisionRun === undefined || !decisionRun.allowedActions.resume) {
@@ -432,6 +508,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         onConfirmPendingActions={handleConfirmPendingActions}
                         onCancelPendingActions={handleCancelPendingActions}
                         onProposeSuggestion={handleProposeSuggestion}
+                        onStopRun={handleStopRun}
                     />
                 ))}
                 {pendingEffectContinuations.map((continuation) => {

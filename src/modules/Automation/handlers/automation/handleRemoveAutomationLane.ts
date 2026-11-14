@@ -1,13 +1,15 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type AutomationPointSnapshot, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { type AutomationLane } from '../../models/Automation';
 import { removeAutomationLane } from '../../useCases/automation/removeAutomationLane';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 import { automationPointSnapshotsMatch } from './automationPointSnapshotsMatch';
+import { isRemoveAutomationLanePayload } from './validateRangeWriteSessionEntries';
 
 type RemoveAutomationLanePayload = Extract<AppAction, { type: 'removeAutomationLane' }>['payload'];
+type RestoreAutomationLanePointsAction = Extract<AppAction, { type: 'restoreAutomationLanePoints' }>;
 
 function findLane(laneId: string): AutomationLane | undefined {
     return getAutomationStoreState()?.lanes.find((lane) => lane.id === laneId);
@@ -17,8 +19,31 @@ function findLane(laneId: string): AutomationLane | undefined {
  * Whether the lane holds exactly what the inverse that created it says it wrote. A lane created
  * with its points is removed with them, and only while no other edit has touched them.
  */
-function holdsOnlyItsCreatedPoints(lane: AutomationLane, payload: RemoveAutomationLanePayload): boolean {
-    return payload.expectedPoints !== undefined && automationPointSnapshotsMatch(lane.points, payload.expectedPoints);
+function holdsOnlyItsCreatedPoints(
+    points: readonly AutomationPointSnapshot[],
+    payload: RemoveAutomationLanePayload
+): boolean {
+    return payload.expectedPoints !== undefined && automationPointSnapshotsMatch(points, payload.expectedPoints);
+}
+
+function isRestoreOfLane(candidate: AppAction, laneId: string): candidate is RestoreAutomationLanePointsAction {
+    return candidate.type === 'restoreAutomationLanePoints' && candidate.payload.laneId === laneId;
+}
+
+/**
+ * The points the lane holds when this removal runs. Undoing a batch that wrote the lane more than
+ * once restores its later writes before it removes the lane, so an earlier restore of this lane in
+ * the same batch leaves the points it restores, and that restore refuses on its own if the lane
+ * does not hold what it expects.
+ */
+function getPlannedPoints(
+    lane: AutomationLane,
+    context: HandlerValidationContext | undefined
+): readonly AutomationPointSnapshot[] {
+    const restore = (context?.actions.slice(0, context.actionIndex) ?? []).findLast((candidate) =>
+        isRestoreOfLane(candidate, lane.id)
+    );
+    return restore !== undefined && isRestoreOfLane(restore, lane.id) ? restore.payload.points : lane.points;
 }
 
 function getPointIdsRemovedEarlierInBatch(laneId: string, context: HandlerValidationContext | undefined): Set<string> {
@@ -53,7 +78,7 @@ function canRemoveLane(payload: RemoveAutomationLanePayload, context: HandlerVal
     const lane = findLane(payload.laneId);
     return (
         lane === undefined ||
-        holdsOnlyItsCreatedPoints(lane, payload) ||
+        holdsOnlyItsCreatedPoints(getPlannedPoints(lane, context), payload) ||
         holdsOnlyPointsRemovedEarlierInBatch(lane, context)
     );
 }
@@ -80,7 +105,7 @@ export const handleRemoveAutomationLane = createHandler<'removeAutomationLane'>(
         if (!lane) {
             return { status: 'no-write' };
         }
-        if (lane.points.length > 0 && !holdsOnlyItsCreatedPoints(lane, action.payload)) {
+        if (lane.points.length > 0 && !holdsOnlyItsCreatedPoints(lane.points, action.payload)) {
             return { status: 'conflict' };
         }
         removeAutomationLane(lane.id);
@@ -91,5 +116,12 @@ export const handleRemoveAutomationLane = createHandler<'removeAutomationLane'>(
     validate: (action, context) => canRemoveLane(action.payload, context),
     canReapplyAfterDivergence: (action, context) => canRemoveLane(action.payload, context),
     describe: () => ({ label: 'Remove automation lane' }),
+    // The removal writes only the automation store, which an aborted batch's transaction rolls
+    // back with every other member; there is no runtime state to compensate for. A group undo that
+    // removes one lane before a later member conflicts therefore reports that conflict and keeps
+    // the whole group on the stack.
+    previewExecution: 'isolated-project',
+    requiresAbortCompensation: false,
+    validateSessionActionArguments: isRemoveAutomationLanePayload,
     undoable: false,
 });

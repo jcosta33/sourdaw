@@ -135,6 +135,7 @@ vi.mock('../helpers/runProjectLoadTransaction', async () => {
         runProjectLoadTransaction: vi.fn(() => ({
             prepare: vi.fn(() => Promise.resolve(true)),
             activate: vi.fn(() => true),
+            abandon: vi.fn(),
             canActivate: () => true,
             isCurrent: () => true,
             signal: new AbortController().signal,
@@ -301,6 +302,7 @@ describe('newProject injectable', () => {
         vi.mocked(runProjectLoadTransaction).mockReturnValueOnce({
             prepare: vi.fn().mockResolvedValue(true),
             activate: vi.fn().mockReturnValue(true),
+            abandon: vi.fn(),
             canActivate: () => isCurrent,
             isCurrent: () => isCurrent,
             signal: new AbortController().signal,
@@ -443,6 +445,7 @@ describe('newProject injectable', () => {
         vi.mocked(runProjectLoadTransaction).mockReturnValueOnce({
             prepare: vi.fn().mockResolvedValue(true),
             activate: vi.fn().mockReturnValue(true),
+            abandon: vi.fn(),
             canActivate: () => isCurrent,
             isCurrent: () => isCurrent,
             signal: new AbortController().signal,
@@ -692,6 +695,7 @@ describe('newProject injectable', () => {
             .mockReturnValueOnce({
                 prepare: vi.fn().mockResolvedValue(true),
                 activate: vi.fn().mockReturnValue(true),
+                abandon: vi.fn(),
                 canActivate: () => latestTransition === 1,
                 isCurrent: () => latestTransition === 1,
                 signal: new AbortController().signal,
@@ -702,6 +706,7 @@ describe('newProject injectable', () => {
                     return Promise.reject(new Error('newer preparation failed'));
                 }),
                 activate: vi.fn().mockReturnValue(false),
+                abandon: vi.fn(),
                 canActivate: () => true,
                 isCurrent: () => false,
                 signal: new AbortController().signal,
@@ -740,6 +745,7 @@ describe('newProject injectable', () => {
         vi.mocked(runProjectLoadTransaction).mockReturnValueOnce({
             prepare: vi.fn().mockResolvedValue(true),
             activate: vi.fn().mockReturnValue(true),
+            abandon: vi.fn(),
             canActivate: () => isCurrent,
             isCurrent: () => isCurrent,
             signal: new AbortController().signal,
@@ -801,6 +807,7 @@ describe('newProject injectable', () => {
             .mockReturnValueOnce({
                 prepare: vi.fn().mockResolvedValue(true),
                 activate: vi.fn().mockReturnValue(true),
+                abandon: vi.fn(),
                 canActivate: () => latestTransition === 1,
                 isCurrent: () => latestTransition === 1,
                 signal: new AbortController().signal,
@@ -808,6 +815,7 @@ describe('newProject injectable', () => {
             .mockReturnValueOnce({
                 prepare: vi.fn().mockResolvedValue(true),
                 activate: vi.fn().mockReturnValue(true),
+                abandon: vi.fn(),
                 canActivate: () => true,
                 isCurrent: () => true,
                 signal: new AbortController().signal,

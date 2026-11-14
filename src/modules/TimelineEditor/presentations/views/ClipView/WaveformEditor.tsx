@@ -559,28 +559,31 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                         reason="AI Denoise requires the Sourdaw desktop app."
                         className="w-full flex"
                     >
-                        <Button
-                            variant="bare"
-                            size="bare"
-                            type="button"
-                            className={cn(
-                                menuBtnClass,
-                                'justify-between text-[var(--color-accent-lavender)] hover:bg-accent'
-                            )}
-                            role="menuitem"
-                            onClick={waveAct(() => {
-                                if (!audioBufferId) {
-                                    notifyUser('Denoise unavailable — clip has no audio buffer', 'error');
-                                    return;
-                                }
-                                void handleAiDenoiseClip(audioBufferId);
-                            })}
-                        >
-                            <span>AI Denoise</span>
-                            <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
-                                {isDesktopRuntime() ? 'Desktop' : 'Web'}
-                            </span>
-                        </Button>
+                        {(disabled) => (
+                            <Button
+                                variant="bare"
+                                size="bare"
+                                type="button"
+                                className={cn(
+                                    menuBtnClass,
+                                    'justify-between text-[var(--color-accent-lavender)] hover:bg-accent'
+                                )}
+                                role="menuitem"
+                                disabled={disabled}
+                                onClick={waveAct(() => {
+                                    if (!audioBufferId) {
+                                        notifyUser('Denoise unavailable — clip has no audio buffer', 'error');
+                                        return;
+                                    }
+                                    void handleAiDenoiseClip(audioBufferId);
+                                })}
+                            >
+                                <span>AI Denoise</span>
+                                <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
+                                    {isDesktopRuntime() ? 'Desktop' : 'Web'}
+                                </span>
+                            </Button>
+                        )}
                     </DisabledFeatureWrapper>
                     <Button
                         variant="bare"

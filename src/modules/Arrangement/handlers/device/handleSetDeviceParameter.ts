@@ -11,10 +11,10 @@ import { runAllEffects } from '#/utils/runEffects';
 
 import { getPluginById } from '../../models/DeviceParameter';
 import { clampDeviceParameterValue, findDeviceParameterDefault } from '../../models/DeviceParameterLaw';
+import { getPlannedDevicePatchState } from '../../useCases/device/getPlannedDevicePatchState';
 import { setDeviceParameter } from '../../useCases/device/setDeviceParameter/setDeviceParameter';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { sessionEntryAgreesOnAutomationRecordingPolicy } from '../automationRecordingPolicy';
-import { getPlannedTrackState } from '../getPlannedTrackState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 function hasExecutionGuards(action: {
@@ -37,25 +37,36 @@ function hasExecutionGuards(action: {
     );
 }
 
-function resolveDeviceTarget(action: { payload: { deviceId: string } }, context?: HandlerValidationContext) {
-    const currentTracks = getTrackStoreState()?.tracks ?? [];
-    const priorActions = context?.actions.slice(0, context.actionIndex) ?? [];
-    const candidateTrackIds = new Set(currentTracks.map((track) => track.id));
-    for (const priorAction of priorActions) {
-        if (priorAction.type === 'addTrack' && priorAction.payload.id) {
-            candidateTrackIds.add(priorAction.payload.id);
+function resolveDeviceTarget(
+    action: { payload: { deviceId: string; paramId?: string; expectedTrackId?: string } },
+    context?: HandlerValidationContext
+) {
+    if (context) {
+        const planned = getPlannedDevicePatchState({
+            deviceId: action.payload.deviceId,
+            trackId: action.payload.expectedTrackId,
+            parameterIds: action.payload.paramId ? [action.payload.paramId] : [],
+            context,
+        });
+        if (!planned) {
+            return { owner: undefined, device: undefined };
         }
-        if (priorAction.type === 'createBus' && priorAction.payload.busId) {
-            candidateTrackIds.add(priorAction.payload.busId);
+        const parameterValues: Record<string, number> = {};
+        for (const [key, value] of Object.entries(planned.state.parameterValues)) {
+            if (value !== null) {
+                parameterValues[key] = value;
+            }
         }
+        return {
+            owner: { id: planned.trackId, frozen: planned.frozen, devices: planned.deviceIds.map((id) => ({ id })) },
+            device: { id: planned.deviceId, type: planned.deviceType, parameterValues },
+        };
     }
-    const owners = [...candidateTrackIds]
-        .map((trackId) =>
-            context ? getPlannedTrackState(context, trackId) : currentTracks.find((track) => track.id === trackId)
-        )
-        .filter((track) => track?.devices.some((device) => device.id === action.payload.deviceId));
-    const owner = owners.length === 1 ? (owners[0] ?? undefined) : undefined;
-    return { owner, device: owner?.devices.find((candidate) => candidate.id === action.payload.deviceId) };
+    const owners = (getTrackStoreState()?.tracks ?? []).filter((track) =>
+        track.devices.some((device) => device.id === action.payload.deviceId)
+    );
+    const owner = owners.length === 1 ? owners[0] : undefined;
+    return { owner, device: owner?.devices.find((device) => device.id === action.payload.deviceId) };
 }
 
 function nativeUnitMatches(
@@ -285,12 +296,8 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         }
         return device?.parameterValues[action.payload.paramId] === action.payload.value;
     },
-    describe: (alpha) => {
-        const state = getTrackStoreState();
-        const owner = state?.tracks.find((track) =>
-            track.devices.some((device) => device.id === alpha.payload.deviceId)
-        );
-        const prev = owner?.devices.find((device) => device.id === alpha.payload.deviceId);
+    describe: (alpha, context) => {
+        const { owner, device: prev } = resolveDeviceTarget(alpha, context);
         const previousValue = prev?.parameterValues[alpha.payload.paramId];
         const previousValuePresent = prev ? Object.hasOwn(prev.parameterValues, alpha.payload.paramId) : false;
         const defaultValue = prev

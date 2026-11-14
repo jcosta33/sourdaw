@@ -12,8 +12,6 @@ import {
 import {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
-    ensureBusStrip,
-    ensureTrackStrip,
     removeBusStrip,
     removeTrackStrip,
 } from '#/modules/AudioEngine/useCases';
@@ -1067,18 +1065,7 @@ describe('shared vocal FX buses workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
-        setArrangementEventBus({
-            emit: (event, payload) => {
-                if (event === 'track.added' && 'trackId' in payload && typeof payload.trackId === 'string') {
-                    if ('kind' in payload && payload.kind === 'bus') {
-                        ensureBusStrip(payload.trackId);
-                    } else {
-                        ensureTrackStrip(payload.trackId);
-                    }
-                }
-                return Promise.resolve();
-            },
-        });
+        setArrangementEventBus({ emit: () => Promise.resolve() });
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         configureRuntimeGraphProjectRevisionValidator(
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision

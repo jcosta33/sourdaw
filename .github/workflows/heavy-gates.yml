@@ -19,7 +19,7 @@ permissions:
   pull-requests: read
 
 env:
-  NODE_VERSION: 24.22.2
+  NODE_VERSION: 26.13.1
 
 jobs:
   e2e:
@@ -27,7 +27,7 @@ jobs:
     if: fromJSON(inputs.matrix).include[0] != null
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d
+      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
       options: --init --ipc=host
     defaults:
       run:

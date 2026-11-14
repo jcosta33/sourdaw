@@ -208,6 +208,7 @@ describe('createFromTemplate', () => {
         mocks.runProjectLoadTransaction.mockReturnValue({
             prepare: mocks.transactionPrepare,
             activate: mocks.transactionActivate,
+            abandon: vi.fn(),
             isCurrent: mocks.transactionIsCurrent,
             canActivate: mocks.transactionCanActivate,
         });

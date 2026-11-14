@@ -338,7 +338,7 @@ pub struct CompressorPedal {
 impl CompressorPedal {
     pub fn new(sample_rate: f32) -> Self {
         Self {
-            threshold: super::params::db_to_linear(-20.0),
+            threshold: crate::primitives::db_to_linear(-20.0),
             ratio: 4.0,
             attack_coeff: (-1.0 / (0.01 * sample_rate)).exp(),
             release_coeff: (-1.0 / (0.2 * sample_rate)).exp(),
@@ -350,7 +350,7 @@ impl CompressorPedal {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            THRESHOLD => self.threshold = super::params::db_to_linear(value),
+            THRESHOLD => self.threshold = crate::primitives::db_to_linear(value),
             "ratio" => self.ratio = value.max(1.0),
             ATTACK => {
                 self.attack_coeff = (-1.0 / (value.max(0.1) * 0.001 * self.sample_rate)).exp()
@@ -378,7 +378,7 @@ impl CompressorPedal {
         let gain = if self.envelope > self.threshold {
             let over_db = super::params::linear_to_db(self.envelope / self.threshold);
             let reduced = over_db / self.ratio;
-            super::params::db_to_linear(reduced - over_db)
+            crate::primitives::db_to_linear(reduced - over_db)
         } else {
             1.0
         };

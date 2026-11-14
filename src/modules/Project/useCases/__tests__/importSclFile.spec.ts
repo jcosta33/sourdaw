@@ -417,6 +417,28 @@ describe('importSclFile', () => {
         expect(transaction.activate()).toBe(true);
     });
 
+    it('keeps a pending import retired but admits a fresh import after a failed project preparation', async () => {
+        const pending = await startPendingImport('picker');
+        const prior = structuredClone(mocks.projectStore.value);
+        const failure = new Error('collaboration shutdown failed');
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => Promise.reject(failure) });
+        const failed = runProjectLoadTransaction();
+        await expect(failed.prepare()).rejects.toBe(failure);
+        expect(failed.activate()).toBe(false);
+
+        pending.resolve();
+        await pending.importing;
+        expect(mocks.projectStore.value).toEqual(prior);
+        expect(mocks.projectStore.set).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+
+        mocks.pickFiles.mockResolvedValue([new File([sclContent], 'fresh.scl')]);
+        mocks.parseScl.mockResolvedValue(parsedScale);
+        await importSclFile();
+        expect(mocks.projectStore.value?.tuning).toEqual({ name: 'Bright twelve', frequencies: [220, 440, 880] });
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Imported scale'), 'success');
+    });
+
     it('does not apply a tuning when no project exists', async () => {
         mocks.projectStore.value = null;
         mocks.pickFiles.mockResolvedValue([new File([sclContent], 'bright.scl')]);

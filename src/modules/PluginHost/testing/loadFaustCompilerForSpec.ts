@@ -11,6 +11,8 @@ import {
     type IFaustCompiler,
 } from '@grame/faustwasm/dist/esm/index.js';
 
+import { installFaustCurrentSound } from '#/helpers/installFaustCurrentSound';
+
 const FAUST_ASSETS_DIR = './public/faust';
 
 let copyCounter = 0;
@@ -39,7 +41,9 @@ export async function loadFaustCompilerForSpec(): Promise<IFaustCompiler> {
             join(FAUST_ASSETS_DIR, 'libfaust-wasm.data'),
             join(FAUST_ASSETS_DIR, 'libfaust-wasm.wasm')
         );
-        return new FaustCompiler(new LibFaust(faustModule));
+        const compiler = new FaustCompiler(new LibFaust(faustModule));
+        installFaustCurrentSound(compiler);
+        return compiler;
     } finally {
         // The loader has already imported (and unlinked) the temp module
         // derived from the copy; the copy itself is no longer needed.

@@ -864,6 +864,43 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'stripSilence',
+        risk: 'destructive-reversible',
+        description:
+            'Replace one unlocked audio clip with one clip per passage that rises above a peak threshold, removing the silence between them, as one reversible edit; the segments keep their source position, gain envelope and clip automation.',
+        intentPhrases: [
+            'strip silence',
+            'strip the silence',
+            'strip silence from',
+            'remove silence',
+            'remove the silence',
+            'cut out the silence',
+            'cut the silence',
+        ],
+        targetRules: editableAudioClipTargetRules,
+        materializedArgumentsValidation: 'owner-required',
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked audio clip ID' },
+                threshold: {
+                    type: 'number',
+                    minimum: -96,
+                    maximum: 0,
+                    description:
+                        'Peak level in dBFS below which audio counts as silence, from -96 through 0; defaults to -40',
+                },
+                minDuration: {
+                    type: 'number',
+                    exclusiveMinimum: 0,
+                    maximum: 16,
+                    description:
+                        'Shortest silence in beats that separates two segments, above 0 through 16; shorter gaps stay inside one segment; defaults to 0.5',
+                },
+            },
+            required: ['clipId'],
+        },
+    },
+    {
         actionType: 'crossfadeClips',
         risk: 'broad-reversible',
         description: 'Create a crossfade between two distinct unlocked clips.',
@@ -1268,6 +1305,34 @@ export const executableAppActionDescriptors = [
                 targetClipId: { type: 'string', description: 'Application-admitted target MIDI clip ID' },
             },
             required: ['sourceClipId', 'targetClipId'],
+        },
+    },
+    {
+        actionType: 'extractGroove',
+        risk: 'bounded-reversible',
+        description:
+            "Extract the timing and velocity feel of one MIDI clip into a new groove template in the project's groove pool, named after the clip; the clip itself does not change.",
+        intentPhrases: [
+            'extract groove',
+            'extract the groove',
+            'extract a groove',
+            'capture the groove',
+            'make a groove template',
+            'create a groove template',
+        ],
+        targetRules: editableMidiClipTargetRules,
+        valueRules: [],
+        materializedArgumentsValidation: 'owner-required',
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing MIDI clip ID whose notes carry the groove' },
+                subdivision: {
+                    type: 'string',
+                    enum: ['1/8', '1/16', '1/32', '1/16T'],
+                    description: 'Grid the groove is measured against; defaults to 1/16',
+                },
+            },
+            required: ['clipId'],
         },
     },
     {
@@ -2461,6 +2526,9 @@ export const executableAppActionDescriptors = [
         actionType: 'automateSendRange',
         risk: 'authority-sensitive',
         description: 'Lower an exact set of existing sends by a relative dB amount inside one named section.',
+        // Retired from provider offers: `automateParameterRange` draws this range. Kept executable so
+        // stored batches, ledger entries and undo groups that name it still read, replay and undo.
+        discoverability: 'hidden',
         intentPhrases: ['lower every vocal send', 'lower vocal sends', 'lower send', 'automate send'],
         targetRules: [
             {
@@ -2506,6 +2574,9 @@ export const executableAppActionDescriptors = [
         risk: 'authority-sensitive',
         description:
             'Lift each named bus by a bounded relative dB amount as gain automation inside one named arrangement section.',
+        // Retired from provider offers: `automateParameterRange` draws this range. Kept executable so
+        // stored batches, ledger entries and undo groups that name it still read, replay and undo.
+        discoverability: 'hidden',
         intentPhrases: ['lift', 'gain lift'],
         targetRules: [
             {
@@ -2543,6 +2614,9 @@ export const executableAppActionDescriptors = [
         risk: 'authority-sensitive',
         description:
             'Ramp an exact set of sends to one bounded absolute dB level across the tail of exact arrangement sections.',
+        // Retired from provider offers: `automateParameterRange` draws this range. Kept executable so
+        // stored batches, ledger entries and undo groups that name it still read, replay and undo.
+        discoverability: 'hidden',
         intentPhrases: ['automate them to', 'final four bars of every chorus'],
         targetRules: [
             {
@@ -2583,9 +2657,37 @@ export const executableAppActionDescriptors = [
         risk: 'bounded-reversible',
         description:
             "Hold one parameter of an existing track — its gain, its pan, the level of one of its sends, or an automatable parameter of a device on it — at a target across a section, a run of bars, or a span of beats, in either direction. The lane ramps in from the value it already draws at the range start and back out to the value it draws at the range end; outside the range it is unchanged, and the lane is created when the track has none. State the range once and the target exactly once: valueDb or deltaDb for gain and send levels, value in the lane's own units otherwise.",
-        intentPhrases: ['dip', 'duck', 'automate'],
+        // `lift` and `gain lift` read the section gain lift the retired `automateTrackGainRange` drew;
+        // the send phrases read the section send ride the retired `automateSendRange` drew.
+        intentPhrases: [
+            'dip',
+            'duck',
+            'automate',
+            'lift',
+            'gain lift',
+            'lower every vocal send',
+            'lower vocal sends',
+            'lower send',
+            'lower sends',
+            'automate send',
+        ],
         targetRules: existingTrackTargetRules,
-        valueRules: [],
+        // A decibel target is the figure the request states, in the form it states it; a pan or
+        // device target carries neither argument and is read as before.
+        valueRules: [
+            {
+                argument: 'valueDb',
+                kind: 'number-if-present',
+                mayOmitWhenUnmentioned: true,
+                levelForm: 'absolute-decibel',
+            },
+            {
+                argument: 'deltaDb',
+                kind: 'number-if-present',
+                mayOmitWhenUnmentioned: true,
+                levelForm: 'relative-decibel',
+            },
+        ],
         parameters: {
             properties: {
                 trackId: { type: 'string', description: 'Existing track ID' },
@@ -2598,13 +2700,14 @@ export const executableAppActionDescriptors = [
                     type: 'object',
                     additionalProperties: false,
                     description:
-                        'Exactly one form: section; startBar with endBar; or startBeat with endBeat. Bars count from 1 through the project meter.',
+                        'Exactly one form: section (barsBefore: bars ending where it starts); startBar with endBar; or startBeat with endBeat. Bars count from 1 through the project meter.',
                     properties: {
                         section: {
                             type: 'string',
                             description:
                                 'Existing section name, optionally with an ordinal among sections of that name: "Chorus", "Chorus 2", "the second chorus", "the last verse"',
                         },
+                        barsBefore: { type: 'integer', minimum: 1 },
                         startBar: { type: 'integer', minimum: 1, description: 'First bar of the range' },
                         endBar: { type: 'integer', minimum: 1, description: 'Last bar of the range, inclusive' },
                         startBeat: { type: 'number', minimum: 0, description: 'Range start, in beats' },
@@ -3163,6 +3266,16 @@ const MIDI_ARTICULATION_COPY_MUTATION_IDENTITY = [
     },
     ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
+/** An extraction reads its source clip and writes only the groove pool, never the clip. */
+const GROOVE_EXTRACTION_MUTATION_IDENTITY = [
+    {
+        arguments: [{ argument: 'clipId' }],
+        destructive: false,
+        resourceFamily: 'clip',
+        resourceReferenceOnly: true,
+    },
+    ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
 const MANY_CLIP_PLACEMENTS_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'moves', cardinality: 'many' }], resourceFamily: 'clip' },
     ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
@@ -3259,6 +3372,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     setClipFade: CLIP_MUTATION_IDENTITY,
     glueClips: MANY_CLIPS_MUTATION_IDENTITY,
     quantizeTransients: CLIP_MUTATION_IDENTITY,
+    stripSilence: CLIP_MUTATION_IDENTITY,
     crossfadeClips: DUAL_CLIPS_MUTATION_IDENTITY,
     lockClip: CLIP_MUTATION_IDENTITY,
     setClipLoop: CLIP_MUTATION_IDENTITY,
@@ -3273,6 +3387,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     arpeggiate: CLIP_MUTATION_IDENTITY,
     createDrumPreviewBranches: NO_MUTATION_IDENTITY,
     copyMidiArticulations: MIDI_ARTICULATION_COPY_MUTATION_IDENTITY,
+    extractGroove: GROOVE_EXTRACTION_MUTATION_IDENTITY,
     transposeNotes: CLIP_MUTATION_IDENTITY,
     invertNotes: CLIP_MUTATION_IDENTITY,
     retrogradeNotes: CLIP_MUTATION_IDENTITY,
@@ -3378,6 +3493,7 @@ export const executableAppActionMutationIdempotenceByType = {
     setClipFade: true,
     glueClips: false,
     quantizeTransients: false,
+    stripSilence: false,
     crossfadeClips: false,
     lockClip: true,
     setClipLoop: true,
@@ -3392,6 +3508,7 @@ export const executableAppActionMutationIdempotenceByType = {
     arpeggiate: false,
     createDrumPreviewBranches: false,
     copyMidiArticulations: false,
+    extractGroove: true,
     transposeNotes: false,
     invertNotes: false,
     retrogradeNotes: false,

@@ -266,7 +266,7 @@ vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
 }));
 
 /**
- * The create/discard handlers publish `track.added` / `track.removed` through
+ * The discard handlers publish `track.removed` through
  * the DI event bus, which only `bootstrap.ts` wires. A recording stub keeps the
  * post-commit effect list runnable without pulling the composition root in.
  */
@@ -345,7 +345,7 @@ describe('creating entities from the menus', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         // `inject` caches the resolved factory on first call, so a bus set in a
-        // previous test would stay captured by `notifyUser`/`publishTrackAdded`
+        // previous test would stay captured by `notifyUser`/`publishTrackRemoved`
         // even after `Container.set` swaps the registration. Clearing the
         // container (the handleAddClip integration pattern) drops the cache
         // before the fresh buses are registered below.

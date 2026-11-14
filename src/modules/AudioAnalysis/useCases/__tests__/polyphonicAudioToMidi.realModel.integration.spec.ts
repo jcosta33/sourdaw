@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 
-import { setBackend } from '@tensorflow/tfjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
@@ -18,10 +17,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     settlePendingProjectWritesAndCaptureRevision: () => 'source-revision',
     projectRevisionMatchesLiveIgnoringSaveWrites: (revision: string) => revision === 'source-revision',
 }));
-vi.mock('@spotify/basic-pitch/model/model.json?url', () => ({ default: '/assets/model-fingerprint.json' }));
-vi.mock('@spotify/basic-pitch/model/group1-shard1of1.bin?url', () => ({
-    default: '/assets/weights-fingerprint.bin',
-}));
+vi.mock('virtual:sourdaw-basic-pitch-model', () => ({ modelUrl: '/assets/basic-pitch/model.json' }));
 
 const packageRoot = dirname(createRequire(import.meta.url).resolve('@spotify/basic-pitch/package.json'));
 
@@ -29,8 +25,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('bundled Basic Pitch real-model inference', () => {
     it('loads emitted weights and retains simultaneous pitches across the full four-second source', async () => {
-        await setBackend('cpu');
         const requests: string[] = [];
+        let modelUnavailable = true;
         let weightsUnavailable = true;
         vi.stubGlobal('fetch', async (input: string | URL | Request) => {
             let url: string;
@@ -42,12 +38,15 @@ describe('bundled Basic Pitch real-model inference', () => {
                 url = input.url;
             }
             requests.push(url);
-            if (url === '/assets/model-fingerprint.json') {
+            if (url === '/assets/basic-pitch/model.json') {
+                if (modelUnavailable) {
+                    throw new Error('Model transport temporarily unavailable');
+                }
                 return new Response(readFileSync(resolve(packageRoot, 'model/model.json')), {
                     headers: { 'Content-Type': 'application/json' },
                 });
             }
-            if (url === '/assets/weights-fingerprint.bin') {
+            if (url === '/assets/basic-pitch/group1-shard1of1.bin') {
                 if (weightsUnavailable) {
                     throw new Error('Weight transport temporarily unavailable');
                 }
@@ -77,12 +76,13 @@ describe('bundled Basic Pitch real-model inference', () => {
         // A rejected real load must not leave a permanently rejected singleton.
         expect(await polyphonicAudioToMidi({ clipId: 'dyad' })).toBeNull();
         expect(pcm).toEqual(original);
+        modelUnavailable = false;
+        expect(await polyphonicAudioToMidi({ clipId: 'dyad' })).toBeNull();
         weightsUnavailable = false;
         const result = await polyphonicAudioToMidi({ clipId: 'dyad' });
 
-        expect(requests.filter((url) => url === '/assets/model-fingerprint.json')).toHaveLength(2);
-        expect(requests).toContain('/assets/weights-fingerprint.bin');
-        expect(requests).not.toContain('/assets/group1-shard1of1.bin');
+        expect(requests.filter((url) => url === '/assets/basic-pitch/model.json')).toHaveLength(3);
+        expect(requests).toContain('/assets/basic-pitch/group1-shard1of1.bin');
         expect(result).not.toBeNull();
         for (const pitch of [60, 64]) {
             const notes = result?.notes.filter((candidate) => candidate.pitchMidi === pitch) ?? [];

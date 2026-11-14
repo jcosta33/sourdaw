@@ -1,5 +1,5 @@
-name: Set up verified JavaScript pnpm
-description: Install the project-pinned JavaScript pnpm release through an integrity-pinned official bootstrap
+name: Set up verified native pnpm
+description: Install the project-pinned native pnpm release through an integrity-pinned official bootstrap
 inputs:
   package_json_file:
     description: Physical project manifest relative to the workspace; symbolic links are refused
@@ -18,7 +18,7 @@ runs:
   steps:
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
-        node-version: 24.22.2
+        node-version: 26.13.1
         package-manager-cache: false
     - shell: bash
       run: node "$GITHUB_ACTION_PATH/../../../scripts/setupPnpm.ts" --prepare-node

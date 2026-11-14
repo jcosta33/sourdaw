@@ -1,8 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
-import { executeUserAppAction } from '#/modules/Command/useCases';
 import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 
+import { executeCommandAction } from '../executeCommandAction';
 import { createPatternInstanceFromSelection } from '../patternInstance/createPatternInstanceFromSelection';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
@@ -19,8 +19,9 @@ export const miscCommands: CallableCommandEntry[] = [
         description: 'Open application preferences',
         category: 'App',
         shortcut: '⌘,',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             openPreferencesDialog();
+            onCommitted?.();
         },
     },
 
@@ -83,10 +84,16 @@ export const miscCommands: CallableCommandEntry[] = [
         label: 'Create Pattern Instance',
         description: 'Create a linked copy of the selected MIDI clip',
         category: 'Clips',
-        action: () => {
-            void createPatternInstanceFromSelection().catch((error: unknown) => {
-                logger.error(new Error('Pattern instance creation failed', { cause: error }));
-            });
+        action: (onCommitted?: () => void) => {
+            void createPatternInstanceFromSelection()
+                .then((created) => {
+                    if (created) {
+                        onCommitted?.();
+                    }
+                })
+                .catch((error: unknown) => {
+                    logger.error(new Error('Pattern instance creation failed', { cause: error }));
+                });
         },
     },
     {
@@ -94,7 +101,7 @@ export const miscCommands: CallableCommandEntry[] = [
         label: 'Detach Pattern Instance',
         description: 'Break the link between this clip and its parent pattern',
         category: 'Clips',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const selection = clipSelectionStore.value;
             const clipId = selection?.selectedClipId;
             if (!clipId || !selection?.selectedClipIds.includes(clipId)) {
@@ -106,7 +113,7 @@ export const miscCommands: CallableCommandEntry[] = [
             if (clip?.type !== 'midi') {
                 return;
             }
-            void executeUserAppAction({ type: 'detachPatternInstance', payload: { clipId } });
+            void executeCommandAction(onCommitted, { type: 'detachPatternInstance', payload: { clipId } });
         },
     },
 
@@ -269,10 +276,10 @@ export const miscCommands: CallableCommandEntry[] = [
         label: 'Quantize Audio to Grid (Elastic)',
         description: 'Detect transients and time-align them to the grid',
         category: 'Editing',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeUserAppAction({ type: 'detectTransients', payload: { clipId } });
+                void executeCommandAction(onCommitted, { type: 'detectTransients', payload: { clipId } });
             }
         },
     },
@@ -338,10 +345,10 @@ export const miscCommands: CallableCommandEntry[] = [
         label: 'Enable Audio Warping',
         description: 'Enable repitch on the selected audio clip; pitch follows playback speed',
         category: 'Editing',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeUserAppAction({ type: 'enableWarping', payload: { clipId } });
+                void executeCommandAction(onCommitted, { type: 'enableWarping', payload: { clipId } });
             }
         },
     },

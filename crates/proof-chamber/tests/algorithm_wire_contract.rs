@@ -13,7 +13,7 @@
 //! asserted here rather than left to review:
 //!
 //! 1. Existing values never move. A stored `0` must stay Plate forever.
-//! 1b. Where a value's *behaviour* does change, that is stated and pinned
+//!    Where a value's *behaviour* does change, that is stated and pinned
 //!    rather than left for someone to trip over. Exactly one value changes
 //!    here — see
 //!    `stored_convolution_backed_values_now_render_plate_instead_of_dry_passthrough`.
@@ -23,6 +23,8 @@
 //!    the repo ships no impulse responses. They therefore fall back to Plate
 //!    here instead of engaging an engine that renders its dry input and calls
 //!    it reverb.
+
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
 
 use proof_chamber::{ProofChamberInstance, UnexposedEngine};
 

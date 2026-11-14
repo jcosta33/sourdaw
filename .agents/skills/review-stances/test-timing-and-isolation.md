@@ -19,6 +19,12 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    readiness through the real progress producer. Delay the bad variant past the case's end: finishing
    before a scheduled side effect does not prove it was prevented, so the delayed mutant must still
    fail. Teardown must not depend on the behavior under test.
+   For readiness after navigation, snapshot the marker baseline before starting navigation: reject a
+   stale marker, accept a fresh marker emitted before navigation resolves or afterward, and propagate
+   navigation errors. #5843's saved-sensitivity reload waited for `reload()` before taking its count,
+   so an early fresh marker could be missed despite the ordinary E2E passing. Check
+   `scripts/__tests__/firstPaintDiagnostics.spec.ts`; moving the baseline capture after `await navigate()`
+   must make that spec fail.
    Do not retry a required material or ownership invariant as readiness: a bounded capture retry hides a
    first-read PCM miss even while permanent absence fails with the right message (#6342). Return null once at the
    actual cached-buffer read while retaining the real PCM, then allow later reads: the case must fail on the
@@ -44,6 +50,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    coherent PCM geometry and the real analysis before setting a case-specific deadline for required work; retain
    programme and gating windows and every functional assertion (#6311, #6350). Do not use global timeouts or
    retries.
+   Static scanners need a deterministic work bound as well as semantic verdicts. #1572 introduced
+   per-spec barrel-mock graph walks without a unique-resolution bound; #5231's investigation after
+   #6419's hook timeout found repeated resolution work, without proving the Linux timeout's cause.
+   Count real resolver computations by exact importer directory and specifier, including misses,
+   across specs with different mock cuts, and require one computation per key within each analysis.
+   Preserve per-spec findings, order, exemptions and derivation counts. Change files between analyses
+   to prove hits and misses are fresh; reverting the cache or bypassing either resolution route must fail.
    Compose stage deadlines (escalation plus proof, navigation plus overlay, every retry attempt plus
    backoff within step and job budgets) and drive a stalled child through the loop. A wall-clock bound
    measures only the budgeted quantity; a count cap is not a deadline. Under induced engine or runner
@@ -58,6 +71,35 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    A warm-up hook that launches a browser, bundles and loads a page under one hook deadline turns a
    stalled step into an anonymous hook timeout and a launch error into a silent skip. Bound each step
    with its own named deadline and skip only on the exact not-installed condition.
+   For browser responsiveness, inspect the complete task containing publication, including Promise
+   continuations, subscriber renders and compositor work; phase measures alone omit surrounding cost.
+   #5843 introduced Detect's Promise settlement inside `requestAnimationFrame`. Its rendering-task/performance
+   stance was mis-prompted: phase measures and an ordinary passing E2E did not require enclosing-task
+   attribution. The escaped task spent 48.449 ms of CPU across 50.075 ms elapsed, so runner preemption
+   cannot excuse the rendering work. Resume heavy post-frame continuations in a separate host task;
+   hold its queued delivery, revoke the operation, and require refusal with no stale writes. Revert
+   that task boundary and require `detectTransientsForClip.spec.ts` to fail. In the real Detect trace,
+   require publication outside `FireAnimationFrame` while preserving PCM, projections, undo/redo,
+   and the original no >=50 ms task and no >=100 ms frame-gap gates. Follow the complete settled
+   command through its success notification and caller DOM update too: #5843 introduced the synchronous
+   post-commit completion path. Its recorded cold 120-second E2E passed the task/frame, PCM and Undo gates;
+   recorded mutations targeted storage admission, tier selection and FFT. Those results did not demonstrate
+   compound UI task margin or cover the distinct late-caller ownership failure. A subsequent whole-host-task
+   counterexample requires both complete-endpoint attribution and held late-caller probes. A later awaited
+   presentation task must leave raw/projected markers, durable replay and session Undo available before delivery,
+   retain notification and caller completion inside the original measurement endpoint, and show both full host
+   tasks including subsequent renders. A held platform receiver must discriminate the real registered path;
+   synchronous delivery, failed scheduling/reconciliation, hidden/pagehide and stale delivery need explicit
+   controls. #5843 also put checked native document parsing and whole-root JS materialization in one adoption
+   task. A Worker mutation does not bound that later load. Attribute both stages and require a real host-task
+   boundary between them; moving parse outside the old phase measure must remain covered by the unchanged
+   click-to-completion long-task gate. Hold the parsed native handle across that boundary, abort or replace
+   authority, and require no materialization or publication and one release. Separating tasks is a hypothesis
+   until the unchanged whole-task/frame gates pass.
+   A fresh-project green does not establish project-scale coverage: build a realistic current document and
+   retained native history through real actions, then assert both from authoritative state. Record fixture
+   size and history depth outside the measured interval without warming worker or replica state on the route.
+   Gate the native phases and their complete enclosing host tasks against the existing budgets.
    (#5191, #6011, #5964, #3270, #3356, #5459, #6000, #4775, #5798, #3222, #2976, #5337, #4228, #5115, #5924, #4331, #6250)
 
 3. **Fixture state leaks across cases or depends on chance or the runner's environment.**

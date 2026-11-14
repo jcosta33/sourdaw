@@ -92,11 +92,11 @@ export class FaustDeviceStrategy implements AudioDeviceStrategy {
         this.node.wamControls?.keyOn?.(channel ?? FAUST_BASE_CHANNEL, noteOrPad, velocity, this.toSeconds(sampleFrame));
     }
 
-    noteOff({ noteOrPad, sampleFrame }: DeviceNoteOffRequest): void {
+    noteOff({ noteOrPad, sampleFrame, channel }: DeviceNoteOffRequest): void {
         // Faust's `keyOff` takes a release velocity in slot 3. Offline note-offs
         // carry none, and the poly voice allocator only needs the note released,
         // so it goes out at zero.
-        this.node.wamControls?.keyOff?.(FAUST_BASE_CHANNEL, noteOrPad, 0, this.toSeconds(sampleFrame));
+        this.node.wamControls?.keyOff?.(channel ?? FAUST_BASE_CHANNEL, noteOrPad, 0, this.toSeconds(sampleFrame));
     }
 
     /** `undefined` means "as soon as possible", which the Faust scheduler honours. */

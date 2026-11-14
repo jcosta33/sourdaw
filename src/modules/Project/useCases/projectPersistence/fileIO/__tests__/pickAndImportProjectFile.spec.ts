@@ -11,6 +11,7 @@ import type { ProjectLoadTransaction } from '../../helpers/runProjectLoadTransac
 const transactionSentinel: ProjectLoadTransaction = {
     prepare: vi.fn(),
     activate: vi.fn(),
+    abandon: vi.fn(),
     canActivate: vi.fn(),
     isCurrent: vi.fn(),
     signal: new AbortController().signal,

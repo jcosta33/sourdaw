@@ -11,9 +11,13 @@ import { faustEngineState } from '../faustEngineState';
 import { isFaustModule } from '../isFaustModule';
 import { registerFaustDSP } from '../registerFaustDSP';
 
+const libraryFs = vi.hoisted(() => ({ writeFile: vi.fn() }));
+
 vi.mock('@grame/faustwasm', () => ({
     instantiateFaustModuleFromFile: vi.fn(),
-    FaustCompiler: vi.fn(),
+    FaustCompiler: vi.fn(function () {
+        return { fs: () => libraryFs };
+    }),
     LibFaust: vi.fn(),
     FaustMonoDspGenerator: vi.fn(),
     FaustPolyDspGenerator: vi.fn(),
@@ -26,6 +30,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 function resetCompilerState(): void {
+    libraryFs.writeFile.mockReset();
     faustEngineState.compiler.promise = null;
     faustEngineState.compiler.ready = false;
     faustEngineState.compiler.error = null;
@@ -92,6 +97,26 @@ describe('getFaustCompiler failure recovery', () => {
 
         expect(instantiateFaustModuleFromFile).toHaveBeenCalledTimes(1);
         expect(second).toBe(first);
+        expect(libraryFs.writeFile).toHaveBeenCalledExactlyOnceWith(
+            '/usr/share/faust/sourdaw-current-sound.lib',
+            expect.stringContaining('filterSections = environment')
+        );
+    });
+
+    it('installs stock sound definitions before readiness and surfaces a failed installation', async () => {
+        const wasmModule = {} as Awaited<ReturnType<typeof instantiateFaustModuleFromFile>>;
+        vi.mocked(instantiateFaustModuleFromFile).mockResolvedValue(wasmModule);
+        libraryFs.writeFile.mockImplementationOnce(() => {
+            expect(faustEngineState.compiler.ready).toBe(false);
+            throw new Error('compiler library write failed');
+        });
+        await expect(getFaustCompiler()).rejects.toThrow('compiler library write failed');
+        expect(faustEngineState.compiler.ready).toBe(false);
+        expect(faustEngineState.compiler.promise).toBeNull();
+        expect(notifyUser).toHaveBeenCalledWith('Faust compiler unavailable: compiler library write failed', 'error');
+        await getFaustCompiler();
+        expect(libraryFs.writeFile).toHaveBeenCalledTimes(2);
+        expect(faustEngineState.compiler.ready).toBe(true);
     });
 
     it('surfaces the initialization failure to the user, not only the console', async () => {

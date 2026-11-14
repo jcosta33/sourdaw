@@ -203,6 +203,11 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     const readyDdspInstruments = registry?.ddspInstruments.filter((instrument) => instrument.status === 'ready') ?? [];
     const selectedDdspInstrument =
         readyDdspInstruments.find((instrument) => instrument.id === ddspInstrumentId) ?? readyDdspInstruments[0];
+    // Keep the choice on the instrument actually shown, so a fallback pick stays put when the list reorders.
+    const resolvedDdspInstrumentId = selectedDdspInstrument?.id ?? '';
+    if (resolvedDdspInstrumentId !== ddspInstrumentId) {
+        setDdspInstrumentId(resolvedDdspInstrumentId);
+    }
     const ddspNotes = midiState.notesByClipId[clip.id] ?? [];
     const ddspDurationSec = secondsBetweenBeats(
         tempoMapState.changes,
@@ -242,10 +247,6 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     const ddspLaunchRef = useRef<DdspLaunch | null>(null);
     const ttsLaunchRef = useRef<AbortController | null>(null);
     const svsLaunchRef = useRef<AbortController | null>(null);
-
-    useEffect(() => {
-        setDdspInstrumentId(selectedDdspInstrument?.id ?? '');
-    }, [selectedDdspInstrument?.id]);
 
     useLayoutEffect(
         () => () => {

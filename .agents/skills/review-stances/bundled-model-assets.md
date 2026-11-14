@@ -43,6 +43,22 @@ note results cannot establish packaged availability.
    from Vite's loader guard, not captured. Real numerical output makes no intelligibility or perceptual quality
    claim.
 
+4. **A model-library pin must construct with the SDK's actual runtime before weights or GPU (#6285).**
+   The SDK update from0.2.85 to0.2.87 retained the v0_2_84 Qwen3 libraries. All three authenticated libraries
+   then failed the runtime constructor with `Cannot find global function runtime.TensorAllocWithScope`;
+   mocked workers and manifest/digest checks never executed that registry lookup. Keep the actual three
+   immutable compressed library fixtures in
+   `src/modules/AiRuntime/repositories/webLlm/__tests__/webLlmModelLibraryAbi.spec.ts`, resolve the runtime
+   through the installed SDK's own dependency, and bind the audited SDK/runtime executable identities.
+   Require exact manifest bytes, real instantiate/createPolyfillWASI, actual global enumeration and callable
+   lookup, and scoped disposal without invoking the allocator or loading GPU/weights. Restore one old binary
+   AND its matching manifest source/record/seal in the clean committed author lane: its named case must fail
+   at the real missing-global constructor, not merely a stale fixture hash. Do not update the independent
+   nonlibrary-input pins, shim the global, downgrade the runtime, or substitute a model. Constructor success
+   is only pre-weight ABI evidence; each supported model still needs actual cold/warm inference and Pro's
+   typed planning needs real provider evidence before Confirm/Undo/Redo. The0.2.88 update did not introduce
+   this constructor requirement; the observed0.2.87 runtime contains the same code.
+
 ## Scope
 
 This class covers the shipped inference boundary between model topology, emitted weight assets, the runtime that

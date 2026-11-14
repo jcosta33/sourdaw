@@ -12,6 +12,7 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 - **E2E files take `test` and `expect` from `tests/e2e/e2eTest.ts`.** That module is the one place a per-test fixture reaches every test, so importing them from `@playwright/test` bypasses it; `scripts/__tests__/e2eSharedTestFixture.spec.ts` enforces the import. Type-only names still come from `@playwright/test`.
 - **Ad-hoc live-UI probes are not E2E.** One-off browser probes/screenshots live in `.agents/ui-scripts/` per the `playwright-ui-bridge` skill — never add them to `tests/e2e/`.
 - **CI browser shards serve a production-mode build.** The dev server's cold module transform is about half of all browser runner time, so a CI shard serves `vite build --mode e2e` through `vite preview` with one Playwright worker. A build serves no `/src/...` module URLs, so any file that loads one at runtime (itself, through a helper, or through an HTML probe) is listed in `tests/e2e/devServerOnlySpecs.ts` and runs against a dev server started in the same shard. Local runs, the offline smoke job, and nightly use the dev server throughout. A built shard runs a production React build, so a browser spec asserting zero console errors there cannot see React's development-only warnings; the dev-server runs still can. `scripts/__tests__/e2eDevServerOnlySpecs.spec.ts` fails when a file loads a `/src/...` URL without being listed, or stays listed after it stops.
+- **Browser performance gates observe the product, not the runner.** Main-thread work the product can split, defer or move off-thread keeps an absolute ceiling, such as the 50 ms long-task line: exceeding it is a product defect to fix by splitting the work. A single third-party operation the product cannot split is bounded against the same operation measured in the same page and run (a robust figure from several standalone samples, plus a stated margin, derived from measured shares and written beside the constant, for the work that has to share its task). Never gate a task with a bare wall-clock ceiling that it reaches only on a slower runner. That gate measures runner speed, and its failure points at no product change. Record every figure in the spec's attachment, and say in a comment which gates block and why.
 - **Browser specs run with reduced motion.** `playwright.config.ts` emulates `prefers-reduced-motion: reduce`, so decorative transitions do not add a fixed wait to every boot. The product must honour that preference wherever motion delays interaction, such as the launch overlay's exit. A spec that asserts a full-motion path opts back in with `test.use({ reducedMotion: 'no-preference' })`, as `tests/e2e/launchFlows.spec.ts` does for the launch fade.
 - **Two reference hosts, no test-only privilege.** Surfaces that have to hold in both hosts are proven in both. `tests/e2e/agentWorkspace.spec.ts` drives the agent workspace in the standalone browser — chat composer, Agent bottom tab, approval card, A/B comparison, revert — against an OpenAI-compatible endpoint on loopback admitted through `configureCloudProvider`. `pnpm desktop:agent-proof` (`scripts/proveDesktopAgentWorkspace.ts`, nightly only) drives the same flow in the packaged Electron app over the DevTools protocol, admitting the same endpoint through the Preferences AI form because the packaged renderer has no `/src/...` to import, and streaming one explain-mode answer back from it — as `tests/e2e/aiConfirmApplyUndo.spec.ts` does for the browser host — because admission alone is a local write and proves no round trip. Neither adds a hook, a test id, or a relaxed policy to the app or the preload: a proof that needs a privilege the product does not ship is proving something the product is not.
 - **Specs follow the owner.** Put each spec in **`__tests__/`** inside the folder that owns the behavior. A source-matched name is the default for one subject; a named behavior spanning several subjects may have its own integration spec there. Do **not** place `*.spec.ts` beside production files.
@@ -100,7 +101,7 @@ Nested UI folders follow the same pattern (e.g. `presentations/views/Mixer/__tes
 
 Every `it` block describes the behaviour under test concisely, using direct verb phrases or `should`/`should not`:
 
-- `it('adds the track and emits TrackAddedEvent')`
+- `it('removes the track and emits TrackRemovedEvent')`
 - `it('should not emit when the store is empty')`
 - `it('throws InvalidTempoError when bpm is below 20')`
 
@@ -158,33 +159,20 @@ What decides between them is faithfulness, not preference. A hand-listed stub mu
 ### Canonical test shape for an injectable
 
 ```typescript
-// Real pattern for Arrangement/useCases/addTrack.ts:
-// inject only ArrangementEventBus; thin repos are static imports (often vi.mock'd).
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+// Pattern for Arrangement/useCases/publishTrackRemoved.ts:
+// inject only ArrangementEventBus; thin repos stay static imports (often vi.mock'd).
+import { describe, it, expect, vi } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { addTrack } from '../addTrack';
+import { publishTrackRemoved } from '../publishTrackRemoved';
 
-vi.mock('../../repositories/track/getTrackState', () => ({ getTrackState: vi.fn() }));
-vi.mock('../../repositories/track/setTrackState', () => ({ setTrackState: vi.fn() }));
-
-describe('addTrack', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-    });
-
-    it('should append the track and emit track.added', async () => {
-        const { getTrackState } = await import('../../repositories/track/getTrackState');
-        const { setTrackState } = await import('../../repositories/track/setTrackState');
-        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null });
-
+describe('publishTrackRemoved', () => {
+    it('should emit track.removed with the removed track id', async () => {
         const eventBus = { emit: vi.fn().mockResolvedValue(undefined) };
-        injectDependencies(addTrack, { eventBus });
+        injectDependencies(publishTrackRemoved, { eventBus });
 
-        const result = addTrack({ name: 'Drums', kind: 'audio' });
+        await publishTrackRemoved({ trackId: 'track-1' });
 
-        expect(result).not.toBeNull();
-        expect(setTrackState).toHaveBeenCalled();
-        expect(eventBus.emit).toHaveBeenCalledWith('track.added', expect.objectContaining({ name: 'Drums' }));
+        expect(eventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 'track-1' });
     });
 });
 ```
@@ -192,7 +180,6 @@ describe('addTrack', () => {
 Notes on this shape:
 
 - `injectDependencies` mocks **only** the inject map keys (here `eventBus`). Static repo imports are mocked with `vi.mock` when needed.
-- Prefer the real `addTrack.spec.ts` under Arrangement as the source of truth when examples drift.
 
 ---
 
@@ -828,6 +815,12 @@ in a fresh physical `0700` execution root under `/var/tmp`; shared objects and a
 Setup changes ownership only of opened physical directories inside this fresh root, preserving
 source files and external store inodes. The unit pnpm action installs its complete tool closure into
 an independent job directory under `/var/tmp`, without granting access to runner HOME or caches.
+The bootstrap uses `npm ci --ignore-scripts` against its reviewed official-registry lock. Its bundled
+`get-pnpm` downloader verifies the exact selected wrapper and native platform package signatures
+with pinned npm keys and verifies both tarball checksums before extraction. Setup checks the physical
+native executable's platform and architecture, then executes that file directly for its version before
+exporting PATH. Windows uses `pnpm.exe` directly. No lifecycle scripts, shell launchers, user config,
+or global package-manager installation participate in this trust path.
 Install and unit verification run through `setpriv` with cleared groups and capabilities,
 `no_new_privs`, an explicit environment, and private `0700` HOME, store and temporary directories.
 Before importing checkout source, stdlib admission validates all four UID/GID fields, source search/read
@@ -907,13 +900,20 @@ own exit code covers that. The guard still owns
 resource enforcement and process-tree cleanup. An unrelated command's zero exit, an unmarked or
 foreign server at the recorded origin, a failed proof, signal, timeout, resource stop, cleanup
 leak, or concurrently replaced receipt preserves the stop. Explicit proofs require a recorded
-`pnpm dev` or `pnpm run dev` receipt; other scripts, including `dev:no-hmr`, are ineligible.
+`pnpm dev`, `pnpm run dev`, or literal `node scripts/e2eDevServer.ts PORT` receipt. The node launcher
+requires the lane root as its recorded cwd, a canonical script path belonging to that lane, and
+exactly one explicit decimal port from 1 through 65535; missing ports never use the current
+environment. Other scripts, including `dev:no-hmr`, and extra node arguments are ineligible.
 Explicit proofs cannot be combined with lint-target replacement; ordinary `--recover` replay is
 unchanged.
 
 Existing running commands and old lane copies keep their original guard. After this change lands,
 their next verification must invoke the updated guard, or merge the fix into the owned lane when
 needed. Do not rewrite or clean another agent's lane to upgrade it.
+To use an approved updated checkout without changing the stopped lane, invoke that checkout's
+`scripts/resourceGuard.ts` by absolute path with `node`, keeping the stopped lane as the working
+directory and passing `--recover -- <finite-proof-command>`; lane detection, dependency preflight,
+recorded cwd and receipt ownership still come from the stopped lane.
 
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 

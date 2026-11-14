@@ -167,12 +167,61 @@ export function readMetricPublication(schema: { function: { description?: string
     });
 }
 
+/**
+ * jsdom has no Web Audio buffers, while a measurement copies each range it reads out of a wider
+ * render into a buffer of its own. This stands in with the native constructor's channel contract.
+ */
+class MetricGoalWindowBuffer {
+    readonly sampleRate: number;
+    readonly length: number;
+    readonly numberOfChannels: number;
+    readonly duration: number;
+    private readonly channels: Float32Array[];
+
+    constructor(options: AudioBufferOptions) {
+        this.sampleRate = options.sampleRate;
+        this.length = options.length;
+        this.numberOfChannels = options.numberOfChannels ?? 1;
+        this.duration = options.length / options.sampleRate;
+        this.channels = Array.from({ length: this.numberOfChannels }, () => new Float32Array(options.length));
+    }
+
+    getChannelData(channel: number): Float32Array {
+        const data = this.channels[channel];
+        if (data === undefined) {
+            throw new RangeError('Unknown audio channel.');
+        }
+        return data;
+    }
+
+    copyFromChannel(destination: Float32Array, channel: number, offset = 0): void {
+        destination.set(this.getChannelData(channel).subarray(offset, offset + destination.length));
+    }
+
+    copyToChannel(source: Float32Array, channel: number, offset = 0): void {
+        this.getChannelData(channel).set(source.subarray(0, this.length - offset), offset);
+    }
+}
+
+/** jsdom has no `AudioBuffer`; a measured window is copied out of its render into one of these. */
+export function provideMetricGoalWindowBuffers(): void {
+    if (typeof globalThis.AudioBuffer === 'undefined') {
+        Object.defineProperty(globalThis, 'AudioBuffer', {
+            configurable: true,
+            writable: true,
+            value: MetricGoalWindowBuffer,
+        });
+    }
+}
+
 /** Shared real compiler/CRDT/Command harness; callers replace only configured provider/audio ports. */
 export function configureMetricGoalProject(input: {
     tracks: NonNullable<typeof trackStore.value>['tracks'];
     sections: NonNullable<typeof markerStore.value>['sections'];
     label: string;
+    tempo?: number;
 }): void {
+    provideMetricGoalWindowBuffers();
     clearPendingActionConfirmations();
     agentRunLifecycle.clear();
     chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
@@ -189,7 +238,7 @@ export function configureMetricGoalProject(input: {
     resetActionReplayAuthority();
     trackStore.set({ tracks: input.tracks, selectedTrackId: null, ghostClips: [] });
     markerStore.set({ markers: [], sections: input.sections });
-    transportStore.set({ ...defaultTransportState, tempo: 120 });
+    transportStore.set({ ...defaultTransportState, tempo: input.tempo ?? 120 });
     flushAutomergeStorageWrites();
     clearAgentMeasurementArtifacts();
 }
@@ -210,8 +259,11 @@ export function resetMetricGoalProject(): void {
 }
 
 /** Full native AudioBuffer shape consumed by actual production metering. */
-export function metricGoalAudioBuffer(sample: (seconds: number) => number, seconds: number): AudioBuffer {
-    const sampleRate = 48_000;
+export function metricGoalAudioBuffer(
+    sample: (seconds: number) => number,
+    seconds: number,
+    sampleRate = 48_000
+): AudioBuffer {
     const length = Math.round(seconds * sampleRate);
     const channels = [new Float32Array(length), new Float32Array(length)];
     for (const channel of channels) {

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { cargoMetadata } from './cargoMetadata.ts';
 import {
     buildDependencyLicenseArtifacts,
     DEPENDENCY_LICENSE_REPORT_PATH,
@@ -169,10 +169,7 @@ export function checkProjectLicense(
     inventoryContents?: string
 ): void {
     const cargo = parseJsonWithUniqueKeys<CargoMetadata>(
-        execFileSync('cargo', ['metadata', '--no-deps', '--format-version', '1'], {
-            cwd: root,
-            encoding: 'utf8',
-        }),
+        cargoMetadata(root, ['--no-deps', '--format-version', '1']),
         'cargo metadata --no-deps --format-version 1'
     );
     const artifacts = artifactBuilder(root);

@@ -27,7 +27,6 @@ import { cn } from '#/utils/Styles/cn';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { toggleFolderCollapse } from '../../useCases/folder/toggleFolderCollapse';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
-import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { soloTrack } from '../../useCases/toggleTrackState/soloTrack';
 import { soloTrackExclusive } from '../../useCases/toggleTrackState/soloTrackExclusive';
 import { INPUT_MONITORING_CYCLE } from '../../useCases/toggleTrackState/toggleInputMonitoring';
@@ -145,7 +144,6 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     }}
                     role="row"
                     aria-selected={isSelected}
-                    onClick={() => selectTrack(track.id)}
                 />
             </TrackContextMenu>
         );
@@ -211,7 +209,6 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                 }}
                 role="row"
                 aria-selected={isSelected}
-                onClick={() => selectTrack(track.id)}
             >
                 <div
                     className={cn('flex items-center gap-1 px-2', track.parentId ? 'pl-7' : '')}

@@ -16,20 +16,30 @@ import {
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 
+import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
+import { fromFermenterDeviceState } from '../../../models/FermenterPatchState';
 import { fermenterStore, getFermenterState } from '../../../stores/fermenterStore';
 import { fermenterDependenciesHolder, setFermenterDependencies } from '../../../useCases/fermenterDependencies';
-import { fermenterParamBatcher } from '../../../useCases/fermenterParamBridge/fermenterParamBatcher';
+import { fermenterPatchBatcher } from '../../../useCases/fermenterParamBridge/fermenterParamBatcher';
+import { getFermenterHandlers } from '../../../useCases/getFermenterHandlers';
 import { FermenterPanel } from '../FermenterPanel';
 
 const DEVICE = 'fermenter-keyboard';
 
 describe('Fermenter real controls', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
+        const transition = runProjectLoadTransaction();
+        expect(await transition.prepare()).toBe(true);
+        expect(transition.activate()).toBe(true);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Fermenter control keyboard');
         removeCrdtDoc('root');
@@ -37,6 +47,8 @@ describe('Fermenter real controls', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(getFermenterHandlers());
+        projectStore.set({ ...defaultProjectStoreState, loading: false });
         trackStore.set({
             tracks: [
                 {
@@ -63,7 +75,8 @@ describe('Fermenter real controls', () => {
     });
     afterEach(() => {
         cleanup();
-        fermenterParamBatcher.cancelAll();
+        fermenterPatchBatcher.cancel(DEVICE);
+        fermenterPatchBatcher.cancel('other');
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         flushAutomergeStorageWrites();
@@ -291,7 +304,16 @@ describe('Fermenter real controls', () => {
         await waitFor(() => {
             expect(control).toHaveAttribute('aria-valuenow', '0.51');
             expect(getFermenterState(DEVICE).patch.macros[index]).toBeCloseTo(0.51, 5);
-            expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues.oscLevel).toBe(0.8);
+            const document = getCrdtDoc<{
+                tracks: { tracks: Array<{ devices: Array<{ id: string; deviceState?: unknown }> }> };
+            }>('root');
+            const device = document?.tracks.tracks
+                .flatMap((track) => track.devices)
+                .find((candidate) => candidate.id === DEVICE);
+            expect(fromFermenterDeviceState(device?.deviceState)?.macros[index]).toBeCloseTo(0.51, 5);
+            expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues.oscLevel ?? DEFAULT_PATCH.oscLevel).toBe(
+                0.8
+            );
         });
         const expected = [...previous];
         expected[index] = 0.51;

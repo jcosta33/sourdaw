@@ -1294,14 +1294,7 @@ describe('drum bus prompt workflow', () => {
         clearPendingActionConfirmations();
         localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         clearAgentSectionRenderArtifacts();
-        setArrangementEventBus({
-            emit: (event, payload) => {
-                if (event === 'track.added' && typeof payload.trackId === 'string') {
-                    audioEngineUseCases.ensureTrackStrip(payload.trackId);
-                }
-                return Promise.resolve();
-            },
-        });
+        setArrangementEventBus({ emit: () => Promise.resolve() });
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         sidechainStore.set({ routes: [] });

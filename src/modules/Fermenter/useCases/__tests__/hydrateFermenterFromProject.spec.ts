@@ -4,6 +4,7 @@ import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { DEFAULT_PATCH, type FermenterPatch } from '../../models/FermenterPatch';
+import { cloneFermenterPatch, toFermenterDeviceState } from '../../models/FermenterPatchState';
 import { fermenterStore, getFermenterState, loadFermenterPatch } from '../../stores/fermenterStore';
 import * as fermenterStoreModule from '../../stores/fermenterStore';
 import { hydrateFermenterFromProject } from '../hydrateFermenterFromProject';
@@ -71,6 +72,22 @@ describe('hydrateFermenterFromProject', () => {
         expect(state.patch.filterResonance).toBe(8);
         expect(state.patch.macros[0]).toBe(0.8);
         expect(state.patch.macros[3]).toBe(0.25);
+    });
+
+    it('does not reseed legacy macro leaves over a committed whole patch', () => {
+        const committed = cloneFermenterPatch({
+            ...DEFAULT_PATCH,
+            macros: [0.11, 0.22, 0.33, 0.44, 0.55, 0.66, 0.77, 0.88],
+        });
+        const track = makeTrack({ filterCutoff: 1400, macro0: 0.99 });
+        track.devices[0]!.deviceState = toFermenterDeviceState(committed);
+        trackStore.set({ tracks: [track], selectedTrackId: 'track-1', ghostClips: [] });
+
+        const patch = hydrateFermenterFromProject(DEVICE_ID);
+
+        expect(patch?.filterCutoff).toBe(1400);
+        expect(patch?.macros).toEqual(committed.macros);
+        expect(getFermenterState(DEVICE_ID).patch.macros).toEqual(committed.macros);
     });
 
     it('preserves defaults for unpersisted parameters', () => {

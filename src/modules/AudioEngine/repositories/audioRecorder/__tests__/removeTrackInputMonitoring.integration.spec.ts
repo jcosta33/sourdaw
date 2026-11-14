@@ -1706,7 +1706,6 @@ describe('track deletion releases the input monitor at Command commit', () => {
             } else {
                 expect(source.connect).not.toHaveBeenCalled();
                 expect(engine.ensureTrackStrip).not.toHaveBeenCalled();
-                expect(emittedEvent).not.toHaveBeenCalledWith('track.added', expect.anything());
             }
         }
     );

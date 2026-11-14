@@ -16,6 +16,12 @@ type GenerateWebLlmCompletionOptions = {
     enableThinking?: boolean;
     /** The caller's prompt-token estimate, logged beside the count the engine reports. */
     estimatedPromptTokens?: number;
+    /**
+     * A JSON schema, as a string, that constrains decoding through web-llm's `response_format`.
+     * It narrows what the model can emit; the reply is still validated by the caller. It adds no
+     * prompt text, so it spends none of the context window.
+     */
+    responseFormatSchema?: string;
 };
 
 /**
@@ -44,10 +50,14 @@ export async function generateWebLlmCompletion(
     if (options?.enableThinking === false) {
         payload.extra_body = { enable_thinking: false };
     }
+    if (options?.responseFormatSchema !== undefined) {
+        payload.response_format = { type: 'json_object', schema: options.responseFormatSchema };
+    }
 
-    // WebLLM's native `tools` API only works on Hermes builds — not the Qwen3
-    // model we ship. Log payload keys (never contents) so a stray `tools:`
-    // attachment surfaces cleanly instead of as an `UnsupportedModelIdError`.
+    // WebLLM's native `tools` API only works on Hermes builds — not the Qwen3 model we ship — so
+    // tools reach the model as prompt text and the reply is constrained through `response_format`.
+    // Log payload keys (never contents) so a stray `tools:` attachment surfaces cleanly instead of
+    // as an `UnsupportedModelIdError`.
     logger.info(`[WebLLM] completion model=${engineState.activeModelId} keys=${Object.keys(payload).sort().join(',')}`);
 
     const response = await webLlmRequestCoordinator.run(eng, {

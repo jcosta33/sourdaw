@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::path::Path;
 use std::process::Command;
 

@@ -13,6 +13,8 @@ import {
 } from '@grame/faustwasm/dist/esm/index.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { installFaustCurrentSound } from '#/helpers/installFaustCurrentSound';
+
 /**
  * Behavior proof for additive-synth.dsp (#3782):
  * The Additive Synth sums 16 harmonics. At high pitches or low sample rates,
@@ -52,7 +54,9 @@ async function loadFaustCompilerForSpec(): Promise<IFaustCompiler> {
             join(FAUST_ASSETS_DIR, 'libfaust-wasm.data'),
             join(FAUST_ASSETS_DIR, 'libfaust-wasm.wasm')
         );
-        return new FaustCompiler(new LibFaust(faustModule));
+        const compiler = new FaustCompiler(new LibFaust(faustModule));
+        installFaustCurrentSound(compiler);
+        return compiler;
     } finally {
         unlinkSync(jsCopy);
     }

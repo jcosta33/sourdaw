@@ -19,7 +19,9 @@ type TestSource = {
     repository: string;
     revision: string;
     version?: string;
-    relationship: 'npm-gitHead' | 'embedded-version-match';
+    relationship: 'npm-gitHead' | 'embedded-version-match' | 'reconstructed-corresponding-source';
+    archiveSha256?: string;
+    upstreamRevisionAvailable?: false;
     archive: string;
 };
 
@@ -126,7 +128,7 @@ function fixture(): { root: string; contract: LgplRuntimeContract } {
     write(
         root,
         'node_modules/@grame/faustwasm/package.json',
-        JSON.stringify({ version: '1.0.0', license: 'LGPL-3.0' })
+        JSON.stringify({ name: '@grame/faustwasm', version: '1.0.0', license: 'LGPL-3.0' })
     );
     write(root, 'node_modules/@grame/faustwasm/COPYING.txt', 'hi');
     write(root, 'node_modules/@grame/faustwasm/libfaust-wasm/libfaust-wasm.data', 'hi');
@@ -135,7 +137,7 @@ function fixture(): { root: string; contract: LgplRuntimeContract } {
     write(
         root,
         'node_modules/@breezystack/lamejs/package.json',
-        JSON.stringify({ version: '1.2.7', license: 'LGPL-3.0' })
+        JSON.stringify({ name: '@breezystack/lamejs', version: '1.2.7', license: 'LGPL-3.0' })
     );
     write(root, 'node_modules/@breezystack/lamejs/LICENSE', 'hi');
     write(root, 'node_modules/@breezystack/lamejs/dist/lamejs.js', 'hi');
@@ -239,9 +241,72 @@ afterEach(() => {
 });
 
 describe('LGPL runtime provenance', () => {
+    it.each(['missing', 'tampered'])('rejects a %s corresponding-source capsule', (kind) => {
+        const { root } = fixture();
+        const archive = 'public/legal/faustwasm-0.20.2-corresponding-source.tar.gz';
+        mutateComponent(root, (component) => {
+            const source = component.sources[0]!;
+            source.relationship = 'reconstructed-corresponding-source';
+            source.archive = archive;
+            source.archiveSha256 = '7a6f0939e8905e40b7733f8e17cf5c806f3c89fb6c5291985dcc6deb883b3682';
+            source.upstreamRevisionAvailable = false;
+        });
+        if (kind === 'tampered') {
+            write(root, archive, 'not the source archive');
+        }
+        expect(validateLgplRuntimeProvenance(root, fixtureContract(root))).toContain(
+            `faustwasm: corresponding source archive ${kind === 'missing' ? 'missing' : 'digest drifted'}`
+        );
+    });
+
+    it.each(['PM-only resolution', 'conflicting PM integrity'])(
+        'refuses %s instead of borrowing package-manager authority',
+        (kind) => {
+            const { root, contract } = fixture();
+            const lock = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8');
+            const boundary = lock.indexOf('packages:');
+            const packageRecords = lock.slice(boundary);
+            let managerPackages = packageRecords;
+            if (kind === 'conflicting PM integrity') {
+                managerPackages = packageRecords.replace('sha512-test', 'sha512-foreign');
+            }
+            const manager = `importers:\n  .:\n    packageManagerDependencies:\n      pnpm: {specifier: 12.18.0, version: 12.18.0}\n${managerPackages}`;
+            const app = kind === 'PM-only resolution' ? `${lock.slice(0, boundary)}packages: {}\n` : lock;
+            write(root, 'pnpm-lock.yaml', `${manager}---\n${app}`);
+            expect(validateLgplRuntimeProvenance(root, contract)).toContain('faustwasm: lock resolution drifted');
+        }
+    );
+
+    it('accepts the application resolution after the current package-manager lock document', () => {
+        const { root, contract } = fixture();
+        const lock = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8');
+        write(
+            root,
+            'pnpm-lock.yaml',
+            `importers:\n  .:\n    configDependencies: {}\n    packageManagerDependencies:\n      pnpm: {specifier: 12.18.0, version: 12.18.0}\npackages:\n  pnpm@12.18.0:\n    resolution: {integrity: sha512-manager}\n---\n${lock}`
+        );
+        expect(validateLgplRuntimeProvenance(root, contract)).toEqual([]);
+    });
+
     it('accepts exact package, source, license, and shipped-file evidence', () => {
         const { root, contract } = fixture();
         expect(validateLgplRuntimeProvenance(root, contract)).toEqual([]);
+    });
+
+    it('rejects a substituted installed package identity with unchanged version and license', () => {
+        const { root, contract } = fixture();
+        write(
+            root,
+            'node_modules/@grame/faustwasm/package.json',
+            JSON.stringify({
+                name: 'unrelated-package',
+                version: '1.0.0',
+                license: 'LGPL-3.0',
+            })
+        );
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain(
+            'faustwasm: installed package identity drifted'
+        );
     });
 
     it('rejects a shipped binary that no longer matches the package', () => {

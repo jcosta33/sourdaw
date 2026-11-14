@@ -7,7 +7,6 @@ import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrack
 import { collaborationAssetTransfer } from '../../useCases/collaborationAssetTransfer';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
-import { publishTrackAdded } from '../../useCases/publishTrackAdded';
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { importStemSetToProject } from '../../useCases/stemImport/importStemSetToProject';
@@ -72,20 +71,16 @@ function getFailureDetail(error: unknown): string {
 }
 
 type ReconcileImportedStemEffectsInput = {
-    addedTracks: readonly Track[];
     importedTracks: readonly Track[];
     projectedTrackIds: Set<string>;
-    publishedTrackIds: Set<string>;
     assetBindings: readonly { leaseId: string; hash: string }[];
     promotedAssetLeaseIds: Set<string>;
     committedTrackIds?: ReadonlySet<string>;
 };
 
 async function reconcileImportedStemEffects({
-    addedTracks,
     importedTracks,
     projectedTrackIds,
-    publishedTrackIds,
     assetBindings,
     promotedAssetLeaseIds,
     committedTrackIds,
@@ -111,12 +106,6 @@ async function reconcileImportedStemEffects({
                 .map((track) => () => {
                     projectTrackToLiveStrip({ trackId: track.id });
                     projectedTrackIds.add(track.id);
-                }),
-            ...addedTracks
-                .filter((track) => isCommitted(track.id) && !publishedTrackIds.has(track.id))
-                .map((track) => async () => {
-                    await publishTrackAdded({ trackId: track.id, name: track.name, kind: track.kind });
-                    publishedTrackIds.add(track.id);
                 }),
         ]);
     } catch (error) {
@@ -151,7 +140,6 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
         }
         pendingGuards.delete(action);
 
-        const addedTracks = [folder, ...importedTracks];
         const assetBindings = action.payload.stems.flatMap((stem) =>
             stem.assetLeaseId && stem.assetHash ? [{ leaseId: stem.assetLeaseId, hash: stem.assetHash }] : []
         );
@@ -159,14 +147,11 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
             return { status: 'conflict' };
         }
         const projectedTrackIds = new Set<string>();
-        const publishedTrackIds = new Set<string>();
         const promotedAssetLeaseIds = new Set<string>();
         const reconcile = (committedTrackIds?: ReadonlySet<string>) =>
             reconcileImportedStemEffects({
-                addedTracks,
                 importedTracks,
                 projectedTrackIds,
-                publishedTrackIds,
                 assetBindings,
                 promotedAssetLeaseIds,
                 committedTrackIds,

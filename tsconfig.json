@@ -24,7 +24,8 @@
         "noEmit": true,
         "skipLibCheck": true,
         "paths": {
-            "#/*": ["./src/*"]
+            "#/*": ["./src/*"],
+            "virtual:sourdaw-basic-pitch-model": ["./src/modules/AudioAnalysis/repositories/basicPitchModel.d.ts"]
         }
     },
     "include": ["src", "vite-env.d.ts"],

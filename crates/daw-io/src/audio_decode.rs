@@ -1009,7 +1009,7 @@ mod tests {
         );
 
         let mut writer = BitWriter::default();
-        writer.write(0b1111_1111_1111_10, 14); // Frame sync.
+        writer.write(0b11_1111_1111_1110, 14); // Frame sync.
         writer.write(0, 1); // Reserved.
         writer.write(0, 1); // Fixed block size: the header codes a frame number.
         writer.write(0b0110, 4); // Block size: an 8-bit (size - 1) field follows.

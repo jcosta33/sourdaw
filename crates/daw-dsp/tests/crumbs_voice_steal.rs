@@ -35,6 +35,8 @@
 //! `k` is chosen at the loudest sample of the victim's own block, which is the
 //! worst case and the one a player hears.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::sync::Arc;
 
 use daw_dsp::crumbs::engine::CrumbsEngine;

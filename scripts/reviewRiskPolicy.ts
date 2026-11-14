@@ -128,6 +128,7 @@ const NATIVE_SECURITY_PATHS = [
     'scripts/electronRuntimeContract.ts',
     'scripts/checkElectronRuntimeProvenance.ts',
     'scripts/installCleanupLanes.ts',
+    'scripts/cleanupLanesCli.ts',
 ] as const;
 /** macOS entitlement files the packaging config signs with, `build/entitlements.mac.plist` and kin. */
 const ENTITLEMENTS_PATTERN = /^build\/entitlements[^/]*\.plist$/u;
@@ -149,6 +150,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/cleanupLaneBookkeeping.ts',
     'scripts/cleanupLanes.ts',
     'scripts/confirmReviewRepairs.ts',
+    'scripts/cutRelease.ts',
     'scripts/deliverPullRequest.ts',
     'scripts/deliveryLockLegacyIncidents.ts',
     'scripts/deliveryRemoteInspection.ts',
@@ -160,9 +162,13 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/guardRecoveryProof.ts',
     'scripts/laneActivity.ts',
     'scripts/laneStackForkMarkers.ts',
+    'scripts/measurementRevisionHolders.ts',
     'scripts/pnpmModulesPreflight.ts',
     'scripts/prContract.ts',
     'scripts/prepareReview.ts',
+    'scripts/processSnapshot.ts',
+    'scripts/pruneRemoteBranches.ts',
+    'scripts/pruneRemoteBranchesGithub.ts',
     'scripts/publishLane.ts',
     'scripts/publishReview.ts',
     'scripts/pullRequestMutationLock.ts',
@@ -171,6 +177,8 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/reconstructReviewRounds.ts',
     'scripts/recoverDeliveryLock.ts',
     'scripts/recoverPublishReviewLock.ts',
+    'scripts/releaseHistory.ts',
+    'scripts/releaseVersion.ts',
     'scripts/removeLane.ts',
     'scripts/repairReviewFinding.ts',
     'scripts/resolveThread.ts',

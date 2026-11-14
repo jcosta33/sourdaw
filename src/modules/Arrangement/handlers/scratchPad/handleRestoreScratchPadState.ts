@@ -4,6 +4,8 @@ import { markerStore } from '../../stores/markerStore';
 import { scratchPadStore } from '../../stores/scratchPadStore';
 import { setScratchPadSections } from '../../useCases/scratchPad/setScratchPadSections';
 
+import { isRestorableMarkerSections, isRestorableScratchPadSections } from './isRestorableSectionCollection';
+
 // Compares by id sequence, not deep equality: fields the store recomputes (e.g. derived
 // display state) would spuriously conflict under a deep compare, while an id-sequence
 // compare is exactly what detects a section being added, removed, or reordered since capture.
@@ -31,14 +33,16 @@ export const handleRestoreScratchPadState = createHandler<'restoreScratchPadStat
         const liveMarkerSectionIds = markerState.sections.map((section) => section.id);
         if (
             !idSequenceMatches(liveSectionIds, expectedSections) ||
-            !idSequenceMatches(liveMarkerSectionIds, expectedMarkerSections)
+            !idSequenceMatches(liveMarkerSectionIds, expectedMarkerSections) ||
+            !isRestorableScratchPadSections(replacementSections) ||
+            !isRestorableMarkerSections(replacementMarkerSections)
         ) {
             return { status: 'conflict' };
         }
         // Both collections were diverged from the same forward command, so both writes
         // land together or neither does — never partially apply.
-        setScratchPadSections(replacementSections as never);
-        markerStore.set({ ...markerState, sections: replacementMarkerSections as never });
+        setScratchPadSections(replacementSections);
+        markerStore.set({ ...markerState, sections: replacementMarkerSections });
         return { status: 'written' };
     },
     describe: () => ({ label: 'Restore scratch pad state', inverseAction: null }),

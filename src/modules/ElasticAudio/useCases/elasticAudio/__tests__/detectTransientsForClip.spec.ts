@@ -22,6 +22,34 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
     },
 }));
 
+const taskChannels: MessageChannel[] = [];
+afterEach(() => {
+    for (const channel of taskChannels.splice(0)) {
+        channel.port1.close();
+        channel.port2.close();
+    }
+});
+
+function controlCommitTask() {
+    const frame = Promise.withResolvers<FrameRequestCallback>();
+    const posted = Promise.withResolvers<void>();
+    const channel = new MessageChannel();
+    taskChannels.push(channel);
+    const closeReceiver = vi.spyOn(channel.port1, 'close');
+    const closeSender = vi.spyOn(channel.port2, 'close');
+    vi.spyOn(globalThis, 'MessageChannel').mockImplementation(function () {
+        return channel;
+    });
+    vi.spyOn(channel.port2, 'postMessage').mockImplementation(() => posted.resolve());
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+        frame.resolve(callback);
+        return 1;
+    });
+    vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => undefined);
+    return { frame: frame.promise, posted: posted.promise, channel, closeReceiver, closeSender };
+}
+
 describe('product transient Worker source lifetime', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -159,6 +187,120 @@ describe('scoped product preparation consumer', () => {
         vi.restoreAllMocks();
         vi.useRealTimers();
     });
+    it.each(['direct', 'consumer'] as const)('admits %s work in a host task after the visible frame', async (route) => {
+        const task = controlCommitTask();
+        let admitted = false;
+        let request: Promise<boolean>;
+        if (route === 'direct') {
+            request = detectTransientsForClip('clip-1', 0.5).then((result) => {
+                admitted = result.status === 'complete';
+                return admitted;
+            });
+        } else {
+            request = detectTransientsForClip('clip-1', 0.5, undefined, async (_ready, lifetime) => {
+                admitted = await lifetime.waitForFrame();
+                return admitted;
+            }).then((result) => result.status === 'consumed' && result.value);
+        }
+        const frame = await task.frame;
+        frame(0);
+        expect(await Promise.race([task.posted.then(() => 'queued'), request.then(() => 'admitted')])).toBe('queued');
+        expect(admitted).toBe(false);
+        expect(task.channel.port1.onmessage).toBeTypeOf('function');
+        task.channel.port1.onmessage?.(new MessageEvent('message'));
+        expect(await request).toBe(true);
+        expect(task.closeReceiver).toHaveBeenCalledOnce();
+        expect(task.closeSender).toHaveBeenCalledOnce();
+    });
+    it('admits a hidden page without allocating a frame or task channel', async () => {
+        const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+        const frame = vi.spyOn(globalThis, 'requestAnimationFrame');
+        const channel = vi.spyOn(globalThis, 'MessageChannel');
+        const request = await detectTransientsForClip('clip-1', 0.5, undefined, async (_ready, lifetime) =>
+            lifetime.waitForFrame()
+        );
+        expect(hidden).toHaveBeenCalled();
+        expect(request).toEqual({ status: 'consumed', value: true });
+        expect(frame).not.toHaveBeenCalled();
+        expect(channel).not.toHaveBeenCalled();
+    });
+    it.each(['before-frame', 'queued'] as const)(
+        'settles a page hidden %s and releases its task channel',
+        async (phase) => {
+            const task = controlCommitTask();
+            const request = detectTransientsForClip('clip-1', 0.5, undefined, async (_ready, lifetime) =>
+                lifetime.waitForFrame()
+            );
+            const frame = await task.frame;
+            if (phase === 'queued') {
+                frame(0);
+                await task.posted;
+            }
+            const deliverQueuedTask = task.channel.port1.onmessage;
+            vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+            document.dispatchEvent(new Event('visibilitychange'));
+            expect(await request).toEqual({ status: 'consumed', value: true });
+            frame(0);
+            deliverQueuedTask?.call(task.channel.port1, new MessageEvent('message'));
+            expect(task.closeReceiver).toHaveBeenCalledOnce();
+            expect(task.closeSender).toHaveBeenCalledOnce();
+        }
+    );
+    it.each(['abort', 'editor', 'preference', 'pagehide', 'root', 'source', 'deadline'] as const)(
+        'refuses queued consumer work after %s revokes its lifetime',
+        async (kind) => {
+            vi.useFakeTimers();
+            const task = controlCommitTask();
+            const controller = new AbortController();
+            let sourceCurrent = true;
+            mocks.read.mockResolvedValueOnce({
+                status: 'complete',
+                hits: [],
+                identity: { clipId: 'clip-1' },
+                isCurrent: () => sourceCurrent,
+            });
+            const request = detectTransientsForClip('clip-1', 0.5, controller.signal, async (_ready, lifetime) =>
+                lifetime.waitForFrame()
+            );
+            const frame = await task.frame;
+            frame(0);
+            expect(await Promise.race([task.posted.then(() => 'queued'), request.then(() => 'admitted')])).toBe(
+                'queued'
+            );
+            const deliverQueuedTask = task.channel.port1.onmessage;
+            expect(deliverQueuedTask).toBeTypeOf('function');
+            if (kind === 'abort') {
+                controller.abort();
+            }
+            if (kind === 'editor') {
+                elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: 'clip-2' });
+            }
+            if (kind === 'preference') {
+                preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 });
+            }
+            if (kind === 'pagehide') {
+                window.dispatchEvent(new Event('pagehide'));
+            }
+            if (kind === 'root') {
+                mocks.root = 'root-2';
+            }
+            if (kind === 'source') {
+                sourceCurrent = false;
+            }
+            if (kind === 'deadline') {
+                await vi.advanceTimersByTimeAsync(30_001);
+            }
+            deliverQueuedTask?.call(task.channel.port1, new MessageEvent('message'));
+            if (kind === 'deadline') {
+                expect(await request).toEqual({ status: 'failed', code: 'analysis-timed-out' });
+            } else {
+                expect(await request).toEqual({ status: 'consumed', value: false });
+            }
+            expect(task.closeReceiver).toHaveBeenCalledOnce();
+            expect(task.closeSender).toHaveBeenCalledOnce();
+            expect(vi.getTimerCount()).toBe(0);
+        }
+    );
     it.each(['abort', 'editor', 'preference', 'pagehide'] as const)(
         'keeps cancellation ownership during an admitted consumer await: %s',
         async (kind) => {

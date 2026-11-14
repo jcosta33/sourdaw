@@ -4,6 +4,7 @@ import { digest } from '#/utils/canonicalDigest';
 
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { type MetricGoal } from '../metricGoalContractTypes';
+import { readRecipeExpectationTolerance } from '../metricHoldTolerances';
 
 import { type VibeBatchPair, readVibeBatchPairs } from './readVibeBatchPairs';
 
@@ -12,9 +13,16 @@ type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 export type VibeBatchRecipeGoals =
     { status: 'read'; pairs: VibeBatchPair[]; goals: MetricGoal[] } | { status: 'refused'; reason: string };
 
+/** A range the plan bound as silent for this target carries no goal: there is nothing to move there. */
+function isSilentRange(batch: ScheduledVibeRunBatch, targetId: string, range: NonNullable<MetricGoal['range']>) {
+    return (batch.silentRanges ?? []).some(
+        (cell) => cell.targetId === targetId && digest(cell.range) === digest(range)
+    );
+}
+
 /**
  * The objective each pair of a batch promises: every measurable expectation of its authored recipe,
- * on its own target, over the whole arrangement, judged across that pair's own step. A goal keeps the
+ * on its own target, over each verification range the target is not silent over, judged across that pair's own step. A goal keeps the
  * index of the expectation it states, so admission can hold it to the catalog entry it came from.
  */
 export function readVibeBatchRecipeGoals(input: {
@@ -38,7 +46,17 @@ export function readVibeBatchRecipeGoals(input: {
             if (metricId === undefined) {
                 continue;
             }
+            const tolerance = readRecipeExpectationTolerance(metricId, expectation.direction);
+            if (tolerance.status === 'missing') {
+                return {
+                    status: 'refused',
+                    reason: `recipe ${recipe.id} holds ${metricId}, which has no versioned hold tolerance`,
+                };
+            }
             for (const range of input.batch.verificationRanges ?? [input.range]) {
+                if (isSilentRange(input.batch, pair.targetId, range)) {
+                    continue;
+                }
                 goals.push({
                     goalId: `vibe:${input.batch.id}:${pair.targetId}:${pair.recipeId}:${String(expectationIndex)}:${digest(range)}`,
                     stepId: pair.stepId,
@@ -49,7 +67,7 @@ export function readVibeBatchRecipeGoals(input: {
                     range,
                     relation: expectation.direction,
                     targetValue: null,
-                    tolerance: 0,
+                    tolerance: tolerance.tolerance,
                     source: {
                         kind: 'recipe',
                         recipeId: recipe.id,

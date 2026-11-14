@@ -6,13 +6,15 @@
 import { createStore } from '#/infra/store/createStore';
 
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
+import { type LocalModelRefusal } from '../models/LocalModelRefusal';
 
 export type LlmEngineStatus =
     | { state: 'idle' }
     | { state: 'loading'; progress: number; text: string }
     | { state: 'ready'; backend: RunnableAiBackend; modelId: string }
     | { state: 'generating' }
-    | { state: 'error'; message: string };
+    /** `refusal` is set when the machine cannot run the requested local model; `message` is its sentence. */
+    | { state: 'error'; message: string; refusal?: LocalModelRefusal };
 
 export const llmStatusStore = createStore<LlmEngineStatus>({
     initialData: { state: 'idle' },

@@ -7,12 +7,7 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore } from '../../../stores/clipSelectionStore';
-import {
-    setAutoScroll,
-    setScrollX,
-    setTimelineViewportHeight,
-    setTimelineViewportWidth,
-} from '../../../stores/timelineViewStore';
+import { setAutoScroll, setScrollX, setTimelineViewportSize } from '../../../stores/timelineViewStore';
 import { useTimelineInteractions } from '../../hooks/useTimelineInteractions';
 import { TimelineSurface } from '../TimelineSurface';
 
@@ -150,8 +145,7 @@ vi.mock('../../../stores/timelineViewStore', () => {
     return {
         timelineViewStore: store,
         setAutoScroll: vi.fn(),
-        setTimelineViewportHeight: vi.fn(),
-        setTimelineViewportWidth: vi.fn(),
+        setTimelineViewportSize: vi.fn(),
         setScrollX: vi.fn(setScrollX),
         setTimelineZoom: vi.fn(setTimelineZoom),
     };
@@ -305,24 +299,29 @@ describe('TimelineSurface', () => {
         expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument();
     });
 
-    it('reports the canvas viewport dimensions whenever its container resizes', () => {
+    it('observes the rendered container and reports both canvas viewport dimensions', () => {
         const resizeCallbacks: ResizeObserverCallback[] = [];
+        const observedTargets: Element[] = [];
         vi.stubGlobal(
             'ResizeObserver',
             class {
                 constructor(callback: ResizeObserverCallback) {
                     resizeCallbacks.push(callback);
                 }
-                observe(): void {}
+                observe(target: Element): void {
+                    observedTargets.push(target);
+                }
                 unobserve(): void {}
                 disconnect(): void {}
             }
         );
 
         try {
-            renderWithTooltip(<TimelineSurface />);
-            expect(setTimelineViewportHeight).not.toHaveBeenCalled();
-            expect(setTimelineViewportWidth).not.toHaveBeenCalled();
+            const { container } = renderWithTooltip(<TimelineSurface />);
+            const canvasContainer = container.querySelector('canvas')?.parentElement;
+            expect(canvasContainer).not.toBeNull();
+            expect(observedTargets).toContain(canvasContainer);
+            expect(setTimelineViewportSize).not.toHaveBeenCalled();
 
             for (const callback of resizeCallbacks) {
                 callback(
@@ -331,10 +330,46 @@ describe('TimelineSurface', () => {
                 );
             }
 
-            expect(setTimelineViewportHeight).toHaveBeenCalledWith(312);
-            expect(setTimelineViewportWidth).toHaveBeenCalledWith(900);
+            expect(setTimelineViewportSize).toHaveBeenCalledWith({ viewportWidth: 900, viewportHeight: 312 });
         } finally {
             vi.unstubAllGlobals();
+        }
+    });
+
+    it('remeasures equal numeric working views on each deferred restore without a resize or remount', () => {
+        const measure = vi
+            .spyOn(HTMLDivElement.prototype, 'getBoundingClientRect')
+            .mockReturnValue(new DOMRect(0, 0, 500, 50));
+        try {
+            const view = {
+                scrollX: 9000,
+                scrollY: 900,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: false,
+                viewportWidth: 500,
+                viewportHeight: 50,
+                viewportMeasurementRevision: 0,
+            };
+            act(() => zoomHandlers.timelineViewStoreRef.current?.set(view));
+            renderWithTooltip(<TimelineSurface />);
+            vi.mocked(setTimelineViewportSize).mockClear();
+            measure.mockClear();
+
+            act(() => {
+                zoomHandlers.timelineViewStoreRef.current?.set({ ...view, viewportMeasurementRevision: 1 });
+            });
+
+            expect(measure).toHaveBeenCalled();
+            expect(setTimelineViewportSize).toHaveBeenCalledWith({ viewportWidth: 500, viewportHeight: 50 });
+            vi.mocked(setTimelineViewportSize).mockClear();
+            measure.mockClear();
+            act(() => {
+                zoomHandlers.timelineViewStoreRef.current?.set({ ...view, viewportMeasurementRevision: 2 });
+            });
+            expect(measure).toHaveBeenCalled();
+            expect(setTimelineViewportSize).toHaveBeenCalledExactlyOnceWith({ viewportWidth: 500, viewportHeight: 50 });
+        } finally {
+            measure.mockRestore();
         }
     });
 

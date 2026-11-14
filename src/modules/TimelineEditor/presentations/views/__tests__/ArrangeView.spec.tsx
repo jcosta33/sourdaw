@@ -2,7 +2,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { setScrollX } from '#/modules/Arrangement/stores';
-import { importMidiFile, setTimelineHorizontalScrollbarScrollX } from '#/modules/Arrangement/useCases';
+import {
+    getTimelineHorizontalContentWidth,
+    importMidiFile,
+    setTimelineHorizontalScrollbarScrollX,
+} from '#/modules/Arrangement/useCases';
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
@@ -260,6 +264,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
         };
     }),
     importMidiFile: vi.fn(),
+    getTimelineHorizontalContentWidth: vi.fn(() => 3072),
     setTimelineHorizontalScrollbarScrollX: vi.fn(),
 }));
 
@@ -355,6 +360,7 @@ const makeTrack = ({ clipEndBeat }: { clipEndBeat: number }): Track => ({
 });
 
 const renderOverflowingTimeline = (): HTMLElement => {
+    vi.mocked(getTimelineHorizontalContentWidth).mockReturnValue(4800);
     vi.mocked(useTracks).mockReturnValue({
         tracks: [makeTrack({ clipEndBeat: 400 })],
         selectedTrackId: 'track-1',
@@ -633,20 +639,6 @@ describe('ArrangeView', () => {
         expect(notifyUser).not.toHaveBeenCalled();
         expect(projectEpoch.latest()?.isCurrent()).toBe(false);
         expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
-    });
-
-    it('computes the horizontal scrollbar width without blowing the call stack on a very large clip count', () => {
-        // Regression: `Math.max(256, ...allEndBeats)` spreads every clip end
-        // beat as a call argument — past V8's argument-count ceiling it throws
-        // `RangeError: Maximum call stack size exceeded` instead of a width.
-        const manyClips = Array.from({ length: 200_000 }, (_, index) => makeClip({ endBeat: index }));
-        vi.mocked(useTracks).mockReturnValue({
-            tracks: [{ ...makeTrack({ clipEndBeat: 0 }), clips: manyClips }],
-            selectedTrackId: 'track-1',
-        });
-
-        expect(() => render(<ArrangeView />)).not.toThrow();
-        expect(document.querySelector('.daw-scrollbar-thumb')).toBeInTheDocument();
     });
 
     it('reserves the horizontal scrollbar strip even when the content fits, without a thumb', () => {

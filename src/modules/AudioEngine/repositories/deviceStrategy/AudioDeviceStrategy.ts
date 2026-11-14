@@ -87,11 +87,12 @@ export type DeviceNoteOffRequest = {
     readonly noteOrPad: number;
     readonly sampleFrame?: number;
     /**
-     * MPE member channel to release. Omitted releases every voice at that
-     * pitch, which is what a device with no channel surface does anyway.
+     * MPE member channel to release. Adapters with a pitch-wide release API
+     * release every voice at that pitch when omitted. Faust's channel-required
+     * API instead uses its base channel 0, matching its omitted-channel note-on.
      *
-     * A note-off that does not name its channel cannot tell two notes at the
-     * same pitch apart, so releasing one silences both. Live playback passes
+     * A pitch-wide adapter cannot distinguish two notes at the same pitch
+     * when the release omits its channel. Live playback passes
      * it; a bounce that dropped it disagreed with the session on exactly the
      * overlapping unison MPE exists to voice separately.
      */

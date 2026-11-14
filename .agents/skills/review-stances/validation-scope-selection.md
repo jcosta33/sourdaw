@@ -64,6 +64,15 @@ does not guard this boundary.
    in every workflow that supplies the check; a comment describing one workflow must not imply the check is
    absent from the others.
 
+8. **CI's declared worker limit must reach the isolated child (#3170, #3119, #5274).** The unit workflows
+   declared four workers despite the repository's two-worker policy, and the isolated launcher separately
+   imposed four in its clean child environment. Trace both workflow callers through `runIsolatedUnitShard.ts`
+   to `vite.config.ts`, including shell inline fixture environments in `scripts/test-health-gate-scripts.sh`;
+   assert both workflows and the actual spawned shard environment use at most two, while sequential guard specs
+   use one and the four-way matrix remains intact. Raising either workflow or the launcher to four must fail
+   `scripts/__tests__/healthGatesWorkflow.spec.ts` or `scripts/__tests__/runIsolatedUnitShard.spec.ts`, respectively;
+   stale shell fixtures must fail the health-gate script harness.
+
 ## Retired lessons
 
 - Tooling paths missing from the browser selector or validation path filter (#4854, #4902, #4484, #4932, #4933) →

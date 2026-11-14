@@ -59,6 +59,7 @@ import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { planAgentRun } from '../planAgentRun';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { sendChatMessage } from '../sendChatMessage';
+import { skipPendingVibeBatch } from '../skipPendingVibeBatch';
 import { splitCompiledCommandList } from '../splitCompiledCommandList';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
@@ -1883,6 +1884,26 @@ describe('a bulk request confirmed one batch at a time', () => {
         expect(mutedTrackIds()).toEqual(layerIds);
         expect(agentRunLifecycle.get(first.runId)?.phase).toBe('completed');
         expect(proposedConfirmations()).toEqual([]);
+    });
+
+    it('refuses to skip a later slice, whose replay builds on the slices before it', async () => {
+        const layerIds = await seedLayerTracks();
+        scriptMuteLayersProposal();
+        await requestMuteLayers();
+        const first = requireOnlyProposedConfirmation();
+        expect(getAgentApprovalView({ confirmationId: first.id })?.skip.available).toBe(false);
+        await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
+        const second = requireOnlyProposedConfirmation();
+        expect(second.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 2 });
+        expect(getAgentApprovalView({ confirmationId: second.id })?.skip.available).toBe(false);
+
+        await expect(skipPendingVibeBatch({ confirmationId: second.id })).resolves.toMatchObject({
+            status: 'refused',
+        });
+
+        expect(requireOnlyProposedConfirmation().id).toBe(second.id);
+        expect(mutedTrackIds()).toEqual(layerIds.slice(0, MAX_LLM_ACTIONS_PER_BATCH));
+        expect(agentRunLifecycle.get(first.runId)?.phase).toBe('waiting-for-approval');
     });
 
     it('does not drop corrupt historical settlement when a persisted schedule proposes its next batch', async () => {

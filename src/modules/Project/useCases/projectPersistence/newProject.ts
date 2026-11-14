@@ -148,6 +148,7 @@ async function switchToNewProject({
     try {
         if (!(await transaction.prepare()) || !shouldProceed() || !transaction.activate()) {
             failNewProjectActivation({ previousTransientState, transaction });
+            transaction.abandon();
             return null;
         }
 
@@ -205,6 +206,7 @@ async function switchToNewProject({
             restorePreviousProjectRuntime();
         }
         failNewProjectActivation({ previousTransientState, transaction });
+        transaction.abandon();
         return null;
     }
 }

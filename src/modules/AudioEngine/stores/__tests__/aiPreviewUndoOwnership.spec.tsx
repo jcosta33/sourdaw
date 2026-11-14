@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -246,7 +245,6 @@ describe('AI preview undo ownership', () => {
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         clearUndoHistory();
         installTimeOperationDependencies();
-        injectDependencies(addTrack, { eventBus: { emit: vi.fn() } });
     });
 
     afterEach(async () => {
@@ -389,7 +387,7 @@ describe('AI preview undo ownership', () => {
 });
 
 function givenAudioTrack(): void {
-    addTrack({ name: 'AI Renders', kind: 'audio', suppressAddedEvent: true });
+    addTrack({ name: 'AI Renders', kind: 'audio' });
 }
 
 function liveClipByBufferId(bufferId: string) {

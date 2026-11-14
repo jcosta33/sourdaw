@@ -6,6 +6,7 @@ import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { playheadSeekRequestRef } from '../../stores/playheadSeekRequestRef';
 import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { schedulerSession } from '../playheadScheduler/schedulerSession';
@@ -18,6 +19,7 @@ import { stopActiveRecording } from './stopActiveRecording';
 
 export function pausePlayback(): void {
     audioEngine.beginAudioPreviewIntent().release();
+    playheadSeekRequestRef.current++;
     const state = getTransportState();
     if (!state) {
         return;

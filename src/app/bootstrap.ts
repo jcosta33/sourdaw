@@ -185,7 +185,6 @@ import { setSetlistEventBus } from '#/modules/Setlist/useCases';
 import {
     initToasterKitPersistence,
     initToasterSubscribers,
-    setToasterEventBus,
     setToasterGrooveAssignmentExecutor,
 } from '#/modules/Toaster/useCases';
 import { setGestureClockSource } from '#/modules/Transport/stores';
@@ -397,7 +396,6 @@ setMixAnalysisDisplayLifecycle({
     complete: completeMixAnalysis,
     fail: failMixAnalysis,
 });
-setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
 setCrumbsEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });

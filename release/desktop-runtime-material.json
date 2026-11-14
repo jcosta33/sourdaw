@@ -4,16 +4,16 @@
     "artifact": "darwin-arm64",
     "runtimeManifest": "ELECTRON-SOURCES.json",
     "requiredMaterial": {
-        "electronSource": "electron-340bae15aaef12b7e96f1c857be986aa9f65c21c.tar.gz",
-        "electronCommit": "electron-340bae15aaef12b7e96f1c857be986aa9f65c21c.commit",
-        "ffmpegSource": "ffmpeg-ad41607c61898cf7150e0fb20fe4bbabd44922a3.tar.gz",
-        "ffmpegCommit": "ffmpeg-ad41607c61898cf7150e0fb20fe4bbabd44922a3.commit",
+        "electronSource": "electron-3025e0491e87674c112f7a7d2646292c0efa4599.tar.gz",
+        "electronCommit": "electron-3025e0491e87674c112f7a7d2646292c0efa4599.commit",
+        "ffmpegSource": "ffmpeg-9db86ce5b5b454dfc96c435f9f0723012980c37f.tar.gz",
+        "ffmpegCommit": "ffmpeg-9db86ce5b5b454dfc96c435f9f0723012980c37f.commit",
         "ffmpegBuild": "ffmpeg-build-material.json",
         "buildInputs": "build-inputs/electron"
     },
     "electron": {
         "repository": "https://github.com/electron/electron",
-        "revision": "340bae15aaef12b7e96f1c857be986aa9f65c21c",
+        "revision": "3025e0491e87674c112f7a7d2646292c0efa4599",
         "buildInputs": [
             ".github/actions/build-electron/action.yml",
             "DEPS",
@@ -26,7 +26,7 @@
     },
     "ffmpeg": {
         "repository": "https://chromium.googlesource.com/chromium/third_party/ffmpeg",
-        "revision": "ad41607c61898cf7150e0fb20fe4bbabd44922a3",
+        "revision": "9db86ce5b5b454dfc96c435f9f0723012980c37f",
         "license": "LGPL-2.1-or-later"
     },
     "build": {

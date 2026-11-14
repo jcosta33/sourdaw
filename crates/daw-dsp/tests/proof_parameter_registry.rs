@@ -1,4 +1,7 @@
 //! Contract and actual PCM admission; all new checks were authored unexecuted.
+
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::proof::{
     parameter_registry::{self as registry, ParameterKind, ParameterRoute},
     ProofInstance,

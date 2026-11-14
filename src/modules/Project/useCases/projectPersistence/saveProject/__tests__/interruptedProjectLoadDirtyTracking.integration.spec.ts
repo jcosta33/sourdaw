@@ -347,15 +347,19 @@ const transactionControls = {
 function loadTransaction(): ProjectLoadTransaction {
     const controller = new AbortController();
     let activated = false;
+    let abandoned = false;
     let lost = false;
-    const ownable = (): boolean => !lost && !transactionControls.superseded;
+    const ownable = (): boolean => !lost && !abandoned && !transactionControls.superseded;
     return {
         prepare: async () => {
+            if (abandoned) {
+                return false;
+            }
             const prepared = await transactionControls.prepare();
-            if (!prepared) {
+            if (!prepared || abandoned) {
                 lost = true;
             }
-            return prepared;
+            return prepared && !abandoned;
         },
         activate: () => {
             activated = ownable() && transactionControls.activate();
@@ -363,6 +367,13 @@ function loadTransaction(): ProjectLoadTransaction {
                 lost = true;
             }
             return activated;
+        },
+        abandon: () => {
+            if (activated || abandoned) {
+                return;
+            }
+            abandoned = true;
+            controller.abort();
         },
         canActivate: () => ownable(),
         isCurrent: () => activated && ownable(),

@@ -100,12 +100,12 @@ export async function loadProject({
         return false;
     }
     try {
-        // Activation settles the preparation ticket even if the caller withdrew
-        // during prepare. No document has been committed at this boundary.
-        if (!(await transaction.prepare()) || !transaction.activate() || !canContinue()) {
+        if (!(await transaction.prepare()) || !canContinue() || !transaction.activate()) {
+            transaction.abandon();
             return false;
         }
     } catch (error) {
+        transaction.abandon();
         logger.error(new Error('Failed to end collaboration before loading project', { cause: error }));
         return false;
     }
@@ -202,6 +202,13 @@ export async function loadProject({
                     return false;
                 }
             }
+        }
+        // Explicit replacements publish the transition while the outgoing
+        // arrangement still owns the current offsets, so working-view persistence
+        // can flush before hydration. Implicit startup restore is not abortable.
+        const outgoingProjectState = projectStore.value;
+        if ((directory || explicit) && outgoingProjectState && !outgoingProjectState.loading) {
+            projectStore.set({ ...outgoingProjectState, loading: true });
         }
         batchStoreUpdates(() => {
             preparedBuffers.publish();

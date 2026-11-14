@@ -8,6 +8,8 @@
 //! For any negative threshold and ratio > 1 that is below 1, so engaging the
 //! compressor turns the whole synth down, including material it never touches.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::fermenter::effects::Compressor;
 
 const SAMPLE_RATE: f32 = 48_000.0;

@@ -8,6 +8,8 @@ import { buildSendAutomationRangesLane } from '../../services/buildSendAutomatio
 import { removeSendAutomationRange } from '../../useCases/automation/removeSendAutomationRange';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
+import { isRemoveSendAutomationRangesPayload } from './validateRangeWriteSessionEntries';
+
 type RemoveSendAutomationRangesAction = Extract<AppAction, { type: 'removeSendAutomationRanges' }>;
 
 function pointsMatch(actual: readonly AutomationPoint[], expected: readonly AutomationPoint[]): boolean {
@@ -117,6 +119,7 @@ export const handleRemoveSendAutomationRanges = createHandler<'removeSendAutomat
         label: `Remove send ramps for ${action.payload.ranges.map((range) => range.sectionName).join(', ')}`,
         inverseAction: currentStateMatches(action) ? { type: 'automateSendRanges', payload: action.payload } : null,
     }),
+    validateSessionActionArguments: isRemoveSendAutomationRangesPayload,
     undoable: true,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,

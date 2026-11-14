@@ -287,10 +287,7 @@ impl MidiClock {
             let remaining_ticks = block_ticks - pulse_offset_ticks;
             let dropped_pulse_count =
                 (remaining_ticks + pulse_interval_ticks - 1) / pulse_interval_ticks;
-            let bounded_dropped_count = match u64::try_from(dropped_pulse_count) {
-                Ok(count) => count,
-                Err(_) => u64::MAX,
-            };
+            let bounded_dropped_count = u64::try_from(dropped_pulse_count).unwrap_or(u64::MAX);
             output.record_dropped_events(bounded_dropped_count);
             pulse_offset_ticks += dropped_pulse_count * pulse_interval_ticks;
         }

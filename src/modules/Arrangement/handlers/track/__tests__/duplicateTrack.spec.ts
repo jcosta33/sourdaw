@@ -5,7 +5,6 @@ import { handleDuplicateTrack } from '../duplicateTrack';
 const mocks = vi.hoisted(() => ({
     duplicateTrack: vi.fn(),
     getTrackStoreState: vi.fn<() => { tracks: { id: string; name?: string; kind: string }[] } | null>(),
-    publishTrackAdded: vi.fn(),
     serializeClipScopedAutomationLanes: vi.fn(),
 }));
 
@@ -20,9 +19,6 @@ vi.mock('../../../useCases/clip/serializeClipScopedAutomationLanes', () => ({
 vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
 }));
-vi.mock('../../../useCases/publishTrackAdded', () => ({
-    publishTrackAdded: mocks.publishTrackAdded,
-}));
 
 describe('handleDuplicateTrack', () => {
     beforeEach(() => {
@@ -30,7 +26,7 @@ describe('handleDuplicateTrack', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', name: 'Source', kind: 'audio' }] });
     });
 
-    it('honors an app-owned selection policy and publishes only after commit', async () => {
+    it('honors an app-owned selection policy and finalizes the discard guard', async () => {
         const action: Parameters<typeof handleDuplicateTrack.describe>[0] = {
             type: 'duplicateTrack',
             payload: { trackId: 't1', select: false },
@@ -51,6 +47,7 @@ describe('handleDuplicateTrack', () => {
 
         const result = await handleDuplicateTrack.execute(action);
 
+        expect(result).toEqual({ status: 'written' });
         // Execute finalizes the guard embedded in the inverse from the
         // committed store shape; an unfinalized or stale entityJson would
         // make undo of a duplicate conflict-fail against
@@ -63,19 +60,9 @@ describe('handleDuplicateTrack', () => {
 
         expect(mocks.duplicateTrack).toHaveBeenCalledWith('t1', {
             select: false,
-            suppressAddedEvent: true,
             targetTrackId,
         });
         expect(targetTrackId).toMatch(/^track-dup-/);
-        expect(mocks.publishTrackAdded).not.toHaveBeenCalled();
-
-        await result?.afterCommit?.();
-
-        expect(mocks.publishTrackAdded).toHaveBeenCalledWith({
-            trackId: targetTrackId,
-            name: 'Copy',
-            kind: 'audio',
-        });
     });
 
     it('finalizes the inverse guard with the committed clips and their cloned automation lanes', async () => {
@@ -138,29 +125,6 @@ describe('handleDuplicateTrack', () => {
         expect(targetTrackId).toMatch(/^track-dup-/);
     });
 
-    it('publishes only a duplicate found in durable truth after an ambiguous commit', async () => {
-        const action = {
-            type: 'duplicateTrack',
-            payload: { trackId: 't1', targetTrackId: 'copy' },
-        } as const;
-        mocks.duplicateTrack.mockReturnValue({ id: 'copy', name: 'Requested Copy', kind: 'audio' });
-        const result = await handleDuplicateTrack.execute(action);
-        mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                { id: 't1', name: 'Source', kind: 'audio' },
-                { id: 'copy', name: 'Committed Copy', kind: 'audio' },
-            ],
-        });
-
-        await result?.afterAmbiguousCommit?.();
-
-        expect(mocks.publishTrackAdded).toHaveBeenCalledWith({
-            trackId: 'copy',
-            name: 'Committed Copy',
-            kind: 'audio',
-        });
-    });
-
     it('preserves the default selection behavior for ordinary commands', async () => {
         const action: Parameters<typeof handleDuplicateTrack.describe>[0] = {
             type: 'duplicateTrack',
@@ -176,7 +140,6 @@ describe('handleDuplicateTrack', () => {
         await handleDuplicateTrack.execute(action);
 
         expect(mocks.duplicateTrack).toHaveBeenCalledWith('t1', {
-            suppressAddedEvent: true,
             targetTrackId,
         });
     });

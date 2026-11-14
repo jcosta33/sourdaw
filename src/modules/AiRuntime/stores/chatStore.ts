@@ -48,6 +48,15 @@ export function updateChatMessage(id: string, partialUpdate: Partial<ChatMessage
     });
 }
 
+/** Removes one message, as a progress report that has nothing left to report. */
+export function removeChatMessage(id: string): void {
+    const currentState = chatStore.value;
+    if (!currentState) {
+        return;
+    }
+    chatStore.set({ ...currentState, messages: currentState.messages.filter((message) => message.id !== id) });
+}
+
 /**
  * Sets the isGenerating global flag locking new chat submissions.
  */

@@ -62,7 +62,6 @@ import { compRegionInterval } from '../../../useCases/comping/compRegionInterval
 import { setCompRegion } from '../../../useCases/comping/setCompRegion';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 
-import type { TrackAddedPayload } from '../../../events/TrackAddedEvent';
 import type { TrackRemovedPayload } from '../../../events/TrackRemovedEvent';
 import type { TrackSelectionChangedPayload } from '../../../events/TrackSelectionChangedEvent';
 
@@ -1282,15 +1281,10 @@ describe('setCompRegion command integration', () => {
         'undoes and redoes a comp followed by track removal and refuses $conflict',
         async ({ peerLaneId, peerTrackId }) => {
             const arrangementEvents = createEventBus<{
-                'track.added': TrackAddedPayload;
                 'track.removed': TrackRemovedPayload;
                 'track.selectionChanged': TrackSelectionChangedPayload;
             }>();
-            const addedEvents: TrackAddedPayload[] = [];
             const removedEvents: TrackRemovedPayload[] = [];
-            arrangementEvents.on('track.added', (event) => {
-                addedEvents.push(event);
-            });
             arrangementEvents.on('track.removed', (event) => {
                 removedEvents.push(event);
             });
@@ -1336,7 +1330,6 @@ describe('setCompRegion command integration', () => {
             expect(getCrdtDoc<{ tracks: { tracks: (typeof track1)[] } }>('root')?.tracks.tracks).toEqual([track2]);
             expect(getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes).toEqual([otherLane]);
             expect(removedEvents).toEqual([{ trackId: 'track-1' }]);
-            expect(addedEvents).toEqual([]);
 
             expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: true });
             expect(trackStore.value?.tracks).toEqual([track1, track2]);
@@ -1360,7 +1353,6 @@ describe('setCompRegion command integration', () => {
                 { groupId: 'comp-then-remove-track', groupLabel: 'Comp then remove' },
                 { groupId: 'comp-then-remove-track', groupLabel: 'Comp then remove' },
             ]);
-            expect(addedEvents).toEqual([{ trackId: 'track-1', name: 'Comped vocal', kind: 'audio' }]);
             expect(removedEvents).toEqual([{ trackId: 'track-1' }]);
             expect(notifications).toEqual([]);
 
@@ -1371,7 +1363,6 @@ describe('setCompRegion command integration', () => {
             expect(getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes).toEqual([otherLane]);
             expect(undoHistoryStore.value?.past).toHaveLength(2);
             expect(undoHistoryStore.value?.future).toEqual([]);
-            expect(addedEvents).toHaveLength(1);
             expect(removedEvents).toEqual([{ trackId: 'track-1' }, { trackId: 'track-1' }]);
             expect(notifications).toEqual([]);
 
@@ -1396,7 +1387,6 @@ describe('setCompRegion command integration', () => {
                 otherLane,
                 peerLane,
             ]);
-            expect(addedEvents).toHaveLength(1);
             expect(removedEvents).toHaveLength(2);
             expect(notifications).toEqual([
                 { message: 'Cannot undo "Comp then remove": project state has changed', level: 'warning' },
@@ -1406,15 +1396,10 @@ describe('setCompRegion command integration', () => {
 
     it('captures a grouped take selection in the following track-removal restore snapshot', async () => {
         const arrangementEvents = createEventBus<{
-            'track.added': TrackAddedPayload;
             'track.removed': TrackRemovedPayload;
             'track.selectionChanged': TrackSelectionChangedPayload;
         }>();
-        const addedEvents: TrackAddedPayload[] = [];
         const removedEvents: TrackRemovedPayload[] = [];
-        arrangementEvents.on('track.added', (event) => {
-            addedEvents.push(event);
-        });
         arrangementEvents.on('track.removed', (event) => {
             removedEvents.push(event);
         });
@@ -1463,7 +1448,6 @@ describe('setCompRegion command integration', () => {
         ]);
         expect(undoHistoryStore.value?.past).toEqual([]);
         expect(undoHistoryStore.value?.future).toHaveLength(2);
-        expect(addedEvents).toEqual([{ trackId: 'track-1', name: 'Selected vocal', kind: 'audio' }]);
         expect(notifications).toEqual([]);
 
         await redo();

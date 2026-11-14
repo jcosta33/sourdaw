@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { createHash, randomUUID } from 'node:crypto';
 import {
     closeSync,
@@ -15,7 +13,6 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import {
     ensureCleanupExclusionFile,
@@ -27,13 +24,10 @@ import {
 import { unsafeCredentialReason } from './evidenceSafety.ts';
 import {
     assertRequiredRepository,
-    assertTrustedExecutingBlob,
     authenticateRole,
     CLEANUP_MINT_PERMISSIONS,
     githubAuthorizationGitEnv,
-    originMainBlob,
     REQUIRED_REPOSITORY,
-    resolvePrimaryRoot,
     spawnCapture,
     spawnRun,
 } from './githubAppIdentity.ts';
@@ -568,36 +562,4 @@ export async function runCleanup(primaryRoot: string, onlyHead?: string): Promis
     } finally {
         auth.session.dispose();
     }
-}
-
-async function main(): Promise<number> {
-    try {
-        const args = process.argv.slice(2);
-        const primaryRoot = resolvePrimaryRoot();
-        if (args[0] === '--status' && args.length === 1) {
-            for (const record of readCleanupRecords(primaryRoot)) {
-                console.log(`${record.status} ${record.identity.path}: ${record.reason}`);
-            }
-            return 0;
-        }
-        if (args.length > 0) {
-            throw new Error('usage: pnpm lane:cleanup [--status]');
-        }
-        assertTrustedExecutingBlob(
-            'scripts/cleanupLanes.ts',
-            fileURLToPath(import.meta.url),
-            originMainBlob('scripts/cleanupLanes.ts', primaryRoot)
-        );
-        await runCleanup(primaryRoot);
-        return 0;
-    } catch (error) {
-        console.error(cleanupFailureReason(error));
-        return 1;
-    }
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then((code) => {
-        process.exitCode = code;
-    });
 }

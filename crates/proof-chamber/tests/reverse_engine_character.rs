@@ -23,6 +23,8 @@
 //! Everything runs at `mix = 1.0`, so the measurement is the engine's output
 //! and not the dry signal passing through it.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::ProofChamberInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

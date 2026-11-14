@@ -1,5 +1,5 @@
-import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import { generateWebLlmCompletion as generateWebCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
+import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 
 import { runLocalModelTextCompletion } from './runLocalModelTextCompletion';
 
@@ -10,7 +10,7 @@ export async function generateWebLlmCompletion(
 ): Promise<string> {
     return runLocalModelTextCompletion({
         provider: 'webllm',
-        model: WEBLLM_MODEL_ID,
+        model: getActiveModelId(),
         systemPrompt,
         userMessage,
         maxOutputTokens: options?.maxTokens ?? 2_048,

@@ -34,6 +34,12 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    across presets must fail musical discrimination. Admit project/history preservation only after the
    inspection bridge observes a genuine UI edit in the same app singleton; an empty bridge must fail.
    A placeholder that asserts its common tone rather than the sound it claims to audition is the blind form.
+   Proof's active benchmark controls were silently ignored (#974, retained by #1084; related #832).
+   Non-silence and a small default gain reduction could not prove the requested load. Observe the
+   actual recipe's stereo PCM and public limiter telemetry on real WASM: +6 dB input into a -1 dB
+   ceiling must remain over 1 dB reducing at warm and late checks. Reverting its canonical setter
+   hunk must fail `crates/daw-dsp/benches/wasm/__tests__/deviceRecipes.spec.ts`. Historical review
+   draws were unavailable; no model or stance attribution is established.
    (#187, #5013, #4904, #5812)
 
 4. **Fixtures or history bytes the real producer would never write.**
@@ -53,6 +59,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    (#5624, #5240, #5115, #5320, #5331)
 
 6. **A test double or controlled system cannot fail the way the real boundary does.**
+   Review capture #2591 (`5cfdc662e38e`) tested 4 MiB ASCII through a real child, but that did not
+   cover combined review-output capacity or raw-byte identity. Historical reviewer tier and prompt
+   are unknown. Pair small real-pipe limit enforcement with caller-specific capacity checks, and
+   compare a real non-UTF-8 Git diff with the installed bundle and live publication bytes. Replacing
+   raw capture with UTF-8 round-tripping or comparing only decoded strings must fail
+   `scripts/__tests__/prepareReview.spec.ts`; an actual large-diff acceptance compares independent
+   streaming byte counts and hashes under the same cwd and environment without printing source.
    Probe: exercise the real thing: the default launcher and owner fence, a real Git DAG, the installed tool, the
    SDK in its server environment, the live GraphQL schema, the pinned scanner, the served entry under the
    production CSP, the compiled build rather than the dev loader, and a transport buffer at production size. A

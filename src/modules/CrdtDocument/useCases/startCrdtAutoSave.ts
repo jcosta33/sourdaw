@@ -176,6 +176,9 @@ export function startCrdtAutoSave(): () => void {
                     return;
                 }
                 runIncrementalPersist();
+            })
+            .catch((error: unknown) => {
+                logger.error(new Error('[CrdtAutoSave] Incremental persist settlement failed', { cause: error }));
             });
     }
 

@@ -136,6 +136,52 @@ function materializationFailure(error: unknown, lifetime: DetectionLifetime): Ha
     throw error;
 }
 
+/** Keep committed history rendering ahead of success feedback without waiting for a visible frame. */
+function waitForTransientCompletionTask(): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const channel = new MessageChannel();
+        let settled = false;
+        const finish = (error?: Error): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            channel.port1.onmessage = null;
+            channel.port1.onmessageerror = null;
+            channel.port1.close();
+            channel.port2.close();
+            window.removeEventListener('pagehide', pageHidden);
+            if (error) {
+                reject(error);
+            } else {
+                resolve();
+            }
+        };
+        const pageHidden = (): void => finish();
+        channel.port1.onmessage = () => {
+            if (settled) {
+                return;
+            }
+            performance.mark('elastic-transient-completion-task-delivered');
+            performance.clearMarks('elastic-transient-completion-task-delivered');
+            finish();
+        };
+        channel.port1.onmessageerror = () => finish(new Error('Transient completion task could not be delivered'));
+        window.addEventListener('pagehide', pageHidden, { once: true });
+        try {
+            performance.mark('elastic-transient-completion-task-enqueued');
+            performance.clearMarks('elastic-transient-completion-task-enqueued');
+            channel.port2.postMessage(undefined);
+        } catch (error) {
+            if (error instanceof Error) {
+                finish(error);
+                return;
+            }
+            finish(new Error('Transient completion task could not be scheduled', { cause: error }));
+        }
+    });
+}
+
 function createTransientWriteResult(
     result: DetectedSource,
     context: DetectContext,
@@ -150,13 +196,24 @@ function createTransientWriteResult(
     const expectedState = isDefaultWarpState(replacement) ? undefined : replacement;
     const refusal = (): string | null =>
         result.isCurrent() && !context?.signal?.aborted ? null : 'Transient detection source changed before commit';
-    const complete = (): void => {
-        performance.measure('elastic-transient-commit', {
-            start: commitStarted,
-            end: performance.now(),
+    let completion: Promise<void> | undefined;
+    const complete = (): Promise<void> => {
+        completion ??= (async () => {
+            performance.measure('elastic-transient-commit', {
+                start: commitStarted,
+                end: performance.now(),
+            });
+            performance.clearMeasures('elastic-transient-commit');
+            await waitForTransientCompletionTask();
+            performance.mark('elastic-transient-success-notification');
+            performance.clearMarks('elastic-transient-success-notification');
+            notifyUser(`Detected ${added.length} transients (${preserved.length} preserved)`, 'success');
+        })().catch((error: unknown) => {
+            completion = undefined;
+            throw error;
         });
-        performance.clearMeasures('elastic-transient-commit');
-        notifyUser(`Detected ${added.length} transients (${preserved.length} preserved)`, 'success');
+        // Reconciliation shares successful feedback and retries only a failed attempt.
+        return completion;
     };
     return {
         status: 'written',

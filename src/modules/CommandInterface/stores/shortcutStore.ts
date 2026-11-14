@@ -127,6 +127,20 @@ const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
         action: { type: 'appAction', action: { type: 'toggleLoop' } },
     },
     {
+        id: 'transport.previousSection',
+        label: 'Previous Section',
+        category: 'transport',
+        defaultKeys: [],
+        action: { type: 'appAction', action: { type: 'navigateSection', payload: { direction: 'previous' } } },
+    },
+    {
+        id: 'transport.nextSection',
+        label: 'Next Section',
+        category: 'transport',
+        defaultKeys: [],
+        action: { type: 'appAction', action: { type: 'navigateSection', payload: { direction: 'next' } } },
+    },
+    {
         id: 'arrangement.addMidiTrack',
         label: 'Add MIDI Track',
         category: 'workflow',

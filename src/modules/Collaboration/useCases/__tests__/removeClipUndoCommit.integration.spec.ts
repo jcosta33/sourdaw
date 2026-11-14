@@ -41,7 +41,7 @@ import {
     setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { getMidiNoteTransformHandlers, restoreMidiClipData } from '#/modules/MIDI/useCases';
+import { getMidiGrooveHandlers, getMidiNoteTransformHandlers, restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
@@ -103,7 +103,7 @@ describe('committed clip restoration through Command and real peer sync', () => 
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
-        addTrack({ id: 'track-1', kind: 'audio', name: 'Track', suppressAddedEvent: true });
+        addTrack({ id: 'track-1', kind: 'audio', name: 'Track' });
         addClip({ id: 'source', trackId: 'track-1', name: 'Source', startBeat: 0, endBeat: 4 });
         addClip({ id: 'survivor', trackId: 'track-1', name: 'Survivor', startBeat: 8, endBeat: 12 });
         flushAutomergeStorageWrites();
@@ -221,7 +221,7 @@ describe('committed clip restoration through Command and real peer sync', () => 
         if (entry?.kind !== 'action' || entry.inverseAction?.type !== 'restoreClip') {
             throw new Error('Expected the removal inverse');
         }
-        addTrack({ id: 'track-2', kind: 'audio', name: 'Destination', suppressAddedEvent: true });
+        addTrack({ id: 'track-2', kind: 'audio', name: 'Destination' });
         flushAutomergeStorageWrites();
         const result = await executeAppActionBatch(
             [
@@ -336,7 +336,6 @@ describe('committed clip restoration through Command and real peer sync', () => 
             kind: 'midi',
             name: 'MIDI',
             withoutDefaultDevice: true,
-            suppressAddedEvent: true,
         });
         addClip({ id: 'source', trackId: 'midi-track', type: 'midi', name: 'MIDI source', startBeat: 0, endBeat: 4 });
         addClip({ id: 'midi-peer', trackId: 'midi-track', type: 'midi', name: 'MIDI peer', startBeat: 8, endBeat: 12 });
@@ -797,6 +796,7 @@ describe('committed clip restoration through Command and real peer sync', () => 
                 getAutomationHandlers(),
                 getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
                 getMidiNoteTransformHandlers(),
+                getMidiGrooveHandlers(),
                 getProjectHandlers(),
                 getTransportHandlers(),
                 getYeastHandlers(),

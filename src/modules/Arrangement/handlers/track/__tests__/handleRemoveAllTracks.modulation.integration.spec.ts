@@ -36,7 +36,6 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 // The real removeTrack emits `track.removed` on the Arrangement bus; the bulk
 // handler runs it unsuppressed, so the harness must wire one.
 type ArrangementTrackEvents = {
-    'track.added': { trackId: string; name: string; kind: string };
     'track.removed': { trackId: string };
     'track.selectionChanged': { trackId: string | null; previousTrackId: string | null };
 };

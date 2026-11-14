@@ -4790,7 +4790,7 @@ describe('punch audio capture loop placement', () => {
             toggleRecording();
             await vi.waitFor(() => expect(hardware.rollStarts).toBe(1), { interval: 1 });
             hardware.now = 50.2;
-            let endingPromise: Promise<void> = Promise.resolve();
+            let endingPromise: Promise<void | boolean> = Promise.resolve();
             if (ending === 'stop') {
                 endingPromise = stopPlayback();
             } else if (ending === 'pause') {

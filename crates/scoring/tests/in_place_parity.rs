@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use scoring::ScoringInstance;
 
 const FRAMES: usize = 128;

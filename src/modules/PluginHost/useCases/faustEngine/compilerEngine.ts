@@ -10,6 +10,7 @@
 
 import { instantiateFaustModuleFromFile, FaustCompiler, LibFaust, type IFaustCompiler } from '@grame/faustwasm';
 
+import { installFaustCurrentSound } from '#/helpers/installFaustCurrentSound';
 import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -28,6 +29,7 @@ export async function getFaustCompiler(): Promise<IFaustCompiler> {
                 const module = await instantiateFaustModuleFromFile(faustPath);
                 const libFaust = new LibFaust(module);
                 const compiler = new FaustCompiler(libFaust);
+                installFaustCurrentSound(compiler);
                 compilerState.ready = true;
                 // A later attempt can succeed where an earlier one failed, and a
                 // stale error from the failed one would keep answering

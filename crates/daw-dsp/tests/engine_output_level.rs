@@ -40,6 +40,8 @@
 //! band width is the claim, and a band wide enough to admit any value asserts
 //! nothing.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 128;
 /// Blocks rendered before measurement starts, so DC blockers, parameter
@@ -480,8 +482,7 @@ fn crust_level() -> Level {
 fn proof_level() -> Level {
     use daw_dsp::proof::ProofInstance;
     let mut i = ProofInstance::new(SAMPLE_RATE);
-    i.set_param("limiter_ceiling", -1.0);
-    i.set_param("limiter_threshold", -12.0);
+    i.set_param("lim_ceiling", -1.0);
     let (lp, rp) = (i.get_input_left_ptr(), i.get_input_right_ptr());
     effect_level(
         &mut |o| unsafe { fill_input(lp, rp, BLOCK, o) },

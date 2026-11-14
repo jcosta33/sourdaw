@@ -6,11 +6,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import {
-    type TrackAddedPayload,
-    type TrackRemovedPayload,
-    type TrackSelectionChangedPayload,
-} from '#/modules/Arrangement/events';
+import { type TrackRemovedPayload, type TrackSelectionChangedPayload } from '#/modules/Arrangement/events';
 import {
     setNotificationEventBus,
     type NotifyPayload,
@@ -74,7 +70,6 @@ function providerResponse(finishReason: 'stop' | 'length' = 'stop'): Response {
 }
 
 type ArrangementEvents = {
-    'track.added': TrackAddedPayload;
     'track.removed': TrackRemovedPayload;
     'track.selectionChanged': TrackSelectionChangedPayload;
 };

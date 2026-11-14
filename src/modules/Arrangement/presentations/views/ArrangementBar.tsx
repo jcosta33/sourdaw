@@ -262,6 +262,17 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         setContextMenu({ kind: 'none' });
     };
 
+    const handleRehearseSection = (loop: boolean) => {
+        if (contextMenu.kind !== 'section') {
+            return;
+        }
+        void executeUserAppAction({
+            type: 'rehearseSection',
+            payload: { sectionId: contextMenu.section.id, loop },
+        });
+        setContextMenu({ kind: 'none' });
+    };
+
     const handleStartRename = () => {
         if (contextMenu.kind !== 'section') {
             return;
@@ -407,6 +418,9 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                     ) : null}
                     {contextMenu.kind === 'section' ? (
                         <>
+                            <DawMenuButton onClick={() => handleRehearseSection(false)}>Play Section</DawMenuButton>
+                            <DawMenuButton onClick={() => handleRehearseSection(true)}>Loop Section</DawMenuButton>
+                            <DawMenuSeparator className="mx-1 my-0.5 border-border/50" />
                             <DawMenuButton onClick={handleStartRename}>Rename</DawMenuButton>
                             <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
                             <Row align="stretch" gap={1} className="px-2 pb-1">

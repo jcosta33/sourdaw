@@ -8,7 +8,8 @@
         "noUncheckedIndexedAccess": false,
         "paths": {
             "#/*": ["./src/*"],
-            "/src/*": ["./src/*"]
+            "/src/*": ["./src/*"],
+            "virtual:sourdaw-basic-pitch-model": ["./src/modules/AudioAnalysis/repositories/basicPitchModel.d.ts"]
         }
     },
     "include": ["playwright.config.ts", "src/types/**/*.d.ts", "tests/e2e/**/*.ts", "tests/production-e2e/**/*.ts"]

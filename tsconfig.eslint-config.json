@@ -1,0 +1,9 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "allowJs": true,
+        "checkJs": true,
+        "types": ["node"]
+    },
+    "include": ["eslint.config.mjs", "eslint.size-baseline.mjs", "scripts/types/eslint-plugin-promise.d.ts"]
+}

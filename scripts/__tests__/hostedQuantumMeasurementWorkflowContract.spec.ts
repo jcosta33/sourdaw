@@ -364,7 +364,7 @@ describe('hosted quantum measurement workflow contract', () => {
     it('rejects structural authority and admission mutations', () => {
         const oldBootstrap = structuredClone(workflow);
         namedStep(oldBootstrap, 'Set up pnpm').uses = 'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86';
-        expect(() => assertHostedQuantumMeasurementWorkflow(oldBootstrap)).toThrow('verified JavaScript pnpm');
+        expect(() => assertHostedQuantumMeasurementWorkflow(oldBootstrap)).toThrow('verified native pnpm');
 
         const wrongHead = structuredClone(workflow);
         record(namedStep(wrongHead, 'Checkout source head').with).ref = '${{ github.sha }}';

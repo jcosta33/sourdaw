@@ -19,6 +19,8 @@
 //! parameter, compared sample for sample, and every claim of inertness is
 //! paired with a configuration where the same parameter moves the output.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::gluten::{sidechain::SidechainChain, GlutenInstance};
 
 const SAMPLE_RATE: f32 = 48_000.0;

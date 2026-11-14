@@ -6,9 +6,11 @@ import { createTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 const mocks = vi.hoisted(() => ({
-    execute: vi.fn<(action: unknown, options?: { signal?: AbortSignal; onCommitted?: () => void }) => Promise<void>>(),
+    execute:
+        vi.fn<(action: AppAction, options?: { signal?: AbortSignal; onCommitted?: () => void }) => Promise<void>>(),
     cancel: vi.fn(),
     notify: vi.fn(),
 }));
@@ -49,7 +51,12 @@ function makeBuffer(): AudioBuffer {
 describe('setElasticSensitivity', () => {
     beforeEach(() => {
         vi.useFakeTimers();
-        mocks.execute.mockReset().mockImplementation(async (_action, options) => {
+        mocks.execute.mockReset().mockImplementation(async (action, options) => {
+            if (action.type !== 'detectTransients') {
+                throw new Error('Expected a Detect command');
+            }
+            // The registered detector takes its invocation revision before acknowledging commit.
+            transientDetectionLifecycle.cancel(action.payload.clipId);
             options?.onCommitted?.();
         });
         mocks.cancel.mockReset().mockImplementation((clipId: string) => transientDetectionLifecycle.cancel(clipId));
@@ -446,7 +453,7 @@ describe('setElasticSensitivity', () => {
             await vi.advanceTimersByTimeAsync(150);
             await expect(request).resolves.toBeUndefined();
             expect(elasticAudioStore.value?.detected).toBe(outcome === 'current');
-            if (outcome === 'current') {
+            if (outcome === 'current' || outcome === 'stale' || outcome === 'successor') {
                 expect(mocks.notify).not.toHaveBeenCalled();
             } else {
                 expect(mocks.notify).toHaveBeenCalledExactlyOnceWith('Transient detection failed. Try again.', 'error');
@@ -454,15 +461,22 @@ describe('setElasticSensitivity', () => {
         }
     );
 
-    it('does not mark a resolved action without an actual commit as detected success', async () => {
-        select('clip-1');
-        mocks.execute.mockResolvedValueOnce(undefined);
-        const pending = setElasticSensitivity(0.8);
-        await vi.advanceTimersByTimeAsync(150);
-        await pending;
-        expect(elasticAudioStore.value?.detected).toBe(false);
-        expect(mocks.notify).toHaveBeenCalledTimes(1);
-    });
+    it.each(['unstarted', 'started'] as const)(
+        'rejects a current %s action without committed or unchanged acknowledgment',
+        async (admission) => {
+            select('clip-1');
+            mocks.execute.mockImplementationOnce(async () => {
+                if (admission === 'started') {
+                    transientDetectionLifecycle.cancel('clip-1');
+                }
+            });
+            const pending = setElasticSensitivity(0.8);
+            await vi.advanceTimersByTimeAsync(150);
+            await pending;
+            expect(elasticAudioStore.value?.detected).toBe(false);
+            expect(mocks.notify).toHaveBeenCalledExactlyOnceWith('Transient detection failed. Try again.', 'error');
+        }
+    );
 
     it('awaits the actual async command and settles an error without detected success', async () => {
         select('clip-1');

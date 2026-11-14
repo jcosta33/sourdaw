@@ -94,6 +94,7 @@ describe('legacy inverse replay admission before registration', () => {
             skipUndo: true,
             skipMacroRecording: true,
             undoEntryId: 'gain',
+            onCommitted: expect.any(Function),
         });
         expect(mocks.undoStoreValue.value).toEqual({ past: [], future: [entry] });
     });

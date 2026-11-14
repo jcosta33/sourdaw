@@ -4,7 +4,7 @@
  */
 import { type ReactElement, useState } from 'react';
 
-import { Search, Star, ChevronRight } from 'lucide-react';
+import { Search, Star, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -19,10 +19,11 @@ type SoundPreset = {
 };
 
 type PresetBrowserProps = {
-    currentName: string;
+    currentPresetId?: string | null;
     userPatches: Array<{ id: string; name: string }>;
     presets: SoundPreset[];
     onLoadPreset: (presetId: string) => void;
+    onStepPreset?: (presetId: string) => void;
 };
 
 const CATEGORIES = [
@@ -56,14 +57,32 @@ const TAGS = [
 ];
 
 export const PresetBrowser = ({
-    currentName,
+    currentPresetId = null,
     userPatches,
     presets,
     onLoadPreset,
+    onStepPreset,
 }: PresetBrowserProps): ReactElement => {
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('all');
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
+
+    function stepPreset(direction: -1 | 1): void {
+        if (!onStepPreset || filtered.length === 0) {
+            return;
+        }
+        const currentIndex = filtered.findIndex((preset) => preset.id === currentPresetId);
+        let nextIndex: number;
+        if (currentIndex < 0) {
+            nextIndex = direction === 1 ? 0 : filtered.length - 1;
+        } else {
+            nextIndex = (currentIndex + direction + filtered.length) % filtered.length;
+        }
+        const nextPreset = filtered[nextIndex];
+        if (nextPreset) {
+            onStepPreset(nextPreset.id);
+        }
+    }
 
     // React Compiler handles memoization automatically — no useMemo needed
     let filtered =
@@ -101,7 +120,7 @@ export const PresetBrowser = ({
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search presets…"
-                    className="w-full h-6 rounded border border-border/40 bg-surface-inset pl-7 pr-2 text-[9px] text-foreground outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70 focus:border-[var(--color-accent-lavender)]"
+                    className="w-full h-6 rounded border border-border/40 bg-surface-inset pl-7 pr-2 text-[length:var(--text-nano)] text-foreground outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70 focus:border-[var(--color-accent-lavender)]"
                 />
             </div>
             {/* Category pills */}
@@ -115,9 +134,12 @@ export const PresetBrowser = ({
                 {CATEGORIES.map((cat) => {
                     let pillStyle: React.CSSProperties | undefined = undefined;
                     if (category === cat.id && cat.color) {
-                        pillStyle = { backgroundColor: cat.color };
+                        pillStyle = { backgroundColor: cat.color, color: 'var(--color-surface-panel)' };
                     } else if (category === cat.id) {
-                        pillStyle = { backgroundColor: 'var(--color-accent-lavender)' };
+                        pillStyle = {
+                            backgroundColor: 'var(--color-accent-lavender)',
+                            color: 'var(--color-surface-panel)',
+                        };
                     }
 
                     return (
@@ -127,8 +149,10 @@ export const PresetBrowser = ({
                             key={cat.id}
                             type="button"
                             aria-pressed={category === cat.id}
-                            className={`shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${
-                                category === cat.id ? 'text-white' : 'text-muted-foreground/60 hover:text-foreground'
+                            className={`min-h-6 shrink-0 whitespace-nowrap rounded px-2 text-[length:var(--text-nano)] font-medium transition-colors ${
+                                category === cat.id
+                                    ? 'text-surface-panel'
+                                    : 'text-muted-foreground hover:text-foreground'
                             }`}
                             style={pillStyle}
                             onClick={() => {
@@ -136,7 +160,7 @@ export const PresetBrowser = ({
                                 setSelectedTag(null);
                             }}
                         >
-                            {cat.id === 'user' ? <Star className="size-2.5 inline mr-0.5" /> : null}
+                            {cat.id === 'user' ? <Star className="mr-0.5 inline size-2.5" /> : null}
                             {cat.label}
                         </Button>
                     );
@@ -156,10 +180,11 @@ export const PresetBrowser = ({
                                 size="bare"
                                 key={tag}
                                 type="button"
-                                className={`px-1 py-0 rounded text-[6px] transition-colors ${
+                                aria-pressed={selectedTag === tag}
+                                className={`min-h-6 min-w-6 rounded px-1.5 text-[length:var(--text-nano)] transition-colors ${
                                     selectedTag === tag
                                         ? 'bg-muted text-foreground'
-                                        : 'text-muted-foreground/40 hover:text-muted-foreground'
+                                        : 'text-muted-foreground hover:text-foreground'
                                 }`}
                                 onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
                             >
@@ -179,22 +204,46 @@ export const PresetBrowser = ({
                             size="bare"
                             key={preset.id}
                             type="button"
-                            className={`w-full flex items-center justify-between px-2 py-1 rounded text-left transition-all ${
-                                preset.name === currentName || preset.name === currentName.replace('Fermenter — ', '')
+                            className={`flex min-h-6 w-full items-center justify-between rounded px-2 text-left text-[length:var(--text-nano)] transition-all ${
+                                preset.id === currentPresetId
                                     ? 'bg-[var(--color-accent-lavender)]/15 text-foreground'
-                                    : 'hover:bg-surface-raised text-foreground/80'
+                                    : 'text-text-secondary hover:bg-surface-raised hover:text-foreground'
                             }`}
                             onClick={() => onLoadPreset(preset.id)}
                         >
-                            <span className="text-[9px] font-medium truncate">{preset.name}</span>
-                            <ChevronRight className="size-3 text-muted-foreground/30 shrink-0" />
+                            <span className="truncate font-medium">{preset.name}</span>
+                            <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
                         </Button>
                     ))
                 )}
             </div>
-            <div className="px-2 py-0.5 border-t border-border/20 shrink-0">
+            <Row justify="between" align="center" gap={1} className="px-2 py-1 border-t border-border/20 shrink-0">
                 <span className="text-[7px] text-muted-foreground/40">{filtered.length} presets</span>
-            </div>
+                {onStepPreset ? (
+                    <Row align="center" gap={0.5} shrink={false}>
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            type="button"
+                            aria-label="Previous preset"
+                            disabled={filtered.length === 0}
+                            onClick={() => stepPreset(-1)}
+                        >
+                            <ChevronLeft className="size-3" />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            type="button"
+                            aria-label="Next preset"
+                            disabled={filtered.length === 0}
+                            onClick={() => stepPreset(1)}
+                        >
+                            <ChevronRight className="size-3" />
+                        </Button>
+                    </Row>
+                ) : null}
+            </Row>
         </Stack>
     );
 };

@@ -8,7 +8,13 @@ import {
 import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { agentRunLifecycle } from '../../useCases/agentRunLifecycle';
-import { persistAgentRunState, readAgentRunState, sanitizeAgentRunState } from '../agentRunStore';
+import {
+    MAX_PLAN_APPLICATION_TOOL_RECEIPTS,
+    MAX_PLAN_CAPABILITIES,
+    persistAgentRunState,
+    readAgentRunState,
+    sanitizeAgentRunState,
+} from '../agentRunStore';
 import { selectAgentRunPendingEffectRecoveries } from '../selectAgentRunPendingEffectRecoveries';
 
 const grants = {
@@ -156,6 +162,60 @@ describe('agentRunStore', () => {
             expect(hydrated.runs[0]?.plan?.applicationToolReceipts).toEqual([receipt]);
             persistAgentRunState(hydrated);
             expect(readAgentRunState().runs[0]?.plan?.terminalMeasurementSettlement).toBe(expected);
+        });
+
+        function withPlan(patch: (plan: NonNullable<ReturnType<typeof recorded>['runs'][number]['plan']>) => object) {
+            const state = recorded({});
+            const run = state.runs[0];
+            if (run?.plan === null || run?.plan === undefined) {
+                throw new TypeError('Expected the recorded plan.');
+            }
+            return { ...state, runs: [{ ...run, plan: { ...run.plan, ...patch(run.plan) } }] };
+        }
+        const receipts = (count: number) =>
+            Array.from({ length: count }, (_, index) => ({
+                ...receipt,
+                callId: `goal-measure-${String(index)}`,
+                turn: 0,
+                origin: 'application-verification' as const,
+            }));
+        const capabilities = (count: number) =>
+            Array.from({ length: count }, (_, index) => ({
+                id: `analysis.measure-${String(index)}`,
+                source: 'application-tool-catalog' as const,
+                prerequisite: 'Application tool analysis.measure returned success.',
+                status: 'available' as const,
+            }));
+
+        // A vibe run's batch previews each append their receipts, and one capability per receipt, to its
+        // plan, so both lists outgrow the 256 every other collection keeps.
+        it.each([
+            {
+                label: 'verification receipts',
+                field: 'applicationToolReceipts',
+                bound: MAX_PLAN_APPLICATION_TOOL_RECEIPTS,
+                items: receipts,
+            },
+            { label: 'capabilities', field: 'capabilities', bound: MAX_PLAN_CAPABILITIES, items: capabilities },
+        ] as const)('round-trips a plan holding as many $label as its bound', ({ field, bound, items }) => {
+            expect(bound).toBeGreaterThan(256);
+            const state = sanitizeAgentRunState(withPlan(() => ({ [field]: items(bound) })));
+            expect(state.runs[0]?.plan?.[field]).toHaveLength(bound);
+            persistAgentRunState(state);
+            expect(readAgentRunState().runs[0]?.plan?.[field]).toEqual(items(bound));
+        });
+        it.each([
+            {
+                label: 'verification receipts',
+                field: 'applicationToolReceipts',
+                bound: MAX_PLAN_APPLICATION_TOOL_RECEIPTS,
+                items: receipts,
+            },
+            { label: 'capabilities', field: 'capabilities', bound: MAX_PLAN_CAPABILITIES, items: capabilities },
+        ] as const)('refuses a plan holding one more of its $label than its bound', ({ field, bound, items }) => {
+            const state = withPlan(() => ({ [field]: items(bound + 1) }));
+            expect(sanitizeAgentRunState(state).runs).toHaveLength(0);
+            expect(() => persistAgentRunState(state)).toThrow('outside the persistent schema bounds');
         });
     });
 

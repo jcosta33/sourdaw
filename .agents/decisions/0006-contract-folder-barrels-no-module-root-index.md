@@ -54,7 +54,7 @@ into private folders (`models/`, `repositories/`, `handlers/`, `engine/`,
 imports to the defining file, never the module's own contract barrels.
 
 This is enforced by `pnpm deps:validate` (`cross-module-index-only`,
-`module-index-contract-only`, `no-self-barrel-import`, and the
+`module-index-contract-only`, `no-internal-barrel-import`, and the
 not-to-unresolvable rule for the retired root form) plus tsgo.
 
 ## Non-goals
@@ -77,7 +77,7 @@ open decisions (persistence, dead surfaces, ownership) tracked in
 
 | Alternative | Why rejected |
 |---|---|
-| Add a module-root `index.ts` per module re-exporting the contract folders | Re-introduces exactly the legacy shape the Tier-1 migration removed; the `cross-module-index-only`/`no-self-barrel-import` rules forbid it, and importers already route through contract-folder barrels, so it adds a redundant surface for zero benefit. |
+| Add a module-root `index.ts` per module re-exporting the contract folders | Re-introduces exactly the legacy shape the Tier-1 migration removed; the `cross-module-index-only`/`no-internal-barrel-import` rules forbid it, and importers already route through contract-folder barrels, so it adds a redundant surface for zero benefit. |
 | Allow deep imports into private folders when "convenient" | Erases the public/private boundary the validator enforces and lets internal refactors break foreign modules. |
 | A single aggregated barrel per module (root only, no contract folders) | Collapses the four independently-importable surfaces into one, coupling consumers to unrelated parts of a module and defeating the type/reachability cruises. |
 

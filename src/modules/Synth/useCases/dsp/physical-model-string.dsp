@@ -1,4 +1,5 @@
 import("stdfaust.lib");
+cs = library("sourdaw-current-sound.lib");
 freq = hslider("freq", 440, 20, 12000, 0.01);
 gain = hslider("gain", 0.5, 0, 1, 0.01);
 gate = button("gate");
@@ -11,5 +12,5 @@ burst = no.noise * excitation * en.ar(0.0001, burst_len, gate);
 // Karplus-Strong: delay line with damped feedback
 delay_samples = ma.SR / freq;
 damp_coeff = 0.99 - damping * 0.15;
-ks_loop = + ~ (de.fdelay(4096, delay_samples - 1) : fi.lowpass(1, freq * (2 + body * 8)) : *(damp_coeff));
+ks_loop = + ~ (de.fdelay(4096, delay_samples - 1) : cs.lowpass(1, freq * (2 + body * 8)) : *(damp_coeff));
 process = burst : ks_loop * gain <: _, _;

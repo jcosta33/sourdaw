@@ -4,17 +4,15 @@ import { captureProjectIdentity, settlePendingProjectWritesAndCaptureRevision } 
 import {
     AGENT_RUN_TERMINAL_PHASES,
     type AgentRun,
+    type AgentRunBatch,
     type AgentRunBatchSchedule,
     type AgentRunBulkSetBatchSchedule,
     type AgentRunProviderProposal,
-    type AgentRunVibeRunBatchSchedule,
 } from '../../models/AgentRun';
 import { type IntentResult } from '../../models/IntentResult';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { appendChatMessage, updateChatMessage } from '../../stores/chatStore';
-import { pendingActionConfirmationStore } from '../../stores/pendingActionConfirmationStore';
 import { normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
-import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
@@ -25,15 +23,18 @@ import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { describeVibeBatchCard } from '../vibeRun/describeVibeBatchCard';
-import { type CommittedVibeBatch, describeVibeRunSummary } from '../vibeRun/describeVibeRunSummary';
 
 import { describeAppliedBatches } from './describeAppliedBatches';
+import { describeBatchPreviewProgress } from './describeBatchPreviewProgress';
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
 import { groundVibeRunBatch } from './groundVibeRunBatch';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';
 import { persistPromptActionConfirmation } from './persistPromptActionConfirmation';
+import { postVibeRunSummary } from './postVibeRunSummary';
 import { readBulkSetSliceEvidence } from './readBulkSetSliceEvidence';
+import { readSkippedVibeBatchPositions } from './readSkippedVibeBatchPositions';
 import { rebaseBulkSetSliceEvidence } from './rebaseBulkSetSliceEvidence';
+import { settleStoppedBatchPreparation } from './settleStoppedBatchPreparation';
 
 type ScheduledBatchOutcome =
     | { status: 'awaiting-approval' }
@@ -55,17 +56,26 @@ type GroundedScheduledBatch =
 type GroundedBatch = Extract<GroundedScheduledBatch, { status: 'grounded' }>;
 
 /**
+ * Whether the batch a schedule most recently proposed lets the next one follow: committed or a no-op
+ * for either kind, and on a vibe run also skipped, since its batches are grounded from the plan
+ * against the live project and none rebases on another. A bulk-set slice is never skipped.
+ */
+function letsNextBatchFollow(status: AgentRunBatch['status'] | undefined, schedule: AgentRunBatchSchedule): boolean {
+    return status === 'committed' || status === 'no-op' || (status === 'skipped' && schedule.kind === 'vibe-run');
+}
+
+/**
  * The next batch is owed only while the run is live, its schedule has a later position, and the
- * batch it most recently proposed has settled as committed or as a no-op. A failed, cancelled or
- * still-pending batch owes nothing further: its own settlement already told the user why.
+ * batch it most recently proposed has settled as committed, as a no-op or, on a vibe run, as
+ * skipped. A failed, cancelled or still-pending batch owes nothing further: its own settlement
+ * already told the user why.
  */
 function getOwedSchedule(run: AgentRun | null): AgentRunBatchSchedule | null {
     const schedule = run?.plan?.batchSchedule;
     if (!run || schedule === undefined || AGENT_RUN_TERMINAL_PHASES.has(run.phase)) {
         return null;
     }
-    const lastBatch = run.batches.at(-1);
-    const settled = lastBatch?.status === 'committed' || lastBatch?.status === 'no-op';
+    const settled = letsNextBatchFollow(run.batches.at(-1)?.status, schedule);
     return settled && schedule.position < schedule.total ? schedule : null;
 }
 
@@ -198,16 +208,31 @@ function groundScheduledSlice(
 
 type MaterializedBatch = Extract<ReturnType<typeof materializePromptCommandPlan>, { status: 'prepared' }>;
 
-function settleStoppedBatchPreparation(
-    assistantMessageId: string,
-    position: number,
-    total: number,
-    current: AgentRun | null
+/** The run keeps the batch's measured goal state and every receipt its preview read, after those of earlier batches. */
+function recordBatchPreviewEvidence(
+    liveRun: AgentRun,
+    revision: GroundedBatch['revision'],
+    metricGoalState: string | undefined,
+    receipts: Awaited<ReturnType<typeof prepareMetricGoalPreview>>['receipts']
 ): void {
-    const cancelled = current !== null && current.cancellation.requestedAt !== null;
-    updateChatMessage(assistantMessageId, {
-        pendingActionConfirmationStatus: cancelled ? 'cancelled' : undefined,
-        content: `${cancelled ? 'Cancelled' : 'Stopped'} preparation of batch ${String(position)} of ${String(total)}. ${describeAppliedBatches(position)}`,
+    if (!liveRun.plan) {
+        return;
+    }
+    const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
+    agentRunLifecycle.recordPlan({
+        runId: liveRun.runId,
+        summary: liveRun.plan.summary,
+        commandIds: liveRun.plan.commandIds,
+        serializedBatchIdentity: liveRun.plan.serializedBatchIdentity,
+        revision,
+        scope: liveRun.scope,
+        grants: liveRun.grants,
+        budgets: liveRun.budgets,
+        plan: {
+            ...liveRun.plan,
+            metricGoalState,
+            applicationToolReceipts: [...priorReceipts, ...receipts],
+        },
     });
 }
 
@@ -237,6 +262,8 @@ async function proposeMeasuredVibeBatch(input: {
         return { status: 'rejected', reason: 'its measured preview could not be prepared' };
     }
     let proof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
+    // Stop is offered only while the preview renders: it cancels the run, which ends this batch's measurement.
+    updateChatMessage(input.assistantMessageId, { stoppableRunId: run.runId });
     try {
         proof = await prepareMetricGoalPreview({
             state,
@@ -244,16 +271,30 @@ async function proposeMeasuredVibeBatch(input: {
             context: grounded.context,
             prompt: run.request,
             runId: run.runId,
+            onProgress: (progress) =>
+                updateChatMessage(input.assistantMessageId, {
+                    content: describeBatchPreviewProgress({
+                        context: grounded.context,
+                        position,
+                        total: schedule.total,
+                        progress,
+                    }),
+                }),
         });
     } catch (error) {
+        updateChatMessage(input.assistantMessageId, { stoppableRunId: undefined });
         const current = agentRunLifecycle.get(run.runId);
         if (current === null || AGENT_RUN_TERMINAL_PHASES.has(current.phase)) {
             settleStoppedBatchPreparation(input.assistantMessageId, position, schedule.total, current);
             return { status: 'stopped' };
         }
+        // The run goes on to refuse this batch in a message of its own; this one keeps no progress line.
+        settleStoppedBatchPreparation(input.assistantMessageId, position, schedule.total, current);
         agentRunLifecycle.updateBatchStatus({ runId: run.runId, batchId, status: 'failed' });
         return { status: 'rejected', reason: error instanceof Error ? error.message : String(error) };
     }
+    // Nothing renders past here, so there is no measurement left to stop.
+    updateChatMessage(input.assistantMessageId, { stoppableRunId: undefined });
     const liveRun = agentRunLifecycle.get(run.runId);
     if (liveRun === null || AGENT_RUN_TERMINAL_PHASES.has(liveRun.phase)) {
         settleStoppedBatchPreparation(input.assistantMessageId, position, schedule.total, liveRun);
@@ -264,24 +305,7 @@ async function proposeMeasuredVibeBatch(input: {
         requireExplicitApproval: true,
         metricGoalState: JSON.stringify(proof.state),
     });
-    if (liveRun?.plan) {
-        const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
-        agentRunLifecycle.recordPlan({
-            runId: liveRun.runId,
-            summary: liveRun.plan.summary,
-            commandIds: liveRun.plan.commandIds,
-            serializedBatchIdentity: liveRun.plan.serializedBatchIdentity,
-            revision: grounded.revision,
-            scope: liveRun.scope,
-            grants: liveRun.grants,
-            budgets: liveRun.budgets,
-            plan: {
-                ...liveRun.plan,
-                metricGoalState: approval.metricGoalState ?? undefined,
-                applicationToolReceipts: [...priorReceipts, ...proof.receipts],
-            },
-        });
-    }
+    recordBatchPreviewEvidence(liveRun, grounded.revision, approval.metricGoalState ?? undefined, proof.receipts);
     const evaluation = evaluateMetricGoalAdmission({ state: proof.state, commandBatch });
     const cardLines = describeVibeBatchCard({
         batch: input.batch,
@@ -451,71 +475,30 @@ function refuseScheduledBatch(run: AgentRun, schedule: AgentRunBatchSchedule, po
     appendChatMessage({
         id: `msg-${crypto.randomUUID()}`,
         role: 'assistant',
-        content: `Batch ${String(position)} of ${String(schedule.total)} was not proposed: ${reason.replace(/\.$/u, '')}. ${describeAppliedBatches(position)}`,
+        content: `Batch ${String(position)} of ${String(schedule.total)} was not proposed: ${reason.replace(/\.$/u, '')}. ${describeAppliedBatches(position, readSkippedVibeBatchPositions(agentRunLifecycle.get(run.runId)))}`,
         timestamp: Date.now(),
         error: reason,
         isCommandAction: true,
     });
-}
-
-/** Each committed batch of a finished vibe run, read from its executed card and the proof it was approved on. */
-function readCommittedVibeBatches(run: AgentRun, schedule: AgentRunVibeRunBatchSchedule): CommittedVibeBatch[] | null {
-    const plan = readScheduledVibeRunPlan(schedule.serializedPlan);
-    const confirmations = pendingActionConfirmationStore.value?.confirmations;
-    if (plan === null || confirmations === undefined) {
-        return null;
+    if (schedule.kind === 'vibe-run') {
+        postVibeRunSummary({ runId: run.runId, refused: { position, reason } });
     }
-    return confirmations
-        .filter(
-            (confirmation) =>
-                confirmation.runId === run.runId &&
-                confirmation.status === 'executed' &&
-                (confirmation.approvalSnapshot.batchPosition?.index ?? 0) > 1
-        )
-        .toSorted(
-            (left, right) =>
-                (left.approvalSnapshot.batchPosition?.index ?? 0) - (right.approvalSnapshot.batchPosition?.index ?? 0)
-        )
-        .flatMap((confirmation) => {
-            const position = confirmation.approvalSnapshot.batchPosition?.index ?? 0;
-            const batch = plan.batches[position - 2];
-            const commandBatch = confirmation.approvalSnapshot.commandBatch;
-            if (batch === undefined || commandBatch === undefined) {
-                return [];
-            }
-            const evaluation = evaluateMetricGoalAdmission({
-                state: metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState),
-                commandBatch,
-            });
-            return [{ position, batch, criteria: evaluation.criteria }];
-        });
 }
 
 /**
- * A vibe run whose last batch committed ends with one message: what each approved batch moved, as
- * its preview measured it. A run that stopped earlier already said which batches stayed applied.
+ * A vibe run whose last batch committed or was skipped ends with its one summary: what each batch
+ * moved, as its approved preview measured it, or what became of it instead.
  */
 function reportFinishedVibeRun(run: AgentRun | null): void {
     const schedule = run?.plan?.batchSchedule;
     if (!run || schedule?.kind !== 'vibe-run' || schedule.position < schedule.total) {
         return;
     }
-    if (run.batches.at(-1)?.status !== 'committed') {
+    const lastStatus = run.batches.at(-1)?.status;
+    if (lastStatus !== 'committed' && lastStatus !== 'skipped') {
         return;
     }
-    const batches = readCommittedVibeBatches(run, schedule);
-    if (batches === null) {
-        return;
-    }
-    appendChatMessage({
-        id: `msg-${crypto.randomUUID()}`,
-        role: 'assistant',
-        content: describeVibeRunSummary({ total: schedule.total, batches, context: getProjectContext() }),
-        timestamp: Date.now(),
-        isCommandAction: true,
-        agentRunId: run.runId,
-        projectId: captureProjectIdentity(),
-    });
+    postVibeRunSummary({ runId: run.runId });
 }
 
 /**

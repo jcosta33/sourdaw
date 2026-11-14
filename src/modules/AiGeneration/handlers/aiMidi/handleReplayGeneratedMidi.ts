@@ -1,4 +1,4 @@
-import { addClip, getTrackStoreState, restoreTrackAtIndexWithDeferredAddedEvent } from '#/modules/Arrangement/useCases';
+import { addClip, getTrackStoreState, restoreTrackAtIndex } from '#/modules/Arrangement/useCases';
 import { isValidMidiNoteSnapshot, setNotesForClip } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
@@ -171,22 +171,18 @@ export const handleReplayGeneratedMidi = createHandler<'replayGeneratedMidi'>({
         if (getTrackStoreState()?.tracks.some((track) => track.id === replayTrack.id) ?? true) {
             return { status: 'conflict' };
         }
-        const trackCreation = restoreTrackAtIndexWithDeferredAddedEvent({
+        const restoredTrack = restoreTrackAtIndex({
             trackJson: operation.trackJson,
             trackIndex: operation.trackIndex,
         });
-        if (!trackCreation || trackCreation.track.id !== replayTrack.id) {
+        if (!restoredTrack || restoredTrack.id !== replayTrack.id) {
             return { status: 'conflict' };
         }
         setNotesForClip(
             operation.clip.id,
             operation.notes.map((note) => ({ ...note }))
         );
-        return {
-            status: 'written',
-            afterCommit: trackCreation.afterCommit,
-            afterAmbiguousCommit: trackCreation.afterAmbiguousCommit,
-        };
+        return { status: 'written' };
     },
     describe: () => ({ label: 'Replay generated MIDI' }),
     previewExecution: 'isolated-project',

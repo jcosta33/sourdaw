@@ -55,6 +55,8 @@
 //! compute exceeds the budget" and "it misses the deadline" are different
 //! claims.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use std::time::Instant;
 
 use proof_chamber::ProofChamberInstance;

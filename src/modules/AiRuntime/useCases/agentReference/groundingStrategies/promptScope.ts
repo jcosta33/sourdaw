@@ -30,4 +30,10 @@ export type ActionPromptScope = PromptClause & {
         /** Whole resolved member spans relative to this scope's original text. */
         references: readonly { id: string; start: number; end: number }[];
     };
+    /**
+     * Set when `coordinatedTargets` came from a source-set reading of sends to one bus ("every vocal
+     * send to the Hall"): its members were resolved as a set, so each call's track is grounded by
+     * membership rather than by a reference of its own.
+     */
+    sendSet?: true;
 };

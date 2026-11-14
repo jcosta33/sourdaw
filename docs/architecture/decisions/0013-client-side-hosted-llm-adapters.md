@@ -2,7 +2,8 @@
 
 - Status: Partially superseded by ADR 0037
 
-> Historical scope: references to the retired native-local language-model route are superseded by ADR 0037. The hosted-provider decisions below remain accepted.
+> Historical scope: references to the retired native-local language-model route are superseded by ADR 0037, which also keeps automatic mode local; clause 9 states that rule. The hosted-provider decisions below remain accepted.
+
 - Date: 2026-07-27
 - Amended by: ADR 0035 for remote HTTPS OpenAI-compatible transport; loopback development remains browser-side.
 - Amended by: ADR 0036 for the provider-neutral ordered and bounded stream envelope.
@@ -35,7 +36,7 @@ Configuration follows these rules:
 6. Browser CORS or provider-policy failures are surfaced as failures; the app does not bypass browser security controls.
 7. Credential drafts are cleared when their provider or compatible endpoint changes, preventing a key from being sent to a different destination.
 8. UI consumers observe one AiRuntime-owned, non-secret provider-status projection; credentials and provider client objects never enter that store.
-9. Users can explicitly select WebLLM or hosted execution. Explicit selection is exclusive and never silently falls through to another provider; automatic mode prefers WebLLM before a configured hosted provider.
+9. Users can explicitly select WebLLM or hosted execution. Explicit selection is exclusive and never silently falls through to another provider. Automatic mode uses browser WebLLM only, fails closed when WebLLM is unavailable, and never routes a prompt to a hosted provider; remote execution requires the user's explicit selection of a hosted provider.
 10. Anthropic and OpenAI require credentials. OpenAI-compatible endpoints may be auth-free; in that case no `Authorization` header is sent.
 11. Tool planning rejects token-limited, refused, malformed, or otherwise incomplete provider envelopes before any proposed call reaches the action bridge.
 12. Credential removal or reconfiguration is a terminal cancellation, distinct from user Stop and ordinary provider failure.
@@ -45,9 +46,9 @@ Configuration follows these rules:
 16. Hosted credentials are shown as configured, not connected or ready; hosted readiness is established only by a successful provider request, never by configuration alone.
 17. Unavailable explicit selections report the missing capability or configuration instead of a generic GPU failure.
 18. UI surfaces own an abort signal for every hosted request and abort it on close or replacement so stale tokens cannot update a later run.
-20. Cancelled edit planning terminalizes its assistant message and restores the prior ready status only when it remains compatible with the selected backend.
-23. WebLLM initialization is attempt-owned. Only a live same-model attempt may be coalesced; superseded attempts cannot clear or overwrite a replacement attempt's worker, promise, engine, model, or status.
-24. Coalesced WebLLM callers own independent waits; one caller's abort cancels the shared initialization only when no live caller remains.
+19. Cancelled edit planning terminalizes its assistant message and restores the prior ready status only when it remains compatible with the selected backend.
+20. WebLLM initialization is attempt-owned. Only a live same-model attempt may be coalesced; superseded attempts cannot clear or overwrite a replacement attempt's worker, promise, engine, model, or status.
+21. Coalesced WebLLM callers own independent waits; one caller's abort cancels the shared initialization only when no live caller remains.
 
 The OpenAI-compatible adapter uses the widely implemented `/chat/completions` tool-calling contract in this phase. Provider-specific APIs such as OpenAI Responses may be admitted later behind the same repository capability boundary.
 

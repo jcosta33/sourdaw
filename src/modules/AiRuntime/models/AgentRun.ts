@@ -239,8 +239,17 @@ export type AgentRunDecisionResume = {
 export type AgentRunBatch = {
     batchId: string;
     commandIds: string[];
+    /** `skipped`: a vibe-run batch the user passed over at its card; it executed nothing and the run went on. */
     status:
-        'planned' | 'waiting-for-approval' | 'previewed' | 'executing' | 'committed' | 'no-op' | 'failed' | 'cancelled';
+        | 'planned'
+        | 'waiting-for-approval'
+        | 'previewed'
+        | 'executing'
+        | 'committed'
+        | 'no-op'
+        | 'skipped'
+        | 'failed'
+        | 'cancelled';
     receiptIdentity: string | null;
 };
 

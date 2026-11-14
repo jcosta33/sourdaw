@@ -6,6 +6,8 @@ import { type AppAction } from '#/utils/handlerContract';
 import { applyTrackGainAutomationRange } from '../../useCases/automation/applyTrackGainAutomationRange';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
+import { isLegacyRangeWriteSessionEntry } from './validateRangeWriteSessionEntries';
+
 type AutomateTrackGainRangeAction = Extract<AppAction, { type: 'automateTrackGainRange' }>;
 type MaterializedPayload = AutomateTrackGainRangeAction['payload'] & {
     sectionId: string;
@@ -104,5 +106,6 @@ export const handleAutomateTrackGainRange = createHandler<'automateTrackGainRang
             inverseAction: { type: 'removeTrackGainAutomationRange', payload },
         };
     },
+    validateSessionEntry: isLegacyRangeWriteSessionEntry,
     undoable: true,
 });

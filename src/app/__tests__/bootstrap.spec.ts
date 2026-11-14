@@ -599,6 +599,7 @@ vi.mock('#/modules/DawInterchange/useCases', () => ({
 vi.mock('#/modules/Fermenter/stores', () => ({ setFermenterTelemetry: noop }));
 
 vi.mock('#/modules/Fermenter/useCases', () => ({
+    getFermenterHandlers: sentinelHandlers('Fermenter'),
     setFermenterMappedParam: noop,
     setFermenterDependencies: noop,
 }));
@@ -735,7 +736,6 @@ vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
         initToasterSubscribers: noop,
         initToasterKitPersistence: noop,
         reconcileToasterKitsFromProject: noop,
-        setToasterEventBus: noop,
         setToasterGrooveAssignmentExecutor: toasterGrooveExecutorMock,
         prepareOfflineToaster: noop,
         captureOfflineToaster: vi.fn(() => {
@@ -961,6 +961,7 @@ describe('bootstrap', () => {
         'DawProject',
         'FinalFeature',
         'CvGate',
+        'Fermenter',
         'GrandBoule',
         'NodeView',
         'WebMidiInput',

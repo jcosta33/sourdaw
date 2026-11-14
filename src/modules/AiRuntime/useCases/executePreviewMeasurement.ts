@@ -1,10 +1,8 @@
-import { compareAgentScopeMeasurements, measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
 import { renderAgentPreviewMeasurementScope, retainAgentMeasurementRenders } from '#/modules/AudioRendering/useCases';
 import {
     previewVersionedCommandBatchEnvelope,
     type parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
-import { digest } from '#/utils/canonicalDigest';
 
 import { ANALYSIS_MEASURE_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { ANALYSIS_MEASURE_MAX_WARNING_LENGTH, ANALYSIS_MEASURE_MAX_WARNINGS } from '../models/AnalysisMeasureLimits';
@@ -23,23 +21,25 @@ import { type RetainedCommand, type RetainedCompilation } from '../models/Retain
 import { type ToolCallResult } from '../models/ToolCallResult';
 import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 
+import { artifactOf } from './artifactOf';
 import { beginMeasurementRun } from './beginMeasurementRun';
 import { compilePreviewMeasurementProposal } from './compilePreviewMeasurementProposal';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
-import { materializeTransformToolCalls } from './materializeTransformToolCalls';
+import { measuredPreviewRead } from './measuredPreviewRead';
+import { measurePreviewTarget, type RenderedPreviewTarget } from './measurePreviewTarget';
 import { type parseAnalysisMeasureArguments } from './parseAnalysisMeasureArguments';
+import { previewFailure } from './previewFailure';
+import { previewRefusalFailure, type PreviewMeasurementFailure } from './previewRefusalFailure';
 import { readMeasurementRenderedSeconds } from './readMeasurementRenderedSeconds';
 import { reduceMeasuredTargets } from './reduceMeasuredTargets';
 import { resolveAnalysisMeasureBeats } from './resolveAnalysisMeasureBeats';
 
 type ParsedArguments = Extract<ReturnType<typeof parseAnalysisMeasureArguments>, { status: 'valid' }>['value'];
 type PreviewRender = Awaited<ReturnType<typeof renderAgentPreviewMeasurementScope>>;
-type PreviewRefusal = Extract<PreviewRender, { status: 'refused' }>;
 type RenderedPreview = Extract<PreviewRender, { status: 'rendered' }>;
-type RenderedTarget = RenderedPreview['baseline']['targets'][number];
-type Failure = { code: string; safeMessage: string; retryable: boolean };
+type RenderedTarget = RenderedPreviewTarget;
 
-type ExecutePreviewMeasurementInput = {
+export type ExecutePreviewMeasurementInput = {
     call: ToolCallResult;
     callId: string;
     turn: number;
@@ -65,7 +65,7 @@ type ExecutePreviewMeasurementInput = {
     };
 };
 
-function failure(input: ExecutePreviewMeasurementInput, reason: Failure): AnalysisMeasureRead {
+function failure(input: ExecutePreviewMeasurementInput, reason: PreviewMeasurementFailure): AnalysisMeasureRead {
     const receipt: ApplicationToolReceipt = {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
@@ -80,104 +80,6 @@ function failure(input: ExecutePreviewMeasurementInput, reason: Failure): Analys
         error: reason,
     };
     return { receipt, commands: null, measuredPreview: null };
-}
-
-function refusalFailure(refusal: PreviewRefusal): Failure {
-    const { measurementMeasuredSeconds, measurementRenderedSeconds } = readAgentResourceLimits();
-    const target = refusal.targetId ?? 'master';
-    const device = refusal.deviceId ?? 'unknown';
-    const document = refusal.subject === 'preview' ? 'the preview' : 'the project';
-    const failures: Readonly<Record<PreviewRefusal['code'], Omit<Failure, 'code'>>> = {
-        'unknown-target': { safeMessage: `Target ${target} is not in ${document}.`, retryable: true },
-        'kind-mismatch': { safeMessage: `Target ${target} is not of the kind this scope names.`, retryable: true },
-        'muted-contributor': {
-            safeMessage: `Target ${target} cannot be measured in isolation: a muted contributor would be rendered unmuted.`,
-            retryable: false,
-        },
-        'disabled-contributor': {
-            safeMessage: `Target ${target} cannot be measured in isolation: a disabled contributor builds no live strip.`,
-            retryable: false,
-        },
-        'render-busy': { safeMessage: 'Another offline render is in progress.', retryable: true },
-        'stale-revision': {
-            safeMessage: 'The project changed while the preview was being measured; read it again before measuring.',
-            retryable: true,
-        },
-        'empty-render': { safeMessage: `The render of ${target} in ${document} holds no audio.`, retryable: false },
-        'render-failed': { safeMessage: `The render of ${target} in ${document} failed.`, retryable: false },
-        'range-exceeds-ceiling': {
-            safeMessage: `In ${document}, a measurement covers at most ${String(measurementMeasuredSeconds)} s and ends within ${String(measurementRenderedSeconds)} s of the project start.`,
-            retryable: true,
-        },
-        'unprojectable-device-state': {
-            safeMessage: `The preview cannot be rendered from its own data: device ${device} holds state the render would read from the live project.`,
-            retryable: false,
-        },
-        'unrenderable-preview-device': {
-            safeMessage: `The preview cannot be rendered: device ${device} has no loaded instance to render.`,
-            retryable: false,
-        },
-    };
-    return { code: refusal.code, ...failures[refusal.code] };
-}
-
-function previewFailure(status: 'no-op' | 'rejected' | 'conflicted' | 'failed', reason: string | undefined): Failure {
-    if (status === 'no-op') {
-        return {
-            code: 'preview-unavailable',
-            safeMessage: 'The proposal changes nothing to measure.',
-            retryable: true,
-        };
-    }
-    return {
-        code: 'preview-unavailable',
-        safeMessage: `The proposal could not be previewed: ${reason ?? status}`,
-        retryable: true,
-    };
-}
-
-function measureTarget(
-    baseline: RenderedTarget,
-    preview: RenderedTarget,
-    metrics: ParsedArguments['metrics']
-): MeasuredPreview['targets'][number] {
-    const analysisMetrics: ParsedArguments['metrics'] = [...new Set([...metrics, 'integratedLoudness' as const])];
-    const baselineAll = measureAgentScopeRender(baseline.buffer, analysisMetrics);
-    const previewAll = measureAgentScopeRender(preview.buffer, analysisMetrics);
-    const requested = (measurements: typeof baselineAll) =>
-        Object.fromEntries(
-            metrics.flatMap((metric) => {
-                const entry = measurements[metric];
-                return entry === undefined ? [] : [[metric, entry] as const];
-            })
-        );
-    const baselineMeasurements = requested(baselineAll);
-    const previewMeasurements = requested(previewAll);
-    const unavailable = { status: 'unavailable', reason: 'Integrated loudness is unavailable.' } as const;
-    return {
-        targetId: baseline.targetId,
-        targetKind: baseline.targetKind,
-        baseline: baselineMeasurements,
-        preview: previewMeasurements,
-        deltas: compareAgentScopeMeasurements({ baseline: baselineMeasurements, preview: previewMeasurements }),
-        audition: {
-            baseline: auditionRender(baseline),
-            preview: auditionRender(preview),
-            baselineIntegratedLoudness: baselineAll.integratedLoudness ?? unavailable,
-            previewIntegratedLoudness: previewAll.integratedLoudness ?? unavailable,
-        },
-    };
-}
-
-function auditionRender(target: RenderedTarget) {
-    return {
-        route: target.route,
-        artifact: { contentAddress: target.artifact.contentAddress },
-        sampleRate: target.buffer.sampleRate,
-        frameCount: target.buffer.length,
-        channelCount: target.buffer.numberOfChannels,
-        durationSeconds: target.buffer.duration,
-    };
 }
 
 /** Each baseline target beside the same target in the preview; `null` when the two documents rendered different targets. */
@@ -201,20 +103,6 @@ function boundedWarnings(rendered: RenderedPreview, retentionWarnings: readonly 
         .map((warning) => warning.slice(0, ANALYSIS_MEASURE_MAX_WARNING_LENGTH));
 }
 
-function artifactOf(target: RenderedTarget) {
-    return { route: target.route, artifact: target.artifact };
-}
-
-function measuredPreviewWithSource(
-    base: Omit<MeasuredPreview, 'recipeSource'>,
-    recipeSource: MeasuredPreview['recipeSource']
-): MeasuredPreview {
-    if (recipeSource === undefined) {
-        return base;
-    }
-    return { ...base, recipeSource };
-}
-
 function successRead(
     input: ExecutePreviewMeasurementInput,
     rendered: RenderedPreview,
@@ -228,83 +116,28 @@ function successRead(
         retentionWarnings: readonly string[];
     }
 ): AnalysisMeasureRead {
-    const { parsed } = input;
-    const { commands, batchContentHash, targets, retentionWarnings } = measured;
-    const { startBeat, endBeat, sectionId } = measured.beats;
-    const measuredPreview: MeasuredPreview = measuredPreviewWithSource(
-        {
-            provenance: {
-                origin: input.preview.origin ?? 'planner',
-                callId: input.callId,
-                turn: input.turn,
-                runId: input.preview.runId,
-                targets: pairs.map(([baseline, preview]) => ({
-                    targetId: baseline.targetId,
-                    baseline: artifactOf(baseline),
-                    preview: artifactOf(preview),
-                })),
-            },
-            scope: parsed.scope,
-            range: { startBeat, endBeat, sectionId },
-            targets,
-            batchContentHash,
-            revision: input.projectRevision,
-        },
-        measured.recipeSource
-    );
-    const measuredSummary = `Measured the proposal preview against the project for ${String(targets.length)} target(s) over beats ${String(startBeat)} to ${String(endBeat)}.`;
-    const data = {
-        kind: 'analysis-measurement',
-        schemaVersion: 1,
-        subject: 'preview',
-        scope: parsed.scope,
-        sourceRevisionDigest: digest(input.projectRevision),
-        range: {
-            startBeat,
-            endBeat,
-            sectionId,
-            baselineSeconds: rendered.baseline.rangeSeconds,
-            previewSeconds: rendered.preview.rangeSeconds,
-        },
-        metrics: parsed.metrics,
-        targets: targets.map((target, index) => ({
-            targetId: target.targetId,
-            targetKind: target.targetKind,
-            baseline: target.baseline,
-            preview: target.preview,
-            deltas: target.deltas,
-            baselineRender: artifactOf(pairs[index]![0]),
-            previewRender: artifactOf(pairs[index]![1]),
-        })),
-    };
-    const receipt: ApplicationToolReceipt = {
-        schema: 'sourdaw.application-tool-receipt',
-        schemaVersion: 1,
+    return measuredPreviewRead({
         callId: input.callId,
-        toolName: ANALYSIS_MEASURE_TOOL_NAME,
         turn: input.turn,
-        status: 'success',
-        revision: input.projectRevision,
-        data,
-        summary: measuredSummary,
-        warnings: boundedWarnings(rendered, retentionWarnings),
-        error: null,
-    };
-    if (input.preview.origin === 'approval-preview') {
-        // The card already holds the batch and no provider adopts it, so its proof is figures alone.
-        return { receipt, commands, measuredPreview };
-    }
-    const adoptable: ApplicationToolReceipt = {
-        ...receipt,
-        data: {
-            ...data,
-            commands: materializeTransformToolCalls([
-                { callId: input.callId, revision: input.projectRevision, commands },
-            ]),
-        },
-        summary: `${measuredSummary} Adopt exactly these commands with compiledCallIds ["${input.callId}"].`,
-    };
-    return { receipt: adoptable, commands, measuredPreview };
+        projectRevision: input.projectRevision,
+        origin: input.preview.origin ?? 'planner',
+        runId: input.preview.runId,
+        scope: input.parsed.scope,
+        metrics: input.parsed.metrics,
+        beats: measured.beats,
+        commands: measured.commands,
+        batchContentHash: measured.batchContentHash,
+        recipeSource: measured.recipeSource,
+        targets: measured.targets,
+        renders: pairs.map(([baseline, preview]) => ({
+            targetId: baseline.targetId,
+            baseline: artifactOf(baseline),
+            preview: artifactOf(preview),
+        })),
+        baselineSeconds: rendered.baseline.rangeSeconds,
+        previewSeconds: rendered.preview.rangeSeconds,
+        warnings: boundedWarnings(rendered, measured.retentionWarnings),
+    });
 }
 
 function sourceRecipe(input: ExecutePreviewMeasurementInput) {
@@ -414,7 +247,7 @@ async function renderAndReduce(
         return failure(input, describeMeasurementStop(run.stopReason() ?? 'cancelled'));
     }
     if (rendered.status === 'refused') {
-        return failure(input, refusalFailure(rendered));
+        return failure(input, previewRefusalFailure(rendered));
     }
     const pairs = pairTargets(rendered);
     if (pairs === null) {
@@ -427,7 +260,7 @@ async function renderAndReduce(
     const reduction = await reduceMeasuredTargets({
         targets: pairs,
         run,
-        reduce: ([baseline, previewTarget]) => measureTarget(baseline, previewTarget, input.parsed.metrics),
+        reduce: ([baseline, previewTarget]) => measurePreviewTarget(baseline, previewTarget, input.parsed.metrics),
     });
     if (reduction.status === 'stopped') {
         return failure(input, describeMeasurementStop(reduction.reason));

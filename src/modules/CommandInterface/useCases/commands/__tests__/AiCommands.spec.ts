@@ -8,6 +8,7 @@ import { aiCommands } from '../AiCommands';
 vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('../../selectionHelpers/getSelectedClipId', () => ({ getSelectedClipId: vi.fn() }));
+vi.mock('../../selectionHelpers/getSelectedClipIdOfType', () => ({ getSelectedClipIdOfType: vi.fn() }));
 
 const REQUIRE_MIDI_CLIP_IDS = [
     'generate-bassline',
@@ -18,19 +19,21 @@ const REQUIRE_MIDI_CLIP_IDS = [
 ];
 const SELECTED_CLIP_IDS = ['detect-tempo', 'detect-key', 'audio-to-midi', 'apply-groove'];
 
-function runAction(id: string): void {
+function runAction(id: string, onCommitted?: () => void): void {
     const command = aiCommands.find((entry) => entry.id === id);
     if (!command || typeof command.action !== 'function') {
         throw new Error(`Expected a callable action for ${id}`);
     }
-    command.action();
+    command.action(onCommitted);
 }
 
 describe('aiCommands', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
         const { getSelectedClipId } = await import('../../selectionHelpers/getSelectedClipId');
+        const { getSelectedClipIdOfType } = await import('../../selectionHelpers/getSelectedClipIdOfType');
         vi.mocked(getSelectedClipId).mockReturnValue('clip-1');
+        vi.mocked(getSelectedClipIdOfType).mockReturnValue('clip-1');
     });
 
     it('exposes the AI commands under the AI category', () => {
@@ -87,7 +90,7 @@ describe('aiCommands', () => {
         }
     });
 
-    it('dispatches the correct action for each MIDI-clip-required command when a clip is selected', () => {
+    it('dispatches the correct action and commit callback for each MIDI-clip-required command', () => {
         const requireMidiClipEntries = [
             {
                 id: 'generate-bassline',
@@ -104,16 +107,19 @@ describe('aiCommands', () => {
                 action: { type: 'variationMidi', payload: { clipId: 'clip-1', amount: 0.6 } },
             },
         ];
+        const onCommitted = vi.fn();
 
         for (const { id, action } of requireMidiClipEntries) {
-            runAction(id);
-            expect(executeUserAppAction).toHaveBeenCalledWith(action);
+            const command = aiCommands.find((entry) => entry.id === id);
+            expect(command?.getInapplicabilityReason?.()).toBeNull();
+            runAction(id, onCommitted);
+            expect(executeUserAppAction).toHaveBeenCalledWith(action, { onCommitted });
         }
     });
 
     it('notifies the user and dispatches nothing for MIDI-clip-required commands when no MIDI clip is selected', async () => {
-        const { getSelectedClipId } = await import('../../selectionHelpers/getSelectedClipId');
-        vi.mocked(getSelectedClipId).mockReturnValue(null);
+        const { getSelectedClipIdOfType } = await import('../../selectionHelpers/getSelectedClipIdOfType');
+        vi.mocked(getSelectedClipIdOfType).mockReturnValue(null);
 
         for (const id of REQUIRE_MIDI_CLIP_IDS) {
             runAction(id);
@@ -122,6 +128,19 @@ describe('aiCommands', () => {
         expect(executeUserAppAction).not.toHaveBeenCalled();
         expect(notifyUser).toHaveBeenCalledTimes(REQUIRE_MIDI_CLIP_IDS.length);
         expect(notifyUser).toHaveBeenCalledWith('Select a MIDI clip first', 'error');
+    });
+
+    it('blocks every MIDI-only AI command when the selected clip is audio', async () => {
+        const { getSelectedClipIdOfType } = await import('../../selectionHelpers/getSelectedClipIdOfType');
+        vi.mocked(getSelectedClipIdOfType).mockImplementation((type) => (type === 'audio' ? 'clip-1' : null));
+
+        for (const id of REQUIRE_MIDI_CLIP_IDS) {
+            const command = aiCommands.find((entry) => entry.id === id);
+            expect(command?.getInapplicabilityReason?.()).toBe('Select a MIDI clip first.');
+            runAction(id);
+        }
+
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('dispatches the correct action for each selected-clip command when a clip is selected', () => {

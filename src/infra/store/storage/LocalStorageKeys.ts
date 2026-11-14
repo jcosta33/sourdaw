@@ -105,6 +105,9 @@ export type LocalStorageKey =
     | 'sourdaw-recent-projects'
     | 'sourdaw:recent-projects'
 
+    // Stores this device's timeline and working-panel layout for one project
+    | `sourdaw:project-view:${string}`
+
     // Stores the last plugin scan result and the configured scan folders
     | 'sourdaw:plugin-scan'
 

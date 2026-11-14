@@ -17,6 +17,8 @@
 //! `grinderAudioParamContract.json` — the host is the side that ships it, and a
 //! copy here would be a fourth place to forget.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use daw_dsp::crust::oversample::normalize_factor;
 use daw_dsp::gluten::oversample::ConfigurableOversample;
 use serde::Deserialize;

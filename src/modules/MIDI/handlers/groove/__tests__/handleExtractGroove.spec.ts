@@ -91,13 +91,29 @@ describe('handleExtractGroove', () => {
 
     it('uses the canonical extracted identity for both inverse planning and execution', () => {
         const action = createAction('  extracted\uFF0Did  ');
+        const extracted = getExtractedTemplate();
 
         expect(handleExtractGroove.describe(action).inverseAction).toEqual({
             type: 'deleteGrooveTemplate',
-            payload: { templateId: 'extracted-id' },
+            payload: { templateId: 'extracted-id', expectedTemplate: extracted.template },
         });
         void handleExtractGroove.execute(action);
-        expect(grooveTemplateStore.value?.templates).toContainEqual(expect.objectContaining({ id: 'extracted-id' }));
+        expect(grooveTemplateStore.value?.templates).toContainEqual(extracted.template);
+    });
+
+    it('pins the template it will create and the notes it read when it describes the extraction', () => {
+        const action = createAction('extracted-id');
+        const extracted = getExtractedTemplate();
+
+        handleExtractGroove.describe(action);
+
+        expect(action.payload).toEqual({
+            ...createAction('extracted-id').payload,
+            proposal: extracted.template,
+            sourceRevision: extracted.sourceRevision,
+        });
+        mocks.notes = [{ id: 'note', startBeat: 0.04, velocity: 96 }];
+        expect(handleExtractGroove.execute(action)).toEqual({ status: 'conflict', reason: 'source-revision-mismatch' });
     });
 
     it('propagates typed extraction failure and marks Straight as a true no-write', () => {
@@ -129,18 +145,17 @@ describe('handleExtractGroove', () => {
 
         const conflicting = createAction('  existing-id  ');
         expect(handleExtractGroove.isNoop?.(conflicting)).toBe(false);
-        expect(() => handleExtractGroove.execute(conflicting)).toThrow(
-            expect.objectContaining({ code: 'template-identity-conflict', name: 'GrooveExtractionActionError' })
-        );
+        expect(handleExtractGroove.execute(conflicting)).toEqual({
+            status: 'conflict',
+            reason: 'template-identity-conflict',
+        });
     });
 
     it('rejects a displayed proposal when the source notes changed before commit', () => {
         const action = createProposalAction();
         mocks.notes = [{ id: 'note', startBeat: 0.04, velocity: 96 }];
 
-        expect(() => handleExtractGroove.execute(action)).toThrow(
-            expect.objectContaining({ code: 'source-revision-mismatch', name: 'GrooveExtractionActionError' })
-        );
+        expect(handleExtractGroove.execute(action)).toEqual({ status: 'conflict', reason: 'source-revision-mismatch' });
         expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
     });
 
@@ -148,9 +163,7 @@ describe('handleExtractGroove', () => {
         const action = createProposalAction();
         mocks.notes = [];
 
-        expect(() => handleExtractGroove.execute(action)).toThrow(
-            expect.objectContaining({ code: 'source-revision-mismatch', name: 'GrooveExtractionActionError' })
-        );
+        expect(handleExtractGroove.execute(action)).toEqual({ status: 'conflict', reason: 'source-revision-mismatch' });
         expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
     });
 
@@ -224,9 +237,7 @@ describe('handleExtractGroove', () => {
             },
         };
 
-        expect(() => handleExtractGroove.execute(action)).toThrow(
-            expect.objectContaining({ code: 'proposal-mismatch', name: 'GrooveExtractionActionError' })
-        );
+        expect(handleExtractGroove.execute(action)).toEqual({ status: 'conflict', reason: 'proposal-mismatch' });
         expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
     });
 
@@ -234,9 +245,7 @@ describe('handleExtractGroove', () => {
         const action = createProposalAction();
         mocks.notes = [{ id: 'note', startBeat: 0.02, velocity: 95 }];
 
-        expect(() => handleExtractGroove.execute(action)).toThrow(
-            expect.objectContaining({ code: 'source-revision-mismatch', name: 'GrooveExtractionActionError' })
-        );
+        expect(handleExtractGroove.execute(action)).toEqual({ status: 'conflict', reason: 'source-revision-mismatch' });
         expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
     });
 
@@ -252,7 +261,7 @@ describe('handleExtractGroove', () => {
 
         expect(handleExtractGroove.describe(action).inverseAction).toEqual({
             type: 'deleteGrooveTemplate',
-            payload: { templateId: 'collision-id' },
+            payload: { templateId: 'collision-id', expectedTemplate: action.payload.proposal },
         });
         expect(handleExtractGroove.execute(action)).toEqual({
             status: 'written',

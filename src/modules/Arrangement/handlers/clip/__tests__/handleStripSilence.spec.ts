@@ -130,6 +130,25 @@ describe('handleStripSilence', () => {
         expect(result).toEqual({ status: 'written' });
     });
 
+    it('never admits a strip as a compiled command without a complete plan', () => {
+        const action: Extract<AppAction, { type: 'stripSilence' }> = {
+            type: 'stripSilence',
+            payload: { clipId: 'c1' },
+        };
+        handleStripSilence.materializeCommandArguments?.(action);
+        const empty = { trackId: 't1', clips: [], clipOrder: [], clipSatellites: [], clipAutomationLanes: [] };
+
+        expect(action.payload).toEqual({ clipId: 'c1' });
+        expect(handleStripSilence.validateMaterializedCommandArguments?.(action.payload)).toBe(false);
+        expect(
+            handleStripSilence.validateMaterializedCommandArguments?.({
+                clipId: 'c1',
+                expected: empty,
+                replacement: empty,
+            })
+        ).toBe(false);
+    });
+
     it('is undoable', () => {
         expect(handleStripSilence.undoable).toBe(true);
         expect(handleStripSilence.requiresAbortCompensation).toBe(false);

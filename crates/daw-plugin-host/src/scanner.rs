@@ -661,10 +661,10 @@ pub fn scan_directory_bounded(
                     format,
                 }),
             }
-        } else if is_dir {
-            if !scan_directory_bounded(&entry_path, candidates, errors, notices, budget) {
-                return false;
-            }
+        } else if is_dir
+            && !scan_directory_bounded(&entry_path, candidates, errors, notices, budget)
+        {
+            return false;
         }
     }
     true
@@ -1582,12 +1582,12 @@ unsafe fn extract_instance_metadata_from_factory(
     }
     let plugin_id = CString::new(plugin_id)
         .map_err(|_| "CLAP descriptor id contains a null byte".to_string())?;
-    let mut host = create_host_descriptor();
+    let host = create_host_descriptor();
     let create_plugin = match factory.create_plugin {
         Some(create_plugin) => create_plugin,
         None => return Err("CLAP factory has no plugin creation callback".to_string()),
     };
-    let plugin = create_plugin(factory, &mut host, plugin_id.as_ptr());
+    let plugin = create_plugin(factory, &host, plugin_id.as_ptr());
     if plugin.is_null() {
         return Err("CLAP factory could not create a metadata instance".to_string());
     }

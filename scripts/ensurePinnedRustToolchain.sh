@@ -17,8 +17,8 @@ import re
 with open(sys.argv[1], 'rb') as file:
     toolchain = tomllib.load(file)['toolchain']
 channel = toolchain['channel']
-if not isinstance(channel, str) or not re.fullmatch(r'nightly-\d{4}-\d{2}-\d{2}', channel):
-    raise ValueError('rust-toolchain.toml needs a date-pinned nightly channel')
+if not isinstance(channel, str) or not re.fullmatch(r'[1-9][0-9]*\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)', channel):
+    raise ValueError('rust-toolchain.toml needs an exact stable release')
 profile = toolchain['profile']
 if not isinstance(profile, str) or profile not in ('minimal', 'default', 'complete'):
     raise ValueError('rust-toolchain.toml needs a rustup profile')
@@ -63,20 +63,26 @@ if [ -z "$host" ] || [ "$active" != "$pin-$host" ]; then
   exit 1
 fi
 
+release=$(printf '%s\n' "$compiler" | sed -n 's/^release: //p')
+if [ "$release" != "$pin" ]; then
+  printf 'restored Rust compiler release does not match pinned stable release %s: %s\n' "$pin" "$release" >&2
+  exit 1
+fi
+
 sysroot=$(rustup run "$active" rustc --print sysroot)
-python3 - "$sysroot/lib/rustlib/multirust-channel-manifest.toml" "${pin#nightly-}" <<'PY'
+python3 - "$sysroot/lib/rustlib/multirust-channel-manifest.toml" "$pin" <<'PY'
 import sys
 import tomllib
 
-manifest_path, expected_date = sys.argv[1:]
+manifest_path, expected_release = sys.argv[1:]
 try:
     with open(manifest_path, 'rb') as file:
-        actual_date = tomllib.load(file).get('date')
+        actual_version = tomllib.load(file).get('pkg', {}).get('rust', {}).get('version')
 except (OSError, tomllib.TOMLDecodeError) as error:
     raise SystemExit(f'cannot read restored Rust channel manifest: {error}')
-if actual_date != expected_date:
+if not isinstance(actual_version, str) or actual_version.split(' ', 1)[0] != expected_release:
     raise SystemExit(
-        f'restored Rust toolchain channel manifest does not match pinned nightly {expected_date}: {actual_date!r}'
+        f'restored Rust toolchain channel manifest does not match pinned stable release {expected_release}: {actual_version!r}'
     )
 PY
 

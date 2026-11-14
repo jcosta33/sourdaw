@@ -18,7 +18,7 @@ Domain events enable modules to communicate without direct dependencies:
 
 ```mermaid
 graph TB
-    A[Track Module] -->|TrackAddedEvent| B[Event Bus]
+    A[Track Module] -->|TrackRemovedEvent| B[Event Bus]
     B --> C[Mixer Module]
     B --> D[AudioEngine Module]
     B --> E[Timeline Module]
@@ -45,20 +45,19 @@ Events are plain typed payloads defined in the app's `AppEvents` map. Each event
 All event payloads are defined as plain types in module `events/` folders, then assembled into the central `AppEvents` map:
 
 ```typescript
-// Arrangement/events/TrackAddedEvent.ts
-export type TrackAddedPayload = { trackId: string; name: string; kind: string };
-
 // Arrangement/events/TrackRemovedEvent.ts
 export type TrackRemovedPayload = { trackId: string };
 
+// Arrangement/events/TrackSelectionChangedEvent.ts
+export type TrackSelectionChangedPayload = { trackId: string | null; previousTrackId: string | null };
+
 // app/registerDependencies.ts
 import { createEventBus } from '#/infra/events/createEventBus';
-import { type TrackAddedPayload } from '#/modules/Arrangement/events';
-import { type TrackRemovedPayload } from '#/modules/Arrangement/events';
+import { type TrackRemovedPayload, type TrackSelectionChangedPayload } from '#/modules/Arrangement/events';
 
 export type AppEvents = {
-    'track.added': TrackAddedPayload;
     'track.removed': TrackRemovedPayload;
+    'track.selectionChanged': TrackSelectionChangedPayload;
 };
 
 export const eventBus = createEventBus<AppEvents>();
@@ -70,7 +69,7 @@ Use `noun.pastTense` dot-separated string keys for lifecycle events (some domain
 
 ```typescript
 // ✅ Clear, descriptive names (all real keys)
-'track.added';
+'track.removed';
 'audioDevice.loaded';
 'yeast.notesOff';
 
@@ -87,27 +86,21 @@ Publish events from business operations, typically at the end of a use case afte
 #### Publishing from use cases
 
 ```typescript
-// Arrangement/useCases/addTrack.ts — inject the module event bus token
+// Arrangement/useCases/publishTrackRemoved.ts — inject the module event bus token
 import { inject } from '#/infra/di/inject';
+import { type TrackRemovedPayload } from '../events/TrackRemovedEvent';
 import { ArrangementEventBus } from './arrangementEventBus';
 
-export const addTrack = inject({ eventBus: ArrangementEventBus })(
+export const publishTrackRemoved = inject({ eventBus: ArrangementEventBus })(
     ({ eventBus }) =>
-        function addTrack(input: AddTrackInput): Track | null {
-            const state = getTrackState();
-            if (!state) {
-                return null;
-            }
-            const track = createTrack(input);
-            setTrackState({ ...state, tracks: [...state.tracks, track], selectedTrackId: track.id });
-            void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
-            return track;
+        function publishTrackRemoved(payload: TrackRemovedPayload): Promise<void> {
+            return eventBus.emit('track.removed', payload);
         }
 );
 ```
 
 > [!IMPORTANT]
-> `eventBus.emit()` returns `Promise<void>`. Prefix with `void` to satisfy `@typescript-eslint/no-floating-promises`.
+> `eventBus.emit()` returns `Promise<void>`. Return it, await it, or prefix it with `void` to satisfy `@typescript-eslint/no-floating-promises`.
 
 When publishing events, ensure the payload contains sufficient, immutable context so that subscribers can act on the event without needing to make additional API calls to fetch related data.
 
@@ -125,10 +118,10 @@ Subscribe to events from other domains. The `on()` method returns an unsubscribe
 import { eventBus } from '#/app/bootstrap';
 
 export function initMixerSubscribers(): () => void {
-    const unsubscribe = eventBus.on('track.added', (payload) => {
-        // payload is typed as TrackAddedPayload — no .payload wrapper
+    const unsubscribe = eventBus.on('track.removed', (payload) => {
+        // payload is typed as TrackRemovedPayload — no .payload wrapper
         const store = getMixerTracksStore();
-        store.update((current) => [...(current ?? []), payload]);
+        store.update((current) => (current ?? []).filter((track) => track.trackId !== payload.trackId));
     });
 
     return unsubscribe;
@@ -172,7 +165,10 @@ export const useFlagSubscription = (callback: () => void) => {
 // ✅ Good: useEffectEvent; bus from props / module wiring (not Container.getInstance())
 import { useEffect, useEffectEvent } from 'react';
 
-export const useFlagSubscription = (eventBus: { on: (type: string, cb: () => void) => () => void }, callback: () => void) => {
+export const useFlagSubscription = (
+    eventBus: { on: (type: string, cb: () => void) => () => void },
+    callback: () => void
+) => {
     const onFlagsFetched = useEffectEvent(callback);
 
     useEffect(() => {
@@ -200,7 +196,6 @@ import { eventBus } from '#/app/bootstrap';
 
 export function registerAiEventHandlers(): () => void {
     const unsubs = [
-        eventBus.on('track.added', syncAiTrackContext),
         eventBus.on('track.removed', removeAiTrackContext),
         eventBus.on('track.selectionChanged', handleSelectionChange),
         eventBus.on('audioDevice.loaded', analyzeNewDeviceParameters),
@@ -227,14 +222,14 @@ Test event handlers in isolation using `createEventBus()`:
 import { createEventBus } from '#/infra/events/createEventBus';
 
 describe('initMixerSubscribers', () => {
-    it('should update the mixer store when track.added fires', async () => {
+    it('should drop the mixer row when track.removed fires', async () => {
         const bus = createEventBus<AppEvents>();
         // wire up the subscriber against the test bus
         initMixerSubscribers(bus);
 
-        await bus.emit('track.added', { trackId: 'track-456', name: 'Bass', kind: 'audio' });
+        await bus.emit('track.removed', { trackId: 'track-456' });
 
-        expect(getMixerTracksStore().value).toContainEqual(expect.objectContaining({ trackId: 'track-456' }));
+        expect(getMixerTracksStore().value).not.toContainEqual(expect.objectContaining({ trackId: 'track-456' }));
     });
 });
 ```
@@ -244,19 +239,21 @@ describe('initMixerSubscribers', () => {
 Test event publishing from use cases using `recordEvents`:
 
 ```typescript
-// Track/useCases/__tests__/addTrack.spec.ts
+// Arrangement/useCases/__tests__/publishTrackRemoved.spec.ts
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { createEventBus } from '#/infra/events/createEventBus';
 import { recordEvents } from '#/infra/events/testing/recordEvents';
 
-describe('addTrack', () => {
-    it('should emit track.added after successful creation', async () => {
+describe('publishTrackRemoved', () => {
+    it('should emit track.removed with the removed track id', async () => {
         const bus = createEventBus<AppEvents>();
         const recorder = recordEvents(bus);
+        injectDependencies(publishTrackRemoved, { eventBus: bus });
 
-        addTrack({ name: 'Vocals', kind: 'audio' });
+        await publishTrackRemoved({ trackId: 'track-1' });
 
         expect(recorder.entries).toContainEqual(
-            expect.objectContaining({ event: 'track.added', payload: expect.objectContaining({ name: 'Vocals' }) })
+            expect.objectContaining({ event: 'track.removed', payload: { trackId: 'track-1' } })
         );
         recorder.stop();
     });

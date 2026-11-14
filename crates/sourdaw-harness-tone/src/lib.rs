@@ -7,6 +7,11 @@
 //! `#[no_mangle]` below. Everything it reaches is `pub(crate)` — nothing
 //! else in this crate is meant to be linked against directly.
 
+#![cfg_attr(
+    test,
+    allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
+)]
+
 mod audio_ports;
 mod descriptor;
 mod factory;

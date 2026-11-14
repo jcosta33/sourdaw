@@ -10,6 +10,8 @@
 //! variation from the oracle. The mechanical-noise golden keeps its captured
 //! absolute hash because that arithmetic has remained stable on every runner.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 mod primitives {
     pub use daw_dsp::primitives::*;
 }

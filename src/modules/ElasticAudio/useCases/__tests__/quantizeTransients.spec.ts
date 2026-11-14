@@ -38,7 +38,7 @@ import {
     resetCrdtProjectAuthority,
     setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getMidiGrooveHandlers, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import {
     defaultTransportState,
@@ -143,6 +143,7 @@ function hydrateProductionContracts(): void {
         getAutomationHandlers(),
         getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
         getMidiNoteTransformHandlers(),
+        getMidiGrooveHandlers(),
         getProjectHandlers(),
         getTransportHandlers(),
         getYeastHandlers(),

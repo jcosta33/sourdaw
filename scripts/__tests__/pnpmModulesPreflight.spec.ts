@@ -13,7 +13,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { Document, parseDocument } from 'yaml';
@@ -401,10 +401,12 @@ describe('pnpm modules preflight against a real filesystem', () => {
         if (enableGlobalVirtualStore !== undefined && typeof enableGlobalVirtualStore !== 'boolean') {
             throw new TypeError('enableGlobalVirtualStore must be a boolean');
         }
+        expect(enableGlobalVirtualStore).toBe(false);
+        const verifyDepsBeforeRun: unknown = workspace.get('verifyDepsBeforeRun');
+        expect(verifyDepsBeforeRun).toBe('error');
         const fixtureWorkspace = new Document({ packages: ['.'] });
-        if (enableGlobalVirtualStore !== undefined) {
-            fixtureWorkspace.set('enableGlobalVirtualStore', enableGlobalVirtualStore);
-        }
+        fixtureWorkspace.set('enableGlobalVirtualStore', enableGlobalVirtualStore);
+        fixtureWorkspace.set('verifyDepsBeforeRun', verifyDepsBeforeRun);
         writeFileSync(join(root, 'pnpm-workspace.yaml'), fixtureWorkspace.toString());
         writeFileSync(
             join(root, 'package.json'),
@@ -468,10 +470,16 @@ describe('pnpm modules preflight against a real filesystem', () => {
         expect(nodeModulesLinkTarget(root)).toBeUndefined();
         expect(realpathSync(join(root, 'node_modules/.pnpm'))).toBe(join(root, 'node_modules/.pnpm'));
         expect(() => assertCheckoutModulesBelongToCheckout(root)).not.toThrow();
-        expect(JSON.parse(readFileSync(join(root, 'node_modules', PNPM_WORKSPACE_STATE), 'utf8'))).toMatchObject({
-            settings: { enableGlobalVirtualStore: false },
-            projects: { [root]: {} },
-        });
+        expect(
+            workspaceStateProjectDirs(readFileSync(join(root, 'node_modules', PNPM_WORKSPACE_STATE), 'utf8'))
+        ).toEqual([root]);
+        const manifest = readFileSync(join(root, 'node_modules', PNPM_MODULES_MANIFEST), 'utf8');
+        const store = modulesManifestVirtualStoreDir(manifest);
+        expect(store).toBeDefined();
+        if (store === undefined) {
+            throw new Error('pnpm modules manifest must name its virtual store');
+        }
+        expect(realpathSync(resolve(root, 'node_modules', store))).toBe(join(root, 'node_modules/.pnpm'));
         // pnpm 11.28 re-stamps the validation time in the workspace state on every run. The stamp
         // is a freshness record, not an install, so only the facts the validation was made against
         // have to hold still: the projects, the settings and the file mtimes it recorded.

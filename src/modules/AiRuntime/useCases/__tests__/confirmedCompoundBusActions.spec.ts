@@ -14,12 +14,7 @@ import { captureCommandBatchPreflightState } from '#/app/captureCommandBatchPref
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import {
-    getArrangementHandlers,
-    projectTrackToLiveStrip,
-    runtimeGraphTopology,
-    setArrangementEventBus,
-} from '#/modules/Arrangement/useCases';
+import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import {
     audioEngine,
     configureRuntimeGraphProjectRevisionValidator,
@@ -219,10 +214,6 @@ function createCompoundActions(includeConflictingSend = false): ExecutableRuntim
         });
     }
     return actions;
-}
-
-function hasTrackId(payload: { trackId: string | null }): payload is { trackId: string } {
-    return typeof payload.trackId === 'string';
 }
 
 function createRepeatedMuteCompilerContext(): ProjectContext {
@@ -509,14 +500,7 @@ describe('confirmed compound bus actions', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
-        setArrangementEventBus({
-            emit: (event, payload) => {
-                if (event === 'track.added' && hasTrackId(payload)) {
-                    projectTrackToLiveStrip({ trackId: payload.trackId });
-                }
-                return Promise.resolve();
-            },
-        });
+        setArrangementEventBus({ emit: () => Promise.resolve() });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const vocals = createVocalsTrack();
         trackStore.set({ tracks: [vocals], selectedTrackId: vocals.id, ghostClips: [] });

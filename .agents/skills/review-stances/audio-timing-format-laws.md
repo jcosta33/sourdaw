@@ -39,6 +39,13 @@ input, state or mutation to run, and the check that must go red. Report the conc
    reopening; an output scrub proves nothing about recursive state. Reverting only the default, cap or fence
    must fail the named PCM case. When the claim is about the shipped carrier, read `wasm:verify` in the
    Types and contracts job on the head; the reviewer never regenerates WASM.
+   Proof benchmark escape (#974, retained by #1084; related level test #832): ignored parameter
+   names left real output sounding, with small default reduction. Require the actual committed-WASM
+   `buildDevices` Proof recipe's +6 dB input/-1 dB ceiling to produce finite stereo PCM and over
+   1 dB negative limiter GR after warmup and at the late window. Reverting valid controls must
+   fail `crates/daw-dsp/benches/wasm/__tests__/deviceRecipes.spec.ts`; a native default-level band
+   or historical timing figure does not establish this configured load. Review draw history was
+   unavailable, so do not invent model, tier or stance claims.
 4. **Format conformance by an independent decoder.** Compare real encoded output through the shipped decoder
    against the originating PCM at each bit depth, including container checksums and decoder warnings (FLAC Rice
    polarity per RFC 9639); reverting the grammar fix must fail the parity case.

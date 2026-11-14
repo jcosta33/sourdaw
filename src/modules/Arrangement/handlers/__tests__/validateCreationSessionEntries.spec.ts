@@ -6,13 +6,11 @@ const mocks = vi.hoisted(() => ({
     addClip: vi.fn<(input: { id?: string }) => unknown>(),
     addTrack: vi.fn<(input: { id?: string }) => unknown>(),
     getTrackStoreState: vi.fn<() => { tracks: { id: string }[] } | null>(() => ({ tracks: [] })),
-    publishTrackAdded: vi.fn(),
     serializeMidiStateForClips: vi.fn(() => '{"notesByClipId":{}}'),
 }));
 
 vi.mock('../../useCases/addTrack', () => ({ addTrack: mocks.addTrack }));
 vi.mock('../../useCases/getTrackStoreState', () => ({ getTrackStoreState: mocks.getTrackStoreState }));
-vi.mock('../../useCases/publishTrackAdded', () => ({ publishTrackAdded: mocks.publishTrackAdded }));
 vi.mock('../../useCases/clip/addClip', () => ({ addClip: mocks.addClip }));
 vi.mock('#/modules/MIDI/useCases', () => ({ serializeMidiStateForClips: mocks.serializeMidiStateForClips }));
 

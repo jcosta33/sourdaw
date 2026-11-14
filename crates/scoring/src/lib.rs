@@ -4,6 +4,11 @@
 //! multiple tuning systems. Analyzer plugin: audio passes through unchanged,
 //! pitch telemetry sent to UI via shared state.
 
+#![cfg_attr(
+    test,
+    allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
+)]
+
 pub mod mpm;
 pub mod poly;
 pub mod preprocess;

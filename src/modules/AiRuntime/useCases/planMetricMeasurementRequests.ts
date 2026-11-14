@@ -3,10 +3,43 @@ import { type ProjectContext } from '../models/ProjectContext';
 
 import { type MetricGoal } from './metricGoalContractTypes';
 
-type Range = NonNullable<MetricGoal['range']>;
-type Metric = NonNullable<MetricGoal['metricId']>;
-type Scope = { kind: 'master' } | { kind: 'tracks' | 'buses'; ids: string[] };
-type Request = { prefix: string; scope: Scope; range: Range; metrics: Metric[] };
+export type MeasurementRange = NonNullable<MetricGoal['range']>;
+export type MeasurementMetric = NonNullable<MetricGoal['metricId']>;
+export type MeasurementScope = { kind: 'master' } | { kind: 'tracks' | 'buses'; ids: string[] };
+/** One receipt's worth of reads: one prefix, scope and exact range, over these metrics. */
+export type MeasurementRequest = {
+    prefix: string;
+    scope: MeasurementScope;
+    range: MeasurementRange;
+    metrics: MeasurementMetric[];
+};
+type Range = MeasurementRange;
+type Metric = MeasurementMetric;
+type Scope = MeasurementScope;
+type Request = MeasurementRequest;
+
+/** One range a unit reduces, at one document (`null` for the live project alone), and the receipt it reports in. */
+export type MeasurementUnitRead = { prefix: string | null; range: Range; metrics: Metric[]; requestIndex: number };
+
+/** Ranges one render covers: its span fits each measurement's measured-seconds ceiling. */
+export type MeasurementRenderGroup = { startBeat: number; endBeat: number; ranges: Range[] };
+
+/**
+ * The work rendered together: each target of `scope` renders once per group in the live project
+ * and, for a preview, once per group in each prefix document read there; each read is one
+ * reduction per target, of that range's window. A project unit holds up to
+ * `ANALYSIS_MEASURE_MAX_TARGETS` targets read over the same ranges; a preview unit holds one target,
+ * so its live render serves every prefix and range it is read at while the buffers it holds stay
+ * those of one target.
+ */
+export type MeasurementUnit = {
+    subject: 'project' | 'preview';
+    scope: Scope;
+    /** Prefix documents a preview unit renders, in first-read order; empty for a project unit. */
+    prefixes: string[];
+    groups: MeasurementRenderGroup[];
+    reads: MeasurementUnitRead[];
+};
 
 function belongsToScope(targetId: string, kind: Scope['kind'], context: Pick<ProjectContext, 'tracks'>): boolean {
     if (targetId === 'master') {
@@ -19,7 +52,10 @@ function belongsToScope(targetId: string, kind: Scope['kind'], context: Pick<Pro
     return kind === 'tracks' && (track?.kind === 'audio' || track?.kind === 'midi');
 }
 
-/** Shared request matrix for actual preview execution and complete-run admission. */
+/**
+ * The receipts a measurement reports in: reads grouped by prefix, scope kind and exact range, at most
+ * `ANALYSIS_MEASURE_MAX_TARGETS` targets each. `planMetricMeasurementUnits` says how they render.
+ */
 export function planMetricMeasurementRequests(input: {
     reads: readonly { prefix: string; range: Range; metricId: Metric; targetIds: readonly string[] }[];
     context: Pick<ProjectContext, 'tracks'>;

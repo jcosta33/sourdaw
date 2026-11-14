@@ -1,11 +1,18 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY } from '../githubAppIdentity.ts';
+import {
+    TRUSTED_COMMON_DIR_ENV,
+    TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV,
+} from '../prContract.ts';
 import {
     assertLandedStackParent,
     assertStackAcyclic,
@@ -646,5 +653,88 @@ describe('ordinary merge stack synchronization', () => {
         git(f.root, 'commit', '-m', 'fix: resolve parent');
         expect(syncParentLane(f.saved(), f.port)).toBe(f.port.head());
         expect(f.saved().parentHead).toBe(next);
+    });
+});
+
+/**
+ * `lane:sync-parent` checks its own file against the commit the launcher pinned. The CLI runs in a
+ * child so the launcher binding reaches it through the environment exactly as the launcher passes it.
+ */
+describe('lane:sync-parent pinned-blob check', () => {
+    function pinnedCheckFixture(): { root: string; commit: string } {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-sync-parent-pin-')));
+        const git = (...args: string[]) =>
+            execFileSync('git', args, {
+                cwd: root,
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    GIT_CONFIG_GLOBAL: '/dev/null',
+                    GIT_CONFIG_NOSYSTEM: '1',
+                    GIT_AUTHOR_NAME: 'Fixture',
+                    GIT_AUTHOR_EMAIL: 'fixture@example.test',
+                    GIT_COMMITTER_NAME: 'Fixture',
+                    GIT_COMMITTER_EMAIL: 'fixture@example.test',
+                },
+            }).trim();
+        git('init', '-q', '-b', 'main');
+        git('commit', '-q', '--allow-empty', '-m', 'chore: base without the script');
+        return { root, commit: git('rev-parse', 'HEAD') };
+    }
+
+    function runPinned(root: string, originCommit: string) {
+        const gitPath = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
+        return spawnSync(
+            process.execPath,
+            [
+                '--input-type=module',
+                '--eval',
+                `import { runSyncParentCli } from ${JSON.stringify(join(import.meta.dirname, '..', 'syncParentLane.ts'))};
+                runSyncParentCli(['--lane', process.argv[1]]).then(
+                    (code) => process.exit(code),
+                    (error) => { console.error(error instanceof Error ? error.message : error); process.exit(1); }
+                );`,
+                root,
+            ],
+            {
+                cwd: root,
+                encoding: 'utf8',
+                env: {
+                    PATH: process.env.PATH,
+                    [TRUSTED_PRIMARY_ROOT_ENV]: root,
+                    [TRUSTED_COMMON_DIR_ENV]: join(root, '.git'),
+                    [TRUSTED_GIT_PATH_ENV]: gitPath,
+                    [TRUSTED_GH_PATH_ENV]: '/usr/bin/false',
+                    [TRUSTED_ORIGIN_COMMIT_ENV]: originCommit,
+                },
+            }
+        );
+    }
+
+    it('refuses when the pinned commit holds no blob for the script', () => {
+        const f = pinnedCheckFixture();
+        try {
+            const result = runPinned(f.root, f.commit);
+
+            expect(result.status).toBe(1);
+            expect(result.stderr.trim()).toBe(
+                'scripts/syncParentLane.ts has no blob on origin/main; refusing to run an unverifiable copy'
+            );
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses when the pinned commit cannot be read rather than treating it as a missing file', () => {
+        const f = pinnedCheckFixture();
+        try {
+            const result = runPinned(f.root, 'e'.repeat(40));
+
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('failed with exit 1');
+            expect(result.stderr).not.toContain('--lane must name');
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
     });
 });

@@ -24,6 +24,8 @@
 //!   and compared against the documented defaults written explicitly, so a
 //!   constructor drifting away from `NativeDspDescriptors.ts` is visible.
 
+#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+
 use proof_chamber::ProofChamberInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;

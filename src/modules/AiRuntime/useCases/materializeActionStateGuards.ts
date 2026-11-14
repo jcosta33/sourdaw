@@ -1,6 +1,6 @@
 import { nextDefaultTrackName, resolveMusicalRange } from '#/modules/Arrangement/useCases';
 import { getNotesForClip, projectDrumPreviewCandidateNotes } from '#/modules/MIDI/useCases';
-import { getBarStartBeat } from '#/modules/Transport/useCases';
+import { getBarAtBeat, getBarStartBeat } from '#/modules/Transport/useCases';
 import { FADER_MAX_GAIN, resolveSendLevelFields, SEND_LEVEL_LAW, toLevelDb } from '#/utils/audioLevelLaw';
 import { normalizeDeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { type AppAction } from '#/utils/handlerContract';
@@ -51,6 +51,7 @@ function materializeParameterRange(
         markers: context.markers ?? [],
         tracks: context.tracks,
         barStartBeat: getBarStartBeat,
+        barAtBeat: getBarAtBeat,
     });
     if (resolution.kind === 'ambiguous-section') {
         return { status: 'rejected', reason: resolution.reason, questions: askWhichSection(resolution) };

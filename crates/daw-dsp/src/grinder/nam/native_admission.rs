@@ -103,7 +103,7 @@ impl NativeNamLease {
 }
 pub fn next_native_nam_request() -> Result<u64, String> {
     NEXT_REQUEST
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_add(1))
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_add(1))
         .map_err(|_| refuse("request identity exhausted"))
 }
 pub struct NativeNamTransaction;

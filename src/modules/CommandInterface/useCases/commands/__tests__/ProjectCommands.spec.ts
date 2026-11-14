@@ -28,7 +28,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     },
     newProject: vi.fn().mockResolvedValue(true),
     pickAndImportProjectFile: vi.fn().mockResolvedValue(true),
-    saveProject: vi.fn(),
+    saveProject: vi.fn().mockResolvedValue(true),
     saveProjectBeforeReplacement: vi.fn(),
 }));
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({ openExportDialog: vi.fn(), toggleBranchManager: vi.fn() }));

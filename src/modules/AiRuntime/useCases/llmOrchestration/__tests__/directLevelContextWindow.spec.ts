@@ -33,7 +33,7 @@ vi.mock('../../../repositories/webLlm/generateWebLlmCompletion', () => ({
 vi.mock('../../../repositories/webLlm/toolCalling', () => ({ generateWebLlmToolCalls: mocks.toolCalls }));
 
 describe('direct level context window', () => {
-    it('fits actual VCA and metronome context with a full thread and 37 advertised tools', async () => {
+    it('fits actual VCA and metronome context with a full thread and 35 advertised tools', async () => {
         const prompt = 'make the chorus wider and tame the harshness on the lead vocal';
         const base = createPlanningProject(getProjectContext(), 5);
         const groupId = `vca-${fixtureUuid('direct-level-window')}`;
@@ -95,7 +95,9 @@ describe('direct level context window', () => {
             built.localMessage
         );
         expect(outcome).toMatchObject({ status: 'complete' });
-        expect(mocks.toolCalls.mock.calls[0]?.[2]).toHaveLength(WEBLLM_TOOL_BUDGET);
+        // Every mandatory tool plus the one prompt-selected slot, inside the budget.
+        expect(mocks.toolCalls.mock.calls[0]?.[2]).toHaveLength(35);
+        expect(mocks.toolCalls.mock.calls[0]?.[2]?.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
         const [systemText, userText] = mocks.completion.mock.calls[0] ?? [];
         if (typeof systemText !== 'string' || typeof userText !== 'string') {
             throw new TypeError('Expected the local request to reach the engine.');

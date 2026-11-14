@@ -3,7 +3,7 @@
 //! Supports: low-pass, high-pass, band-pass, notch, formant, comb.
 //! Stable under audio-rate modulation.
 
-use crate::primitives::flush_denormal;
+use crate::primitives::{flush_denormal, pole_from_ms};
 use std::f32::consts::PI;
 
 /// Filter mode selector.
@@ -80,7 +80,7 @@ impl SvfFilter {
         if ms <= 0.0 {
             1.0
         } else {
-            (-1.0 / (ms * 0.001 * sample_rate)).exp()
+            pole_from_ms(ms, sample_rate)
         }
     }
 
@@ -186,5 +186,23 @@ impl SvfFilter {
         self.env_level = 0.0;
         self.comb_buffer.fill(0.0);
         self.comb_write_pos = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SvfFilter;
+
+    /// The filter envelope freezes at zero and negative times: a coefficient of
+    /// 1.0 holds `env_level` where it is. Pinned as found, not endorsed — the
+    /// other millisecond followers in this crate go instant at 0 ms instead.
+    #[test]
+    fn filter_envelope_time_at_or_below_zero_is_a_coefficient_of_one() {
+        assert_eq!(SvfFilter::time_to_coeff(0.0, 48_000.0), 1.0);
+        assert_eq!(SvfFilter::time_to_coeff(-1.0, 48_000.0), 1.0);
+        assert_eq!(
+            SvfFilter::time_to_coeff(5.0, 48_000.0).to_bits(),
+            0x3f7e_ef80
+        );
     }
 }

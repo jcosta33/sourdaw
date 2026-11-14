@@ -3,12 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
     addTrack: vi.fn(),
     getTrackStoreState: vi.fn<() => { tracks: { id: string; name?: string; kind?: string }[] } | null>(),
-    publishTrackAdded: vi.fn(),
 }));
 
 vi.mock('../../../useCases/addTrack', () => ({ addTrack: mocks.addTrack }));
 vi.mock('../../../useCases/getTrackStoreState', () => ({ getTrackStoreState: mocks.getTrackStoreState }));
-vi.mock('../../../useCases/publishTrackAdded', () => ({ publishTrackAdded: mocks.publishTrackAdded }));
 
 import { handleAddTrack } from '../handleAddTrack';
 
@@ -22,7 +20,7 @@ describe('handleAddTrack', () => {
         expect(handleAddTrack.undoable).toBe(true);
     });
 
-    it('honors an app-owned selection policy and publishes only after commit', async () => {
+    it('honors an app-owned selection policy and finalizes the discard guard', async () => {
         const action: Parameters<typeof handleAddTrack.describe>[0] = {
             type: 'addTrack',
             payload: { name: 'Bass', kind: 'audio', select: false },
@@ -37,6 +35,7 @@ describe('handleAddTrack', () => {
 
         const result = await handleAddTrack.execute(action);
 
+        expect(result).toEqual({ status: 'written' });
         // Execute finalizes the guard embedded in the inverse: an
         // unfinalized entityJson would make undo of addTrack conflict-fail
         // against isGeneratedMidiStateCurrent.
@@ -54,18 +53,8 @@ describe('handleAddTrack', () => {
             select: false,
             color: action.payload.color,
             initialAlternativeId: action.payload.initialAlternativeId,
-            suppressAddedEvent: true,
         });
         expect(trackId).toMatch(/^track-ai-/);
-        expect(mocks.publishTrackAdded).not.toHaveBeenCalled();
-
-        await result?.afterCommit?.();
-
-        expect(mocks.publishTrackAdded).toHaveBeenCalledWith({
-            trackId,
-            name: 'Bass',
-            kind: 'audio',
-        });
     });
 
     it('preserves the default selection behavior for ordinary commands', async () => {
@@ -88,7 +77,6 @@ describe('handleAddTrack', () => {
             kind: 'audio',
             color: action.payload.color,
             initialAlternativeId: action.payload.initialAlternativeId,
-            suppressAddedEvent: true,
         });
     });
 
@@ -131,26 +119,6 @@ describe('handleAddTrack', () => {
         expect(explicit.payload.color).toBe('#123456');
         expect(explicit.payload.initialAlternativeId).toBe('alt-explicit');
         expect(explicit.payload.initialDeviceId).toBeUndefined();
-    });
-
-    it('publishes only a track found in durable truth after an ambiguous commit', async () => {
-        const action = {
-            type: 'addTrack',
-            payload: { id: 'created', name: 'Requested', kind: 'audio' },
-        } as const;
-        mocks.addTrack.mockReturnValue({ id: 'created', name: 'Requested', kind: 'audio' });
-        const result = await handleAddTrack.execute(action);
-        mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 'created', name: 'Committed', kind: 'audio' }],
-        });
-
-        await result?.afterAmbiguousCommit?.();
-
-        expect(mocks.publishTrackAdded).toHaveBeenCalledWith({
-            trackId: 'created',
-            name: 'Committed',
-            kind: 'audio',
-        });
     });
 
     it('describes an inverse that removes the exact created track', () => {

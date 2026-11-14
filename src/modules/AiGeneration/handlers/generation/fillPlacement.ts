@@ -1,10 +1,5 @@
 import { type Track } from '#/modules/Arrangement/stores';
-import {
-    addClip,
-    addTrackWithDeferredAddedEvent,
-    getTrackStoreState,
-    selectClipWithFocus,
-} from '#/modules/Arrangement/useCases';
+import { addClip, addTrack, getTrackStoreState, selectClipWithFocus } from '#/modules/Arrangement/useCases';
 import { batchAddMidiNotes, setNotesForClip } from '#/modules/MIDI/useCases';
 import {
     type GeneratedMidiStateGuard,
@@ -193,19 +188,19 @@ export function executeFillPlacement(input: {
         return { status: 'conflict' };
     }
 
-    let trackCreation: ReturnType<typeof addTrackWithDeferredAddedEvent> = null;
+    let createdTrack: Track | null = null;
     let trackName: string;
     if (state.trackCreationInput) {
         if (getTrackStoreState()?.tracks.some((track) => track.id === state.trackId)) {
             notifyUser('Cannot place the fill: a track with the planned id already exists', 'error');
             return { status: 'no-write' };
         }
-        trackCreation = addTrackWithDeferredAddedEvent(state.trackCreationInput);
-        if (!trackCreation) {
+        createdTrack = addTrack(state.trackCreationInput);
+        if (!createdTrack) {
             notifyUser('Cannot place the fill: track creation failed', 'error');
             return { status: 'no-write' };
         }
-        trackName = trackCreation.track.name;
+        trackName = createdTrack.name;
     } else {
         const target = getTrackStoreState()?.tracks.find((track) => track.id === state.trackId);
         if (!target || target.kind !== 'midi') {
@@ -234,7 +229,7 @@ export function executeFillPlacement(input: {
         const guardedTrack = getTrackStoreState()?.tracks.find((track) => track.id === state.trackId);
         populateGeneratedMidiStateGuard({
             guard: state.trackInverse.generatedMidiStateGuard,
-            entity: guardedTrack ?? { ...trackCreation!.track, clips: [placedClip] },
+            entity: guardedTrack ?? { ...createdTrack!, clips: [placedClip] },
             clipIds: [placedClip.id],
         });
     } else {
@@ -257,13 +252,5 @@ export function executeFillPlacement(input: {
         'success'
     );
 
-    if (!trackCreation) {
-        return { status: 'written' };
-    }
-    const createdTrack = trackCreation;
-    return {
-        status: 'written',
-        afterCommit: () => void createdTrack.afterCommit(),
-        afterAmbiguousCommit: () => createdTrack.afterAmbiguousCommit(),
-    };
+    return { status: 'written' };
 }

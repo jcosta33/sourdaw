@@ -25,7 +25,7 @@ type BridgeBackingVocalPlatePlanResult =
           nativeLiteralUses: WorkflowNativeLiteralUse[];
       };
 
-const EX_01_ONLY_TOOL_NAMES = new Set(['automateSendRanges', 'renderProjectSections']);
+const EX_01_ONLY_TOOL_NAMES = new Set(['renderProjectSections']);
 
 function valuesEqual(left: unknown, right: unknown): boolean {
     if (Object.is(left, right)) {
@@ -143,16 +143,18 @@ export function bridgeBackingVocalPlatePlan({
                 expectedAbsent: true as const,
             },
         })),
-        {
-            type: 'automateSendRanges',
-            payload: {
-                trackIds,
-                busId,
-                sectionIds,
-                tailBars: values.automationTailBars,
-                targetLevelDb: values.automationTargetLevelDb,
-            },
-        },
+        ...trackIds.flatMap((trackId) =>
+            scope.capability.chorusSections.map((section) => ({
+                type: 'automateParameterRange' as const,
+                payload: {
+                    trackId,
+                    parameterId: `send:${busId}`,
+                    range: { startBeat: section.automationStartBeat, endBeat: section.endBeat },
+                    valueDb: values.automationTargetLevelDb,
+                    rampIn: section.endBeat - section.automationStartBeat,
+                },
+            }))
+        ),
         { type: 'renderProjectSections', payload: { sectionIds } },
     ];
     return {

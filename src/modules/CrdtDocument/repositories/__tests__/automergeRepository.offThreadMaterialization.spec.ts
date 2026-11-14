@@ -64,6 +64,7 @@ vi.mock('@automerge/automerge', async (importOriginal) => {
         clone: vi.fn(actual.clone),
         free: vi.fn(actual.free),
         load: vi.fn(actual.load),
+        prepareLoad: vi.fn(actual.prepareLoad),
         decodeChange: vi.fn(actual.decodeChange),
         getChanges: vi.fn(actual.getChanges),
         applyChanges: vi.fn(actual.applyChanges),
@@ -391,10 +392,11 @@ describe('repository canonical Worker candidate adoption', () => {
             }
             mocks.request.mockResolvedValueOnce({ bytes, heads: queuedHeads });
             const prepared = plan(original);
-            await prepared.requestMaterialization!(new AbortController().signal);
-            vi.mocked(native.load).mockClear();
-            expect(prepared.materialize).toThrow('invalid document length');
-            expect(native.load).not.toHaveBeenCalled();
+            vi.mocked(native.prepareLoad).mockClear();
+            await expect(prepared.requestMaterialization!(new AbortController().signal)).rejects.toThrow(
+                'invalid document length'
+            );
+            expect(native.prepareLoad).not.toHaveBeenCalled();
             prepared.discard();
             expect(repository.getDoc('root')).toBe(original);
             const fresh = plan(original);
@@ -561,18 +563,26 @@ describe('repository canonical Worker candidate adoption', () => {
         expect(decodeChange(last)).toMatchObject({ actor, seq: 3, deps: getHeads(actual) });
     });
 
-    it('materializes through one checked load and native metadata without full decode or incremental apply', async () => {
+    it('parses privately before separately materializing with native metadata and no incremental apply', async () => {
         const original = seed();
         expect(getAuthor(original)).toBeUndefined();
         const prepared = plan(original);
+        vi.mocked(native.prepareLoad).mockClear();
         await prepared.requestMaterialization!(new AbortController().signal);
+        expect(native.prepareLoad).toHaveBeenCalledExactlyOnceWith(expect.any(Uint8Array), { actor });
+        const pending = vi.mocked(native.prepareLoad).mock.results.at(-1)?.value;
+        if (!pending) {
+            throw new Error('Expected private parsed load');
+        }
+        const materialize = vi.spyOn(pending, 'materialize');
+        expect(materialize).not.toHaveBeenCalled();
         vi.mocked(native.load).mockClear();
         vi.mocked(native.decodeChange).mockClear();
         vi.mocked(native.getChanges).mockClear();
         vi.mocked(native.applyChanges).mockClear();
         const candidate = prepared.materialize();
-        expect(native.load).toHaveBeenCalledTimes(1);
-        expect(native.load).toHaveBeenCalledWith(expect.any(Uint8Array), { actor });
+        expect(materialize).toHaveBeenCalledOnce();
+        expect(native.load).not.toHaveBeenCalled();
         expect(native.decodeChange).not.toHaveBeenCalled();
         expect(native.getChanges).not.toHaveBeenCalled();
         expect(native.applyChanges).not.toHaveBeenCalled();
@@ -580,6 +590,43 @@ describe('repository canonical Worker candidate adoption', () => {
         publish(candidate);
         expect(repository.getDoc<Document>('root')?.slot.count).toBe(1);
     });
+
+    it.each(['discard', 'abort', 'authority'] as const)(
+        'discards the parsed native handle across the caller yield when %s prevents adoption',
+        async (kind) => {
+            const original = seed();
+            const observer = vi.fn();
+            repository.onChange(observer);
+            const prepared = plan(original);
+            const controller = new AbortController();
+            await prepared.requestMaterialization!(controller.signal);
+            const pending = vi.mocked(native.prepareLoad).mock.results.at(-1)?.value;
+            if (!pending) {
+                throw new Error('Expected parsed native candidate');
+            }
+            const materialize = vi.spyOn(pending, 'materialize');
+            const discard = vi.spyOn(pending, 'discard');
+            if (kind === 'authority') {
+                repository.insertDoc('root', clone(original));
+                repository.insertDoc('root', original);
+            } else if (kind === 'abort') {
+                controller.abort();
+            } else {
+                prepared.discard();
+            }
+            expect(prepared.materialize).toThrow();
+            prepared.discard();
+            prepared.discard();
+            expect(materialize).not.toHaveBeenCalled();
+            expect(discard).toHaveBeenCalledOnce();
+            expect(repository.getDoc('root')).toBe(original);
+            expect(observer).not.toHaveBeenCalled();
+            repository.changeDoc<Document>('root', (doc) => {
+                doc.slot.count = 7;
+            });
+            expect(repository.getDoc<Document>('root')?.slot.count).toBe(7);
+        }
+    );
 
     it.each(['aabbcc', ''])('keeps the complete ordinary callback for native author %s', (author) => {
         const original = from<Document>({ slot: { count: 0 } }, { actor, author });
@@ -730,11 +777,15 @@ describe('repository canonical Worker candidate adoption', () => {
             return { ...result, bytes };
         });
         const prepared = plan(original);
-        await prepared.requestMaterialization!(new AbortController().signal);
-        vi.mocked(native.load).mockClear();
-        expect(prepared.materialize).toThrow(kind === 'frontier' ? 'lost the native frontier' : undefined);
+        vi.mocked(native.prepareLoad).mockClear();
+        if (kind === 'frontier') {
+            await prepared.requestMaterialization!(new AbortController().signal);
+            expect(prepared.materialize).toThrow('lost the native frontier');
+        } else {
+            await expect(prepared.requestMaterialization!(new AbortController().signal)).rejects.toThrow();
+        }
         if (kind !== 'checksum' && kind !== 'frontier') {
-            expect(native.load).not.toHaveBeenCalled();
+            expect(native.prepareLoad).not.toHaveBeenCalled();
         }
         prepared.discard();
         expect(repository.getDoc('root')).toBe(original);
@@ -764,9 +815,8 @@ describe('repository canonical Worker candidate adoption', () => {
             heads: getHeads(original),
         });
         const prepared = plan(original);
-        await prepared.requestMaterialization!(new AbortController().signal);
+        await expect(prepared.requestMaterialization!(new AbortController().signal)).rejects.toThrow(error);
         const retained = vi.mocked(native.clone).mock.results.at(-2)!.value;
-        expect(prepared.materialize).toThrow(error);
         prepared.discard();
         prepared.discard();
         expect(releases.mock.calls.filter(([doc]) => doc === retained)).toHaveLength(1);
@@ -902,9 +952,9 @@ describe('repository canonical Worker candidate adoption', () => {
                 }
             });
         }
-        if (kind === 'transport') {
+        if (kind === 'transport' || kind === 'invalid bytes') {
             await expect(prepared.requestMaterialization!(new AbortController().signal)).rejects.toThrow(
-                'transport failed'
+                kind === 'transport' ? 'transport failed' : 'invalid document envelope'
             );
             prepared.discard();
         } else {

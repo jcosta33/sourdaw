@@ -55,11 +55,11 @@ type RestoreClipPayload = Extract<AppAction, { type: 'restoreClip' }>['payload']
  * `automationLaneSnapshots` only `id`/`trackId` — because the generated command
  * argument schemas close every object. The capture sites
  * (`captureTrackRemovalSnapshot`, `handleRemoveClip`'s `describe`) write full
- * `Track`/`AutomationLane`/`Clip` clones, and the restore handlers already
- * bridge that same gap with `as never` when they write the clones back. The
- * readers below narrow the runtime shape through `unknown` instead of assuming
- * it, so a payload that is not the shape its capture site wrote simply does
- * not project.
+ * `Track`/`AutomationLane`/`Clip` clones, and `restoreTrack` decodes its
+ * track and take-lane clones through the stores' own row laws before writing
+ * them back. The readers below narrow the runtime shape through `unknown`
+ * instead of assuming it, so a payload that is not the shape its capture site
+ * wrote simply does not project.
  */
 
 function findLiveClip(clipId: string): LocatableClip | null {
