@@ -209,6 +209,30 @@ describe('ExternalPluginParameterList', () => {
         expect(screen.getByText('The plugin refused this change.')).toBeInTheDocument();
     });
 
+    it('keeps the newer pending value when an older send is accepted first', async () => {
+        const sends: Array<{ resolve: () => void; promise: Promise<void> }> = [];
+        mockEdit.mockImplementation(() => {
+            let resolve: () => void = () => {};
+            const promise = new Promise<void>((resolvePromise) => {
+                resolve = resolvePromise;
+            });
+            sends.push({ resolve, promise });
+            return promise;
+        });
+        seed([parameter({ id: 7, name: 'Decay', value: 0.25 })]);
+        render(<ExternalPluginParameterList device={device} />);
+        const slider = screen.getByRole('slider', { name: 'Decay' });
+        fireEvent.change(slider, { target: { value: '0.5' } });
+        fireEvent.change(slider, { target: { value: '0.6' } });
+
+        await act(async () => {
+            sends[0]?.resolve();
+            await sends[0]?.promise;
+        });
+
+        expect(slider).toHaveValue('0.6');
+    });
+
     it('drops the pending value once the latest send is accepted and the store has moved', async () => {
         let resolveSend: () => void = () => {};
         let sent: Promise<void> = Promise.resolve();
