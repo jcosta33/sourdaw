@@ -61,12 +61,19 @@ a new action must join.
    such file exports its sub-union and adds exactly one registry key with
    `declare module '#/utils/handlerContract' { interface AppActionRegistry { ... } }`. Reason: utils
    imports nothing, and each module already depends on utils, so composing the union adds no module
-   edge and no cycle. The final empty `export interface AppActionRegistry {}` is a declaration-merging
-   target, which `typescript/no-empty-object-type` refuses at error level in `.oxlintrc.json`. It
-   carries one line-scoped disable for that rule, an `oxlint-disable-next-line typescript/no-empty-object-type` directive, with the merge-target reason beside it. typescript-eslint documents a
-   disable as the way to keep a merge target. `eslint.config.mjs` does not enable the rule, so it
-   needs no ESLint directive. Interface augmentation is the TypeScript mechanism for an open,
-   compiler-checked registry. It was verified with both the tsc 7 command line that typechecks the
+   edge and no cycle. Declaration merging works only on interfaces, so a type alias cannot replace
+   them. `.oxlintrc.json` sets `typescript/consistent-type-definitions` to `["error", "type"]` and
+   `typescript/no-empty-object-type` to error. The empty `export interface AppActionRegistry {}`
+   trips both rules, and it carries a line-scoped disable for each. Every owner's
+   `interface AppActionRegistry { ... }` augmentation trips `consistent-type-definitions`, and it
+   carries a line-scoped disable for that rule. Each directive has the declaration-merging reason
+   beside it. The directive form is the one `src/app/router.ts` already uses above its augmenting
+   interface: `// eslint-disable-next-line @typescript-eslint/consistent-type-definitions`, with
+   `@typescript-eslint/no-empty-object-type` for the empty registry. oxlint honours both
+   `eslint-disable` and `oxlint-disable` comments. typescript-eslint documents a disable as the way
+   to keep a merge target. This amends the line in `docs/07-conventions.md` that forbids disabled
+   lint rules: a declaration-merging target may carry that line-scoped disable and nothing broader.
+   Interface augmentation is the TypeScript mechanism for an open, compiler-checked registry. It was verified with both the tsc 7 command line that typechecks the
    repository and the pinned typescript 6 compiler (6.0.3) whose API the schema generator uses,
    together with a transitional key declared in the same interface. `events/` is the cross-module
    type surface for action variants, as it is for event payloads, because §3.3 of
@@ -98,11 +105,14 @@ a new action must join.
    stops, and this ADR is amended in its own pull request before the slice continues.
 
 5. **`src/utils` holds no domain types.** After the last slice, `handlerContract.ts` holds only the
-   domain-free contract and the empty registry, whose declaration carries the line-scoped disable
+   domain-free contract and the empty registry, whose declaration carries the line-scoped disables
    from decision 2. The domain types it holds today move to their owners:
    every variant, every snapshot, and `TrackKind`, `AutomationMode` and `AutomationRecordingPolicy`.
-   Utilities whose only purpose is a moved domain type move with it, for example the tempo
-   audio-source promotion helpers.
+   A utility whose only purpose is a moved domain type follows decision 4's placement for that type,
+   including the lowest-tier rule and the stop clause. An example is the tempo audio-source
+   promotion helpers (`tempoAudioSourcePromotion.ts`, `isTempoAudioSourcePromotion.ts` and
+   `tempoAudioSourceCoverage.ts`), which Arrangement, Transport and the kernel module Command all
+   import. The slice that moves a utility rewrites its importers. This ADR names no destination.
 
 6. **Shape preservation.** No action, payload or snapshot changes shape during the moves. Undo
    inverses, `describe()` projections and persisted history therefore stay valid. The command
