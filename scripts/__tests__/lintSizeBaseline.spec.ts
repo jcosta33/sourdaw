@@ -245,6 +245,12 @@ describe('size ceiling violation messages', () => {
             'a.ts: 960 lines exceeds its ceiling of 950 by 10; move code into a new file (new files are held to the size rules) until it has at most 950 lines. Ceilings are never raised.'
         );
     });
+
+    it('should state the recording rule when a ceiling is below the floor', () => {
+        expect(describeSizeCeilingViolation({ kind: 'below-floor', path: 'a.ts', ceiling: 599 })).toBe(
+            "a.ts: ceiling 599 is not a whole number of at least 600; record the ceiling the file's length earns: its line count plus 50 when over 600 lines, else 600."
+        );
+    });
 });
 
 type WrittenKeysCase = { name: string; text: string; expected: string[] };

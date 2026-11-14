@@ -127,7 +127,7 @@ export function describeSizeCeilingViolation(violation: SizeCeilingViolation): s
         case 'stale-ceiling':
             return `${violation.path}: ceiling ${violation.ceiling} sits more than ${SIZE_CEILING_SLACK} above ${expectedSizeCeiling(violation.lines)}, the ceiling its ${violation.lines} lines earn; lower it to ${expectedSizeCeiling(violation.lines)} in ${SIZE_CEILINGS_PATH}.`;
         case 'below-floor':
-            return `${violation.path}: ceiling ${violation.ceiling} is not a whole number of at least ${SIZE_CEILING_FLOOR}; record the file's line count, or ${SIZE_CEILING_FLOOR} if it is shorter.`;
+            return `${violation.path}: ceiling ${violation.ceiling} is not a whole number of at least ${SIZE_CEILING_FLOOR}; record the ceiling the file's length earns: its line count plus ${SIZE_CEILING_HEADROOM} when over ${SIZE_CEILING_FLOOR} lines, else ${SIZE_CEILING_FLOOR}.`;
         default: {
             const unreachable: never = violation;
             throw new Error(`unhandled size ceiling violation: ${JSON.stringify(unreachable)}`);
