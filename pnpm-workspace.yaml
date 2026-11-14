@@ -88,7 +88,6 @@ minimumReleaseAgeExclude:
     - tldts@7.4.26
     - '@eslint/config-array@0.23.6'
     - '@playwright/test@1.65.1'
-    - '@stylistic/eslint-plugin@6.0.0'
     - eslint@10.15.0
     - lucide-react@1.73.0
     - playwright-core@1.65.1

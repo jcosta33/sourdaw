@@ -169,8 +169,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:cdf495849afaf9ff8558ccee76c070a34b55497764b12d2acc7950fab77d5478:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:95df2555e4a3b1ef8198fc8df2c7525dc0ce9d3ff428bd0cf56b9c999c67223b:release/dependency-license-proofs.json"
+                "sha256:68432f452a2e7082857c438fe7b62aab796ee1f660c5b79e1480be6587a25521:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:4d809e8f685ab975f4c6142a2110c8b90e841e901af73cc5374464ac1ab55c39:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -296,7 +296,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:1942e51a6df0b8375079974a5155c6574b712fd42b552521b891127dc9807e1a",
+                "sha256:4ffebe69283c769bf3786076ea9a0f3b0df8ab7393cc642842d7cf9747a3e102",
                 "sha256:a94654faf2322892cd82b403a21b97fe3d8c88df091e1724c685bc6217eb6550",
                 "sha256:da20539796075e22f2ad7f835eb6f1be13a6b540a503d633a85173c02c2aa5c7:public/legal/MLC-WEB-NOTICES.txt",
                 "sha256:7cddc1f1194da5eb320bfc27cc9a18b0750915a820cfa0328e0e9f4ef9e1af22:public/legal/THIRD-PARTY-NOTICES.md"
@@ -1890,7 +1890,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "9df2e86002b2d1f2fe83fe79d433a592038f8b1a4e085e61365202ab8c78e2f3"
+            "sha256": "555ebf1a17ffe53855efe6ef3a7699ce709505848e36de25aa919e77f4ff6146"
         },
         {
             "path": "server/package.json",
@@ -1902,7 +1902,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "1942e51a6df0b8375079974a5155c6574b712fd42b552521b891127dc9807e1a"
+            "sha256": "4ffebe69283c769bf3786076ea9a0f3b0df8ab7393cc642842d7cf9747a3e102"
         },
         {
             "path": "Cargo.toml",
