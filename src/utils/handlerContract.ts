@@ -2087,7 +2087,16 @@ type LegacyAppAction =
     | { type: 'setMarkerColor'; payload: { markerId: string; color: string; expectedColor?: string } }
     | {
           type: 'addSection';
-          payload: { startBeat: number; endBeat: number; name: string; sectionId?: string; color?: string };
+          /** `index` is the slot in the section list to insert at (clamped to its length);
+           *  absent appends. `removeSection`'s inverse sets it so undo restores the order. */
+          payload: {
+              startBeat: number;
+              endBeat: number;
+              name: string;
+              sectionId?: string;
+              color?: string;
+              index?: number;
+          };
       }
     | { type: 'removeSection'; payload: { sectionId: string } }
     | { type: 'renameSection'; payload: { sectionId: string; name: string } }

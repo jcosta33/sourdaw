@@ -1,8 +1,10 @@
-import { type AppAction, type MidiNotesSnapshot } from '#/utils/handlerContract';
+import { type AppAction, type AppActionType, type MidiNotesSnapshot } from '#/utils/handlerContract';
 
 import { type MidiNote } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
 import { isMaterializedAddNotesArguments } from '../../transformers/isMaterializedAddNotesArguments';
+
+type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
 /**
  * The removal snapshot carries the store's full note objects under the narrow
@@ -17,6 +19,439 @@ function cloneSnapshotNotes(notes: MidiNotesSnapshot): MidiNote[] {
     return notesWithAllFields.map((note) => ({ ...note }));
 }
 
+function noNotesProjection(): void {
+    return undefined;
+}
+
+function projectAddNotes(action: ActionOf<'addNotes'>, notesByClipId: Record<string, MidiNote[]>): void {
+    if (!isMaterializedAddNotesArguments(action.payload)) {
+        return;
+    }
+    notesByClipId[action.payload.clipId] = [
+        ...(notesByClipId[action.payload.clipId] ?? []),
+        ...action.payload.notes.map((note) => ({ ...note })),
+    ];
+}
+
+function projectRestoreTrack(action: ActionOf<'restoreTrack'>, notesByClipId: Record<string, MidiNote[]>): void {
+    // `restoreMidiClipData` replaces each bucket it replays, so the
+    // snapshot's buckets become the projected state for their clip ids.
+    for (const [clipId, notes] of Object.entries(action.payload.midiNotesByClipId)) {
+        notesByClipId[clipId] = cloneSnapshotNotes(notes);
+    }
+}
+
+function projectRestoreClip(action: ActionOf<'restoreClip'>, notesByClipId: Record<string, MidiNote[]>): void {
+    // `restoreMidiClipData` replaces the bucket when the removal captured
+    // one and leaves the clip's notes alone when it captured none.
+    if (action.payload.midiNotesSnapshot !== null) {
+        notesByClipId[action.payload.clipId] = cloneSnapshotNotes(action.payload.midiNotesSnapshot);
+    }
+}
+
+function projectRestoreMidiClipNotes(
+    action: ActionOf<'restoreMidiClipNotes'>,
+    notesByClipId: Record<string, MidiNote[]>
+): void {
+    if (action.payload.notesBucketPresent === false) {
+        delete notesByClipId[action.payload.clipId];
+        return;
+    }
+    notesByClipId[action.payload.clipId] = action.payload.notes.map((note) => ({ ...note }));
+}
+
+// Every action type states how it changes the notes buckets: a new action does not compile until it does.
+const notesProjectionByActionType: {
+    readonly [Type in AppActionType]: (action: ActionOf<Type>, notesByClipId: Record<string, MidiNote[]>) => void;
+} = {
+    importStemSet: noNotesProjection,
+    discardImportedStemSet: noNotesProjection,
+    addTrack: noNotesProjection,
+    removeTrack: noNotesProjection,
+    discardCreatedTrack: noNotesProjection,
+    restoreTrack: projectRestoreTrack,
+    restoreClip: projectRestoreClip,
+    discardDuplicatedClip: noNotesProjection,
+    removeAllTracks: noNotesProjection,
+    renameTrack: noNotesProjection,
+    createTrackAlternative: noNotesProjection,
+    switchTrackAlternative: noNotesProjection,
+    renameTrackAlternative: noNotesProjection,
+    deleteTrackAlternative: noNotesProjection,
+    selectTrack: noNotesProjection,
+    muteTrack: noNotesProjection,
+    soloTrack: noNotesProjection,
+    selectTake: noNotesProjection,
+    replaceOriginalMidiTakeRow: noNotesProjection,
+    replaceOriginalMidiBaseRow: noNotesProjection,
+    toggleSoloSafe: noNotesProjection,
+    setSoloSafe: noNotesProjection,
+    restoreSoloSafe: noNotesProjection,
+    armTrack: noNotesProjection,
+    freezeTrack: noNotesProjection,
+    unfreezeTrack: noNotesProjection,
+    restoreFreezeState: noNotesProjection,
+    flattenTrack: noNotesProjection,
+    bounceInPlace: noNotesProjection,
+    reorderTrack: noNotesProjection,
+    setTempo: noNotesProjection,
+    restoreTempoEdit: noNotesProjection,
+    editTempoMap: noNotesProjection,
+    restoreTempoMapEdit: noNotesProjection,
+    setTimeSignature: noNotesProjection,
+    setPlayback: noNotesProjection,
+    togglePlayback: noNotesProjection,
+    stopPlayback: noNotesProjection,
+    toggleRecording: noNotesProjection,
+    setMasterGain: noNotesProjection,
+    restoreMasterGain: noNotesProjection,
+    toggleLoop: noNotesProjection,
+    toggleMetronome: noNotesProjection,
+    setMetronomeVolume: noNotesProjection,
+    setLoopRegion: noNotesProjection,
+    setLoopEnabled: noNotesProjection,
+    setMetronomeEnabled: noNotesProjection,
+    restoreLoopRegion: noNotesProjection,
+    addClip: noNotesProjection,
+    moveClip: noNotesProjection,
+    restoreClipPlacement: noNotesProjection,
+    duplicateClip: noNotesProjection,
+    duplicateClipToNextBar: noNotesProjection,
+    duplicateTrack: noNotesProjection,
+    removeClip: noNotesProjection,
+    renameClip: noNotesProjection,
+    splitClip: noNotesProjection,
+    restoreClipSplitState: noNotesProjection,
+    trimClipStart: noNotesProjection,
+    trimClipEnd: noNotesProjection,
+    restoreAudioClipStartTrim: noNotesProjection,
+    restoreAudioClipSlip: noNotesProjection,
+    slipClipContent: noNotesProjection,
+    drawClip: noNotesProjection,
+    discardDrawnClip: noNotesProjection,
+    restoreDrawnClip: noNotesProjection,
+    duplicateClipAt: noNotesProjection,
+    moveClips: noNotesProjection,
+    restoreClipMoves: noNotesProjection,
+    addDevice: noNotesProjection,
+    bypassDevice: noNotesProjection,
+    removeDevice: noNotesProjection,
+    restoreDevice: noNotesProjection,
+    reorderDevices: noNotesProjection,
+    setDeviceParameter: noNotesProjection,
+    setExternalPluginState: noNotesProjection,
+    setDeviceState: noNotesProjection,
+    setFermenterPatch: noNotesProjection,
+    setGrandBouleDeviceState: noNotesProjection,
+    createBus: noNotesProjection,
+    createFolder: noNotesProjection,
+    setSend: noNotesProjection,
+    setWorkspaceMode: noNotesProjection,
+    openPreferencesDialog: noNotesProjection,
+    openMixer: noNotesProjection,
+    closeMixer: noNotesProjection,
+    toggleSidebar: noNotesProjection,
+    toggleInspector: noNotesProjection,
+    toggleChatPanel: noNotesProjection,
+    setTrackInput: noNotesProjection,
+    restoreTrackInput: noNotesProjection,
+    setEditingTool: noNotesProjection,
+    setMarqueeSelection: noNotesProjection,
+    addMarker: noNotesProjection,
+    removeMarker: noNotesProjection,
+    setMarkerColor: noNotesProjection,
+    addSection: noNotesProjection,
+    removeSection: noNotesProjection,
+    renameSection: noNotesProjection,
+    renameMarker: noNotesProjection,
+    moveMarker: noNotesProjection,
+    moveSection: noNotesProjection,
+    resizeSection: noNotesProjection,
+    setSectionColor: noNotesProjection,
+    reorderSection: noNotesProjection,
+    navigateSection: noNotesProjection,
+    rehearseSection: noNotesProjection,
+    restoreSectionBeats: noNotesProjection,
+    setClipGainEnvelope: noNotesProjection,
+    toggleClipGainEnvelope: noNotesProjection,
+    addGainEnvelopePoint: noNotesProjection,
+    removeGainEnvelopePoint: noNotesProjection,
+    resetClipGainEnvelope: noNotesProjection,
+    addModulator: noNotesProjection,
+    removeModulator: noNotesProjection,
+    updateModulator: noNotesProjection,
+    addMapping: noNotesProjection,
+    removeMapping: noNotesProjection,
+    addAutomationLane: noNotesProjection,
+    automateSendRange: noNotesProjection,
+    automateSendRanges: noNotesProjection,
+    removeSendAutomationRanges: noNotesProjection,
+    renderProjectSections: noNotesProjection,
+    removeRenderedProjectSections: noNotesProjection,
+    automateTrackGainRange: noNotesProjection,
+    automateParameterRange: noNotesProjection,
+    removeTrackGainAutomationRange: noNotesProjection,
+    removeSendAutomationRange: noNotesProjection,
+    removeAutomationLane: noNotesProjection,
+    setAutomationLaneEnabled: noNotesProjection,
+    addAutomationPoint: noNotesProjection,
+    quantizeNotes: noNotesProjection,
+    removeShortMidiOverlaps: noNotesProjection,
+    createDrumPreviewBranches: noNotesProjection,
+    deleteDrumPreviewBranches: noNotesProjection,
+    copyMidiArticulations: noNotesProjection,
+    restoreMidiClipNotes: projectRestoreMidiClipNotes,
+    quantizeNoteLengths: noNotesProjection,
+    transposeNotes: noNotesProjection,
+    humanizeNotes: noNotesProjection,
+    invertNotes: noNotesProjection,
+    retrogradeNotes: noNotesProjection,
+    scaleVelocities: noNotesProjection,
+    scaleAllVelocities: noNotesProjection,
+    setAllVelocities: noNotesProjection,
+    setTrackGain: noNotesProjection,
+    setTrackPan: noNotesProjection,
+    setTrackColor: noNotesProjection,
+    copyClip: noNotesProjection,
+    cutClip: noNotesProjection,
+    pasteClip: noNotesProjection,
+    setClipFade: noNotesProjection,
+    importMidiFile: noNotesProjection,
+    normalizeClip: noNotesProjection,
+    reverseClip: noNotesProjection,
+    restoreReversedClip: noNotesProjection,
+    glueClips: noNotesProjection,
+    restoreClipGlueState: noNotesProjection,
+    setCompRegion: noNotesProjection,
+    removeCompRegion: noNotesProjection,
+    restoreCompRegionInterval: noNotesProjection,
+    nudgeClip: noNotesProjection,
+    crossfadeClips: noNotesProjection,
+    restoreCrossfadeClips: noNotesProjection,
+    setClipGain: noNotesProjection,
+    setClipColor: noNotesProjection,
+    lockClip: noNotesProjection,
+    consolidateSelection: noNotesProjection,
+    bounceSelection: noNotesProjection,
+    seekPlayhead: noNotesProjection,
+    setPunchIn: noNotesProjection,
+    setPunchOut: noNotesProjection,
+    setPunchEnabled: noNotesProjection,
+    restorePunchRegion: noNotesProjection,
+    togglePunch: noNotesProjection,
+    toggleCountIn: noNotesProjection,
+    setCountInBars: noNotesProjection,
+    togglePreRoll: noNotesProjection,
+    setPreRollBars: noNotesProjection,
+    zoomTracksVertical: noNotesProjection,
+    addTimeSignatureChange: noNotesProjection,
+    removeTimeSignatureChange: noNotesProjection,
+    setTrackOutput: noNotesProjection,
+    addSend: noNotesProjection,
+    removeSend: noNotesProjection,
+    removeAutomationPoint: noNotesProjection,
+    setAutomationMode: noNotesProjection,
+    hideTrack: noNotesProjection,
+    disableTrack: noNotesProjection,
+    restoreTrackDisabled: noNotesProjection,
+    setTrackHeight: noNotesProjection,
+    setSnapValue: noNotesProjection,
+    zoomToFit: noNotesProjection,
+    zoomToSelection: noNotesProjection,
+    exportProject: noNotesProjection,
+    saveProject: noNotesProjection,
+    newProject: noNotesProjection,
+    importAudioFile: noNotesProjection,
+    exportMidi: noNotesProjection,
+    foldTrack: noNotesProjection,
+    groupTracks: noNotesProjection,
+    ungroupTracks: noNotesProjection,
+    scaleAutomation: noNotesProjection,
+    stretchAutomation: noNotesProjection,
+    invertAutomation: noNotesProjection,
+    reverseAutomation: noNotesProjection,
+    thinAutomation: noNotesProjection,
+    quantizeAutomation: noNotesProjection,
+    restoreAutomationLanePoints: noNotesProjection,
+    restoreAutomationPointPresence: noNotesProjection,
+    loadPreset: noNotesProjection,
+    restorePresetDeviceChain: noNotesProjection,
+    savePreset: noNotesProjection,
+    generateDrumPattern: noNotesProjection,
+    generateMelody: noNotesProjection,
+    generateChordProgression: noNotesProjection,
+    setClipLoop: noNotesProjection,
+    restoreClipLoop: noNotesProjection,
+    setClipLoopLength: noNotesProjection,
+    restoreClipLoopLength: noNotesProjection,
+    createGrooveTemplate: noNotesProjection,
+    renameGrooveTemplate: noNotesProjection,
+    restoreGrooveTemplateName: noNotesProjection,
+    deleteGrooveTemplate: noNotesProjection,
+    restoreDeletedGrooveTemplate: noNotesProjection,
+    assignGrooveTemplate: noNotesProjection,
+    restoreGrooveAssignment: noNotesProjection,
+    extractGroove: noNotesProjection,
+    applyGroove: noNotesProjection,
+    setClipStretchMode: noNotesProjection,
+    setClipStretchRatio: noNotesProjection,
+    restoreClipStretchState: noNotesProjection,
+    fitClipToBeats: noNotesProjection,
+    analyzeMix: noNotesProjection,
+    autoFixMix: noNotesProjection,
+    enableMpe: noNotesProjection,
+    disableMpe: noNotesProjection,
+    getLatencyReport: noNotesProjection,
+    createCollabSession: noNotesProjection,
+    joinCollabSession: noNotesProjection,
+    leaveCollabSession: noNotesProjection,
+    scanPlugins: noNotesProjection,
+    loadExternalPlugin: noNotesProjection,
+    audioToMidi: noNotesProjection,
+    commitPitchEdit: noNotesProjection,
+    restoreClipFileId: noNotesProjection,
+    muteClip: noNotesProjection,
+    clearSolos: noNotesProjection,
+    restoreTrackSoloStates: noNotesProjection,
+    setTrackNotes: noNotesProjection,
+    deleteTime: noNotesProjection,
+    insertTime: noNotesProjection,
+    duplicateTimeRange: noNotesProjection,
+    restoreTimeOperationState: noNotesProjection,
+    restoreTrackHeights: noNotesProjection,
+    restoreTrackGroupMemberships: noNotesProjection,
+    restoreTracks: noNotesProjection,
+    restoreTrackClipStates: noNotesProjection,
+    discardCreatedTracks: noNotesProjection,
+    discardCreatedCompGroup: noNotesProjection,
+    restoreTrackAlternativeState: noNotesProjection,
+    restoreScratchPadState: noNotesProjection,
+    stripSilence: noNotesProjection,
+    restoreStripSilenceState: noNotesProjection,
+    detectTempo: noNotesProjection,
+    detectKey: noNotesProjection,
+    consolidateAllTracks: noNotesProjection,
+    arpeggiate: noNotesProjection,
+    addSidechainRoute: noNotesProjection,
+    removeSidechainRoute: noNotesProjection,
+    bounceToNewTrack: noNotesProjection,
+    saveTrackTemplate: noNotesProjection,
+    loadTrackTemplate: noNotesProjection,
+    deleteTrackTemplate: noNotesProjection,
+    createProjectFromTemplate: noNotesProjection,
+    setProductionBrief: noNotesProjection,
+    repairProjectData: noNotesProjection,
+    createVcaGroup: noNotesProjection,
+    assignToVca: noNotesProjection,
+    removeFromVca: noNotesProjection,
+    setVcaGain: noNotesProjection,
+    restoreLegacyVcaState: noNotesProjection,
+    setMidiOutput: noNotesProjection,
+    clearMidiOutput: noNotesProjection,
+    restoreMidiOutput: noNotesProjection,
+    addNotes: projectAddNotes,
+    completeMidi: noNotesProjection,
+    variationMidi: noNotesProjection,
+    generateBassline: noNotesProjection,
+    replayGeneratedMidi: noNotesProjection,
+    stemSeparate: noNotesProjection,
+    autoOrganizeProject: noNotesProjection,
+    addChordEvent: noNotesProjection,
+    moveChordEvent: noNotesProjection,
+    updateChordEvent: noNotesProjection,
+    removeChordEvent: noNotesProjection,
+    toggleChordTrack: noNotesProjection,
+    clearChordTrack: noNotesProjection,
+    restoreChordTrackState: noNotesProjection,
+    clearAllMidiMappings: noNotesProjection,
+    completeMidiLearn: noNotesProjection,
+    removeMidiMapping: noNotesProjection,
+    restoreMidiLearnMappings: noNotesProjection,
+    toggleScratchPad: noNotesProjection,
+    captureScratchPad: noNotesProjection,
+    commitScratchPad: noNotesProjection,
+    clearScratchPad: noNotesProjection,
+    createPatternInstance: noNotesProjection,
+    detachPatternInstance: noNotesProjection,
+    restorePatternInstanceLink: noNotesProjection,
+    startMacroRecording: noNotesProjection,
+    stopMacroRecording: noNotesProjection,
+    playMacro: noNotesProjection,
+    deleteMacro: noNotesProjection,
+    renameMacro: noNotesProjection,
+    undo: noNotesProjection,
+    redo: noNotesProjection,
+    toggleUndoTree: noNotesProjection,
+    labelUndoBranch: noNotesProjection,
+    detectSongStructure: noNotesProjection,
+    createProjectVersion: noNotesProjection,
+    restoreProjectVersion: noNotesProjection,
+    createVersionBranch: noNotesProjection,
+    generateFill: noNotesProjection,
+    generateAllTransitions: noNotesProjection,
+    compareToReference: noNotesProjection,
+    toggleControlRoomMono: noNotesProjection,
+    toggleControlRoomDim: noNotesProjection,
+    switchMonitor: noNotesProjection,
+    getMentorTips: noNotesProjection,
+    searchSamples: noNotesProjection,
+    createCompGroup: noNotesProjection,
+    togglePunchRecording: noNotesProjection,
+    toggleLoopRecord: noNotesProjection,
+    triggerScene: noNotesProjection,
+    nextSetlistItem: noNotesProjection,
+    previousSetlistItem: noNotesProjection,
+    createAdjustmentLayer: noNotesProjection,
+    removeAdjustmentLayer: noNotesProjection,
+    toggleAdjustmentLayer: noNotesProjection,
+    setLayerParameter: noNotesProjection,
+    setLayerMix: noNotesProjection,
+    addAdjustmentRegion: noNotesProjection,
+    removeAdjustmentRegion: noNotesProjection,
+    moveAdjustmentRegion: noNotesProjection,
+    setLayerFades: noNotesProjection,
+    setLayerAffectedTracks: noNotesProjection,
+    setLayerInsertionIndex: noNotesProjection,
+    restoreAdjustmentLayerMutation: noNotesProjection,
+    detectTransients: noNotesProjection,
+    quantizeTransients: noNotesProjection,
+    openElasticEditor: noNotesProjection,
+    closeElasticEditor: noNotesProjection,
+    elasticSetSensitivity: noNotesProjection,
+    elasticAddMarker: noNotesProjection,
+    elasticRemoveMarker: noNotesProjection,
+    elasticToggleMarkerLock: noNotesProjection,
+    elasticSetTool: noNotesProjection,
+    toggleNodeView: noNotesProjection,
+    setControlSurface: noNotesProjection,
+    addCvOutput: noNotesProjection,
+    removeCvOutput: noNotesProjection,
+    connectPush: noNotesProjection,
+    disconnectPush: noNotesProjection,
+    exportDawProject: noNotesProjection,
+    importDawProject: noNotesProjection,
+    loadRaveModel: noNotesProjection,
+    setRaveBlend: noNotesProjection,
+    enableWarping: noNotesProjection,
+    setWarpAlgorithm: noNotesProjection,
+    setWarpPitchShift: noNotesProjection,
+    setYeastProcessorParam: noNotesProjection,
+    setYeastArpPattern: noNotesProjection,
+    setYeastProcessorBypass: noNotesProjection,
+    addYeastProcessor: noNotesProjection,
+    removeYeastProcessor: noNotesProjection,
+    reorderYeastProcessor: noNotesProjection,
+    commitRecording: noNotesProjection,
+    discardRecording: noNotesProjection,
+    restoreRecording: noNotesProjection,
+    appendOverdubControllers: noNotesProjection,
+    removeOverdubControllers: noNotesProjection,
+};
+
+function lookup<Type extends AppActionType>(action: ActionOf<Type>, notesByClipId: Record<string, MidiNote[]>): void {
+    notesProjectionByActionType[action.type](action, notesByClipId);
+}
+
 /**
  * Projects the notes buckets produced by earlier note writes without changing
  * project state. Ordered inverse validation uses this to validate each restore
@@ -29,40 +464,7 @@ export function projectMidiNotesByClipIdThroughRestores(actions: readonly AppAct
     }
 
     for (const action of actions) {
-        if (action.type === 'addNotes') {
-            if (!isMaterializedAddNotesArguments(action.payload)) {
-                continue;
-            }
-            notesByClipId[action.payload.clipId] = [
-                ...(notesByClipId[action.payload.clipId] ?? []),
-                ...action.payload.notes.map((note) => ({ ...note })),
-            ];
-            continue;
-        }
-        if (action.type === 'restoreTrack') {
-            // `restoreMidiClipData` replaces each bucket it replays, so the
-            // snapshot's buckets become the projected state for their clip ids.
-            for (const [clipId, notes] of Object.entries(action.payload.midiNotesByClipId)) {
-                notesByClipId[clipId] = cloneSnapshotNotes(notes);
-            }
-            continue;
-        }
-        if (action.type === 'restoreClip') {
-            // `restoreMidiClipData` replaces the bucket when the removal captured
-            // one and leaves the clip's notes alone when it captured none.
-            if (action.payload.midiNotesSnapshot !== null) {
-                notesByClipId[action.payload.clipId] = cloneSnapshotNotes(action.payload.midiNotesSnapshot);
-            }
-            continue;
-        }
-        if (action.type !== 'restoreMidiClipNotes') {
-            continue;
-        }
-        if (action.payload.notesBucketPresent === false) {
-            delete notesByClipId[action.payload.clipId];
-            continue;
-        }
-        notesByClipId[action.payload.clipId] = action.payload.notes.map((note) => ({ ...note }));
+        lookup(action, notesByClipId);
     }
 
     return notesByClipId;

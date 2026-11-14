@@ -4,6 +4,7 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 
 import { createCreativeInterpretationToolSchema } from '../../../models/CreativeInterpretation';
 import {
+    LOCAL_PLANNING_PROMPT_HEADROOM_FLOOR_TOKENS,
     LOCAL_PLANNING_REPLY_RESERVE_TOKENS,
     LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS,
 } from '../../../models/LocalPlanningBudget';
@@ -33,7 +34,7 @@ vi.mock('../../../repositories/webLlm/generateWebLlmCompletion', () => ({
 vi.mock('../../../repositories/webLlm/toolCalling', () => ({ generateWebLlmToolCalls: mocks.toolCalls }));
 
 describe('direct level context window', () => {
-    it('fits actual VCA and metronome context with a full thread and 35 advertised tools', async () => {
+    it('fits actual VCA and metronome context with a full thread, leaving the headroom floor', async () => {
         const prompt = 'make the chorus wider and tame the harshness on the lead vocal';
         const base = createPlanningProject(getProjectContext(), 5);
         const groupId = `vca-${fixtureUuid('direct-level-window')}`;
@@ -92,11 +93,14 @@ describe('direct level context window', () => {
             undefined,
             undefined,
             undefined,
-            built.localMessage
+            built.localMessage,
+            { keptCapabilityIds: built.localWorkflowCapabilityIds }
         );
         expect(outcome).toMatchObject({ status: 'complete' });
-        // Every mandatory tool plus the one prompt-selected slot, inside the budget.
-        expect(mocks.toolCalls.mock.calls[0]?.[2]).toHaveLength(35);
+        // No workflow capability grounds this request, so the offer is the selector (stem import
+        // only), the mandatory planning tools, command-index search, catalog discovery, the joint
+        // interpretation tool and the one prompt-selected slot: no workflow action tool.
+        expect(mocks.toolCalls.mock.calls[0]?.[2]).toHaveLength(14);
         expect(mocks.toolCalls.mock.calls[0]?.[2]?.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
         const [systemText, userText] = mocks.completion.mock.calls[0] ?? [];
         if (typeof systemText !== 'string' || typeof userText !== 'string') {
@@ -112,6 +116,10 @@ describe('direct level context window', () => {
             LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS +
             THREAD_CONTEXT_MAX_BYTES.local +
             LOCAL_PLANNING_REPLY_RESERVE_TOKENS;
-        expect(cost).toBeLessThanOrEqual(getWebLlmContextWindowSize());
+        const windowTokens = getWebLlmContextWindowSize();
+        expect(
+            windowTokens - cost,
+            `local planning prompt leaves ${String(windowTokens - cost)} tokens of headroom: cost ${String(cost)} in a ${String(windowTokens)}-token window, floor ${String(LOCAL_PLANNING_PROMPT_HEADROOM_FLOOR_TOKENS)}`
+        ).toBeGreaterThanOrEqual(LOCAL_PLANNING_PROMPT_HEADROOM_FLOOR_TOKENS);
     });
 });
