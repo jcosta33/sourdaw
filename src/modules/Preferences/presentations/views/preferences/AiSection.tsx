@@ -30,15 +30,11 @@ import { admitHostedBackendQuestion } from '../../../useCases/admitHostedBackend
 import { forgetHostedBackendQuestion } from '../../../useCases/forgetHostedBackendQuestion';
 import { SectionTitle, FieldGroup } from '../preferencesShared';
 
+import { type HostedBackendQuestion, HostedBackendQuestionPrompt } from './HostedBackendQuestionPrompt';
+
 type HostedProviderSelection = 'anthropic' | 'openai' | 'openai-compatible';
 type HostedProviderAuthentication = 'api-key' | 'none';
 type BackendSelection = 'auto' | 'webllm' | 'cloud';
-
-/** The question asked once after a hosted provider is saved under Automatic. */
-type HostedBackendQuestion = {
-    identity: string;
-    providerLabel: string;
-};
 
 type HostedModelOption = {
     label: string;
@@ -517,37 +513,15 @@ export const AiSection = (): ReactElement => {
                         </p>
                     ) : null}
                     {backendQuestion !== null && backendPreference === 'auto' ? (
-                        <div
-                            role="group"
-                            aria-labelledby="hosted-ai-backend-question"
-                            className="mt-1.5 rounded-md border border-border/50 p-2"
-                        >
-                            <p id="hosted-ai-backend-question" className="text-[10px] leading-relaxed">
-                                Automatic never sends requests to a hosted provider. Use {backendQuestion.providerLabel}{' '}
-                                for AI requests?
-                            </p>
-                            <Row gap={1.5} justify="end" className="mt-1.5">
-                                <Button
-                                    variant="ghost"
-                                    size="xs"
-                                    className="text-[10px]"
-                                    onClick={() => {
-                                        setBackendQuestion(null);
-                                    }}
-                                >
-                                    Keep Automatic
-                                </Button>
-                                <Button
-                                    size="xs"
-                                    className="text-[10px]"
-                                    onClick={() => {
-                                        selectAskedHostedProvider(backendQuestion);
-                                    }}
-                                >
-                                    Use hosted provider
-                                </Button>
-                            </Row>
-                        </div>
+                        <HostedBackendQuestionPrompt
+                            providerLabel={backendQuestion.providerLabel}
+                            onKeep={() => {
+                                setBackendQuestion(null);
+                            }}
+                            onUse={() => {
+                                selectAskedHostedProvider(backendQuestion);
+                            }}
+                        />
                     ) : null}
 
                     <Row justify="between" className="mt-2">
