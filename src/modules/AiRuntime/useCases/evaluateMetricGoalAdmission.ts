@@ -7,10 +7,12 @@ import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MetricGoalEvaluation, type MetricGoalProof } from '../models/MetricGoalAdmission';
 
 import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
+import { describeRecipeHoldFailure, type HoldViolation } from './describeRecipeHoldFailure';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { unaccountedNumericRefusal } from './evaluateRequestNumericLiterals';
 import { hasContradictoryMetricGoals } from './hasContradictoryMetricGoals';
 import { type MetricGoal, type MetricGoalState } from './metricGoalContractTypes';
+import { readRecipeExpectationTolerance } from './metricHoldTolerances';
 import { objectiveMetricProjection } from './objectiveMetricProjection';
 import { describePerceptualConstraintFailure } from './perceptualConstraints/describePerceptualConstraintFailure';
 import { perceptualConstraintCriterionMatches } from './perceptualConstraints/perceptualConstraintInvariants';
@@ -115,6 +117,18 @@ function completeGoalsRefusal(state: MetricGoalState, binding: Binding, goals: M
     return null;
 }
 
+/**
+ * A hold carries its metric's versioned tolerance and a movement goal carries zero; a goal with no
+ * measurable metric is the unsupported shape, which admission blocks as incomparable, so it carries zero.
+ */
+function recipeToleranceMatches(goal: MetricGoal): boolean {
+    if (goal.metricId === null) {
+        return goal.tolerance === 0;
+    }
+    const expected = readRecipeExpectationTolerance(goal.metricId, goal.relation);
+    return expected.status === 'read' && goal.tolerance === expected.tolerance;
+}
+
 function recipeCriterionMatches(goal: MetricGoal, catalog: ReturnType<typeof getMixRecipeCatalog>): boolean {
     if (goal.source.kind !== 'recipe') {
         return true;
@@ -131,7 +145,7 @@ function recipeCriterionMatches(goal: MetricGoal, catalog: ReturnType<typeof get
         (goal.metricId === null || expectation.metric === goal.metricId) &&
         (expectation.band ?? null) === goal.band &&
         expectation.direction === goal.relation &&
-        goal.tolerance === 0
+        recipeToleranceMatches(goal)
     );
 }
 
@@ -283,6 +297,16 @@ function observation(
     return figures[0] ?? null;
 }
 
+/**
+ * Whether `to` moved from `from` by at most `tolerance`. Subtracting two binary figures can exceed the
+ * exact decimal difference by a few units in the last place (0.51 − 0.5 is 0.010000000000000009), so a
+ * movement over the tolerance by no more than that rounding is a movement of exactly the tolerance.
+ */
+function movedWithin(from: number, to: number, tolerance: number): boolean {
+    const rounding = 4 * Number.EPSILON * Math.max(Math.abs(from), Math.abs(to), tolerance);
+    return to - from <= tolerance + rounding;
+}
+
 function satisfies(goal: MetricGoal, before: number, after: number, reference: number | undefined): boolean {
     if (goal.relation === 'increase') {
         return after > before;
@@ -291,22 +315,26 @@ function satisfies(goal: MetricGoal, before: number, after: number, reference: n
         return after < before;
     }
     if (goal.relation === 'hold') {
-        return Math.abs(after - before) <= goal.tolerance;
+        return movedWithin(before, after, goal.tolerance) && movedWithin(after, before, goal.tolerance);
     }
     if (goal.relation === 'no-increase') {
-        return after - before <= goal.tolerance;
+        return movedWithin(before, after, goal.tolerance);
     }
     if (goal.relation === 'no-decrease') {
-        return before - after <= goal.tolerance;
+        return movedWithin(after, before, goal.tolerance);
     }
     if (goal.relation === 'target') {
-        return goal.targetValue !== null && Math.abs(after - goal.targetValue) <= goal.tolerance;
+        return (
+            goal.targetValue !== null &&
+            movedWithin(goal.targetValue, after, goal.tolerance) &&
+            movedWithin(after, goal.targetValue, goal.tolerance)
+        );
     }
     if (reference === undefined) {
         return false;
     }
     if (goal.relation === 'match-current') {
-        return Math.abs(after - reference) <= goal.tolerance;
+        return movedWithin(reference, after, goal.tolerance) && movedWithin(after, reference, goal.tolerance);
     }
     if (goal.relation === 'greater-than-current') {
         return after > reference;
@@ -375,6 +403,7 @@ function criterionTargets(
     const observed: number[] = [];
     let unit: string | null = null;
     let failure = initialFailure;
+    let violation: HoldViolation | null = null;
     for (const [index, id] of goal.targetIds.entries()) {
         const figures = targetComparison(goal, id, prefix, context);
         if (figures === null) {
@@ -386,21 +415,22 @@ function criterionTargets(
         observed.push(final.value);
         unit = final.unit;
         const referenceValue = reference.length === 1 ? reference[0] : reference[index];
-        if (
-            failure === null &&
-            (!satisfies(goal, before.value, after.value, referenceValue) ||
-                !satisfies(goal, initial.value, final.value, referenceValue))
-        ) {
+        if (failure === null && !satisfies(goal, before.value, after.value, referenceValue)) {
             failure = 'out-of-tolerance';
+            violation = { targetId: id, from: before.value, to: after.value };
+        }
+        if (failure === null && !satisfies(goal, initial.value, final.value, referenceValue)) {
+            failure = 'out-of-tolerance';
+            violation = { targetId: id, from: initial.value, to: final.value };
         }
     }
-    return { baseline, observed, reference, unit, failure };
+    return { baseline, observed, reference, unit, failure, violation };
 }
 
 function evaluateCriterion(
     goal: MetricGoal,
     context: ObservationContext
-): { criterion: Criterion; failure: Failure | null } {
+): { criterion: Criterion; failure: Failure | null; violation: HoldViolation | null } {
     const prefix = readGoalPrefix(goal, context.binding);
     let values: {
         baseline: number[];
@@ -408,12 +438,14 @@ function evaluateCriterion(
         reference: number[];
         unit: string | null;
         failure: Failure | null;
+        violation: HoldViolation | null;
     } = {
         baseline: [],
         observed: [],
         reference: [],
         unit: null,
         failure: null,
+        violation: null,
     };
     if (goal.metricId === null || goal.relation === 'unsupported' || goal.range === null) {
         values.failure = 'incomparable';
@@ -423,8 +455,12 @@ function evaluateCriterion(
         const { reference, failure } = goalReferences(goal, context);
         values = criterionTargets(goal, prefix, context, reference, failure);
     }
-    const { failure, ...figures } = values;
-    return { criterion: { ...goal, ...figures, status: failure === null ? 'verified' : 'blocked' }, failure };
+    const { failure, violation, ...figures } = values;
+    return {
+        criterion: { ...goal, ...figures, status: failure === null ? 'verified' : 'blocked' },
+        failure,
+        violation,
+    };
 }
 
 function nameTarget(targetId: string): string {
@@ -435,9 +471,21 @@ function nameTarget(targetId: string): string {
 }
 
 /** A constraint failure names its clause and violating metric, because that refusal is what the user sees. */
-function criterionFailureReason(result: { criterion: Criterion; failure: Failure }): string {
+function criterionFailureReason(result: {
+    criterion: Criterion;
+    failure: Failure;
+    violation: HoldViolation | null;
+}): string {
     if (result.criterion.source.kind === 'constraint') {
         return describePerceptualConstraintFailure(result.criterion, result.failure, nameTarget);
+    }
+    if (
+        result.criterion.source.kind === 'recipe' &&
+        result.criterion.relation === 'hold' &&
+        result.failure === 'out-of-tolerance' &&
+        result.violation !== null
+    ) {
+        return describeRecipeHoldFailure(result.criterion, result.violation, nameTarget);
     }
     return result.failure === 'out-of-tolerance'
         ? 'Actual preview measurements do not satisfy the frozen objective criterion.'
@@ -504,10 +552,10 @@ export function evaluateMetricGoalAdmission(input: AdmissionInput): MetricGoalEv
         });
     }
     for (const [goalIndex, goal] of goals.entries()) {
-        const { criterion, failure } = evaluateCriterion(goal, { state, binding });
+        const { criterion, failure, violation } = evaluateCriterion(goal, { state, binding });
         criteria[goalIndex] = criterion;
         if (failure !== null) {
-            return blocked(criteria, { failure, reason: criterionFailureReason({ criterion, failure }) });
+            return blocked(criteria, { failure, reason: criterionFailureReason({ criterion, failure, violation }) });
         }
     }
     return {

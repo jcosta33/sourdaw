@@ -1,5 +1,6 @@
 import { type PerceptualConstraint } from '../../models/PerceptualConstraint';
 import { type MetricGoal, type ObjectiveMetricId } from '../metricGoalContractTypes';
+import { METRIC_HOLD_TOLERANCES } from '../metricHoldTolerances';
 
 /**
  * `hold` keeps a metric within its tolerance either way; a bound lets it move freely one way and by at
@@ -14,38 +15,23 @@ type InvariantMetric = {
     tolerance: number;
 };
 
-/**
- * Half a decibel in a band holding between a tenth and nine tenths of the energy moves its share by
- * about a point, and 0.5 dB is the smallest level change listeners reliably detect (the level JND).
- */
-const BAND_SHARE_TOLERANCE = 0.01;
-/** A side share of one point below 120 Hz is side 20 dB under mid, which still reads as a mono low end. */
-const LOW_SIDE_SHARE_TOLERANCE = 0.01;
-/** The level JND: 0.5 dB is the smallest level change listeners reliably detect on program material. */
-const LEVEL_TOLERANCE_DB = 0.5;
-/** The estimate is a difference of two levels, each read at the 0.5 dB level JND. */
-const DYNAMIC_RANGE_TOLERANCE_DB = 1;
-/**
- * Loudness matching compares A/B within the 0.5 dB level JND, and EBU R 128 (2014) permits a ±0.5 LU
- * deviation from its target. R 128's tighter ±0.2 LU since 2020 is a meter-error allowance for
- * quality control, which a deterministic offline render of the same project does not have.
- */
-const LOUDNESS_TOLERANCE_LU = 0.5;
-/** Crest factor is a peak level minus an RMS level, each read at the 0.5 dB level JND. */
-const CREST_FACTOR_TOLERANCE_DB = 1;
-/**
- * Half a decibel of side relative to mid moves the side share by about a point for any share between
- * a tenth and nine tenths, as for a band share; a near-mono source, under a tenth, is held more loosely.
- */
-const SIDE_SHARE_TOLERANCE = 0.01;
-/**
- * Listening tests found a centroid change of about 16% the smallest reliably discriminated on natural
- * instrument tones (Horner lab, "Effect of Spectral Centroid Manipulation on Discrimination and
- * Identification of Instrument Timbres"). 50 Hz is that fraction of a 300 Hz centroid, a bass track's,
- * and a far smaller fraction of a mix's kHz-range centroid, so the hold is no looser than audible for
- * any source above 300 Hz; it compares absolute figures, so it is stricter on bright sources by design.
- */
-const CENTROID_TOLERANCE_HZ = 50;
+/** A bound's tolerance is its metric's hold tolerance, so the two can never disagree. */
+function toleranceOf(metricId: ObjectiveMetricId): number {
+    const entry = METRIC_HOLD_TOLERANCES[metricId];
+    if (entry === undefined) {
+        throw new TypeError(`${metricId} has no versioned hold tolerance.`);
+    }
+    return entry.value;
+}
+
+const BAND_SHARE_TOLERANCE = toleranceOf('frequencyBandEnergy');
+const LOW_SIDE_SHARE_TOLERANCE = toleranceOf('lowFrequencyStereoContent');
+const LEVEL_TOLERANCE_DB = toleranceOf('rms');
+const DYNAMIC_RANGE_TOLERANCE_DB = toleranceOf('dynamicRangeEstimate');
+const LOUDNESS_TOLERANCE_LU = toleranceOf('integratedLoudness');
+const CREST_FACTOR_TOLERANCE_DB = toleranceOf('crestFactor');
+const SIDE_SHARE_TOLERANCE = toleranceOf('sideEnergyFraction');
+const CENTROID_TOLERANCE_HZ = toleranceOf('spectralCentroid');
 
 /**
  * What each constraint measures. The low end is the measurement's own `sub` and `bass` bands, the

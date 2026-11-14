@@ -7,6 +7,7 @@ import {
     REACT_FIRST_RENDER_MARKER,
     VITE_CONNECTED_MARKER,
     wait_for_console_marker,
+    wait_for_console_marker_after,
     type FirstPaintTimeline,
 } from '../../tests/e2e/firstPaintDiagnostics';
 
@@ -191,5 +192,45 @@ describe('console marker readiness wait', () => {
 
         await expect(waiting).rejects.toThrow('The page never logged "[capabilities]"');
         await expect(waiting).rejects.toThrow('refuses to hand a cold server to the timed first-paint waits');
+    });
+});
+
+describe('fresh console marker after navigation', () => {
+    it('accepts a fresh marker emitted before navigation resolves', async () => {
+        const timeline = timelineWith([[1, CAPABILITIES_MARKER]]);
+        let finishNavigation: () => void = () => {
+            throw new Error('navigation did not start');
+        };
+        const navigation = new Promise<void>((resolve) => {
+            finishNavigation = resolve;
+        });
+        const waiting = wait_for_console_marker_after(timeline, CAPABILITIES_MARKER, 50, () => navigation);
+        timeline.events.push({ atMs: 2, text: CAPABILITIES_MARKER });
+        finishNavigation();
+        await expect(waiting).resolves.toBeUndefined();
+    });
+
+    it('rejects an old marker when no new marker arrives', async () => {
+        const timeline = timelineWith([[1, CAPABILITIES_MARKER]]);
+        await expect(wait_for_console_marker_after(timeline, CAPABILITIES_MARKER, 20, async () => {})).rejects.toThrow(
+            'The page never logged "[capabilities]"'
+        );
+    });
+
+    it('accepts a marker arriving after navigation', async () => {
+        const timeline = timelineWith([[1, CAPABILITIES_MARKER]]);
+        const waiting = wait_for_console_marker_after(timeline, CAPABILITIES_MARKER, 1000, async () => {
+            setTimeout(() => timeline.events.push({ atMs: 2, text: CAPABILITIES_MARKER }), 0);
+        });
+        await expect(waiting).resolves.toBeUndefined();
+    });
+
+    it('propagates a navigation failure', async () => {
+        const failure = new Error('navigation failed');
+        await expect(
+            wait_for_console_marker_after(timelineWith([]), CAPABILITIES_MARKER, 100, async () => {
+                throw failure;
+            })
+        ).rejects.toBe(failure);
     });
 });
