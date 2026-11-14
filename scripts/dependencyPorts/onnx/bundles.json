@@ -1,0 +1,1046 @@
+[
+    {
+        "path": "dist/ort.all.bundle.min.mjs",
+        "sha256": "2aef479af24d8ebb0d4f94abfa26eb738e0791cba6fb0b1717d0e0439415cb4c",
+        "bytes": 869537,
+        "sourceMap": "linked",
+        "mapPath": "ort.all.bundle.min.mjs.map",
+        "mapSha256": "2023f593f29ebd2e2ab0be38756d6e85d035496ddd4404cf5d069ae6da97e301",
+        "sourceCount": 252,
+        "protobufAndLongInputs": [
+            {
+                "source": "../node_modules/long/index.js",
+                "sha256": "8d6b1d2162ff21170db73d6b91e313e6b90bd35acfdd60453b2792ec433ae69e",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/@protobufjs/aspromise/index.js",
+                "sha256": "fb1acf6664b54d5d6a0d110e213a1fac0ea8cc1fba3867b93bfe1bc31fdddc10",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/base64/index.js",
+                "sha256": "c49fe6e858675f444adc5f6f4790f202c9de96d9a573b88b4791db94e6b6aeb9",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/eventemitter/index.js",
+                "sha256": "9f30f0caa6fb0ca2f4de57eb0b00161795e8aa9b76eb7edfede6d7506a588562",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/float/index.js",
+                "sha256": "bacb0a4b2b042bccb8b30186662a6e7fa0027f354be53175095daa40c56d98bb",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/inquire/index.js",
+                "sha256": "5dd189800ae3de685fc6b6d02dbe2aa276edd386718ca2e9c410ec2dd7814b2d",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/utf8/index.js",
+                "sha256": "d039bcabadff40522235eb8023e8d25464ec89ca22746a0d2f56c88908fb18a1",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/pool/index.js",
+                "sha256": "7b8d9bf0a28ad86b7735fc8550a5982856998b2cfbd017f09090ba0f94619d74",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/longbits.js",
+                "sha256": "3afff6e35a4c1717b01d2a4bd40bbdb7bf5d00d007d411acdec3aa622cbc803a",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/long/umd/index.js",
+                "sha256": "ea6da8d5fff04abc358b94488dbbb7eeb46e5027cc05303b1761cea94bef7821",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/minimal.js",
+                "sha256": "a30c396af5fc144988e789e051840cbdf029efd264707a128f114f7801b17203",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer.js",
+                "sha256": "c3d5b3b1a85310fb790c997709b2a3654f80ab849f09689aaef6600e141963f2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer_buffer.js",
+                "sha256": "ccaba96e1ec77260d358330a9475411488b2977d46d03aa3ec47b807a61d91c2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader.js",
+                "sha256": "a9eeb03b99bbb743bb368fcd6513814bb978c25d37344bf58d872587baaab7e0",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader_buffer.js",
+                "sha256": "b942cc88d4dd75b3ca378ea53c7b7037909cc388e31d35fcdfb76ea5d8c5d096",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc/service.js",
+                "sha256": "d276dd024814d7feecf0b5fefd40e8d58d4eb6c781768f3ef3e3a7e06f6cb300",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc.js",
+                "sha256": "126acd0deef0363d8c1748ca8da5b0cf06312bc88fdc7227f9dd7495ec364f67",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/roots.js",
+                "sha256": "67afecbc9bdbce1242773b0e67f93fc0ece79febaf547301e3e3586685a9b63c",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/index-minimal.js",
+                "sha256": "6b6436025c7c67c5a0a89d68d4e9e8d788bc944509d8ea650afb6748a89a069d",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/minimal.js",
+                "sha256": "76af8114bd4fe1bd0b023cbd1a871019b77036282445e37f14071b26fb233920",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../lib/onnxjs/ort-schema/protobuf/onnx.js",
+                "sha256": "b6cb83ec708b51f5bcce8295a2dc1452e430d6c8696db2da68c5233d9359cb3f",
+                "matchesVerifiedPackages": []
+            }
+        ]
+    },
+    {
+        "path": "dist/ort.all.js",
+        "sha256": "ecb80563a8727fed5cdd0820a0cc0054dc97465a2d1c5b823e619d0297c68abf",
+        "bytes": 6060527,
+        "sourceMap": "inline",
+        "mapPath": null,
+        "mapSha256": null,
+        "sourceCount": 251,
+        "protobufAndLongInputs": [
+            {
+                "source": "../node_modules/long/index.js",
+                "sha256": "8d6b1d2162ff21170db73d6b91e313e6b90bd35acfdd60453b2792ec433ae69e",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/@protobufjs/aspromise/index.js",
+                "sha256": "fb1acf6664b54d5d6a0d110e213a1fac0ea8cc1fba3867b93bfe1bc31fdddc10",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/base64/index.js",
+                "sha256": "c49fe6e858675f444adc5f6f4790f202c9de96d9a573b88b4791db94e6b6aeb9",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/eventemitter/index.js",
+                "sha256": "9f30f0caa6fb0ca2f4de57eb0b00161795e8aa9b76eb7edfede6d7506a588562",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/float/index.js",
+                "sha256": "bacb0a4b2b042bccb8b30186662a6e7fa0027f354be53175095daa40c56d98bb",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/inquire/index.js",
+                "sha256": "5dd189800ae3de685fc6b6d02dbe2aa276edd386718ca2e9c410ec2dd7814b2d",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/utf8/index.js",
+                "sha256": "d039bcabadff40522235eb8023e8d25464ec89ca22746a0d2f56c88908fb18a1",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/pool/index.js",
+                "sha256": "7b8d9bf0a28ad86b7735fc8550a5982856998b2cfbd017f09090ba0f94619d74",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/longbits.js",
+                "sha256": "3afff6e35a4c1717b01d2a4bd40bbdb7bf5d00d007d411acdec3aa622cbc803a",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/long/umd/index.js",
+                "sha256": "ea6da8d5fff04abc358b94488dbbb7eeb46e5027cc05303b1761cea94bef7821",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/minimal.js",
+                "sha256": "a30c396af5fc144988e789e051840cbdf029efd264707a128f114f7801b17203",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer.js",
+                "sha256": "c3d5b3b1a85310fb790c997709b2a3654f80ab849f09689aaef6600e141963f2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer_buffer.js",
+                "sha256": "ccaba96e1ec77260d358330a9475411488b2977d46d03aa3ec47b807a61d91c2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader.js",
+                "sha256": "a9eeb03b99bbb743bb368fcd6513814bb978c25d37344bf58d872587baaab7e0",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader_buffer.js",
+                "sha256": "b942cc88d4dd75b3ca378ea53c7b7037909cc388e31d35fcdfb76ea5d8c5d096",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc/service.js",
+                "sha256": "d276dd024814d7feecf0b5fefd40e8d58d4eb6c781768f3ef3e3a7e06f6cb300",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc.js",
+                "sha256": "126acd0deef0363d8c1748ca8da5b0cf06312bc88fdc7227f9dd7495ec364f67",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/roots.js",
+                "sha256": "67afecbc9bdbce1242773b0e67f93fc0ece79febaf547301e3e3586685a9b63c",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/index-minimal.js",
+                "sha256": "6b6436025c7c67c5a0a89d68d4e9e8d788bc944509d8ea650afb6748a89a069d",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/minimal.js",
+                "sha256": "76af8114bd4fe1bd0b023cbd1a871019b77036282445e37f14071b26fb233920",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../lib/onnxjs/ort-schema/protobuf/onnx.js",
+                "sha256": "b6cb83ec708b51f5bcce8295a2dc1452e430d6c8696db2da68c5233d9359cb3f",
+                "matchesVerifiedPackages": []
+            }
+        ]
+    },
+    {
+        "path": "dist/ort.all.min.js",
+        "sha256": "4f8c9e2241c34eda8515cee38b62ed9eb052c054a1e531591074459c8bd8ff97",
+        "bytes": 823379,
+        "sourceMap": "linked",
+        "mapPath": "ort.all.min.js.map",
+        "mapSha256": "07978e0db14a4e1395a6bb155425b5c2a402d8107fb2658bf0eae604df5b8014",
+        "sourceCount": 251,
+        "protobufAndLongInputs": [
+            {
+                "source": "../node_modules/long/index.js",
+                "sha256": "8d6b1d2162ff21170db73d6b91e313e6b90bd35acfdd60453b2792ec433ae69e",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/@protobufjs/aspromise/index.js",
+                "sha256": "fb1acf6664b54d5d6a0d110e213a1fac0ea8cc1fba3867b93bfe1bc31fdddc10",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/base64/index.js",
+                "sha256": "c49fe6e858675f444adc5f6f4790f202c9de96d9a573b88b4791db94e6b6aeb9",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/eventemitter/index.js",
+                "sha256": "9f30f0caa6fb0ca2f4de57eb0b00161795e8aa9b76eb7edfede6d7506a588562",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/float/index.js",
+                "sha256": "bacb0a4b2b042bccb8b30186662a6e7fa0027f354be53175095daa40c56d98bb",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/inquire/index.js",
+                "sha256": "5dd189800ae3de685fc6b6d02dbe2aa276edd386718ca2e9c410ec2dd7814b2d",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/utf8/index.js",
+                "sha256": "d039bcabadff40522235eb8023e8d25464ec89ca22746a0d2f56c88908fb18a1",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/pool/index.js",
+                "sha256": "7b8d9bf0a28ad86b7735fc8550a5982856998b2cfbd017f09090ba0f94619d74",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/longbits.js",
+                "sha256": "3afff6e35a4c1717b01d2a4bd40bbdb7bf5d00d007d411acdec3aa622cbc803a",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/long/umd/index.js",
+                "sha256": "ea6da8d5fff04abc358b94488dbbb7eeb46e5027cc05303b1761cea94bef7821",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/minimal.js",
+                "sha256": "a30c396af5fc144988e789e051840cbdf029efd264707a128f114f7801b17203",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer.js",
+                "sha256": "c3d5b3b1a85310fb790c997709b2a3654f80ab849f09689aaef6600e141963f2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer_buffer.js",
+                "sha256": "ccaba96e1ec77260d358330a9475411488b2977d46d03aa3ec47b807a61d91c2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader.js",
+                "sha256": "a9eeb03b99bbb743bb368fcd6513814bb978c25d37344bf58d872587baaab7e0",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader_buffer.js",
+                "sha256": "b942cc88d4dd75b3ca378ea53c7b7037909cc388e31d35fcdfb76ea5d8c5d096",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc/service.js",
+                "sha256": "d276dd024814d7feecf0b5fefd40e8d58d4eb6c781768f3ef3e3a7e06f6cb300",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc.js",
+                "sha256": "126acd0deef0363d8c1748ca8da5b0cf06312bc88fdc7227f9dd7495ec364f67",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/roots.js",
+                "sha256": "67afecbc9bdbce1242773b0e67f93fc0ece79febaf547301e3e3586685a9b63c",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/index-minimal.js",
+                "sha256": "6b6436025c7c67c5a0a89d68d4e9e8d788bc944509d8ea650afb6748a89a069d",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/minimal.js",
+                "sha256": "76af8114bd4fe1bd0b023cbd1a871019b77036282445e37f14071b26fb233920",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../lib/onnxjs/ort-schema/protobuf/onnx.js",
+                "sha256": "b6cb83ec708b51f5bcce8295a2dc1452e430d6c8696db2da68c5233d9359cb3f",
+                "matchesVerifiedPackages": []
+            }
+        ]
+    },
+    {
+        "path": "dist/ort.all.min.mjs",
+        "sha256": "d95eb420c46e4e2b72a83aa906ff9a06baa9223a7809c8ce1c905b4c1ddedfa5",
+        "bytes": 823307,
+        "sourceMap": "linked",
+        "mapPath": "ort.all.min.mjs.map",
+        "mapSha256": "3812de0c0bf590a0be4569a04da68823cb11f7a86c2a8b3213bedada80954305",
+        "sourceCount": 251,
+        "protobufAndLongInputs": [
+            {
+                "source": "../node_modules/long/index.js",
+                "sha256": "8d6b1d2162ff21170db73d6b91e313e6b90bd35acfdd60453b2792ec433ae69e",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/@protobufjs/aspromise/index.js",
+                "sha256": "fb1acf6664b54d5d6a0d110e213a1fac0ea8cc1fba3867b93bfe1bc31fdddc10",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/base64/index.js",
+                "sha256": "c49fe6e858675f444adc5f6f4790f202c9de96d9a573b88b4791db94e6b6aeb9",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/eventemitter/index.js",
+                "sha256": "9f30f0caa6fb0ca2f4de57eb0b00161795e8aa9b76eb7edfede6d7506a588562",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/float/index.js",
+                "sha256": "bacb0a4b2b042bccb8b30186662a6e7fa0027f354be53175095daa40c56d98bb",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/inquire/index.js",
+                "sha256": "5dd189800ae3de685fc6b6d02dbe2aa276edd386718ca2e9c410ec2dd7814b2d",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/utf8/index.js",
+                "sha256": "d039bcabadff40522235eb8023e8d25464ec89ca22746a0d2f56c88908fb18a1",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/pool/index.js",
+                "sha256": "7b8d9bf0a28ad86b7735fc8550a5982856998b2cfbd017f09090ba0f94619d74",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/longbits.js",
+                "sha256": "3afff6e35a4c1717b01d2a4bd40bbdb7bf5d00d007d411acdec3aa622cbc803a",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/long/umd/index.js",
+                "sha256": "ea6da8d5fff04abc358b94488dbbb7eeb46e5027cc05303b1761cea94bef7821",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/minimal.js",
+                "sha256": "a30c396af5fc144988e789e051840cbdf029efd264707a128f114f7801b17203",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer.js",
+                "sha256": "c3d5b3b1a85310fb790c997709b2a3654f80ab849f09689aaef6600e141963f2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer_buffer.js",
+                "sha256": "ccaba96e1ec77260d358330a9475411488b2977d46d03aa3ec47b807a61d91c2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader.js",
+                "sha256": "a9eeb03b99bbb743bb368fcd6513814bb978c25d37344bf58d872587baaab7e0",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader_buffer.js",
+                "sha256": "b942cc88d4dd75b3ca378ea53c7b7037909cc388e31d35fcdfb76ea5d8c5d096",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc/service.js",
+                "sha256": "d276dd024814d7feecf0b5fefd40e8d58d4eb6c781768f3ef3e3a7e06f6cb300",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc.js",
+                "sha256": "126acd0deef0363d8c1748ca8da5b0cf06312bc88fdc7227f9dd7495ec364f67",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/roots.js",
+                "sha256": "67afecbc9bdbce1242773b0e67f93fc0ece79febaf547301e3e3586685a9b63c",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/index-minimal.js",
+                "sha256": "6b6436025c7c67c5a0a89d68d4e9e8d788bc944509d8ea650afb6748a89a069d",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/minimal.js",
+                "sha256": "76af8114bd4fe1bd0b023cbd1a871019b77036282445e37f14071b26fb233920",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../lib/onnxjs/ort-schema/protobuf/onnx.js",
+                "sha256": "b6cb83ec708b51f5bcce8295a2dc1452e430d6c8696db2da68c5233d9359cb3f",
+                "matchesVerifiedPackages": []
+            }
+        ]
+    },
+    {
+        "path": "dist/ort.all.mjs",
+        "sha256": "7bfedc577f29244a28e681d17b037cf51e9b261006bb4fc6aa70d03efad99d57",
+        "bytes": 5977507,
+        "sourceMap": "inline",
+        "mapPath": null,
+        "mapSha256": null,
+        "sourceCount": 251,
+        "protobufAndLongInputs": [
+            {
+                "source": "../node_modules/long/index.js",
+                "sha256": "8d6b1d2162ff21170db73d6b91e313e6b90bd35acfdd60453b2792ec433ae69e",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/@protobufjs/aspromise/index.js",
+                "sha256": "fb1acf6664b54d5d6a0d110e213a1fac0ea8cc1fba3867b93bfe1bc31fdddc10",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/base64/index.js",
+                "sha256": "c49fe6e858675f444adc5f6f4790f202c9de96d9a573b88b4791db94e6b6aeb9",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/eventemitter/index.js",
+                "sha256": "9f30f0caa6fb0ca2f4de57eb0b00161795e8aa9b76eb7edfede6d7506a588562",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/float/index.js",
+                "sha256": "bacb0a4b2b042bccb8b30186662a6e7fa0027f354be53175095daa40c56d98bb",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/inquire/index.js",
+                "sha256": "5dd189800ae3de685fc6b6d02dbe2aa276edd386718ca2e9c410ec2dd7814b2d",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/utf8/index.js",
+                "sha256": "d039bcabadff40522235eb8023e8d25464ec89ca22746a0d2f56c88908fb18a1",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/pool/index.js",
+                "sha256": "7b8d9bf0a28ad86b7735fc8550a5982856998b2cfbd017f09090ba0f94619d74",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/longbits.js",
+                "sha256": "3afff6e35a4c1717b01d2a4bd40bbdb7bf5d00d007d411acdec3aa622cbc803a",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/long/umd/index.js",
+                "sha256": "ea6da8d5fff04abc358b94488dbbb7eeb46e5027cc05303b1761cea94bef7821",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/minimal.js",
+                "sha256": "a30c396af5fc144988e789e051840cbdf029efd264707a128f114f7801b17203",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer.js",
+                "sha256": "c3d5b3b1a85310fb790c997709b2a3654f80ab849f09689aaef6600e141963f2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer_buffer.js",
+                "sha256": "ccaba96e1ec77260d358330a9475411488b2977d46d03aa3ec47b807a61d91c2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader.js",
+                "sha256": "a9eeb03b99bbb743bb368fcd6513814bb978c25d37344bf58d872587baaab7e0",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader_buffer.js",
+                "sha256": "b942cc88d4dd75b3ca378ea53c7b7037909cc388e31d35fcdfb76ea5d8c5d096",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc/service.js",
+                "sha256": "d276dd024814d7feecf0b5fefd40e8d58d4eb6c781768f3ef3e3a7e06f6cb300",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc.js",
+                "sha256": "126acd0deef0363d8c1748ca8da5b0cf06312bc88fdc7227f9dd7495ec364f67",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/roots.js",
+                "sha256": "67afecbc9bdbce1242773b0e67f93fc0ece79febaf547301e3e3586685a9b63c",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/index-minimal.js",
+                "sha256": "6b6436025c7c67c5a0a89d68d4e9e8d788bc944509d8ea650afb6748a89a069d",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/minimal.js",
+                "sha256": "76af8114bd4fe1bd0b023cbd1a871019b77036282445e37f14071b26fb233920",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../lib/onnxjs/ort-schema/protobuf/onnx.js",
+                "sha256": "b6cb83ec708b51f5bcce8295a2dc1452e430d6c8696db2da68c5233d9359cb3f",
+                "matchesVerifiedPackages": []
+            }
+        ]
+    },
+    {
+        "path": "dist/ort.webgl.js",
+        "sha256": "050f9559ef050f5e2d694d67631e47889545405bbbc21878dcf7005636f28e06",
+        "bytes": 3608571,
+        "sourceMap": "inline",
+        "mapPath": null,
+        "mapSha256": null,
+        "sourceCount": 171,
+        "protobufAndLongInputs": [
+            {
+                "source": "../node_modules/long/index.js",
+                "sha256": "8d6b1d2162ff21170db73d6b91e313e6b90bd35acfdd60453b2792ec433ae69e",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/@protobufjs/aspromise/index.js",
+                "sha256": "fb1acf6664b54d5d6a0d110e213a1fac0ea8cc1fba3867b93bfe1bc31fdddc10",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/base64/index.js",
+                "sha256": "c49fe6e858675f444adc5f6f4790f202c9de96d9a573b88b4791db94e6b6aeb9",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/eventemitter/index.js",
+                "sha256": "9f30f0caa6fb0ca2f4de57eb0b00161795e8aa9b76eb7edfede6d7506a588562",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/float/index.js",
+                "sha256": "bacb0a4b2b042bccb8b30186662a6e7fa0027f354be53175095daa40c56d98bb",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/inquire/index.js",
+                "sha256": "5dd189800ae3de685fc6b6d02dbe2aa276edd386718ca2e9c410ec2dd7814b2d",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/utf8/index.js",
+                "sha256": "d039bcabadff40522235eb8023e8d25464ec89ca22746a0d2f56c88908fb18a1",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/pool/index.js",
+                "sha256": "7b8d9bf0a28ad86b7735fc8550a5982856998b2cfbd017f09090ba0f94619d74",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/longbits.js",
+                "sha256": "3afff6e35a4c1717b01d2a4bd40bbdb7bf5d00d007d411acdec3aa622cbc803a",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/long/umd/index.js",
+                "sha256": "ea6da8d5fff04abc358b94488dbbb7eeb46e5027cc05303b1761cea94bef7821",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/minimal.js",
+                "sha256": "a30c396af5fc144988e789e051840cbdf029efd264707a128f114f7801b17203",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer.js",
+                "sha256": "c3d5b3b1a85310fb790c997709b2a3654f80ab849f09689aaef6600e141963f2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer_buffer.js",
+                "sha256": "ccaba96e1ec77260d358330a9475411488b2977d46d03aa3ec47b807a61d91c2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader.js",
+                "sha256": "a9eeb03b99bbb743bb368fcd6513814bb978c25d37344bf58d872587baaab7e0",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader_buffer.js",
+                "sha256": "b942cc88d4dd75b3ca378ea53c7b7037909cc388e31d35fcdfb76ea5d8c5d096",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc/service.js",
+                "sha256": "d276dd024814d7feecf0b5fefd40e8d58d4eb6c781768f3ef3e3a7e06f6cb300",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc.js",
+                "sha256": "126acd0deef0363d8c1748ca8da5b0cf06312bc88fdc7227f9dd7495ec364f67",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/roots.js",
+                "sha256": "67afecbc9bdbce1242773b0e67f93fc0ece79febaf547301e3e3586685a9b63c",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/index-minimal.js",
+                "sha256": "6b6436025c7c67c5a0a89d68d4e9e8d788bc944509d8ea650afb6748a89a069d",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/minimal.js",
+                "sha256": "76af8114bd4fe1bd0b023cbd1a871019b77036282445e37f14071b26fb233920",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../lib/onnxjs/ort-schema/protobuf/onnx.js",
+                "sha256": "b6cb83ec708b51f5bcce8295a2dc1452e430d6c8696db2da68c5233d9359cb3f",
+                "matchesVerifiedPackages": []
+            }
+        ]
+    },
+    {
+        "path": "dist/ort.webgl.min.js",
+        "sha256": "bc9a9f4ec0dfca91cf0c2c973069e06ee4ea92f88acdd899aa005a70c297daaf",
+        "bytes": 473821,
+        "sourceMap": "linked",
+        "mapPath": "ort.webgl.min.js.map",
+        "mapSha256": "7e45290ef12b52e19dd3701c9311910acece73329284dedc4e41918f531c9434",
+        "sourceCount": 171,
+        "protobufAndLongInputs": [
+            {
+                "source": "../node_modules/long/index.js",
+                "sha256": "8d6b1d2162ff21170db73d6b91e313e6b90bd35acfdd60453b2792ec433ae69e",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/@protobufjs/aspromise/index.js",
+                "sha256": "fb1acf6664b54d5d6a0d110e213a1fac0ea8cc1fba3867b93bfe1bc31fdddc10",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/base64/index.js",
+                "sha256": "c49fe6e858675f444adc5f6f4790f202c9de96d9a573b88b4791db94e6b6aeb9",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/eventemitter/index.js",
+                "sha256": "9f30f0caa6fb0ca2f4de57eb0b00161795e8aa9b76eb7edfede6d7506a588562",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/float/index.js",
+                "sha256": "bacb0a4b2b042bccb8b30186662a6e7fa0027f354be53175095daa40c56d98bb",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/inquire/index.js",
+                "sha256": "5dd189800ae3de685fc6b6d02dbe2aa276edd386718ca2e9c410ec2dd7814b2d",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/utf8/index.js",
+                "sha256": "d039bcabadff40522235eb8023e8d25464ec89ca22746a0d2f56c88908fb18a1",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/pool/index.js",
+                "sha256": "7b8d9bf0a28ad86b7735fc8550a5982856998b2cfbd017f09090ba0f94619d74",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/longbits.js",
+                "sha256": "3afff6e35a4c1717b01d2a4bd40bbdb7bf5d00d007d411acdec3aa622cbc803a",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/long/umd/index.js",
+                "sha256": "ea6da8d5fff04abc358b94488dbbb7eeb46e5027cc05303b1761cea94bef7821",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/minimal.js",
+                "sha256": "a30c396af5fc144988e789e051840cbdf029efd264707a128f114f7801b17203",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer.js",
+                "sha256": "c3d5b3b1a85310fb790c997709b2a3654f80ab849f09689aaef6600e141963f2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer_buffer.js",
+                "sha256": "ccaba96e1ec77260d358330a9475411488b2977d46d03aa3ec47b807a61d91c2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader.js",
+                "sha256": "a9eeb03b99bbb743bb368fcd6513814bb978c25d37344bf58d872587baaab7e0",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader_buffer.js",
+                "sha256": "b942cc88d4dd75b3ca378ea53c7b7037909cc388e31d35fcdfb76ea5d8c5d096",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc/service.js",
+                "sha256": "d276dd024814d7feecf0b5fefd40e8d58d4eb6c781768f3ef3e3a7e06f6cb300",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc.js",
+                "sha256": "126acd0deef0363d8c1748ca8da5b0cf06312bc88fdc7227f9dd7495ec364f67",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/roots.js",
+                "sha256": "67afecbc9bdbce1242773b0e67f93fc0ece79febaf547301e3e3586685a9b63c",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/index-minimal.js",
+                "sha256": "6b6436025c7c67c5a0a89d68d4e9e8d788bc944509d8ea650afb6748a89a069d",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/minimal.js",
+                "sha256": "76af8114bd4fe1bd0b023cbd1a871019b77036282445e37f14071b26fb233920",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../lib/onnxjs/ort-schema/protobuf/onnx.js",
+                "sha256": "b6cb83ec708b51f5bcce8295a2dc1452e430d6c8696db2da68c5233d9359cb3f",
+                "matchesVerifiedPackages": []
+            }
+        ]
+    },
+    {
+        "path": "dist/ort.webgl.min.mjs",
+        "sha256": "761dededbe0f371ff711f15d776ee40d526838bdbf7c1ac415f82cbedb1f8036",
+        "bytes": 473681,
+        "sourceMap": "linked",
+        "mapPath": "ort.webgl.min.mjs.map",
+        "mapSha256": "0de6ebdf43e06a6d29bd5a091b4d00697bdbe803b9312c81ec165b05d1b9d1f8",
+        "sourceCount": 171,
+        "protobufAndLongInputs": [
+            {
+                "source": "../node_modules/long/index.js",
+                "sha256": "8d6b1d2162ff21170db73d6b91e313e6b90bd35acfdd60453b2792ec433ae69e",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/@protobufjs/aspromise/index.js",
+                "sha256": "fb1acf6664b54d5d6a0d110e213a1fac0ea8cc1fba3867b93bfe1bc31fdddc10",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/base64/index.js",
+                "sha256": "c49fe6e858675f444adc5f6f4790f202c9de96d9a573b88b4791db94e6b6aeb9",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/eventemitter/index.js",
+                "sha256": "9f30f0caa6fb0ca2f4de57eb0b00161795e8aa9b76eb7edfede6d7506a588562",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/float/index.js",
+                "sha256": "bacb0a4b2b042bccb8b30186662a6e7fa0027f354be53175095daa40c56d98bb",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/inquire/index.js",
+                "sha256": "5dd189800ae3de685fc6b6d02dbe2aa276edd386718ca2e9c410ec2dd7814b2d",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/utf8/index.js",
+                "sha256": "d039bcabadff40522235eb8023e8d25464ec89ca22746a0d2f56c88908fb18a1",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/pool/index.js",
+                "sha256": "7b8d9bf0a28ad86b7735fc8550a5982856998b2cfbd017f09090ba0f94619d74",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/longbits.js",
+                "sha256": "3afff6e35a4c1717b01d2a4bd40bbdb7bf5d00d007d411acdec3aa622cbc803a",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/long/umd/index.js",
+                "sha256": "ea6da8d5fff04abc358b94488dbbb7eeb46e5027cc05303b1761cea94bef7821",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/minimal.js",
+                "sha256": "a30c396af5fc144988e789e051840cbdf029efd264707a128f114f7801b17203",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer.js",
+                "sha256": "c3d5b3b1a85310fb790c997709b2a3654f80ab849f09689aaef6600e141963f2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer_buffer.js",
+                "sha256": "ccaba96e1ec77260d358330a9475411488b2977d46d03aa3ec47b807a61d91c2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader.js",
+                "sha256": "a9eeb03b99bbb743bb368fcd6513814bb978c25d37344bf58d872587baaab7e0",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader_buffer.js",
+                "sha256": "b942cc88d4dd75b3ca378ea53c7b7037909cc388e31d35fcdfb76ea5d8c5d096",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc/service.js",
+                "sha256": "d276dd024814d7feecf0b5fefd40e8d58d4eb6c781768f3ef3e3a7e06f6cb300",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc.js",
+                "sha256": "126acd0deef0363d8c1748ca8da5b0cf06312bc88fdc7227f9dd7495ec364f67",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/roots.js",
+                "sha256": "67afecbc9bdbce1242773b0e67f93fc0ece79febaf547301e3e3586685a9b63c",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/index-minimal.js",
+                "sha256": "6b6436025c7c67c5a0a89d68d4e9e8d788bc944509d8ea650afb6748a89a069d",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/minimal.js",
+                "sha256": "76af8114bd4fe1bd0b023cbd1a871019b77036282445e37f14071b26fb233920",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../lib/onnxjs/ort-schema/protobuf/onnx.js",
+                "sha256": "b6cb83ec708b51f5bcce8295a2dc1452e430d6c8696db2da68c5233d9359cb3f",
+                "matchesVerifiedPackages": []
+            }
+        ]
+    },
+    {
+        "path": "dist/ort.webgl.mjs",
+        "sha256": "95eaf2d04897012095dd82e4925180521d0f2765bb6057fdc9efbcc8082d36ab",
+        "bytes": 3555235,
+        "sourceMap": "inline",
+        "mapPath": null,
+        "mapSha256": null,
+        "sourceCount": 171,
+        "protobufAndLongInputs": [
+            {
+                "source": "../node_modules/long/index.js",
+                "sha256": "8d6b1d2162ff21170db73d6b91e313e6b90bd35acfdd60453b2792ec433ae69e",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/@protobufjs/aspromise/index.js",
+                "sha256": "fb1acf6664b54d5d6a0d110e213a1fac0ea8cc1fba3867b93bfe1bc31fdddc10",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/base64/index.js",
+                "sha256": "c49fe6e858675f444adc5f6f4790f202c9de96d9a573b88b4791db94e6b6aeb9",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/eventemitter/index.js",
+                "sha256": "9f30f0caa6fb0ca2f4de57eb0b00161795e8aa9b76eb7edfede6d7506a588562",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/float/index.js",
+                "sha256": "bacb0a4b2b042bccb8b30186662a6e7fa0027f354be53175095daa40c56d98bb",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/inquire/index.js",
+                "sha256": "5dd189800ae3de685fc6b6d02dbe2aa276edd386718ca2e9c410ec2dd7814b2d",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/utf8/index.js",
+                "sha256": "d039bcabadff40522235eb8023e8d25464ec89ca22746a0d2f56c88908fb18a1",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/@protobufjs/pool/index.js",
+                "sha256": "7b8d9bf0a28ad86b7735fc8550a5982856998b2cfbd017f09090ba0f94619d74",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/longbits.js",
+                "sha256": "3afff6e35a4c1717b01d2a4bd40bbdb7bf5d00d007d411acdec3aa622cbc803a",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/long/umd/index.js",
+                "sha256": "ea6da8d5fff04abc358b94488dbbb7eeb46e5027cc05303b1761cea94bef7821",
+                "matchesVerifiedPackages": ["long@5.3.2"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/util/minimal.js",
+                "sha256": "a30c396af5fc144988e789e051840cbdf029efd264707a128f114f7801b17203",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer.js",
+                "sha256": "c3d5b3b1a85310fb790c997709b2a3654f80ab849f09689aaef6600e141963f2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/writer_buffer.js",
+                "sha256": "ccaba96e1ec77260d358330a9475411488b2977d46d03aa3ec47b807a61d91c2",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader.js",
+                "sha256": "a9eeb03b99bbb743bb368fcd6513814bb978c25d37344bf58d872587baaab7e0",
+                "matchesVerifiedPackages": []
+            },
+            {
+                "source": "../node_modules/protobufjs/src/reader_buffer.js",
+                "sha256": "b942cc88d4dd75b3ca378ea53c7b7037909cc388e31d35fcdfb76ea5d8c5d096",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc/service.js",
+                "sha256": "d276dd024814d7feecf0b5fefd40e8d58d4eb6c781768f3ef3e3a7e06f6cb300",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/rpc.js",
+                "sha256": "126acd0deef0363d8c1748ca8da5b0cf06312bc88fdc7227f9dd7495ec364f67",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/roots.js",
+                "sha256": "67afecbc9bdbce1242773b0e67f93fc0ece79febaf547301e3e3586685a9b63c",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../node_modules/protobufjs/src/index-minimal.js",
+                "sha256": "6b6436025c7c67c5a0a89d68d4e9e8d788bc944509d8ea650afb6748a89a069d",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6"]
+            },
+            {
+                "source": "../node_modules/protobufjs/minimal.js",
+                "sha256": "76af8114bd4fe1bd0b023cbd1a871019b77036282445e37f14071b26fb233920",
+                "matchesVerifiedPackages": ["protobufjs@7.6.6", "protobufjs@8.8.1"]
+            },
+            {
+                "source": "../lib/onnxjs/ort-schema/protobuf/onnx.js",
+                "sha256": "b6cb83ec708b51f5bcce8295a2dc1452e430d6c8696db2da68c5233d9359cb3f",
+                "matchesVerifiedPackages": []
+            }
+        ]
+    }
+]

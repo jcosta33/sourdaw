@@ -1,0 +1,14 @@
+{
+    "name": "sourdaw-private-onnx-protobuf-producer",
+    "private": true,
+    "type": "commonjs",
+    "engines": {
+        "node": ">=26.13.1 <27"
+    },
+    "dependencies": {
+        "esbuild": "0.28.2",
+        "terser": "5.51.2",
+        "source-map": "0.8.0",
+        "minimist": "1.2.8"
+    }
+}

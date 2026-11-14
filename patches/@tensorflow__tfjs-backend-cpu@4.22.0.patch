@@ -1,0 +1,13 @@
+diff --git a/package.json b/package.json
+index 229894c..caa7e22 100644
+--- a/package.json
++++ b/package.json
+@@ -32,7 +32,7 @@
+     "test-dev": "ibazel run :tests --test-output=streamed"
+   },
+   "dependencies": {
+-    "@types/seedrandom": "^2.4.28",
++    "@types/seedrandom": "^3.0.8",
+     "seedrandom": "^3.0.5"
+   },
+   "peerDependencies": {

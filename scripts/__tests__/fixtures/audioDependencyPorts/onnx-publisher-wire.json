@@ -1,0 +1,422 @@
+{
+    "valid": {
+        "Buffer": [
+            {
+                "type": "TensorProto",
+                "wireHex": "0a02020210073a1e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7f4204776972654a0400ff80015a150080808080808080808001ffffffffffffffffff01",
+                "plain": {
+                    "dims": ["2", "2"],
+                    "dataType": 7,
+                    "int64Data": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                    "name": "wire",
+                    "rawData": [0, 255, 128, 1],
+                    "uint64Data": ["0", "9223372036854775808", "18446744073709551615"]
+                }
+            },
+            {
+                "type": "AttributeProto",
+                "wireHex": "0a046178697318ffffffffffffffffff012a490a02020210073a1e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7f4204776972654a0400ff80015a150080808080808080808001ffffffffffffffffff01421e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7fa00102",
+                "plain": {
+                    "name": "axis",
+                    "i": "-1",
+                    "t": {
+                        "dims": ["2", "2"],
+                        "dataType": 7,
+                        "int64Data": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                        "name": "wire",
+                        "rawData": [0, 255, 128, 1],
+                        "uint64Data": ["0", "9223372036854775808", "18446744073709551615"]
+                    },
+                    "ints": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                    "type": 2
+                }
+            },
+            {
+                "type": "ModelProto",
+                "wireHex": "0809120c776972652d666978747572653a9c010a93010a01781201791a016e2207466978747572652a7f0a046178697318ffffffffffffffffff012a490a02020210073a1e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7f4204776972654a0400ff80015a150080808080808080808001ffffffffffffffffff01421e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7fa00102120477697265",
+                "plain": {
+                    "irVersion": "9",
+                    "producerName": "wire-fixture",
+                    "graph": {
+                        "node": [
+                            {
+                                "input": ["x"],
+                                "output": ["y"],
+                                "name": "n",
+                                "opType": "Fixture",
+                                "attribute": [
+                                    {
+                                        "name": "axis",
+                                        "i": "-1",
+                                        "t": {
+                                            "dims": ["2", "2"],
+                                            "dataType": 7,
+                                            "int64Data": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                                            "name": "wire",
+                                            "rawData": [0, 255, 128, 1],
+                                            "uint64Data": ["0", "9223372036854775808", "18446744073709551615"]
+                                        },
+                                        "ints": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                                        "type": 2
+                                    }
+                                ]
+                            }
+                        ],
+                        "name": "wire"
+                    }
+                }
+            }
+        ],
+        "Uint8Array": [
+            {
+                "type": "TensorProto",
+                "wireHex": "0a02020210073a1e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7f4204776972654a0400ff80015a150080808080808080808001ffffffffffffffffff01",
+                "plain": {
+                    "dims": ["2", "2"],
+                    "dataType": 7,
+                    "int64Data": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                    "name": "wire",
+                    "rawData": [0, 255, 128, 1],
+                    "uint64Data": ["0", "9223372036854775808", "18446744073709551615"]
+                }
+            },
+            {
+                "type": "AttributeProto",
+                "wireHex": "0a046178697318ffffffffffffffffff012a490a02020210073a1e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7f4204776972654a0400ff80015a150080808080808080808001ffffffffffffffffff01421e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7fa00102",
+                "plain": {
+                    "name": "axis",
+                    "i": "-1",
+                    "t": {
+                        "dims": ["2", "2"],
+                        "dataType": 7,
+                        "int64Data": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                        "name": "wire",
+                        "rawData": [0, 255, 128, 1],
+                        "uint64Data": ["0", "9223372036854775808", "18446744073709551615"]
+                    },
+                    "ints": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                    "type": 2
+                }
+            },
+            {
+                "type": "ModelProto",
+                "wireHex": "0809120c776972652d666978747572653a9c010a93010a01781201791a016e2207466978747572652a7f0a046178697318ffffffffffffffffff012a490a02020210073a1e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7f4204776972654a0400ff80015a150080808080808080808001ffffffffffffffffff01421e80808080808080808001ffffffffffffffffff0100ffffffffffffffff7fa00102120477697265",
+                "plain": {
+                    "irVersion": "9",
+                    "producerName": "wire-fixture",
+                    "graph": {
+                        "node": [
+                            {
+                                "input": ["x"],
+                                "output": ["y"],
+                                "name": "n",
+                                "opType": "Fixture",
+                                "attribute": [
+                                    {
+                                        "name": "axis",
+                                        "i": "-1",
+                                        "t": {
+                                            "dims": ["2", "2"],
+                                            "dataType": 7,
+                                            "int64Data": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                                            "name": "wire",
+                                            "rawData": [0, 255, 128, 1],
+                                            "uint64Data": ["0", "9223372036854775808", "18446744073709551615"]
+                                        },
+                                        "ints": ["-9223372036854775808", "-1", "0", "9223372036854775807"],
+                                        "type": 2
+                                    }
+                                ]
+                            }
+                        ],
+                        "name": "wire"
+                    }
+                }
+            }
+        ]
+    },
+    "literals": [
+        {
+            "name": "empty model defaults",
+            "representation": "Buffer",
+            "plain": {}
+        },
+        {
+            "name": "empty model defaults",
+            "representation": "Uint8Array",
+            "plain": {}
+        },
+        {
+            "name": "explicit zero presence",
+            "representation": "Buffer",
+            "plain": {
+                "irVersion": "0"
+            }
+        },
+        {
+            "name": "explicit zero presence",
+            "representation": "Uint8Array",
+            "plain": {
+                "irVersion": "0"
+            }
+        },
+        {
+            "name": "UTF8 non-ASCII",
+            "representation": "Buffer",
+            "plain": {
+                "producerName": "é🎵"
+            }
+        },
+        {
+            "name": "UTF8 non-ASCII",
+            "representation": "Uint8Array",
+            "plain": {
+                "producerName": "é🎵"
+            }
+        },
+        {
+            "name": "unknown varint discarded",
+            "representation": "Buffer",
+            "plain": {
+                "irVersion": "9"
+            }
+        },
+        {
+            "name": "unknown varint discarded",
+            "representation": "Uint8Array",
+            "plain": {
+                "irVersion": "9"
+            }
+        },
+        {
+            "name": "unknown bytes discarded",
+            "representation": "Buffer",
+            "plain": {
+                "irVersion": "9"
+            }
+        },
+        {
+            "name": "unknown bytes discarded",
+            "representation": "Uint8Array",
+            "plain": {
+                "irVersion": "9"
+            }
+        },
+        {
+            "name": "unknown group skipped",
+            "representation": "Buffer",
+            "plain": {
+                "irVersion": "9"
+            }
+        },
+        {
+            "name": "unknown group skipped",
+            "representation": "Uint8Array",
+            "plain": {
+                "irVersion": "9"
+            }
+        },
+        {
+            "name": "signed dimension",
+            "representation": "Buffer",
+            "plain": {
+                "dimValue": "-1",
+                "value": "dimValue"
+            }
+        },
+        {
+            "name": "signed dimension",
+            "representation": "Uint8Array",
+            "plain": {
+                "dimValue": "-1",
+                "value": "dimValue"
+            }
+        },
+        {
+            "name": "float and negative zero",
+            "representation": "Buffer",
+            "plain": {
+                "dataType": 1,
+                "floatData": [0.5, 0]
+            }
+        },
+        {
+            "name": "float and negative zero",
+            "representation": "Uint8Array",
+            "plain": {
+                "dataType": 1,
+                "floatData": [0.5, 0]
+            }
+        },
+        {
+            "name": "double",
+            "representation": "Buffer",
+            "plain": {
+                "dataType": 11,
+                "doubleData": [1.5]
+            }
+        },
+        {
+            "name": "double",
+            "representation": "Uint8Array",
+            "plain": {
+                "dataType": 11,
+                "doubleData": [1.5]
+            }
+        }
+    ],
+    "edges": [
+        {
+            "name": "truncated string",
+            "representation": "Buffer",
+            "result": {
+                "producerName": "a"
+            },
+            "reencoded": "120161"
+        },
+        {
+            "name": "truncated string",
+            "representation": "Uint8Array",
+            "error": {
+                "name": "RangeError",
+                "message": "index out of range: 2 + 3 > 3"
+            }
+        },
+        {
+            "name": "malformed UTF8",
+            "representation": "Buffer",
+            "result": {
+                "producerName": "�"
+            },
+            "reencoded": "1203efbfbd"
+        },
+        {
+            "name": "malformed UTF8",
+            "representation": "Uint8Array",
+            "result": {
+                "producerName": "�"
+            },
+            "reencoded": "1203efbfbd"
+        },
+        {
+            "name": "ten continuation bytes",
+            "representation": "Buffer",
+            "result": {
+                "dataType": 0
+            },
+            "reencoded": "1000"
+        },
+        {
+            "name": "ten continuation bytes",
+            "representation": "Uint8Array",
+            "result": {
+                "dataType": 0
+            },
+            "reencoded": "1000"
+        },
+        {
+            "name": "overflowing length",
+            "representation": "Buffer",
+            "result": {
+                "producerName": ""
+            },
+            "reencoded": "1200"
+        },
+        {
+            "name": "overflowing length",
+            "representation": "Uint8Array",
+            "result": {
+                "producerName": ""
+            },
+            "reencoded": "1200"
+        },
+        {
+            "name": "truncated int64",
+            "representation": "Buffer",
+            "error": {
+                "name": "RangeError",
+                "message": "index out of range: 2 + 1 > 2"
+            }
+        },
+        {
+            "name": "truncated int64",
+            "representation": "Uint8Array",
+            "error": {
+                "name": "RangeError",
+                "message": "index out of range: 2 + 1 > 2"
+            }
+        },
+        {
+            "name": "invalid wire type",
+            "representation": "Buffer",
+            "error": {
+                "name": "Error",
+                "message": "invalid wire type 7 at offset 1"
+            }
+        },
+        {
+            "name": "invalid wire type",
+            "representation": "Uint8Array",
+            "error": {
+                "name": "Error",
+                "message": "invalid wire type 7 at offset 1"
+            }
+        },
+        {
+            "name": "unterminated group",
+            "representation": "Buffer",
+            "error": {
+                "name": "RangeError",
+                "message": "index out of range: 4 + 10 > 4"
+            }
+        },
+        {
+            "name": "unterminated group",
+            "representation": "Uint8Array",
+            "error": {
+                "name": "RangeError",
+                "message": "index out of range: 4 + 10 > 4"
+            }
+        },
+        {
+            "name": "duplicate oneof value then param",
+            "representation": "Buffer",
+            "result": {
+                "dimValue": "1",
+                "value": "dimParam",
+                "dimParam": "x"
+            },
+            "reencoded": "0801120178"
+        },
+        {
+            "name": "duplicate oneof value then param",
+            "representation": "Uint8Array",
+            "result": {
+                "dimValue": "1",
+                "value": "dimParam",
+                "dimParam": "x"
+            },
+            "reencoded": "0801120178"
+        },
+        {
+            "name": "duplicate oneof param then value",
+            "representation": "Buffer",
+            "result": {
+                "dimValue": "1",
+                "value": "dimParam",
+                "dimParam": "x"
+            },
+            "reencoded": "0801120178"
+        },
+        {
+            "name": "duplicate oneof param then value",
+            "representation": "Uint8Array",
+            "result": {
+                "dimValue": "1",
+                "value": "dimParam",
+                "dimParam": "x"
+            },
+            "reencoded": "0801120178"
+        }
+    ]
+}

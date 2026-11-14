@@ -1,0 +1,80 @@
+diff --git a/bin/qrcode b/bin/qrcode
+--- a/bin/qrcode
++++ b/bin/qrcode
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env node
+-var yargs = require('yargs')
++var yargs = require('yargs')(process.argv.slice(2))
+ var qr = require('../lib')
+ 
+ function save (file, text, options) {
+@@ -132,7 +132,7 @@
+   })
+   .help('h')
+   .alias('h', 'help')
+-  .version()
++  .version(require('../package.json').version)
+   .example('$0 "some text"', 'Draw in terminal window')
+   .example('$0 -o out.png "some text"', 'Save as png image')
+   .example('$0 -d F00 -o out.png "some text"', 'Use red as foreground color')
+diff --git a/lib/renderer/png.js b/lib/renderer/png.js
+--- a/lib/renderer/png.js
++++ b/lib/renderer/png.js
+@@ -23,7 +23,7 @@
+   }
+ 
+   exports.renderToBuffer(qrData, options, function (err, output) {
+-    if (err) cb(err)
++    if (err) return cb(err)
+     let url = 'data:image/png;base64,'
+     url += output.toString('base64')
+     cb(null, url)
+@@ -38,15 +38,21 @@
+ 
+   const png = exports.render(qrData, options)
+   const buffer = []
++  let called = false
++  const done = (...args) => {
++    if (called) return
++    called = true
++    cb.apply(null, args)
++  }
+ 
+-  png.on('error', cb)
++  png.on('error', done)
+ 
+   png.on('data', function (data) {
+     buffer.push(data)
+   })
+ 
+   png.on('end', function () {
+-    cb(null, Buffer.concat(buffer))
++    done(null, Buffer.concat(buffer))
+   })
+ 
+   png.pack()
+@@ -74,5 +80,10 @@
+ 
+ exports.renderToFileStream = function renderToFileStream (stream, qrData, options) {
+   const png = exports.render(qrData, options)
++  png.on('error', (err) => {
++    const error = err instanceof Error ? err : new Error(String(err))
++    if (typeof stream.destroy === 'function') stream.destroy(error)
++    else stream.emit('error', error)
++  })
+   png.pack().pipe(stream)
+ }
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -39,8 +39,8 @@
+   },
+   "dependencies": {
+     "dijkstrajs": "^1.0.1",
+-    "pngjs": "^5.0.0",
+-    "yargs": "^15.3.1"
++    "pngjs": "^7.0.0",
++    "yargs": "^18.2.0"
+   },
+   "devDependencies": {
+     "@babel/core": "^7.9.0",

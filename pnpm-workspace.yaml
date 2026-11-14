@@ -64,6 +64,22 @@ patchedDependencies:
     'eslint-plugin-react-hooks@7.1.1': patches/eslint-plugin-react-hooks@7.1.1.patch
     '@automerge/automerge@3.5.0': patches/@automerge__automerge@3.5.0.patch
     vite@8.3.8: patches/vite@8.3.8.patch
+    '@webgpu/types@0.1.74': patches/@webgpu__types@0.1.74.patch
+    '@tensorflow/tfjs-core@4.22.0': patches/@tensorflow__tfjs-core@4.22.0.patch
+    '@tensorflow/tfjs-data@4.22.0': patches/@tensorflow__tfjs-data@4.22.0.patch
+    '@tensorflow/tfjs-backend-cpu@4.22.0': patches/@tensorflow__tfjs-backend-cpu@4.22.0.patch
+    '@tensorflow/tfjs-backend-webgl@4.22.0': patches/@tensorflow__tfjs-backend-webgl@4.22.0.patch
+    '@tensorflow/tfjs@4.22.0': patches/@tensorflow__tfjs@4.22.0.patch
+    yargs@18.2.0: patches/yargs@18.2.0.patch
+    cliui@9.0.1: patches/cliui@9.0.1.patch
+    wrap-ansi@10.0.2: patches/wrap-ansi@10.0.2.patch
+    duplexer2@0.1.4: patches/duplexer2@0.1.4.patch
+    fftjs@0.0.4: patches/fftjs@0.0.4.patch
+    meyda@5.6.3: patches/meyda@5.6.3.patch
+    qrcode@1.5.4: patches/qrcode@1.5.4.patch
+    stream-parser@0.3.1: patches/stream-parser@0.3.1.patch
+    wav@1.0.2: patches/wav@1.0.2.patch
+    onnxruntime-web@1.31.1: patches/onnxruntime-web@1.31.1.patch
 
 # Upgrade Basic Pitch's whole TensorFlow.js umbrella, which pins its core,
 # converter, CPU and WebGL backends to the same release as the app's WebGPU
@@ -123,6 +139,35 @@ overrides:
     'tapable@': 2.3.4
     'tldts@': 7.5.2
     'tldts-core@': 7.5.2
+    '@tensorflow/tfjs-core@4.22.0>node-fetch': '-'
+    '@tensorflow/tfjs-core@4.22.0>@types/long': '-'
+    '@tensorflow/tfjs-core@4.22.0>@types/offscreencanvas': '-'
+    '@tensorflow/tfjs-core@4.22.0>long': 5.3.2
+    '@tensorflow/tfjs-core@4.22.0>@types/seedrandom': 3.0.8
+    '@tensorflow/tfjs-core@4.22.0>@webgpu/types': 0.1.74
+    '@tensorflow/tfjs-data@4.22.0>node-fetch': '-'
+    '@tensorflow/tfjs-data@4.22.0>@types/node-fetch': '-'
+    '@tensorflow/tfjs-backend-cpu@4.22.0>@types/seedrandom': 3.0.8
+    '@tensorflow/tfjs-backend-webgl@4.22.0>@types/seedrandom': 3.0.8
+    '@tensorflow/tfjs-backend-webgl@4.22.0>@types/offscreencanvas': '-'
+    '@tensorflow/tfjs@4.22.0>argparse': '-'
+    '@tensorflow/tfjs@4.22.0>chalk': 6.0.1
+    '@tensorflow/tfjs@4.22.0>yargs': 18.2.0
+    '@tensorflow/tfjs@4.22.0>regenerator-runtime': 0.14.1
+    yargs@18.2.0>string-width: 9.0.0
+    cliui@9.0.1>string-width: 9.0.0
+    cliui@9.0.1>wrap-ansi: 10.0.2
+    wrap-ansi@10.0.2>string-width: 9.0.0
+    wrap-ansi@10.0.2>ansi-styles: 7.0.0
+    meyda@5.6.3>@rollup/plugin-node-resolve: '-'
+    fftjs@0.0.4>babel-plugin-add-module-exports: '-'
+    wav@1.0.2>readable-stream: 4.8.0
+    wav@1.0.2>debug: 4.4.3
+    stream-parser@0.3.1>debug: 4.4.3
+    duplexer2@0.1.4>readable-stream: 4.8.0
+    qrcode@1.5.4>pngjs: 7.0.0
+    qrcode@1.5.4>yargs: 18.2.0
+    onnxruntime-web@1.31.1>protobufjs: 8.8.1
 
 minimumReleaseAgeExclude:
     - '@eslint-react/ast@5.30.2'
@@ -162,9 +207,16 @@ minimumReleaseAgeExclude:
     - mdast-util-to-hast@13.2.2
     - node-releases@2.0.64
     - tapable@2.3.4
+    - string-width@9.0.0
 
 packageExtensions:
     dependency-cruiser@18.7.2:
         dependencies:
             typescript: 7.0.2
             esbuild: 0.28.2
+    '@tensorflow/tfjs@4.22.0':
+        dependencies:
+            long: ^5.3.2
+    meyda@5.6.3:
+        dependencies:
+            tslib: 2.9.1

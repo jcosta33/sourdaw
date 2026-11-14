@@ -1,0 +1,20 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -13,6 +13,7 @@
+     "url": "git@github.com:nevosegal/fftjs.git"
+   },
+   "devDependencies": {
++    "babel-plugin-add-module-exports": "^1.0.4",
+     "babel-cli": "^6.24.1",
+     "babel-preset-es2015": "^6.24.1"
+   },
+@@ -23,8 +24,5 @@
+     "plugins": [
+       "babel-plugin-add-module-exports"
+     ]
+-  },
+-  "dependencies": {
+-    "babel-plugin-add-module-exports": "^0.2.1"
+   }
+ }
