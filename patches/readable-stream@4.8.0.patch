@@ -1,0 +1,81 @@
+diff --git a/lib/ours/util.js b/lib/ours/util.js
+--- a/lib/ours/util.js
++++ b/lib/ours/util.js
+@@ -6,8 +6,7 @@
+   codes: { ERR_INVALID_ARG_TYPE }
+ } = require('./errors')
+ const { kResistStopPropagation, AggregateError, SymbolDispose } = require('./primordials')
+-const AbortSignal = globalThis.AbortSignal || require('abort-controller').AbortSignal
+-const AbortController = globalThis.AbortController || require('abort-controller').AbortController
++const { AbortController, AbortSignal } = require('./abort')
+ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+ const Blob = globalThis.Blob || bufferModule.Blob
+ /* eslint-disable indent */
+diff --git a/lib/internal/streams/duplexify.js b/lib/internal/streams/duplexify.js
+--- a/lib/internal/streams/duplexify.js
++++ b/lib/internal/streams/duplexify.js
+@@ -37,7 +37,7 @@
+     : function isBlob(b) {
+         return false
+       }
+-const AbortController = globalThis.AbortController || require('abort-controller').AbortController
++const { AbortController } = require('../../ours/abort')
+ const { FunctionPrototypeCall } = require('../../ours/primordials')
+ 
+ // This is needed for pre node 17.
+diff --git a/lib/internal/streams/operators.js b/lib/internal/streams/operators.js
+--- a/lib/internal/streams/operators.js
++++ b/lib/internal/streams/operators.js
+@@ -1,6 +1,6 @@
+ 'use strict'
+ 
+-const AbortController = globalThis.AbortController || require('abort-controller').AbortController
++const { AbortController } = require('../../ours/abort')
+ const {
+   codes: { ERR_INVALID_ARG_VALUE, ERR_INVALID_ARG_TYPE, ERR_MISSING_ARGS, ERR_OUT_OF_RANGE },
+   AbortError
+diff --git a/lib/internal/streams/pipeline.js b/lib/internal/streams/pipeline.js
+--- a/lib/internal/streams/pipeline.js
++++ b/lib/internal/streams/pipeline.js
+@@ -34,7 +34,7 @@
+   isReadableStream,
+   isReadableFinished
+ } = require('./utils')
+-const AbortController = globalThis.AbortController || require('abort-controller').AbortController
++const { AbortController } = require('../../ours/abort')
+ let PassThrough
+ let Readable
+ let addAbortListener
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -46,7 +46,6 @@
+     "lint": "eslint src"
+   },
+   "dependencies": {
+-    "abort-controller": "^3.0.0",
+     "buffer": "^6.0.3",
+     "events": "^3.3.0",
+     "process": "^0.11.10",
+@@ -84,6 +83,6 @@
+     "webpack-cli": "^4.9.2"
+   },
+   "engines": {
+-    "node": "^12.22.0 || ^14.17.0 || >=16.0.0"
++    "node": ">=26"
+   }
+ }
+diff --git a/lib/ours/abort.js b/lib/ours/abort.js
+new file mode 100644
+--- /dev/null
++++ b/lib/ours/abort.js
+@@ -0,0 +1,9 @@
++'use strict'
++
++const { AbortController, AbortSignal } = globalThis
++
++if (typeof AbortController !== 'function' || typeof AbortSignal !== 'function') {
++  throw new Error('readable-stream requires native AbortController and AbortSignal in Node.js 26 or supported Chromium')
++}
++
++module.exports = { AbortController, AbortSignal }

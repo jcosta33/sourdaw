@@ -1,0 +1,20 @@
+diff --git a/packages/runtime/src/env.ts b/packages/runtime/src/env.ts
+--- a/packages/runtime/src/env.ts
++++ b/packages/runtime/src/env.ts
+@@ -3,7 +3,6 @@
+ import type { IStoreValue } from './Store'
+ import {
+   TryCatch,
+-  _setImmediate,
+   NODE_API_SUPPORTED_VERSION_MAX,
+   NAPI_VERSION_EXPERIMENTAL,
+   NODE_API_DEFAULT_MODULE_API_VERSION
+@@ -314,7 +313,7 @@
+     if (!this.finalizationScheduled && !this.destructing) {
+       this.finalizationScheduled = true
+       this.ref()
+-      _setImmediate(() => {
++      this.ctx.feature.setImmediate(() => {
+         this.finalizationScheduled = false
+         this.unref()
+         this.drainFinalizerQueue()

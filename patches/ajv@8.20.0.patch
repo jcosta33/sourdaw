@@ -1,0 +1,133 @@
+diff --git a/dist/compile/validate/defaults.js b/dist/compile/validate/defaults.js
+--- a/dist/compile/validate/defaults.js
++++ b/dist/compile/validate/defaults.js
+@@ -21,7 +21,7 @@
+         return;
+     const childData = (0, codegen_1._) `${data}${(0, codegen_1.getProperty)(prop)}`;
+     if (compositeRule) {
+-        (0, util_1.checkStrictMode)(it, `default is ignored for: ${childData}`);
++        (0, util_1.checkStrictMode)(it, `default is ignored for: ${childData}`, opts.rejectIgnoredDefaults ?? opts.strictSchema);
+         return;
+     }
+     let condition = (0, codegen_1._) `${childData} === undefined`;
+diff --git a/dist/compile/validate/index.js b/dist/compile/validate/index.js
+--- a/dist/compile/validate/index.js
++++ b/dist/compile/validate/index.js
+@@ -123,5 +123,7 @@
+     if (it.opts.jtd)
+         return schemaKeywords(it, [], false, errsCount);
++    if (it.schema.$ref && it.opts.ignoreKeywordsWithRef)
++        return schemaKeywords(it, [], false, errsCount);
+     const types = (0, dataType_1.getSchemaTypes)(it.schema);
+     const checkedTypes = (0, dataType_1.coerceAndCheckDataType)(it, types);
+     schemaKeywords(it, types, !checkedTypes, errsCount);
+@@ -135,8 +137,8 @@
+ }
+ function checkNoDefault(it) {
+     const { schema, opts } = it;
+-    if (schema.default !== undefined && opts.useDefaults && opts.strictSchema) {
+-        (0, util_1.checkStrictMode)(it, "default is ignored in the schema root");
++    if (schema.default !== undefined && opts.useDefaults && (opts.rejectIgnoredDefaults ?? opts.strictSchema)) {
++        (0, util_1.checkStrictMode)(it, "default is ignored in the schema root", opts.rejectIgnoredDefaults ?? opts.strictSchema);
+     }
+ }
+ function updateContext(it) {
+diff --git a/dist/core.d.ts b/dist/core.d.ts
+--- a/dist/core.d.ts
++++ b/dist/core.d.ts
+@@ -22,6 +22,9 @@
+ export interface CurrentOptions {
+     strict?: boolean | "log";
+     strictSchema?: boolean | "log";
++    /** Separately control ignored-default diagnostics without disabling schema/format validation. */
++    rejectIgnoredDefaults?: boolean;
++    allowIgnoredAdditionalItems?: boolean;
+     strictNumbers?: boolean | "log";
+     strictTypes?: boolean | "log";
+     strictTuples?: boolean | "log";
+diff --git a/lib/compile/validate/defaults.ts b/lib/compile/validate/defaults.ts
+--- a/lib/compile/validate/defaults.ts
++++ b/lib/compile/validate/defaults.ts
+@@ -18,7 +18,7 @@
+   if (defaultValue === undefined) return
+   const childData = _`${data}${getProperty(prop)}`
+   if (compositeRule) {
+-    checkStrictMode(it, `default is ignored for: ${childData}`)
++    checkStrictMode(it, `default is ignored for: ${childData}`, opts.rejectIgnoredDefaults ?? opts.strictSchema)
+     return
+   }
+ 
+diff --git a/lib/compile/validate/index.ts b/lib/compile/validate/index.ts
+--- a/lib/compile/validate/index.ts
++++ b/lib/compile/validate/index.ts
+@@ -156,6 +156,7 @@
+ 
+ function typeAndKeywords(it: SchemaObjCxt, errsCount?: Name): void {
+   if (it.opts.jtd) return schemaKeywords(it, [], false, errsCount)
++  if (it.schema.$ref && it.opts.ignoreKeywordsWithRef) return schemaKeywords(it, [], false, errsCount)
+   const types = getSchemaTypes(it.schema)
+   const checkedTypes = coerceAndCheckDataType(it, types)
+   schemaKeywords(it, types, !checkedTypes, errsCount)
+@@ -170,8 +171,8 @@
+ 
+ function checkNoDefault(it: SchemaObjCxt): void {
+   const {schema, opts} = it
+-  if (schema.default !== undefined && opts.useDefaults && opts.strictSchema) {
+-    checkStrictMode(it, "default is ignored in the schema root")
++  if (schema.default !== undefined && opts.useDefaults && (opts.rejectIgnoredDefaults ?? opts.strictSchema)) {
++    checkStrictMode(it, "default is ignored in the schema root", opts.rejectIgnoredDefaults ?? opts.strictSchema)
+   }
+ }
+ 
+diff --git a/lib/core.ts b/lib/core.ts
+--- a/lib/core.ts
++++ b/lib/core.ts
+@@ -91,6 +91,9 @@
+   // strict mode options (NEW)
+   strict?: boolean | "log"
+   strictSchema?: boolean | "log"
++  /** Separately control ignored-default diagnostics without disabling schema/format validation. */
++  rejectIgnoredDefaults?: boolean
++  allowIgnoredAdditionalItems?: boolean
+   strictNumbers?: boolean | "log"
+   strictTypes?: boolean | "log"
+   strictTuples?: boolean | "log"
+diff --git a/dist/vocabularies/applicator/additionalItems.js b/dist/vocabularies/applicator/additionalItems.js
+--- a/dist/vocabularies/applicator/additionalItems.js
++++ b/dist/vocabularies/applicator/additionalItems.js
+@@ -17,7 +17,8 @@
+         const { parentSchema, it } = cxt;
+         const { items } = parentSchema;
+         if (!Array.isArray(items)) {
+-            (0, util_1.checkStrictMode)(it, '"additionalItems" is ignored when "items" is not an array of schemas');
++            if (!it.opts.allowIgnoredAdditionalItems)
++                (0, util_1.checkStrictMode)(it, '"additionalItems" is ignored when "items" is not an array of schemas');
+             return;
+         }
+         validateAdditionalItems(cxt, items);
+diff --git a/lib/vocabularies/applicator/additionalItems.ts b/lib/vocabularies/applicator/additionalItems.ts
+--- a/lib/vocabularies/applicator/additionalItems.ts
++++ b/lib/vocabularies/applicator/additionalItems.ts
+@@ -25,7 +25,9 @@
+     const {parentSchema, it} = cxt
+     const {items} = parentSchema
+     if (!Array.isArray(items)) {
+-      checkStrictMode(it, '"additionalItems" is ignored when "items" is not an array of schemas')
++      if (!it.opts.allowIgnoredAdditionalItems) {
++        checkStrictMode(it, '"additionalItems" is ignored when "items" is not an array of schemas')
++      }
+       return
+     }
+     validateAdditionalItems(cxt, items)
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -60,7 +60,7 @@
+   "runkitExampleFilename": ".runkit_example.js",
+   "dependencies": {
+     "fast-deep-equal": "^3.1.3",
+-    "fast-uri": "^3.0.1",
++    "fast-uri": "^4.2.3",
+     "json-schema-traverse": "^1.0.0",
+     "require-from-string": "^2.0.2"
+   },

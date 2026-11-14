@@ -1,0 +1,12 @@
+diff --git a/lib/internal/utils.js b/lib/internal/utils.js
+--- a/lib/internal/utils.js
++++ b/lib/internal/utils.js
+@@ -4,7 +4,7 @@
+  */
+ "use strict"
+ 
+-const escapeStringRegexp = require("escape-string-regexp")
++const escapeStringRegexp = require("escape-string-regexp").default
+ const LINE_PATTERN = /[^\r\n\u2028\u2029]*(?:\r\n|[\r\n\u2028\u2029]|$)/gu
+ 
+ const DIRECTIVE_PATTERN =

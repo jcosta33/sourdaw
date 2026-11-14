@@ -1,0 +1,15 @@
+diff --git a/bin/node-gyp.js b/bin/node-gyp.js
+--- a/bin/node-gyp.js
++++ b/bin/node-gyp.js
+@@ -7,1 +7,1 @@
++const envPaths = require('env-paths').default
+-const envPaths = require('env-paths')
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -25,1 +25,1 @@
++    "env-paths": "4.0.0",
+-    "env-paths": "^2.2.0",
+@@ -37,1 +37,1 @@
++    "node": ">=26.0.0"
+-    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"

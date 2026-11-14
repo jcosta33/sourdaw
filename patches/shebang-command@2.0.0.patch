@@ -1,0 +1,18 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -25,7 +25,7 @@
+ 		"shebang"
+ 	],
+ 	"dependencies": {
+-		"shebang-regex": "^3.0.0"
++		"shebang-regex": "^4.0.0"
+ 	},
+ 	"devDependencies": {
+ 		"ava": "^2.3.0",
+diff --git a/index.js b/index.js
+--- a/index.js
++++ b/index.js
+@@ -2,1 +2,1 @@
+-const shebangRegex = require('shebang-regex');
++const shebangRegex = require('shebang-regex').default;

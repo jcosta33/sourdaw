@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -250,7 +250,7 @@
+     "./encoding.js"
+   ],
+   "peerDependencies": {
+-    "@noble/hashes": "^1.8.0 || ^2.0.0"
++    "@noble/hashes": "^2.4.0"
+   },
+   "peerDependenciesMeta": {
+     "@noble/hashes": {

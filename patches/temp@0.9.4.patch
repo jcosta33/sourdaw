@@ -1,0 +1,91 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -21,8 +21,8 @@
+   },
+   "main": "./lib/temp",
+   "dependencies": {
+-    "rimraf": "~2.6.2",
+-    "mkdirp": "^0.5.1"
++    "rimraf": "^6.1.4",
++    "mkdirp": "^3.0.1"
+   },
+   "keywords": [
+     "temporary",
+diff --git a/lib/temp.js b/lib/temp.js
+--- a/lib/temp.js
++++ b/lib/temp.js
+@@ -3,11 +3,10 @@
+ let cnst = require('constants');
+ 
+ let os         = require('os');
+-let rimraf     = require('rimraf');
+-let mkdirp     = require('mkdirp');
++let { rimraf, rimrafSync } = require('rimraf');
++let { mkdirp, mkdirpSync } = require('mkdirp');
+ let osTmpdir   = require('os').tmpdir();
+ 
+-const rimrafSync = rimraf.sync;
+ 
+ //== helpers
+ //
+@@ -123,7 +122,7 @@
+   var count = 0;
+   var toDelete;
+   while ((toDelete = filesToDelete.shift()) !== undefined) {
+-    rimrafSync(toDelete, { maxBusyTries: 6 });
++    rimrafSync(toDelete, { maxRetries: 6 });
+     count++;
+   }
+   return count;
+@@ -165,7 +164,7 @@
+     }
+   };
+   while ((toDelete = filesToDelete.shift()) !== undefined) {
+-    rimraf(toDelete, { maxBusyTries: 6 }, rimrafCallback);
++    rimraf(toDelete, { maxRetries: 6 }).then(() => rimrafCallback(null), rimrafCallback);
+   }
+   return promise;
+ }
+@@ -177,7 +176,7 @@
+   var count = 0;
+   var toDelete;
+   while ((toDelete = dirsToDelete.shift()) !== undefined) {
+-    rimrafSync(toDelete, { maxBusyTries: 6 });
++    rimrafSync(toDelete, { maxRetries: 6 });
+     count++;
+   }
+   return count;
+@@ -219,7 +218,7 @@
+     }
+   };
+   while ((toDelete = dirsToDelete.shift()) !== undefined) {
+-    rimraf(toDelete, { maxBusyTries: 6 }, rimrafCallback);
++    rimraf(toDelete, { maxRetries: 6 }).then(() => rimrafCallback(null), rimrafCallback);
+   }
+   return promise;
+ }
+@@ -262,18 +261,16 @@
+   callback = p[1];
+ 
+   let dirPath = generateName(affixes, 'd-');
+-  mkdirp(dirPath, 0o700, (err) => {
+-    if (!err) {
+-      deleteDirOnExit(dirPath);
+-    }
+-    callback(err, dirPath);
+-  });
++  mkdirp(dirPath, { mode: 0o700 }).then(() => {
++    deleteDirOnExit(dirPath);
++    callback(null, dirPath);
++  }, err => callback(err, dirPath));
+   return promise;
+ }
+ 
+ const mkdirSync = (affixes) => {
+   let dirPath = generateName(affixes, 'd-');
+-  mkdirp.sync(dirPath, 0o700);
++  mkdirpSync(dirPath, { mode: 0o700 });
+   deleteDirOnExit(dirPath);
+   return dirPath;
+ }

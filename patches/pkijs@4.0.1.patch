@@ -1,0 +1,6 @@
+diff --git a/build/index.js b/build/index.js
+--- a/build/index.js
++++ b/build/index.js
+@@ -14569,1 +14569,1 @@
+-					ParameterError.assert(eContent, "eContent", "cmsSigned.encapContentInfo");
++					ParameterError.assertEmpty(eContent, "eContent", "cmsSigned.encapContentInfo");

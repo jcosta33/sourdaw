@@ -1,0 +1,31 @@
+diff --git a/dist/matchers-3ed9c960.js b/dist/matchers-3ed9c960.js
+--- a/dist/matchers-3ed9c960.js
++++ b/dist/matchers-3ed9c960.js
+@@ -1,7 +1,7 @@
+ 'use strict';
+ 
+ var dom = require('@testing-library/dom');
+-var redent = require('redent');
++var redent = require('redent').default;
+ var cssTools = require('@adobe/css-tools');
+ var domAccessibilityApi = require('dom-accessibility-api');
+ var ariaQuery = require('aria-query');
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -80,12 +80,12 @@
+   "author": "Ernesto Garcia <gnapse@gmail.com> (http://gnapse.github.io)",
+   "license": "MIT",
+   "dependencies": {
+-    "@adobe/css-tools": "^4.4.0",
++    "@adobe/css-tools": "^5.0.0",
+     "aria-query": "^5.0.0",
+     "css.escape": "^1.5.1",
+-    "dom-accessibility-api": "^0.6.3",
++    "dom-accessibility-api": "^0.7.1",
+     "picocolors": "^1.1.1",
+-    "redent": "^3.0.0"
++    "redent": "^4.0.0"
+   },
+   "devDependencies": {
+     "@jest/globals": "^29.6.2",

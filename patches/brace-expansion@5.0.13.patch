@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -43,7 +43,7 @@
+     "typedoc": "^0.28.5"
+   },
+   "dependencies": {
+-    "balanced-match": "^4.0.2"
++    "balanced-match": "^5.0.0"
+   },
+   "license": "MIT",
+   "engines": {

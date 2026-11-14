@@ -1,0 +1,24 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -51,7 +51,7 @@
+ 		"resolve"
+ 	],
+ 	"dependencies": {
+-		"ini": "6.0.0"
++		"ini": "7.0.0"
+ 	},
+ 	"devDependencies": {
+ 		"ava": "^6.4.1",
+diff --git a/index.js b/index.js
+--- a/index.js
++++ b/index.js
+@@ -60,7 +60,7 @@
+ 
+ const getNpmPrefix = () => {
+ 	const environmentPrefix = getEnvironmentNpmConfigValue('prefix');
+-	if (environmentPrefix !== undefined) {
++	if (environmentPrefix !== undefined && environmentPrefix !== '') {
+ 		return environmentPrefix;
+ 	}
+ 

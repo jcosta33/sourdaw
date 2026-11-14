@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -62,7 +62,7 @@
+     "comment-parser": "^1.4.1",
+     "debug": "^4.4.1",
+     "es-module-lexer": "^3.0.3",
+-    "eslint-import-context": "^0.1.9",
++    "eslint-import-context": "^0.2.1",
+     "is-glob": "^4.0.3",
+     "minimatch": "^9.0.3 || ^10.1.2 || ^11.0.1",
+     "semver": "^7.7.2",

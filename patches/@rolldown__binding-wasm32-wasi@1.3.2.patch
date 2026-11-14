@@ -1,0 +1,48 @@
+diff --git a/rolldown-binding.wasi.cjs b/rolldown-binding.wasi.cjs
+--- a/rolldown-binding.wasi.cjs
++++ b/rolldown-binding.wasi.cjs
+@@ -130,6 +130,18 @@
+     __workerExecArgv.push(__arg)
+   }
+   return __removed ? __workerExecArgv : undefined
++}
++
++// Constructor failures happen before a worker can raise these existing crash
++// flags. Raise them here so the addon's synchronous failure cleanup can trap
++// instead of waiting forever for a thread that was never created.
++function __recordWasiWorkerCreationFailure(error) {
++  __wasiThreadCrashed = true
++  __recordWasiThreadCrashError(error)
++  Atomics.store(__wasiThreadCrashFlag, 0, 1)
++  if (__wasiAddonCrashFlag) {
++    Atomics.store(__wasiAddonCrashFlag, 0, 1)
++  }
+ }
+ 
+ function __createWasiWorker(filename) {
+@@ -149,11 +161,13 @@
+       })
+     } catch (error) {
+       if (!error || error.code !== 'ERR_WORKER_INVALID_EXEC_ARGV') {
++        __recordWasiWorkerCreationFailure(error)
+         throw error
+       }
+       const __nextWorkerExecArgv =
+         __removeInvalidWasiWorkerExecArgv(__workerExecArgv, error)
+       if (!__nextWorkerExecArgv) {
++        __recordWasiWorkerCreationFailure(error)
+         throw error
+       }
+       __workerExecArgv = __nextWorkerExecArgv
+@@ -2169,6 +2183,11 @@
+       __prepareWasmEnvCleanup,
+       __isPreparingWasmEnvCleanup,
+     )
++    // v1 exposes its scheduler on the fresh context instead of accepting
++    // the v2 features option. Keep this binding's crash guard on that route.
++    if (__emnapiContext.feature) {
++      __emnapiContext.feature.setImmediate = __wasiSetImmediate
++    }
+     // emnapi 2.x still registers an unconditional once-listener for
+     // beforeExit that auto-destroys the context, and suppressDestroy() only
+     // neutralizes its callback without removing it. This loader owns cleanup

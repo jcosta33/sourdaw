@@ -1,0 +1,18 @@
+diff --git a/lib/util/resolveCommand.js b/lib/util/resolveCommand.js
+--- a/lib/util/resolveCommand.js
++++ b/lib/util/resolveCommand.js
+@@ -5,1 +5,1 @@
++const getPathKey = require('path-key').default;
+-const getPathKey = require('path-key');
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -51,1 +51,1 @@
++    "path-key": "4.0.0",
+-    "path-key": "^3.1.0",
+@@ -53,1 +53,1 @@
++    "which": "7.0.0"
+-    "which": "^2.0.1"
+@@ -71,1 +71,1 @@
++    "node": ">=26.0.0"
+-    "node": ">= 8"

@@ -1,0 +1,24 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -29,9 +29,9 @@
+     "tdd": "ava --watch"
+   },
+   "dependencies": {
+-    "@electron/asar": "^3.2.1",
++    "@electron/asar": "^4.3.2",
+     "debug": "^4.1.1",
+-    "fs-extra": "^7.0.1",
++    "fs-extra": "^11.4.1",
+     "lodash": "^4.17.21",
+     "semver": "^7.6.3",
+     "temp": "^0.9.0"
+@@ -51,7 +51,7 @@
+     "typescript": "^4.9.3"
+   },
+   "optionalDependencies": {
+-    "@electron/windows-sign": "^1.1.2"
++    "@electron/windows-sign": "^2.1.0"
+   },
+   "engines": {
+     "node": ">=8.0.0"

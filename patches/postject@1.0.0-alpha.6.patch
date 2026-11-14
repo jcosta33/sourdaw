@@ -1,0 +1,23 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -27,7 +27,7 @@
+     "test": "mocha"
+   },
+   "dependencies": {
+-    "commander": "^9.4.0"
++    "commander": "^15.1.0"
+   },
+   "devDependencies": {
+     "chai": "^4.3.6",
+diff --git a/dist/cli.js b/dist/cli.js
+--- a/dist/cli.js
++++ b/dist/cli.js
+@@ -1,6 +1,6 @@
+ #!/usr/bin/env node
+ 
+-const program = require("commander");
++const { program } = require("commander");
+ const { constants, promises: fs } = require("fs");
+ const path = require("path");
+ const { inject } = require("./api.js");

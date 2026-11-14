@@ -1,0 +1,264 @@
+diff --git a/lib/config/config-loader.js b/lib/config/config-loader.js
+--- a/lib/config/config-loader.js
++++ b/lib/config/config-loader.js
+@@ -11,7 +11,7 @@
+ 
+ const path = require("node:path");
+ const fs = require("node:fs/promises");
+-const findUp = require("find-up");
++const { findUp } = require("find-up");
+ const { pathToFileURL } = require("node:url");
+ const debug = require("debug")("eslint:config-loader");
+ const { FlatConfigArray } = require("./flat-config-array");
+diff --git a/lib/config/config.js b/lib/config/config.js
+--- a/lib/config/config.js
++++ b/lib/config/config.js
+@@ -56,7 +56,7 @@
+  * `ajv` pulls in a large dependency graph (~40 modules) that's only needed
+  * once a rule's options actually need schema validation, so it's constructed
+  * lazily instead of eagerly at module load time.
+- * @type {import("ajv").Ajv|undefined}
++ * @type {import("ajv-draft-04").default|undefined}
+  */
+ let ajv;
+ 
+@@ -66,7 +66,7 @@
+ 
+ /**
+  * Gets the shared ajv instance, constructing it on first use.
+- * @returns {import("ajv").Ajv} The ajv instance.
++ * @returns {import("ajv-draft-04").default} The ajv instance.
+  */
+ function getAjv() {
+ 	if (!ajv) {
+@@ -432,7 +432,9 @@
+ 			const schema = getRuleOptionsSchema(rule);
+ 
+ 			if (schema) {
+-				validators.set(rule, getAjv().compile(schema));
++				const instance = getAjv();
++				const prepared = require("../shared/prepare-rule-schema")(instance, schema);
++				validators.set(rule, instance.compile(prepared));
+ 			}
+ 		} catch (err) {
+ 			throw new InvalidRuleOptionsSchemaError(ruleId, err);
+diff --git a/lib/linter/apply-disable-directives.js b/lib/linter/apply-disable-directives.js
+--- a/lib/linter/apply-disable-directives.js
++++ b/lib/linter/apply-disable-directives.js
+@@ -18,7 +18,7 @@
+ // Module Definition
+ //------------------------------------------------------------------------------
+ 
+-const escapeRegExp = require("escape-string-regexp");
++const escapeRegExp = require("escape-string-regexp").default;
+ const { Config } = require("../config/config.js");
+ 
+ /**
+diff --git a/lib/rule-tester/rule-tester.js b/lib/rule-tester/rule-tester.js
+--- a/lib/rule-tester/rule-tester.js
++++ b/lib/rule-tester/rule-tester.js
+@@ -168,11 +168,11 @@
+ 
+ /**
+  * Gets the shared ajv instance, constructing it on first use.
+- * @returns {import("ajv").Ajv} The ajv instance.
++ * @returns {import("ajv-draft-04").default} The ajv instance.
+  */
+ function getAjv() {
+ 	if (!ajv) {
+-		ajv = require("../shared/ajv")({ strictDefaults: true });
++		ajv = require("../shared/ajv")({ rejectIgnoredDefaults: true });
+ 	}
+ 	return ajv;
+ }
+@@ -1262,15 +1262,14 @@
+ 			if (schema) {
+ 				const ajvInstance = getAjv();
+ 
+-				ajvInstance.validateSchema(schema);
++				const prepared = require("../shared/prepare-rule-schema")(ajvInstance, schema);
++				ajvInstance.validateSchema(prepared);
+ 
+ 				if (ajvInstance.errors) {
+ 					const errors = ajvInstance.errors
+ 						.map(error => {
+ 							const field =
+-								error.dataPath[0] === "."
+-									? error.dataPath.slice(1)
+-									: error.dataPath;
++								require("../shared/schema-error-path")(error.instancePath, prepared);
+ 
+ 							return `\t${field}: ${error.message}`;
+ 						})
+@@ -1289,7 +1288,7 @@
+ 				 * the schema is compiled here separately from checking for `validateSchema` errors.
+ 				 */
+ 				try {
+-					ajvInstance.compile(schema);
++					ajvInstance.compile(prepared);
+ 				} catch (err) {
+ 					throw new Error(
+ 						`Schema for rule ${ruleName} is invalid: ${err.message}`,
+diff --git a/lib/rules/no-warning-comments.js b/lib/rules/no-warning-comments.js
+--- a/lib/rules/no-warning-comments.js
++++ b/lib/rules/no-warning-comments.js
+@@ -5,7 +5,7 @@
+ 
+ "use strict";
+ 
+-const escapeRegExp = require("escape-string-regexp");
++const escapeRegExp = require("escape-string-regexp").default;
+ const astUtils = require("./utils/ast-utils");
+ 
+ const CHAR_LIMIT = 40;
+diff --git a/lib/rules/spaced-comment.js b/lib/rules/spaced-comment.js
+--- a/lib/rules/spaced-comment.js
++++ b/lib/rules/spaced-comment.js
+@@ -5,7 +5,7 @@
+  */
+ "use strict";
+ 
+-const escapeRegExp = require("escape-string-regexp");
++const escapeRegExp = require("escape-string-regexp").default;
+ const astUtils = require("./utils/ast-utils");
+ 
+ //------------------------------------------------------------------------------
+diff --git a/lib/rules/utils/ast-utils.js b/lib/rules/utils/ast-utils.js
+--- a/lib/rules/utils/ast-utils.js
++++ b/lib/rules/utils/ast-utils.js
+@@ -12,7 +12,7 @@
+ const { KEYS: eslintVisitorKeys } = require("eslint-visitor-keys");
+ const esutils = require("esutils");
+ const espree = require("espree");
+-const escapeRegExp = require("escape-string-regexp");
++const escapeRegExp = require("escape-string-regexp").default;
+ const {
+ 	breakableTypePattern,
+ 	createGlobalLinebreakMatcher,
+diff --git a/lib/shared/ajv.js b/lib/shared/ajv.js
+--- a/lib/shared/ajv.js
++++ b/lib/shared/ajv.js
+@@ -1,34 +1,26 @@
+-/**
+- * @fileoverview The instance of Ajv validator.
+- * @author Evgeny Poberezkin
+- */
++/** ESLint rule schemas retain their documented draft-04 semantics on the current Ajv compiler. */
+ "use strict";
+-
+-//------------------------------------------------------------------------------
+-// Requirements
+-//------------------------------------------------------------------------------
+-
+-const Ajv = require("ajv"),
+-	metaSchema = require("ajv/lib/refs/json-schema-draft-04.json");
+-
+-//------------------------------------------------------------------------------
+-// Public Interface
+-//------------------------------------------------------------------------------
++const AjvDraft04 = require("ajv-draft-04");
++const addFormats = require("ajv-formats");
+ 
+ module.exports = (additionalOptions = {}) => {
+-	const ajv = new Ajv({
+-		meta: false,
+-		useDefaults: true,
+-		validateSchema: false,
+-		missingRefs: "ignore",
+-		verbose: true,
+-		schemaId: "auto",
+-		...additionalOptions,
+-	});
+-
+-	ajv.addMetaSchema(metaSchema);
+-	// eslint-disable-next-line no-underscore-dangle -- Ajv's API
+-	ajv._opts.defaultMeta = metaSchema.id;
+-
+-	return ajv;
++    const ajv = new AjvDraft04({
++        useDefaults: true,
++        validateSchema: false,
++        verbose: true,
++        strictSchema: true,
++        strictTypes: false,
++        strictTuples: false,
++        strictRequired: false,
++        unicodeRegExp: false,
++        rejectIgnoredDefaults: false,
++        allowIgnoredAdditionalItems: true,
++        ignoreKeywordsWithRef: true,
++        ...additionalOptions,
++    });
++    addFormats(ajv, { keywords: false, formats: [
++        "date", "time", "date-time", "uri", "uri-reference", "uri-template", "url", "email",
++        "hostname", "ipv4", "ipv6", "regex", "uuid", "json-pointer", "json-pointer-uri-fragment", "relative-json-pointer",
++    ] });
++    return ajv;
+ };
+diff --git a/lib/shared/prepare-rule-schema.js b/lib/shared/prepare-rule-schema.js
+new file mode 100644
+--- /dev/null
++++ b/lib/shared/prepare-rule-schema.js
+@@ -0,0 +1,41 @@
++"use strict";
++const traverse = require("json-schema-traverse");
++const builtInAnnotations = new Set(["$schema", "id", "$defs", "definitions", "title", "description", "default"]);
++
++function enumerableCopy(value) {
++    const entries = [];
++    for (const key in value) entries.push([key, value[key]]);
++    return Object.fromEntries(entries);
++}
++
++/** Normalize schema identifiers, never instance/default/enum data, for the draft-04 compiler. */
++module.exports = (ajv, schema) => {
++    if (typeof schema === "boolean") return schema;
++    const copies = new Map();
++    let root;
++    traverse(schema, { allKeys: true }, (node, _pointer, _root, _parentPointer, keyword, parent, index) => {
++        const copy = enumerableCopy(node);
++        copies.set(node, copy);
++        if (!parent) root = copy;
++        else {
++            const parentCopy = copies.get(parent);
++            if (index === undefined) parentCopy[keyword] = copy;
++            else {
++                if (parentCopy[keyword] === parent[keyword]) {
++                    parentCopy[keyword] = Array.isArray(parent[keyword]) ? [...parent[keyword]] : enumerableCopy(parent[keyword]);
++                }
++                Object.defineProperty(parentCopy[keyword], index, { value: copy, writable: true, enumerable: true, configurable: true });
++            }
++        }
++        if (node.$id !== undefined) {
++            if (node.id !== undefined && node.id !== node.$id) throw new Error("schema $id is different from id");
++            copy.id = node.$id;
++            delete copy.$id;
++        }
++        // Draft-04 permits extension annotations. Known keywords keep the compiler's real validation.
++        for (const key in copy) {
++            if (!builtInAnnotations.has(key) && !ajv.getKeyword(key)) ajv.addKeyword({ keyword: key });
++        }
++    });
++    return root;
++};
+diff --git a/lib/shared/schema-error-path.js b/lib/shared/schema-error-path.js
+new file mode 100644
+--- /dev/null
++++ b/lib/shared/schema-error-path.js
+@@ -0,0 +1,16 @@
++"use strict";
++
++/** Format native JSON Pointer errors against the schema value, retaining readable array/property paths. */
++module.exports = (pointer, schema) => {
++    let current = schema;
++    let result = "";
++    if (!pointer) return result;
++    for (const encoded of pointer.slice(1).split("/")) {
++        const key = encoded.replace(/~1/g, "/").replace(/~0/g, "~");
++        if (Array.isArray(current) && /^(?:0|[1-9][0-9]*)$/.test(key)) result += `[${key}]`;
++        else if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)) result += `${result ? "." : ""}${key}`;
++        else result += `[${JSON.stringify(key)}]`;
++        current = current?.[key];
++    }
++    return result;
++};

@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -132,7 +132,7 @@
+     },
+     "scripts": {},
+     "dependencies": {
+-        "undici-types": "~8.9.0"
++        "undici-types": "~8.12.4"
+     },
+     "peerDependencies": {},
+     "typesPublisherContentHash": "53beb6693c262ca57af67f961a0fd8dbb7ffa495737a63f1676f34d45ddaa189",
