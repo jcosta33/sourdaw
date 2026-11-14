@@ -212,12 +212,15 @@ type RestoreTrackPayload = Extract<AppAction, { type: 'restoreTrack' }>['payload
 function decodeRestoredRows(payload: RestoreTrackPayload): { track: Track; takeLanes: TakeLane[] } | null {
     const track = decodeTrackSnapshot(payload.trackSnapshot);
     const takeLanes = decodeExactTakeLaneSnapshots(payload.takeLaneSnapshots);
+    if (track?.id !== payload.trackId) {
+        return null;
+    }
+    const ownClipIds = new Set(collectTrackClipIds(track));
     if (
-        track?.id !== payload.trackId ||
         !holdsOnlyOwnClips(track) ||
         !describesRow(payload, track) ||
-        !keysOnlyOwnClips(payload, track) ||
-        payload.automationLaneSnapshots.some((lane) => lane.trackId !== payload.trackId) ||
+        !keysOnlyOwnClips(payload, ownClipIds) ||
+        !holdsOnlyOwnAutomationLanes(payload, ownClipIds) ||
         !takeLanes ||
         takeLanes.some((lane) => lane.trackId !== payload.trackId)
     ) {
@@ -235,14 +238,27 @@ function describesRow(payload: RestoreTrackPayload, track: Track): boolean {
 // The capture keys MIDI data and satellites by the clips the row holds, live
 // or in a stored alternative; a key naming any other clip would overwrite
 // another track's clip data.
-function keysOnlyOwnClips(payload: RestoreTrackPayload, track: Track): boolean {
-    const ownClipIds = new Set(collectTrackClipIds(track));
+function keysOnlyOwnClips(payload: RestoreTrackPayload, ownClipIds: ReadonlySet<string>): boolean {
     return [
         ...Object.keys(payload.midiNotesByClipId),
         ...Object.keys(payload.midiCcByClipId),
         ...Object.keys(payload.midiPitchBendByClipId),
         ...payload.clipSatellites.map((entry) => entry.clipId),
     ].every((clipId) => ownClipIds.has(clipId));
+}
+
+// The capture takes every automation lane of the track; a clip lane rides one
+// of the row's clips, since moving a clip carries its lanes to the target track
+// and removing it drops them. The contract type names only the lane's identity,
+// so the captured `clipId` is read from the snapshot itself.
+function holdsOnlyOwnAutomationLanes(payload: RestoreTrackPayload, ownClipIds: ReadonlySet<string>): boolean {
+    return payload.automationLaneSnapshots.every((lane) => {
+        const clipId: unknown = Reflect.get(lane, 'clipId');
+        return (
+            lane.trackId === payload.trackId &&
+            (clipId === undefined || (typeof clipId === 'string' && ownClipIds.has(clipId)))
+        );
+    });
 }
 
 // Every clip a track holds, live or in a stored alternative copy, names that

@@ -932,6 +932,29 @@ describe('handleRestoreTrack', () => {
             expect(mocks.restoreAutomationLanes).toHaveBeenCalledWith(payload.automationLaneSnapshots);
         });
 
+        // A clip automation lane rides its clip's id; the contract type names
+        // only the lane's identity, while the capture copies the whole lane.
+        function clipLane(id: string, clipId: string): RestoreTrackPayload['automationLaneSnapshots'][number] {
+            const lane = { id, trackId: removedTrackId, clipId };
+            return lane;
+        }
+
+        it('restores clip automation lanes on its own live clip and on a clip only an alternative holds', () => {
+            const row = rowWithAlternativeOnlyClip();
+            seedCapturedMembers();
+            const ownClipLanes = [clipLane('lane-clip-zero', 'clip-zero'), clipLane('lane-alt-only', 'clip-alt-only')];
+            mocks.capturedStores.automationLanes = [...(mocks.capturedStores.automationLanes ?? []), ...ownClipLanes];
+            const payload = captureRemoval(row, storeTakeLane());
+            vi.clearAllMocks();
+
+            expect(payload.automationLaneSnapshots).toEqual([
+                { id: 'lane-own', trackId: removedTrackId },
+                ...ownClipLanes,
+            ]);
+            expectRestored({ type: 'restoreTrack', payload }, row);
+            expect(mocks.restoreAutomationLanes).toHaveBeenCalledWith(payload.automationLaneSnapshots);
+        });
+
         it.each([
             ['a folder child', { parentId: 'folder-1' }],
             ['a top-level track', { parentId: null }],
@@ -1011,6 +1034,16 @@ describe('handleRestoreTrack', () => {
                     automationLaneSnapshots: [
                         ...payload.automationLaneSnapshots,
                         { id: 'lane-survivor', trackId: survivor.id },
+                    ],
+                }),
+            ],
+            [
+                "a clip automation lane on another track's clip",
+                (payload: RestoreTrackPayload) => ({
+                    ...payload,
+                    automationLaneSnapshots: [
+                        ...payload.automationLaneSnapshots,
+                        clipLane('lane-foreign-clip', survivorClipId),
                     ],
                 }),
             ],
