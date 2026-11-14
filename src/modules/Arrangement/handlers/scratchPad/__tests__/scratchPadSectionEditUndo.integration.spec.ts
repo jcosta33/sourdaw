@@ -179,6 +179,68 @@ describe('scratch pad section edits are undoable', () => {
         });
     });
 
+    it('undoes a pad edit after an unrelated section added later was undone first', async () => {
+        await executeAppAction({
+            type: 'renameScratchPadSection',
+            payload: { sectionId: CHORUS.id, name: 'Hook' },
+        });
+        await executeAppAction({
+            type: 'addSection',
+            payload: { startBeat: 0, endBeat: 8, name: 'Intro', sectionId: 'sec-intro', color: '#aa0000' },
+        });
+
+        await undo({ stepOverConflicts: false });
+        await undo({ stepOverConflicts: false });
+
+        expect(padSections()).toEqual([VERSE, CHORUS, BRIDGE]);
+        expect(markerStore.value?.sections).toEqual([]);
+    });
+
+    describe('reverting an older pad edit out of order from the action history', () => {
+        let unsubscribeFromHistory: () => void = () => undefined;
+
+        beforeEach(() => {
+            setActionHistoryMetadataPort({
+                record: recordActionHistoryEntry,
+                recordBatch: recordActionHistoryEntries,
+                markReverted: markActionHistoryEntryReverted,
+                clear: clearActionHistory,
+            });
+            unsubscribeFromHistory = subscribeToPublishedActionHistory({
+                onHistory: syncActionReplayMetadata,
+                onRootReplaced: resetActionReplayAuthority,
+            });
+        });
+
+        afterEach(() => {
+            unsubscribeFromHistory();
+            unsubscribeFromHistory = () => undefined;
+            clearActionHistory();
+        });
+
+        it('refuses and keeps the later pad edit', async () => {
+            await executeAppAction({
+                type: 'renameScratchPadSection',
+                payload: { sectionId: VERSE.id, name: 'Intro' },
+            });
+            await executeAppAction({
+                type: 'renameScratchPadSection',
+                payload: { sectionId: CHORUS.id, name: 'Hook' },
+            });
+            const afterBoth = structuredClone(padSections());
+            const firstRename = actionHistoryStore.value?.entries.find(
+                (entry) => entry.actionKind === 'renameScratchPadSection'
+            );
+            if (!firstRename) {
+                throw new Error('Expected the first pad rename in the action history');
+            }
+
+            await expect(revertAction(firstRename.id)).resolves.toEqual({ status: 'conflict' });
+
+            expect(padSections()).toEqual(afterBoth);
+        });
+    });
+
     describe('with a marker section edit reverted out of order from the action history', () => {
         let unsubscribeFromHistory: () => void = () => undefined;
 
