@@ -21,10 +21,10 @@ import {
 } from '../prepareReview.ts';
 import { assertTrustedExecutingBlobs, trustedExecutingPaths } from '../prepareReviewEntry.ts';
 import { shellPort as publicationShellPort } from '../publishReview.ts';
-import { parseReviewDocument } from '../reviewDocumentParser.ts';
 import { formatReviewDiffSummary, summarizeReviewDiff } from '../reviewDiffSummary.ts';
-import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
+import { parseReviewDocument } from '../reviewDocumentParser.ts';
 import { prepareReviewDossierPublication } from '../reviewPublicationBinding.ts';
+import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
 import { REVIEW_ROUND_FREEZE_THRESHOLD } from '../reviewRoundEscalation.ts';
 
 /**
