@@ -404,6 +404,8 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prep
                 cwd: primaryRoot,
                 env: session.env,
                 trim: false,
+                // Complete source diffs can exceed 256 MiB; keep this exceptional allowance local.
+                maxBufferBytes: 512 * 1024 * 1024,
             }),
         numstat: (baseSha, headSha) =>
             Buffer.from(

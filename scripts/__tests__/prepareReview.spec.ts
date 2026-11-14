@@ -3,8 +3,9 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import * as githubAppIdentity from '../githubAppIdentity.ts';
 import { REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
     installBundleAtomically,
@@ -95,6 +96,49 @@ function fakePort(root: string) {
 }
 
 describe('review prepare', () => {
+    it('gives only the full shell review diff a 512 MiB capture allowance and preserves its bytes', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-capture-'));
+        const diff = 'diff --git a/file b/file\n+  exact bytes  \n';
+        const numstat = '1\t0\tfile\0';
+        mkdirSync(join(root, '.git'));
+        mkdirSync(join(root, '.gh'));
+        const capture = vi.spyOn(githubAppIdentity, 'spawnCapture').mockImplementation((_command, args) => {
+            if (args[0] === 'rev-parse') {
+                return join(root, '.git');
+            }
+            if (args[0] === 'diff') {
+                return args.includes('--numstat') ? numstat : diff;
+            }
+            return 'ordinary';
+        });
+        try {
+            const session: GhSession = {
+                configDir: join(root, '.gh'),
+                env: { ...process.env, GH_TOKEN: ['ghs', 'sentinel'].join('_') },
+                dispose: () => undefined,
+            };
+            const port = shellPort(session, root);
+            expect(port.diff('base', 'head')).toBe(diff);
+            expect(capture).toHaveBeenLastCalledWith('git', ['diff', 'base...head'], {
+                cwd: root,
+                env: session.env,
+                trim: false,
+                maxBufferBytes: 512 * 1024 * 1024,
+            });
+            expect(port.numstat('base', 'head')).toEqual(Buffer.from(numstat));
+            port.mergeBase('base', 'head');
+            port.showFile('head', 'file');
+            port.listDecisionFiles('head');
+            port.fetchShas('base', 'head');
+            const overrides = capture.mock.calls.filter(([, , options]) => options?.maxBufferBytes !== undefined);
+            expect(overrides).toHaveLength(1);
+            expect(overrides[0]?.[1]).toEqual(['diff', 'base...head']);
+        } finally {
+            capture.mockRestore();
+            removeTempRoot(root);
+        }
+    });
+
     it('writes a complete bundle for the current head without review.json', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
         const { port, calls, logs, files } = fakePort(root);

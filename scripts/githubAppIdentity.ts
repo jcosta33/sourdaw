@@ -804,11 +804,24 @@ function assertTokenBearingGitChildIsHookFree(
     assertNoConfigDefinedHooks(childCommand, args, cwd, env);
 }
 
+const DEFAULT_CAPTURE_BUFFER_BYTES = 64 * 1024 * 1024;
+const MAX_CAPTURE_BUFFER_BYTES = 512 * 1024 * 1024;
+
 export function spawnCapture(
     command: string,
     args: string[],
-    options: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string; trim?: boolean } = {}
+    options: {
+        cwd?: string;
+        env?: NodeJS.ProcessEnv;
+        input?: string;
+        trim?: boolean;
+        maxBufferBytes?: number;
+    } = {}
 ): string {
+    const maxBufferBytes = options.maxBufferBytes ?? DEFAULT_CAPTURE_BUFFER_BYTES;
+    if (!Number.isSafeInteger(maxBufferBytes) || maxBufferBytes <= 0 || maxBufferBytes > MAX_CAPTURE_BUFFER_BYTES) {
+        throw new RangeError(`maxBufferBytes must be a positive safe integer at most ${MAX_CAPTURE_BUFFER_BYTES}`);
+    }
     const childCommand = trustedChildExecutable(command, options.env ?? process.env);
     const cwd = options.cwd ?? process.cwd();
     assertTokenBearingGitChildIsHookFree(childCommand, args, cwd, options.env ?? process.env);
@@ -816,12 +829,9 @@ export function spawnCapture(
         cwd,
         env: options.env,
         encoding: 'utf8',
-        // Sized at 64 MiB: spawnSync's 1 MiB default kills any larger capture with ENOBUFS.
-        // The largest legitimate capture is `git show` of the biggest tracked blob (~5 MiB
-        // sample wav today); `git diff` captures stay textual because git elides binaries.
-        // 64 MiB covers that plus a whole-source-tree textual diff with headroom, and a
-        // capture exceeding even this bound still fails loudly through result.error below.
-        maxBuffer: 64 * 1024 * 1024,
+        // Ordinary commands retain 64 MiB; full review diffs explicitly request bounded headroom.
+        // Overflow still throws through result.error rather than returning a partial capture.
+        maxBuffer: maxBufferBytes,
         shell: false,
         input: options.input,
     });
