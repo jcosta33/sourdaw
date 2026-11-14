@@ -121,12 +121,12 @@ Each module may expose **up to four** independently-importable contract surfaces
 
 ### Contract folder roles
 
-| Contract folder        | Role                              | Import target                                                                                                                          |
-| ---------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `useCases/`            | public write boundary (functions) | `#/modules/<M>/useCases` — `export { fn }` only, **no** `export type` from `useCases/`. Includes **`get<Module>Handlers`** (see §4.5). |
-| `events/`              | domain event payload types        | `#/modules/<M>/events` — `export type` / values as needed                                                                              |
-| `stores/`              | shared business/read state        | `#/modules/<M>/stores`                                                                                                                 |
-| `presentations/views/` | composable UI entry points        | `#/modules/<M>/presentations/views`                                                                                                    |
+| Contract folder        | Role                                                                                 | Import target                                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `useCases/`            | public write boundary (functions)                                                    | `#/modules/<M>/useCases` — `export { fn }` only, **no** `export type` from `useCases/`. Includes **`get<Module>Handlers`** (see §4.5). |
+| `events/`              | domain event payload types and app-action variants (`<area>AppActions.ts`, ADR 0058) | `#/modules/<M>/events` — `export type` / values as needed                                                                              |
+| `stores/`              | shared business/read state                                                           | `#/modules/<M>/stores`                                                                                                                 |
+| `presentations/views/` | composable UI entry points                                                           | `#/modules/<M>/presentations/views`                                                                                                    |
 
 Modules with no events do not need an `events/index.ts`. Modules with no cross-module views do not need a `presentations/views/index.ts`.
 
@@ -331,6 +331,8 @@ ProjectLoadError
 ## 4.3 `events/`
 
 **Events** represent meaningful business occurrences.
+
+`events/` also carries a module's app-action variants (`<area>AppActions.ts`, ADR 0058). Those are requests dispatched through `executeAppAction`, not occurrences, and they are not a substitute for use-case calls.
 
 Events are not just value changes.
 They are used when another concern needs to react independently.

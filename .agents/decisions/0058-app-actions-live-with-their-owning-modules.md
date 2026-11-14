@@ -62,8 +62,12 @@ a new action must join.
    `declare module '#/utils/handlerContract' { interface AppActionRegistry { ... } }`. Reason: utils
    imports nothing, and each module already depends on utils, so composing the union adds no module
    edge and no cycle. Interface augmentation is the TypeScript mechanism for an open,
-   compiler-checked registry. It was verified with tsc 7, together with a transitional key declared
-   in the same interface.
+   compiler-checked registry. It was verified with both the tsc 7 command line that typechecks the
+   repository and the pinned typescript 6 compiler (6.0.3) whose API the schema generator uses,
+   together with a transitional key declared in the same interface. `events/` is the cross-module
+   type surface for action variants, as it is for event payloads, because §3.3 of
+   `docs/architecture/03-typescript-module.md` names `events/index.ts` the canonical cross-module
+   named-type surface.
 
 3. **Ownership oracle.** An action belongs to the module whose `get<Module>Handlers` map registers
    its handler. That set is the one `getProductionCommandHandlerMaps` returns.
@@ -92,7 +96,12 @@ a new action must join.
    argument schema generator emits a canonical order, so moving a variant between files leaves the
    generated `src/modules/Command/useCases/versionedCommandArgumentKeys.ts` unchanged except for its
    import line. Any other diff in that file during a move slice means a shape changed, and it blocks
-   the slice. Release-inventory digests move only because tracked paths move. The agent evidence
+   the slice. Release-inventory digests move only because tracked paths move, or because a tracked
+   set pins a moved variant: `scripts/checkReleaseInventory.ts` has a tracked set,
+   `grand-boule-project-state`, that lists `src/utils/handlerContract.ts` to pin the GrandBoule
+   device-state action shape. When a move slice moves a variant that a tracked set pins, the same
+   slice repoints that set to the variant's new file and restamps it
+   (`pnpm release:restamp:tracked-set`). The agent evidence
    manifest does not move.
 
 7. **Per-action behaviour is one exhaustive lookup per concern.** Code that derives a property of
@@ -104,7 +113,9 @@ a new action must join.
     - When an existing owner-provided handler capability already expresses the concern (for example
       `materializeCommandArguments`), the concern uses that capability instead of a second table.
     - A record that would pass the line ceiling is split into per-owner partial records, composed with
-      `satisfies` against the full mapped type.
+      `satisfies` against the full mapped type. Every partial record lives in the module that owns
+      the concern. The split by action owner is only a file split inside that module, so no import
+      edge to the owning modules is added.
     - Narrowing is not a table and stays. That covers a handler narrowing its own action, and code
       narrowing to one specific action that it builds or consumes by contract.
 
@@ -122,7 +133,8 @@ The slice order:
 - (b) Until the last move slice, `AppActionRegistry` carries one `legacy` key whose value is the
   union of variants not yet moved, declared in `handlerContract.ts` itself.
 - (c) Each move slice moves one owner group's variants and the snapshot types only they reference,
-  shrinking `legacy`. It rewrites only the importers of the moved named types. The first move slice
+  shrinking `legacy`. It rewrites only the importers of the moved named types. It repoints and
+  restamps any tracked set that pins a moved variant (decision 6). The first move slice
   adds the partial-program includes.
 - (d) The last move slice removes `legacy` and the remaining domain types from `handlerContract.ts`.
 - (e) The lookup-table slices run per concern-owning module and do not wait for the moves, because
@@ -137,6 +149,10 @@ request.
   lookup. The compiler refuses the build until each answers.
 - Each module owns its action language, and `src/utils` stops holding domain types.
 - Tier and cycle rules do not change.
+- Resolves the question ADR 0007 and the open-decision docket left open about where `AppAction`
+  lives and whether it stays the dispatch contract. `AppAction` stays the canonical dispatch
+  contract, composed over the domain-free registry in `src/utils/handlerContract.ts`. The
+  `models/AppAction.ts` location in 0007 is no longer current. 0007 is immutable and is not edited.
 - Extends 0006 (contract barrels) and 0011 (one language, one owner). Supersedes none.
 
 ## Deferred
