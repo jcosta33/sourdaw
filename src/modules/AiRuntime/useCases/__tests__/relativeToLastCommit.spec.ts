@@ -139,6 +139,7 @@ vi.hoisted(() => {
                 release: createAudioParam(0.25),
                 reduction: 0,
             }),
+            createWaveShaper: () => ({ ...createNode(), curve: null, oversample: 'none' }),
         });
     }
     Object.defineProperty(globalThis, 'AudioContext', {
@@ -1446,6 +1447,79 @@ describe('relative to the last commit', () => {
                 'do the same to the Guitars',
                 'holds "Set EQ Low Freq to 120 Hz", which the recipe'
             );
+        });
+
+        /**
+         * Rewrites the committed recipe's parameter writes to the values a provider chose inside each
+         * window, as a commit of `recipe.expand` with supplied values would hold them; a null value
+         * drops that write, as an insert leaves out a value its added device already holds.
+         */
+        function rewriteCommittedWrites(values: Readonly<Record<string, number | null>>): void {
+            const history = undoHistoryStore.value!;
+            const groupId = history.past.at(-1)?.groupId;
+            const past = history.past.flatMap((entry) => {
+                if (entry.groupId !== groupId || entry.kind !== 'action') {
+                    return [entry];
+                }
+                const { payload } = entry.action as { type: string; payload: Record<string, unknown> };
+                const paramId = typeof payload.paramId === 'string' ? payload.paramId : undefined;
+                if (paramId === undefined || !(paramId in values)) {
+                    return [entry];
+                }
+                const value = values[paramId];
+                return value === null || value === undefined
+                    ? []
+                    : [{ ...entry, action: { ...entry.action, payload: { ...payload, value } } } as typeof entry];
+            });
+            undoHistoryStore.set({ ...history, past });
+        }
+
+        /** A second vocal source, named as a backing vocal so a vocal recipe serves it. */
+        function addBackingVocals(): void {
+            const current = trackStore.value!;
+            trackStore.set({ ...current, tracks: [...current.tracks, createTrack('track-bgv', 'BGV')] });
+        }
+
+        function proposedWrites(): Record<string, unknown> {
+            return Object.fromEntries(
+                (proposedCard()?.actions ?? []).flatMap((action) =>
+                    action.type === 'setDeviceParameter' ? [[String(action.payload.paramId), action.payload.value]] : []
+                )
+            );
+        }
+
+        it("repeats the values the commit wrote, not each window's middle", async () => {
+            await commitRecipeOnVocals('vocal-warm');
+            const written = { 'eq-low-freq': 150, 'eq-low-gain': 2, 'eq-high-freq': 10000, 'eq-high-gain': -1 };
+            rewriteCommittedWrites(written);
+            addBackingVocals();
+
+            await sendChatMessage('do the same to the BGV');
+
+            expect(proposedCard()?.actions[0]).toMatchObject({ type: 'addDevice', payload: { trackId: 'track-bgv' } });
+            expect(proposedWrites()).toEqual(written);
+        });
+
+        it('repeats an insert value the commit left to its added device, not the middle of its window', async () => {
+            await commitRecipeOnVocals('vocal-tight');
+            // A compressor starts with a 10 ms attack, inside the 5-12 ms window whose middle is 8.5 ms,
+            // so a commit choosing 10 ms wrote nothing for it.
+            const written = { 'comp-release': 70, 'comp-makeup': 4, 'eq-low-freq': 110, 'eq-low-gain': -2.5 };
+            rewriteCommittedWrites({ ...written, 'comp-attack': null });
+            addBackingVocals();
+
+            await sendChatMessage('do the same to the BGV');
+
+            expect(proposedCard()?.actions.filter((action) => action.type === 'addDevice')).toHaveLength(2);
+            expect(proposedWrites()).toEqual(written);
+        });
+
+        it('refuses to repeat a recipe whose committed write left its window, naming it', async () => {
+            await commitRecipeOnVocals('vocal-warm');
+            rewriteCommittedWrites({ 'eq-low-freq': 400 });
+            addBackingVocals();
+
+            await expectAnsweredWithoutChange('do the same to the BGV', 'which the recipe');
         });
 
         it.each(['do the same to the Guitars', 'Guitars too', 'apply that recipe to the Guitars'])(

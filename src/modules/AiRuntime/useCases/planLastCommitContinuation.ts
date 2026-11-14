@@ -1,4 +1,9 @@
-import { getBuiltinPlugins, getMixRecipeCatalog, quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
+import {
+    getAddedDeviceParameterValues,
+    getBuiltinPlugins,
+    getMixRecipeCatalog,
+    quantiseDeviceParameterValue,
+} from '#/modules/Arrangement/useCases';
 import { undoHistoryStore } from '#/modules/Command/stores';
 import {
     getExecutableAppActionEffect,
@@ -740,41 +745,20 @@ function findRecipeChange(adopted: AdoptedRecipe): string | null {
     return null;
 }
 
-/** The committed command a recipe command pairs with: an insert by its track and device type, a write by device, parameter and value. */
-function pairsWithRecipeCommand(
-    command: CommittedCommand,
-    recipeCommand: ReturnType<typeof readExpandedRecipeCommands>[number],
-    boundDevices: ReadonlyMap<string, string>
-): boolean {
-    if (command.type !== recipeCommand.operation) {
-        return false;
-    }
-    const { payload } = command;
-    const stated = recipeCommand.arguments;
-    if (recipeCommand.operation === 'addDevice') {
-        return (
-            payload.trackId === stated.trackId &&
-            payload.deviceType === stated.deviceType &&
-            typeof payload.deviceId === 'string'
-        );
-    }
-    const deviceId =
-        typeof stated.deviceId === 'string' && stated.deviceId.startsWith('$')
-            ? boundDevices.get(stated.deviceId)
-            : stated.deviceId;
-    return (
-        deviceId !== undefined &&
-        payload.deviceId === deviceId &&
-        payload.paramId === stated.paramId &&
-        payload.value === stated.value
-    );
-}
+type MixRecipeStep = ReturnType<typeof getMixRecipeCatalog>['recipes'][number]['steps'][number];
 
-/**
- * The adopted recipe expanded again on the committed track as its chain stood before the commit,
- * without the devices the commit's own inserts added, or the reason it no longer expands there.
- */
-function readExpandedRecipeCommands(committed: CommittedBatch, adopted: AdoptedRecipe, context: ProjectContext) {
+type MixRecipeParameter = MixRecipeStep['parameters'][number];
+
+type RecipeValue = { step: number; paramId: string; value: number };
+
+type CommittedRecipeValues = { status: 'read'; values: RecipeValue[] } | { status: 'refused'; reason: string };
+
+/** The planning context with the committed track's chain as it stood before the commit's own inserts. */
+function readContextBeforeCommit(
+    committed: CommittedBatch,
+    adopted: AdoptedRecipe,
+    context: ProjectContext
+): ProjectContext {
     const added = new Set(
         committed.commands.flatMap((command) =>
             command.type === 'addDevice' && typeof command.payload.deviceId === 'string'
@@ -782,7 +766,7 @@ function readExpandedRecipeCommands(committed: CommittedBatch, adopted: AdoptedR
                 : []
         )
     );
-    const before: ProjectContext = {
+    return {
         ...context,
         tracks: context.tracks.map((track) =>
             track.id === adopted.targetId
@@ -790,52 +774,107 @@ function readExpandedRecipeCommands(committed: CommittedBatch, adopted: AdoptedR
                 : track
         ),
     };
-    const expanded = expandMixRecipe(
-        { recipeId: adopted.recipeId, targetId: adopted.targetId, role: null, values: [] },
-        before,
-        0
+}
+
+/** Takes the first unpaired committed insert of the step's device type on the track, returning the device it added. */
+function takeCommittedInsert(unpaired: CommittedCommand[], trackId: string, deviceType: string): string | null {
+    const index = unpaired.findIndex(
+        ({ type, payload }) =>
+            type === 'addDevice' &&
+            payload.trackId === trackId &&
+            payload.deviceType === deviceType &&
+            typeof payload.deviceId === 'string'
     );
-    return expanded.status === 'expanded' ? expanded.commands : [];
+    const [insert] = index === -1 ? [] : unpaired.splice(index, 1);
+    return typeof insert?.payload.deviceId === 'string' ? insert.payload.deviceId : null;
+}
+
+/** The one live device of the step's type an edit step retunes, on the track as it stood before the commit. */
+function readRetunedDevice(before: ProjectContext, trackId: string, deviceType: string): string | null {
+    const devices = before.tracks.find((track) => track.id === trackId)?.devices ?? [];
+    const matching = devices.filter((device) => device.type === deviceType && !device.bypassed);
+    return matching.length === 1 ? (matching[0]?.id ?? null) : null;
+}
+
+/** Takes the first unpaired committed write of the parameter to the device, when its value lies inside the window. */
+function takeCommittedWrite(
+    unpaired: CommittedCommand[],
+    deviceId: string,
+    parameter: MixRecipeParameter
+): number | null {
+    const index = unpaired.findIndex(
+        ({ type, payload }) =>
+            type === 'setDeviceParameter' &&
+            payload.deviceId === deviceId &&
+            payload.paramId === parameter.paramId &&
+            typeof payload.value === 'number' &&
+            payload.value >= parameter.minimum &&
+            payload.value <= parameter.maximum
+    );
+    const [write] = index === -1 ? [] : unpaired.splice(index, 1);
+    return typeof write?.payload.value === 'number' ? write.payload.value : null;
 }
 
 /**
- * Why the committed batch is not the adopted recipe's expansion alone, or `null` when it is. Nothing
- * the application records ties a committed command to the recipe that built it, so the recipe is
- * expanded again on the committed track as it stood before the commit, and every committed command
- * must pair, in the expansion's order, with exactly one command of it: an insert binding the device
- * it added, and a write to that device, or to the device an edit step retunes, with the expanded
- * value. A command that pairs with none is named, so a provider command committed beside the recipe
- * is never silently left out of the repeat.
+ * The values the commit gave the adopted recipe, one per step and parameter, or why the committed batch
+ * is not that recipe's expansion alone. Nothing the application records ties a committed command to the
+ * recipe that built it, so each step is paired with the commit in the recipe's order: an insert with a
+ * committed insert of its device type on the committed track, an edit with the one device of its type
+ * the chain held before the commit, and each parameter with a write to that device inside its window.
+ * A parameter of an inserted device the commit did not write keeps the value the device starts with,
+ * as an expansion leaves out a write the added device already holds. A committed command that pairs
+ * with nothing is named, so a provider command committed beside the recipe is never silently dropped
+ * from the repeat, and the values must expand the recipe again on the committed track as it stood.
  */
-function findCommandsBesideRecipe(
+function readCommittedRecipeValues(
     committed: CommittedBatch,
     adopted: AdoptedRecipe,
     context: ProjectContext
-): string | null {
-    const recipeCommands = readExpandedRecipeCommands(committed, adopted, context);
+): CommittedRecipeValues {
+    const incomplete: CommittedRecipeValues = {
+        status: 'refused',
+        reason: `The last committed change no longer reads as the recipe "${adopted.title}" expands on ${trackName(adopted.targetId, context)}, so it cannot be repeated as that recipe.`,
+    };
+    const recipe = getMixRecipeCatalog().recipes.find((candidate) => candidate.id === adopted.recipeId);
+    if (recipe === undefined) {
+        return incomplete;
+    }
+    const before = readContextBeforeCommit(committed, adopted, context);
     const unpaired = [...committed.commands];
-    const boundDevices = new Map<string, string>();
-    let complete = recipeCommands.length > 0;
-    for (const recipeCommand of recipeCommands) {
-        const index = unpaired.findIndex((command) => pairsWithRecipeCommand(command, recipeCommand, boundDevices));
-        const paired = unpaired[index];
-        if (paired === undefined) {
+    const values: RecipeValue[] = [];
+    let complete = true;
+    for (const [step, recipeStep] of recipe.steps.entries()) {
+        const deviceId =
+            recipeStep.kind === 'insert'
+                ? takeCommittedInsert(unpaired, adopted.targetId, recipeStep.deviceType)
+                : readRetunedDevice(before, adopted.targetId, recipeStep.deviceType);
+        if (deviceId === null) {
             complete = false;
             continue;
         }
-        unpaired.splice(index, 1);
-        if (recipeCommand.binding !== null && typeof paired.payload.deviceId === 'string') {
-            boundDevices.set(`$${recipeCommand.binding}`, paired.payload.deviceId);
+        const held = recipeStep.kind === 'insert' ? getAddedDeviceParameterValues(recipeStep.deviceType) : null;
+        for (const parameter of recipeStep.parameters) {
+            const value = takeCommittedWrite(unpaired, deviceId, parameter) ?? held?.[parameter.paramId];
+            if (value === undefined) {
+                complete = false;
+                continue;
+            }
+            values.push({ step, paramId: parameter.paramId, value });
         }
     }
     const [beside] = unpaired;
     if (beside !== undefined) {
-        return `The last committed change holds "${beside.label}", which the recipe "${adopted.title}" does not produce, so it cannot be repeated as the recipe alone.`;
+        return {
+            status: 'refused',
+            reason: `The last committed change holds "${beside.label}", which the recipe "${adopted.title}" does not produce, so it cannot be repeated as the recipe alone.`,
+        };
     }
-    if (!complete) {
-        return `The last committed change no longer reads as the recipe "${adopted.title}" expands on ${trackName(adopted.targetId, context)}, so it cannot be repeated as that recipe.`;
-    }
-    return null;
+    const expanded = expandMixRecipe(
+        { recipeId: adopted.recipeId, targetId: adopted.targetId, role: null, values },
+        before,
+        0
+    );
+    return complete && expanded.status === 'expanded' ? { status: 'read', values } : incomplete;
 }
 
 /**
@@ -857,10 +896,11 @@ function retargetCommittedRecipe(input: {
     if (recipeChange !== null) {
         return denied(recipeChange);
     }
-    const besideRecipe = findCommandsBesideRecipe(committed, adopted, context);
-    if (besideRecipe !== null) {
-        return denied(besideRecipe);
+    const committedValues = readCommittedRecipeValues(committed, adopted, context);
+    if (committedValues.status === 'refused') {
+        return denied(committedValues.reason);
     }
+    const { values } = committedValues;
     const targets = readRetargetTracks(input.request, context);
     if (targets.status === 'refused') {
         return targets.outcome;
@@ -877,7 +917,7 @@ function retargetCommittedRecipe(input: {
     let commandCount = 0;
     for (const [ordinal, id] of targets.ids.entries()) {
         const expanded = expandMixRecipe(
-            { recipeId: adopted.recipeId, targetId: id, role: null, values: [] },
+            { recipeId: adopted.recipeId, targetId: id, role: null, values },
             context,
             ordinal
         );
@@ -891,7 +931,12 @@ function retargetCommittedRecipe(input: {
             `Repeating the last committed change there takes ${String(commandCount)} commands, more than one batch of ${String(MAX_LLM_ACTIONS_PER_BATCH)} holds.`
         );
     }
-    const [first, ...rest] = targets.ids.map((targetId) => ({ recipeId: adopted.recipeId, targetId, role: null }));
+    const [first, ...rest] = targets.ids.map((targetId) => ({
+        recipeId: adopted.recipeId,
+        targetId,
+        role: null,
+        values,
+    }));
     if (first === undefined) {
         return denied('The request names no track to apply the recipe to.');
     }
