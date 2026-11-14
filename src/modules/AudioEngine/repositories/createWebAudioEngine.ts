@@ -17,7 +17,6 @@ import {
     RuntimeGraphMutationFailure,
     RuntimeGraphMutationRejected,
     TrackNode,
-    type TrackNodeRuntimeGraphMutation,
 } from '../engine/TrackNode';
 import {
     bitcrusherRateProcessorUrl,
@@ -47,6 +46,11 @@ import { createAudioPreview, type AudioPreview } from './webAudioEngine/createAu
 import { createEmptyGraphSlotResourcesByLoadState } from './webAudioEngine/createEmptyGraphSlotResourcesByLoadState';
 import { createMasterSection, type MasterMeterNode, type MasterSection } from './webAudioEngine/createMasterSection';
 import { createNoopAudioContext } from './webAudioEngine/createNoopAudioContext';
+import {
+    createRuntimeGraphRevision,
+    type RuntimeGraphMutation,
+    type RuntimeGraphRevision,
+} from './webAudioEngine/createRuntimeGraphRevision';
 import { createScheduledSources, type ScheduledSources } from './webAudioEngine/createScheduledSources';
 import { createSendRouting, type SendRouting } from './webAudioEngine/createSendRouting';
 import {
@@ -116,16 +120,6 @@ const UNWIRED_USE_CASE_DEVICE_COLLABORATORS: EngineUseCaseCollaborators = {
  * store reset ends the outgoing devices.
  */
 type StripTeardown = 'track-removed' | 'strip-deactivated' | 'graph-reset';
-
-type RuntimeGraphMutation<TValue> = Readonly<{
-    value: TValue;
-    changed: boolean;
-}>;
-
-type RuntimeGraphMutationReceipt<TValue> = Readonly<{
-    value: TValue;
-    runtimeRevision: number;
-}>;
 
 /**
  * Repository-internal view of engine state for repository specs and the
@@ -257,9 +251,8 @@ class AudioEngineImpl implements AudioEngine {
     private workletReady = false;
     private fallbackMode = false;
     private readonly transportClock: TransportClock;
-    private runtimeGraphRevision = 0;
-    private runtimeGraphProjectRevisionValidator: RuntimeGraphProjectRevisionValidator | null = null;
-    private runtimeGraphTopologyValidator: RuntimeGraphTopologyValidator | null = null;
+    /** The runtime-graph revision and the validators a compiled delta is admitted against. */
+    private readonly runtimeGraph: RuntimeGraphRevision = createRuntimeGraphRevision();
     private useCaseDeviceCollaborators: EngineUseCaseCollaborators = UNWIRED_USE_CASE_DEVICE_COLLABORATORS;
     /** Built-ins come straight from this repository; the rest resolve through the installed use cases per call. */
     private readonly deviceCollaborators: EngineDeviceCollaborators = {
@@ -337,7 +330,7 @@ class AudioEngineImpl implements AudioEngine {
             scheduleTrackSendAutomation: (sourceTrackId, busId, level, time) =>
                 this.trackNodes.get(sourceTrackId)?.scheduleSendAutomation(busId, level, time),
             mutateRuntimeGraph: (mutation) => {
-                this.mutateRuntimeGraph(() => ({ value: undefined, changed: mutation() }));
+                this.runtimeGraph.mutate(() => ({ value: undefined, changed: mutation() }));
             },
         });
 
@@ -350,7 +343,7 @@ class AudioEngineImpl implements AudioEngine {
             isFallback: () => this.fallbackMode,
             readTrackStrip: (trackId) => this.trackNodes.get(trackId)?.strip,
             mutateRuntimeGraph: (mutation) => {
-                this.mutateRuntimeGraph(() => ({ value: undefined, changed: mutation() }));
+                this.runtimeGraph.mutate(() => ({ value: undefined, changed: mutation() }));
             },
         });
 
@@ -373,34 +366,6 @@ class AudioEngineImpl implements AudioEngine {
         }
     }
 
-    private advanceRuntimeGraphRevision(): number {
-        this.runtimeGraphRevision++;
-        return this.runtimeGraphRevision;
-    }
-
-    /**
-     * The sole revision writer for control-thread graph topology. A public graph
-     * command reports whether it materially changed the graph; compound commands
-     * (for example, removing a strip and its dependent edges) therefore publish
-     * one generation, while no-ops and completed rollbacks publish none.
-     */
-    private mutateRuntimeGraph<TValue>(
-        mutation: () => RuntimeGraphMutation<TValue>
-    ): RuntimeGraphMutationReceipt<TValue> {
-        const result = mutation();
-        return Object.freeze({
-            value: result.value,
-            runtimeRevision: result.changed ? this.advanceRuntimeGraphRevision() : this.runtimeGraphRevision,
-        });
-    }
-
-    private recordRuntimeGraphMutation(mutation: TrackNodeRuntimeGraphMutation): void {
-        this.mutateRuntimeGraph(() => ({ value: undefined, changed: true }));
-        if (mutation.application === 'needs-reconcile') {
-            logger.warn(`[AudioEngine] ${mutation.reason}`);
-        }
-    }
-
     private hasRuntimeOutputDestination(outputId: string): boolean {
         return outputId === 'master' || outputId === 'hw_out' || this.trackNodes.has(outputId);
     }
@@ -412,7 +377,7 @@ class AudioEngineImpl implements AudioEngine {
     private needsRuntimeGraphReconciliation(
         delta: RuntimeGraphDelta,
         reason: string,
-        runtimeRevision = this.runtimeGraphRevision,
+        runtimeRevision = this.runtimeGraph.current(),
         compensation: 'not-attempted' | 'failed' = 'not-attempted'
     ): RuntimeGraphDeltaResult {
         return Object.freeze({
@@ -426,17 +391,18 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     private applyRuntimeDeviceChainDelta(delta: RuntimeGraphDeviceChainDelta): RuntimeGraphDeltaResult {
-        if (delta.correlation.appRevision !== this.runtimeGraphRevision) {
+        if (delta.correlation.appRevision !== this.runtimeGraph.current()) {
             return Object.freeze({
                 acceptance: 'rejected' as const,
                 application: 'not-applied' as const,
                 reason: 'Runtime graph delta is stale for the live engine revision',
             });
         }
-        if (this.runtimeGraphProjectRevisionValidator) {
+        const projectRevisionValidator = this.runtimeGraph.projectRevisionValidator();
+        if (projectRevisionValidator) {
             let isCurrentProjectRevision: boolean;
             try {
-                isCurrentProjectRevision = this.runtimeGraphProjectRevisionValidator(delta.correlation.projectRevision);
+                isCurrentProjectRevision = projectRevisionValidator(delta.correlation.projectRevision);
             } catch (error) {
                 return Object.freeze({
                     acceptance: 'rejected' as const,
@@ -452,10 +418,11 @@ class AudioEngineImpl implements AudioEngine {
                 });
             }
         }
-        if (this.runtimeGraphTopologyValidator) {
+        const topologyValidator = this.runtimeGraph.topologyValidator();
+        if (topologyValidator) {
             let isCurrentProjectTopology: boolean;
             try {
-                isCurrentProjectTopology = this.runtimeGraphTopologyValidator([delta.after]);
+                isCurrentProjectTopology = topologyValidator([delta.after]);
             } catch (error) {
                 return Object.freeze({
                     acceptance: 'rejected' as const,
@@ -485,7 +452,7 @@ class AudioEngineImpl implements AudioEngine {
             });
         }
 
-        const deviceMutation = this.mutateRuntimeGraph<
+        const deviceMutation = this.runtimeGraph.mutate<
             | { status: 'applied' }
             | { status: 'rejected'; error: RuntimeGraphMutationRejected }
             | { status: 'needs-reconcile'; reason: string; compensation: 'not-attempted' | 'failed' }
@@ -539,17 +506,18 @@ class AudioEngineImpl implements AudioEngine {
     private applyRuntimeTrackStripInitialization(
         delta: RuntimeGraphTrackStripInitializationDelta
     ): RuntimeGraphDeltaResult {
-        if (delta.correlation.appRevision !== this.runtimeGraphRevision) {
+        if (delta.correlation.appRevision !== this.runtimeGraph.current()) {
             return Object.freeze({
                 acceptance: 'rejected' as const,
                 application: 'not-applied' as const,
                 reason: 'Runtime graph initialization is stale for the live engine revision',
             });
         }
-        if (this.runtimeGraphProjectRevisionValidator) {
+        const projectRevisionValidator = this.runtimeGraph.projectRevisionValidator();
+        if (projectRevisionValidator) {
             let isCurrentProjectRevision: boolean;
             try {
-                isCurrentProjectRevision = this.runtimeGraphProjectRevisionValidator(delta.correlation.projectRevision);
+                isCurrentProjectRevision = projectRevisionValidator(delta.correlation.projectRevision);
             } catch (error) {
                 return Object.freeze({
                     acceptance: 'rejected' as const,
@@ -565,10 +533,11 @@ class AudioEngineImpl implements AudioEngine {
                 });
             }
         }
-        if (this.runtimeGraphTopologyValidator) {
+        const topologyValidator = this.runtimeGraph.topologyValidator();
+        if (topologyValidator) {
             let isCurrentProjectTopology: boolean;
             try {
-                isCurrentProjectTopology = this.runtimeGraphTopologyValidator(delta.nodes);
+                isCurrentProjectTopology = topologyValidator(delta.nodes);
             } catch (error) {
                 return Object.freeze({
                     acceptance: 'rejected' as const,
@@ -609,7 +578,7 @@ class AudioEngineImpl implements AudioEngine {
                     acceptance: 'accepted' as const,
                     application: 'applied' as const,
                     correlation: delta.correlation,
-                    runtimeRevision: this.runtimeGraphRevision,
+                    runtimeRevision: this.runtimeGraph.current(),
                 });
             }
             return Object.freeze({
@@ -638,7 +607,7 @@ class AudioEngineImpl implements AudioEngine {
 
         let initializedNode: TrackNode | undefined;
         try {
-            const initialization = this.mutateRuntimeGraph(() => {
+            const initialization = this.runtimeGraph.mutate(() => {
                 initializedNode = this.createTrackNode(sourcePlan.id);
                 try {
                     for (const device of sourcePlan.devices) {
@@ -689,7 +658,7 @@ class AudioEngineImpl implements AudioEngine {
                 return this.needsRuntimeGraphReconciliation(
                     delta,
                     typedFailure.mutation.reason,
-                    this.runtimeGraphRevision,
+                    this.runtimeGraph.current(),
                     typedFailure.rollbackError ? 'failed' : 'not-attempted'
                 );
             }
@@ -996,17 +965,15 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public getRuntimeGraphRevision(): number {
-        return this.runtimeGraphRevision;
+        return this.runtimeGraph.current();
     }
 
-    // null clears the contract: an unregistered validator is skipped, not fail-closed.
     public setRuntimeGraphProjectRevisionValidator(validator: RuntimeGraphProjectRevisionValidator | null): void {
-        this.runtimeGraphProjectRevisionValidator = validator;
+        this.runtimeGraph.setProjectRevisionValidator(validator);
     }
 
-    // null clears the contract: an unregistered validator is skipped, not fail-closed.
     public setRuntimeGraphTopologyValidator(validator: RuntimeGraphTopologyValidator | null): void {
-        this.runtimeGraphTopologyValidator = validator;
+        this.runtimeGraph.setTopologyValidator(validator);
     }
 
     // null unwires the collaborators: every later use refuses instead of writing nothing.
@@ -1036,17 +1003,18 @@ class AudioEngineImpl implements AudioEngine {
         if (delta.command === 'initialize-track-strip') {
             return this.applyRuntimeTrackStripInitialization(delta);
         }
-        if (delta.correlation.appRevision !== this.runtimeGraphRevision) {
+        if (delta.correlation.appRevision !== this.runtimeGraph.current()) {
             return Object.freeze({
                 acceptance: 'rejected' as const,
                 application: 'not-applied' as const,
                 reason: 'Runtime graph delta is stale for the live engine revision',
             });
         }
-        if (this.runtimeGraphProjectRevisionValidator) {
+        const projectRevisionValidator = this.runtimeGraph.projectRevisionValidator();
+        if (projectRevisionValidator) {
             let isCurrentProjectRevision: boolean;
             try {
-                isCurrentProjectRevision = this.runtimeGraphProjectRevisionValidator(delta.correlation.projectRevision);
+                isCurrentProjectRevision = projectRevisionValidator(delta.correlation.projectRevision);
             } catch (error) {
                 return Object.freeze({
                     acceptance: 'rejected' as const,
@@ -1062,10 +1030,11 @@ class AudioEngineImpl implements AudioEngine {
                 });
             }
         }
-        if (this.runtimeGraphTopologyValidator) {
+        const topologyValidator = this.runtimeGraph.topologyValidator();
+        if (topologyValidator) {
             let isCurrentProjectTopology: boolean;
             try {
-                isCurrentProjectTopology = this.runtimeGraphTopologyValidator(delta.nodes);
+                isCurrentProjectTopology = topologyValidator(delta.nodes);
             } catch (error) {
                 return Object.freeze({
                     acceptance: 'rejected' as const,
@@ -1117,7 +1086,7 @@ class AudioEngineImpl implements AudioEngine {
             }
         }
 
-        const outputMutation = this.mutateRuntimeGraph<
+        const outputMutation = this.runtimeGraph.mutate<
             | { status: 'applied' }
             | { status: 'rejected'; error: RuntimeGraphMutationRejected }
             | { status: 'needs-reconcile'; error: unknown; reason: string; compensation: 'not-attempted' | 'failed' }
@@ -1279,7 +1248,7 @@ class AudioEngineImpl implements AudioEngine {
             reconnectRoutingForTrack: (id) => this.reconnectRoutingForTrack(id),
             onDeviceLoaded: (id) => this.toasterPads.reconcileParent(id),
             onDeviceRemoved: (id, device) => this.toasterPads.handleDeviceRemoved(id, device),
-            onAsyncRuntimeGraphMutation: (mutation) => this.recordRuntimeGraphMutation(mutation),
+            onAsyncRuntimeGraphMutation: (mutation) => this.runtimeGraph.recordMutation(mutation),
         });
     }
 
@@ -1298,7 +1267,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public ensureTrackStrip(trackId: string): TrackChannelStrip {
-        return this.mutateRuntimeGraph(() => this.ensureTrackStripInGraph(trackId)).value;
+        return this.runtimeGraph.mutate(() => this.ensureTrackStripInGraph(trackId)).value;
     }
 
     private removeTrackStripFromGraph(trackId: string, teardown: StripTeardown): boolean {
@@ -1340,14 +1309,14 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public removeTrackStrip(trackId: string): void {
-        this.mutateRuntimeGraph(() => ({
+        this.runtimeGraph.mutate(() => ({
             value: undefined,
             changed: this.removeTrackStripFromGraph(trackId, 'track-removed'),
         }));
     }
 
     public deactivateTrackStrip(trackId: string): void {
-        this.mutateRuntimeGraph(() => ({
+        this.runtimeGraph.mutate(() => ({
             value: undefined,
             changed: this.removeTrackStripFromGraph(trackId, 'strip-deactivated'),
         }));
@@ -1484,7 +1453,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public ensureBusStrip(busId: string): BusStrip {
-        return this.mutateRuntimeGraph(() => this.ensureBusStripInGraph(busId)).value;
+        return this.runtimeGraph.mutate(() => this.ensureBusStripInGraph(busId)).value;
     }
 
     private removeBusStripFromGraph(busId: string, teardown: StripTeardown): boolean {
@@ -1503,7 +1472,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public removeBusStrip(busId: string): void {
-        this.mutateRuntimeGraph(() => ({
+        this.runtimeGraph.mutate(() => ({
             value: undefined,
             changed: this.removeBusStripFromGraph(busId, 'track-removed'),
         }));
@@ -1531,7 +1500,7 @@ class AudioEngineImpl implements AudioEngine {
         }
         let stripChanged = false;
         try {
-            this.mutateRuntimeGraph(() => {
+            this.runtimeGraph.mutate(() => {
                 const stripMutation = this.ensureTrackStripInGraph(trackId);
                 stripChanged = stripMutation.changed;
                 const deviceAdded =
@@ -1543,9 +1512,9 @@ class AudioEngineImpl implements AudioEngine {
             });
         } catch (error) {
             if (error instanceof RuntimeGraphMutationFailure) {
-                this.recordRuntimeGraphMutation(error.mutation);
+                this.runtimeGraph.recordMutation(error.mutation);
             } else if (stripChanged) {
-                this.mutateRuntimeGraph(() => ({ value: undefined, changed: true }));
+                this.runtimeGraph.mutate(() => ({ value: undefined, changed: true }));
             }
             throw error;
         }
@@ -1557,13 +1526,13 @@ class AudioEngineImpl implements AudioEngine {
             return;
         }
         try {
-            this.mutateRuntimeGraph(() => ({
+            this.runtimeGraph.mutate(() => ({
                 value: undefined,
                 changed: this.trackNodes.get(trackId)?.removeDevice(deviceId) ?? false,
             }));
         } catch (error) {
             if (error instanceof RuntimeGraphMutationFailure) {
-                this.recordRuntimeGraphMutation(error.mutation);
+                this.runtimeGraph.recordMutation(error.mutation);
             }
             throw error;
         }
@@ -1620,7 +1589,7 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return;
         }
-        this.mutateRuntimeGraph(() => ({
+        this.runtimeGraph.mutate(() => ({
             value: undefined,
             changed: this.trackNodes.get(trackId)?.updateBypass(deviceId, bypassed) ?? false,
         }));
@@ -1691,7 +1660,7 @@ class AudioEngineImpl implements AudioEngine {
 
     public setTrackOutput(trackId: string, outputId: string, padBinding?: ToasterPadBinding): void {
         try {
-            this.mutateRuntimeGraph(() => {
+            this.runtimeGraph.mutate(() => {
                 const trackNode = this.trackNodes.get(trackId);
                 if (!trackNode) {
                     return { value: undefined, changed: false };
@@ -1706,7 +1675,7 @@ class AudioEngineImpl implements AudioEngine {
             });
         } catch (error) {
             if (error instanceof RuntimeGraphMutationFailure) {
-                this.recordRuntimeGraphMutation(error.mutation);
+                this.runtimeGraph.recordMutation(error.mutation);
             }
             throw error;
         }
@@ -1930,7 +1899,7 @@ class AudioEngineImpl implements AudioEngine {
                     () => this.deviceReadinessDiagnostics.reset(),
                     // Publish the changed generation before any retirement fault
                     // escapes; empty resets still publish no topology mutation.
-                    () => this.mutateRuntimeGraph(() => ({ value: undefined, changed: hadLiveGraph })),
+                    () => this.runtimeGraph.mutate(() => ({ value: undefined, changed: hadLiveGraph })),
                 ]);
             },
         ]);
