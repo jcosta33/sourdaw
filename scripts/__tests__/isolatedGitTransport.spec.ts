@@ -400,6 +400,33 @@ describe('isolated git transport', () => {
         });
     });
 
+    it('refuses a transport git directory whose environment moves its common directory to the shared repository', () => {
+        withFixture((f) => {
+            withIsolatedGitTransport(
+                runner(f.lane, f.env),
+                { token: SENTINEL, helperDir: f.helperDir },
+                (transport) => {
+                    const gitDir = transport.capture(['rev-parse', '--git-dir']);
+                    const listRemote = [
+                        `--git-dir=${gitDir}`,
+                        ...gitAuthenticatedArgs(SENTINEL, f.helperDir, ['ls-remote', f.remoteUrl]),
+                    ];
+
+                    // GIT_COMMON_DIR makes git read the shared repository's config beside the live directory.
+                    for (const key of ['GIT_COMMON_DIR', 'git_common_dir']) {
+                        expect(() =>
+                            spawnCapture('git', listRemote, {
+                                cwd: f.lane,
+                                env: { ...f.env, [key]: join(f.primary, '.git') },
+                            })
+                        ).toThrow('refusing a token-bearing git child outside an isolated git directory');
+                    }
+                    expect(spawnCapture('git', listRemote, { cwd: f.lane, env: f.env })).toContain(f.main);
+                }
+            );
+        });
+    });
+
     it('refuses a transport git directory that a later git-dir overrides or a path that only resolves to it', () => {
         withFixture((f) => {
             withIsolatedGitTransport(
@@ -431,17 +458,29 @@ describe('isolated git transport', () => {
         });
     });
 
-    it('refuses a transport git directory once its transport has returned', () => {
+    it.each([
+        ['returned', false],
+        ['thrown', true],
+    ])('refuses a transport git directory once its transport body has %s', (_exit, throws) => {
         withFixture((f) => {
             let gitDir = '';
-            withIsolatedGitTransport(
-                runner(f.lane, f.env),
-                { token: SENTINEL, helperDir: f.helperDir },
-                (transport) => {
-                    gitDir = transport.capture(['rev-parse', '--git-dir']);
-                    expect(transport.capture(['ls-remote', f.remoteUrl, 'refs/heads/main'])).toContain(f.main);
-                }
-            );
+            const transportRun = () =>
+                withIsolatedGitTransport(
+                    runner(f.lane, f.env),
+                    { token: SENTINEL, helperDir: f.helperDir },
+                    (transport) => {
+                        gitDir = transport.capture(['rev-parse', '--git-dir']);
+                        expect(transport.capture(['ls-remote', f.remoteUrl, 'refs/heads/main'])).toContain(f.main);
+                        if (throws) {
+                            throw new Error('body failed');
+                        }
+                    }
+                );
+            if (throws) {
+                expect(transportRun).toThrow('body failed');
+            } else {
+                transportRun();
+            }
             mkdirSync(gitDir);
             fixtureGit(f.root, ['init', '-q', '--bare', gitDir]);
 

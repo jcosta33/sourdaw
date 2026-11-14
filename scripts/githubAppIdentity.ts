@@ -796,16 +796,23 @@ export function releaseIsolatedGitDirectory(gitDir: string): void {
  * writes, so no lane-chosen transport, remote helper, URL rewrite or `http.*` setting applies beside
  * the token. Naming `--git-dir` proves nothing alone: it could name the shared repository. Every
  * `--git-dir` must match a live directory exactly, because git honours the last one and a path that
- * only resolves to a live directory has not been proven to.
+ * only resolves to a live directory has not been proven to. `GIT_COMMON_DIR` survives `--git-dir` and
+ * moves where git reads config from, so a child whose environment names it refuses too; the match
+ * ignores case because a Windows child's environment does.
  */
-function assertCredentialHelperChildIsIsolated(args: readonly string[]): void {
+function assertCredentialHelperChildIsIsolated(args: readonly string[], env: NodeJS.ProcessEnv): void {
     if (!installsCredentialHelper(args)) {
         return;
     }
     const gitDirs = gitGlobalOptions(args)
         .filter((option) => option.startsWith('--git-dir='))
         .map((option) => option.slice('--git-dir='.length));
-    if (gitDirs.length === 0 || !gitDirs.every((gitDir) => liveIsolatedGitDirectories.has(gitDir))) {
+    const redirectsCommonDir = Object.keys(env).some((key) => key.toUpperCase() === 'GIT_COMMON_DIR');
+    if (
+        redirectsCommonDir ||
+        gitDirs.length === 0 ||
+        !gitDirs.every((gitDir) => liveIsolatedGitDirectories.has(gitDir))
+    ) {
         throw new Error('refusing a token-bearing git child outside an isolated git directory');
     }
 }
@@ -854,7 +861,7 @@ function assertTokenBearingGitChildIsHookFree(
     if (basename(childCommand) !== 'git' || !isTokenBearingGitChild(args, env)) {
         return;
     }
-    assertCredentialHelperChildIsIsolated(args);
+    assertCredentialHelperChildIsIsolated(args, env);
     assertNoConfigDefinedHooks(childCommand, args, cwd, env);
 }
 
