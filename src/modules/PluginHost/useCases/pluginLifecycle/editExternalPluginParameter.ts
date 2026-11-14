@@ -1,12 +1,8 @@
 import { setPluginParameter } from '../../repositories/pluginBridge/setPluginParameter';
 import { type ExternalPluginParameter, externalPluginParameterStore } from '../../stores/externalPluginParameterStore';
 
-import {
-    pluginEditCount,
-    publishHostParameterEdit,
-    startWatchingPluginEdits,
-    stopWatchingPluginEdits,
-} from './publishExternalPluginParameterEdit';
+import { announceExternalPluginParameterEdit } from './announceExternalPluginParameterEdit';
+import { pluginEditCounts, pluginEditWatchKey } from './pluginEditWatches';
 
 type EditExternalPluginParameterInput = {
     instanceId: string;
@@ -58,10 +54,10 @@ function clampToRange(parameter: ExternalPluginParameter, value: number): number
  * the last value the plugin accepted.
  */
 async function drain(instanceId: string, parameterId: number, first: PendingSend): Promise<void> {
-    const key = `${instanceId}|${String(parameterId)}`;
+    const key = pluginEditWatchKey(instanceId, parameterId);
     const slot: ParameterSlot = { pending: null };
     slots.set(key, slot);
-    startWatchingPluginEdits(instanceId, parameterId);
+    pluginEditCounts.set(key, 0);
     try {
         let current: PendingSend | null = first;
         while (current) {
@@ -75,7 +71,7 @@ async function drain(instanceId: string, parameterId: number, first: PendingSend
                 return;
             }
             const value = clampToRange(parameter, current.value);
-            const editsBefore = pluginEditCount(instanceId, parameterId);
+            const editsBefore = pluginEditCounts.get(key) ?? 0;
             try {
                 await setPluginParameter({ instanceId, paramId: parameterId, value });
             } catch (error: unknown) {
@@ -85,8 +81,8 @@ async function drain(instanceId: string, parameterId: number, first: PendingSend
                 continue;
             }
             // An edit the plugin made while this send was out is the newer truth.
-            if (pluginEditCount(instanceId, parameterId) === editsBefore) {
-                publishHostParameterEdit({ instanceId, parameterId, kind: 'value', value });
+            if ((pluginEditCounts.get(key) ?? 0) === editsBefore) {
+                announceExternalPluginParameterEdit({ instanceId, parameterId, kind: 'value', value });
             }
             for (const waiter of current.waiters) {
                 waiter.resolve();
@@ -95,7 +91,7 @@ async function drain(instanceId: string, parameterId: number, first: PendingSend
             slot.pending = null;
         }
     } finally {
-        stopWatchingPluginEdits(instanceId, parameterId);
+        pluginEditCounts.delete(key);
         slots.delete(key);
     }
 }
@@ -131,7 +127,7 @@ export function editExternalPluginParameter(input: EditExternalPluginParameterIn
 
     return new Promise<void>((resolve, reject) => {
         const waiter: Waiter = { resolve, reject };
-        const slot = slots.get(`${instanceId}|${String(parameterId)}`);
+        const slot = slots.get(pluginEditWatchKey(instanceId, parameterId));
         if (slot) {
             const queued: Waiter[] = slot.pending ? [...slot.pending.waiters] : [];
             queued.push(waiter);
