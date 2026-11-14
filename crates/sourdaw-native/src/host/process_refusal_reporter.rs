@@ -16,6 +16,10 @@
 //! kind — hands it here. A raised hint visits every engine-owned instance and
 //! lets each backend answer for itself; the report is latched, so an instance
 //! that has already spoken says nothing on a later visit.
+//!
+//! The same hint carries the slot's other audio-thread-only observation: note
+//! events lost to a full retention queue. Each visit logs the count lost since
+//! the instance's last report.
 
 use crate::host::{all_engine_runtimes, retry_unreached_instance};
 use crate::state::EnginePluginInstanceData;
@@ -38,6 +42,10 @@ type EnginePlugins = Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>;
 /// Called from the parameter-event drain's tick, once it has taken the hint.
 pub fn report_pending_process_refusals(engine_plugins: &EnginePlugins) {
     for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "process-failure report") {
+        // Counted by the slot on the shared owner, so it needs no access to the
+        // wrapper and cannot be held up by the audio thread.
+        runtime.report_dropped_note_events(&instance_id);
+
         let reached = runtime.try_with_control(CONTROL_TIMEOUT, |plugin| {
             plugin.report_plugin_observations();
             Ok(())
