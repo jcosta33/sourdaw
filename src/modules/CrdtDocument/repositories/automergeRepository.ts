@@ -674,7 +674,9 @@ class AutomergeRepository {
                                 if (result.changes.length > 1) {
                                     throw new Error('Prospective mutation Worker changed native authorship');
                                 }
-                                for (const bytes of result.changes) assertCompleteCanonicalChange(bytes);
+                                for (const bytes of result.changes) {
+                                    assertCompleteCanonicalChange(bytes);
+                                }
                                 workerResult = result;
                             } finally {
                                 performance.measure('automerge-prospective-response-task', {

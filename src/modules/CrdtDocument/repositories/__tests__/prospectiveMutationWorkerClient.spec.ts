@@ -66,6 +66,12 @@ function expectReleased(worker: ControlledWorker) {
     expect(worker.onmessageerror).toBeNull();
 }
 
+function sparseEnvelopeArray(): unknown[] {
+    const entries: unknown[] = [];
+    entries.length = 1;
+    return entries;
+}
+
 describe('prospective mutation Worker ownership', () => {
     it('accepts an owned zero-change response and releases its timer and listeners', async () => {
         vi.useFakeTimers();
@@ -82,8 +88,8 @@ describe('prospective mutation Worker ownership', () => {
 
     it.each([
         { changes: Uint8Array.of(1), heads: [] },
-        { changes: new Array(1), heads: [] },
-        { changes: [], heads: new Array(1) },
+        { changes: sparseEnvelopeArray(), heads: [] },
+        { changes: [], heads: sparseEnvelopeArray() },
         { changes: [new Uint8Array()], heads: [] },
         { changes: [Uint8Array.of(1), Uint8Array.of(2)], heads: [] },
         { changes: [Uint8Array.of(1)], heads: ['invalid'] },

@@ -256,9 +256,10 @@ describe('repository canonical Worker candidate adoption', () => {
             repository.insertDoc('root', original);
             mocks.request.mockImplementationOnce(async (request) => {
                 const result = response(request);
-                const bytes = compressed
-                    ? compressSmallChange(result.changes[0]!)
-                    : Uint8Array.from(result.changes[0]!);
+                let bytes = Uint8Array.from(result.changes[0]!);
+                if (compressed) {
+                    bytes = compressSmallChange(result.changes[0]!);
+                }
                 bytes[4] = bytes[4]! ^ 1;
                 const prefix = Array.from(bytes.subarray(4, 8), (byte) => byte.toString(16).padStart(2, '0')).join('');
                 return { changes: [bytes], heads: [prefix + result.heads[0]!.slice(8)] };
@@ -679,7 +680,9 @@ describe('repository canonical Worker candidate adoption', () => {
         vi.mocked(native.clone).mockClear();
         const prepared = plan(original);
         const retained = vi.mocked(native.clone).mock.results[0]?.value;
-        if (!retained) throw new Error('Expected retained private clone');
+        if (!retained) {
+            throw new Error('Expected retained private clone');
+        }
         const retainedBackend = getBackend(retained);
         vi.mocked(native.prepareLoad).mockClear();
         await prepared.requestMaterialization!(new AbortController().signal);
@@ -739,8 +742,11 @@ describe('repository canonical Worker candidate adoption', () => {
                 const document = load<Record<string, unknown>>(request.seed, { actor: request.actor });
                 const changed = change(document, { message: request.message }, (draft) => {
                     applyCanonicalStorageSlotMutation(draft, request.mutation);
-                    if (kind === 'other') draft.other = true;
-                    else draft._storagePublicationEvidence = [{ forged: true }];
+                    if (kind === 'other') {
+                        draft.other = true;
+                    } else {
+                        draft._storagePublicationEvidence = [{ forged: true }];
+                    }
                 });
                 try {
                     return {
@@ -1148,13 +1154,13 @@ describe('repository canonical Worker candidate adoption', () => {
             });
         }
         if (kind === 'transport' || kind === 'invalid bytes' || kind === 'sequence' || kind === 'extra change') {
-            await expect(prepared.requestMaterialization!(new AbortController().signal)).rejects.toThrow(
-                kind === 'transport'
-                    ? 'transport failed'
-                    : kind === 'invalid bytes'
-                      ? 'invalid change envelope'
-                      : 'changed native authorship'
-            );
+            let expectedError = 'changed native authorship';
+            if (kind === 'transport') {
+                expectedError = 'transport failed';
+            } else if (kind === 'invalid bytes') {
+                expectedError = 'invalid change envelope';
+            }
+            await expect(prepared.requestMaterialization!(new AbortController().signal)).rejects.toThrow(expectedError);
             prepared.discard();
         } else {
             await prepared.requestMaterialization!(new AbortController().signal);
