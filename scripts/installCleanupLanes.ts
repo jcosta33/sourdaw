@@ -270,8 +270,9 @@ function launchFailure(
     const workerError = join(home, 'Library/Logs/Sourdaw/lane-cleanup/worker-error.log');
     const remediation =
         `Inspect launchctl print and the macOS system log for the launchd error; worker output, if any, is at ${workerError}. ` +
-        `Only if the worker reports that ${node} cannot access ${primaryRoot}, grant it Full Disk Access ` +
-        '(or Removable Volumes access for an external volume), then rerun pnpm lane:cleanup:install.';
+        `Only if the macOS privacy log identifies a denial for ${node} accessing ${primaryRoot}, grant it ` +
+        'Removable Volumes access for an external volume (or Full Disk Access if that denial requires it), ' +
+        'then rerun pnpm lane:cleanup:install.';
     if (!isSettled(observation)) {
         return `launchd did not start or finish initializing the cleanup job for ${primaryRoot} within ${CLEANUP_LAUNCH_WAIT_MS / 1000} seconds. ${remediation}`;
     }
@@ -413,9 +414,6 @@ export function installCleanupLanes(port: CleanupInstallationPort): { plist: str
     const runtimes = join(directory, 'runtimes');
     mkdirSync(runtimes, { recursive: true, mode: 0o700 });
     assertCanonicalRuntimes(runtimes);
-    for (const name of ['worker.log', 'worker-error.log']) {
-        assertExclusiveCleanupLog(join(directory, name));
-    }
     const runtime = join(runtimes, `${commit}-${randomUUID()}`);
     mkdirSync(join(runtime, 'scripts'), { recursive: true, mode: 0o700 });
     for (const path of paths) {

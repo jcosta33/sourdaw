@@ -26,10 +26,12 @@ reviewer prompts and tiers are unestablished unless a probe says otherwise. Repo
    `LaunchAgents` could replace an unrelated external plist. The same attack at `Logs`, `Sourdaw`, or
    `lane-cleanup` could redirect launchd's stdout or stderr to foreign data. Require an existing canonical home
    anchor, refuse each component alias before creating a child beneath it or scheduling, and preserve the foreign
-   sentinel byte-for-byte. Refuse symlinked and hardlinked log files, while retaining ordinary one-link files
-   and previous primary logs. Removing a component or log-file refusal must fail
-   `scripts/__tests__/installCleanupLanes.spec.ts` at the matching alias case.
-4. **The first launch must exercise launchd's pre-exec paths (#5869, #5940).** `launchctl bootstrap` and
+   sentinel byte-for-byte. Refuse symlinked and hardlinked files at the new home log targets, while
+   retaining ordinary one-link files there. Old primary logs are unused; leave them untouched and do not gate
+   installation on their file type or link count. Removing a current-path refusal must fail
+   `scripts/__tests__/installCleanupLanes.spec.ts` at the matching alias case; restoring the old-path gate must
+   fail its "leaves obsolete primary" cases.
+4. **The first launch must exercise launchd's pre-exec paths (#5869, #5940).** Runs: orchestrator. `launchctl bootstrap` and
    `launchctl print` prove registration; even a counted run may end at `78: EX_CONFIG` before Node executes.
    On an external primary, launchd's working directory and stdout/stderr formerly pointed there; the system log
    showed `Unable to open stdout path ... Operation not permitted`, with no worker log. A fixture whose home and
@@ -38,8 +40,9 @@ reviewer prompts and tiers are unestablished unless a probe says otherwise. Repo
    primary. Reverting those plist paths must fail `scripts/__tests__/installCleanupLanes.spec.ts` "installs and
    reinstalls a launchd job". Stub `print` as `runs = 1`, `last exit code = 78: EX_CONFIG` and as `runs = 0`
    throughout the wait; both must boot out, restore or remove the plist, and direct diagnosis to launchctl/system
-   logs and the home worker log. Recommend Node privacy access only for an observed worker denial, never from 78
-   alone. The stub proves rollback and diagnostics, not actual macOS launch success; after delivery, observe the
+   logs and the home worker log. Recommend Node privacy access only for an identified macOS privacy denial of
+   that pinned binary, never from 78 or a generic worker error alone. The stub proves rollback and diagnostics,
+   not actual macOS launch success; after delivery, observe the
    installed job's first launch on the target machine.
 5. **Selection provenance must reach the byte consumer (issue #5767).** A native-dialog rejection fallback
    returned browser `File.name` strings that the desktop consumer read as native paths; separate mocked

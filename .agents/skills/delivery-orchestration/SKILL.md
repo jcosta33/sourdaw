@@ -627,8 +627,9 @@ before Node reaches an external primary checkout. Consult `lane:cleanup --status
 checkout for retained work, those home logs for worker output, and
 `launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` plus the macOS system log for launchd
 initialization failures. Existing `.agents/lane-cleanup/worker*.log` files in the primary remain
-historical and untouched. Grant the pinned Node binary Full Disk Access or Removable Volumes access
-only when the worker reports a primary-access denial.
+historical and untouched. Grant the pinned Node binary Removable Volumes access for an external
+primary only when the macOS privacy log identifies its denial; use Full Disk Access only when that
+denial requires it.
 
 ## Briefs
 

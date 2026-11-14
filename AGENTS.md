@@ -467,8 +467,8 @@ directory, `~/Library/Logs/Sourdaw/lane-cleanup/worker.log` and `worker-error.lo
 worker output, and `launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` plus the macOS system log
 for launchd initialization failures. The job starts with the canonical home as its working directory
 and opens its logs on that volume before Node accesses the primary checkout. Grant the pinned Node
-binary Full Disk Access or Removable Volumes access only when the worker reports a primary-access
-denial. The worker can run directly
+binary Removable Volumes access for an external primary only when the macOS privacy log identifies
+its denial; use Full Disk Access only when that denial requires it. The worker can run directly
 where process inspection is available; the scheduler installer explicitly requires macOS.
 
 Run `pnpm lane:remove <path>` outside the lane; its author lock remains until removal succeeds.

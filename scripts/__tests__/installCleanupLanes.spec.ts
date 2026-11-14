@@ -329,58 +329,62 @@ describe('cleanup installation', () => {
         }
     });
 
-    it.each(['worker.log', 'worker-error.log'])(
-        'refuses a preexisting hardlinked %s before scheduler activation',
-        (name) => {
-            const f = fixture();
-            const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-log-alias-')));
-            try {
-                const directory = join(f.root, '.agents/lane-cleanup');
-                mkdirSync(directory, { recursive: true });
-                const target = join(foreign, 'unrelated-data');
-                const bytes = 'unrelated private fixture bytes\n';
-                writeFileSync(target, bytes);
+    it.each([
+        ['worker.log', 'hardlink'],
+        ['worker-error.log', 'symlink'],
+    ])('leaves obsolete primary %s %s untouched while installing', (name, alias) => {
+        const f = fixture();
+        const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-log-alias-')));
+        try {
+            const directory = join(f.root, '.agents/lane-cleanup');
+            mkdirSync(directory, { recursive: true });
+            const target = join(foreign, 'unrelated-data');
+            const bytes = 'unrelated private fixture bytes\n';
+            writeFileSync(target, bytes);
+            if (alias === 'hardlink') {
                 linkSync(target, join(directory, name));
-                expect(() => installCleanupLanes(f.port)).toThrow('exclusive regular file');
-                expect(f.events).toHaveLength(0);
-                expect(readFileSync(target, 'utf8')).toBe(bytes);
-                expect(readFileSync(join(directory, name), 'utf8')).toBe(bytes);
-                expect(readFileSync(join(f.root, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8')).toBe(
-                    'old approved launcher\n'
-                );
-            } finally {
-                f.dispose();
-                rmSync(foreign, { recursive: true });
+            } else {
+                symlinkSync(target, join(directory, name));
             }
+
+            const installed = installCleanupLanes(f.port);
+            expect(f.events).toContainEqual(['bootstrap', 'gui/501', installed.plist]);
+            expect(readFileSync(target, 'utf8')).toBe(bytes);
+            expect(readFileSync(join(directory, name), 'utf8')).toBe(bytes);
+        } finally {
+            f.dispose();
+            rmSync(foreign, { recursive: true });
         }
-    );
+    });
 
-    it.each(['hardlink', 'symlink'])(
-        'refuses an internal cleanup log %s without changing its external target',
-        (alias) => {
-            const f = fixture();
-            const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-internal-log-alias-')));
-            try {
-                const logs = join(f.home, 'Library/Logs/Sourdaw/lane-cleanup');
-                mkdirSync(logs, { recursive: true });
-                const target = join(foreign, 'unrelated-data');
-                writeFileSync(target, 'foreign bytes\n');
-                if (alias === 'hardlink') {
-                    linkSync(target, join(logs, 'worker.log'));
-                } else {
-                    symlinkSync(target, join(logs, 'worker.log'));
-                }
-
-                expect(() => installCleanupLanes(f.port)).toThrow('exclusive regular file');
-                expect(readFileSync(target, 'utf8')).toBe('foreign bytes\n');
-                expect(existsSync(join(f.root, '.agents/lane-cleanup'))).toBe(false);
-                expect(f.events).toHaveLength(0);
-            } finally {
-                f.dispose();
-                rmSync(foreign, { recursive: true });
+    it.each([
+        ['worker.log', 'hardlink'],
+        ['worker.log', 'symlink'],
+        ['worker-error.log', 'hardlink'],
+        ['worker-error.log', 'symlink'],
+    ])('refuses a current %s %s without changing its external target', (name, alias) => {
+        const f = fixture();
+        const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-internal-log-alias-')));
+        try {
+            const logs = join(f.home, 'Library/Logs/Sourdaw/lane-cleanup');
+            mkdirSync(logs, { recursive: true });
+            const target = join(foreign, 'unrelated-data');
+            writeFileSync(target, 'foreign bytes\n');
+            if (alias === 'hardlink') {
+                linkSync(target, join(logs, name));
+            } else {
+                symlinkSync(target, join(logs, name));
             }
+
+            expect(() => installCleanupLanes(f.port)).toThrow('exclusive regular file');
+            expect(readFileSync(target, 'utf8')).toBe('foreign bytes\n');
+            expect(existsSync(join(f.root, '.agents/lane-cleanup'))).toBe(false);
+            expect(f.events).toHaveLength(0);
+        } finally {
+            f.dispose();
+            rmSync(foreign, { recursive: true });
         }
-    );
+    });
 
     it('preserves ordinary existing one-link logs through installation and reinstallation', () => {
         const f = fixture();
@@ -645,8 +649,8 @@ describe('cleanup installation', () => {
             expect(message).toContain(f.root);
             expect(message).toContain('Inspect launchctl print and the macOS system log');
             expect(message).toContain(join(f.home, 'Library/Logs/Sourdaw/lane-cleanup/worker-error.log'));
-            expect(message).toContain('Only if the worker reports');
-            expect(message).toContain('Full Disk Access');
+            expect(message).toContain('Only if the macOS privacy log identifies a denial');
+            expect(message).toContain('Removable Volumes access');
             expect(message).toContain('pnpm lane:cleanup:install');
             expect(f.events.findIndex((args) => args[0] === 'bootstrap')).toBeGreaterThanOrEqual(0);
             expect(f.events.at(-2)?.[0]).toBe('print');
