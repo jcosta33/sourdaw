@@ -21,6 +21,12 @@ import tseslint from 'typescript-eslint';
 import { sizeBaselineFiles } from './eslint.size-baseline.mjs';
 import sourdawPlugin from './scripts/lint/sourdaw.mjs';
 
+const jsxA11yPlugin = eslintPluginJsxA11yX.configs.recommended.plugins['jsx-a11y-x'];
+const commentsPlugin = eslintPluginComments.recommended.plugins?.['@eslint-community/eslint-comments'];
+if (!commentsPlugin) {
+    throw new Error('The recommended comments config did not register @eslint-community/eslint-comments');
+}
+
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 function isRecord(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -148,14 +154,13 @@ export default tseslint.config(
             'import-x': eslintPluginImport,
             'promise-js': eslintPluginPromise,
             promise: eslintPluginPromise,
-            'jsx-a11y-x-js': eslintPluginJsxA11yX,
-            'jsx-a11y-x': eslintPluginJsxA11yX,
+            'jsx-a11y-x-js': jsxA11yPlugin,
+            'jsx-a11y-x': jsxA11yPlugin,
             'react-hooks-js': eslintPluginReactHooks,
             'react-hooks': eslintPluginReactHooks,
             sourdaw: sourdawPlugin,
             '@stylistic': eslintPluginStylistic,
-            '@eslint-community/eslint-comments':
-                eslintPluginComments.recommended.plugins['@eslint-community/eslint-comments'],
+            '@eslint-community/eslint-comments': commentsPlugin,
         },
         languageOptions: {
             ecmaVersion: 'latest',
