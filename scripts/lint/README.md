@@ -2,8 +2,9 @@
 
 `scripts/runLint.ts` runs the existing native `.oxlintrc.json` pass, the public JavaScript
 plugins in `.oxlint-plugins.json`, then the retained `eslint.config.mjs` pass. The plugin
-pass deliberately uses the old ESLint target and ignore set: the native pass excludes
-some JavaScript tooling and existing TypeScript debt that still needs these checks.
+and final ESLint passes retain the previous ESLint targets and ignore set, with
+`scripts/lint/sourdaw.mjs` explicitly added to their full targets. The native pass
+excludes some JavaScript tooling and existing TypeScript debt that still needs these checks.
 The native phase permits an unmatched selection so an intentionally ignored focused
 target can reach those enforcing passes. The plugin phase still rejects an empty
 selection, and ESLint still rejects missing target paths.
