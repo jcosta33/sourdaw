@@ -11,6 +11,17 @@ const mocks = vi.hoisted(() => ({
     removeTrack: vi.fn(),
     removeTrackModulationReferences: vi.fn(),
     wireSidechainRoutes: vi.fn(),
+    unloadPlugin: vi.fn(),
+    clearReportedLatency: vi.fn(),
+}));
+
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    unloadPlugin: mocks.unloadPlugin,
+}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    clearReportedLatency: mocks.clearReportedLatency,
 }));
 
 vi.mock('#/modules/Routing/useCases', () => ({
@@ -66,6 +77,7 @@ describe('handleDiscardCreatedTrack', () => {
             id: 'created',
             name: 'Created',
             freezeState: { status: 'unfrozen', renderedAt: 2 },
+            devices: [],
             clips: [{ id: 'created-clip' }],
         };
         mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
@@ -75,6 +87,7 @@ describe('handleDiscardCreatedTrack', () => {
                 trackId: 'created',
                 generatedMidiStateGuard: {
                     entityJson: JSON.stringify({
+                        devices: [],
                         clips: [],
                         freezeState: { renderedAt: 2, status: 'unfrozen' },
                         name: 'Created',
@@ -156,7 +169,7 @@ describe('handleDiscardCreatedTrack', () => {
             removed: true,
             finalizeRuntimeRemoval: mocks.finalizeRuntimeRemoval,
         });
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'created' }] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'created', devices: [] }] });
 
         const result = await handleDiscardCreatedTrack.execute({
             type: 'discardCreatedTrack',
@@ -187,6 +200,64 @@ describe('handleDiscardCreatedTrack', () => {
         expect(result).toEqual({ status: 'written' });
         expect(mocks.removeTrackModulationReferences).not.toHaveBeenCalled();
         expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
+    });
+
+    it('unloads every hosted plugin instance the discarded track held, after commit', async () => {
+        mocks.removeTrack.mockReturnValue({
+            removed: true,
+            finalizeRuntimeRemoval: mocks.finalizeRuntimeRemoval,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'created',
+                    devices: [
+                        { id: 'dev-a', type: 'external-plugin', externalPluginId: 'p', externalInstanceId: 'p-1' },
+                        { id: 'dev-b', type: 'external-plugin', externalPluginId: 'q', externalInstanceId: 'q-2' },
+                        { id: 'dev-c', type: 'builtin-eq' },
+                    ],
+                },
+            ],
+        });
+        mocks.unloadPlugin.mockResolvedValue(undefined);
+
+        const result = await handleDiscardCreatedTrack.execute({
+            type: 'discardCreatedTrack',
+            payload: { trackId: 'created' },
+        });
+        if (!result) {
+            throw new Error('Expected a written execution result');
+        }
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        // The track leaves the store when removeTrack commits; later reads see it gone.
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        await result.afterCommit?.();
+
+        expect(mocks.unloadPlugin.mock.calls.map(([instanceId]) => instanceId).sort()).toEqual(['p-1', 'q-2']);
+        expect(mocks.clearReportedLatency.mock.calls.map(([deviceId]) => deviceId).sort()).toEqual(['dev-a', 'dev-b']);
+    });
+
+    it('requests no plugin unload for a discarded track without hosted plugins', async () => {
+        mocks.removeTrack.mockReturnValue({
+            removed: true,
+            finalizeRuntimeRemoval: mocks.finalizeRuntimeRemoval,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'created', devices: [{ id: 'dev-c', type: 'builtin-eq' }] }],
+        });
+
+        const result = await handleDiscardCreatedTrack.execute({
+            type: 'discardCreatedTrack',
+            payload: { trackId: 'created' },
+        });
+        if (!result) {
+            throw new Error('Expected a written execution result');
+        }
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        await result.afterCommit?.();
+
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
     });
 
     it('is an internal non-undoable compensation action', () => {

@@ -39,6 +39,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     getTrackAnalyser: vi.fn(() => null),
     getMasterAnalyser: vi.fn(() => null),
     createTrackStrip: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     removeTrackStrip: vi.fn(),
     updateDeviceParam: vi.fn(),
     setTrackGain: vi.fn(),
@@ -46,6 +47,18 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     setTrackMute: vi.fn(),
     setTrackSolo: vi.fn(),
     setTrackSoloGate: vi.fn(),
+}));
+
+const pluginHostMocks = vi.hoisted(() => ({
+    activateExternalPlugin: vi.fn(),
+    unloadPlugin: vi.fn(),
+}));
+// Only the two lifecycle calls are stubbed: the subject is which instance ids the
+// template load requests from the plugin host, not the native host itself.
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    activateExternalPlugin: pluginHostMocks.activateExternalPlugin,
+    unloadPlugin: pluginHostMocks.unloadPlugin,
 }));
 
 const noActionHistoryMetadataPort = {
@@ -145,5 +158,55 @@ describe('loadTrackTemplate undo/redo integration', () => {
         // entry itself popped.
         await undo();
         expect(trackStore.value?.tracks).toEqual([]);
+    });
+
+    it('activates a template-loaded hosted plugin under a fresh instance and unloads it on undo', async () => {
+        trackTemplateCache.templates = [
+            {
+                id: 'tmpl-hosted',
+                name: 'Hosted',
+                category: 'user',
+                trackKind: 'audio',
+                devices: [
+                    {
+                        id: 'tmpl-device',
+                        name: 'Reverb',
+                        type: 'external-plugin',
+                        bypassed: false,
+                        parameterValues: {},
+                        externalPluginId: 'plugin-abc',
+                        // A legacy template saved with a stale id must never reuse it.
+                        externalInstanceId: 'plugin-abc-live',
+                        externalStateChunk: 'c2F2ZWQ=',
+                    },
+                ],
+                sends: [],
+                gain: 1,
+                pan: 0,
+                color: '#123456',
+                createdAt: 0,
+            },
+        ];
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+
+        await executeAppAction(
+            { type: 'loadTrackTemplate', payload: { templateId: 'tmpl-hosted' } },
+            { source: 'manual' }
+        );
+
+        const instanceId = trackStore.value!.tracks[0]!.devices[0]!.externalInstanceId;
+        expect(instanceId).toMatch(/^plugin-abc-.+/);
+        expect(instanceId).not.toBe('plugin-abc-live');
+        expect(pluginHostMocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({ pluginId: 'plugin-abc', instanceId, stateChunk: 'c2F2ZWQ=' })
+        );
+        expect(pluginHostMocks.unloadPlugin).not.toHaveBeenCalled();
+
+        await undo();
+
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledTimes(1);
+        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledWith(instanceId);
     });
 });
