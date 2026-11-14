@@ -53,6 +53,7 @@ function fullScopeEntries(full: ReturnType<typeof measureAgentObjectiveBuffer>['
         crestFactor: full.crestFactor,
         dynamicRangeEstimate: full.dynamicRangeEstimate,
         spectralCentroid: full.spectralCentroid,
+        spectralRolloff: full.spectralRolloff,
         frequencyBandEnergy: full.frequencyBandEnergy,
         stereoCorrelation: full.stereoCorrelation,
         sideEnergyFraction: full.sideEnergyFraction,
@@ -227,7 +228,7 @@ describe('measureAgentScopeRender', () => {
         expect(samples).toEqual(original);
     });
 
-    it('keeps all fourteen scope metrics equal to the total producer in canonical order', () => {
+    it('keeps every scope metric equal to the total producer in canonical order', () => {
         const buffer = toneBuffer();
         const families = observeFamilies();
         const expected = fullScopeEntries(measureAgentObjectiveBuffer(buffer).measurements);

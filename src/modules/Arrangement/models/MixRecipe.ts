@@ -101,9 +101,9 @@ export type MixRecipeRole = (typeof MIX_RECIPE_ROLES)[number];
 /**
  * The objective measurements recipes in this catalog claim to move.
  *
- * Every entry is also an AudioAnalysis objective metric id. The list is
- * restated here rather than imported because Arrangement does not depend on
- * AudioAnalysis; the catalog spec holds the two lists together.
+ * Every entry is an id the planner's `analysis.measure` tool reports. The list
+ * is restated here rather than imported because Arrangement does not depend on
+ * AudioAnalysis; the catalog census spec holds the two lists together.
  */
 export const MIX_RECIPE_METRIC_IDS = [
     'integratedLoudness',
@@ -119,8 +119,6 @@ export const MIX_RECIPE_METRIC_IDS = [
     'sideEnergyFraction',
     'lowFrequencyStereoContent',
     'transientDensity',
-    'interTrackMasking',
-    'busHeadroom',
 ] as const;
 
 export type MixRecipeMetricId = (typeof MIX_RECIPE_METRIC_IDS)[number];
@@ -208,7 +206,7 @@ export type MixRecipe = {
  * A reader that does not recognise the version must decline the catalog rather
  * than guess at the shape behind it.
  */
-export const MIX_RECIPE_CATALOG_VERSION = 2;
+export const MIX_RECIPE_CATALOG_VERSION = 3;
 
 export type MixRecipeCatalog = {
     version: typeof MIX_RECIPE_CATALOG_VERSION;

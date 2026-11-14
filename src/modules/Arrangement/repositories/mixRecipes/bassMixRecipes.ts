@@ -134,10 +134,7 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip when no kick shares the low register with this part; the duck then has nothing to make room for.',
             'Skip when the release cannot recover before the next kick at this tempo.',
         ],
-        metrics: [
-            { metric: 'transientDensity', direction: 'hold' },
-            { metric: 'interTrackMasking', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'transientDensity', direction: 'hold' }],
         source: 'Punch in the low end is mostly a question of who occupies the first fifty milliseconds after each kick, so the first stage steadies the bass level and the second clears that window. A release tied to the gap between kicks restores the bass fully before the next note rather than pumping across the bar.',
     },
     {
@@ -288,7 +285,7 @@ export const bassMixRecipes: readonly MixRecipe[] = [
         ],
         metrics: [
             { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' },
-            { metric: 'interTrackMasking', direction: 'decrease' },
+            { metric: 'rms', direction: 'decrease' },
         ],
         source: 'Bass mud collects just above the fundamental, between 200 Hz and 350 Hz, where cabinet resonance and room modes pile up and where vocals and guitars also sit. A narrow bell there clears space for those sources while leaving the fundamental octave and the definition region untouched.',
     },
@@ -317,7 +314,7 @@ export const bassMixRecipes: readonly MixRecipe[] = [
         ],
         metrics: [
             { metric: 'frequencyBandEnergy', band: 'bass', direction: 'increase' },
-            { metric: 'busHeadroom', direction: 'decrease' },
+            { metric: 'truePeak', direction: 'increase' },
         ],
         source: 'A thin bass is normally missing the fundamental rather than the body, so the shelf sits in the played octave and the broad bell above it restores the weight that follows. Both moves consume headroom quickly, which is why each stays under 4 dB.',
     },
