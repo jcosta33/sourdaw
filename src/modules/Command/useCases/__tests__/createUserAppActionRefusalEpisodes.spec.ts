@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { AppActionConflictError } from '../../errors/AppActionExecutionError';
+import { AppActionAdmissionRefusedError, AppActionConflictError } from '../../errors/AppActionExecutionError';
 import { createUserAppActionRefusalEpisodes } from '../createUserAppActionRefusalEpisodes';
 import { executeAppAction } from '../executeAppAction';
 
@@ -16,7 +16,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 }));
 
 const action = { type: 'addTrack', payload: { name: 'New track', kind: 'audio' } } as const;
-const refuse = () => vi.mocked(executeAppAction).mockRejectedValueOnce(new AppActionConflictError('addTrack'));
+const refuse = () => vi.mocked(executeAppAction).mockRejectedValueOnce(new AppActionAdmissionRefusedError('addTrack'));
 
 describe('createUserAppActionRefusalEpisodes', () => {
     beforeEach(() => {
@@ -89,6 +89,19 @@ describe('createUserAppActionRefusalEpisodes', () => {
         await episodes.execute('device-1', action);
 
         expect(notifyUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects a plain conflict unchanged, notifies nothing and opens no episode', async () => {
+        const episodes = createUserAppActionRefusalEpisodes();
+        const conflict = new AppActionConflictError('addTrack');
+        vi.mocked(executeAppAction).mockRejectedValueOnce(conflict);
+
+        await expect(episodes.execute('device-1', action)).rejects.toBe(conflict);
+        expect(notifyUser).not.toHaveBeenCalled();
+
+        refuse();
+        await episodes.execute('device-1', action);
+        expect(notifyUser).toHaveBeenCalledTimes(1);
     });
 
     it('rejects a non-conflict failure unchanged and notifies nothing', async () => {

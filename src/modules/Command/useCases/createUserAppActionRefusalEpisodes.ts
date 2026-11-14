@@ -1,10 +1,9 @@
 import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { AppActionConflictError } from '../errors/AppActionExecutionError';
-
 import { describeAppActionRefusal } from './describeAppActionRefusal';
 import { executeAppAction, type ExecuteAppActionOptions } from './executeAppAction';
+import { isAppActionAdmissionRefusal } from './isAppActionAdmissionRefusal';
 
 export type UserAppActionRefusalEpisodes = {
     execute: (key: string, action: AppAction, options?: ExecuteAppActionOptions) => Promise<void>;
@@ -19,7 +18,8 @@ export type UserAppActionRefusalEpisodes = {
  *
  * A refusal opens an episode for its key and notifies once; the episode ends at
  * the key's next successful dispatch or when the caller ends it (the key left
- * the session store). Failures other than a refusal still reject unchanged.
+ * the session store). Only the dispatch gate's admission refusal counts: every
+ * other failure, a handler or storage conflict included, still rejects unchanged.
  */
 export function createUserAppActionRefusalEpisodes(): UserAppActionRefusalEpisodes {
     const open = new Set<string>();
@@ -29,7 +29,7 @@ export function createUserAppActionRefusalEpisodes(): UserAppActionRefusalEpisod
             try {
                 await executeAppAction(action, options);
             } catch (error) {
-                if (!(error instanceof AppActionConflictError)) {
+                if (!isAppActionAdmissionRefusal(error)) {
                     throw error;
                 }
                 if (open.has(key)) {
