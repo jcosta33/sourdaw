@@ -690,6 +690,14 @@ describe('ElasticEditorPanel', () => {
         await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Detection complete'));
     });
 
+    it('shows neither completion nor failure when Detect resolves false on a refused project', async () => {
+        mocks.detect.mockResolvedValueOnce(false);
+        render(<ElasticEditorPanel />);
+        fireEvent.click(screen.getByTestId('elastic-detect-button'));
+        await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/^$/));
+        expect(screen.getByRole('status')).not.toHaveTextContent('Detection');
+    });
+
     it('keeps pending Detect incomplete, reports failure and permits a successful retry', async () => {
         let fail: ((error: Error) => void) | undefined;
         mocks.detect.mockImplementationOnce(

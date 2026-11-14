@@ -72,6 +72,8 @@ export { generateGroupId } from './generateGroupId';
 
 export { executeAppAction } from './executeAppAction';
 export { executeUserAppAction } from './executeUserAppAction';
+export { createUserAppActionRefusalEpisodes } from './createUserAppActionRefusalEpisodes';
+export { describeAppActionRefusal } from './describeAppActionRefusal';
 export { executeAppActionBatch } from './executeAppActionBatch';
 export { executeVersionedCommandEnvelope } from './executeVersionedCommandEnvelope';
 export { executeVersionedCommandBatch } from './executeVersionedCommandBatch';

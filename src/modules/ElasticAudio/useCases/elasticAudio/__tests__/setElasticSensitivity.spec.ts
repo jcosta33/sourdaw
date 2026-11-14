@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { clipSelectionStore, defaultClipSelectionState, trackStore } from '#/modules/Arrangement/stores';
+import { AppActionConflictError } from '#/modules/Command/errors/AppActionExecutionError';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
@@ -402,6 +403,21 @@ describe('setElasticSensitivity', () => {
             { type: 'detectTransients', payload: { clipId: 'clip-1', sensitivity: 0.4 } },
             expect.objectContaining({ signal: expect.any(AbortSignal), onCommitted: expect.any(Function) })
         );
+    });
+
+    it('warns with the refusal reason, without an error notice or log, when the project refuses detection', async () => {
+        select('clip-1');
+        mocks.execute.mockRejectedValueOnce(new AppActionConflictError('detectTransients'));
+        const pending = setElasticSensitivity(0.8);
+        await vi.advanceTimersByTimeAsync(150);
+        await expect(pending).resolves.toBeUndefined();
+
+        expect(mocks.notify).toHaveBeenCalledExactlyOnceWith(
+            "Detect transients was refused because the project can't be changed right now.",
+            'warning'
+        );
+        expect(logger.error).not.toHaveBeenCalled();
+        expect(elasticAudioStore.value?.detected).toBe(false);
     });
 
     it('reports unexpected detection failure and settles without a rejected fire-and-forget promise', async () => {
