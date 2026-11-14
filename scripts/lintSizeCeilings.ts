@@ -2,11 +2,12 @@
  * Per-file line ceilings for the size-ceiling burn-down baseline (docs/07-conventions.md — Lint-aligned
  * conventions). eslint.config.mjs holds every file in eslint.size-baseline.mjs to `warn` instead of
  * `error`, so nothing in lint stops a baselined file from growing. scripts/lintSizeCeilings.json records
- * one line ceiling per baselined file; a file may not exceed it, and a ceiling more than the slack above a
- * file that shrank must be lowered. A raise that leaves the ceiling more than the slack above the larger of
- * the file's line count and the floor fails as stale; a raise within the slack passes here, and review
- * refuses it. Generated files listed in GENERATED_SIZE_EXEMPTIONS carry no ceiling: their size follows their
- * generator's input.
+ * one line ceiling per baselined file: a file over the floor is recorded at its line count plus the
+ * headroom, a file within the floor at the floor. A file may not exceed its ceiling, and a ceiling more
+ * than the slack above the ceiling the file's current length earns is stale and must be lowered to it.
+ * Ceilings are never raised: review refuses any raised figure, and the spec catches a raise only when it
+ * ends more than the slack above the ceiling the file's current length earns. Generated files listed in
+ * GENERATED_SIZE_EXEMPTIONS carry no ceiling: their size follows their generator's input.
  */
 
 import { readFileSync } from 'node:fs';
@@ -14,7 +15,9 @@ import { resolve } from 'node:path';
 
 /** The `max-lines` limit; no ceiling sits below it and a ceiling at it is never stale. */
 export const SIZE_CEILING_FLOOR = 600;
-/** How far a ceiling may sit above a file before it must be lowered. */
+/** Lines a file already over the floor may grow past its recorded length before code must move out. */
+export const SIZE_CEILING_HEADROOM = 50;
+/** How far a ceiling may sit above the ceiling a file's length earns before it must be lowered. */
 export const SIZE_CEILING_SLACK = 100;
 
 export const SIZE_CEILINGS_PATH = 'scripts/lintSizeCeilings.json';
@@ -48,9 +51,9 @@ export type SizeCeilingInputs = {
     lineCount: (path: string) => number;
 };
 
-/** The ceiling a file of `lines` lines should carry: its length, never below the floor. */
+/** The ceiling a file of `lines` lines should carry: its length plus the headroom once over the floor, else the floor. */
 export function expectedSizeCeiling(lines: number): number {
-    return Math.max(lines, SIZE_CEILING_FLOOR);
+    return lines > SIZE_CEILING_FLOOR ? lines + SIZE_CEILING_HEADROOM : SIZE_CEILING_FLOOR;
 }
 
 function isValidCeiling(ceiling: number): boolean {
@@ -120,9 +123,9 @@ export function describeSizeCeilingViolation(violation: SizeCeilingViolation): s
         case 'stale-exemption':
             return `${violation.path}: is in GENERATED_SIZE_EXEMPTIONS (scripts/lintSizeCeilings.ts) but not in eslint.size-baseline.mjs; remove the exemption.`;
         case 'over-ceiling':
-            return `${violation.path}: ${violation.lines} lines exceeds its ceiling of ${violation.ceiling}; extract code into another file until it fits. Never raise the ceiling.`;
+            return `${violation.path}: ${violation.lines} lines exceeds its ceiling of ${violation.ceiling} by ${violation.lines - violation.ceiling}; move code into a new file (new files are held to the size rules) until it has at most ${violation.ceiling} lines. Ceilings are never raised.`;
         case 'stale-ceiling':
-            return `${violation.path}: ceiling ${violation.ceiling} sits more than ${SIZE_CEILING_SLACK} above its ${violation.lines} lines; lower it to ${expectedSizeCeiling(violation.lines)} in ${SIZE_CEILINGS_PATH}.`;
+            return `${violation.path}: ceiling ${violation.ceiling} sits more than ${SIZE_CEILING_SLACK} above ${expectedSizeCeiling(violation.lines)}, the ceiling its ${violation.lines} lines earn; lower it to ${expectedSizeCeiling(violation.lines)} in ${SIZE_CEILINGS_PATH}.`;
         case 'below-floor':
             return `${violation.path}: ceiling ${violation.ceiling} is not a whole number of at least ${SIZE_CEILING_FLOOR}; record the file's line count, or ${SIZE_CEILING_FLOOR} if it is shorter.`;
         default: {

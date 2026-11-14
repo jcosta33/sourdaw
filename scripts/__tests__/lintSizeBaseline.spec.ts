@@ -11,15 +11,16 @@
  *
  * The `warn` downgrade alone would let a listed file grow without bound, so
  * scripts/lintSizeCeilings.json records one line ceiling per listed file: a
- * file may not exceed its ceiling, a ceiling left more than the slack above a
- * file that shrank must be lowered, and the ceilings file lists exactly the
- * non-exempt baseline paths, each written once, in sorted order, on a line
- * whose key matches the parsed key (scripts/lintSizeCeilings.ts holds the
- * rule). Generated files named in its exemption list carry no ceiling; each
- * must exist, name a real generator, and say so in its header. A raise that
- * leaves a ceiling more than the slack above the larger of the file's line
- * count and the floor fails as stale; a raise within the slack passes here,
- * and review refuses it.
+ * file over 600 lines is recorded at its line count plus 50 and a file within
+ * 600 at 600; a file may not exceed its ceiling, and a ceiling more than 100
+ * above the ceiling the file's current length earns is stale and must be
+ * lowered to it. The ceilings file lists exactly the non-exempt baseline
+ * paths, each written once, in sorted order, on a line whose key matches the
+ * parsed key (scripts/lintSizeCeilings.ts holds the rule). Generated files
+ * named in its exemption list carry no ceiling; each must exist, name a real
+ * generator, and say so in its header. Ceilings are never raised: review
+ * refuses any raised figure, and the spec catches a raise only when it ends
+ * more than 100 above the ceiling the file's current length earns.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -31,6 +32,7 @@ import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
 import {
     countFileLines,
     describeSizeCeilingViolation,
+    expectedSizeCeiling,
     findSizeCeilingViolations,
     GENERATED_SIZE_EXEMPTIONS,
     listUnreadableCeilingLines,
@@ -68,32 +70,61 @@ type CeilingCase = {
 };
 
 const ceilingCases: CeilingCase[] = [
-    { name: 'a file exactly at its ceiling', lines: { 'a.ts': 900 }, ceilings: { 'a.ts': 900 }, expected: [] },
+    {
+        name: 'a file at its ceiling, headroom included',
+        lines: { 'a.ts': 900 },
+        ceilings: { 'a.ts': 950 },
+        expected: [],
+    },
     {
         name: 'a file one line over its ceiling',
-        lines: { 'a.ts': 901 },
+        lines: { 'a.ts': 951 },
+        ceilings: { 'a.ts': 950 },
+        expected: [{ kind: 'over-ceiling', path: 'a.ts', lines: 951, ceiling: 950 }],
+    },
+    {
+        name: 'a file below the headroom it was recorded with',
+        lines: { 'a.ts': 900 },
         ceilings: { 'a.ts': 900 },
-        expected: [{ kind: 'over-ceiling', path: 'a.ts', lines: 901, ceiling: 900 }],
+        expected: [],
+    },
+    { name: 'a file exactly at the floor ceiling', lines: { 'a.ts': 600 }, ceilings: { 'a.ts': 600 }, expected: [] },
+    {
+        name: 'a file within the floor at the floor ceiling',
+        lines: { 'a.ts': 580 },
+        ceilings: { 'a.ts': 600 },
+        expected: [],
     },
     { name: 'a floor ceiling over a short file', lines: { 'a.ts': 40 }, ceilings: { 'a.ts': 600 }, expected: [] },
-    { name: 'slack of exactly 100 above the floor', lines: { 'a.ts': 600 }, ceilings: { 'a.ts': 700 }, expected: [] },
     {
-        name: 'slack of 101 above the floor',
+        name: 'a file one line over the floor ceiling',
+        lines: { 'a.ts': 601 },
+        ceilings: { 'a.ts': 600 },
+        expected: [{ kind: 'over-ceiling', path: 'a.ts', lines: 601, ceiling: 600 }],
+    },
+    {
+        name: 'slack of exactly 100 above the ceiling a floor-length file earns',
+        lines: { 'a.ts': 600 },
+        ceilings: { 'a.ts': 700 },
+        expected: [],
+    },
+    {
+        name: 'slack of 101 above the ceiling a floor-length file earns',
         lines: { 'a.ts': 600 },
         ceilings: { 'a.ts': 701 },
         expected: [{ kind: 'stale-ceiling', path: 'a.ts', lines: 600, ceiling: 701 }],
     },
     {
-        name: 'slack of 101 above a long file',
-        lines: { 'a.ts': 2899 },
-        ceilings: { 'a.ts': 3000 },
-        expected: [{ kind: 'stale-ceiling', path: 'a.ts', lines: 2899, ceiling: 3000 }],
-    },
-    {
-        name: 'slack of exactly 100 above a long file',
-        lines: { 'a.ts': 2900 },
+        name: 'slack of exactly 100 above the ceiling a long file earns',
+        lines: { 'a.ts': 2850 },
         ceilings: { 'a.ts': 3000 },
         expected: [],
+    },
+    {
+        name: 'slack of 101 above the ceiling a long file earns',
+        lines: { 'a.ts': 2849 },
+        ceilings: { 'a.ts': 3000 },
+        expected: [{ kind: 'stale-ceiling', path: 'a.ts', lines: 2849, ceiling: 3000 }],
     },
     {
         name: 'slack measured against the floor for a short file',
@@ -110,7 +141,7 @@ const ceilingCases: CeilingCase[] = [
     {
         name: 'a ceiling for a path outside the baseline',
         lines: { 'a.ts': 650 },
-        ceilings: { 'a.ts': 650, 'gone.ts': 900 },
+        ceilings: { 'a.ts': 700, 'gone.ts': 900 },
         expected: [{ kind: 'unlisted-ceiling', path: 'gone.ts' }],
     },
     {
@@ -127,10 +158,10 @@ const ceilingCases: CeilingCase[] = [
     },
     {
         name: 'two violations of different kinds',
-        lines: { 'a.ts': 1201, 'b.ts': 700 },
-        ceilings: { 'a.ts': 1200 },
+        lines: { 'a.ts': 1251, 'b.ts': 700 },
+        ceilings: { 'a.ts': 1250 },
         expected: [
-            { kind: 'over-ceiling', path: 'a.ts', lines: 1201, ceiling: 1200 },
+            { kind: 'over-ceiling', path: 'a.ts', lines: 1251, ceiling: 1250 },
             { kind: 'missing-ceiling', path: 'b.ts', lines: 700 },
         ],
     },
@@ -144,30 +175,30 @@ const ceilingCases: CeilingCase[] = [
     {
         name: 'an exempt path that also carries a ceiling',
         lines: { 'gen.ts': 50_000 },
-        ceilings: { 'gen.ts': 50_000 },
+        ceilings: { 'gen.ts': 50_050 },
         exempt: ['gen.ts'],
         expected: [{ kind: 'exempt-ceiling', path: 'gen.ts' }],
     },
     {
         name: 'an exemption for a path outside the baseline',
         lines: { 'a.ts': 650 },
-        ceilings: { 'a.ts': 650 },
+        ceilings: { 'a.ts': 700 },
         exempt: ['gone.ts'],
         expected: [{ kind: 'stale-exemption', path: 'gone.ts' }],
     },
     {
         name: 'a repeated exemption for a path outside the baseline',
         lines: { 'a.ts': 650 },
-        ceilings: { 'a.ts': 650 },
+        ceilings: { 'a.ts': 700 },
         exempt: ['gone.ts', 'gone.ts'],
         expected: [{ kind: 'stale-exemption', path: 'gone.ts' }],
     },
     {
         name: 'an exemption beside an over-ceiling file',
-        lines: { 'a.ts': 901, 'gen.ts': 50_000 },
-        ceilings: { 'a.ts': 900 },
+        lines: { 'a.ts': 951, 'gen.ts': 50_000 },
+        ceilings: { 'a.ts': 950 },
         exempt: ['gen.ts'],
-        expected: [{ kind: 'over-ceiling', path: 'a.ts', lines: 901, ceiling: 900 }],
+        expected: [{ kind: 'over-ceiling', path: 'a.ts', lines: 951, ceiling: 950 }],
     },
 ];
 
@@ -195,6 +226,25 @@ describe('lint size ceilings rule', () => {
             expect(violations).toEqual(expected);
         }
     );
+});
+
+describe('expected size ceiling', () => {
+    it.each([
+        { lines: 40, expected: 600 },
+        { lines: 600, expected: 600 },
+        { lines: 601, expected: 651 },
+        { lines: 900, expected: 950 },
+    ])('should record $expected for a file of $lines lines', ({ lines, expected }) => {
+        expect(expectedSizeCeiling(lines)).toBe(expected);
+    });
+});
+
+describe('size ceiling violation messages', () => {
+    it('should tell the author the overflow and that ceilings are never raised', () => {
+        expect(describeSizeCeilingViolation({ kind: 'over-ceiling', path: 'a.ts', lines: 960, ceiling: 950 })).toBe(
+            'a.ts: 960 lines exceeds its ceiling of 950 by 10; move code into a new file (new files are held to the size rules) until it has at most 950 lines. Ceilings are never raised.'
+        );
+    });
 });
 
 type WrittenKeysCase = { name: string; text: string; expected: string[] };
