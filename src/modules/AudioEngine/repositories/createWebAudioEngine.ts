@@ -43,6 +43,15 @@ import { matchesRuntimeDeviceChainTopology } from '../services/matchesRuntimeDev
 import { applyParams } from './applyParams';
 import { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
 import { createOfflineDeviceNode } from './deviceNodeFactory';
+import { addCountByType } from './webAudioEngine/addCountByType';
+import { addDeviceResources } from './webAudioEngine/addDeviceResources';
+import { countDeviceRuntimeResources } from './webAudioEngine/countDeviceRuntimeResources';
+import { createEmptyGraphSlotResourcesByLoadState } from './webAudioEngine/createEmptyGraphSlotResourcesByLoadState';
+import { createNoopAudioContext } from './webAudioEngine/createNoopAudioContext';
+import { createTransportClock, type TransportClock } from './webAudioEngine/createTransportClock';
+import { getChromePlaybackStats } from './webAudioEngine/getChromePlaybackStats';
+import { readPlaybackStats } from './webAudioEngine/readPlaybackStats';
+import { toSortedCountRecord } from './webAudioEngine/toSortedCountRecord';
 
 import type {
     AdjustmentLayerTickInput,
@@ -50,7 +59,6 @@ import type {
     AudioDeviceWaitResult,
     AudioEngineDiagnostics,
     AudioEngineHealth,
-    AudioEnginePlaybackStats,
     AudioProcessorLifecycleState,
     AudioEngineState,
     BusStrip,
@@ -157,141 +165,11 @@ type RuntimeGraphMutationReceipt<TValue> = Readonly<{
     runtimeRevision: number;
 }>;
 
-type ChromeAudioPlaybackStats = AudioEnginePlaybackStats & {
-    resetLatency(): void;
-    toJSON(): object;
-};
-
-function isChromeAudioPlaybackStats(value: unknown): value is ChromeAudioPlaybackStats {
-    if (typeof value !== 'object' || value === null) {
-        return false;
-    }
-    return (
-        'underrunDuration' in value &&
-        typeof value.underrunDuration === 'number' &&
-        'underrunEvents' in value &&
-        typeof value.underrunEvents === 'number' &&
-        'totalDuration' in value &&
-        typeof value.totalDuration === 'number' &&
-        'averageLatency' in value &&
-        typeof value.averageLatency === 'number' &&
-        'minimumLatency' in value &&
-        typeof value.minimumLatency === 'number' &&
-        'maximumLatency' in value &&
-        typeof value.maximumLatency === 'number' &&
-        'resetLatency' in value &&
-        typeof value.resetLatency === 'function' &&
-        'toJSON' in value &&
-        typeof value.toJSON === 'function'
-    );
-}
-
 function hasToasterPadOutputControls(
     controls: ToasterDeviceControls | undefined | null
 ): controls is ToasterPadOutputControls {
     return typeof controls?.connectPadOutput === 'function';
 }
-
-function getChromePlaybackStats(context: AudioContext): ChromeAudioPlaybackStats {
-    const stats = 'playbackStats' in context ? context.playbackStats : undefined;
-    if (!isChromeAudioPlaybackStats(stats)) {
-        throw new Error('Audio diagnostics require AudioContext.playbackStats from current stable Chrome.');
-    }
-    return stats;
-}
-
-function readPlaybackStats(context: AudioContext): AudioEnginePlaybackStats {
-    const stats = getChromePlaybackStats(context);
-    return {
-        underrunDuration: stats.underrunDuration,
-        underrunEvents: stats.underrunEvents,
-        totalDuration: stats.totalDuration,
-        averageLatency: stats.averageLatency,
-        minimumLatency: stats.minimumLatency,
-        maximumLatency: stats.maximumLatency,
-    };
-}
-
-type DeviceRuntimeResources = {
-    audioNodes: number;
-    audioWorkletProcessors: number;
-    workers: number;
-};
-
-function countDeviceRuntimeResources(device: BuiltinDeviceNode): DeviceRuntimeResources {
-    const ownedAudioNodes = new Set([device.inputNode, device.outputNode, ...device.nodes]);
-    let audioWorkletProcessors = 0;
-    for (const node of ownedAudioNodes) {
-        if (node instanceof AudioWorkletNode) {
-            audioWorkletProcessors++;
-        }
-    }
-    return { audioNodes: ownedAudioNodes.size, audioWorkletProcessors, workers: device.workerInstances ?? 0 };
-}
-
-function createEmptyGraphSlotResourcesByLoadState(): AudioEngineDiagnostics['graph']['graphSlotResourcesByLoadState'] {
-    return {
-        ready: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
-        pending: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
-        failed: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
-    };
-}
-
-function addDeviceResources(target: DeviceRuntimeResources, resources: DeviceRuntimeResources): void {
-    target.audioNodes += resources.audioNodes;
-    target.audioWorkletProcessors += resources.audioWorkletProcessors;
-    target.workers += resources.workers;
-}
-
-function addCountByType(counts: Map<string, number>, type: string, count: number): void {
-    if (count === 0) {
-        return;
-    }
-    counts.set(type, (counts.get(type) ?? 0) + count);
-}
-
-function toSortedCountRecord(counts: Map<string, number>): Record<string, number> {
-    return Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)));
-}
-
-/**
- * Transport SharedArrayBuffer layout (one 72-byte buffer shared with worklet
- * readers, e.g. {@link kneadProcessor}).
- *
- * The transport fields are read as `Float64Array` slots 0–6 and 8; a single
- * 32-bit sequence counter lives at `Int32Array` index 14 (bytes 56–59, the low
- * half of the otherwise-unused 8th f64 slot). The counter guards every field
- * with a seqlock: the writer makes it odd before the field writes and even
- * after, and a reader retries while it is odd or changes across the read — so a
- * worklet never observes a snapshot torn across the non-atomic field writes.
- *
- * `positionSeconds` sits beside `beat` because a beat alone does not locate the
- * transport in time: converting one to the other means integrating the tempo
- * map, which lives on the main thread. A worklet that needs seconds — Knead,
- * whose pitch blobs are measured in them — reads the integration rather than
- * repeating it against the single `tempo` scalar, which is only the tempo in
- * force at the playhead and says nothing about the span behind it.
- *
- * `Atomics` requires an integer-typed view, hence the separate `Int32Array` for
- * the counter; the data fields stay `Float64Array` (they carry fractional beats
- * and tempo). Index/offset names are shared with the reader so both sides agree.
- */
-const TRANSPORT_F64 = {
-    beat: 0,
-    tempo: 1,
-    sampleRate: 2,
-    loopStart: 3,
-    loopEnd: 4,
-    isPlaying: 5,
-    isLooping: 6,
-    positionSeconds: 8,
-} as const;
-
-/** Byte length of the transport SAB: 9 f64 slots (8 data + 1 holding the seq counter). */
-const TRANSPORT_SAB_BYTES = 72;
-
-/** `Int32Array` index of the seqlock sequence counter (byte offset 56, the 8th f64 slot). */
-const TRANSPORT_SEQ_I32 = 14;
 
 /**
  * Equal-time crossfade duration (seconds) for a live pre/post-fader send-tap
@@ -322,37 +200,6 @@ const SIDECHAIN_KEY_DELAY_RAMP_SECONDS = 0.01;
  *  alignment counts as unchanged and schedules nothing — the alignment refresh
  *  runs every scheduler tick and must not churn AudioParam events. */
 const SIDECHAIN_KEY_DELAY_EPSILON_SECONDS = 1e-6;
-
-/**
- * Builds a silent stand-in for {@link AudioContext} from an
- * {@link OfflineAudioContext} (which never produces sound and shares the
- * node-factory surface the fallback path uses). The handful of `AudioContext`
- * members `OfflineAudioContext` lacks are stubbed so the result is a genuine,
- * structurally-checked `AudioContext` — replacing the former
- * `as BaseAudioContext as AudioContext` double-assertion, which silenced the
- * type checker rather than satisfying it.
- */
-function createNoopAudioContext(): AudioContext {
-    const offline = new OfflineAudioContext(2, 1, 44100);
-    function reject(): never {
-        throw new Error('AudioEngine is in fallback mode — no AudioContext is available.');
-    }
-    const shim: AudioContext = Object.assign(offline, {
-        baseLatency: 0,
-        outputLatency: 0,
-        close: () => Promise.resolve(),
-        // `OfflineAudioContext.suspend` requires a `suspendTime` argument, so its
-        // signature is wider than `AudioContext.suspend()`. Override both lifecycle
-        // methods with the no-op, no-arg forms the fallback path expects.
-        resume: () => Promise.resolve(),
-        suspend: () => Promise.resolve(),
-        createMediaElementSource: reject,
-        createMediaStreamSource: reject,
-        createMediaStreamDestination: reject,
-        getOutputTimestamp: () => ({ contextTime: 0, performanceTime: 0 }),
-    });
-    return shim;
-}
 
 /**
  * Repository-internal view of engine state for repository specs and the
@@ -533,9 +380,7 @@ class AudioEngineImpl implements AudioEngine {
     private withheldDeviceNotices = new Set<string>();
     private workletReady = false;
     private fallbackMode = false;
-    private transportSAB: SharedArrayBuffer | null;
-    private transportView: Float64Array | null;
-    private transportSeqView: Int32Array | null;
+    private readonly transportClock: TransportClock;
     private runtimeGraphRevision = 0;
     private runtimeGraphProjectRevisionValidator: RuntimeGraphProjectRevisionValidator | null = null;
     private runtimeGraphTopologyValidator: RuntimeGraphTopologyValidator | null = null;
@@ -566,27 +411,7 @@ class AudioEngineImpl implements AudioEngine {
     private readonly latencyHint: 'interactive' | 'playback' | null;
 
     constructor(providedContext?: AudioContext) {
-        // Transport SAB layout: see TRANSPORT_F64 / TRANSPORT_SEQ_I32 above. The
-        // seven f64 data fields (slots 0–6) are guarded by a seqlock counter in
-        // the Int32 view at TRANSPORT_SEQ_I32 so worklet readers never observe a
-        // torn snapshot.
-        //
-        // Guard the allocation with hasSharedArrayBuffer(): without COOP+COEP the
-        // global is absent and `new SharedArrayBuffer(...)` throws. This runs at
-        // module load (`export const audioEngine = composeWebAudioEngine().engine`), so an
-        // unguarded throw here aborts the whole module import on a non-isolated
-        // page. When SAB is unavailable the views stay null and setTransportInfo
-        // no-ops (it already guards on null), so the worklet readers just fall
-        // back to their default transport — no torn read, no import crash.
-        if (hasSharedArrayBuffer()) {
-            this.transportSAB = new SharedArrayBuffer(TRANSPORT_SAB_BYTES);
-            this.transportView = new Float64Array(this.transportSAB);
-            this.transportSeqView = new Int32Array(this.transportSAB);
-        } else {
-            this.transportSAB = null;
-            this.transportView = null;
-            this.transportSeqView = null;
-        }
+        this.transportClock = createTransportClock({ readSampleRate: () => this.context.sampleRate });
 
         if (providedContext) {
             this.latencyProfile = null;
@@ -1874,7 +1699,7 @@ class AudioEngineImpl implements AudioEngine {
             pendingDevicePromises: this.pendingDevicePromises,
             readinessDiagnostics: this.deviceReadinessDiagnostics,
             collaborators: this.deviceCollaborators,
-            transportSAB: this.transportSAB ?? undefined,
+            transportSAB: this.transportClock.sharedBuffer() ?? undefined,
             getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
             reconnectRoutingForTrack: (id) => this.reconnectRoutingForTrack(id),
             onDeviceLoaded: (id) => this.reconcileToasterParent(id),
@@ -2307,29 +2132,7 @@ class AudioEngineImpl implements AudioEngine {
         loopEnd = 0,
         isLooping = false
     ): void {
-        const value = this.transportView;
-        const seq = this.transportSeqView;
-        if (!value || !seq) {
-            // Released by dispose(); nothing to write into.
-            return;
-        }
-        // Seqlock write: bump the counter to an odd value (write in progress),
-        // publish the seven fields, then bump it to the next even value (write
-        // complete). A worklet reader that samples an odd or changed counter
-        // around its read retries, so it never sees a snapshot torn across the
-        // seven plain f64 writes. The trailing Atomics.store also publishes the
-        // field writes to other agents (release semantics).
-        const odd = Atomics.load(seq, TRANSPORT_SEQ_I32) + 1;
-        Atomics.store(seq, TRANSPORT_SEQ_I32, odd);
-        value[TRANSPORT_F64.beat] = beat;
-        value[TRANSPORT_F64.tempo] = tempo;
-        value[TRANSPORT_F64.sampleRate] = this.context.sampleRate;
-        value[TRANSPORT_F64.loopStart] = loopStart;
-        value[TRANSPORT_F64.loopEnd] = loopEnd;
-        value[TRANSPORT_F64.isPlaying] = isPlaying ? 1 : 0;
-        value[TRANSPORT_F64.isLooping] = isLooping ? 1 : 0;
-        value[TRANSPORT_F64.positionSeconds] = positionSeconds;
-        Atomics.store(seq, TRANSPORT_SEQ_I32, odd + 1);
+        this.transportClock.write({ beat, positionSeconds, tempo, isPlaying, loopStart, loopEnd, isLooping });
     }
 
     public setSend(sourceTrackId: string, busId: string, level: number, preFader = false): void {
@@ -3066,11 +2869,7 @@ class AudioEngineImpl implements AudioEngine {
                     () => this.masterAnalyserLeft.disconnect(),
                     () => this.masterAnalyserRight.disconnect(),
                     () => this.masterStereoTapSink.disconnect(),
-                    () => {
-                        this.transportSAB = null;
-                        this.transportView = null;
-                        this.transportSeqView = null;
-                    },
+                    () => this.transportClock.release(),
                 ]),
             () => this.context.close(),
         ]);

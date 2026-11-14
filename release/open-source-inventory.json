@@ -1179,6 +1179,7 @@
                 "src/modules/AudioEngine/models/AudioEngineState.ts",
                 "src/modules/AudioEngine/models/GrandBouleRingProtocol.ts",
                 "src/modules/AudioEngine/repositories/createWebAudioEngine.ts",
+                "src/modules/AudioEngine/repositories/webAudioEngine/**",
                 "src/modules/AudioEngine/workers/grandBouleEngineWorker.ts",
                 "src/modules/AudioEngine/worklets/grandBoule*.ts",
                 "src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts",
@@ -1227,10 +1228,10 @@
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:20bcf828794365a588f32d7e13808657502a13d0e8427a6543cf78c2cec789ce:grand-boule-discovery-catalog",
                 "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
-                "tracked-set-sha256:eaa809018aea8e96f598f3b55ad0711e475c6a79f06c87491af507ad88d346bd:grand-boule-live-runtime",
-                "tracked-set-sha256:a7ad8efd13e2ca4be9e5d576d54350a669f293dbb6152015df5072b51352c2fd:grand-boule-project-state",
+                "tracked-set-sha256:fd76dd8e5fd9b71b34dd6f9f5a64a33bce9dd38c7e23d91272ef0ff0baa0bdc8:grand-boule-live-runtime",
+                "tracked-set-sha256:9a8e14d67eedb90cd6b73909dc9940ffaf2ea059b4b143499bddd68f643b7de3:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:595ff372d13747883ebfaa3428abc40d541aaeaa64909a363d2a35e84b2ce1c5:grand-boule-release-proof"
+                "tracked-set-sha256:8d9da5fa5f17218ec1ee056e9bc784d4129da511552d012ab0ce42bf404e2953:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
