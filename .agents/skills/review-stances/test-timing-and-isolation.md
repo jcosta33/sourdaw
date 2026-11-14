@@ -96,6 +96,10 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    click-to-completion long-task gate. Hold the parsed native handle across that boundary, abort or replace
    authority, and require no materialization or publication and one release. Separating tasks is a hypothesis
    until the unchanged whole-task/frame gates pass.
+   A fresh-project green does not establish project-scale coverage: build a realistic current document and
+   retained native history through real actions, then assert both from authoritative state. Record fixture
+   size and history depth outside the measured interval without warming worker or replica state on the route.
+   Gate the native phases and their complete enclosing host tasks against the existing budgets.
    (#5191, #6011, #5964, #3270, #3356, #5459, #6000, #4775, #5798, #3222, #2976, #5337, #4228, #5115, #5924, #4331, #6250)
 
 3. **Fixture state leaks across cases or depends on chance or the runner's environment.**
