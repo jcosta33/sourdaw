@@ -18,6 +18,7 @@ import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { OBJECTIVE_METRIC_LABELS, OBJECTIVE_METRIC_UNITS } from './objectiveMetricProjection';
 import { readVibeBatchSkipAvailability } from './readVibeBatchSkipAvailability';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
+import { describeRecipeValueSource } from './vibeRun/describeRecipeValueSource';
 
 type ApprovalSnapshot = PendingAppActionConfirmation['approvalSnapshot'];
 type SemanticDiff = NonNullable<ApprovalSnapshot['semanticDiff']>;
@@ -46,8 +47,11 @@ type ApprovalIntentGroup = {
 
 type AdoptedRecipe = NonNullable<ApprovalSnapshot['adoptedRecipes']>[number];
 
-/** A recipe the batch adopted, with the name of the track it was expanded onto, or `null` once that track is gone. */
-type ApprovalRecipe = AdoptedRecipe & { targetName: string | null };
+/**
+ * A recipe the batch adopted, with the name of the track it was expanded onto, or `null` once that
+ * track is gone, and on a vibe-run batch the words saying where its values came from (`null` elsewhere).
+ */
+type ApprovalRecipe = AdoptedRecipe & { targetName: string | null; valueSourceLabel: string | null };
 
 type MeasuredPreviewEvidence = NonNullable<ApprovalSnapshot['measuredPreview']>;
 type MeasuredTarget = MeasuredPreviewEvidence['targets'][number];
@@ -306,6 +310,7 @@ function projectRecipes(adoptedRecipes: ApprovalSnapshot['adoptedRecipes']): Age
     return (adoptedRecipes ?? []).map((recipe) => ({
         ...recipe,
         targetName: tracks.find((track) => track.id === recipe.targetId)?.name ?? null,
+        valueSourceLabel: describeRecipeValueSource(recipe),
     }));
 }
 

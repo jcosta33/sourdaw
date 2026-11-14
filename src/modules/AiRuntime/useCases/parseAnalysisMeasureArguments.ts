@@ -45,8 +45,8 @@ function isBeat(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-function parseTargetIds(value: unknown): string[] | null {
-    if (!Array.isArray(value) || value.length === 0 || value.length > ANALYSIS_MEASURE_MAX_TARGETS) {
+function parseTargetIds(value: unknown, maxTargets: number): string[] | null {
+    if (!Array.isArray(value) || value.length === 0 || value.length > maxTargets) {
         return null;
     }
     const ids: string[] = [];
@@ -59,7 +59,7 @@ function parseTargetIds(value: unknown): string[] | null {
     return ids;
 }
 
-function parseScope(value: unknown): AnalysisMeasureScope | null {
+function parseScope(value: unknown, maxTargets: number): AnalysisMeasureScope | null {
     if (!isRecord(value) || !hasOnlyKeys(value, ['kind', 'ids'])) {
         return null;
     }
@@ -69,7 +69,7 @@ function parseScope(value: unknown): AnalysisMeasureScope | null {
     if (value.kind !== 'tracks' && value.kind !== 'buses') {
         return null;
     }
-    const ids = parseTargetIds(value.ids);
+    const ids = parseTargetIds(value.ids, maxTargets);
     return ids === null ? null : { kind: value.kind, ids };
 }
 
@@ -123,11 +123,13 @@ function parseSubject(subject: unknown, proposal: unknown, recipeCallId: unknown
  * render ceilings are answered by the executor against the project.
  *
  * `toolName` is the tool the refusals name: `analysis.compareReference` takes the same
- * scope, range and metrics, so it reads them through this contract.
+ * scope, range and metrics, so it reads them through this contract. `maxTargets` is the
+ * most track or bus ids that tool's receipt can carry.
  */
 export function parseAnalysisMeasureArguments(
     argumentsValue: unknown,
-    toolName: string = ANALYSIS_MEASURE_TOOL_NAME
+    toolName: string = ANALYSIS_MEASURE_TOOL_NAME,
+    maxTargets: number = ANALYSIS_MEASURE_MAX_TARGETS
 ): ParsedAnalysisMeasureArguments {
     if (
         !isRecord(argumentsValue) ||
@@ -145,11 +147,11 @@ export function parseAnalysisMeasureArguments(
             reason: `${toolName} subject is project, which takes neither source, or preview, which requires exactly one of proposal or recipeCallId.`,
         };
     }
-    const scope = parseScope(argumentsValue.scope);
+    const scope = parseScope(argumentsValue.scope, maxTargets);
     if (scope === null) {
         return {
             status: 'invalid',
-            reason: `${toolName} scope must be master, project, or tracks or buses with 1 to ${String(ANALYSIS_MEASURE_MAX_TARGETS)} distinct ids.`,
+            reason: `${toolName} scope must be master, project, or tracks or buses with 1 to ${String(maxTargets)} distinct ids.`,
         };
     }
     const range = parseRange(argumentsValue.range);

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Parent Spec must already be open. One-shot work is Bug or Feature. Secrets stay in `~/.agents/artifacts`.
+        Parent Spec must already be open. One-shot work is Bug or Feature. Secrets stay in the artifact workspace (`AGENTS.md`, Artifacts).
 
         After create: attach as sub-issue of the Spec; add `priority:P*`.
 

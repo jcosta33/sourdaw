@@ -2700,13 +2700,14 @@ export const executableAppActionDescriptors = [
                     type: 'object',
                     additionalProperties: false,
                     description:
-                        'Exactly one form: section; startBar with endBar; or startBeat with endBeat. Bars count from 1 through the project meter.',
+                        'Exactly one form: section (barsBefore: bars ending where it starts); startBar with endBar; or startBeat with endBeat. Bars count from 1 through the project meter.',
                     properties: {
                         section: {
                             type: 'string',
                             description:
                                 'Existing section name, optionally with an ordinal among sections of that name: "Chorus", "Chorus 2", "the second chorus", "the last verse"',
                         },
+                        barsBefore: { type: 'integer', minimum: 1 },
                         startBar: { type: 'integer', minimum: 1, description: 'First bar of the range' },
                         endBar: { type: 'integer', minimum: 1, description: 'Last bar of the range, inclusive' },
                         startBeat: { type: 'number', minimum: 0, description: 'Range start, in beats' },

@@ -2253,10 +2253,12 @@ export type AppAction =
               trackId: string;
               /** `gain`, `pan`, `send:<busId>`, or `<deviceId>:<paramId>`. */
               parameterId: string;
-              /** Exactly one form: `section`, `startBar` with `endBar`, or `startBeat` with `endBeat`. */
+              /** Exactly one form: `section`, `section` with `barsBefore`, `startBar` with `endBar`, or `startBeat` with `endBeat`. */
               range: {
                   /** A section name, optionally with an ordinal: "Chorus 2", "the second chorus". */
                   section?: string;
+                  /** With `section`: the N whole bars that end where that section starts. */
+                  barsBefore?: number;
                   /** First bar, 1-based. */
                   startBar?: number;
                   /** Last bar, inclusive. */

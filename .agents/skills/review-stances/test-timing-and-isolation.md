@@ -19,6 +19,12 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    readiness through the real progress producer. Delay the bad variant past the case's end: finishing
    before a scheduled side effect does not prove it was prevented, so the delayed mutant must still
    fail. Teardown must not depend on the behavior under test.
+   For readiness after navigation, snapshot the marker baseline before starting navigation: reject a
+   stale marker, accept a fresh marker emitted before navigation resolves or afterward, and propagate
+   navigation errors. #5843's saved-sensitivity reload waited for `reload()` before taking its count,
+   so an early fresh marker could be missed despite the ordinary E2E passing. Check
+   `scripts/__tests__/firstPaintDiagnostics.spec.ts`; moving the baseline capture after `await navigate()`
+   must make that spec fail.
    Do not retry a required material or ownership invariant as readiness: a bounded capture retry hides a
    first-read PCM miss even while permanent absence fails with the right message (#6342). Return null once at the
    actual cached-buffer read while retaining the real PCM, then allow later reads: the case must fail on the
@@ -90,6 +96,10 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    click-to-completion long-task gate. Hold the parsed native handle across that boundary, abort or replace
    authority, and require no materialization or publication and one release. Separating tasks is a hypothesis
    until the unchanged whole-task/frame gates pass.
+   A fresh-project green does not establish project-scale coverage: build a realistic current document and
+   retained native history through real actions, then assert both from authoritative state. Record fixture
+   size and history depth outside the measured interval without warming worker or replica state on the route.
+   Gate the native phases and their complete enclosing host tasks against the existing budgets.
    (#5191, #6011, #5964, #3270, #3356, #5459, #6000, #4775, #5798, #3222, #2976, #5337, #4228, #5115, #5924, #4331, #6250)
 
 3. **Fixture state leaks across cases or depends on chance or the runner's environment.**

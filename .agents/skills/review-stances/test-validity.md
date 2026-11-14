@@ -161,6 +161,12 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    (#638, #1874, #2169, #471, #645, #5649)
 
 7. **The fixture never holds the deciding input.**
+   #2591's 4 MiB ASCII capture fixture (`5cfdc662e38e`, historical reviewer tier and prompt unknown)
+   could not discriminate raw-byte preservation or a full-review diff exceeding the ordinary cap.
+   Include non-UTF-8 bytes and a one-byte replacement that decodes identically: the intact Git patch
+   must bind, and the replacement must fail publication in `scripts/__tests__/prepareReview.spec.ts`.
+   Lower real-child limits in a small fixture to prove overflow refusal, and check the exceptional
+   allowance at both production full-diff callers rather than enlarging every capture's default.
    Probe: name the mutation that would get the rule wrong, place the deciding input where it errs, and
    require the unchanged case to fail when the fix is reverted. Escaped inputs: equal start and end
    timestamps plus a one-unit-narrower enclosure for every nesting comparison; first versus last event

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        New user-facing behavior is a Spec. Secrets stay in `~/.agents/artifacts`.
+        New user-facing behavior is a Spec. Secrets stay in the artifact workspace (`AGENTS.md`, Artifacts).
 
         Each wave stays green. Task split dispatches write-disjoint Tasks of a ready Spec. After create: add `priority:P*`; attach those Tasks as sub-issues.
 
