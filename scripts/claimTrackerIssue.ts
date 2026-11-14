@@ -1,9 +1,11 @@
 #!/usr/bin/env node
+import { randomUUID } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+    ORCHESTRATOR_USER_NODE_ID,
     REQUIRED_REPOSITORY,
     assertTrustedExecutingBlob,
     authenticateOrchestratorSession,
@@ -60,10 +62,10 @@ export type ClaimBoardItem = {
  * The label swap runs before the board move: the labels are the claim another agent's survey
  * reads. The claim reads the labels back after the edit and moves no board until the swap is
  * observed. The read-back proves the write landed, not exclusivity: two operators claiming at
- * once both add an already-present label without error, so it cannot detect a concurrent claim.
- * A rerun cannot repair boards a partial claim left behind — once status:active is on the issue
- * the refusal below fires first — so the operator completes a stranded board move by hand under
- * the manual-gh exception for an issue's own project membership.
+ * once both add an already-present label without error, so exclusivity comes from the claim
+ * token below. A rerun cannot repair boards a partial claim left behind — once status:active is
+ * on the issue the refusal below fires first — so the operator completes a stranded board move by
+ * hand under the manual-gh exception for an issue's own project membership.
  */
 export function labelSwapPlan(labels: string[]): { add: string; remove: string[] } {
     return {
@@ -259,7 +261,153 @@ export function itemEditArgs(board: ClaimBoardItem, ids: { fieldId: string; opti
 
 export type Gh = (args: string[]) => string;
 
-export function claimTrackerIssue(issue: number, gh: Gh, log: (message: string) => void): void {
+/**
+ * Every claim runs as the same operator credential and re-adding a present label succeeds
+ * silently, so nothing a claim reads about the labels says which claim wrote them. Each claim
+ * therefore posts one comment carrying a fresh random token after its label swap is observed,
+ * and the earliest token comment since status:active was last removed is the claim. Every
+ * claimer reads the same timeline and applies the same rule, so concurrent claims agree on one
+ * winner; a loser withdraws its own comment and moves no board.
+ *
+ * Posting after the swap means a claim that dies after posting leaves status:active behind, so
+ * later claims refuse on the label, and removing that label releases the claim and starts a new
+ * token window. Only comments the verified operator wrote whose whole body is the token line
+ * count: anyone can comment on the public tracker, and a quoted token is not a claim.
+ */
+const CLAIM_TOKEN_PATTERN = /^Claimed by pnpm issue:claim \(sourdaw-claim:v1:([0-9a-f-]{36})\)\.$/;
+
+export function claimTokenBody(token: string): string {
+    return `Claimed by pnpm issue:claim (sourdaw-claim:v1:${token}).`;
+}
+
+export function postClaimTokenArgs(issue: number, token: string): string[] {
+    return [
+        'api',
+        '-X',
+        'POST',
+        `repos/${REQUIRED_REPOSITORY}/issues/${issue}/comments`,
+        '-f',
+        `body=${claimTokenBody(token)}`,
+    ];
+}
+
+export function issueTimelineArgs(issue: number): string[] {
+    return ['api', '--paginate', '--slurp', `repos/${REQUIRED_REPOSITORY}/issues/${issue}/timeline?per_page=100`];
+}
+
+export function deleteClaimTokenArgs(commentId: number): string[] {
+    return ['api', '-X', 'DELETE', `repos/${REQUIRED_REPOSITORY}/issues/comments/${commentId}`];
+}
+
+export type ClaimToken = { commentId: number; token: string; url: string | undefined };
+
+function postClaimToken(issue: number, token: string, gh: Gh): number {
+    const comment = parseJson<{ id?: unknown }>(gh(postClaimTokenArgs(issue, token)), `issue #${issue} claim comment`);
+    if (typeof comment.id !== 'number' || !Number.isSafeInteger(comment.id)) {
+        fail(`issue #${issue} claim comment returned malformed data`);
+    }
+    return comment.id;
+}
+
+type TimelineEntry = {
+    event?: unknown;
+    id?: unknown;
+    body?: unknown;
+    html_url?: unknown;
+    user?: { node_id?: unknown } | null;
+    label?: { name?: unknown } | null;
+};
+
+function timelineEntries(pages: unknown, issue: number): TimelineEntry[] {
+    if (!Array.isArray(pages) || !pages.every((page) => Array.isArray(page))) {
+        fail(`issue #${issue} timeline returned malformed data`);
+    }
+    const entries = (pages as unknown[][]).flat();
+    if (!entries.every((entry) => typeof entry === 'object' && entry !== null)) {
+        fail(`issue #${issue} timeline returned malformed data`);
+    }
+    return entries as TimelineEntry[];
+}
+
+function claimTokenFromEntry(entry: TimelineEntry): ClaimToken | undefined {
+    if (entry.event !== 'commented' || entry.user?.node_id !== ORCHESTRATOR_USER_NODE_ID) {
+        return undefined;
+    }
+    const token = typeof entry.body === 'string' ? CLAIM_TOKEN_PATTERN.exec(entry.body)?.[1] : undefined;
+    if (token === undefined || typeof entry.id !== 'number' || !Number.isSafeInteger(entry.id)) {
+        return undefined;
+    }
+    return {
+        commentId: entry.id,
+        token,
+        url: typeof entry.html_url === 'string' ? entry.html_url : undefined,
+    };
+}
+
+/** The claim tokens posted since status:active was last removed, earliest comment first. */
+export function claimTokensSinceRelease(pages: unknown, issue: number): ClaimToken[] {
+    const entries = timelineEntries(pages, issue);
+    const releaseIndex = entries.findLastIndex(
+        (entry) => entry.event === 'unlabeled' && entry.label?.name === ACTIVE_STATUS_LABEL
+    );
+    return entries
+        .slice(releaseIndex + 1)
+        .flatMap((entry) => {
+            const claim = claimTokenFromEntry(entry);
+            return claim === undefined ? [] : [claim];
+        })
+        .sort((left, right) => left.commentId - right.commentId);
+}
+
+function describeClaim(claim: ClaimToken): string {
+    return claim.url ?? `comment ${claim.commentId}`;
+}
+
+function assertClaimWon(issue: number, token: string, gh: Gh): void {
+    const claims = claimTokensSinceRelease(
+        parseJson<unknown>(gh(issueTimelineArgs(issue)), `issue #${issue} timeline`),
+        issue
+    );
+    const winner = claims[0];
+    if (winner === undefined || !claims.some((claim) => claim.token === token)) {
+        fail(`issue #${issue} claim comment was not observed on the timeline; no board was moved`);
+    }
+    if (winner.token !== token) {
+        fail(
+            `issue #${issue} was claimed concurrently by ${describeClaim(winner)}; ` +
+                'this claim withdrew its comment, left the labels to that claim, and moved no board'
+        );
+    }
+}
+
+/**
+ * Withdrawing a token that has not won is always safe: it can only leave zero winners, never two,
+ * because no claimer that already compared can change its decision. A winner never withdraws.
+ */
+function decideClaim(issue: number, token: string, gh: Gh): void {
+    const commentId = postClaimToken(issue, token, gh);
+    try {
+        assertClaimWon(issue, token, gh);
+    } catch (error) {
+        try {
+            gh(deleteClaimTokenArgs(commentId));
+        } catch (withdrawal) {
+            fail(
+                `${error instanceof Error ? error.message : String(error)}; ` +
+                    `withdrawing claim comment ${commentId} also failed: ` +
+                    `${withdrawal instanceof Error ? withdrawal.message : String(withdrawal)}`
+            );
+        }
+        throw error;
+    }
+}
+
+export function claimTrackerIssue(
+    issue: number,
+    gh: Gh,
+    log: (message: string) => void,
+    token: string = randomUUID()
+): void {
     const { labels, state } = readIssueClaimRow(issue, gh);
     if (state !== 'OPEN') {
         fail(`issue #${issue} is closed; reopen it or choose open work before claiming`);
@@ -277,6 +425,7 @@ export function claimTrackerIssue(issue: number, gh: Gh, log: (message: string) 
         fail(`issue #${issue} closed during the claim; status labels were edited, no board was moved`);
     }
     assertLabelSwapObserved(issue, edited.labels, plan);
+    decideClaim(issue, token, gh);
     const removed = plan.remove.length > 0 ? `, removed ${plan.remove.join(', ')}` : '';
     log(`issue #${issue}: added ${ACTIVE_STATUS_LABEL}${removed}`);
     const boards = boardsFromGraphql(

@@ -121,9 +121,13 @@ An issue-bound lane claims its issue in the same step: `lane:open` prints the co
 label, removes every other `status:` label, and moves every board item holding the issue to In
 progress, reading the project's field and option ids live, and reads the label swap back before
 moving any board. The script refuses a closed issue and an issue that already carries
-`status:active`, making an existing claim visible before work starts; the check is
-read-then-write, not atomic, so the survey before `lane:open` remains the guard against two claims
-racing in one window.
+`status:active`, making an existing claim visible before work starts. Two claims racing past that
+check are decided by a claim comment: after its label swap each claim posts one comment carrying a
+fresh token, and the earliest such comment the operator wrote since `status:active` was last
+removed holds the claim. Only that claim moves the boards; every other withdraws its own comment
+and refuses, naming the winning comment. The winning comment stays on the issue as the claim
+record. A refusal naming a claim no lane holds means a claim died before its boards moved: find
+its lane, or release the issue by removing `status:active` and claim again.
 
 An issueless lane's worktree and PR are the claim: choose a slug that names the change precisely and
 publish early, before the head is final if needed. Work that outlives one lane or session — a
