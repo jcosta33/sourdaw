@@ -233,7 +233,8 @@ describe('repository canonical Worker candidate adoption', () => {
     it.each([false, true])(
         'accepts the native change with its computed checksum, compressed=%s',
         async (compressed) => {
-            const original = seed();
+            const original = from<Document>({ slot: { count: 0 } }, { actor });
+            repository.insertDoc('root', original);
             mocks.request.mockImplementationOnce(async (request) => {
                 const result = response(request);
                 return { ...result, changes: compressed ? [compressSmallChange(result.changes[0]!)] : result.changes };
@@ -251,7 +252,8 @@ describe('repository canonical Worker candidate adoption', () => {
     it.each([false, true])(
         'rejects a corrupt checksum even with forged response heads, compressed=%s',
         async (compressed) => {
-            const original = seed();
+            const original = from<Document>({ slot: { count: 0 } }, { actor });
+            repository.insertDoc('root', original);
             mocks.request.mockImplementationOnce(async (request) => {
                 const result = response(request);
                 const bytes = compressed
