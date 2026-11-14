@@ -485,9 +485,12 @@ removes the worktree and deletes the lane's local branch with `git branch -D`;
 
 Drafts, one-offs, scratch clones and checkouts, dependency installs, and unpublished or secret work
 stay in `<root>/.agents/artifacts/sourdaw/`, outside every checkout, and are not filed. `<root>` is
-the mount point of the drive holding the primary checkout: the last field of `df -P .` run there.
-When that matches `df -P ~`, `<root>` is the home directory. Never place this work on another drive
-or under `~/.agents/artifacts` when the checkout's drive differs.
+the mount point of the drive holding the primary checkout, printed by
+`df -P . | awk 'NR==2{sub(/^([^ ]+ +){5}/,""); print}'` run there; mount points can contain spaces,
+so quote it. When the same command run on `~` prints the same mount point, `<root>` is the home
+directory. When `<root>` is the primary checkout itself, ask the owner for a directory on that drive
+outside the checkout. Never place this work on another drive or under `~/.agents/artifacts` when
+the checkout's drive differs.
 The tracker is public. The issue body is the original; delete any local copy after filing.
 `.agents/specs/` is leftover corpus: do not add files there. Assigned leftover files stay until
 their work is done. Planning handed to future agents lives in GitHub issues, never a plan file.

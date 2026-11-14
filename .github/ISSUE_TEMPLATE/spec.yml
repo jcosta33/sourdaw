@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        File when every blocking choice is resolved. Secrets stay in `~/.agents/artifacts`.
+        File when every blocking choice is resolved. Secrets stay in the artifact workspace (`AGENTS.md`, Artifacts).
 
         Slices are Tasks. After create, add `priority:P*`.
 
