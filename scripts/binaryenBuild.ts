@@ -218,6 +218,23 @@ function privateDirectory(path: string): string {
     }
     return path;
 }
+/** Keep authenticated archives and build receipts under one explicit private root. */
+export function wasmCacheRoot(source: NodeJS.ProcessEnv = process.env): string {
+    const selected = source.SOURDAW_WASM_CACHE_DIR;
+    if (
+        selected !== undefined &&
+        (!isAbsolute(selected) ||
+            resolve(selected) !== selected ||
+            selected.trim() !== selected ||
+            /[\r\n\0]/.test(selected))
+    ) {
+        throw new Error('SOURDAW_WASM_CACHE_DIR must be a nonempty absolute private directory');
+    }
+    const root = selected ?? join(homedir(), '.cache', 'sourdaw');
+    assertRealPath(root);
+    if (existsSync(root)) privateDirectory(root);
+    return root;
+}
 export function assertArchiveDigest(bytes: Buffer, expected: string): void {
     if (digest(bytes) !== expected) {
         throw new Error('Binaryen archive checksum mismatch');
@@ -323,7 +340,7 @@ export async function qualifyBinaryenArchive(
     if (!pin) {
         throw new Error(`Unsupported Binaryen host: ${host}`);
     }
-    const cache = privateDirectory(join(homedir(), '.cache', 'sourdaw', 'binaryen', binaryenRelease, host));
+    const cache = privateDirectory(join(wasmCacheRoot(), 'binaryen', binaryenRelease, host));
     const archivePath = join(cache, pin.archive);
     assertRealPath(archivePath);
     if (!existsSync(archivePath)) {
@@ -406,15 +423,7 @@ export function assertRuntimeArchiveBindings(
     if (!identity.host.startsWith('darwin-')) {
         return;
     }
-    const archivePath = join(
-        homedir(),
-        '.cache',
-        'sourdaw',
-        'binaryen',
-        binaryenRelease,
-        identity.host,
-        identity.archive
-    );
+    const archivePath = join(wasmCacheRoot(), 'binaryen', binaryenRelease, identity.host, identity.archive);
     assertRealPath(archivePath);
     assertArchiveDigest(readFileSync(archivePath), identity.archiveSha256);
     const member = 'binaryen-version_133/lib/libbinaryen.dylib';
@@ -438,7 +447,7 @@ export async function provisionBinaryen(): Promise<BinaryenRuntimeIdentity> {
     return assertBinaryenIdentity({ ...qualified, version });
 }
 function receiptDirectory(root: string): string {
-    return privateDirectory(join(homedir(), '.cache', 'sourdaw', 'wasm-build-receipts', digest(realpathSync(root))));
+    return privateDirectory(join(wasmCacheRoot(), 'wasm-build-receipts', digest(realpathSync(root))));
 }
 export function sameArtifactHashes(left: Record<string, string>, right: Record<string, string>): boolean {
     const keys = Object.keys(left);
@@ -490,15 +499,7 @@ export function readBuildReceipt(
         throw new Error('Receipt belongs to another WASM package');
     }
     const identity = generation.optimizer;
-    const archivePath = join(
-        homedir(),
-        '.cache',
-        'sourdaw',
-        'binaryen',
-        binaryenRelease,
-        identity.host,
-        identity.archive
-    );
+    const archivePath = join(wasmCacheRoot(), 'binaryen', binaryenRelease, identity.host, identity.archive);
     assertRealPath(archivePath);
     assertArchiveDigest(readFileSync(archivePath), identity.archiveSha256);
     const member = `binaryen-version_133/bin/wasm-opt${identity.host.startsWith('win32-') ? '.exe' : ''}`;

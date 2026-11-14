@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import {
     cpSync,
+    chmodSync,
+    existsSync,
     mkdirSync,
     mkdtempSync,
     readFileSync,
@@ -9,20 +11,24 @@ import {
     symlinkSync,
     rmSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     assertArchiveDigest,
     assertArchiveEntries,
     assertBinaryenIdentity,
     assertRecordedBinaryenIdentity,
+    assertRuntimeArchiveBindings,
     buildCommand,
     generationInputsHash,
     wasmGenerationEnvironment,
     parseBinaryenIdentity,
     parseBuildGeneration,
+    qualifyBinaryenArchive,
+    readBuildReceipt,
+    wasmCacheRoot,
     readBoundedArchive,
     validateBuildReceipt,
 } from '../binaryenBuild.ts';
@@ -33,6 +39,7 @@ import { wasmArtifacts } from '../wasm-artifacts.ts';
 const temporary: string[] = [];
 afterEach(() => {
     for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true });
+    vi.unstubAllEnvs();
 });
 function temporaryRoot(prefix: string): string {
     const path = mkdtempSync(join(tmpdir(), prefix));
@@ -50,6 +57,111 @@ const official = {
     executableSha256: 'a'.repeat(64),
     version: 'wasm-opt version 133',
 };
+
+describe('configured WASM cache boundary', () => {
+    it('preserves the ordinary default and propagates the explicit root unchanged to builder children', () => {
+        expect(wasmCacheRoot({})).toBe(join(homedir(), '.cache', 'sourdaw'));
+        const root = join(temporaryRoot('wasm-cache-selector-'), 'new-private-root');
+        expect(wasmCacheRoot({ SOURDAW_WASM_CACHE_DIR: root })).toBe(root);
+        expect(existsSync(root)).toBe(false);
+        expect(wasmGenerationEnvironment({ SOURDAW_WASM_CACHE_DIR: root })).toEqual({
+            SOURDAW_WASM_CACHE_DIR: root,
+        });
+    });
+    it.each(['', ' ', 'relative/cache', '../cache', '/absolute/../cache', '/absolute\ncache'])(
+        'rejects invalid selector %j before downloading or creating a cache',
+        async (selected) => {
+            vi.stubEnv('SOURDAW_WASM_CACHE_DIR', selected);
+            const fetcher = vi.spyOn(globalThis, 'fetch');
+            try {
+                await expect(qualifyBinaryenArchive(official.host)).rejects.toThrow('nonempty absolute');
+                expect(fetcher).not.toHaveBeenCalled();
+            } finally {
+                fetcher.mockRestore();
+            }
+        }
+    );
+    it('refuses a symlink root or ancestor before creating any child cache', async () => {
+        const parent = temporaryRoot('wasm-cache-link-');
+        const target = join(parent, 'target');
+        mkdirSync(target);
+        const link = join(parent, 'linked');
+        symlinkSync(target, link, 'dir');
+        for (const selected of [link, join(link, 'child')]) {
+            vi.stubEnv('SOURDAW_WASM_CACHE_DIR', selected);
+            await expect(qualifyBinaryenArchive(official.host)).rejects.toThrow('symlink');
+        }
+        expect(existsSync(join(target, 'binaryen'))).toBe(false);
+        expect(existsSync(join(target, 'child'))).toBe(false);
+    });
+    it('refuses an unsafe existing root before download or receipt creation', async () => {
+        const root = temporaryRoot('wasm-cache-mode-');
+        chmodSync(root, 0o777);
+        vi.stubEnv('SOURDAW_WASM_CACHE_DIR', root);
+        await expect(qualifyBinaryenArchive(official.host)).rejects.toThrow('without group/other write');
+        expect(() =>
+            readBuildReceipt(root, 'scoring', {
+                head: 'a'.repeat(40),
+                sourceHash: 'sha256:' + 'b'.repeat(64),
+                inputsHash: 'sha256:' + 'c'.repeat(64),
+                command: [],
+                artifacts: {},
+            })
+        ).toThrow('without group/other write');
+        expect(existsSync(join(root, 'binaryen'))).toBe(false);
+        expect(existsSync(join(root, 'wasm-build-receipts'))).toBe(false);
+    });
+    it('authenticates the archive at the configured root instead of consulting the ordinary user cache', async () => {
+        const root = temporaryRoot('wasm-explicit-cache-');
+        vi.stubEnv('SOURDAW_WASM_CACHE_DIR', root);
+        const archive = join(root, 'binaryen', official.release, official.host, official.archive);
+        mkdirSync(dirname(archive), { recursive: true });
+        // A foreign archive at the selected location cannot be rescued by a genuine home-cache copy.
+        writeFileSync(archive, 'untrusted archive', { mode: 0o600 });
+        await expect(qualifyBinaryenArchive(official.host)).rejects.toThrow('official size');
+    });
+    it('uses the selected archive for the actual macOS runtime-library authentication', () => {
+        const root = temporaryRoot('wasm-runtime-cache-');
+        vi.stubEnv('SOURDAW_WASM_CACHE_DIR', root);
+        const archive = join(root, 'binaryen', official.release, official.host, official.archive);
+        mkdirSync(dirname(archive), { recursive: true });
+        writeFileSync(archive, 'foreign archive', { mode: 0o600 });
+        expect(() =>
+            assertRuntimeArchiveBindings({
+                ...official,
+                executablePath: join(root, 'verified/bin/wasm-opt'),
+            })
+        ).toThrow('archive checksum mismatch');
+    });
+    it('reads the helper receipt under the same explicit root and refuses foreign optimizer archive bytes', () => {
+        const root = temporaryRoot('wasm-receipt-cache-');
+        const project = temporaryRoot('wasm-receipt-project-');
+        vi.stubEnv('SOURDAW_WASM_CACHE_DIR', root);
+        const expected = {
+            head: 'a'.repeat(40),
+            sourceHash: 'sha256:' + 'b'.repeat(64),
+            inputsHash: 'sha256:' + 'c'.repeat(64),
+            command: buildCommand('scoring'),
+            artifacts: {},
+        };
+        const receipt = join(root, 'wasm-build-receipts', digest(Buffer.from(realpathSync(project))), 'scoring.json');
+        mkdirSync(dirname(receipt), { recursive: true });
+        writeFileSync(
+            receipt,
+            JSON.stringify({
+                version: 1,
+                packageId: 'scoring',
+                ...expected,
+                optimizer: official,
+                optimizerPath: join(root, 'verified/bin/wasm-opt'),
+            })
+        );
+        const archive = join(root, 'binaryen', official.release, official.host, official.archive);
+        mkdirSync(dirname(archive), { recursive: true });
+        writeFileSync(archive, 'foreign archive', { mode: 0o600 });
+        expect(() => readBuildReceipt(project, 'scoring', expected)).toThrow('archive checksum mismatch');
+    });
+});
 
 describe('Binaryen build provenance', () => {
     it('covers every package route without shell-interpolated arguments', () => {
