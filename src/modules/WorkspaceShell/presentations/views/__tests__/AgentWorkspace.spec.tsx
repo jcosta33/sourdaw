@@ -726,6 +726,27 @@ describe('AgentWorkspace', () => {
             ).toEqual(['Stop if the project revision changes', 'Stop if a render fails']);
         });
 
+        it('renders a repeated stopping condition once per occurrence without a duplicate-key warning', () => {
+            agentRunControlsMock.list.mockReturnValue([projection()]);
+            setRuns([
+                plannedRun({
+                    stoppingConditions: ['Stop if a render fails', 'Stop if a render fails'],
+                    audible: { status: 'not-claimed', reason: 'No render' },
+                }),
+            ]);
+            const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+            render(<AgentWorkspace />);
+
+            const list = screen.getByRole('list', { name: 'Stopping conditions' });
+            const sameKeyWarnings = consoleError.mock.calls.filter((call) =>
+                call.some((part) => typeof part === 'string' && part.includes('same key'))
+            );
+            consoleError.mockRestore();
+            expect(within(list).getAllByText('Stop if a render fails')).toHaveLength(2);
+            expect(sameKeyWarnings).toEqual([]);
+        });
+
         it('renders no stopping-conditions list or placeholder when the plan has none', () => {
             agentRunControlsMock.list.mockReturnValue([projection()]);
             setRuns([plannedRun({ stoppingConditions: [], audible: { status: 'not-claimed', reason: 'No render' } })]);

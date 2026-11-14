@@ -123,8 +123,8 @@ export const AgentPlanSection = ({ plan, tracks }: AgentPlanSectionProps): React
             {renderTextList('Risks', plan.risks)}
             {plan.stoppingConditions.length === 0 ? null : (
                 <ul aria-label="Stopping conditions" className="list-inside list-disc text-xs text-foreground">
-                    {plan.stoppingConditions.map((condition) => (
-                        <li key={condition}>{condition}</li>
+                    {plan.stoppingConditions.map((condition, index) => (
+                        <li key={`${String(index)}-${condition}`}>{condition}</li>
                     ))}
                 </ul>
             )}
