@@ -1513,12 +1513,47 @@ describe('no sample data reaches a hosted provider', () => {
             named: withTargetField(project, { samples: [0.25] }),
             typed: withTargetField(project, { levels: channel }),
             encoded: withTargetField(project, { levels: 'A'.repeat(512) }),
+            commaText: withTargetField(project, { note: `Levels were ${samples.slice(0, 8).join(',')} in dB.` }),
+            spacedText: withTargetField(project, { note: `Levels ${samples.slice(0, 8).join(' ')} in dB` }),
+            numericStrings: withTargetField(project, { levels: samples.slice(0, 8).map(String) }),
+            siblingArrays: withTargetField(project, { levels: [samples.slice(0, 4), samples.slice(4, 8)] }),
+            keyedChannels: withTargetField(project, {
+                levels: Object.fromEntries(samples.slice(0, 8).map((sample, index) => [`ch${String(index)}`, sample])),
+            }),
+            wrappedBase64: withTargetField(project, { levels: `${'A'.repeat(76)}\n`.repeat(4) }),
         };
 
         for (const [carrier, receipt] of Object.entries(poisoned)) {
             const bodies = await buildWireBodies(historyOf(receipt));
             expect({ carrier, flagged: containsSampleData(bodies[dialect]) }).toEqual({ carrier, flagged: true });
         }
+    });
+
+    // Red when the detector flags a figure list, prose or token that carries no sample series.
+    it.each([
+        ['a seven-number list', 'Levels 1, 2, 3, 4, 5, 6, 7 in dB'],
+        ['a seven-element array of numeric strings', ['1', '2', '3', '4', '5', '6', '7']],
+        [
+            'prose with a tempo, bar numbers and dB figures',
+            'At 120 bpm the chorus runs bars 17 to 24, about -6.5 dB under the verse.',
+        ],
+        ['a 255-character base64-looking token', 'A'.repeat(255)],
+        ['a 255-character base64 run wrapped at 76 characters', `${'A'.repeat(76)}\n`.repeat(3) + 'A'.repeat(27)],
+        [
+            'seven numbers across two sibling arrays',
+            {
+                levels: [
+                    [1, 2, 3, 4],
+                    [5, 6, 7],
+                ],
+            },
+        ],
+        [
+            'a band map beside other fields',
+            { bands: { low: 1, mid: 2 }, label: 'Drums', gain: 3, pan: 4, tempo: 5, bars: 6, depth: 7 },
+        ],
+    ])('does not flag %s', (_name, body) => {
+        expect(containsSampleData(body)).toBe(false);
     });
 
     // Red when the entry check stops rejecting a metric whose value is a series.
