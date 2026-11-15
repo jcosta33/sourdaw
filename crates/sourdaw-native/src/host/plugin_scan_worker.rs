@@ -676,6 +676,20 @@ fn parent_probe() -> Box<dyn Fn() -> bool + Send> {
     // thread; the watchdog thread is its only user.
     unsafe impl Send for ParentHandle {}
 
+    impl ParentHandle {
+        /// A method rather than a field read in the closure: edition 2021
+        /// closures capture the fields they name, and the bare `HANDLE`
+        /// field is not `Send` the way this wrapper is.
+        fn wait_outcome(&self) -> ParentWaitOutcome {
+            // SAFETY: the handle stays open for the life of the process.
+            match unsafe { WaitForSingleObject(self.0, 0) } {
+                WAIT_OBJECT_0 => ParentWaitOutcome::Exited,
+                WAIT_TIMEOUT => ParentWaitOutcome::Running,
+                _ => ParentWaitOutcome::Failed,
+            }
+        }
+    }
+
     let Some(pid) = declared_parent_pid() else {
         return Box::new(|| true);
     };
@@ -693,15 +707,7 @@ fn parent_probe() -> Box<dyn Fn() -> bool + Send> {
         }
     };
     let parent = ParentHandle(handle);
-    Box::new(move || {
-        // SAFETY: the handle stays open for the life of the process.
-        let outcome = match unsafe { WaitForSingleObject(parent.0, 0) } {
-            WAIT_OBJECT_0 => ParentWaitOutcome::Exited,
-            WAIT_TIMEOUT => ParentWaitOutcome::Running,
-            _ => ParentWaitOutcome::Failed,
-        };
-        parent_alive_from(ParentObservation::Waited(outcome))
-    })
+    Box::new(move || parent_alive_from(ParentObservation::Waited(parent.wait_outcome())))
 }
 
 #[cfg(not(any(unix, windows)))]
