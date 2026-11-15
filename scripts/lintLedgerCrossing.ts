@@ -129,16 +129,39 @@ function indexKeyedJson(index: BindingIndex, name: string, side: string, text: s
     }
 }
 
-function indexOxlintOverrides(index: BindingIndex, name: string, side: string, text: string): void {
+/** An oxlint rule value that disables the rule: `"off"`/`"allow"`/`0`, bare or leading a `[severity, options]` array. */
+function isOxlintSeverityOff(value: unknown): boolean {
+    const severity = Array.isArray(value) ? value[0] : value;
+    return severity === 'off' || severity === 'allow' || severity === 0;
+}
+
+/**
+ * One entry per (file, rule, value) so a rule added to an override does not disturb the entries
+ * already bound to its files. Entries whose rule is enforcing are also recorded in `enforcing`.
+ */
+function indexOxlintOverrides(
+    index: BindingIndex,
+    enforcing: BindingIndex,
+    name: string,
+    side: string,
+    text: string
+): void {
     const parsed = parseLedgerJson(name, side, text);
     const overrides = isRecord(parsed) && Array.isArray(parsed['overrides']) ? parsed['overrides'] : [];
     for (const override of overrides) {
-        if (!isRecord(override) || !Array.isArray(override['files'])) {
+        if (!isRecord(override) || !Array.isArray(override['files']) || !isRecord(override['rules'])) {
             continue;
         }
         for (const file of override['files']) {
-            if (typeof file === 'string') {
-                addBinding(index, file, `${name}=${canonicalJson(override['rules'])}`);
+            if (typeof file !== 'string') {
+                continue;
+            }
+            for (const [rule, value] of Object.entries(override['rules'])) {
+                const binding = `${name}:${JSON.stringify(rule)}=${canonicalJson(value)}`;
+                addBinding(index, file, binding);
+                if (!isOxlintSeverityOff(value)) {
+                    addBinding(enforcing, file, binding);
+                }
             }
         }
     }
@@ -157,28 +180,41 @@ function indexModuleList(index: BindingIndex, name: string, text: string): void 
     }
 }
 
-function bindingIndex(tree: LedgerTree, side: string): BindingIndex {
-    const index: BindingIndex = new Map();
+type LedgerBindings = {
+    entries: BindingIndex;
+    /** The oxlint entries that enforce a rule; every other ledger records none. */
+    enforcing: BindingIndex;
+};
+
+function bindingIndex(tree: LedgerTree, side: string): LedgerBindings {
+    const entries: BindingIndex = new Map();
+    const enforcing: BindingIndex = new Map();
     for (const [name, text] of Object.entries(tree)) {
         if (name === '.oxlintrc.json') {
-            indexOxlintOverrides(index, name, side, text);
+            indexOxlintOverrides(entries, enforcing, name, side, text);
         } else if (name.endsWith('.json')) {
-            indexKeyedJson(index, name, side, text);
+            indexKeyedJson(entries, name, side, text);
         } else {
-            indexModuleList(index, name, text);
+            indexModuleList(entries, name, text);
         }
     }
-    return index;
+    return { entries, enforcing };
 }
 
 /**
- * Paths for which one side lost a binding entry the merge base held, with no file edit needed. An
- * entry the side only adds can relax or newly bind a path but never turns a green pair red.
+ * Paths a side touches in the ledgers with no file edit: it lost an entry the merge base held (a
+ * baseline removed or a figure changed), or it added an enforcing oxlint entry the base lacked,
+ * which tightens a file the other side measured under the relaxed rule. Any other added entry only
+ * relaxes or newly binds a path and never turns a green pair red.
  */
-function rebound(base: BindingIndex, side: BindingIndex): string[] {
-    return [...base]
-        .filter(([path, entries]) => [...entries].some((entry) => side.get(path)?.has(entry) !== true))
+function rebound(base: LedgerBindings, side: LedgerBindings): string[] {
+    const lost = [...base.entries]
+        .filter(([path, entries]) => [...entries].some((entry) => side.entries.get(path)?.has(entry) !== true))
         .map(([path]) => path);
+    const tightened = [...side.enforcing]
+        .filter(([path, entries]) => [...entries].some((entry) => base.entries.get(path)?.has(entry) !== true))
+        .map(([path]) => path);
+    return [...lost, ...tightened];
 }
 
 /**

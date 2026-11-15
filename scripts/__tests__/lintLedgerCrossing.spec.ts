@@ -210,6 +210,53 @@ describe('lint ledger crossing decision', () => {
         expect(lintLedgerCrossingPaths(['src/x.ts'], [], { base, main: base, head: added })).toEqual([]);
     });
 
+    const oxlintRules = (...overrides: Array<{ files: string[]; rules: Record<string, unknown> }>): LedgerTree => ({
+        [OXC]: JSON.stringify({ overrides }),
+    });
+    const fOff = { files: ['./src/f.ts'], rules: { 'no-var': 'off' } };
+
+    it('crosses when main adds an enforcing override for a path the pull request edits, and the mirror', () => {
+        const base = oxlintRules(fOff);
+        const added = oxlintRules(fOff, { files: ['./src/f.ts'], rules: { 'no-var': 'error' } });
+        expect(lintLedgerCrossingPaths([], ['src/f.ts'], { base, main: added, head: base })).toEqual(['src/f.ts']);
+        expect(lintLedgerCrossingPaths(['src/f.ts'], [], { base, main: base, head: added })).toEqual(['src/f.ts']);
+    });
+
+    it('does not cross when main adds an off rule to an override listing a path the pull request edits, and the mirror', () => {
+        const aOff = { files: ['./src/a.ts'], rules: { 'no-var': 'off' } };
+        const base = oxlintRules(aOff);
+        const relaxed = oxlintRules({ ...aOff, rules: { ...aOff.rules, 'some-rule': 'off' } });
+        expect(lintLedgerCrossingPaths([], ['src/a.ts'], { base, main: relaxed, head: base })).toEqual([]);
+        expect(lintLedgerCrossingPaths(['src/a.ts'], [], { base, main: base, head: relaxed })).toEqual([]);
+    });
+
+    it('crosses when main adds a warn rule to an override listing a path the pull request edits, and the mirror', () => {
+        const base = oxlintRules(fOff);
+        const warned = oxlintRules({ ...fOff, rules: { ...fOff.rules, 'some-rule': 'warn' } });
+        expect(lintLedgerCrossingPaths([], ['src/f.ts'], { base, main: warned, head: base })).toEqual(['src/f.ts']);
+        expect(lintLedgerCrossingPaths(['src/f.ts'], [], { base, main: base, head: warned })).toEqual(['src/f.ts']);
+    });
+
+    it('crosses when an existing rule changes from off to error, and the mirror', () => {
+        const base = oxlintRules(fOff);
+        const tightened = oxlintRules({ ...fOff, rules: { 'no-var': 'error' } });
+        expect(lintLedgerCrossingPaths([], ['src/f.ts'], { base, main: tightened, head: base })).toEqual(['src/f.ts']);
+        expect(lintLedgerCrossingPaths(['src/f.ts'], [], { base, main: base, head: tightened })).toEqual(['src/f.ts']);
+    });
+
+    it.each([0, ['off'], ['off', { option: true }], 'allow'])('treats the oxlint severity %j as off', (severity) => {
+        const base = oxlintRules(fOff);
+        const relaxed = oxlintRules({ ...fOff, rules: { ...fOff.rules, 'some-rule': severity } });
+        expect(lintLedgerCrossingPaths([], ['src/f.ts'], { base, main: relaxed, head: base })).toEqual([]);
+        expect(lintLedgerCrossingPaths(['src/f.ts'], [], { base, main: base, head: relaxed })).toEqual([]);
+    });
+
+    it.each([2, ['error', { option: true }]])('treats the oxlint severity %j as enforcing', (severity) => {
+        const base = oxlintRules(fOff);
+        const enforced = oxlintRules({ ...fOff, rules: { ...fOff.rules, 'some-rule': severity } });
+        expect(lintLedgerCrossingPaths([], ['src/f.ts'], { base, main: enforced, head: base })).toEqual(['src/f.ts']);
+    });
+
     it.each([SUP, OXC, CEIL])('fails closed when %s does not parse', (name) => {
         const good = { [name]: '{}' };
         const bad = { [name]: '{ not json' };
