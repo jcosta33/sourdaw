@@ -392,6 +392,15 @@ describe('production Oxlint public-plugin migration', () => {
     });
 
     it('reuses canonical moved settings in cofix mode without changing retained or parser scopes', () => {
+        const targets: Array<'app' | 'spec' | 'script' | 'tool' | 'server' | 'e2e' | 'declaration'> = [
+            'app',
+            'spec',
+            'script',
+            'tool',
+            'server',
+            'e2e',
+            'declaration',
+        ];
         const query = `
             import { ESLint } from 'eslint';
             const eslint = new ESLint();
@@ -431,22 +440,33 @@ describe('production Oxlint public-plugin migration', () => {
             if (!isRecord(configs)) {
                 throw new TypeError('ESLint did not return configuration snapshots');
             }
-            return Object.fromEntries(
-                Object.entries(configs).map(([target, config]) => {
-                    if (!isRecord(config) || !isRecord(config.rules)) {
-                        throw new TypeError(`ESLint returned an invalid configuration snapshot for ${target}`);
-                    }
-                    return [
-                        target,
-                        {
-                            rules: config.rules,
-                            project: config.project,
-                            react: config.react,
-                            legacy: config.legacy,
-                        },
-                    ];
-                })
-            );
+            if (
+                Object.keys(configs).length !== targets.length ||
+                targets.some((target) => !Object.hasOwn(configs, target))
+            ) {
+                throw new TypeError('ESLint did not return exactly the required configuration snapshot targets');
+            }
+            const snapshot = (target: string) => {
+                const config = configs[target];
+                if (!isRecord(config) || !isRecord(config.rules)) {
+                    throw new TypeError(`ESLint returned an invalid configuration snapshot for ${target}`);
+                }
+                return {
+                    rules: config.rules,
+                    project: config.project,
+                    react: config.react,
+                    legacy: config.legacy,
+                };
+            };
+            return {
+                app: snapshot('app'),
+                spec: snapshot('spec'),
+                script: snapshot('script'),
+                tool: snapshot('tool'),
+                server: snapshot('server'),
+                e2e: snapshot('e2e'),
+                declaration: snapshot('declaration'),
+            };
         };
         const check = inspect(false);
         const fix = inspect(true);
@@ -465,7 +485,7 @@ describe('production Oxlint public-plugin migration', () => {
         if (!Array.isArray(commentSetting)) {
             throw new TypeError('The canonical comment rule has no options');
         }
-        for (const target of ['app', 'spec', 'script', 'tool', 'server', 'e2e', 'declaration']) {
+        for (const target of targets) {
             for (const mode of [check, fix]) {
                 expect(mode[target].legacy, target).toEqual(['jsx-a11y-x', 'promise', 'react-hooks']);
                 const legacyActive = Object.entries(mode[target].rules).filter(([name, setting]) => {
