@@ -33,10 +33,12 @@ import {
     linuxFilePorts,
     parseLinuxFileSnapshot,
     parseLinuxStartTicks,
+} from '../resourceGuard';
+import {
     startTimeExcuseSupervisor,
     storageRecoveryPorts,
     storageIdentityState,
-} from '../resourceGuard';
+} from '../resourceGuardStorageProcessProof';
 import { areTransientProofReasons } from '../resourceGuardProofReasons';
 import {
     createGuardStorage,
