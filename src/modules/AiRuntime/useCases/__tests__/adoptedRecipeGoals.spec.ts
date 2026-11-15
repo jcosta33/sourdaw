@@ -4,6 +4,7 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
+import { removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import {
@@ -128,10 +129,14 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    // The engine keeps live strips for the process, so a bus one case committed on would break the next.
+    for (const trackId of ['bus-a', 'bus-b', 'bus-empty', BGV_ID]) {
+        removeTrackStrip(trackId);
+    }
     tearDownVibeRunFixture();
 });
 
-function suggest(recipeId: string, targetId = VOCAL_ID) {
+function suggest(recipeId: string, targetId = VOCAL_ID, recipeRole = 'vocal') {
     const messageId = `answer-${recipeId}-${targetId}`;
     appendChatMessage({
         id: messageId,
@@ -145,7 +150,7 @@ function suggest(recipeId: string, targetId = VOCAL_ID) {
             recipeTitle: recipeId,
             targetId,
             targetName: targetId,
-            recipeRole: 'vocal',
+            recipeRole,
             roleSource: 'argument',
         },
     });
@@ -184,6 +189,31 @@ function addBackingVocals(): void {
                     ...bgv,
                     clips: (vocal?.clips ?? []).map((clip) => ({ ...clip, id: `${BGV_ID}-clip`, trackId: BGV_ID })),
                 },
+            ],
+        });
+    });
+}
+
+function routeSourcesToBuses(): void {
+    landProjectEdit(() => {
+        const state = trackStore.value;
+        if (state === null) {
+            throw new TypeError('Expected project tracks');
+        }
+        const bus = (id: string, name: string) => createTrack({ id, name, kind: 'bus' });
+        trackStore.set({
+            ...state,
+            tracks: [
+                ...state.tracks.map((track) =>
+                    track.id === VOCAL_ID
+                        ? { ...track, outputId: 'bus-a' }
+                        : track.id === 'track-bass'
+                          ? { ...track, outputId: 'bus-b' }
+                          : track
+                ),
+                bus('bus-a', 'Bus A'),
+                bus('bus-b', 'Bus B'),
+                bus('bus-empty', 'Empty Bus'),
             ],
         });
     });
@@ -285,5 +315,54 @@ describe("an adopted recipe proposal is verified against the recipe's own expect
         expect(authority).toMatchObject({ origin: 'answer-suggestion', kind: 'literal', goals: [] });
         expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
         expect(getAgentApprovalView({ confirmationId: card.id })?.metricGoals.status).toBe('not-required');
+    });
+    it("repeats the last commit's authored bus recipe on another bus with goals on that bus and a measured preview", async () => {
+        routeSourcesToBuses();
+        await suggest('bus-warm', 'bus-a', 'bus');
+        await expect(confirmPendingChatActions({ confirmationId: onlyCard().id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        await sendChatMessage('do the same to the Bus B');
+
+        const card = onlyCard();
+        const state = goalState(card);
+        const [authority] = state.authorities;
+        expect(authority).toMatchObject({ origin: 'last-commit-recipe', kind: 'perceptual' });
+        expect(authority?.goals.map((goal) => goal.targetIds)).toEqual([['bus-b'], ['bus-b']]);
+        expect(state.proofs.length).toBeGreaterThan(0);
+        expect(getAgentApprovalView({ confirmationId: card.id })?.metricGoals.status).toBe('verified');
+    });
+
+    it('gives no goals to an adopted recipe on an audio track with no clips while other tracks hold clips', async () => {
+        landProjectEdit(() => {
+            const state = trackStore.value;
+            if (state === null) {
+                throw new TypeError('Expected project tracks');
+            }
+            trackStore.set({
+                ...state,
+                tracks: [...state.tracks, createTrack({ id: BGV_ID, name: 'BGV', kind: 'audio' })],
+            });
+        });
+
+        await suggest('vocal-warm', BGV_ID);
+
+        const [authority] = goalState(onlyCard()).authorities;
+        expect(authority).toMatchObject({ origin: 'answer-suggestion', kind: 'literal', goals: [] });
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+    it('keeps the goals of an audible bus recipe and drops only those of a bus no audible track feeds in one batch', async () => {
+        routeSourcesToBuses();
+        await suggest('bus-warm', 'bus-a', 'bus');
+        await expect(confirmPendingChatActions({ confirmationId: onlyCard().id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        await sendChatMessage('do the same to the Bus B and Empty Bus');
+
+        const [authority] = goalState(onlyCard()).authorities;
+        expect(authority).toMatchObject({ kind: 'perceptual' });
+        expect([...new Set(authority?.goals.flatMap((goal) => goal.targetIds))]).toEqual(['bus-b']);
     });
 });

@@ -9,6 +9,7 @@ import { compileRecipeBatchSteps, readRecipeStepId } from './compileRecipeBatchS
 import { type MetricGoal, type MetricGoalState, type MetricRequestAuthority } from './metricGoalContractTypes';
 import { readArrangementRange } from './readArrangementRange';
 import { readAuthoredRecipeGoals } from './readAuthoredRecipeGoals';
+import { readTargetCarriesAudio } from './readTargetCarriesAudio';
 
 type RecipeCompilation = Extract<RetainedCompilation, { kind: 'recipe' }>;
 
@@ -23,7 +24,7 @@ type AdoptedRecipeMetricAuthority =
  * measurable expectation of each authored recipe adopted, on its own track, over the whole
  * arrangement, judged across that recipe's own step, so the preview measures what each recipe
  * promises and Confirm waits for it. A factory preset states none, since choosing a named preset is a
- * literal choice with nothing to predict, and a track that holds no clip has nothing to measure; a
+ * literal choice with nothing to predict, and a target carrying no audio, an empty track or a bus no audible track feeds, has nothing to measure; a
  * batch with no goal left stays literal, and a mixed batch carries the goals of its authored pairs
  * alone. Every recipe still forms a step, so the last prefix ends at the whole batch.
  */
@@ -46,7 +47,7 @@ export function compileAdoptedRecipeMetricAuthority(input: {
         if (recipe === undefined) {
             return { status: 'refused', reason: `recipe ${adopted.recipeId} is no longer in the catalog` };
         }
-        const holdsAudio = context.tracks.some((track) => track.id === adopted.targetId && track.clips.length > 0);
+        const holdsAudio = readTargetCarriesAudio(context, adopted.targetId);
         if (recipe.origin !== undefined || !holdsAudio) {
             continue;
         }
