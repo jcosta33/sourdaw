@@ -455,16 +455,15 @@ function planBoardMoves(issue: number, gh: Gh): BoardMove[] {
         parseGraphqlResponse(gh(issueBoardsArgs(issue)), `issue #${issue} board membership`),
         issue
     );
-    return boards.map((board) => ({
-        board,
-        ids:
-            board.statusName === IN_PROGRESS_OPTION_NAME
-                ? undefined
-                : statusFieldIds(
-                      parseJson<unknown>(gh(fieldListArgs(board)), `board "${board.projectTitle}" fields`),
-                      board
-                  ),
-    }));
+    return boards.map((board) => ({ board, ids: inProgressIds(board, gh) }));
+}
+
+/** The live Status field and In progress option ids, or none for a board already In progress. */
+function inProgressIds(board: ClaimBoardItem, gh: Gh): BoardMove['ids'] {
+    if (board.statusName === IN_PROGRESS_OPTION_NAME) {
+        return undefined;
+    }
+    return statusFieldIds(parseJson<unknown>(gh(fieldListArgs(board)), `board "${board.projectTitle}" fields`), board);
 }
 
 /**
