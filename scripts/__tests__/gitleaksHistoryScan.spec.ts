@@ -199,20 +199,24 @@ exec "$HISTORY_TEST_CURL" --connect-to "github.com:443:127.0.0.1:$HISTORY_TEST_P
             scanTarget,
         };
     } finally {
-        if (deadline) clearTimeout(deadline);
+        if (deadline) {
+            clearTimeout(deadline);
+        }
         if (child?.pid !== undefined && child.exitCode === null && child.signalCode === null) {
             process.kill(-child.pid, 'SIGKILL');
             await completion;
         }
-        for (const socket of sockets) socket.destroy();
+        for (const socket of sockets) {
+            socket.destroy();
+        }
         if (server?.listening) {
-            await new Promise<void>((resolveClose, reject) => {
+            await new Promise<void>((_resolve, reject) => {
                 server?.close((error) => {
                     if (error) {
                         reject(error);
                         return;
                     }
-                    resolveClose();
+                    _resolve();
                 });
             });
         }
