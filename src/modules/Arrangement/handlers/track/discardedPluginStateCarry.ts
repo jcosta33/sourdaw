@@ -12,7 +12,9 @@ const discardedPluginStatesByUndoEntryId = new Map<string, DiscardedPluginStates
 /** Drops the records of entries history no longer holds, so an undone creation never redone does not keep its chunks. */
 function pruneRecordsOutsideHistory(): void {
     const history = undoHistoryStore.value;
-    const liveEntryIds = new Set([...(history?.past ?? []), ...(history?.future ?? [])].map((entry) => entry.id));
+    const past = history?.past ?? [];
+    const future = history?.future ?? [];
+    const liveEntryIds = new Set([...past, ...future].map((entry) => entry.id));
     for (const undoEntryId of discardedPluginStatesByUndoEntryId.keys()) {
         if (!liveEntryIds.has(undoEntryId)) {
             discardedPluginStatesByUndoEntryId.delete(undoEntryId);
@@ -78,10 +80,11 @@ export function overlayDiscardedPluginStates(
     for (const restore of restores) {
         const track = decodeTrackSnapshot(restore.trackSnapshot);
         if (track) {
-            restore.trackSnapshot = {
+            const overlaid: Track = {
                 ...track,
                 devices: track.devices.map((device) => withRecordedState(device, states)),
             };
+            restore.trackSnapshot = overlaid;
         }
     }
 }
