@@ -58,3 +58,8 @@ export function recordAppliedAutomationWrite(deviceId: string, parameterId: stri
     lastWriteSequence += 1;
     byParameter.set(parameterId, lastWriteSequence);
 }
+
+/** The sequence of the most recent scheduler write to any parameter; every later write numbers above it. */
+export function readLastAutomationWriteSequence(): number {
+    return lastWriteSequence;
+}

@@ -15,7 +15,13 @@ type UseFollowedAutomationValueInput = {
      * The parameter's own store object. Its identity changes when an edit or a re-read of the host
      * patches this parameter, which ends the hold on the last followed value.
      */
-    settledToken: unknown;
+    settledToken: object | undefined;
+    /**
+     * The scheduler write sequence that was latest when the re-read that produced a store object was
+     * issued. A re-read issued before the write that delivered the followed value says nothing about
+     * that write; an object absent from the map (an edit's patch) always counts as news.
+     */
+    readIssuedAt: WeakMap<object, number>;
 };
 
 type FollowedValue = {
@@ -42,6 +48,7 @@ type FollowedAutomationValue = {
  * sequence), even if the number is unchanged, because the plugin then holds that value whatever the
  * store says (Play start, seek, loop wrap). With no new write, any newer fact about the parameter (its
  * `settledToken` changing) wins over the held value, so a flat lane segment cannot overwrite a user edit.
+ * The exception is a re-read of the host issued before that write (`readIssuedAt`): the write supersedes it.
  */
 export const useFollowedAutomationValue = ({
     deviceId,
@@ -49,6 +56,7 @@ export const useFollowedAutomationValue = ({
     automated,
     element,
     settledToken,
+    readIssuedAt,
 }: UseFollowedAutomationValueInput): FollowedAutomationValue => {
     const isPlaying = useStoreSelector(transportStore, (state) => state?.isPlaying ?? false);
     const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined');
@@ -87,6 +95,10 @@ export const useFollowedAutomationValue = ({
                     // No new scheduler write since the last adoption: a newer store object is a fact the
                     // lane has not contradicted, so it keeps winning over the held value.
                     if (previous.settledAtRead !== settledToken) {
+                        const issuedAt = settledToken === undefined ? undefined : readIssuedAt.get(settledToken);
+                        if (issuedAt !== undefined && issuedAt < writeSequence) {
+                            return { ...previous, settledAtRead: settledToken };
+                        }
                         return previous;
                     }
                     if (previous.value === value) {
@@ -114,7 +126,7 @@ export const useFollowedAutomationValue = ({
         };
         rafId = requestAnimationFrame(loop);
         return () => cancelAnimationFrame(rafId);
-    }, [active, deviceId, parameterId, settledToken]);
+    }, [active, deviceId, parameterId, settledToken, readIssuedAt]);
 
     if (followed === null || followed.settledAtRead !== settledToken) {
         return { value: null, following: false };

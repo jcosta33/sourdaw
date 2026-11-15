@@ -1,4 +1,8 @@
-import { appliedAutomationBases, appliedAutomationWriteSequences } from './appliedAutomationBases';
+import {
+    appliedAutomationBases,
+    appliedAutomationWriteSequences,
+    readLastAutomationWriteSequence,
+} from './appliedAutomationBases';
 
 type AppliedAutomationValue = {
     value: number;
@@ -20,4 +24,12 @@ export function readAppliedAutomationValue(deviceId: string, parameterId: string
         value,
         writeSequence: appliedAutomationWriteSequences.get(deviceId)?.get(parameterId) ?? 0,
     };
+}
+
+/**
+ * The sequence of the scheduler's latest write to any device parameter. Every later write numbers above
+ * it, so a caller that records it when it starts slow work can tell whether a write came after.
+ */
+export function readLatestAutomationWriteSequence(): number {
+    return readLastAutomationWriteSequence();
 }

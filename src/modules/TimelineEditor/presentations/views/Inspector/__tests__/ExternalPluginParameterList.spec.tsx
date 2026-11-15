@@ -40,6 +40,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
     return {
         ...actual,
+        readLatestAutomationWriteSequence: () => mockWriteSequence,
         readAppliedAutomationValue: (deviceId: string, parameterId: string) => {
             const value = mockReadApplied(deviceId, parameterId);
             return value === undefined ? undefined : { value, writeSequence: mockWriteSequence };
@@ -721,6 +722,74 @@ describe('ExternalPluginParameterList', () => {
             });
             expect(slider).toHaveValue('0.8');
             expect(slider).toHaveAttribute('aria-valuetext', '0.800');
+        });
+
+        it('keeps the value the scheduler delivered on the next play over a re-read issued before that write', async () => {
+            let releaseRead: () => void = () => {};
+            const readGate = new Promise<void>((resolve) => {
+                releaseRead = resolve;
+            });
+            mockRefresh.mockImplementation(async () => {
+                await readGate;
+                moveStoreValue(7, 'Decay', 0.9);
+            });
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            setPlaying(false);
+            expect(mockRefresh).toHaveBeenCalledTimes(1);
+
+            // Play again before the host answers: the scheduler rewrites the flat lane's 0.5.
+            mockWriteSequence = 2;
+            setPlaying(true);
+            runFrame(50);
+            await act(async () => {
+                releaseRead();
+                await readGate;
+            });
+            runFrame(100);
+            runFrame(150);
+
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+            expect(slider).toHaveValue('0.5');
+            expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
+        });
+
+        it('shows a user edit made after a stale re-read landed during play', async () => {
+            let releaseRead: () => void = () => {};
+            const readGate = new Promise<void>((resolve) => {
+                releaseRead = resolve;
+            });
+            mockRefresh.mockImplementation(async () => {
+                await readGate;
+                moveStoreValue(7, 'Decay', 0.9);
+            });
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            setPlaying(false);
+            mockWriteSequence = 2;
+            setPlaying(true);
+            runFrame(50);
+            await act(async () => {
+                releaseRead();
+                await readGate;
+            });
+            runFrame(100);
+
+            act(() => {
+                moveStoreValue(7, 'Decay', 0.3);
+            });
+            runFrame(150);
+            runFrame(200);
+
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+            expect(slider).toHaveValue('0.3');
+            expect(slider).toHaveAttribute('aria-valuetext', '0.300');
         });
 
         it('never publishes a followed value as a plugin edit', () => {
