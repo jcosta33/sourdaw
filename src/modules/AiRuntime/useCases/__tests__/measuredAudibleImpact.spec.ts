@@ -754,50 +754,167 @@ describe('the plan’s audible claim', () => {
         });
     });
 
-    it('drops a run whose measured claim is malformed, as it does for other malformed plan fields', () => {
-        proposeCard({ gain: 0.7, preview: previewOf([vocalTarget()]) });
-        const stored: unknown = structuredClone(readAgentRunState());
-        const corrupt = (mutate: (impact: Record<string, unknown>) => void): number => {
-            const copy = structuredClone(stored) as {
+    describe('a stored claim the reader refuses', () => {
+        type StoredClaim = Record<string, unknown> & { metrics: Record<string, unknown>[] };
+        type Corruption = {
+            rule: string;
+            base: 'measured' | 'not-claimed';
+            edit: (claim: StoredClaim) => void;
+        };
+        const firstMetric = (claim: StoredClaim): Record<string, unknown> => {
+            const [metric] = claim.metrics;
+            if (metric === undefined) {
+                throw new Error('Expected a metric to corrupt.');
+            }
+            return metric;
+        };
+        const metricRange = (claim: StoredClaim): Record<string, unknown> =>
+            firstMetric(claim).range as Record<string, unknown>;
+        const metricFigure = (claim: StoredClaim, key: 'baseline' | 'preview' | 'delta'): Record<string, unknown> =>
+            firstMetric(claim)[key] as Record<string, unknown>;
+
+        const CORRUPTIONS: Corruption[] = [
+            {
+                rule: 'a not-claimed claim with no reason',
+                base: 'not-claimed',
+                edit: (claim) => {
+                    delete claim.reason;
+                },
+            },
+            {
+                rule: 'a not-claimed claim with an empty reason',
+                base: 'not-claimed',
+                edit: (claim) => {
+                    claim.reason = '';
+                },
+            },
+            {
+                rule: 'a status that is neither measured nor not-claimed',
+                base: 'measured',
+                edit: (claim) => {
+                    claim.status = 'unknown';
+                },
+            },
+            {
+                rule: 'a measured claim with no revision',
+                base: 'measured',
+                edit: (claim) => {
+                    delete claim.revision;
+                },
+            },
+            {
+                rule: 'a measured claim with an empty revision',
+                base: 'measured',
+                edit: (claim) => {
+                    claim.revision = '';
+                },
+            },
+            {
+                rule: 'an empty batchContentHash',
+                base: 'measured',
+                edit: (claim) => {
+                    claim.batchContentHash = '';
+                },
+            },
+            {
+                rule: 'metrics that are not an array',
+                base: 'measured',
+                edit: (claim) => {
+                    claim.metrics = 'not-a-list' as unknown as Record<string, unknown>[];
+                },
+            },
+            {
+                rule: 'a targetKind outside master, track and bus',
+                base: 'measured',
+                edit: (claim) => {
+                    firstMetric(claim).targetKind = 'clip';
+                },
+            },
+            {
+                rule: 'an empty metricId',
+                base: 'measured',
+                edit: (claim) => {
+                    firstMetric(claim).metricId = '';
+                },
+            },
+            {
+                rule: 'a figure with an empty unit',
+                base: 'measured',
+                edit: (claim) => {
+                    metricFigure(claim, 'baseline').unit = '';
+                },
+            },
+            {
+                rule: 'a figure whose value is a string',
+                base: 'measured',
+                edit: (claim) => {
+                    metricFigure(claim, 'baseline').value = 'loud';
+                },
+            },
+            {
+                rule: 'a range whose startBeat is a string',
+                base: 'measured',
+                edit: (claim) => {
+                    metricRange(claim).startBeat = 'zero';
+                },
+            },
+            {
+                rule: 'a range whose endBeat is a string',
+                base: 'measured',
+                edit: (claim) => {
+                    metricRange(claim).endBeat = '4';
+                },
+            },
+            {
+                rule: 'a range sectionId that is a number',
+                base: 'measured',
+                edit: (claim) => {
+                    metricRange(claim).sectionId = 7;
+                },
+            },
+            {
+                rule: 'a range sectionId that is an empty string',
+                base: 'measured',
+                edit: (claim) => {
+                    metricRange(claim).sectionId = '';
+                },
+            },
+        ];
+
+        /** How many runs survive a reload of the stored state after `edit` rewrote its audible claim. */
+        function survivorsAfter(base: Corruption['base'], edit: (claim: StoredClaim) => void): number {
+            if (base === 'measured') {
+                proposeCard({ gain: 0.7, preview: previewOf([vocalTarget()]) });
+            } else {
+                proposeCard({ gain: 0.7 });
+            }
+            const copy = structuredClone(readAgentRunState()) as {
+                runs: { plan: { expectedImpact: { audible: StoredClaim } } }[];
+            };
+            for (const run of copy.runs) {
+                edit(run.plan.expectedImpact.audible);
+            }
+            return sanitizeAgentRunState(copy).runs.length;
+        }
+
+        it.each(['measured', 'not-claimed'] as const)('keeps a run whose %s claim is untouched', (base) => {
+            expect(survivorsAfter(base, () => undefined)).toBe(1);
+        });
+
+        it('drops a run whose plan carries another malformed field, the reference for the rows below', () => {
+            proposeCard({ gain: 0.7, preview: previewOf([vocalTarget()]) });
+            const copy = structuredClone(readAgentRunState()) as {
                 runs: { plan: { expectedImpact: Record<string, unknown> } }[];
             };
             for (const run of copy.runs) {
-                mutate(run.plan.expectedImpact);
+                run.plan.expectedImpact.project = 7;
             }
-            return sanitizeAgentRunState(copy).runs.length;
-        };
-        expect(corrupt(() => undefined)).toBe(1);
-        const reference = corrupt((impact) => {
-            impact.project = 7;
+            expect(sanitizeAgentRunState(copy).runs).toHaveLength(0);
         });
-        expect(reference).toBe(0);
-        expect(
-            corrupt((impact) => {
-                (impact.audible as { metrics: unknown }).metrics = 'not-a-list';
-            })
-        ).toBe(reference);
-        expect(
-            corrupt((impact) => {
-                const claim = impact.audible as { metrics: { baseline: { value: unknown } }[] };
-                claim.metrics[0]!.baseline.value = 'loud';
-            })
-        ).toBe(reference);
-        expect(
-            corrupt((impact) => {
-                (impact.audible as { batchContentHash: unknown }).batchContentHash = '';
-            })
-        ).toBe(reference);
-        for (const badRange of [
-            { startBeat: 'zero', endBeat: 4, sectionId: null },
-            { startBeat: 0, endBeat: '4', sectionId: null },
-        ]) {
-            expect(
-                corrupt((impact) => {
-                    const claim = impact.audible as { metrics: { range: unknown }[] };
-                    claim.metrics[0]!.range = badRange;
-                })
-            ).toBe(reference);
-        }
+
+        it.each(CORRUPTIONS.map((row) => [row.rule, row] as const))('drops the run for %s', (_rule, row) => {
+            expect(survivorsAfter(row.base, row.edit)).toBe(0);
+        });
     });
 
     it('drops a run whose persisted measured claim carries more metrics than the limit', () => {
