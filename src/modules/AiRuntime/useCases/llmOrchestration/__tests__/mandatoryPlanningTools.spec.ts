@@ -512,6 +512,47 @@ describe('mandatory planning tools', () => {
             expect(advertised.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
         });
 
+        // Red when an offered brief compiler is cut, or a mandatory tool is cut for it, beside every workflow
+        // action tool, or the budget admits a tool outside the mandatory set there.
+        it('keeps every mandatory tool and the brief compiler within the budget beside every workflow action tool', async () => {
+            const prompt = 'add an eq device to the vocals';
+            const catalog = prepareCreativeInterpretationCatalog({
+                prompt,
+                context: getProjectContext(),
+                projectRevision: 'revision-1',
+                offersBrief: true,
+            });
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+            await generateToolPlanningOutcome(
+                'system',
+                prompt,
+                productionToolSchemas(catalog, getProjectContext(), undefined, prompt, true),
+                undefined,
+                prompt,
+                undefined,
+                undefined,
+                undefined,
+                AUTO_TOOL_CHOICE,
+                undefined,
+                prompt,
+                { keptCapabilityIds: ['drum-routing'] }
+            );
+            const advertised = namesOf((mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[]);
+            const mandatory = new Set<string>([
+                WORKFLOW_CAPABILITY_TOOL_NAME,
+                ...MANDATORY_PLANNING_TOOL_NAMES,
+                AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+                CREATIVE_INTERPRETATION_TOOL_NAME,
+                BRIEF_COMPILE_TOOL_NAME,
+                ...WORKFLOW_ACTION_TOOL_NAMES,
+            ]);
+
+            expect(new Set(advertised)).toEqual(mandatory);
+            expect(advertised).toHaveLength(WEBLLM_TOOL_BUDGET);
+        });
+
         it('does not advertise analysis.compareReference with a reference loaded, even ahead of the free slot', async () => {
             agentReferenceStore.set({
                 reference: {
