@@ -6,6 +6,7 @@ import {
     configureAutomergeStoragePort,
     createAutomergeStoragePreview,
     flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoStore, undoHistoryStore } from '#/modules/Command/stores';
 import { clearUndoHistory, undo, redo, executeAppAction } from '#/modules/Command/useCases';
@@ -612,7 +613,13 @@ describe('relinkClipAudioSource', () => {
         expect(root.tracks).toBeUndefined();
         const rawBefore = JSON.stringify(root);
 
-        const { validation } = captureRelinkAudioSourceCommitValidation(targets);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            captureRelinkAudioSourceCommitValidation(targets)
+        );
+        if (transaction.status === 'threw') {
+            throw transaction.error;
+        }
+        const { validation } = transaction.value;
         try {
             expect(validation.beforeCommit()).not.toBeNull();
             const beforeMutation = validation.beforeMutation;
@@ -625,6 +632,7 @@ describe('relinkClipAudioSource', () => {
             expect(undoHistoryStore.value?.past).toEqual([]);
         } finally {
             validation.release();
+            transaction.abort();
         }
     });
 
