@@ -593,13 +593,9 @@ test('failed initial App graph recovers in the same child document and preserves
         await audioTrack().click({ button: 'right', position: { x: 8, y: 8 } });
         const chooser = page.waitForEvent('filechooser');
         await frame.getByRole('menuitem', { name: new RegExp(`Import ${kind}`, 'i') }).click();
-        await (
-            await chooser
-        ).setFiles(
-            kind === 'Audio'
-                ? { name: 'startup-source.wav', mimeType: 'audio/wav', buffer: sineWav() }
-                : { name: 'startup-source.mid', mimeType: 'audio/midi', buffer: midiFile() }
-        );
+        const audioSource = { name: 'startup-source.wav', mimeType: 'audio/wav', buffer: sineWav() };
+        const midiSource = { name: 'startup-source.mid', mimeType: 'audio/midi', buffer: midiFile() };
+        await (await chooser).setFiles(kind === 'Audio' ? audioSource : midiSource);
         await expect
             .poll(
                 async () =>

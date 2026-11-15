@@ -182,7 +182,7 @@ test('source-onset read crosses the real chat planner and Worker with numeric pa
             );
             const reference = `c${String(trackIndex)}.${String(clipIndex)}`;
             const index = view.scopes.findIndex((row) => row[0] === 'clips' && row[1].includes(reference));
-            const scopeId = ids[index];
+            const scopeId = index < 0 ? undefined : ids.at(index);
             expect(view.scopes[index]?.[1]).toEqual([reference]);
             if (scopeId === undefined) {
                 throw new Error('Imported source clip was not advertised.');

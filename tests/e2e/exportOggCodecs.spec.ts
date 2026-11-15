@@ -25,6 +25,13 @@ const oneFrameOpusPackets = {
     ],
 };
 
+async function createCodecEncoder(codec: 'ogg' | 'opus', channels: number) {
+    if (codec === 'ogg') {
+        return ogg({ sampleRate: 48000, channels, quality: 4 });
+    }
+    return opus({ sampleRate: 48000, channels, bitrate: 128, application: 'audio', complexity: 10 });
+}
+
 function oggPacketDigests(bytes: Uint8Array) {
     const digests: string[] = [];
     let offset = 0,
@@ -351,17 +358,8 @@ test('the actual codec wrappers preserve short and nominal mono/stereo duration 
                         0.2 * Math.sin((2 * Math.PI * (channel ? 733 : 431) * frame) / 48000 + 0.2 + channel * 0.37)
                 )
             );
-            for (const codec of ['ogg', 'opus']) {
-                const encoder =
-                    codec === 'ogg'
-                        ? await ogg({ sampleRate: 48000, channels, quality: 4 })
-                        : await opus({
-                              sampleRate: 48000,
-                              channels,
-                              bitrate: 128,
-                              application: 'audio',
-                              complexity: 10,
-                          });
+            for (const codec of ['ogg', 'opus'] as const) {
+                const encoder = await createCodecEncoder(codec, channels);
                 let bytes: Uint8Array;
                 try {
                     const chunks: Uint8Array[] = [];
@@ -495,7 +493,7 @@ for (const codec of ['ogg', 'opus']) {
                                         observation.maxOutputBytes,
                                         message.bytes.byteLength
                                     );
-                                } else if (message.kind === 'done' || message.kind === 'error') {
+                                } else {
                                     if (observation.awaitingAck) {
                                         proof.violations.push('request completed before sink acknowledgement');
                                     }

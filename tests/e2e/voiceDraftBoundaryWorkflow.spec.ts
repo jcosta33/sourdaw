@@ -38,7 +38,8 @@ async function readTruth(page: Page) {
         }
         const tracks = trackStore.value?.tracks ?? [];
         const snapshot = (value: unknown): unknown => {
-            const serialized = JSON.stringify(value);
+            // JSON.stringify returns undefined for undefined and functions, which its declared type omits.
+            const serialized = JSON.stringify(value) as string | undefined;
             if (serialized === undefined) {
                 return undefined;
             }
@@ -91,7 +92,7 @@ test('native transcript stays a draft until explicit submission and confirmation
             queueTerminal: (sessionId, payload) => {
                 // Native events already queued retain their original callback
                 // even when the application unsubscribes before later delivery.
-                const callbacks = [...(terminals.get(sessionId) ?? [])];
+                const callbacks = Array.from(terminals.get(sessionId) ?? []);
                 if (callbacks.length === 0) {
                     throw new Error('No native terminal subscription to capture');
                 }

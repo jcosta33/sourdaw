@@ -161,7 +161,8 @@ test.describe('AI chat over an admitted loopback provider', () => {
             await provider.close();
             let range: { startBeat: number; endBeat: number } | undefined;
             let figures:
-                Record<string, { status: string; value: number; unit: string; confidence: string }> | undefined;
+                | Partial<Record<string, { status: string; value: number; unit: string; confidence: string }>>
+                | undefined;
             const measuredProvider = await startScriptedToolProvider((request, turn) => {
                 if (turn === 0) {
                     const call = createLoopbackAnswerIntake(request, {
@@ -288,6 +289,9 @@ test.describe('AI chat over an admitted loopback provider', () => {
                 ['truePeak', 'true peak'],
             ] as const) {
                 const value = figures[metric];
+                if (value === undefined) {
+                    throw new Error(`The provider received no measured ${label}.`);
+                }
                 expect(Number.isFinite(value.value)).toBe(true);
                 const rounded = Math.round(value.value * 100) / 100;
                 await expect(conversation).toContainText(

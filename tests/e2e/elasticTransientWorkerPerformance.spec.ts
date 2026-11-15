@@ -216,7 +216,7 @@ async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string):
                     let timeout: ReturnType<typeof setTimeout> | undefined;
                     const ended = await Promise.race([
                         completion,
-                        new Promise<never>((_, reject) => {
+                        new Promise<never>((_resolve, reject) => {
                             timeout = setTimeout(() => reject(new Error('Elastic trace completion timed out')), 5000);
                         }),
                     ]).finally(() => clearTimeout(timeout));
@@ -669,7 +669,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect((await sourceState(page)).pcm).toEqual(before.pcm);
 
     const canvas = panel.getByTestId('elastic-waveform-canvas');
-    const firstMarker = after.projected[0];
+    const firstMarker = after.projected.at(0);
     if (!firstMarker) {
         throw new Error('Expected first detected onset');
     }

@@ -548,11 +548,10 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                 if (!state || state.loading) {
                     return 'pending';
                 }
-                return state.initialized
-                    ? state.projectId === projectId
-                        ? 'saved-active'
-                        : 'wrong-active'
-                    : 'launch-ready';
+                if (!state.initialized) {
+                    return 'launch-ready';
+                }
+                return state.projectId === projectId ? 'saved-active' : 'wrong-active';
             }, saved.projectId);
         await expect.poll(mode, { timeout: 30_000 }).toMatch(/^(saved-active|launch-ready)$/);
         if ((await mode()) === 'launch-ready') {
@@ -724,10 +723,8 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                 const results = [];
                 for (const route of ['top', 'saved'] as const) {
                     const data = JSON.parse(raw) as import('../../src/modules/Project/models/ProjectData').ProjectData;
-                    const lanes =
-                        route === 'top'
-                            ? data.takeLanes
-                            : data.arrangements?.find((item) => item.id === data.activeArrangementId)?.takeLanes;
+                    const activeArrangement = data.arrangements?.find((item) => item.id === data.activeArrangementId);
+                    const lanes = route === 'top' ? data.takeLanes : activeArrangement?.takeLanes;
                     const take = lanes?.lanes.flatMap((lane) => lane.takes).find((item) => item.midiSource);
                     if (!take?.midiSource) {
                         throw new Error(`Frozen source absent in ${route}`);

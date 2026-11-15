@@ -161,7 +161,7 @@ async function settledReopenMode(
     const launch = page.getByLabel('Sourdaw — start a project');
     const recent = page.getByRole('button', { name: `Open recent project ${projectName}` });
     const launchActive = await launch.evaluateAll((elements) => {
-        const element = elements[0];
+        const element = elements.at(0);
         if (!element) {
             return false;
         }
@@ -1238,7 +1238,7 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
             throw new Error('Comp regions disappeared after the UI drag');
         }
         for (const [index, expected] of compPlan.entries()) {
-            const region = comped?.regions[index];
+            const region = comped.regions.at(index);
             expect(region?.takeId).toBe(expected.take.id);
             expect(region?.startBeat).toBeCloseTo(expected.start, 1);
             expect(region?.endBeat).toBeCloseTo(expected.end, 1);
@@ -1360,7 +1360,7 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
         expect(persisted?.clipId).toBe(captured.clipId);
         expect(persisted?.bufferId).toBe(captured.bufferId);
         expect(persisted?.takes.map((take) => take.id)).toEqual(captured.takes.map((take) => take.id));
-        expect(persisted?.regions).toEqual(comped?.regions);
+        expect(persisted?.regions).toEqual(comped.regions);
         expect(persisted?.takes).toEqual(comped.takes);
         expect(await recordingOwners(reopened, trackId)).toEqual(savedOwners);
         expect(await pcmFingerprint(reopened, captured.bufferId)).toEqual(originalPcm);
@@ -1393,7 +1393,7 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
                     clipId: captured.clipId,
                     bufferId: captured.bufferId,
                     passes,
-                    regions: comped?.regions,
+                    regions: comped.regions,
                     micTimecodeCorrelation: bestMicTimecodeMatch(envelope),
                     normalExportScore,
                     stretchExportScore,
@@ -1971,10 +1971,16 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
             await expect
                 .poll(async () => {
                     const owner = await automaticPunchProjectOwner(target);
+                    const clipKey = (clipId: unknown): string => {
+                        if (typeof clipId === 'string') {
+                            return clipId;
+                        }
+                        return JSON.stringify(clipId);
+                    };
                     const family = (entries: typeof owner.past) =>
                         entries
                             .map((entry) => entry.family)
-                            .sort((left, right) => String(left.clipId).localeCompare(String(right.clipId)));
+                            .sort((left, right) => clipKey(left.clipId).localeCompare(clipKey(right.clipId)));
                     const recordings = owner.past.filter((entry) => entry.family.type === 'commitRecording');
                     return {
                         owned: owner.projectId === owner.mirrorProjectId && owner.witness === owner.mirrorWitness,

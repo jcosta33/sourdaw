@@ -18,17 +18,12 @@ type Deferred<TValue> = {
 };
 
 function createDeferred<TValue>(): Deferred<TValue> {
-    let resolve!: (value: TValue) => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<TValue>((resolvePromise, rejectPromise) => {
-        resolve = resolvePromise;
-        reject = rejectPromise;
-    });
+    const { promise, resolve, reject } = Promise.withResolvers<TValue>();
     void promise.catch(() => undefined);
     return { promise, resolve, reject };
 }
 
-type BindingRegistration = { dispose: () => Promise<void> | void };
+type BindingRegistration = { dispose: () => Promise<void> };
 
 export type FilePickerCapture = {
     path: string;
@@ -79,9 +74,10 @@ function installPicker({
         return;
     }
     const prior = Reflect.get(window, priorPickerKey) as PriorPicker | undefined;
-    const descriptor = prior
-        ? prior.descriptor
-        : (Object.getOwnPropertyDescriptor(window, 'showSaveFilePicker') ?? null);
+    let descriptor = prior?.descriptor ?? null;
+    if (prior === undefined) {
+        descriptor = Object.getOwnPropertyDescriptor(window, 'showSaveFilePicker') ?? null;
+    }
     Object.defineProperty(window, priorPickerKey, { configurable: true, value: { descriptor, owner } });
     const callBinding = (name: string, ...args: unknown[]): Promise<unknown> => {
         const binding = Reflect.get(window, name);
@@ -167,6 +163,15 @@ export async function installFilePickerCapture(
         writeBinding: `${WRITE_BINDING}_${suffix}`,
         closeBinding: `${CLOSE_BINDING}_${suffix}`,
         abortBinding: `${ABORT_BINDING}_${suffix}`,
+    };
+
+    // The bindings close the file while installation awaits, so the close guard reads the flag here.
+    const closeFileOnce = async (): Promise<void> => {
+        if (fileClosed) {
+            return;
+        }
+        await file.close();
+        fileClosed = true;
     };
 
     const failCapture = (error: unknown): void => {
@@ -308,9 +313,7 @@ export async function installFilePickerCapture(
         }
     } catch (error) {
         failCapture(error);
-        if (!fileClosed) {
-            await file.close();
-        }
+        await closeFileOnce();
         await retire();
         await Promise.all(registrations.map((registration) => registration.dispose()));
         throw error;
@@ -357,10 +360,7 @@ export async function installFilePickerCapture(
             disposed = true;
             await retire();
             await Promise.all(registrations.map((registration) => registration.dispose()));
-            if (!fileClosed) {
-                await file.close();
-                fileClosed = true;
-            }
+            await closeFileOnce();
         },
     };
 }

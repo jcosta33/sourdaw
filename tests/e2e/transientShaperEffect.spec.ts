@@ -39,7 +39,7 @@ async function sourceState(page: Page) {
             await import('/src/modules/CrdtDocument/useCases/index.ts');
         settlePendingProjectWritesAndCaptureRevision();
         const tracks = (trackStore.value?.tracks ?? []).filter((track) => track.kind === 'audio');
-        const clip = tracks[0]?.clips[0];
+        const clip = tracks.at(0)?.clips.at(0);
         const source = clip?.audioBufferId ? audioBufferCache.get(clip.audioBufferId) : undefined;
         if (!source) {
             throw new Error('Actual source PCM is unavailable');
@@ -282,9 +282,10 @@ for (const recipe of [
                     throw new Error('No current project identity to reopen');
                 }
                 const saved = await saveProject();
-                const loaded = saved
-                    ? await loadRecentProject(getProjectSnapshotKey(createdAt), { requireDurable: true })
-                    : 'not-attempted';
+                if (!saved) {
+                    return { saved, loaded: 'not-attempted' as const };
+                }
+                const loaded = await loadRecentProject(getProjectSnapshotKey(createdAt), { requireDurable: true });
                 return { saved, loaded };
             });
             await testInfo.attach('save-load-result', {
@@ -542,7 +543,7 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
         strategy.node.outputNode.connect(offline.destination);
         offlineSource.start();
         const printed = await offline.startRendering();
-        strategy.destroy?.();
+        strategy.destroy();
         const f = Math.fround;
         const coefficient = (seconds: number) => f(1 - f(Math.exp(f(-1 / f(f(seconds) * rate)))));
         const fast = coefficient(0.0005),
@@ -551,6 +552,28 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
             oracleError = 0;
         const differences: Array<{ channel: number; frame: number; live: number; offline: number; expected: number }> =
             [];
+        // The shipped attack and sustain gain schedules, as piecewise-constant frame ranges.
+        const attackGainAt = (frame: number): number => {
+            if (frame < 61) {
+                return 1;
+            }
+            if (frame < 257) {
+                return 1.5;
+            }
+            if (frame < 4097) {
+                return 2;
+            }
+            return 0.75;
+        };
+        const sustainGainAt = (frame: number): number => {
+            if (frame < 129) {
+                return 1;
+            }
+            if (frame < 4097) {
+                return 0.25;
+            }
+            return 0.5;
+        };
         for (let channel = 0; channel < 2; channel++) {
             let fastEnv = 0,
                 slowEnv = 0;
@@ -567,8 +590,8 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
                 if (Math.abs(slowEnv) < 1.1754943508222875e-38) {
                     slowEnv = 0;
                 }
-                const a = frame < 61 ? 1 : frame < 257 ? 1.5 : frame < 4097 ? 2 : 0.75;
-                const b = frame < 129 ? 1 : frame < 4097 ? 0.25 : 0.5;
+                const a = attackGainAt(frame);
+                const b = sustainGainAt(frame);
                 const expected = f(sample * (f(fastEnv - slowEnv) > 0.01 ? a : b));
                 if (Math.abs(rendered[frame] - offlineSamples[frame]) > 1e-7 && differences.length < 12) {
                     differences.push({
@@ -828,13 +851,11 @@ test('real worklet export failure and terminal reset exhaustion cannot report su
         try {
             window.AudioWorkletNode = class extends Original {
                 constructor(context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions) {
-                    super(
-                        context,
-                        name,
-                        name === 'transient-shaper-processor'
-                            ? { ...options, processorOptions: { ...options?.processorOptions, wasmModule: minimal } }
-                            : options
-                    );
+                    const minimalModuleOptions = {
+                        ...options,
+                        processorOptions: { ...options?.processorOptions, wasmModule: minimal },
+                    };
+                    super(context, name, name === 'transient-shaper-processor' ? minimalModuleOptions : options);
                 }
             };
             try {
@@ -948,15 +969,13 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
             const samples = new Float32Array(256);
             async function observe(expected: number, name: string) {
                 const deadline = performance.now() + 5000;
-                while (true) {
-                    analyser.getFloatTimeDomainData(samples);
-                    if (samples.every((sample) => Math.abs(sample - expected) < 0.00001)) {
-                        break;
-                    }
+                analyser.getFloatTimeDomainData(samples);
+                while (!samples.every((sample) => Math.abs(sample - expected) < 0.00001)) {
                     if (performance.now() > deadline) {
                         throw new Error(`${name} never rendered expected audio`);
                     }
                     await new Promise(requestAnimationFrame);
+                    analyser.getFloatTimeDomainData(samples);
                 }
                 performance.mark(`${name}-start`);
                 const start = context.currentTime;
@@ -974,9 +993,10 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
             });
             const node = await creating;
             let moduleReady = false;
-            void node.ready.then(() => {
+            void (async () => {
+                await node.ready;
                 moduleReady = true;
-            });
+            })();
             const pending = moduleReady;
             await node.ready;
             node.setParam('attackGain', 0.5);
@@ -991,7 +1011,7 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
             return {
                 sampleRate: context.sampleRate,
                 pending,
-                activeAudioObserved: Math.abs((active.first ?? 0) - 0.25) < 0.00001,
+                activeAudioObserved: Math.abs(active.first - 0.25) < 0.00001,
                 dry,
                 active,
                 failed,

@@ -66,7 +66,7 @@ function comparisonIntake(request: ScriptedToolRequest, drumsId: string, bassId:
                 if (typeof reference !== 'number' || !Number.isSafeInteger(reference)) {
                     throw new TypeError('Expected a published metric expectation index.');
                 }
-                const expectation = expectations[reference];
+                const expectation = reference < 0 ? undefined : expectations.at(reference);
                 if (expectation === undefined) {
                     return false;
                 }
@@ -78,7 +78,7 @@ function comparisonIntake(request: ScriptedToolRequest, drumsId: string, bassId:
                 );
             })
         );
-    const objectiveId = objectiveIds[objectiveIndex];
+    const objectiveId = objectiveIndex < 0 ? undefined : objectiveIds.at(objectiveIndex);
     if (objectiveIndex < 0 || objectiveId === undefined) {
         throw new Error('Missing the actual published loudness-match policy objective.');
     }
@@ -282,11 +282,9 @@ async function installOutputProbe(page: Page, confirmationId: string) {
         const proof = raw.proofs.at(-1);
         const target = proof?.preview.targets.find((entry) => entry.targetKind === 'track');
         const baseline = rendering.getAgentMeasurementArtifact(
-            target?.audition?.baseline?.artifact?.contentAddress ?? ''
+            target?.audition?.baseline.artifact.contentAddress ?? ''
         );
-        const proposal = rendering.getAgentMeasurementArtifact(
-            target?.audition?.preview?.artifact?.contentAddress ?? ''
-        );
+        const proposal = rendering.getAgentMeasurementArtifact(target?.audition?.preview.artifact.contentAddress ?? '');
         if (baseline === null || proposal === null) {
             throw new Error('The current exact retained pair is unavailable.');
         }
@@ -362,12 +360,12 @@ async function installOutputProbe(page: Page, confirmationId: string) {
                 });
                 source.start = new Proxy(source.start, {
                     apply(start, node, startArgs) {
-                        const side =
-                            source.buffer === baseline.buffer
-                                ? 'baseline'
-                                : source.buffer === proposal.buffer
-                                  ? 'preview'
-                                  : null;
+                        let side: 'baseline' | 'preview' | null = null;
+                        if (source.buffer === baseline.buffer) {
+                            side = 'baseline';
+                        } else if (source.buffer === proposal.buffer) {
+                            side = 'preview';
+                        }
                         if (side !== null) {
                             starts.push({
                                 side,
@@ -829,8 +827,11 @@ test('auditions one genuine retained measured request before Confirm without pro
             .poll(() =>
                 page.evaluate(() => {
                     const probe = window.measuredAuditionProbe;
-                    const frame = probe?.resumeFrame();
-                    if (probe === undefined || frame == null) {
+                    if (probe === undefined) {
+                        return 0;
+                    }
+                    const frame = probe.resumeFrame();
+                    if (frame === null) {
                         return 0;
                     }
                     return probe.blocks.filter((block) => block.frame >= frame).length;

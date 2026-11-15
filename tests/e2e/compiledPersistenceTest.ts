@@ -13,13 +13,13 @@ const root = realpathSync(fileURLToPath(new URL('../../', import.meta.url)));
 // Other selected specs never request this fixture and never pay for a build.
 export const test = base.extend<object, { compiledPersistenceOrigin: string }>({
     compiledPersistenceOrigin: [
-        async ({}, use, workerInfo) => {
+        async ({}, provide, workerInfo) => {
             if (isBuiltE2eShardRun(process.env)) {
                 const origin = workerInfo.project.use.baseURL;
                 if (typeof origin !== 'string') {
                     throw new TypeError('Built persistence shard requires its configured preview origin');
                 }
-                await use(origin);
+                await provide(origin);
                 return;
             }
             const server = await startCompiledPersistenceServer(root);
@@ -28,14 +28,14 @@ export const test = base.extend<object, { compiledPersistenceOrigin: string }>({
                     ...workerInfo.config,
                     projects: [{ ...workerInfo.project, use: { ...workerInfo.project.use, baseURL: server.origin } }],
                 });
-                await use(server.origin);
+                await provide(server.origin);
             } finally {
                 await server.close();
             }
         },
         { scope: 'worker', timeout: 600_000 },
     ],
-    baseURL: async ({ compiledPersistenceOrigin }, use) => {
-        await use(compiledPersistenceOrigin);
+    baseURL: async ({ compiledPersistenceOrigin }, provide) => {
+        await provide(compiledPersistenceOrigin);
     },
 });

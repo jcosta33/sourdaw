@@ -432,7 +432,7 @@ async function toolbarState(frame: Frame): Promise<ToolbarState> {
             }
         }
         const nameOf = (element: HTMLElement): string =>
-            element.getAttribute('aria-label') ?? element.textContent?.trim() ?? element.tagName;
+            element.getAttribute('aria-label') ?? element.textContent.trim();
         const active = document.activeElement;
         return {
             activeName: active instanceof HTMLElement ? nameOf(active) : null,
@@ -834,7 +834,7 @@ function noteById(snapshot: ProjectSnapshot, id: string): Note {
 
 function latestNote(snapshot: ProjectSnapshot): Note {
     const notes = Object.values(snapshot.midi.notesByClipId).flat();
-    const note = notes[notes.length - 1];
+    const note = notes.at(-1);
     if (note === undefined) {
         throw new Error('Exported project contains no MIDI notes');
     }

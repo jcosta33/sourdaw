@@ -51,7 +51,7 @@ async function withinBudget(operation: Promise<void>, milliseconds: number): Pro
     try {
         await Promise.race([
             operation,
-            new Promise<never>((_, reject) => {
+            new Promise<never>((_resolve, reject) => {
                 timer = setTimeout(
                     () =>
                         reject(new Error('Native input/observation deadline exceeded; pending input is not cancelled')),
@@ -104,7 +104,7 @@ function validateNativeInputOrder(inputs: TransportEvent[]): void {
                 'Native Stop input was untrusted, missing, moved, hidden, covered or targeted another element'
             );
         }
-        if (`${event.event}:${event.phase}` !== order[index]) {
+        if (`${event.event ?? ''}:${event.phase ?? ''}` !== order[index]) {
             throw new Error('Native Stop events arrived out of order or more than once');
         }
     }
@@ -301,7 +301,7 @@ export function observeProductionTransportState(original: Element, options: { ma
     function observeState() {
         const play = controls.querySelector('[data-testid="transport-play"]');
         const state = {
-            status: controls.querySelector('[role="status"]')?.textContent?.trim() ?? '',
+            status: controls.querySelector('[role="status"]')?.textContent.trim() ?? '',
             play: play?.getAttribute('aria-label') ?? '',
             active: play?.getAttribute('data-active') ?? '',
         };
@@ -375,7 +375,7 @@ export function installProductionTransportCapture(
         const target = event.composedPath().find((node) => node instanceof HTMLButtonElement);
         const play = controls.querySelector('[data-testid="transport-play"]');
         const state = {
-            status: controls.querySelector('[role="status"]')?.textContent?.trim() ?? '',
+            status: controls.querySelector('[role="status"]')?.textContent.trim() ?? '',
             play: play?.getAttribute('aria-label') ?? '',
             active: play?.getAttribute('data-active') ?? '',
         };
@@ -435,10 +435,8 @@ async function measureStop(page: Page, stop: Locator) {
     if (count !== 1) {
         assertTransportAdmission(count, false, false);
     }
+    // Locator.elementHandle waits for the element and throws when it never attaches.
     const element = await stop.elementHandle();
-    if (!element) {
-        throw new Error('Production Stop disappeared before measured admission');
-    }
     try {
         assertTransportAdmission(count, await element.isVisible(), await element.isEnabled());
         expect(await element.getAttribute('data-testid')).toBe('transport-stop');
@@ -464,10 +462,14 @@ async function measureStop(page: Page, stop: Locator) {
     }
 }
 
+function asError(error: unknown): Error {
+    return error instanceof Error ? error : new Error('A non-Error value was thrown', { cause: error });
+}
+
 function createObservationJournal(page: Page, marker: string) {
     const events: TransportEvent[] = [];
     let changed: (() => void) | undefined;
-    let failure: unknown;
+    let failure: Error | undefined;
     const assertHealthy = () => {
         if (failure) {
             throw failure;
@@ -480,7 +482,7 @@ function createObservationJournal(page: Page, marker: string) {
         try {
             events.push(parseProductionTransportEvent(message.text().slice(marker.length)));
         } catch (error) {
-            failure = error;
+            failure = asError(error);
         }
         changed?.();
     };
@@ -500,7 +502,7 @@ function createObservationJournal(page: Page, marker: string) {
                                     resolve();
                                 }
                             } catch (error) {
-                                reject(error);
+                                reject(asError(error));
                             }
                         };
                         changed();

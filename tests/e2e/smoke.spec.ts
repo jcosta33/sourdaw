@@ -380,7 +380,7 @@ async function expectCommittedProjectFolder(page: Page, folderPath: string): Pro
         if (folders.length !== 1) {
             throw new Error('Expected one saved project folder');
         }
-        const folder = folders[0];
+        const folder = folders.at(0);
         if (!folder) {
             throw new Error('The saved project folder is unavailable');
         }
@@ -726,8 +726,8 @@ test.describe('Crust runtime lifecycle', () => {
                 if (message.type() !== 'error') {
                     return;
                 }
-                pendingErrors.push(
-                    Promise.all(
+                const describeConsoleError = async (): Promise<void> => {
+                    const parts = await Promise.all(
                         message.args().map((arg) =>
                             arg.evaluate((value: unknown) => {
                                 const seen = new WeakSet<object>();
@@ -750,10 +750,10 @@ test.describe('Crust runtime lifecycle', () => {
                                 return describe(value);
                             })
                         )
-                    ).then((parts) => {
-                        errors.push(`${message.text()} ${parts.join(' ')}`);
-                    })
-                );
+                    );
+                    errors.push(`${message.text()} ${parts.join(' ')}`);
+                };
+                pendingErrors.push(describeConsoleError());
             });
             const assertOffline = await openNewProject(page);
             await addMidiTrack(page);

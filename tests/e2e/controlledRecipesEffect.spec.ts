@@ -95,8 +95,7 @@ test('every controlled compressor expansion lowers measured dynamic range throug
             if (initial === null) {
                 throw new Error('builtin-compressor has no initial values');
             }
-            const parameters: Record<string, number> = { ...initial };
-            for (const item of expansion.commands.slice(1)) {
+            const writes = expansion.commands.slice(1).map((item) => {
                 if (
                     item.operation !== 'setDeviceParameter' ||
                     typeof item.arguments.paramId !== 'string' ||
@@ -104,8 +103,9 @@ test('every controlled compressor expansion lowers measured dynamic range throug
                 ) {
                     throw new Error(`${entry.id}: not an ordinary parameter command`);
                 }
-                parameters[item.arguments.paramId] = item.arguments.value;
-            }
+                return [item.arguments.paramId, item.arguments.value] as const;
+            });
+            const parameters: Record<string, number> = { ...initial, ...Object.fromEntries(writes) };
             if (expansion.values.some((value) => value.source !== 'midpoint')) {
                 throw new Error(`${entry.id}: midpoint provenance lost`);
             }
@@ -449,9 +449,10 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
                 throw new Error('No project identity to reopen');
             }
             const saved = await saveProject();
-            const loaded = saved
-                ? await loadRecentProject(getProjectSnapshotKey(createdAt), { requireDurable: true })
-                : 'not-attempted';
+            if (!saved) {
+                return { saved, loaded: 'not-attempted' };
+            }
+            const loaded = await loadRecentProject(getProjectSnapshotKey(createdAt), { requireDurable: true });
             return { saved, loaded };
         });
         expect(persistence).toEqual({ saved: true, loaded: 'committed' });
