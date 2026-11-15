@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
-import { change, clone, free, from, getChanges, getHeads, load, save } from '@automerge/automerge';
+import { applyChanges, change, clone, free, from, getChanges, getHeads, save } from '@automerge/automerge';
 import { build, createLogger, createServer, loadConfigFromFile } from 'vite';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -232,7 +232,7 @@ describe('shipping prospective Worker public WASM assets', () => {
         );
 
         type Reply =
-            | { status: 'complete'; bytes: Uint8Array<ArrayBuffer>; heads: string[] }
+            | { status: 'complete'; changes: Uint8Array<ArrayBuffer>[]; heads: string[] }
             | { status: 'failed'; message: string };
         for (const origin of ['https://example.test/subdirectory/', 'app://sourdaw/']) {
             const postMessage = vi.fn<(reply: Reply, transfer?: ArrayBuffer[]) => void>();
@@ -305,7 +305,20 @@ describe('shipping prospective Worker public WASM assets', () => {
                 if (reply.status !== 'complete') {
                     throw new Error(reply.message);
                 }
-                const actual = load<{ slot: { count: number } }>(reply.bytes, { actor });
+                expect(reply.changes).toHaveLength(1);
+                for (const bytes of reply.changes) {
+                    expect(bytes).toBeInstanceOf(Uint8Array);
+                    expect(bytes.buffer).toBeInstanceOf(ArrayBuffer);
+                    expect(bytes.byteLength).toBeGreaterThan(0);
+                    expect(bytes.byteOffset).toBe(0);
+                    expect(bytes.byteLength).toBe(bytes.buffer.byteLength);
+                }
+                const transfer = postMessage.mock.calls[0]![1];
+                expect(transfer).toHaveLength(reply.changes.length);
+                for (const [index, bytes] of reply.changes.entries()) {
+                    expect(transfer?.[index]).toBe(bytes.buffer);
+                }
+                const [actual] = applyChanges(clone(original, { actor }), reply.changes);
                 try {
                     expect(actual.slot.count).toBe(1);
                     expect(getHeads(actual)).toEqual(reply.heads);
@@ -313,11 +326,12 @@ describe('shipping prospective Worker public WASM assets', () => {
                         draft.slot.count = 1;
                     });
                     try {
+                        expect(actual).toEqual(expected);
                         expect(getChanges(original, actual)).toEqual(getChanges(original, expected));
                     } finally {
                         free(expected);
                     }
-                    expect(postMessage.mock.calls[0]![1]).toEqual([reply.bytes.buffer]);
+                    expect(original.slot.count).toBe(0);
                 } finally {
                     free(actual);
                 }
