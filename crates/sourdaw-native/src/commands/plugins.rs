@@ -6875,8 +6875,17 @@ mod tests {
         );
     }
 
+    /// How long any step of a concurrent-load test may take before the test
+    /// fails rather than hangs.
+    const CONCURRENT_LOAD_DEADLINE: Duration = Duration::from_secs(30);
+
     /// A rescan double that tells the test it has started, holds until the
     /// test releases it, and then answers like [`recording_rescan`].
+    ///
+    /// The hold is bounded: a release that never comes — the test panicked
+    /// before sending it — ends at the deadline, and a dropped release (see
+    /// [`ReleaseOnDrop`]) ends it at once, so the double never parks its
+    /// thread for the life of the test process.
     fn held_rescan(
         log: &VettingLog,
         answer: Result<(), String>,
@@ -6885,14 +6894,61 @@ mod tests {
     ) -> impl PluginRescan {
         let answer_with = recording_rescan(log, answer);
         move |format: &str, path: &Path, plugin_id: &str, descriptor_id: &str| {
-            started
-                .send(())
-                .expect("the test should be waiting for the rescan to start");
-            release
-                .recv()
-                .expect("the test should release the held rescan");
+            // The test may already have given up and dropped its receiver.
+            let _ = started.send(());
+            let _ = release.recv_timeout(CONCURRENT_LOAD_DEADLINE);
             answer_with(format, path, plugin_id, descriptor_id)
         }
+    }
+
+    /// Releases a [`held_rescan`] when dropped, so a test that panics before
+    /// its explicit release still lets the held thread finish.
+    struct ReleaseOnDrop(std::sync::mpsc::Sender<()>);
+
+    impl ReleaseOnDrop {
+        fn release(&self) {
+            let _ = self.0.send(());
+        }
+    }
+
+    impl Drop for ReleaseOnDrop {
+        fn drop(&mut self) {
+            self.release();
+        }
+    }
+
+    fn join_before<T>(handle: std::thread::JoinHandle<T>, deadline: Instant, what: &str) -> T {
+        while !handle.is_finished() {
+            assert!(Instant::now() < deadline, "{what} did not finish in time");
+            std::thread::yield_now();
+        }
+        handle
+            .join()
+            .unwrap_or_else(|_| panic!("{what} should not panic"))
+    }
+
+    fn spawn_load(
+        state: &Arc<AppState>,
+        scan_policy: &PluginScanPolicy,
+        log: &VettingLog,
+        instance_id: &str,
+        rescan: impl PluginRescan,
+    ) -> std::thread::JoinHandle<Result<PluginInstance, String>> {
+        let state = Arc::clone(state);
+        let scan_policy = scan_policy.clone();
+        let log = Arc::clone(log);
+        let instance_id = instance_id.to_string();
+        std::thread::spawn(move || {
+            crate::block_on_test(load_plugin_with_backend(
+                PluginId("aaaa1111".to_string()),
+                PluginInstanceId(instance_id),
+                &NoWindowHost,
+                &state,
+                scan_policy,
+                rescan,
+                recording_construction(&log),
+            ))
+        })
     }
 
     /// Two loads of "aaaa1111" on two threads: the first one's rescan is held
@@ -6900,9 +6956,10 @@ mod tests {
     /// not timed — and only then released.
     ///
     /// The second load is handed a rescan double of its own, so a second
-    /// rescan would show in the log rather than hide.
+    /// rescan would show in the log rather than hide. Every wait is bounded
+    /// and the held rescan is released on every exit, panics included.
     fn load_twice_while_the_first_rescan_runs(
-        state: &AppState,
+        state: &Arc<AppState>,
         scan_policy: PluginScanPolicy,
         log: &VettingLog,
         answer: Result<(), String>,
@@ -6910,52 +6967,42 @@ mod tests {
         Result<PluginInstance, String>,
         Result<PluginInstance, String>,
     ) {
+        let deadline = Instant::now() + CONCURRENT_LOAD_DEADLINE;
         let (started_sender, started) = std::sync::mpsc::channel();
-        let (release, release_receiver) = std::sync::mpsc::channel();
-        let load = |instance_id: &str,
-                    rescan: Box<
-            dyn FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String> + Send,
-        >| {
-            crate::block_on_test(load_plugin_with_backend(
-                PluginId("aaaa1111".to_string()),
-                PluginInstanceId(instance_id.to_string()),
-                &NoWindowHost,
-                state,
-                scan_policy.clone(),
-                rescan,
-                recording_construction(log),
-            ))
-        };
-        let first_rescan = held_rescan(log, answer.clone(), started_sender, release_receiver);
-        let second_rescan = recording_rescan(log, answer);
+        let (release_sender, release_receiver) = std::sync::mpsc::channel();
+        let release = ReleaseOnDrop(release_sender);
 
-        std::thread::scope(|scope| {
-            let first = scope.spawn(|| load("first-concurrent-instance", Box::new(first_rescan)));
-            started
-                .recv_timeout(Duration::from_secs(10))
-                .expect("the first load's rescan should start");
-            let second =
-                scope.spawn(|| load("second-concurrent-instance", Box::new(second_rescan)));
+        let first = spawn_load(
+            state,
+            &scan_policy,
+            log,
+            "first-concurrent-instance",
+            held_rescan(log, answer.clone(), started_sender, release_receiver),
+        );
+        started
+            .recv_timeout(CONCURRENT_LOAD_DEADLINE)
+            .expect("the first load's rescan should start");
+        let second = spawn_load(
+            state,
+            &scan_policy,
+            log,
+            "second-concurrent-instance",
+            recording_rescan(log, answer),
+        );
 
-            let deadline = Instant::now() + Duration::from_secs(10);
-            while state.plugin_registry_store.rescan_waiters("aaaa1111") == 0
-                && !second.is_finished()
-            {
-                assert!(
-                    Instant::now() < deadline,
-                    "the second load neither waited on the rescan nor finished"
-                );
-                std::thread::yield_now();
-            }
-            release
-                .send(())
-                .expect("the held rescan should still be waiting for its release");
+        while state.plugin_registry_store.rescan_waiters("aaaa1111") == 0 && !second.is_finished() {
+            assert!(
+                Instant::now() < deadline,
+                "the second load neither waited on the rescan nor finished"
+            );
+            std::thread::yield_now();
+        }
+        release.release();
 
-            (
-                first.join().expect("the first load should not panic"),
-                second.join().expect("the second load should not panic"),
-            )
-        })
+        (
+            join_before(first, deadline, "the first load"),
+            join_before(second, deadline, "the second load"),
+        )
     }
 
     /// Two loads of one changed plugin at once — two devices of the same
@@ -6968,7 +7015,7 @@ mod tests {
     #[test]
     fn a_second_load_of_a_changed_plugin_waits_for_the_first_ones_rescan() {
         let plugins = LoadFixtureRoot::create("vetting-concurrent-changed");
-        let state = AppState::default();
+        let state = Arc::new(AppState::default());
         let published =
             plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
         std::fs::write(
@@ -6988,7 +7035,10 @@ mod tests {
     }
 
     /// The waiting load gets the refusal the first load's rescan recorded,
-    /// word for word, and starts no rescan of its own.
+    /// word for word, and starts no rescan of its own. The row is persisted,
+    /// as every scanned row is in production: a refused hit drops its stale
+    /// registry row, so the waiter re-resolves as a miss and reaches the
+    /// recorded refusal through the persisted last known location.
     ///
     /// Mutation this catches: the immediate busy refusal on
     /// `RescanClaim::InProgress`, which answers the second load with "already
@@ -6996,9 +7046,13 @@ mod tests {
     #[test]
     fn a_second_load_of_a_changed_plugin_gets_the_first_ones_refusal() {
         let plugins = LoadFixtureRoot::create("vetting-concurrent-refused");
-        let state = AppState::default();
+        let state = Arc::new(state_with_registry_file(&plugins.root));
         let published =
             plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        state.plugin_registry_store.persist(&key_scanned_plugins(
+            &published,
+            &fixture_fingerprints(&published),
+        ));
         std::fs::write(
             &published[0].path,
             "a plugin that no longer declares itself",
@@ -7044,7 +7098,7 @@ mod tests {
         fixture.persist("aaaa1111", &plugin_path);
         std::fs::write(&plugin_path, b"clap-bytes-version-2")
             .expect("the plugin should be updated in place");
-        let state = state_with_registry_file(&fixture.root);
+        let state = Arc::new(state_with_registry_file(&fixture.root));
         let log = vetting_log();
 
         let (first, second) =
