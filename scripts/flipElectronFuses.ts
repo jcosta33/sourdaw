@@ -107,6 +107,9 @@ export const resolvePackagedResourcesPath = (context: AfterPackContext): string 
     return join(context.appOutDir, 'resources');
 };
 
+// electron-builder cleans up the extracted distribution before afterExtract: macOS moves both
+// legal files into Electron.app/Contents/Resources, while other platforms retain them at appOutDir.
+// All platforms rename LICENSE to LICENSE.electron.txt during that cleanup.
 export const stageElectronLegalFiles = async (
     context: AfterPackContext,
     contract: ElectronRuntimeContract = ELECTRON_RUNTIME_CONTRACT
