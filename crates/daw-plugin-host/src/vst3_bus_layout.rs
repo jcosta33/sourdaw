@@ -134,14 +134,16 @@ pub unsafe fn negotiate_bus_layout(
     processor: &ComPtr<IAudioProcessor>,
     name: &str,
 ) -> Result<BusLayout, String> {
-    let inputs = declared_buses(component, BusDirections_::kInput as int32);
-    let outputs = declared_buses(component, BusDirections_::kOutput as int32);
+    let inputs = unsafe { declared_buses(component, BusDirections_::kInput as int32) };
+    let outputs = unsafe { declared_buses(component, BusDirections_::kOutput as int32) };
 
-    negotiate_main_pair(processor, &inputs, &outputs);
+    unsafe { negotiate_main_pair(processor, &inputs, &outputs) };
 
     let layout = BusLayout {
-        inputs: accepted_geometry(processor, &inputs, BusDirections_::kInput as int32),
-        outputs: accepted_geometry(processor, &outputs, BusDirections_::kOutput as int32),
+        inputs: unsafe { accepted_geometry(processor, &inputs, BusDirections_::kInput as int32) },
+        outputs: unsafe {
+            accepted_geometry(processor, &outputs, BusDirections_::kOutput as int32)
+        },
     };
 
     refuse_unfeedable_main_bus(&layout, name)?;
@@ -155,24 +157,23 @@ pub unsafe fn negotiate_bus_layout(
 /// # Safety
 /// `component` must be initialised and inactive.
 pub unsafe fn activate_main_audio_bus(component: &ComPtr<IComponent>, direction: int32) {
-    let buses = declared_buses(component, direction);
+    let buses = unsafe { declared_buses(component, direction) };
     let Some(index) = buses.iter().position(|bus| bus.is_main) else {
         return;
     };
-    component.activateBus(MediaTypes_::kAudio as int32, direction, index as int32, 1);
+    unsafe { component.activateBus(MediaTypes_::kAudio as int32, direction, index as int32, 1) };
 }
 
 unsafe fn declared_buses(component: &ComPtr<IComponent>, direction: int32) -> Vec<DeclaredBus> {
-    let count = component
-        .getBusCount(MediaTypes_::kAudio as int32, direction)
+    let count = unsafe { component.getBusCount(MediaTypes_::kAudio as int32, direction) }
         .clamp(0, MAX_AUDIO_BUSES);
 
     let mut buses: Vec<DeclaredBus> = (0..count)
         .map(|index| {
-            let mut info: BusInfo = std::mem::zeroed();
-            let described =
+            let mut info: BusInfo = unsafe { std::mem::zeroed() };
+            let described = unsafe {
                 component.getBusInfo(MediaTypes_::kAudio as int32, direction, index, &mut info)
-                    == kResultOk;
+            } == kResultOk;
             let channels = if described {
                 usize::try_from(info.channelCount).unwrap_or(0)
             } else {
@@ -182,7 +183,7 @@ unsafe fn declared_buses(component: &ComPtr<IComponent>, direction: int32) -> Ve
                 channels,
                 is_main: described && info.busType == BusTypes_::kMain as int32,
                 arrangement: declared_arrangement(
-                    processor_arrangement_of(component, direction, index),
+                    unsafe { processor_arrangement_of(component, direction, index) },
                     channels,
                 ),
             }
@@ -208,7 +209,7 @@ unsafe fn processor_arrangement_of(
 ) -> Option<SpeakerArrangement> {
     let processor = component.cast::<IAudioProcessor>()?;
     let mut arrangement: SpeakerArrangement = SpeakerArr::kEmpty;
-    (processor.getBusArrangement(direction, index, &mut arrangement) == kResultOk)
+    (unsafe { processor.getBusArrangement(direction, index, &mut arrangement) } == kResultOk)
         .then_some(arrangement)
 }
 
@@ -250,12 +251,14 @@ unsafe fn negotiate_main_pair(
         let mut requested_outputs =
             requested_arrangements(outputs, output_widths.get(attempt).copied());
 
-        let accepted = processor.setBusArrangements(
-            requested_inputs.as_mut_ptr(),
-            requested_inputs.len() as int32,
-            requested_outputs.as_mut_ptr(),
-            requested_outputs.len() as int32,
-        );
+        let accepted = unsafe {
+            processor.setBusArrangements(
+                requested_inputs.as_mut_ptr(),
+                requested_inputs.len() as int32,
+                requested_outputs.as_mut_ptr(),
+                requested_outputs.len() as int32,
+            )
+        };
         if accepted == kResultOk {
             return;
         }
@@ -295,8 +298,9 @@ unsafe fn accepted_geometry(
         .enumerate()
         .map(|(index, bus)| {
             let mut arrangement: SpeakerArrangement = SpeakerArr::kEmpty;
-            let answered = processor.getBusArrangement(direction, index as int32, &mut arrangement)
-                == kResultOk;
+            let answered =
+                unsafe { processor.getBusArrangement(direction, index as int32, &mut arrangement) }
+                    == kResultOk;
             BusGeometry {
                 channels: if answered {
                     arrangement_channels(arrangement)

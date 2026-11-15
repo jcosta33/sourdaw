@@ -486,11 +486,11 @@ unsafe fn host_state<'a>(host: *const clap_host) -> Option<&'a HostCallbackState
     if host.is_null() {
         return None;
     }
-    let data = (*host).host_data as *const HostCallbackState;
+    let data = unsafe { (*host).host_data } as *const HostCallbackState;
     if data.is_null() {
         return None;
     }
-    Some(&*data)
+    Some(unsafe { &*data })
 }
 
 static HOST_NAME: &[u8] = b"Sourdaw\0";
@@ -525,7 +525,7 @@ unsafe extern "C" fn host_get_extension(
         return std::ptr::null();
     }
 
-    let id = CStr::from_ptr(extension_id);
+    let id = unsafe { CStr::from_ptr(extension_id) };
 
     if id == CLAP_EXT_PARAMS {
         return &HOST_PARAMS as *const clap_host_params as *const c_void;
@@ -560,7 +560,7 @@ unsafe extern "C" fn host_request_restart(host: *const clap_host) {
     // heap-copied instance id and channel node are a missed device period.
     // #3745 was that allocation. The flag is the record; the latency watcher
     // services the hint and makes the same re-query the channel wake did.
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.flag_latency_requery();
     }
 }
@@ -581,7 +581,7 @@ unsafe extern "C" fn host_request_process(_host: *const clap_host) {
 /// deferred worker results and editor updates forever pending; #6566 was its
 /// wake allocating on the calling thread.
 unsafe extern "C" fn host_request_callback(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_main_thread_callback_requested();
     }
 }
@@ -602,7 +602,7 @@ static HOST_PARAMS: clap_host_params = clap_host_params {
 /// only says that there is work. Deliberately unlogged: it can arrive from a
 /// plugin's own thread, where stderr I/O is not acceptable.
 unsafe extern "C" fn host_params_rescan(host: *const clap_host, _flags: u32) {
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_parameters_rescan();
     }
 }
@@ -630,7 +630,7 @@ unsafe extern "C" fn host_params_clear(_host: *const clap_host, _param_id: u32, 
 /// and deciding that plus making the call is the control path's job; this
 /// callback is `[thread-safe]` and may be the audio thread.
 unsafe extern "C" fn host_params_request_flush(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.request_parameters_flush();
     }
 }
@@ -666,7 +666,7 @@ unsafe extern "C" fn host_gui_request_resize(
     width: u32,
     height: u32,
 ) -> bool {
-    match host_state(host) {
+    match unsafe { host_state(host) } {
         Some(state) => state.request_editor_resize(width, height),
         None => false,
     }
@@ -701,7 +701,7 @@ static HOST_STATE: clap_host_state = clap_host_state {
 /// for the same reason nothing here reaches the renderer directly. The control
 /// path consumes the flag and publishes the change.
 unsafe extern "C" fn host_state_mark_dirty(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_state_dirty();
     }
 }
@@ -716,7 +716,7 @@ static HOST_LATENCY: clap_host_latency = clap_host_latency {
 /// main thread; latency itself may only change across a deactivate/reactivate,
 /// so we flag the instance dirty and let the control thread re-query.
 unsafe extern "C" fn host_latency_changed(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_latency_dirty();
     }
     eprintln!("[CLAP Host] Plugin reported a latency change");
@@ -735,7 +735,7 @@ static HOST_TAIL: clap_host_tail = clap_host_tail {
 /// stderr and making a write syscall is a dropout. Re-reading `clap.tail` is the
 /// control path's job.
 unsafe extern "C" fn host_tail_changed(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_tail_dirty();
     }
 }

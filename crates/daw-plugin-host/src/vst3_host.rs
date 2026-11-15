@@ -619,7 +619,7 @@ impl IHostApplicationTrait for Vst3HostApplication {
         if name.is_null() {
             return kInvalidArgument;
         }
-        write_string128(&mut *name, HOST_NAME);
+        write_string128(unsafe { &mut *name }, HOST_NAME);
         kResultOk
     }
 
@@ -632,13 +632,13 @@ impl IHostApplicationTrait for Vst3HostApplication {
         if cid.is_null() || obj.is_null() {
             return kInvalidArgument;
         }
-        if !tuid_matches(&*cid, &IMessage::IID) {
+        if !tuid_matches(unsafe { &*cid }, &IMessage::IID) {
             return kNotImplemented;
         }
         let Some(message) = ComWrapper::new(Vst3Message::default()).to_com_ptr::<IMessage>() else {
             return kNotImplemented;
         };
-        *obj = message.into_raw() as *mut c_void;
+        unsafe { *obj = message.into_raw() as *mut c_void };
         kResultOk
     }
 }
@@ -673,13 +673,13 @@ impl IPlugInterfaceSupportTrait for Vst3HostApplication {
         ];
         if supported
             .iter()
-            .any(|candidate| tuid_matches(&*_iid, candidate))
+            .any(|candidate| tuid_matches(unsafe { &*_iid }, candidate))
         {
             return kResultOk;
         }
         // Only Linux advertises a run loop, for the same reason the frame only
         // answers `queryInterface` for one there.
-        if cfg!(target_os = "linux") && tuid_matches(&*_iid, &IRunLoop::IID) {
+        if cfg!(target_os = "linux") && tuid_matches(unsafe { &*_iid }, &IRunLoop::IID) {
             return kResultOk;
         }
         kResultFalse
@@ -799,7 +799,7 @@ impl IAttributeListTrait for Vst3AttributeList {
         }
         match self.get(id) {
             Some(AttributeValue::Int(stored)) => {
-                *value = stored;
+                unsafe { *value = stored };
                 kResultOk
             }
             _ => kResultFalse,
@@ -816,7 +816,7 @@ impl IAttributeListTrait for Vst3AttributeList {
         }
         match self.get(id) {
             Some(AttributeValue::Float(stored)) => {
-                *value = stored;
+                unsafe { *value = stored };
                 kResultOk
             }
             _ => kResultFalse,
@@ -829,9 +829,9 @@ impl IAttributeListTrait for Vst3AttributeList {
         }
         let mut units = Vec::new();
         let mut cursor = string;
-        while *cursor != 0 {
-            units.push(*cursor);
-            cursor = cursor.add(1);
+        while unsafe { *cursor } != 0 {
+            units.push(unsafe { *cursor });
+            cursor = unsafe { cursor.add(1) };
         }
         self.set(id, AttributeValue::String(units))
     }
@@ -845,8 +845,8 @@ impl IAttributeListTrait for Vst3AttributeList {
         };
         let capacity = (size_in_bytes as usize / 2).saturating_sub(1);
         let length = stored.len().min(capacity);
-        std::ptr::copy_nonoverlapping(stored.as_ptr(), string, length);
-        *string.add(length) = 0;
+        unsafe { std::ptr::copy_nonoverlapping(stored.as_ptr(), string, length) };
+        unsafe { *string.add(length) = 0 };
         kResultOk
     }
 
@@ -854,7 +854,9 @@ impl IAttributeListTrait for Vst3AttributeList {
         if data.is_null() {
             return kInvalidArgument;
         }
-        let bytes = std::slice::from_raw_parts(data as *const u8, size_in_bytes as usize).to_vec();
+        let bytes =
+            unsafe { std::slice::from_raw_parts(data as *const u8, size_in_bytes as usize) }
+                .to_vec();
         self.set(id, AttributeValue::Binary(bytes))
     }
 
@@ -874,8 +876,8 @@ impl IAttributeListTrait for Vst3AttributeList {
             return kInvalidArgument;
         };
         *borrowed = stored;
-        *data = borrowed.as_ptr() as *const c_void;
-        *size_in_bytes = borrowed.len() as uint32;
+        unsafe { *data = borrowed.as_ptr() as *const c_void };
+        unsafe { *size_in_bytes = borrowed.len() as uint32 };
         kResultOk
     }
 }
@@ -920,7 +922,7 @@ impl IMessageTrait for Vst3Message {
         *stored = if id.is_null() {
             None
         } else {
-            Some(CStr::from_ptr(id).to_owned())
+            Some(unsafe { CStr::from_ptr(id) }.to_owned())
         };
     }
 
