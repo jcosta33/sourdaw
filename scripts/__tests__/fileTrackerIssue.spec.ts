@@ -282,6 +282,8 @@ describe('ghIssueCreateArgs', () => {
     const labelledArgs = [
         'issue',
         'create',
+        '--repo',
+        'jcosta33/sourdaw',
         '--title',
         'spec(scope): mixer',
         '--body',
@@ -578,6 +580,31 @@ describe('runCli', () => {
         expect(gh.calls).toHaveLength(1);
         expect(gh.calls[0]?.slice(-4)).toEqual(['--milestone', 'Editor Groundwork', '--project', 'Sourdaw Roadmap']);
         expect(String(stdout.mock.calls[0]?.[0])).toContain('"number": 2270');
+    });
+
+    /**
+     * Without `--repo`, gh picks the repository from the caller checkout's git config, where a
+     * `remote.<name>.gh-resolved` key any lane can write overrides the remote URL.
+     */
+    it('names the required repository on the create call', () => {
+        vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+        const gh = fakeGh(created);
+
+        expect(runCli([...filing, '--create'], gh.run)).toBe(0);
+
+        expect(gh.calls).toHaveLength(1);
+        expect(gh.calls[0]?.slice(0, 4)).toEqual(['issue', 'create', '--repo', 'jcosta33/sourdaw']);
+    });
+
+    it('refuses a created url outside the required repository', () => {
+        const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
+        const gh = fakeGh({ status: 0, stdout: 'https://github.com/cli/cli/issues/2270\n', stderr: '' });
+
+        expect(runCli([...filing, '--create'], gh.run)).toBe(1);
+
+        expect(String(consoleError.mock.calls[0]?.[0])).toBe(
+            'gh issue create returned an unreadable url: https://github.com/cli/cli/issues/2270'
+        );
     });
 
     it('reaches gh only with --create', () => {

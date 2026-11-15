@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
     AUTHOR_LOCK_REASON,
+    assertRequiredRepository,
     assertTrustedExecutingBlob,
     isAuthorBotNodeId,
     originMainBlob,
@@ -1017,8 +1018,22 @@ function parseJson<Value>(value: string, label: string): Value {
 
 export function shellPort(shell: ShellRunner = { capture, run }, root?: string): LaneStrandPort {
     let cachedRepository: string | undefined;
+    // gh answers the checkout query from git config any lane can write, where
+    // `remote.<name>.gh-resolved` overrides the remote URL, so the answer is asserted before any
+    // ownership read uses it.
     const repository = () => {
-        cachedRepository ??= shell.capture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
+        if (cachedRepository === undefined) {
+            const nameWithOwner = shell.capture('gh', [
+                'repo',
+                'view',
+                '--json',
+                'nameWithOwner',
+                '--jq',
+                '.nameWithOwner',
+            ]);
+            assertRequiredRepository(nameWithOwner);
+            cachedRepository = nameWithOwner;
+        }
         return cachedRepository;
     };
     const primaryRoot = root ?? resolvePrimaryRoot();

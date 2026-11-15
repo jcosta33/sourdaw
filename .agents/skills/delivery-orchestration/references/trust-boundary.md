@@ -76,7 +76,10 @@ out of, with inherited repository routing removed: any Git it runs finds no repo
 repository config. Each such call therefore names its repository with `--repo` or an explicit API
 path. The one exception is the exact checkout repository query (`gh repo view --json nameWithOwner
 --jq .nameWithOwner`), which reads remote names in the caller's repository with `git remote -v` and
-`git config --get-regexp`; those read config but start no config-selected program.
+`git config --get-regexp`; those read config but start no config-selected program. That query
+answers from config any lane can write, where `remote.<name>.gh-resolved` overrides the remote URL,
+so a command reads it once, asserts it names the required repository, and passes that asserted name
+to every later call; a second read would let a lane move the calls after the check.
 Keeping the token secret from same-account processes is outside this
 boundary. Every Git-read environment
 ignores replace refs. The

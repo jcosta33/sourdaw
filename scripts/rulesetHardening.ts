@@ -543,8 +543,12 @@ function readRulesetDocument(value: string, label: string): RulesetDocument {
     return parsed;
 }
 
-function repositoryFields(gh: Gh): string {
-    const nameWithOwner = gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
+/**
+ * The owner and name come from the one repository name the coordinator read and asserted. Reading
+ * the checkout query again would let a lane rewrite `remote.<name>.gh-resolved` between the two
+ * reads and move every later call to a repository it chose.
+ */
+function repositoryFields(nameWithOwner: string): string {
     const [owner, name] = nameWithOwner.split('/');
     if (owner === undefined || name === undefined || owner === '' || name === '') {
         fail(`repository name ${nameWithOwner} is not owner/name`);
@@ -611,15 +615,16 @@ export function writeRulesetById(repository: string, rulesetId: number, ruleset:
 
 export function shellPort(
     session: GhSession,
-    cwd: string = process.cwd(),
-    capture: typeof spawnCapture = spawnCapture
+    cwd: string,
+    capture: typeof spawnCapture,
+    nameWithOwner: string
 ): RulesetHardeningPort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => capture(command, args, { cwd: directory }),
         cwd
     );
     const gh: Gh = (args, input) => capture('gh', args, { cwd: primaryRoot, env: session.env, input });
-    const repository = repositoryFields(gh);
+    const repository = repositoryFields(nameWithOwner);
     return {
         resolveRulesetId: () => readMainRulesetId(repository, gh),
         readRuleset: (rulesetId) => readRulesetById(repository, rulesetId, gh),
@@ -634,7 +639,7 @@ export type RulesetHardeningCoordinatorDependencies = {
     primaryRoot: () => string;
     authenticateOrchestrator: () => OrchestratorAuthentication;
     repositoryName: (session: GhSession, primaryRoot: string) => string;
-    port: (session: GhSession, primaryRoot: string) => RulesetHardeningPort;
+    port: (session: GhSession, primaryRoot: string, repository: string) => RulesetHardeningPort;
     harden: (apply: boolean, port: RulesetHardeningPort) => RulesetHardeningReceipt;
 };
 
@@ -647,7 +652,7 @@ export function defaultRulesetHardeningCoordinatorDependencies(): RulesetHardeni
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        port: (session, primaryRoot) => shellPort(session, primaryRoot, spawnCapture),
+        port: (session, primaryRoot, repository) => shellPort(session, primaryRoot, spawnCapture, repository),
         harden: (apply, port) => hardenRuleset(apply, port),
     };
 }
@@ -668,8 +673,9 @@ export function coordinateRulesetHardening(
         if (!isOrchestratorUserNodeId(auth.minted.actorNodeId)) {
             fail(`minted actor ${auth.minted.actorNodeId} is not ${ORCHESTRATOR_USER_NODE_ID}`);
         }
-        assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
-        return dependencies.harden(apply, dependencies.port(auth.session, primaryRoot));
+        const repository = dependencies.repositoryName(auth.session, primaryRoot);
+        assertRequiredRepository(repository);
+        return dependencies.harden(apply, dependencies.port(auth.session, primaryRoot, repository));
     } finally {
         auth.session.dispose();
     }
