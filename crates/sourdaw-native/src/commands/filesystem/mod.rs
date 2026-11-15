@@ -1787,6 +1787,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_read_write_pick_inside_a_plugin_folder_is_refused_and_not_granted() {
+        let plugin_folder = crate::host::plugin_folder_grants::plugin_code_roots()
+            .into_iter()
+            .next()
+            .expect("every supported platform defines a plugin folder");
+        let pick = plugin_folder.join("Vendor");
+
+        grant_registry::with_grants_for_test(Vec::new(), || {
+            let refused = crate::block_on_test(grant_path(
+                pick.to_string_lossy().into_owned(),
+                "readwrite".to_string(),
+                true,
+            ));
+            assert!(
+                refused
+                    .as_ref()
+                    .is_err_and(|message| message.contains("plugin folder")),
+                "unexpected result {refused:?}"
+            );
+            assert!(!grant_registry::admits(&pick, GrantMode::Read));
+        });
+    }
+
     #[tokio::test]
     async fn list_directory_refuses_a_missing_path_with_the_not_accessible_text() {
         let scratch = TempAuthorityDir::create_owned_scratch();

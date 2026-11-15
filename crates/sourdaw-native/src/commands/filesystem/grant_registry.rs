@@ -179,15 +179,43 @@ pub(crate) fn admits(path: &Path, mode: GrantMode) -> bool {
 }
 
 /// The plugin folder that `path` is inside of or equal to, if any.
-/// `starts_with` is component-wise, so a sibling sharing a name prefix is not
-/// inside.
+///
+/// Compared component by component, so a sibling sharing a name prefix is not
+/// inside, and with names compared the way the platform's filesystem compares
+/// them. A folder that does not exist yet keeps whatever spelling the renderer
+/// sent, and `Plug-Ins/clap` is the CLAP folder on a case-insensitive volume.
 pub(crate) fn plugin_folder_containing<'a>(
     path: &Path,
     plugin_folders: &'a [PathBuf],
 ) -> Option<&'a PathBuf> {
+    let path = comparable_components(path);
     plugin_folders
         .iter()
-        .find(|folder| path.starts_with(folder))
+        .find(|folder| path.starts_with(&comparable_components(folder)))
+}
+
+fn comparable_components(path: &Path) -> Vec<String> {
+    path.components()
+        .map(|component| comparable_name(&component.as_os_str().to_string_lossy()))
+        .collect()
+}
+
+/// macOS and Windows volumes are case-insensitive by default; folding on a
+/// case-sensitive one only refuses more. Windows also drops trailing dots and
+/// spaces from a name on its way to the filesystem.
+#[cfg(target_os = "windows")]
+fn comparable_name(name: &str) -> String {
+    name.trim_end_matches(['.', ' ']).to_lowercase()
+}
+
+#[cfg(target_os = "macos")]
+fn comparable_name(name: &str) -> String {
+    name.to_lowercase()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn comparable_name(name: &str) -> String {
+    name.to_string()
 }
 
 /// Refuse a read-write pick that is inside or equal to a plugin folder, so the
@@ -655,6 +683,12 @@ mod tests {
                 GrantMode::Read,
                 false,
             ),
+            (
+                "inside it in another case",
+                "/plugins/vst3/Evil.vst3",
+                GrantMode::ReadWrite,
+                cfg!(any(target_os = "macos", target_os = "windows")),
+            ),
         ] {
             let result =
                 refuse_write_grant_in_plugin_folder(Path::new(path), mode, &plugin_folders);
@@ -673,6 +707,18 @@ mod tests {
         assert!(message.contains("/plugins/VST3"), "{message}");
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn a_plugin_folder_spelled_with_a_trailing_dot_or_space_is_the_same_folder() {
+        let plugin_folders = vec![PathBuf::from(r"C:\Plugins\VST3")];
+        for spelling in [r"C:\Plugins\VST3.\Evil.vst3", r"C:\Plugins\VST3 \Evil.vst3"] {
+            assert!(
+                plugin_folder_containing(Path::new(spelling), &plugin_folders).is_some(),
+                "{spelling} should be inside the plugin folder"
+            );
+        }
+    }
+
     #[test]
     fn a_grant_containing_a_platform_plugin_folder_never_admits_writes_into_it() {
         let plugin_folder = plugin_folder_grants::plugin_code_roots()
@@ -684,6 +730,15 @@ mod tests {
             .expect("a plugin folder has a parent")
             .to_path_buf();
         let bundle = plugin_folder.join("Evil.clap");
+        let respelled_bundle = parent
+            .join(
+                plugin_folder
+                    .file_name()
+                    .expect("a plugin folder has a name")
+                    .to_string_lossy()
+                    .to_uppercase(),
+            )
+            .join("Evil.clap");
         let elsewhere = parent.join("sourdaw-not-a-plugin-folder").join("song.wav");
 
         with_grants_for_test(
@@ -696,6 +751,9 @@ mod tests {
                 assert!(admits(&elsewhere, GrantMode::ReadWrite));
                 assert!(!admits(&bundle, GrantMode::ReadWrite));
                 assert!(!admits(&plugin_folder, GrantMode::ReadWrite));
+                if cfg!(any(target_os = "macos", target_os = "windows")) {
+                    assert!(!admits(&respelled_bundle, GrantMode::ReadWrite));
+                }
                 assert!(admits(&bundle, GrantMode::Read));
             },
         );

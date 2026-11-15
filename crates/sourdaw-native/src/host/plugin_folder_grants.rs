@@ -241,12 +241,17 @@ pub(crate) fn production_store_location() -> Option<PathBuf> {
 /// A stored grant counts even while it is unavailable: once its folder is back
 /// it is authority again, with whatever was written there in the meantime.
 pub(crate) fn plugin_code_roots() -> Vec<PathBuf> {
+    plugin_code_roots_at(production_store_location().as_deref())
+}
+
+/// [`plugin_code_roots`] over the grant store at `store`, if any.
+pub(crate) fn plugin_code_roots_at(store: Option<&Path>) -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = default_plugin_scan_roots()
         .iter()
         .map(|root| resolve_forbidden_root(root))
         .collect();
-    if let Some(location) = production_store_location() {
-        roots.extend(read_grants(&location));
+    if let Some(location) = store {
+        roots.extend(read_grants(location));
     }
     roots
 }
@@ -946,5 +951,19 @@ mod tests {
             "unexpected statuses {statuses:?}"
         );
         assert!(valid_grants_at(&tree.store(), &forbidden).is_empty());
+    }
+
+    #[test]
+    fn plugin_code_roots_include_every_stored_grant_available_or_not() {
+        let tree = TempTree::create("code-roots");
+        let available = tree.dir("Plugins/Available");
+        let unplugged = tree.path("Unplugged/Plugins");
+        save_grants(&tree.store(), &[available.clone(), unplugged.clone()])
+            .expect("store should be written");
+
+        let roots = plugin_code_roots_at(Some(&tree.store()));
+        assert!(roots.contains(&available), "{roots:?}");
+        assert!(roots.contains(&unplugged), "{roots:?}");
+        assert!(!plugin_code_roots_at(None).contains(&available));
     }
 }
