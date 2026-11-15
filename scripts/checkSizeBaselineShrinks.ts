@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
     describeSizeBaselineGrowth,
@@ -50,11 +50,30 @@ function readHeadCeilings(root: string): Record<string, number> {
     return existsSync(path) ? parseSizeCeilingsText(readFileSync(path, 'utf8')) : {};
 }
 
+/** A seam for hosts whose module resolver cannot import a file outside its root (a spec's temporary repository). */
+export type ModuleLoader = (absolutePath: string) => Promise<unknown>;
+
+const importModule: ModuleLoader = (absolutePath) => import(pathToFileURL(absolutePath).href);
+
+/**
+ * The head's list is the module's evaluated export, exactly what eslint.config.mjs imports, so no
+ * expression form (concat, push, a decoy comment) can hide an entry from the comparison. An empty list is a
+ * full burn-down. The import is cached per path, so each root is read once per process.
+ */
+async function readHeadBaselineFiles(root: string, load: ModuleLoader): Promise<string[]> {
+    const loaded = await load(resolve(root, BASELINE_PATH));
+    const files = typeof loaded === 'object' && loaded !== null ? Reflect.get(loaded, 'sizeBaselineFiles') : undefined;
+    if (!Array.isArray(files) || !files.every((entry): entry is string => typeof entry === 'string')) {
+        throw new Error(`${BASELINE_PATH} must export sizeBaselineFiles as an array of strings.`);
+    }
+    return files;
+}
+
 /** Compares the working tree's baseline and ceilings with the merge base's; returns one message per finding. */
-export function checkSizeBaselineShrinks(root: string): string[] {
+export async function checkSizeBaselineShrinks(root: string, load: ModuleLoader = importModule): Promise<string[]> {
     const mergeBase = resolveMergeBase(root);
     const baseFiles = parseSizeBaselineFilesText(git(root, ['show', `${mergeBase}:${BASELINE_PATH}`]));
-    const headFiles = parseSizeBaselineFilesText(readFileSync(resolve(root, BASELINE_PATH), 'utf8'));
+    const headFiles = await readHeadBaselineFiles(root, load);
     const growth = findSizeBaselineGrowth(
         { baselineFiles: baseFiles, ceilings: readBaseCeilings(root, mergeBase) },
         { baselineFiles: headFiles, ceilings: readHeadCeilings(root) }
@@ -66,7 +85,7 @@ const entry = process.argv[1];
 if (entry !== undefined && import.meta.url === new URL(`file://${resolve(entry)}`).href) {
     const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
     try {
-        const findings = checkSizeBaselineShrinks(root);
+        const findings = await checkSizeBaselineShrinks(root);
         if (findings.length > 0) {
             process.stderr.write(`${findings.join('\n')}\n`);
             process.exitCode = 1;

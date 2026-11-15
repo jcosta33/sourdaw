@@ -27,11 +27,12 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
-import { checkSizeBaselineShrinks } from '../checkSizeBaselineShrinks';
+import { checkSizeBaselineShrinks as checkSizeBaselineShrinksWith } from '../checkSizeBaselineShrinks';
 import {
     countFileLines,
     describeSizeBaselineGrowth,
@@ -500,6 +501,20 @@ describe('size baseline list text', () => {
     });
 });
 
+// The test runner's module resolver cannot import a file outside its root, so each temporary repository's
+// baseline is evaluated by a Node process importing it, which is what the command and ESLint do.
+function evaluateInNode(absolutePath: string): Promise<unknown> {
+    const script = 'import(process.argv[1]).then((m) => process.stdout.write(JSON.stringify(m)))';
+    const output = execFileSync('node', ['--input-type=module', '-e', script, pathToFileURL(absolutePath).href], {
+        encoding: 'utf8',
+    });
+    return Promise.resolve(JSON.parse(output));
+}
+
+function checkSizeBaselineShrinks(root: string): Promise<string[]> {
+    return checkSizeBaselineShrinksWith(root, evaluateInNode);
+}
+
 describe('size baseline check against the merge base', () => {
     let dir = '';
 
@@ -530,23 +545,85 @@ describe('size baseline check against the merge base', () => {
         rmSync(dir, { recursive: true, force: true });
     });
 
-    it('should name a path the head added to the baseline', () => {
+    it('should name a path the head added to the baseline', async () => {
         git('update-ref', 'refs/remotes/origin/main', 'HEAD');
         writeBaseline(['a.ts', 'b.ts', 'z.ts'], { 'a.ts': 700, 'b.ts': 800, 'z.ts': 950 });
         commit('head');
-        const findings = checkSizeBaselineShrinks(dir);
+        const findings = await checkSizeBaselineShrinks(dir);
         expect(findings.some((finding) => finding.startsWith('z.ts: added to eslint.size-baseline.mjs'))).toBe(true);
     });
 
-    it('should accept a head that only removes a path and lowers a ceiling', () => {
+    it('should accept a head that only removes a path and lowers a ceiling', async () => {
         git('update-ref', 'refs/remotes/origin/main', 'HEAD');
         writeBaseline(['a.ts'], { 'a.ts': 650 });
         commit('head');
-        expect(checkSizeBaselineShrinks(dir)).toEqual([]);
+        expect(await checkSizeBaselineShrinks(dir)).toEqual([]);
     });
 
-    it('should fail closed when origin/main is missing', () => {
-        expect(() => checkSizeBaselineShrinks(dir)).toThrow('refs/remotes/origin/main is missing');
+    it('should fail closed when origin/main is missing', async () => {
+        await expect(checkSizeBaselineShrinks(dir)).rejects.toThrow('refs/remotes/origin/main is missing');
+    });
+
+    describe('head list forms the text reader cannot see', () => {
+        const added = ['src/Big.ts: added to eslint.size-baseline.mjs'];
+
+        function commitHeadModule(source: string): void {
+            git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+            writeFileSync(join(dir, 'eslint.size-baseline.mjs'), source);
+            commit('head');
+        }
+
+        async function headFindings(source: string): Promise<string[]> {
+            commitHeadModule(source);
+            const findings = await checkSizeBaselineShrinks(dir);
+            return findings.map((finding) => finding.slice(0, finding.indexOf(';')));
+        }
+
+        beforeEach(() => {
+            writeBaseline(['a.ts'], { 'a.ts': 700 });
+            commit('base with one path');
+        });
+
+        it('should report a path appended through concat', async () => {
+            expect(await headFindings("export const sizeBaselineFiles = ['a.ts'].concat(['src/Big.ts']);\n")).toEqual(
+                added
+            );
+        });
+
+        it('should report a path pushed after the literal', async () => {
+            expect(
+                await headFindings(
+                    "export const sizeBaselineFiles = ['a.ts'];\nsizeBaselineFiles.push('src/Big.ts');\n"
+                )
+            ).toEqual(added);
+        });
+
+        it('should report a path listed after a decoy assignment in a comment', async () => {
+            expect(
+                await headFindings(
+                    "// sizeBaselineFiles = ['a.ts']\nexport const sizeBaselineFiles = ['a.ts', 'src/Big.ts'];\n"
+                )
+            ).toEqual(added);
+        });
+
+        it('should accept a head that empties the list and changes nothing else', async () => {
+            commitHeadModule('export const sizeBaselineFiles = [];\n');
+            expect(await checkSizeBaselineShrinks(dir)).toEqual([]);
+        });
+
+        it('should refuse a head whose export is not an array of strings', async () => {
+            commitHeadModule('export const sizeBaselineFiles = [1];\n');
+            await expect(checkSizeBaselineShrinks(dir)).rejects.toThrow('must export sizeBaselineFiles');
+        });
+
+        it('should report a ceiling the head raises', async () => {
+            git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+            writeBaseline(['a.ts'], { 'a.ts': 750 });
+            commit('head');
+            expect(await checkSizeBaselineShrinks(dir)).toEqual([
+                `a.ts: ceiling raised from 700 to 750 in ${SIZE_CEILINGS_PATH}; ceilings are never raised.`,
+            ]);
+        });
     });
 
     function removeCeilingsFile(): void {
@@ -554,26 +631,26 @@ describe('size baseline check against the merge base', () => {
         commit('base without ceilings');
     }
 
-    it('should accept a head that adds nothing when the merge base has no ceilings file', () => {
+    it('should accept a head that adds nothing when the merge base has no ceilings file', async () => {
         removeCeilingsFile();
         git('update-ref', 'refs/remotes/origin/main', 'HEAD');
         writeFileSync(join(dir, 'unrelated.txt'), 'x\n');
         commit('head');
         rmSync(join(dir, SIZE_CEILINGS_PATH), { force: true });
-        expect(checkSizeBaselineShrinks(dir)).toEqual([]);
+        expect(await checkSizeBaselineShrinks(dir)).toEqual([]);
     });
 
-    it('should report a ceiling key the head adds when the merge base has no ceilings file', () => {
+    it('should report a ceiling key the head adds when the merge base has no ceilings file', async () => {
         removeCeilingsFile();
         git('update-ref', 'refs/remotes/origin/main', 'HEAD');
         writeBaseline(['a.ts', 'b.ts'], { 'a.ts': 700 });
         commit('head');
-        expect(checkSizeBaselineShrinks(dir)).toEqual([
+        expect(await checkSizeBaselineShrinks(dir)).toEqual([
             `a.ts: new ceiling in ${SIZE_CEILINGS_PATH}; ceilings exist only for files already baselined.`,
         ]);
     });
 
-    it('should compare against the merge base, not an origin/main that moved on with its own shrink', () => {
+    it('should compare against the merge base, not an origin/main that moved on with its own shrink', async () => {
         const base = git('rev-parse', 'HEAD').trim();
         writeBaseline(['a.ts'], { 'a.ts': 700 });
         commit('main shrinks');
@@ -581,7 +658,7 @@ describe('size baseline check against the merge base', () => {
         git('checkout', '-q', '-b', 'feature', base);
         writeFileSync(join(dir, 'unrelated.txt'), 'x\n');
         commit('head');
-        expect(checkSizeBaselineShrinks(dir)).toEqual([]);
+        expect(await checkSizeBaselineShrinks(dir)).toEqual([]);
     });
 
     describe('as a command', () => {
@@ -599,6 +676,21 @@ describe('size baseline check against the merge base', () => {
             writeBaseline(['a.ts', 'b.ts', 'z.ts'], { 'a.ts': 700, 'b.ts': 800, 'z.ts': 950 });
             const { status, stderr } = runCli();
             expect({ status, mentionsPath: stderr.includes('z.ts: added to eslint.size-baseline.mjs') }).toEqual({
+                status: 1,
+                mentionsPath: true,
+            });
+        });
+
+        it('should exit 1 for a path the head appends through concat, which the text reader cannot see', () => {
+            writeBaseline(['a.ts'], { 'a.ts': 700 });
+            commit('base with one path');
+            git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+            writeFileSync(
+                join(dir, 'eslint.size-baseline.mjs'),
+                "export const sizeBaselineFiles = ['a.ts'].concat(['src/Big.ts']);\n"
+            );
+            const { status, stderr } = runCli();
+            expect({ status, mentionsPath: stderr.includes('src/Big.ts: added to eslint.size-baseline.mjs') }).toEqual({
                 status: 1,
                 mentionsPath: true,
             });
