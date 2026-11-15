@@ -467,6 +467,23 @@ pub struct SharedHostedPlugin<Runtime = HostedRuntime> {
     /// path. Live playback only counts them; an offline render refuses a print
     /// that holds one (`commands::offline_plugins`).
     unserved_blocks: AtomicU64,
+    /// Records the thread the wrapper is torn down on. Declared last so it
+    /// drops after `wrapper`, on the same thread.
+    #[cfg(test)]
+    teardown_witness: OnceLock<TeardownWitness>,
+}
+
+/// Pushes the thread it drops on into a test's record.
+#[cfg(test)]
+pub(crate) struct TeardownWitness(Arc<Mutex<Vec<thread::ThreadId>>>);
+
+#[cfg(test)]
+impl Drop for TeardownWitness {
+    fn drop(&mut self) {
+        if let Ok(mut threads) = self.0.lock() {
+            threads.push(thread::current().id());
+        }
+    }
 }
 
 // SAFETY: access_state enforces exclusive mutable access to wrapper. The audio
@@ -494,7 +511,15 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             dropped_note_events: AtomicU64::new(0),
             reported_dropped_note_events: AtomicU64::new(0),
             unserved_blocks: AtomicU64::new(0),
+            #[cfg(test)]
+            teardown_witness: OnceLock::new(),
         }
+    }
+
+    /// Record into `threads` the thread this plugin's wrapper is torn down on.
+    #[cfg(test)]
+    pub(crate) fn witness_teardown(&self, threads: Arc<Mutex<Vec<thread::ThreadId>>>) {
+        let _ = self.teardown_witness.set(TeardownWitness(threads));
     }
 
     /// How many blocks a slot handed this plugin without its being served.

@@ -501,6 +501,7 @@ thread_local! {
 #[derive(Clone, Default)]
 struct OfflineInstanceWatch {
     gates: Arc<Mutex<Vec<Arc<ProcessingGate>>>>,
+    teardown_threads: Arc<Mutex<Vec<ThreadId>>>,
 }
 
 impl OfflineInstanceWatch {
@@ -508,11 +509,15 @@ impl OfflineInstanceWatch {
     /// `then` over them.
     fn after_build(&self, then: Option<fn(&[Arc<SharedHostedPlugin>])>) -> AfterBuild {
         let gates = Arc::clone(&self.gates);
+        let teardown_threads = Arc::clone(&self.teardown_threads);
         Box::new(move |runtimes: &[Arc<SharedHostedPlugin>]| {
             gates
                 .lock()
                 .expect("gates")
                 .extend(runtimes.iter().map(|runtime| runtime.processing_gate()));
+            for runtime in runtimes {
+                runtime.witness_teardown(Arc::clone(&teardown_threads));
+            }
             if let Some(then) = then {
                 then(runtimes);
             }
@@ -535,6 +540,17 @@ impl OfflineInstanceWatch {
                 "the render thread left processing; teardown did not have to force it"
             );
         }
+    }
+
+    /// Every watched instance was torn down, and on the UI thread.
+    fn assert_every_instance_torn_down_on(&self, ui: &RecordingUiThread) {
+        let built = self.gates.lock().expect("gates").len();
+        let teardown_threads = self.teardown_threads.lock().expect("teardown threads");
+        assert_eq!(
+            *teardown_threads,
+            vec![ui.thread_id; built],
+            "every offline instance is torn down, on the UI thread"
+        );
     }
 }
 
@@ -616,6 +632,7 @@ fn the_print_is_the_dry_render_through_the_live_instances_settings(format: Forma
         .expect("the live instance answers");
     assert_eq!(live_rate, LIVE_RATE, "the live instance was never re-rated");
     watch.assert_every_instance_left_processing();
+    watch.assert_every_instance_torn_down_on(&ui);
     assert_eq!(
         ui.tasks_run(),
         2,
@@ -892,6 +909,7 @@ fn a_cancel_mid_render_stops_the_render_of(format: Format) {
     let refusal = outcome.expect_err("a cancelled render returns no print");
     assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
     watch.assert_every_instance_left_processing();
+    watch.assert_every_instance_torn_down_on(&ui);
     assert_eq!(
         ui.tasks_run(),
         2,
@@ -1051,6 +1069,7 @@ fn an_offline_instance_that_fails_a_block_refuses_the_render_by_name(format: For
         "{refusal}"
     );
     watch.assert_every_instance_left_processing();
+    watch.assert_every_instance_torn_down_on(&ui);
     assert_eq!(
         ui.tasks_run(),
         2,
