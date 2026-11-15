@@ -1419,6 +1419,20 @@ mod tests {
         );
     }
 
+    /// A directory where the module belongs is not a module: selection tests
+    /// for a file, as the host does, not for any existing path.
+    #[test]
+    fn a_directory_at_the_arm64x_path_is_passed_over_for_the_arm64_module() {
+        let fixture = FixtureDirectory::new("arm64x-directory");
+        fs::create_dir_all(fixture.0.join(ARM64X_MODULE)).expect("the directory is creatable");
+        let arm64 = fixture.write(Path::new(ARM64_MODULE), b"arm64");
+
+        assert_eq!(
+            first_existing_module(&arm_candidates(&fixture)),
+            Some(arm64.as_path())
+        );
+    }
+
     #[test]
     fn a_bundle_with_no_arm_module_opens_nothing() {
         let fixture = FixtureDirectory::new("no-arm");
@@ -1672,5 +1686,51 @@ mod tests {
             .expect("an unchanged resident module opens again");
 
         assert_eq!(loads.load(AtomicOrdering::SeqCst), 2);
+    }
+
+    /// Opening another bundle sweeps released entries; a resident one must
+    /// survive that, because its image is still the one this path loads.
+    #[test]
+    fn a_resident_module_record_survives_the_sweep_another_bundle_runs() {
+        let fixture = FixtureDirectory::new("resident-swept");
+        let reverb_file = fixture.write(Path::new("Reverb.vst3/module"), b"build 1");
+        let delay_file = fixture.write(Path::new("Delay.vst3/module"), b"delay");
+        let cache = resident_cache();
+        let reverb_loads = AtomicUsize::new(0);
+        let reverb_fingerprint = || module_file_fingerprint(&reverb_file);
+        let load_reverb = || {
+            reverb_loads.fetch_add(1, AtomicOrdering::SeqCst);
+            Ok(Arc::new(ResidentFakeModule))
+        };
+
+        drop(
+            shared_module(
+                &cache,
+                fixture.0.join("Reverb.vst3"),
+                reverb_fingerprint,
+                load_reverb,
+            )
+            .expect("the fake loads"),
+        );
+        let _delay = shared_module(
+            &cache,
+            fixture.0.join("Delay.vst3"),
+            || module_file_fingerprint(&delay_file),
+            || Ok(Arc::new(ResidentFakeModule)),
+        )
+        .expect("a second bundle loads, sweeping released entries");
+        fixture.replace(&reverb_file, b"build 2, rebuilt");
+        let reopened = shared_module(
+            &cache,
+            fixture.0.join("Reverb.vst3"),
+            reverb_fingerprint,
+            load_reverb,
+        );
+
+        assert!(
+            reopened.is_err(),
+            "the sweep must not forget that the old build stays resident"
+        );
+        assert_eq!(reverb_loads.load(AtomicOrdering::SeqCst), 1);
     }
 }
