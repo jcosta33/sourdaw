@@ -17,12 +17,14 @@ use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use crate::plugin_slot::{
     CaptureInputBlock, MidiControlEvent, MidiNoteEvent, NativePlugin, TransportState,
 };
+#[cfg(test)]
+use crate::timeline::timeline_rt_diagnostics_channel;
 use crate::timeline::{
-    timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, BuiltinParamName,
-    ChainEntry, ClipPlacement, ClipPlayback, CompensationDevices, DeviceChain, DeviceParam,
-    DeviceParamEvent, DeviceParamQueue, DeviceParamTarget, RetiredTimelineObject, RouteTarget,
-    SendTap, TimelineBus, TimelineClip, TimelineGraph, TimelineRtDiagnosticsSnapshot,
-    TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
+    AutomationTarget, AutomationWrite, BuiltinParamName, ChainEntry, ClipPlacement, ClipPlayback,
+    CompensationDevices, DeviceChain, DeviceParam, DeviceParamEvent, DeviceParamQueue,
+    DeviceParamTarget, RetiredTimelineObject, RouteTarget, SendTap, TimelineBus, TimelineClip,
+    TimelineGraph, TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES,
+    MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use crate::transport_map::{LoopRegion, TransportMaps};
 use daw_dsp::bacteria::engine::BacteriaEngine;
@@ -3089,51 +3091,15 @@ impl BacteriaBody {
 /// alias another is answered here, where every other body answers it.
 const PROOF_PATCH_PRECEDENCE: &[&str] = &[];
 
-/// The Proof parameter name the graph owns rather than the chain, and which
-/// [`ProofBody::set_param`] therefore drops on both threads.
-///
-/// `bypass` is the device's bypass, and the device's bypass is
-/// [`GraphCommand::SetBypass`] for every body the engine hosts: the chain skips
-/// a bypassed device rather than handing it a block, and
-/// [`ActiveEffect::refresh_declared_latency`] reads that state to declare 0
-/// while it holds. Forwarding the name would put a second, invisible bypass
-/// inside a device the graph already believes it is running — the block would
-/// come back untouched while the graph went on declaring the chain's figure,
-/// so every route meeting the strip would wait for a delay the signal no longer
-/// takes.
-///
-/// `ab_bypass` is deliberately not here. It is the mastering panel's A/B
-/// compare, which `ProofChain::process` answers by returning the dry signal
-/// scaled by the loudness offset it has been tracking
-/// (`crates/daw-dsp/src/proof/chain.rs`). It is a chain control all the same,
-/// and a compare pressed while the session rolls natively is a gesture on the
-/// carrier that is sounding. Dropping it here would leave the panel's chip
-/// reading "A / dry" over the processed mix. The gain offset the compare is
-/// matched with is the chain's own: it opens at 0 dB and the chain re-derives
-/// it from its meters on every pass it processes, so this body gain-matches
-/// out of the same state the web twin does, whatever reads the meters
-/// afterwards.
-///
-/// The project has not persisted it since 11563e86b (2026-08-16) —
-/// `setProofParam` (`src/modules/Proof/useCases/proofParamBridge`) holds it out
-/// of the saved device row — but a row saved before that commit can still
-/// carry it. [`PROOF_RECORD_REFUSED`] is what refuses that name at the record
-/// door; this constant governs only the live arm.
-///
-/// The name is dropped on the control thread too, unlike
-/// [`BACTERIA_CONTROL_THREAD_ONLY`], because the reason is not which thread may
-/// run the arm: it is that the arm belongs to a carrier this body is not. A
-/// persisted record carrying it leaves the chain exactly where the graph's own
-/// bypass put it.
-const PROOF_GRAPH_OWNED: &[&str] = &["bypass"];
-
 /// The Proof parameter name a persisted patch record must not carry, refused
 /// only at the record door in [`ProofBody::load_patch`]. A live
 /// [`ProofBody::set_param`] still forwards it: the arm it engages there is a
-/// session gesture, not a saved value, and [`PROOF_GRAPH_OWNED`]'s doc is what
-/// explains why that arm is not dropped on the live path.
+/// session gesture, not a saved value.
 ///
-/// `ab_bypass` is the mastering panel's A/B compare. Before 11563e86b
+/// `ab_bypass` is the mastering panel's A/B compare, which `ProofChain::process`
+/// answers by returning the dry signal scaled by the loudness offset it has been
+/// tracking (`crates/daw-dsp/src/proof/chain.rs`); a compare pressed while the
+/// session rolls natively is a gesture on the carrier that is sounding. Before 11563e86b
 /// (2026-08-16) the panel persisted it into the device row like any other
 /// control; that commit stopped the persistence, but a project saved before it
 /// can still carry `ab_bypass: 1`. Feeding that value through `load_patch`
@@ -3219,9 +3185,9 @@ fn proof_chain_order_slot(name: &str) -> Option<usize> {
 ///
 /// ## Names the graph owns
 ///
-/// [`PROOF_GRAPH_OWNED`] — `bypass` — is dropped here rather than forwarded, for
-/// the reason that constant carries: the device's bypass is
-/// [`GraphCommand::SetBypass`]. `ab_bypass` is not in it, and reaches the chain
+/// `bypass` is dropped here rather than forwarded (the parameter registry
+/// admits it as graph-owned), because the device's bypass is
+/// [`GraphCommand::SetBypass`]. `ab_bypass` is not dropped, and reaches the chain
 /// like any other control, so the panel's A/B compare is audible on a natively
 /// carried strip.
 ///
@@ -3449,7 +3415,7 @@ const DUTCH_OVEN_PATCH_PRECEDENCE: &[&str] = &[];
 /// never as a parameter — the `dutch-oven` descriptor
 /// (`src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts`)
 /// declares no `bypass` row, and `ProofChamberInstance::set_param` has no arm
-/// for one — so there is no [`PROOF_GRAPH_OWNED`] analogue to withhold. Nor is
+/// for one — so there is no graph-owned name to withhold. Nor is
 /// there a record-door refusal like [`PROOF_RECORD_REFUSED`]: no wire name
 /// engages a session-only audition here, and the one internal name the record
 /// carries beyond the descriptor's automatable rows,
@@ -6282,6 +6248,7 @@ impl AudioScheduler {
         Self::with_midi_rt_diagnostics(command_rx, retired_tx, sample_rate, diagnostics_tx)
     }
 
+    #[cfg(test)]
     pub(crate) fn with_midi_rt_diagnostics(
         command_rx: Consumer<GraphCommand>,
         retired_tx: Producer<RetiredGraphObjects>,

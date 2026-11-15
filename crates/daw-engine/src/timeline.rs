@@ -1593,6 +1593,7 @@ const MASTER_FADER_SETTLED_EPSILON: f32 = 1e-6;
 /// ride `setTargetAtTime(target, now, 0.005)`, and the native gate has to glide
 /// on the same curve: a hard step silences at a block boundary with a click
 /// the web side does not have (issue #2126).
+#[cfg(test)]
 const GATE_TIME_CONSTANT_SEC: f32 = 0.005;
 
 /// The fraction of the remaining distance one frame covers:
