@@ -100,7 +100,12 @@ it is gone or a zombie` with an EACCES FD list progressing through live, reaped,
 Linux release from an observation that waited on an exit`, requiring a new complete process observation after
     any wait, including retention when a previously inspected process becomes a borrower; `keeps storage proof
 evidence out of the child output unless it explains retention`, where startup, superseded and successful
-    proofs leave byte-exact parseable child output and a retained run emits only its own final obstruction.
+    proofs leave byte-exact parseable child output and retained proof reports only this run's evidence. Silent
+    census/identity returns (#5274) and sticky/caught release proof (#5443, #5358) must be observed by
+    `reports the original storage proof predicate`, `keeps the first storage obstruction` and
+    `reports a safe storage release exception`: capture the original predicate, separate first obstruction/final census, and bounded
+    PID/status/errno/syscall. Removing an original reporter or collapsing first/final proof must fail; the nonblocking
+    supervisor-identity control must preserve transient retention. Emit no starts, paths, raw errors, commands or environment.
 11. **Process-group inspection EPERM is not a foreign UID (#5240).** XNU's group signal traversal
     ([`bsd/kern/kern_sig.c`][xnu-sig]) excludes zombies, so an existing all-zombie group may return EPERM until
     reap ([`bsd/kern/kern_exit.c`][xnu-exit]) removes its membership; current kernel source is not an

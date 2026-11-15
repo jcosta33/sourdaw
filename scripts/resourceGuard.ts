@@ -54,7 +54,11 @@ import {
     type ProcessTreeSnapshot,
     type ProcessTreeState,
 } from './resourceGuardProcessTree.ts';
-import { areTransientProofReasons } from './resourceGuardProofReasons.ts';
+import {
+    areTransientProofReasons,
+    describeStorageProofFailure,
+    storageReleaseFailure,
+} from './resourceGuardProofReasons.ts';
 import {
     createGuardStorage,
     diskStorageFailure,
@@ -1115,14 +1119,28 @@ function boundedEnvironment(
 
 type ProcessMetadata = Extract<ReturnType<typeof captureProcessGroupSnapshot>, { status: 'available' }>['rows'][number];
 
-function storageIdentityState(identity: StorageProcessIdentity): 'alive' | 'dead' | 'unknown' {
+export function storageIdentityState(
+    identity: StorageProcessIdentity,
+    report?: (reason: string) => void,
+    host: Pick<ProcessTreeHost, 'kill' | 'processStartedAt'> = processTreeHost
+): 'alive' | 'dead' | 'unknown' {
     try {
-        process.kill(identity.pid, 0);
+        host.kill(identity.pid, 0);
     } catch (error) {
-        return (error as NodeJS.ErrnoException).code === 'ESRCH' ? 'dead' : 'unknown';
+        const errno = processSignalErrno(error);
+        if (errno === 'ESRCH') {
+            return 'dead';
+        }
+        report?.(`session-identity-unknown:pid=${identity.pid}:status=probe-unavailable:errno=${errno}`);
+        return 'unknown';
     }
-    const startedAt = processStartedAt(identity.pid);
+    const startedAt = host.processStartedAt(identity.pid);
     // A reused PID is conservatively retained; it is never authority to delete storage.
+    if (startedAt !== identity.startedAt) {
+        report?.(
+            `session-identity-unknown:pid=${identity.pid}:status=${startedAt === undefined ? 'start-unavailable' : 'reused'}`
+        );
+    }
     return startedAt === identity.startedAt ? 'alive' : 'unknown';
 }
 
@@ -1144,7 +1162,10 @@ export function startTimeExcuseSupervisor(
 type StorageRecoveryHost = {
     platform: () => NodeJS.Platform;
     currentPid: number;
-    identityState: (identity: StorageProcessIdentity) => 'alive' | 'dead' | 'unknown';
+    identityState: (
+        identity: StorageProcessIdentity,
+        report?: (reason: string) => void
+    ) => 'alive' | 'dead' | 'unknown';
     processCensus: (sessionToken: string) => { rows: ProcessRow[]; rawOutput?: string } | undefined;
     fileState: (
         tempDirectories: string[],
@@ -1171,15 +1192,20 @@ export function storageRecoveryPorts(
         identityState: host.identityState,
         sessionState: (owner, tempDirectory, currentTempDirectory = tempDirectory) => {
             if (host.platform() === 'win32' && owner.phase !== 'ready') {
+                report('session-platform-unsupported');
                 return 'unknown';
             }
             const census = host.processCensus(owner.token);
             if (census === undefined) {
+                report('session-process-census-unavailable');
                 return 'unknown';
             }
             if (host.platform() !== 'win32') {
                 const references = storageReferenceState(census.rawOutput, tempDirectory);
                 if (references !== 'dead') {
+                    if (references === 'unknown') {
+                        report('session-reference-unavailable');
+                    }
                     return references;
                 }
             }
@@ -1191,8 +1217,14 @@ export function storageRecoveryPorts(
                 return 'alive';
             }
             for (const identity of [...owner.tracked, ...(owner.child === undefined ? [] : [owner.child])]) {
-                const state = host.identityState(identity);
+                let identityReason: string | undefined;
+                const state = host.identityState(identity, (reason) => {
+                    identityReason = reason;
+                });
                 if (state !== 'dead') {
+                    if (state === 'unknown') {
+                        report(identityReason ?? `session-identity-unknown:pid=${identity.pid}:status=unclassified`);
+                    }
                     return state;
                 }
             }
@@ -2227,6 +2259,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     let storageRemoved = false;
     let treeExitProved = false;
     let releaseThrew = false;
+    let releaseFailure: ReturnType<typeof storageReleaseFailure> | undefined;
     const cleanupStorage = async (): Promise<boolean> => {
         if (storageRemoved) {
             return true;
@@ -2235,8 +2268,9 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         treeExitProved = treeStopped;
         storageProof.verdict = undefined;
         storageProof.reasons = [];
-        const removed = await storage.release(treeStopped).catch(() => {
+        const removed = await storage.release(treeStopped).catch((error: unknown) => {
             releaseThrew = true;
+            releaseFailure ??= storageReleaseFailure(error, storageProof.verdict);
             return false;
         });
         if (ownedSession && treeStopped) {
@@ -2494,6 +2528,16 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
                     `\nguard storage retained: process-tree exit or storage ownership could not be proved\nguard storage final census: ${census}\n`
                 )
             );
+            const diagnostic = describeStorageProofFailure(
+                storageProof.obstruction,
+                storageProof.diagnostic,
+                storageProof.verdict,
+                storageProof.reasons,
+                releaseFailure
+            );
+            if (diagnostic !== undefined) {
+                output.append(Buffer.from(`\nguard storage diagnostic: ${diagnostic}\n`));
+            }
             reason ??= 'leak';
         }
     }

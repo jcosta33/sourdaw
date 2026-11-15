@@ -35,6 +35,7 @@ import {
     parseLinuxStartTicks,
     startTimeExcuseSupervisor,
     storageRecoveryPorts,
+    storageIdentityState,
 } from '../resourceGuard';
 import { areTransientProofReasons } from '../resourceGuardProofReasons';
 import {
@@ -5102,6 +5103,55 @@ describe('disk reserve contract', () => {
 });
 
 describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
+    it.each([
+        { status: 'reused', current: 'replacement-private-start', errno: undefined, verdict: 'unknown', reads: 1 },
+        { status: 'start-unavailable', current: undefined, errno: undefined, verdict: 'unknown', reads: 1 },
+        {
+            status: 'probe-unavailable',
+            current: 'matching-private-start',
+            errno: 'EPERM',
+            verdict: 'unknown',
+            reads: 0,
+        },
+        {
+            status: 'probe-unavailable',
+            current: 'matching-private-start',
+            errno: 'EACCES',
+            verdict: 'unknown',
+            reads: 0,
+        },
+        { status: 'matching', current: 'matching-private-start', errno: undefined, verdict: 'alive', reads: 1 },
+        { status: 'absent', current: 'matching-private-start', errno: 'ESRCH', verdict: 'dead', reads: 0 },
+    ] as const)('captures the original storage identity observation for $status $errno', (item) => {
+        const reports: string[] = [];
+        let reads = 0;
+        const verdict = storageIdentityState(
+            { pid: 200, startedAt: 'matching-private-start' },
+            (reason) => reports.push(reason),
+            {
+                kill: (_pid, signal) => {
+                    expect(signal).toBe(0);
+                    if (item.errno !== undefined) {
+                        throw Object.assign(new Error('private syscall message'), { code: item.errno });
+                    }
+                    return true;
+                },
+                processStartedAt: () => {
+                    reads += 1;
+                    return item.current;
+                },
+            }
+        );
+        expect(verdict).toBe(item.verdict);
+        expect(reads).toBe(item.reads);
+        const expectedReports: string[] = [];
+        if (item.verdict === 'unknown') {
+            expectedReports.push(
+                `session-identity-unknown:pid=200:status=${item.status}${item.errno === undefined ? '' : `:errno=${item.errno}`}`
+            );
+        }
+        expect(reports).toEqual(expectedReports);
+    });
     type CensusHost = NonNullable<Parameters<typeof runGuardedCommand>[0]['storageHost']>;
     const censusReporting = (verdict: 'alive' | 'dead' | 'unknown', ...reasons: string[]): CensusHost => ({
         fileState: (_tempDirectories, _ownedPids, report) => {
@@ -5196,6 +5246,317 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             }
         }
     }
+
+    function proofOutput(result: Awaited<ReturnType<typeof runGuardedCommand>> | undefined): string {
+        if (result === undefined) {
+            throw new Error('guarded command did not return a result');
+        }
+        return result.output;
+    }
+
+    function proofObservation(output: string) {
+        const line = output.split('\n').find((value) => value.startsWith('guard storage diagnostic: '));
+        expect(line, output).toBeDefined();
+        if (line === undefined) {
+            throw new Error(output);
+        }
+        return JSON.parse(line.slice('guard storage diagnostic: '.length));
+    }
+
+    it.each([
+        { route: 'process census', predicate: 'session-process-census-unavailable' },
+        { route: 'reference evidence', predicate: 'session-reference-unavailable' },
+        { route: 'identity', predicate: 'session-identity-unknown:pid=200:status=unclassified' },
+    ])('reports the original storage proof predicate for unavailable $route', async ({ route, predicate }) => {
+        const root = fixture();
+        let fileCensuses = 0;
+        const { code, result } = await runCli(root, {
+            args: ['-e', 'process.stdout.write("child-output")'],
+            storageHost: {
+                processCensus: () => {
+                    if (route === 'process census') {
+                        return undefined;
+                    }
+                    if (route === 'reference evidence') {
+                        return { rows: [] };
+                    }
+                    return { rows: [], rawOutput: 'unrelated' };
+                },
+                identityState: (identity) => (identity.pid === 200 ? 'unknown' : 'dead'),
+                fileState: () => {
+                    fileCensuses += 1;
+                    return 'dead';
+                },
+            },
+            storageFactory: (input) => {
+                const storage = createGuardStorage(input);
+                return {
+                    ...storage,
+                    release: (stopped) => {
+                        storage.recordProcesses(undefined, new Map([[200, 'private-start-must-not-appear']]));
+                        return storage.release(stopped);
+                    },
+                };
+            },
+        });
+        expect(code).toBe(1);
+        expect(result?.reason).toBe('leak');
+        expect(fileCensuses).toBe(0);
+        expect(proofObservation(proofOutput(result))).toEqual({
+            firstObstruction: { verdict: 'unknown', predicate },
+            finalObservation: { verdict: 'unknown', predicate },
+        });
+        expect(proofOutput(result)).not.toContain('private-start-must-not-appear');
+    });
+
+    it.each([
+        { status: 'reused', current: 'replacement-private-start', errno: undefined },
+        { status: 'start-unavailable', current: undefined, errno: undefined },
+        { status: 'probe-unavailable', current: 'private-start', errno: 'EPERM' },
+    ] as const)('reports the original storage identity status $status in final guard output', async (item) => {
+        const root = fixture();
+        const predicate = `session-identity-unknown:pid=200:status=${item.status}${item.errno === undefined ? '' : `:errno=${item.errno}`}`;
+        const { result } = await runCli(root, {
+            args: ['-e', 'process.exitCode=0'],
+            storageHost: {
+                processCensus: () => ({ rows: [], rawOutput: 'unrelated' }),
+                identityState: (identity, report) => {
+                    if (identity.pid !== 200) {
+                        return 'dead';
+                    }
+                    return storageIdentityState(identity, report, {
+                        kill: () => {
+                            if (item.errno !== undefined) {
+                                throw Object.assign(new Error('private syscall message'), { code: item.errno });
+                            }
+                            return true;
+                        },
+                        processStartedAt: () => item.current,
+                    });
+                },
+                fileState: () => {
+                    throw new Error('uncertain identity must not reach file census');
+                },
+            },
+            storageFactory: (input) => {
+                const storage = createGuardStorage(input);
+                return {
+                    ...storage,
+                    release: (stopped) => {
+                        storage.recordProcesses(undefined, new Map([[200, 'private-start']]));
+                        return storage.release(stopped);
+                    },
+                };
+            },
+        });
+        expect(result?.reason).toBe('leak');
+        expect(proofObservation(proofOutput(result))).toEqual({
+            firstObstruction: { verdict: 'unknown', predicate },
+            finalObservation: { verdict: 'unknown', predicate },
+        });
+        expect(proofOutput(result)).not.toContain('private-start');
+        expect(proofOutput(result)).not.toContain('private syscall');
+    });
+
+    it('keeps nonblocking supervisor identity uncertainty out of transient storage proof', async () => {
+        const root = fixture();
+        const { result } = await runCli(root, {
+            args: ['-e', 'process.stdout.write("child-output")'],
+            storageHost: {
+                platform: () => 'linux',
+                currentPid: process.pid,
+                processCensus: () => ({ rows: [], rawOutput: 'unrelated' }),
+                identityState: (identity, report) => {
+                    if (identity.pid !== process.pid) {
+                        return 'dead';
+                    }
+                    return storageIdentityState(identity, report, {
+                        kill: () => {
+                            throw Object.assign(new Error('private supervisor read'), { code: 'EPERM' });
+                        },
+                        processStartedAt: () => {
+                            throw new Error('permission failure cannot add an identity read');
+                        },
+                    });
+                },
+                fileState: (_paths, _pids, report) => {
+                    report('file-census-time-bound');
+                    return 'unknown';
+                },
+            },
+        });
+        expect(result?.reason).toBeUndefined();
+        expect(result?.retainedStorage?.reason).toBe('file-census-time-bound');
+        expect(proofOutput(result)).toBe('child-output');
+    });
+
+    it('reports unsupported Windows recovery census without inspecting processes', () => {
+        const root = fixture();
+        const reports: string[] = [];
+        const ports = storageRecoveryPorts((reason) => reports.push(reason), {
+            platform: () => 'win32',
+            currentPid: process.pid,
+            identityState: () => 'dead',
+            processCensus: () => {
+                throw new Error('unsupported proof cannot inspect processes');
+            },
+            fileState: () => {
+                throw new Error('unsupported proof cannot inspect files');
+            },
+        });
+        const storage = createGuardStorage({ root, token: randomUUID(), owner: fakeOwner, ports });
+        storage.markSpawning();
+        expect(ports.sessionState(readOwner(storage.tempDirectory), storage.tempDirectory)).toBe('unknown');
+        expect(reports).toEqual(['session-platform-unsupported']);
+    });
+
+    it('redacts non-errno release fields in final guard diagnostics', async () => {
+        const root = fixture();
+        const { result } = await runCli(root, {
+            args: ['-e', 'process.exitCode=0'],
+            storageFactory: (input) => {
+                const storage = createGuardStorage(input);
+                return {
+                    ...storage,
+                    release: async () => {
+                        throw Object.assign(new Error('private message'), {
+                            code: 'EACCES /private/path',
+                            syscall: 'rename /private/path',
+                        });
+                    },
+                };
+            },
+        });
+        expect(result?.reason).toBe('leak');
+        expect(proofObservation(proofOutput(result))).toEqual({
+            firstObstruction: null,
+            finalObservation: { verdict: 'unobserved' },
+            releaseFailure: { errno: 'unknown', syscall: 'unknown', census: 'unobserved' },
+        });
+        expect(proofOutput(result)).not.toContain('private');
+    });
+
+    it.each(['before', 'after'] as const)('reports a safe storage release exception %s the census', async (when) => {
+        const root = fixture();
+        const error = Object.assign(new Error('private message /private/path must not appear'), {
+            code: 'EACCES',
+            syscall: 'rename',
+            path: '/private/path',
+        });
+        const { code, result } = await runCli(root, {
+            args: ['-e', 'process.exitCode=0'],
+            storageHost: censusReporting('dead'),
+            storageFactory: (input) => {
+                const storage = createGuardStorage(input);
+                return {
+                    ...storage,
+                    release: async () => {
+                        if (when === 'after') {
+                            const owner = readOwner(storage.tempDirectory);
+                            input.ports.sessionState(owner, storage.tempDirectory);
+                        }
+                        throw error;
+                    },
+                };
+            },
+        });
+        expect(code).toBe(1);
+        expect(result?.reason).toBe('leak');
+        const verdict = when === 'before' ? 'unobserved' : 'dead';
+        expect(proofObservation(proofOutput(result))).toEqual({
+            firstObstruction: null,
+            finalObservation: { verdict },
+            releaseFailure: { errno: 'EACCES', syscall: 'rename', census: verdict },
+        });
+        expect(proofOutput(result)).not.toContain('private message');
+        expect(proofOutput(result)).not.toContain('/private/path');
+    });
+
+    it.each(['reference-unknown', 'throw-before-census'] as const)(
+        'keeps the first storage obstruction when the final attempt is %s',
+        async (when) => {
+            const root = fixture();
+            let attempts = 0;
+            const { result } = await runCli(root, {
+                args: ['-e', 'process.exitCode=0'],
+                storageHost: {
+                    processCensus: () => (attempts === 1 ? undefined : { rows: [] }),
+                    identityState: () => 'dead',
+                    fileState: () => 'dead',
+                },
+                storageFactory: (input) => {
+                    const storage = createGuardStorage(input);
+                    return {
+                        ...storage,
+                        release: async () => {
+                            attempts += 1;
+                            if (attempts > 1 && when === 'throw-before-census') {
+                                throw Object.assign(new Error('private release detail'), {
+                                    code: 'EIO',
+                                    syscall: 'lstat',
+                                });
+                            }
+                            input.ports.sessionState(readOwner(storage.tempDirectory), storage.tempDirectory);
+                            return false;
+                        },
+                    };
+                },
+            });
+            expect(result?.reason).toBe('leak');
+            const observation = proofObservation(proofOutput(result));
+            expect(observation.firstObstruction).toEqual({
+                verdict: 'unknown',
+                predicate: 'session-process-census-unavailable',
+            });
+            if (when === 'reference-unknown') {
+                expect(observation.finalObservation).toEqual({
+                    verdict: 'unknown',
+                    predicate: 'session-reference-unavailable',
+                });
+                expect(observation.releaseFailure).toBeUndefined();
+            } else {
+                expect(observation.finalObservation).toEqual({ verdict: 'unobserved' });
+                expect(observation.releaseFailure).toEqual({ errno: 'EIO', syscall: 'lstat', census: 'unobserved' });
+            }
+        }
+    );
+
+    it('keeps the first storage obstruction distinct from the final census and release exception', async () => {
+        const root = fixture();
+        let attempts = 0;
+        const { result } = await runCli(root, {
+            args: ['-e', 'process.exitCode=0'],
+            storageHost: {
+                processCensus: () => (attempts === 1 ? undefined : { rows: [], rawOutput: 'unrelated' }),
+                identityState: () => 'dead',
+                fileState: () => 'dead',
+            },
+            storageFactory: (input) => {
+                const storage = createGuardStorage(input);
+                return {
+                    ...storage,
+                    release: async () => {
+                        attempts += 1;
+                        const owner = readOwner(storage.tempDirectory);
+                        input.ports.sessionState(owner, storage.tempDirectory);
+                        if (attempts > 1) {
+                            throw Object.assign(new Error('private release detail'), {
+                                code: 'ENOENT',
+                                syscall: 'lstat',
+                            });
+                        }
+                        return false;
+                    },
+                };
+            },
+        });
+        expect(result?.reason).toBe('leak');
+        expect(proofObservation(proofOutput(result))).toEqual({
+            firstObstruction: { verdict: 'unknown', predicate: 'session-process-census-unavailable' },
+            finalObservation: { verdict: 'dead' },
+            releaseFailure: { errno: 'ENOENT', syscall: 'lstat', census: 'dead' },
+        });
+    });
 
     it.each([
         { status: 0, expectedCode: 0 },
