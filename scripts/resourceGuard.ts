@@ -69,9 +69,7 @@ import {
     referencesStoragePath,
     DEFAULT_DISK_RESERVE_BYTES,
     DISK_RESERVE_ENV,
-    type StorageProcessIdentity,
 } from './resourceGuardStorage.ts';
-
 import {
     storageIdentityState,
     storageRecoveryPorts,

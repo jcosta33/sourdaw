@@ -34,11 +34,7 @@ import {
     parseLinuxFileSnapshot,
     parseLinuxStartTicks,
 } from '../resourceGuard';
-import {
-    startTimeExcuseSupervisor,
-    storageRecoveryPorts,
-    storageIdentityState,
-} from '../resourceGuardStorageProcessProof';
+import { type ProcessRow } from '../resourceGuardProcessTree';
 import { areTransientProofReasons } from '../resourceGuardProofReasons';
 import {
     createGuardStorage,
@@ -55,6 +51,11 @@ import {
     type StorageProcessIdentity,
     type StorageRecoveryPorts,
 } from '../resourceGuardStorage';
+import {
+    startTimeExcuseSupervisor,
+    storageRecoveryPorts,
+    storageIdentityState,
+} from '../resourceGuardStorageProcessProof';
 
 const roots: string[] = [];
 const childPids = new Set<number>();
@@ -2327,7 +2328,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                 if (table.some((entry) => entry.pid === identity.pid && entry.startedAt === identity.startedAt)) {
                     return 'alive';
                 }
-                return table.some((entry) => entry.pid === identity.pid) ? 'unknown' : 'dead';
+                return table.some((entry) => entry.pid === identity.pid) ? 'replaced' : 'dead';
             };
             expect(startTimeExcuseSupervisor(owner, supervisorIdentity.pid, host, identityState)).toBe(bound);
         }
@@ -5106,21 +5107,21 @@ describe('disk reserve contract', () => {
 
 describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it.each([
-        { status: 'reused', current: 'replacement-private-start', errno: undefined, verdict: 'unknown', reads: 1 },
+        { status: 'reused', current: 'replacement-private-start', errno: undefined, verdict: 'replaced', reads: 1 },
         { status: 'start-unavailable', current: undefined, errno: undefined, verdict: 'unknown', reads: 1 },
         {
             status: 'probe-unavailable',
             current: 'matching-private-start',
             errno: 'EPERM',
             verdict: 'unknown',
-            reads: 0,
+            reads: 1,
         },
         {
             status: 'probe-unavailable',
             current: 'matching-private-start',
             errno: 'EACCES',
             verdict: 'unknown',
-            reads: 0,
+            reads: 1,
         },
         { status: 'matching', current: 'matching-private-start', errno: undefined, verdict: 'alive', reads: 1 },
         { status: 'absent', current: 'matching-private-start', errno: 'ESRCH', verdict: 'dead', reads: 0 },
@@ -5312,7 +5313,6 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     });
 
     it.each([
-        { status: 'reused', current: 'replacement-private-start', errno: undefined },
         { status: 'start-unavailable', current: undefined, errno: undefined },
         { status: 'probe-unavailable', current: 'private-start', errno: 'EPERM' },
     ] as const)('reports the original storage identity status $status in final guard output', async (item) => {
@@ -5377,7 +5377,7 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                             throw Object.assign(new Error('private supervisor read'), { code: 'EPERM' });
                         },
                         processStartedAt: () => {
-                            throw new Error('permission failure cannot add an identity read');
+                            return identity.startedAt;
                         },
                     });
                 },
@@ -5850,4 +5850,284 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         expect(existsSync(provable.tempDirectory)).toBe(false);
         expect(existsSync(unprovable.tempDirectory)).toBe(true);
     });
+});
+
+describe('storage identity replacement', () => {
+    const oldStart = 'stored-old-start';
+    const newStart = 'current-new-start';
+    function proofFixture() {
+        const state: {
+            starts: Map<number, string | undefined>;
+            errors: Map<number, string>;
+            rows: ProcessRow[];
+            fileVerdict: 'alive' | 'dead' | 'unknown';
+            fileCalls: number[][];
+            reports: string[];
+        } = {
+            starts: new Map(),
+            errors: new Map(),
+            rows: [],
+            fileVerdict: 'dead',
+            fileCalls: [],
+            reports: [],
+        };
+        const host: Parameters<typeof storageRecoveryPorts>[1] = {
+            platform: () => 'darwin',
+            currentPid: process.pid,
+            identityState: (identity, report) =>
+                storageIdentityState(identity, report, {
+                    kill: (pid, signal) => {
+                        expect(signal).toBe(0);
+                        const errno = state.errors.get(pid);
+                        if (errno !== undefined) {
+                            throw Object.assign(new Error('private probe detail'), { code: errno });
+                        }
+                        if (!state.starts.has(pid)) {
+                            throw Object.assign(new Error('exited'), { code: 'ESRCH' });
+                        }
+                        return true;
+                    },
+                    processStartedAt: (pid) => state.starts.get(pid),
+                }),
+            processCensus: () => ({ rows: state.rows, rawOutput: 'unrelated process output' }),
+            fileState: (_paths, owned) => {
+                state.fileCalls.push(owned);
+                return state.fileVerdict;
+            },
+        };
+        return { state, host, ports: storageRecoveryPorts((reason) => state.reports.push(reason), host) };
+    }
+    function groupRow(pid: number, pgid: number, sessionOwned = false): ProcessRow {
+        return { pid, parentPid: 1, processGroupId: pgid, rssBytes: 0, sessionOwned, command: 'unrelated' };
+    }
+
+    it.each([
+        { member: 'tracked', matching: true },
+        { member: 'tracked', matching: false },
+        { member: 'child', matching: true },
+        { member: 'child', matching: false },
+    ])(
+        'retains a current $member binding with matching=$matching and no numeric group row',
+        async ({ member, matching }) => {
+            const ctx = proofFixture();
+            let start: string | undefined;
+            if (matching) {
+                start = oldStart;
+            }
+            ctx.state.starts.set(200, start);
+            const storage = ownedStorage(fixture(), ctx.ports);
+            if (member === 'child') {
+                storage.recordProcesses({ pid: 200, startedAt: oldStart }, new Map());
+            } else {
+                storage.recordProcesses(undefined, new Map([[200, oldStart]]));
+            }
+            expect(await storage.release(true)).toBe(false);
+            expect(existsSync(storage.payloadPath())).toBe(true);
+            expect(ctx.state.fileCalls).toEqual([]);
+        }
+    );
+
+    it.each(['dead', 'alive', 'unknown'] as const)(
+        'requires complete file proof after a replaced tracked identity: %s',
+        async (verdict) => {
+            const ctx = proofFixture();
+            ctx.state.starts.set(200, newStart);
+            ctx.state.fileVerdict = verdict;
+            const storage = ownedStorage(fixture(), ctx.ports);
+            storage.recordProcesses(undefined, new Map([[200, oldStart]]));
+            const removed = await storage.release(true);
+            expect(ctx.state.fileCalls.length).toBeGreaterThan(0);
+            expect(ctx.state.fileCalls.every((owned) => !owned.includes(200))).toBe(true);
+            expect(removed).toBe(verdict === 'dead');
+            expect(existsSync(storage.payloadPath())).toBe(verdict !== 'dead');
+        }
+    );
+
+    it.each([
+        { uid: 501, borrower: true, removed: false },
+        { uid: 501, borrower: false, removed: true },
+        { uid: 777, borrower: false, removed: true },
+    ])(
+        'uses fresh complete user/file proof for replacement UID $uid, borrower $borrower',
+        async ({ uid, borrower, removed }) => {
+            const ctx = proofFixture();
+            ctx.state.starts.set(200, newStart);
+            if (uid !== 501) {
+                ctx.state.errors.set(200, 'EPERM');
+            }
+            const inspected: number[] = [];
+            let userReads = 0;
+            ctx.host.fileState = (paths, owned, report) => {
+                ctx.state.fileCalls.push(owned);
+                const users = () => {
+                    userReads += 1;
+                    return sameUserProcessIds(`${process.pid} 501\n200 ${uid}\n`, 501, process.pid, owned);
+                };
+                const pids = users();
+                if (pids === undefined) {
+                    return 'unknown';
+                }
+                return linuxStorageFileCensus(pids, 501, paths, 100, report, {
+                    readProcessUsers: () => users() ?? 'process-users-unusable',
+                    isGone: () => false,
+                    now: () => 0,
+                    files: {
+                        inspectUid: () => 501,
+                        readCwd: (pid) => {
+                            inspected.push(pid);
+                            if (pid === 200 && borrower) {
+                                const currentPath = paths[1];
+                                if (currentPath === undefined) {
+                                    throw new Error('complete proof must include the current payload path');
+                                }
+                                return currentPath;
+                            }
+                            return '/unrelated';
+                        },
+                        listDescriptors: () => [],
+                        readDescriptor: () => undefined,
+                        readStatus: () => '',
+                        isGone: () => false,
+                        now: () => 0,
+                    },
+                });
+            };
+            const storage = ownedStorage(fixture(), ctx.ports);
+            storage.recordProcesses(undefined, new Map([[200, oldStart]]));
+            const actual = await storage.release(true);
+            expect(ctx.state.fileCalls.length).toBeGreaterThan(0);
+            expect(ctx.state.fileCalls.every((owned) => !owned.includes(200))).toBe(true);
+            expect(userReads).toBeGreaterThan(0);
+            expect(inspected.includes(200)).toBe(uid === 501);
+            expect(actual).toBe(removed);
+            expect(existsSync(storage.payloadPath())).toBe(!removed);
+        }
+    );
+
+    it.each([
+        { kind: 'replaced', start: newStart, present: true, removed: true },
+        { kind: 'absent leader with live original group', start: undefined, present: false, removed: false },
+        { kind: 'unreadable leader', start: undefined, present: true, removed: false },
+        { kind: 'matching leader', start: oldStart, present: true, removed: false },
+    ])('distinguishes root PGID authority for $kind', async ({ start, present, removed }) => {
+        const ctx = proofFixture();
+        if (present) {
+            ctx.state.starts.set(200, start);
+        }
+        ctx.state.rows = [groupRow(201, 200)];
+        const storage = ownedStorage(fixture(), ctx.ports);
+        storage.recordProcesses({ pid: 200, startedAt: oldStart }, new Map());
+        expect(await storage.release(true)).toBe(removed);
+        expect(existsSync(storage.payloadPath())).toBe(!removed);
+        expect(ctx.state.fileCalls.length > 0).toBe(removed);
+    });
+
+    it.each(['token', 'raw-reference'] as const)('retains a replaced identity borrower proved by %s', async (proof) => {
+        const ctx = proofFixture();
+        ctx.state.starts.set(200, newStart);
+        const storage = ownedStorage(fixture(), ctx.ports);
+        storage.recordProcesses({ pid: 200, startedAt: oldStart }, new Map());
+        if (proof === 'token') {
+            ctx.state.rows = [groupRow(201, 200, true)];
+        } else {
+            ctx.host.processCensus = () => ({ rows: [], rawOutput: storage.tempDirectory });
+        }
+        expect(await storage.release(true)).toBe(false);
+        expect(existsSync(storage.payloadPath())).toBe(true);
+        expect(ctx.state.fileCalls).toEqual([]);
+    });
+
+    it.each(['absent', 'replaced'] as const)(
+        'recovers an original payload with %s owner and replaced tracked identity',
+        (ownerState) => {
+            const ctx = proofFixture();
+            const root = fixture();
+            const storage = ownedStorage(root, deadPorts);
+            storage.recordProcesses(undefined, new Map([[200, oldStart]]));
+            ctx.state.starts.set(200, newStart);
+            if (ownerState === 'replaced') {
+                ctx.state.starts.set(fakeOwner.pid, newStart);
+            }
+            recoverGuardStorage(root, ctx.ports, fakeReclaimer);
+            expect(ctx.state.fileCalls.length).toBeGreaterThan(0);
+            expect(existsSync(storage.tempDirectory)).toBe(false);
+            expect(ctx.state.fileCalls.every((owned) => !owned.includes(200))).toBe(true);
+            if (ownerState === 'replaced') {
+                expect(ctx.state.fileCalls.every((owned) => !owned.includes(fakeOwner.pid))).toBe(true);
+            }
+        }
+    );
+
+    it.each(['replaced', 'unknown'] as const)(
+        'recovers a moved claim only with independent proof and %s reclaimer',
+        (reclaimer) => {
+            const root = fixture();
+            const storage = ownedStorage(root, deadPorts);
+            storage.recordProcesses(undefined, new Map([[200, oldStart]]));
+            let inspections = 0;
+            expect(
+                reclaimGuardStorage({
+                    root,
+                    owner: readOwner(storage.tempDirectory),
+                    reclaimer: fakeReclaimer,
+                    canRemove: () => {
+                        inspections += 1;
+                        return inspections === 1;
+                    },
+                })
+            ).toBe(false);
+            const payloads = claimPayloads(root);
+            expect(payloads).toHaveLength(1);
+            const payload = payloads[0];
+            if (payload === undefined) {
+                throw new Error('claim payload missing');
+            }
+            const ctx = proofFixture();
+            ctx.state.starts.set(200, newStart);
+            ctx.state.starts.set(fakeOwner.pid, newStart);
+            ctx.state.starts.set(fakeReclaimer.pid, undefined);
+            if (reclaimer === 'replaced') {
+                ctx.state.starts.set(fakeReclaimer.pid, newStart);
+            }
+            recoverGuardStorage(root, ctx.ports, { pid: 999992, startedAt: 'current-reclaimer' });
+            expect(existsSync(payload)).toBe(reclaimer !== 'replaced');
+            expect(ctx.state.fileCalls.length > 0).toBe(reclaimer === 'replaced');
+            expect(ctx.state.fileCalls.every((owned) => !owned.includes(fakeOwner.pid) && !owned.includes(200))).toBe(
+                true
+            );
+        }
+    );
+
+    it('remembers only the exact replaced binding within one proof controller', async () => {
+        const root = fixture();
+        const ctx = proofFixture();
+        ctx.state.starts.set(200, newStart);
+        ctx.state.fileVerdict = 'unknown';
+        const storage = ownedStorage(root, ctx.ports);
+        storage.recordProcesses(undefined, new Map([[200, oldStart]]));
+        expect(await storage.release(true)).toBe(false);
+        expect(ctx.state.fileCalls.length).toBeGreaterThan(0);
+        ctx.state.starts.set(200, undefined);
+        ctx.state.fileVerdict = 'dead';
+        const independent = storageRecoveryPorts((reason) => ctx.state.reports.push(reason), ctx.host);
+        recoverGuardStorage(root, independent, fakeReclaimer);
+        expect(existsSync(storage.tempDirectory)).toBe(true);
+        expect(ctx.ports.identityState({ pid: 200, startedAt: newStart })).toBe('unknown');
+        expect(await storage.release(true)).toBe(true);
+        expect(existsSync(storage.payloadPath())).toBe(false);
+    });
+
+    it.each(['EPERM', 'EACCES'] as const)(
+        'retires denied replacement %s while retaining matching and unreadable bindings',
+        (errno) => {
+            const ctx = proofFixture();
+            ctx.state.errors.set(200, errno);
+            ctx.state.starts.set(200, newStart);
+            expect(ctx.ports.identityState({ pid: 200, startedAt: oldStart })).toBe('dead');
+            expect(ctx.ports.identityState({ pid: 200, startedAt: newStart })).toBe('unknown');
+            ctx.state.starts.set(200, undefined);
+            expect(ctx.ports.identityState({ pid: 200, startedAt: 'another-binding' })).toBe('unknown');
+            expect(ctx.ports.identityState({ pid: 200, startedAt: oldStart })).toBe('dead');
+        }
+    );
 });

@@ -106,6 +106,10 @@ evidence out of the child output unless it explains retention`, where startup, s
     `reports a safe storage release exception`: capture the original predicate, separate first obstruction/final census, and bounded
     PID/status/errno/syscall. Removing an original reporter or collapsing first/final proof must fail; the nonblocking
     supervisor-identity control must preserve transient retention. Emit no starts, paths, raw errors, commands or environment.
+    Positive replacement retires only that PID/start binding; `storage identity replacement` must still require fresh
+    complete current-user/file proof across local release and original/moved-claim recovery. Drive same-UID borrowers,
+    foreign-UID replacements, denied/unreadable reads and weaker later observations; independent bindings/controllers
+    retain their own authority. Mapping replacement back to unknown, bypassing file proof or caching only PID must fail.
 11. **Process-group inspection EPERM is not a foreign UID (#5240).** XNU's group signal traversal
     ([`bsd/kern/kern_sig.c`][xnu-sig]) excludes zombies, so an existing all-zombie group may return EPERM until
     reap ([`bsd/kern/kern_exit.c`][xnu-exit]) removes its membership; current kernel source is not an
