@@ -1998,7 +1998,7 @@ describe('generateToolPlanningOutcome', () => {
 
         // The list production sends must carry exactly the planning contract plus every workflow action tool, and this holds across catalog growth.
         // The reference comparison is offered only while the user has a reference loaded, and none is
-        // loaded here; the brief only to a hosted chat request that asks for it, which this is not.
+        // loaded here; the brief only to a chat request that asks for it, which this is not.
         expect(new Set(schemas.map((tool) => tool.function.name))).toEqual(
             new Set([
                 ...planningContract
