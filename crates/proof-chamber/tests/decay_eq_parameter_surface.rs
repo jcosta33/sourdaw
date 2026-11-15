@@ -163,7 +163,13 @@ fn render(sample_rate: f32, algorithm: f32, writes: &[Write]) -> Render {
         let ptr = instance.process(&input, &input, BLOCK as u32);
         assert!(!ptr.is_null(), "process returned a null buffer");
         for i in 0..BLOCK {
-            left.push(unsafe { *ptr.add(i) });
+            // SAFETY: `ptr` is the instance's `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `i < BLOCK`, which is inside that capacity.
+            let slot = unsafe { ptr.add(i) };
+            // SAFETY: `slot` is in bounds of that initialised buffer, and
+            // nothing writes the instance between `process` and this read.
+            left.push(unsafe { *slot });
         }
         index += BLOCK;
     }
@@ -650,7 +656,15 @@ fn the_band_curve_survives_a_round_trip_through_another_algorithm() {
                 stimulus_block(index, &mut input, burst_frames);
                 let ptr = instance.process(&input, &input, BLOCK as u32);
                 for i in 0..BLOCK {
-                    left.push(unsafe { *ptr.add(i) });
+                    // SAFETY: `ptr` is the instance's `out_left`, allocated at
+                    // `PROOF_CHAMBER_BLOCK_FRAMES` samples by
+                    // `ProofChamberInstance::new` and never resized, and
+                    // `i < BLOCK`, which is inside that capacity.
+                    let slot = unsafe { ptr.add(i) };
+                    // SAFETY: `slot` is in bounds of that initialised buffer,
+                    // and nothing writes the instance between `process` and
+                    // this read.
+                    left.push(unsafe { *slot });
                 }
                 index += BLOCK;
             }

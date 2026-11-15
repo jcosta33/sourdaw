@@ -27,6 +27,10 @@ unsafe extern "C" fn count(_plugin: *const clap_plugin, _is_input: bool) -> u32 
     1
 }
 
+/// # Safety
+/// `info`, when non-null, must be valid and aligned for a write of one
+/// `clap_audio_port_info`, as `clap/ext/audio-ports.h` requires of the host's
+/// `get` argument.
 unsafe extern "C" fn get(
     _plugin: *const clap_plugin,
     index: u32,
@@ -41,6 +45,10 @@ unsafe extern "C" fn get(
     for (slot, byte) in name.iter_mut().zip(label.iter()) {
         *slot = *byte as c_char;
     }
+    // SAFETY: `info` is non-null (checked above) and, per this function's
+    // `# Safety` contract, valid and aligned for one `clap_audio_port_info`
+    // write; the type is plain `Copy` data, so the overwritten value needs no
+    // drop.
     unsafe {
         *info = clap_audio_port_info {
             id: MAIN_PORT_ID,

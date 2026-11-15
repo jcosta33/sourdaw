@@ -80,7 +80,7 @@ describe('handleSwitchTrackAlternative', () => {
         expect(result).toEqual({ status: 'written' });
     });
 
-    it('passes sibling tracks through untouched when switching on the target track', () => {
+    it('passes sibling tracks through untouched when switching on the target track', async () => {
         const sibling = {
             id: 'sibling',
             activeAlternativeId: 'sib-alt',
@@ -102,7 +102,7 @@ describe('handleSwitchTrackAlternative', () => {
             ],
         });
 
-        handleSwitchTrackAlternative.execute({
+        await handleSwitchTrackAlternative.execute({
             type: 'switchTrackAlternative',
             payload: { trackId: 't1', alternativeId: 'alt2' },
         });

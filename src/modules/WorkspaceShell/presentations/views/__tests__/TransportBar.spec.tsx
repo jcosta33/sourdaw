@@ -396,7 +396,9 @@ describe('TransportBar', () => {
             expect(clipSelectionStore.value?.selectedClipIds).toEqual(['fill']);
 
             setViewportWidth(VIEWPORT_COMPACT_WIDTH);
-            act(() => window.dispatchEvent(new Event('resize')));
+            act(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
             expect(screen.getByRole('button', { name: 'Browse timeline clips' })).toBe(browse);
             expect(screen.getByRole('listbox', { name: 'Timeline clips' })).toBe(listbox);
             expect(listbox).toHaveAttribute('aria-activedescendant', activeId);
@@ -409,7 +411,9 @@ describe('TransportBar', () => {
             fireEvent.keyDown(listbox, { key: 'Escape' });
             await waitFor(() => expect(browse).toHaveFocus());
             setViewportWidth(VIEWPORT_FULL_WIDTH);
-            act(() => window.dispatchEvent(new Event('resize')));
+            act(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
             expect(screen.getByRole('button', { name: 'Browse timeline clips' })).toBe(browse);
             expect(browse).toHaveFocus();
             expect(screen.getAllByRole('button', { name: 'Browse timeline clips' })).toHaveLength(1);

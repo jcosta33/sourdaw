@@ -73,6 +73,19 @@ does not guard this boundary.
    `scripts/__tests__/healthGatesWorkflow.spec.ts` or `scripts/__tests__/runIsolatedUnitShard.spec.ts`, respectively;
    stale shell fixtures must fail the health-gate script harness.
 
+9. **An advanced event base does not make main-only source a feature edit (#5240, #6745).**
+   PR #5240 introduced the native transport selector comparing the event base directly with the feature head;
+   a newer main-only transport/Cargo change then made an older tooling feature request mutation proof and fail
+   its candidate-to-integration warm-graph check (#6740). The existing immutable-ref fixture verified fetched
+   history using empty commits, leaving this scope-selection failure mode unprobed. In a disposable branched
+   Git fixture, change owning source and the native graph only on main and tooling only on the feature, then
+   invoke the real hosted producer. Require its `not-scheduled` summary and `restored=true` output. Compare the
+   feature head with its unique merge base after binding the immutable event refs; a genuine feature source edit
+   must still require proof and retain warm-graph checks, and absent refs or a missing/ambiguous merge base must
+   fail closed. Restoring endpoint base-to-head comparison must fail
+   `verifyNativeTransportMutations.spec.ts` "does not schedule main-only transport and graph changes for an older
+   tooling feature".
+
 ## Retired lessons
 
 - Tooling paths missing from the browser selector or validation path filter (#4854, #4902, #4484, #4932, #4933) →

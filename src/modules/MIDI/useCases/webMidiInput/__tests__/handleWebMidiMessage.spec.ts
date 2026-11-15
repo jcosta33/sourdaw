@@ -97,22 +97,22 @@ describe('handleWebMidiMessage', () => {
         channelPitchBendState.clear();
     });
 
-    it('should dispatch CC bytes to the CC use case', () => {
-        handleWebMidiMessage(midi_event([0xb3, 7, 101]));
+    it('should dispatch CC bytes to the CC use case', async () => {
+        await handleWebMidiMessage(midi_event([0xb3, 7, 101]));
 
         // The timestamp is resolved on admission, before a queued handler waits.
         expect(handle_cc).toHaveBeenCalledWith(3, 7, 101, { audioTime: 2 });
     });
 
-    it('should normalize raw note-off release velocity before dispatch', () => {
-        handleWebMidiMessage(midi_event([0x81, 72, 96]));
+    it('should normalize raw note-off release velocity before dispatch', async () => {
+        await handleWebMidiMessage(midi_event([0x81, 72, 96]));
 
         expect(handle_note_off).toHaveBeenCalledWith(1, 72, 96 / 127, { audioTime: 2 });
     });
 
-    it('should ignore short or empty browser MIDI events', () => {
-        handleWebMidiMessage(midi_event([]));
-        handleWebMidiMessage(midi_event([0x90]));
+    it('should ignore short or empty browser MIDI events', async () => {
+        await handleWebMidiMessage(midi_event([]));
+        await handleWebMidiMessage(midi_event([0x90]));
 
         expect(handle_note_on).not.toHaveBeenCalled();
         expect(handle_note_off).not.toHaveBeenCalled();
@@ -128,8 +128,8 @@ describe('handleWebMidiMessage', () => {
         });
         handle_note_on.mockImplementationOnce(() => noteOnPending);
 
-        handleWebMidiMessage(midi_event([0x90, 60, 100]));
-        handleWebMidiMessage(midi_event([0x80, 60, 0]));
+        const noteOn = handleWebMidiMessage(midi_event([0x90, 60, 100]));
+        const noteOff = handleWebMidiMessage(midi_event([0x80, 60, 0]));
 
         expect(handle_note_on).toHaveBeenCalledTimes(1);
         expect(handle_note_off).not.toHaveBeenCalled();
@@ -137,6 +137,8 @@ describe('handleWebMidiMessage', () => {
         resolveNoteOn();
         await noteOnPending;
         await vi.waitFor(() => expect(handle_note_off).toHaveBeenCalledWith(0, 60, 0, { audioTime: 2 }));
+        await noteOn;
+        await noteOff;
     });
 
     it('should hold a pitch bend behind a pending note-on so the opening bend is not dropped', async () => {
@@ -158,8 +160,8 @@ describe('handleWebMidiMessage', () => {
         // to queue behind it too — run first it resolves against a
         // channel->note map the note-on has not written yet, returns early, and
         // the note's opening bend is lost (audit MD-3).
-        handleWebMidiMessage(midi_event([0x91, 60, 100]));
-        handleWebMidiMessage(midi_event([0xe1, 0, 96]));
+        const noteOn = handleWebMidiMessage(midi_event([0x91, 60, 100]));
+        const bend = handleWebMidiMessage(midi_event([0xe1, 0, 96]));
 
         expect(order).toEqual(['noteOn']);
 
@@ -169,6 +171,8 @@ describe('handleWebMidiMessage', () => {
         await Promise.resolve();
 
         expect(order).toEqual(['noteOn', 'pitchBend']);
+        await noteOn;
+        await bend;
     });
 
     it('should hold channel pressure and CC behind a pending note-on, in arrival order', async () => {
@@ -188,9 +192,9 @@ describe('handleWebMidiMessage', () => {
             order.push('cc');
         });
 
-        handleWebMidiMessage(midi_event([0x91, 60, 100]));
-        handleWebMidiMessage(midi_event([0xd1, 90]));
-        handleWebMidiMessage(midi_event([0xb1, 74, 40]));
+        const noteOn = handleWebMidiMessage(midi_event([0x91, 60, 100]));
+        const pressure = handleWebMidiMessage(midi_event([0xd1, 90]));
+        const controller = handleWebMidiMessage(midi_event([0xb1, 74, 40]));
 
         expect(order).toEqual(['noteOn']);
 
@@ -201,6 +205,9 @@ describe('handleWebMidiMessage', () => {
         await Promise.resolve();
 
         expect(order).toEqual(['noteOn', 'channelPressure', 'cc']);
+        await noteOn;
+        await pressure;
+        await controller;
     });
 
     it('commits release only after admitted member expression, before the next note on that channel', async () => {
@@ -234,17 +241,23 @@ describe('handleWebMidiMessage', () => {
             releaseDone();
         });
 
-        handleWebMidiMessage(midi_event([0x91, 60, 100]));
-        handleWebMidiMessage(midi_event([0xd1, 80]));
-        handleWebMidiMessage(midi_event([0xb1, 74, 90]));
-        handleWebMidiMessage(midi_event([0xe1, 0, 96]));
-        handleWebMidiMessage(midi_event([0x81, 60, 0]));
-        handleWebMidiMessage(midi_event([0x91, 62, 100]));
+        const on60 = handleWebMidiMessage(midi_event([0x91, 60, 100]));
+        const pressure = handleWebMidiMessage(midi_event([0xd1, 80]));
+        const slide = handleWebMidiMessage(midi_event([0xb1, 74, 90]));
+        const bend = handleWebMidiMessage(midi_event([0xe1, 0, 96]));
+        const off60 = handleWebMidiMessage(midi_event([0x81, 60, 0]));
+        const on62 = handleWebMidiMessage(midi_event([0x91, 62, 100]));
         expect(order).toEqual(['on60']);
 
         releaseFirstOn();
         await done;
         await vi.waitFor(() => expect(order).toEqual(['on60', 'pressure', 'slide', 'bend', 'off60', 'on62']));
+        await on60;
+        await pressure;
+        await slide;
+        await bend;
+        await off60;
+        await on62;
     });
 
     it.each([
@@ -275,7 +288,7 @@ describe('handleWebMidiMessage', () => {
         setTargetTrackId('old-target');
         setMpeEnabledInternal(true);
 
-        handleWebMidiMessage(midi_event([0x91, 60, 100]));
+        const retiredNote = handleWebMidiMessage(midi_event([0x91, 60, 100]));
         const retiredExpression = handleWebMidiMessage(midi_event([0xd1, 90]));
         clear();
         const currentNote = handleWebMidiMessage(midi_event([0x91, 62, 100]));
@@ -292,6 +305,7 @@ describe('handleWebMidiMessage', () => {
         // callback: the callback must never run after the boundary.
         expect(retiredExpression).toBeInstanceOf(Promise);
         await retiredExpression;
+        await retiredNote;
         expect(handle_channel_pressure).not.toHaveBeenCalled();
         expect(memberExpressionState.get(1)).toBeUndefined();
 
@@ -321,11 +335,13 @@ describe('handleWebMidiMessage', () => {
             instrumentTrackId: 'old-target',
         });
         setTargetTrackId('old-target');
-        handleWebMidiMessage(midi_event([0x91, 60, 100]));
-        handleWebMidiMessage(midi_event([0x81, 60, 0]));
+        const noteOn = handleWebMidiMessage(midi_event([0x91, 60, 100]));
+        const noteOff = handleWebMidiMessage(midi_event([0x81, 60, 0]));
         setTargetTrackId('new-target');
         finishNoteOn();
         await vi.waitFor(() => expect(handle_note_off).toHaveBeenCalledWith(1, 60, 0, { audioTime: 2 }));
+        await noteOn;
+        await noteOff;
     });
 
     it('should not delay expression past its arrival frame behind an unrelated note-on', async () => {
@@ -350,14 +366,14 @@ describe('handleWebMidiMessage', () => {
         // its cross-thread worker round trip.
         audio_clock.currentTime = 2;
         performance_now.mockReturnValue(1000);
-        handleWebMidiMessage(midi_event([0x91, 60, 100], 1000));
+        const stalledNoteOn = handleWebMidiMessage(midi_event([0x91, 60, 100], 1000));
 
         // 50 ms later an unrelated channel-2 bend arrives. It owes nothing to
         // the stalled note, so it must voice at its own arrival frame rather
         // than waiting and being clamped forward to a later render position.
         audio_clock.currentTime = 2.05;
         performance_now.mockReturnValue(1050);
-        handleWebMidiMessage(midi_event([0xe2, 0, 96], 1050));
+        const unrelatedBend = handleWebMidiMessage(midi_event([0xe2, 0, 96], 1050));
 
         // 2.05 s at 48 kHz, plus the one-quantum scheduling budget.
         expect(bendFrame).toBe(98_528);
@@ -371,6 +387,8 @@ describe('handleWebMidiMessage', () => {
         await Promise.resolve();
 
         expect(bendFrame).toBe(98_528);
+        await stalledNoteOn;
+        await unrelatedBend;
 
         performance_now.mockRestore();
     });
@@ -391,12 +409,13 @@ describe('handleWebMidiMessage', () => {
         handle_note_on.mockReset();
         handle_note_on.mockImplementationOnce(() => first);
         try {
-            handleWebMidiMessage(midi_event([0x91, 60, 100]));
+            const firstNoteOn = handleWebMidiMessage(midi_event([0x91, 60, 100]));
             nativeBeat = 0.15;
             const queued = handleWebMidiMessage(midi_event([0x91, 62, 100]));
             nativeBeat = 1.25;
             finishFirst();
             await queued;
+            await firstNoteOn;
             const centred = { channel: 0, master: 0 };
             expect(handle_note_on).toHaveBeenNthCalledWith(
                 1,
@@ -450,12 +469,13 @@ describe('handleWebMidiMessage', () => {
             handle_note_on.mockImplementationOnce(() => noteOnPending);
             handler.mockReset();
             try {
-                handleWebMidiMessage(midi_event([0x91, 60, 100]));
+                const pendingNoteOn = handleWebMidiMessage(midi_event([0x91, 60, 100]));
                 nativeBeat = 0.15;
                 const queued = handleWebMidiMessage(midi_event(bytes));
                 nativeBeat = 1.25;
                 finishNoteOn();
                 await queued;
+                await pendingNoteOn;
 
                 expect(handler).toHaveBeenCalledTimes(1);
                 expect(handler).toHaveBeenCalledWith(...expectedArgs, {
@@ -503,13 +523,14 @@ describe('handleWebMidiMessage', () => {
         handle_note_on.mockImplementationOnce(() => noteOnPending);
         handler.mockReset();
         try {
-            handleWebMidiMessage(midi_event([0x91, 60, 100]));
+            const pendingNoteOn = handleWebMidiMessage(midi_event([0x91, 60, 100]));
             const queued = handleWebMidiMessage(midi_event(bytes));
             nativeBeat = 4.25;
             playheadPositionRef.current = nativeBeat;
             playheadWrapCountRef.current = 2;
             finishNoteOn();
             await queued;
+            await pendingNoteOn;
 
             expect(handler).toHaveBeenCalledTimes(1);
             expect(handler).toHaveBeenCalledWith(...expectedArgs, {
@@ -527,7 +548,7 @@ describe('handleWebMidiMessage', () => {
         }
     });
 
-    it("stamps a recording take's controller and bend with the beat of their own arrival", () => {
+    it("stamps a recording take's controller and bend with the beat of their own arrival", async () => {
         const previous = transportStore.value;
         transportStore.set({ ...defaultTransportState, isPlaying: true, isRecording: true, playheadPosition: 7.95 });
         playheadPositionRef.current = 7.95;
@@ -536,8 +557,8 @@ describe('handleWebMidiMessage', () => {
             readNativeCursorBeats: () => 3.5,
         });
         try {
-            handleWebMidiMessage(midi_event([0xb3, 64, 127]));
-            handleWebMidiMessage(midi_event([0xe2, 0, 96]));
+            await handleWebMidiMessage(midi_event([0xb3, 64, 127]));
+            await handleWebMidiMessage(midi_event([0xe2, 0, 96]));
 
             expect(handle_cc).toHaveBeenCalledWith(3, 64, 127, {
                 audioTime: 2,
@@ -591,15 +612,16 @@ describe('handleWebMidiMessage', () => {
                     finishNoteOn = resolve;
                 });
                 handle_note_on.mockImplementationOnce(() => noteOnInFlight);
-                handleWebMidiMessage(midi_event([0xe1, 0, 96]));
+                await handleWebMidiMessage(midi_event([0xe1, 0, 96]));
                 expect(startBendOnChannelOne()?.pitchBend).toBe(4096);
 
-                handleWebMidiMessage(midi_event([0x91, 60, 100]));
+                const fencedNoteOn = handleWebMidiMessage(midi_event([0x91, 60, 100]));
                 const queuedCentre = handleWebMidiMessage(midi_event([0xe1, 0, 64]));
                 fence();
                 finishNoteOn();
                 await noteOnInFlight;
                 await queuedCentre;
+                await fencedNoteOn;
 
                 expect(startBendOnChannelOne()).toBeUndefined();
             }
@@ -625,8 +647,8 @@ describe('handleWebMidiMessage', () => {
                 }
             );
 
-            handleWebMidiMessage(midi_event([0x91, 60, 100]));
-            handleWebMidiMessage(midi_event([0x91, 62, 100]));
+            const firstNoteOn = handleWebMidiMessage(midi_event([0x91, 60, 100]));
+            const secondNoteOn = handleWebMidiMessage(midi_event([0x91, 62, 100]));
             const queuedBend = handleWebMidiMessage(midi_event([0xe1, 0, 96]));
 
             // The bend is held from its arrival, but it arrived behind the note.
@@ -635,16 +657,18 @@ describe('handleWebMidiMessage', () => {
 
             finishFirstNoteOn();
             await queuedBend;
+            await firstNoteOn;
+            await secondNoteOn;
 
             expect(secondNoteStart).toBeUndefined();
             expect(handle_pitch_bend).toHaveBeenCalledWith(1, 0, 96, { audioTime: 2 });
         });
 
-        it('hands a note-on the wheel of its channel and the zone master as they stood when it arrived', () => {
-            handleWebMidiMessage(midi_event([0xe1, 0, 96]));
-            handleWebMidiMessage(midi_event([0xe0, 0, 32]));
+        it('hands a note-on the wheel of its channel and the zone master as they stood when it arrived', async () => {
+            await handleWebMidiMessage(midi_event([0xe1, 0, 96]));
+            await handleWebMidiMessage(midi_event([0xe0, 0, 32]));
 
-            handleWebMidiMessage(midi_event([0x91, 60, 100]));
+            await handleWebMidiMessage(midi_event([0x91, 60, 100]));
 
             expect(handle_note_on).toHaveBeenCalledWith(
                 1,
@@ -658,11 +682,11 @@ describe('handleWebMidiMessage', () => {
             );
         });
 
-        it('keeps an MPE member-channel bend as the channel wheel for a note struck after MPE is switched off', () => {
+        it('keeps an MPE member-channel bend as the channel wheel for a note struck after MPE is switched off', async () => {
             setMpeEnabledInternal(true);
-            handleWebMidiMessage(midi_event([0xe2, 0, 96]));
+            await handleWebMidiMessage(midi_event([0xe2, 0, 96]));
             expect(channelPitchBendState.get(2)).toBe(4096);
-            handleWebMidiMessage(midi_event([0xe2, 0, 64]));
+            await handleWebMidiMessage(midi_event([0xe2, 0, 64]));
             setMpeEnabledInternal(false);
 
             expect(channelPitchBendState.get(2)).toBe(0);
@@ -674,14 +698,15 @@ describe('handleWebMidiMessage', () => {
                 finishNoteOn = resolve;
             });
             handle_note_on.mockImplementationOnce(() => noteOnInFlight);
-            handleWebMidiMessage(midi_event([0xe1, 0, 96]));
-            handleWebMidiMessage(midi_event([0xe2, 0, 96]));
+            await handleWebMidiMessage(midi_event([0xe1, 0, 96]));
+            await handleWebMidiMessage(midi_event([0xe2, 0, 96]));
 
-            handleWebMidiMessage(midi_event([0x91, 60, 100]));
+            const pendingNoteOn = handleWebMidiMessage(midi_event([0x91, 60, 100]));
             const queuedReset = handleWebMidiMessage(midi_event([0xb1, 121, 0]));
             resetChannelControllerState();
             finishNoteOn();
             await queuedReset;
+            await pendingNoteOn;
 
             expect(startBendOnChannelOne()).toBeUndefined();
             expect(channelPitchBendState.get(2)).toBe(4096);

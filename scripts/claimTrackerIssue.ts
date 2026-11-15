@@ -268,11 +268,15 @@ export type Gh = (args: string[]) => string;
  * Every claim runs as the same operator credential and re-adding a present label succeeds
  * silently, so nothing a claim reads about the labels says which claim wrote them. Each claim
  * therefore posts one comment carrying a fresh random token after its label swap is observed,
- * then reads the timeline, and wins only when its token is the sole claim token since
+ * then reads the timeline until two consecutive reads agree, and wins only when its token is the sole claim token since
  * status:active was last removed. Of two concurrent claims, the one whose comment became visible
  * later sees both, so at most one sees itself alone, whatever order the comment ids or timestamps
  * fall in; both may lose and withdraw, never both win. A loser withdraws its own comment and moves
  * no board.
+ *
+ * The election assumes a comment is visible to every read that starts after its POST returns.
+ * GitHub documents no such read-after-write guarantee for the REST API. A claim whose own comment
+ * is not yet visible refuses; a rival's comment that one read cannot see yet is not detected.
  *
  * Posting after the swap means a claim that dies after posting leaves status:active behind, so
  * later claims refuse on the label, and removing that label releases the claim and starts a new
@@ -358,8 +362,7 @@ function claimTokenFromEntry(entry: TimelineEntry): ClaimToken | undefined {
 }
 
 /** The claim tokens posted since status:active was last removed, in comment id order. */
-export function claimTokensSinceRelease(pages: unknown, issue: number): ClaimToken[] {
-    const entries = timelineEntries(pages, issue);
+export function claimTokensSinceRelease(entries: TimelineEntry[]): ClaimToken[] {
     const releaseIndex = entries.findLastIndex(
         (entry) => entry.event === 'unlabeled' && entry.label?.name === ACTIVE_STATUS_LABEL
     );
@@ -374,15 +377,44 @@ export function claimTokensSinceRelease(pages: unknown, issue: number): ClaimTok
 
 const RELEASE_HINT = `; ${ACTIVE_STATUS_LABEL} stays on the issue — if no lane holds it, remove the label and claim again`;
 
+/**
+ * The timeline pages by position (`page` and `per_page`, its only documented paging parameters),
+ * and gh fetches each page as a separate request. Deleting an entry on a page already fetched
+ * shifts every later entry one slot earlier, so the entry at the next page boundary lands on a page
+ * already read and that read skips it: a rival token can vanish from one read. The deleted entry
+ * is in that read and in no read that starts after the deletion, so a read that skipped an entry
+ * never equals the next read. Two consecutive reads that agree entry for entry therefore prove the
+ * earlier one skipped nothing. Appended entries only push later entries back, which repeats an
+ * entry instead of skipping one. A timeline that keeps changing refuses after a bounded number of
+ * reads rather than deciding from a read it cannot trust.
+ */
+const TIMELINE_READ_LIMIT = 4;
+
+function readTimeline(issue: number, gh: Gh): TimelineEntry[] {
+    return timelineEntries(parseJson<unknown>(gh(issueTimelineArgs(issue)), `issue #${issue} timeline`), issue);
+}
+
+function readSettledTimeline(issue: number, gh: Gh): TimelineEntry[] {
+    let previous = readTimeline(issue, gh);
+    for (let read = 2; read <= TIMELINE_READ_LIMIT; read += 1) {
+        const current = readTimeline(issue, gh);
+        if (JSON.stringify(current) === JSON.stringify(previous)) {
+            return current;
+        }
+        previous = current;
+    }
+    return fail(
+        `issue #${issue} timeline changed between every two consecutive reads of ${TIMELINE_READ_LIMIT}; ` +
+            `no board was moved${RELEASE_HINT}`
+    );
+}
+
 function describeClaim(claim: ClaimToken): string {
     return claim.url ?? `comment ${claim.commentId}`;
 }
 
 function assertClaimWon(issue: number, token: string, gh: Gh): void {
-    const claims = claimTokensSinceRelease(
-        parseJson<unknown>(gh(issueTimelineArgs(issue)), `issue #${issue} timeline`),
-        issue
-    );
+    const claims = claimTokensSinceRelease(readSettledTimeline(issue, gh));
     if (!claims.some((claim) => claim.token === token)) {
         fail(`issue #${issue} claim comment was not observed on the timeline; no board was moved${RELEASE_HINT}`);
     }
