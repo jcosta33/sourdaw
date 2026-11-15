@@ -568,9 +568,9 @@ impl GrinderEngine {
             }
 
             // Output processing
-            let og = self.output_gain.next();
-            let mix = self.output_mix.next();
-            let clean = self.clean_blend.next();
+            let og = self.output_gain.next_value();
+            let mix = self.output_mix.next_value();
+            let clean = self.clean_blend.next_value();
 
             signal *= og;
 
