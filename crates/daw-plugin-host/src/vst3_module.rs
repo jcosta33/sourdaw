@@ -897,16 +897,16 @@ mod tests {
         let cache = fake_cache();
         let unloads = Arc::new(AtomicUsize::new(0));
         let loads = AtomicUsize::new(0);
-        let mut load = || {
+        let load = || {
             loads.fetch_add(1, AtomicOrdering::SeqCst);
             Ok(Arc::new(FakeModule {
                 unloads: Arc::clone(&unloads),
             }))
         };
 
-        let first = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+        let first = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
             .expect("the fake loads");
-        let second = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+        let second = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
             .expect("the fake loads");
 
         assert_eq!(loads.load(AtomicOrdering::SeqCst), 1);
@@ -951,7 +951,7 @@ mod tests {
         let cache = fake_cache();
         let unloads = Arc::new(AtomicUsize::new(0));
         let loads = AtomicUsize::new(0);
-        let mut load = || {
+        let load = || {
             loads.fetch_add(1, AtomicOrdering::SeqCst);
             Ok(Arc::new(FakeModule {
                 unloads: Arc::clone(&unloads),
@@ -959,10 +959,10 @@ mod tests {
         };
 
         drop(
-            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
                 .expect("the fake loads"),
         );
-        let reopened = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+        let reopened = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
             .expect("the fake loads");
 
         assert_eq!(loads.load(AtomicOrdering::SeqCst), 2);

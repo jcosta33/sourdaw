@@ -5378,7 +5378,7 @@ pub async fn apply_graph_commands(
     // Lock order, here and in `map_graph_batch` and `render_graph_offline`:
     // timeline samples first, then levain banks. All three sites take both, and
     // a site that took them the other way round would deadlock against these.
-    let mut samples = state
+    let samples = state
         .timeline_samples
         .lock()
         .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
@@ -8131,7 +8131,7 @@ mod tests {
         )
         .unwrap();
         let mut overflow = vec![hold.clone()];
-        overflow.extend(std::iter::repeat(step.clone()).take(33));
+        overflow.extend(std::iter::repeat_n(step.clone(), 33));
         let before = registry.batches_sent;
         assert!(admit_and_send(
             &mut registry,

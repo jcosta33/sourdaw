@@ -3385,8 +3385,10 @@ mod tests {
         engine.add_effect(7, "knead").expect("the device registers");
         assert_eq!(engine.registered_effect_count(), 1);
 
-        let mut published = ActiveMidiRtDiagnosticsSnapshot::default();
-        published.effect_id_collisions = u64::MAX;
+        let published = ActiveMidiRtDiagnosticsSnapshot {
+            effect_id_collisions: u64::MAX,
+            ..Default::default()
+        };
         diagnostics_tx.write(published);
 
         engine.midi_rt_diagnostics_snapshot();
