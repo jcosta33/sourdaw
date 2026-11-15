@@ -114,3 +114,9 @@ impl AdditiveEngine {
         output / active_count.sqrt()
     }
 }
+
+impl Default for AdditiveEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -2471,8 +2471,8 @@ impl TimelineGraph {
                 in_degree[dest] += 1;
             });
         }
-        for node in 0..count {
-            if in_degree[node] == 0 {
+        for (node, &degree) in in_degree.iter().enumerate().take(count) {
+            if degree == 0 {
                 ready.push(node);
             }
         }
@@ -2579,8 +2579,8 @@ impl TimelineGraph {
         track_summing_depth[..track_count].fill(0);
 
         let mut master_depth = 0;
-        for order_index in 0..mix_order.len() {
-            let (arrival, output) = match mix_order[order_index] {
+        for node in mix_order.iter() {
+            let (arrival, output) = match *node {
                 MixNode::Track(index) => {
                     // Everything routed into this track's input has already
                     // been visited, so its own chain starts from the deepest of
@@ -2746,8 +2746,8 @@ impl TimelineGraph {
             bus.clear_input(frames);
         }
 
-        for order_index in 0..mix_order.len() {
-            match mix_order[order_index] {
+        for node in mix_order.iter() {
+            match *node {
                 MixNode::Track(index) => {
                     let left = &mut scratch_left[..frames];
                     let right = &mut scratch_right[..frames];
@@ -3011,6 +3011,12 @@ impl TimelineGraph {
             count += 1;
         }
         count
+    }
+}
+
+impl Default for TimelineGraph {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

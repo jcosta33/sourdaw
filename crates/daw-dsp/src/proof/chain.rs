@@ -888,14 +888,14 @@ mod latency_contract_tests {
             right[i] = left[i];
         }
         chain.process(&mut left, &mut right);
-        for i in 0..BLOCK {
+        for (i, &actual) in left.iter().enumerate().take(BLOCK) {
             let expected = tone(n + i - latency);
             assert!(
-                (left[i] - expected).abs() < 1e-4,
+                (actual - expected).abs() < 1e-4,
                 "sample {i} of the post-bypass block read {} against an expected \
                  unity delayed tone of {expected} — the bypass left a stale gain \
                  applied to the line",
-                left[i]
+                actual
             );
         }
     }
@@ -946,14 +946,14 @@ mod latency_contract_tests {
         chain.process(&mut left, &mut right);
 
         let ab_gain = 10.0_f32.powf(chain.ab_gain_offset_db() / 20.0);
-        for i in 0..BLOCK {
+        for (i, &actual) in left.iter().enumerate().take(BLOCK) {
             let expected = tone(n + i - latency) * ab_gain;
             assert!(
-                (left[i] - expected).abs() < 1e-4,
+                (actual - expected).abs() < 1e-4,
                 "sample {i} of the first compared block read {} against an \
                  expected delayed tone of {expected} — the dry line was not kept \
                  fed while the compare was off",
-                left[i]
+                actual
             );
         }
     }

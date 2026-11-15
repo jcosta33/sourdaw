@@ -38,7 +38,7 @@ struct DenoisePcmResult {
 
 /// Sample count of a Float32 LE payload, or an alignment error.
 pub fn denoise_pcm_sample_count(byte_len: usize) -> Result<usize, String> {
-    if byte_len % BYTES_PER_SAMPLE != 0 {
+    if !byte_len.is_multiple_of(BYTES_PER_SAMPLE) {
         return Err(format!(
             "Denoise PCM byte length {byte_len} is not a whole number of f32 samples"
         ));
@@ -56,7 +56,7 @@ fn decode_denoise_pcm(bytes: &[u8], channels: u32) -> Result<Vec<f32>, String> {
     denoise_pcm_frame_count(bytes.len(), channels)?;
     let count = denoise_pcm_sample_count(bytes.len())?;
     let mut samples = Vec::with_capacity(count);
-    for chunk in bytes.chunks_exact(BYTES_PER_SAMPLE) {
+    for chunk in bytes.as_chunks::<BYTES_PER_SAMPLE>().0 {
         samples.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
     }
     Ok(samples)
@@ -171,7 +171,7 @@ fn validate_channel_layout(sample_count: usize, channels: u32) -> Result<usize, 
         return Err("Denoise channel count must be at least 1".to_owned());
     }
     let channels = channels as usize;
-    if sample_count % channels != 0 {
+    if !sample_count.is_multiple_of(channels) {
         return Err(format!(
             "Denoise sample count {sample_count} must be divisible by channel count {channels}"
         ));
