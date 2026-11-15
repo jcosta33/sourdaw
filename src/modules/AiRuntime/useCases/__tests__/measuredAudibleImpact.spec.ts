@@ -424,6 +424,26 @@ describe('the plan’s audible claim', () => {
             ]);
         });
 
+        it('lists one metric over equal beats in two sections once per section', () => {
+            const verse = { startBeat: 0, endBeat: 4, sectionId: 'verse' };
+            const chorus = { startBeat: 0, endBeat: 4, sectionId: 'chorus' };
+            proposeCard({
+                gain: 0.7,
+                proofPreviews: [
+                    over(verse, [loudness(compared('LUFS', 1.5), -12.5)]),
+                    over(chorus, [loudness(compared('LUFS', 0.8), -13.2)]),
+                ],
+            });
+            const claim = audible();
+            if (claim.status !== 'measured') {
+                throw new Error('Expected both sections to be claimed.');
+            }
+            expect(claim.metrics.map((metric) => [metric.range, metric.delta.value])).toEqual([
+                [verse, 1.5],
+                [chorus, 0.8],
+            ]);
+        });
+
         it('never claims from a proof of another batch', () => {
             proposeCard({
                 gain: 0.7,
