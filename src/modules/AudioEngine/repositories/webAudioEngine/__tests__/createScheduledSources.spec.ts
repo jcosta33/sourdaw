@@ -74,6 +74,20 @@ describe('createScheduledSources', () => {
         expect(sources.nodes()).toEqual([]);
     });
 
+    it('stops tracking a registered source when it ends naturally', () => {
+        const addEventListener = vi.fn<(type: string, listener: () => void) => void>();
+        const voice = { stop: vi.fn(), addEventListener } as unknown as AudioScheduledSourceNode;
+        const sources = createScheduledSources(createPorts());
+        sources.register(voice);
+        expect(sources.nodes()).toContain(voice);
+
+        const onEnded = addEventListener.mock.calls.find(([type]) => type === 'ended')?.[1];
+        expect(onEnded).toBeTypeOf('function');
+        onEnded?.();
+
+        expect(sources.nodes()).not.toContain(voice);
+    });
+
     it('creates and tracks nothing on the fallback graph', () => {
         const { context, raw } = createContextStub();
         const sources = createScheduledSources(createPorts({ readContext: () => context, isFallback: () => true }));
