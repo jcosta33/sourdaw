@@ -52,8 +52,10 @@ import { expandMixRecipe } from '../expandMixRecipe';
 import { getProjectContext } from '../getProjectContext';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { planLastCommitContinuation } from '../planLastCommitContinuation';
+import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 import { type planPromptActions } from '../planPromptActions';
 import { readChatThreadContext } from '../readChatThreadContext';
+import { resumeAgentRunDecision } from '../resumeAgentRunDecision';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
@@ -1012,6 +1014,105 @@ describe('relative to the last commit', () => {
                 expect(landed()).toBe(true);
             });
         });
+
+        describe('reads the target list in a closed word set', () => {
+            /**
+             * The tracks a standing commit's re-target reaches: one track is committed directly, several
+             * wait on a card, so both the committed and the proposed gain moves count.
+             */
+            async function retargetedTracks(prompt: string, extraTracks: ReadonlyArray<[string, string]> = []) {
+                for (const [id, name] of extraTracks) {
+                    addTrack(createTrack(id, name), 'audio');
+                }
+                scriptProvider([[VOCALS_DOWN_3_DB], [REDERIVED_VOCALS_LEVEL]]);
+                await commitVocalsDown3Db();
+                const calls = providerCallCount();
+
+                await sendChatMessage(prompt);
+
+                expect(providerCallCount()).toBe(calls);
+                const committed = (trackStore.value?.tracks ?? [])
+                    .map((track) => track.id)
+                    .filter((id) => id !== 'track-vocals' && decibelsOf(id) === -3);
+                return [...committed, ...proposedGainMoves()].toSorted();
+            }
+
+            it.each([
+                ['Bass track too', [], ['track-bass']],
+                ['the Bass and Keys tracks too', [], ['track-bass', 'track-keys']],
+                ['both Bass and Keys too', [], ['track-bass', 'track-keys']],
+                ['same to Keys', [], ['track-keys']],
+                ['same for Keys', [], ['track-keys']],
+                ['do the same to Keys.', [], ['track-keys']],
+                ['do the same to Keys!', [], ['track-keys']],
+                ['Bass and Bass too', [], ['track-bass']],
+                ['Thanks, Bass too', [['track-thanks', 'Thanks']], ['track-bass']],
+                ['Thank you, Bass too', [['track-thanks', 'Thanks']], ['track-bass']],
+                ['Thanks too', [['track-thanks', 'Thanks']], ['track-thanks']],
+                ['Thanks and Bass too', [['track-thanks', 'Thanks']], ['track-bass', 'track-thanks']],
+                ['Bass too, thanks', [['track-thanks', 'Thanks']], ['track-bass']],
+                ['Rhythm and Lead too', [['track-rhythm-lead', 'Rhythm and Lead']], ['track-rhythm-lead']],
+                ['Pads too', [['track-pad', 'Pad']], ['track-pad']],
+            ] as const)('re-targets "%s" to the tracks it names, once each', async (prompt, extraTracks, expected) => {
+                await expect(retargetedTracks(prompt, extraTracks)).resolves.toEqual(expected);
+            });
+
+            it.each([
+                ['Bass track Keys too', []],
+                ['Thanks Bass too', [['track-thanks', 'Thanks']]],
+                ['do the same to Keys?', []],
+                ['same for Keys?', []],
+                ['apply that recipe to Keys?', []],
+                ['Bass too?', []],
+                ['Bass too :)', []],
+            ] as const)('plans "%s" as any request, since it is no list', async (prompt, extraTracks) => {
+                for (const [id, name] of extraTracks) {
+                    addTrack(createTrack(id, name), 'audio');
+                }
+                scriptProvider([[VOCALS_DOWN_3_DB], [MUTE_BASS]]);
+                await commitVocalsDown3Db();
+                const calls = providerCallCount();
+
+                await sendChatMessage(prompt);
+
+                expect(providerCallCount()).toBeGreaterThan(calls);
+                expect(proposedGainMoves()).toEqual([]);
+                expect(decibelsOf('track-keys')).toBe(0);
+                expect(decibelsOf('track-bass')).toBe(0);
+            });
+
+            it('reads "Thanks, undo that" as an undo behind a courtesy opener', async () => {
+                addTrack(createTrack('track-thanks', 'Thanks'), 'audio');
+                scriptProvider([[VOCALS_DOWN_3_DB]]);
+                await commitVocalsDown3Db();
+
+                await sendChatMessage('Thanks, undo that');
+
+                expect(decibelsOf('track-vocals')).toBe(0);
+            });
+
+            it.each(['do the same to Keys :)', 'same to you'])(
+                'asks for the tracks when "%s" leaves a word the list does not read',
+                async (prompt) => {
+                    scriptProvider([[VOCALS_DOWN_3_DB]]);
+                    await commitVocalsDown3Db();
+
+                    await expectAnsweredWithoutChange(prompt, 'is not a list of this project');
+                }
+            );
+
+            it('asks which track a name two tracks share means, naming the question the user sees', async () => {
+                addTrack(createTrack('track-lead-a', 'Lead'), 'audio');
+                addTrack(createTrack('track-lead-b', 'Lead'), 'audio');
+                scriptProvider([[VOCALS_DOWN_3_DB]]);
+                await commitVocalsDown3Db();
+
+                await expectAnsweredWithoutChange(
+                    'Lead too',
+                    '"Lead" names more than one track. 1. Which track should take the last change: Lead?'
+                );
+            });
+        });
     });
 
     describe('refuses or asks, and changes nothing', () => {
@@ -1864,6 +1965,35 @@ describe('relative to the last commit', () => {
             expect(readLastCommitRequest(prompt)).toEqual(request);
         });
 
+        const retarget = (form: string, targetText: string) => ({ kind: 'retarget', form, targetText });
+
+        it.each([
+            ['do the same to Keys?', { kind: 'none' }],
+            ['same for Keys?', { kind: 'none' }],
+            ['apply that recipe to Keys?', { kind: 'none' }],
+            ['Bass too?', { kind: 'none' }],
+            ['undo that?', { kind: 'none' }],
+            ['do the same to Keys.', retarget('same', 'Keys')],
+            ['do the same to Keys!', retarget('same', 'Keys')],
+            ['do the same to Keys :)', retarget('same', 'Keys :)')],
+            ['Bass too :)', { kind: 'none' }],
+            ['same to Keys', retarget('same', 'Keys')],
+            ['same for Keys', retarget('same', 'Keys')],
+            ['same to you', retarget('same', 'you')],
+            ['Thanks, Bass too', retarget('too', 'Bass')],
+            ['Thank you, Bass too', retarget('too', 'Bass')],
+            ['Thanks too', retarget('too', 'Thanks')],
+            ['Thanks and Bass too', retarget('too', 'Thanks and Bass')],
+            ['Thanks Bass too', retarget('too', 'Thanks Bass')],
+            ['Thanks, undo that', undoRequest],
+            ['Bass too, thanks', retarget('too', 'Bass')],
+        ])(
+            '"%s" is read as its grammar form, with no question form and thanks opening only before a comma',
+            (prompt, request) => {
+                expect(readLastCommitRequest(prompt)).toEqual(request);
+            }
+        );
+
         it.each([
             ['another 20 Hz', { kind: 'continue', phrasing: 'another', comparative: 'more', figure: 20, unit: 'Hz' }],
             ['20hz less', { kind: 'continue', phrasing: 'comparative', comparative: 'less', figure: 20, unit: 'Hz' }],
@@ -2314,6 +2444,118 @@ describe('relative to the last commit', () => {
             expect(undoHistoryStore.value?.past.map((entry) => entry.id)).toEqual(past);
             expect(undoHistoryStore.value?.future ?? []).toEqual([]);
         });
+
+        const PAUSED_SOURCE_RUN = 'paused-source-run';
+
+        /** A paused run holding a pending decision whose request the planner reads as an undo. */
+        function seedPausedDecisionRun(mode: 'apply' | 'plan'): void {
+            const { scope, grants, budgets } = DECISION_RESUME;
+            const revision = captureProjectRevision();
+            agentRunLifecycle.create({
+                runId: PAUSED_SOURCE_RUN,
+                request: 'undo that',
+                mode,
+                createdRevision: revision,
+                scope,
+                grants,
+                budgets,
+            });
+            agentRunLifecycle.recordDecision({
+                runId: PAUSED_SOURCE_RUN,
+                decision: {
+                    decisionId: DECISION_RESUME.decisionId,
+                    capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+                    proposalIdentity: DECISION_RESUME.proposalIdentity,
+                    budgets,
+                    revision,
+                    scope,
+                    grants,
+                    alternatives: [DECISION_RESUME.selectedAlternative],
+                    reason: 'Choose the bounded interpretation.',
+                    selectedAlternativeId: null,
+                    resumeAttemptId: null,
+                },
+            });
+            agentRunLifecycle.requireManualResume({
+                runId: PAUSED_SOURCE_RUN,
+                reason: 'Choose the bounded interpretation.',
+                workIds: [],
+            });
+        }
+
+        async function resumePausedDecision() {
+            flushAutomergeStorageWrites();
+            scriptState.requestTurn = 0;
+            chatPlanning.last = null;
+            return resumeAgentRunDecision({ runId: PAUSED_SOURCE_RUN, alternativeId: 'vocals' });
+        }
+
+        function sourceDecision() {
+            const decision = agentRunLifecycle.get(PAUSED_SOURCE_RUN)?.decision;
+            return {
+                selectedAlternativeId: decision?.selectedAlternativeId,
+                resumeAttemptId: decision?.resumeAttemptId,
+            };
+        }
+
+        it('reports a resumed undo that wrote as accepted and selects the decision alternative', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            seedPausedDecisionRun('apply');
+
+            const result = await resumePausedDecision();
+
+            expect(result).toMatchObject({
+                status: 'resumed',
+                sourceRunId: PAUSED_SOURCE_RUN,
+                decisionId: DECISION_RESUME.decisionId,
+                selectedAlternativeId: 'vocals',
+            });
+            expect(sourceDecision()).toEqual({ selectedAlternativeId: 'vocals', resumeAttemptId: null });
+            expect(decibelsOf('track-vocals')).toBe(0);
+        });
+
+        it.each([
+            [
+                'the user undid the commit while it was planned',
+                'apply' as const,
+                () => {
+                    const settle = agentRunWorkLease.settle.bind(agentRunWorkLease);
+                    vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+                        void undo();
+                        return settle(input);
+                    });
+                },
+                0,
+            ],
+            [
+                'the group revert throws',
+                'apply' as const,
+                () => {
+                    revertMocks.outcome = () =>
+                        Promise.reject(new Error('Grouped undo failed: The inverse write failed'));
+                },
+                -3,
+            ],
+            ['the run mode may not commit', 'plan' as const, () => undefined, -3],
+        ])(
+            'reports a resumed undo as rejected and releases the claim when %s',
+            async (_state, mode, arrange, level) => {
+                scriptProvider([[VOCALS_DOWN_3_DB]]);
+                await commitVocalsDown3Db();
+                seedPausedDecisionRun(mode);
+                arrange();
+
+                const result = await resumePausedDecision();
+
+                expect(result).toEqual({
+                    status: 'rejected',
+                    reason: 'The replacement planning attempt was not admitted.',
+                });
+                expect(sourceDecision()).toEqual({ selectedAlternativeId: null, resumeAttemptId: null });
+                expect(decibelsOf('track-vocals')).toBe(level);
+            }
+        );
 
         it('lists every command of an undone confirmed batch', async () => {
             scriptProvider([[{ name: 'setTrackGain', arguments: { trackId: 'track-keys', deltaDb: -2 } }, MUTE_BASS]]);
