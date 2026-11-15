@@ -280,10 +280,10 @@ async function deliverTick(sentAtClockMs: number): Promise<void> {
     await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false), { interval: 1 });
 }
 
-/** The next tick's scheduling work blocks the thread for `OVERRUN_MS`. */
-function overrunNextTick(): void {
+/** The next tick's scheduling work blocks the thread for `workMs`. */
+function blockNextTick(workMs: number): void {
     vi.mocked(applyAutomation).mockImplementationOnce(() => {
-        clock.ms += OVERRUN_MS;
+        clock.ms += workMs;
         return new Set<string>();
     });
 }
@@ -292,14 +292,18 @@ function playing(): typeof defaultTransportState {
     return { ...defaultTransportState, isPlaying: true, tempo: 120, scheduleGrainMs: GRAIN_MS, playheadPosition: 0 };
 }
 
-/** Run one overrunning tick and return the clock span its work blocked. */
-async function runOverrunningTick(): Promise<{ startedMs: number; settledMs: number }> {
+/** Run one tick whose work blocks for `workMs` and return the clock span it blocked. */
+async function runBlockingTick(workMs: number): Promise<{ startedMs: number; settledMs: number }> {
     clock.ms += GRAIN_MS;
     const startedMs = clock.ms;
-    overrunNextTick();
+    blockNextTick(workMs);
     await deliverTick(startedMs);
-    expect(clock.ms).toBe(startedMs + OVERRUN_MS);
+    expect(clock.ms).toBe(startedMs + workMs);
     return { startedMs, settledMs: clock.ms };
+}
+
+function runOverrunningTick(): Promise<{ startedMs: number; settledMs: number }> {
+    return runBlockingTick(OVERRUN_MS);
 }
 
 describe('startPlayheadScheduler after a tick overruns the grain', () => {
@@ -339,6 +343,28 @@ describe('startPlayheadScheduler after a tick overruns the grain', () => {
         expect(timing.ticksSettled - settledBefore).toBe(0);
         expect(timing.ticksSkippedBehindOverrun).toBe(QUEUED_BACKLOG);
         expect(timing.messagesReceived).toBe(1 + QUEUED_BACKLOG);
+    });
+
+    it('drops a message sent just before a five-grain overrun settled', async () => {
+        startPlayheadScheduler();
+        const { settledMs } = await runBlockingTick(5 * GRAIN_MS);
+        const ticksBefore = vi.mocked(applyAutomation).mock.calls.length;
+
+        await deliverTick(settledMs - 0.5);
+
+        expect(vi.mocked(applyAutomation).mock.calls.length - ticksBefore).toBe(0);
+        expect(schedulerTimingDiagnostics.snapshot().ticksSkippedBehindOverrun).toBe(1);
+    });
+
+    it('admits a message sent before a tick that stayed inside the grain settled', async () => {
+        startPlayheadScheduler();
+        const { startedMs } = await runBlockingTick(GRAIN_MS / 2);
+        const ticksBefore = vi.mocked(applyAutomation).mock.calls.length;
+
+        await deliverTick(startedMs + 1);
+
+        expect(vi.mocked(applyAutomation).mock.calls.length - ticksBefore).toBe(1);
+        expect(schedulerTimingDiagnostics.snapshot().ticksSkippedBehindOverrun).toBe(0);
     });
 
     it('runs the first message the Worker sent after the overrunning tick settled', async () => {

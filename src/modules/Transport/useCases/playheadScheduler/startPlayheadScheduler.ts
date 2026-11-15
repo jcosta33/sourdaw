@@ -422,8 +422,10 @@ export function startPlayheadScheduler(
     const grainMs = state.scheduleGrainMs;
     schedulerTimingDiagnostics.reset(grainMs);
     // When this session's last tick settled, on the clock the Worker stamps
-    // `sentAtMs` with. Scoped to the session so a restart never inherits it.
+    // `sentAtMs` with, and whether that tick ran longer than the grain. Scoped
+    // to the session so a restart never inherits them.
     let lastTickSettledAtMs = Number.NEGATIVE_INFINITY;
+    let lastTickOverran = false;
 
     async function tick(initial = false): Promise<void> {
         // Second line of defence, not the primary filter: `worker.onmessage`
@@ -456,7 +458,9 @@ export function startPlayheadScheduler(
         } finally {
             if (schedulerSession.generation === schedulerGeneration) {
                 lastTickSettledAtMs = highResolutionEpochMs();
-                schedulerTimingDiagnostics.recordTickSettled(lastTickSettledAtMs - tickStartedAtMs);
+                const tickDurationMs = lastTickSettledAtMs - tickStartedAtMs;
+                lastTickOverran = tickDurationMs > grainMs;
+                schedulerTimingDiagnostics.recordTickSettled(tickDurationMs);
                 schedulerSession.tickInFlight = false;
             }
         }
@@ -2083,14 +2087,16 @@ export function startPlayheadScheduler(
                 message.sentAtMs,
                 receivedAtMs
             );
-            // A tick that runs synchronously past the grain blocks the thread
-            // while the Worker keeps posting. Every message sent before that
-            // tick settled was queued behind it: running a full tick for each
-            // would keep the thread from the event loop once per-tick work
-            // exceeds the grain (#6823). Drop them; the next message the Worker
-            // sends after settlement runs at most a grain later, and its window
-            // catches up the span this one would have covered.
-            if (message.sentAtMs + CLOCK_PRECISION_TOLERANCE_MS < lastTickSettledAtMs) {
+            // After a tick that ran longer than the grain, every message the
+            // Worker sent before that tick settled was queued behind it, and is
+            // dropped: running a full tick for each, back to back, never lets
+            // the main thread back to the event loop once per-tick work exceeds
+            // the grain (#6823). The cost under overload is that the catch-up
+            // tick starts at the first Worker message after settlement, up to
+            // one grain later than running a queued message at once; that idle
+            // gap is what returns the thread to the event loop. After a tick
+            // inside the grain, every message is admitted.
+            if (lastTickOverran && message.sentAtMs < lastTickSettledAtMs) {
                 schedulerTimingDiagnostics.recordTickSkippedBehindOverrun();
                 return;
             }
