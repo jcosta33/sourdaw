@@ -529,7 +529,11 @@ fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), File
 /// keeps projects in. The user's documents, downloads, desktop and music
 /// folders were roots here once (#3313); they are the user's, not the app's,
 /// and reach them now only through a grant the user made in a dialog.
-fn built_in_roots() -> Result<Vec<PathBuf>, String> {
+///
+/// A plugin folder grant may not overlap any of these: the renderer writes
+/// here without a pick, so an overlapping plugin folder would let a page plant
+/// native code that the scan and the loader execute.
+pub(crate) fn built_in_roots() -> Result<Vec<PathBuf>, String> {
     let mut roots = vec![ipc_temp_dir()?];
 
     if let Some(data_dir) = application_data_directory()? {

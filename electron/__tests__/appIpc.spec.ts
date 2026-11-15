@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     registerDialogChannels,
     registerPathChannels,
+    registerPluginFolderChannels,
     registerSystemChannels,
     registerScanCommand,
     registerNativeMenuChannels,
@@ -25,6 +26,7 @@ import {
     DIALOG_SAVE_CHANNEL,
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
+    PLUGIN_FOLDER_ADD_CHANNEL,
     SYSTEM_TOTAL_MEMORY_CHANNEL,
     WINDOW_CLOSE_CHANNEL,
     WINDOW_IS_MAXIMIZED_CHANNEL,
@@ -584,6 +586,98 @@ describe('the grants a dialog mints', () => {
     });
 });
 
+describe('the plugin folder picker', () => {
+    const folderHandler = (
+        showOpenDialog: NativeDialogs['showOpenDialog'],
+        native: () => NativeHost | undefined
+    ): Handler | undefined => {
+        const { ipcMain, handlers } = collectingIpc();
+        registerPluginFolderChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            dialogs: { ...cancelledDialogs(), showOpenDialog },
+            native,
+        });
+        return handlers.get(PLUGIN_FOLDER_ADD_CHANNEL);
+    };
+
+    const folderGrantRecorder = (
+        grantPluginFolder: NativeHost['grantPluginFolder'] = async (path) => path
+    ): { readonly native: () => NativeHost; readonly grantPluginFolder: NativeHost['grantPluginFolder'] } => {
+        const spy = vi.fn(grantPluginFolder);
+        return { native: () => ({ grantPluginFolder: spy }) as unknown as NativeHost, grantPluginFolder: spy };
+    };
+
+    const picking = (filePaths: readonly string[]) =>
+        vi.fn(async (_options: OpenDialogOptions) => ({ canceled: false, filePaths: [...filePaths] }));
+
+    it('opens a single directory picker and grants exactly the folder it returned', async () => {
+        const showOpenDialog = picking(['/Users/me/Plugins']);
+        const { native, grantPluginFolder } = folderGrantRecorder(async () => '/Users/me/Plugins');
+
+        await expect(folderHandler(showOpenDialog, native)?.(APP_FRAME)).resolves.toEqual({
+            status: 'granted',
+            path: '/Users/me/Plugins',
+        });
+        expect(showOpenDialog).toHaveBeenCalledWith({
+            title: 'Add Plugin Folder',
+            properties: ['openDirectory', 'createDirectory'],
+        });
+        expect(vi.mocked(grantPluginFolder).mock.calls).toEqual([['/Users/me/Plugins']]);
+    });
+
+    it('grants the picked folder, never a path the renderer sent', async () => {
+        // A forged message carrying a path must not reach the grant: the only
+        // path granted is the one the native dialog answered with.
+        const { native, grantPluginFolder } = folderGrantRecorder();
+
+        await folderHandler(picking(['/Users/me/Plugins']), native)?.(APP_FRAME, '/etc', { path: '/etc' });
+
+        expect(vi.mocked(grantPluginFolder).mock.calls).toEqual([['/Users/me/Plugins']]);
+    });
+
+    it('grants nothing when the picker is cancelled, whatever the renderer sent', async () => {
+        const { native, grantPluginFolder } = folderGrantRecorder();
+        const handler = folderHandler(
+            async (_options: OpenDialogOptions) => ({ canceled: true, filePaths: ['/Users/me/Plugins'] }),
+            native
+        );
+
+        await expect(handler?.(APP_FRAME, '/etc')).resolves.toEqual({ status: 'cancelled' });
+        await expect(folderHandler(picking([]), native)?.(APP_FRAME, '/etc')).resolves.toEqual({
+            status: 'cancelled',
+        });
+        expect(grantPluginFolder).not.toHaveBeenCalled();
+    });
+
+    it('answers a native refusal with its reason rather than throwing', async () => {
+        const { native } = folderGrantRecorder(async () => {
+            throw new Error('/Volumes/USB is a symlinked folder and cannot be scanned');
+        });
+
+        await expect(folderHandler(picking(['/Volumes/USB']), native)?.(APP_FRAME)).resolves.toEqual({
+            status: 'refused',
+            reason: '/Volumes/USB is a symlinked folder and cannot be scanned',
+        });
+    });
+
+    it('refuses with a clear reason when no addon is loaded', async () => {
+        await expect(folderHandler(picking(['/Users/me/Plugins']), noNativeHost)?.(APP_FRAME)).resolves.toEqual({
+            status: 'refused',
+            reason: 'Plugin folders cannot be added because the native host is not loaded.',
+        });
+    });
+
+    it('refuses a foreign sender before raising a picker or granting anything', () => {
+        const showOpenDialog = picking(['/Users/me/Plugins']);
+        const { native, grantPluginFolder } = folderGrantRecorder();
+
+        expect(() => folderHandler(showOpenDialog, native)?.(FOREIGN_FRAME)).toThrow(/not the application/u);
+        expect(showOpenDialog).not.toHaveBeenCalled();
+        expect(grantPluginFolder).not.toHaveBeenCalled();
+    });
+});
+
 describe('the message box', () => {
     it('resolves to nothing rather than to a button index', async () => {
         await expect(
@@ -660,6 +754,12 @@ describe('the origin guard on every non-command channel', () => {
     it('refuses a foreign frame on each one', () => {
         const { ipcMain, handlers } = collectingIpc();
         registerDialogChannels({ ipcMain, isTrustedFrameUrl, dialogs: cancelledDialogs(), native: noNativeHost });
+        registerPluginFolderChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            dialogs: cancelledDialogs(),
+            native: noNativeHost,
+        });
         registerPathChannels({
             ipcMain,
             isTrustedFrameUrl,
@@ -675,6 +775,7 @@ describe('the origin guard on every non-command channel', () => {
                 DIALOG_SAVE_CHANNEL,
                 PATHS_JOIN_CHANNEL,
                 PATHS_SAMPLES_BASE_CHANNEL,
+                PLUGIN_FOLDER_ADD_CHANNEL,
                 SYSTEM_TOTAL_MEMORY_CHANNEL,
             ].sort()
         );
