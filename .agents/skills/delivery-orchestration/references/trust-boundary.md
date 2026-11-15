@@ -47,8 +47,10 @@ so a lane can choose the programs and network settings any Git command run there
 merge and diff drivers, textconv, `name::` remote helpers, URL rewrites, and URL-scoped or plain
 `http.*` keys such as `http.curloptResolve`, `http.sslCAInfo` and `http.proxy`. Their names are
 the lane's choice, so no environment override can switch them off. The token is therefore kept
-out of every Git command that reads that config. No Git child receives `GH_TOKEN` or the GitHub
-CLI's config directory; Git authenticates only through a credential helper, and the only children
+out of every Git command that reads that config. No Git child receives any variable the GitHub CLI
+reads a token from (`GH_TOKEN`, `GITHUB_TOKEN` and their enterprise forms, in any case) or its
+config directory, and a caller that hands one to a Git child gets the same hook check as a
+credential-holding child; Git authenticates only through a credential helper, and the only children
 that install one are the network transports (fetch, push, `ls-remote`). Those run through
 `withIsolatedGitTransport` in `scripts/isolatedGitTransport.ts`, against a fresh Git directory
 whose config the script writes, named with `--git-dir`, whose `objects` links to the repository's

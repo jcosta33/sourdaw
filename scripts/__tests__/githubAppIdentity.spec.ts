@@ -1688,6 +1688,55 @@ describe('sterile Git child environments', () => {
         });
     });
 
+    it.each(['GITHUB_TOKEN', 'github_token', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'])(
+        'refuses a git child that carries its token only in %s while the repository config defines a hook',
+        (key) => {
+            withScratch('sourdaw-config-hook-token-key-', (root) => {
+                const sentinel = ['ghs', 'token', 'key', 'sentinel'].join('_');
+                const leaked = join(root, 'leaked');
+                const program = join(root, 'hook');
+                const source = join(root, 'source');
+                const repository = join(root, 'repository');
+                for (const path of [source, repository]) {
+                    mkdirSync(path);
+                    fixtureGit(path, ['init', '-q', '-b', 'main']);
+                }
+                fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: source']);
+                writeExecutable(program, `#!/bin/sh\nenv > ${JSON.stringify(leaked)}\n`);
+                fixtureGit(repository, ['config', 'hook.lane.event', 'reference-transaction']);
+                fixtureGit(repository, ['config', 'hook.lane.command', program]);
+                const env = { ...githubAuthorizationGitEnv(), [key]: sentinel };
+                const fetchArgs = ['fetch', source, 'main'];
+
+                expect(() => spawnCapture('git', fetchArgs, { cwd: repository, env })).toThrow(
+                    'refusing a token-bearing git child: repository config defines hook.lane.event'
+                );
+                expect(() => spawnRun('git', ['-C', repository, ...fetchArgs], { env })).toThrow(
+                    'repository config defines hook.lane.event'
+                );
+                expect(existsSync(leaked)).toBe(false);
+
+                spawnSync('git', fetchArgs, { cwd: repository, env });
+                expect(readFileSync(leaked, 'utf8')).toContain(sentinel);
+            });
+        }
+    );
+
+    it.each(['GITHUB_TOKEN', 'github_token', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'])(
+        'keeps a token carried in %s from the programs a git child runs',
+        (key) => {
+            withScratch('sourdaw-token-key-strip-', (root) => {
+                const sentinel = ['ghs', 'token', 'key', 'sentinel'].join('_');
+                fixtureGit(root, ['init', '-q', '-b', 'main']);
+                const env = { ...githubAuthorizationGitEnv(), [key]: sentinel };
+                const dumpArgs = ['-c', 'alias.dump=!env', 'dump'];
+
+                expect(spawnCapture('git', dumpArgs, { cwd: root, env })).not.toContain(sentinel);
+                expect(spawnSync('git', dumpArgs, { cwd: root, env, encoding: 'utf8' }).stdout).toContain(sentinel);
+            });
+        }
+    );
+
     it('runs a git child without a token whatever hooks the repository config defines', () => {
         withScratch('sourdaw-config-hook-untokened-', (root) => {
             fixtureGit(root, ['init', '-q', '-b', 'main']);

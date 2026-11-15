@@ -85,10 +85,13 @@ export function executableName(command: string): string {
         .replace(/\.exe$/u, '');
 }
 
-function carriesGithubToken(env: NodeJS.ProcessEnv): boolean {
-    return Object.entries(env).some(
-        ([key, value]) => value !== undefined && GITHUB_TOKEN_ENV_KEYS.has(key.toUpperCase())
-    );
+/** A variable the GitHub CLI reads a token from, matched ignoring case as a Windows child does. */
+export function isGithubTokenKey(key: string): boolean {
+    return GITHUB_TOKEN_ENV_KEYS.has(key.toUpperCase());
+}
+
+export function carriesGithubToken(env: NodeJS.ProcessEnv): boolean {
+    return Object.entries(env).some(([key, value]) => value !== undefined && isGithubTokenKey(key));
 }
 
 function isCheckoutRepositoryQuery(args: readonly string[]): boolean {

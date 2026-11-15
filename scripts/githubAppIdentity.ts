@@ -7,7 +7,9 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fail, TRUSTED_GH_PATH_ENV, TRUSTED_GIT_PATH_ENV } from './prContract.ts';
 import {
     assertRunsInLiveIsolatedGitDirectory,
+    carriesGithubToken,
     executableName,
+    isGithubTokenKey,
     withGhChildLocation,
 } from './tokenBearingChildPlacement.ts';
 
@@ -406,7 +408,7 @@ const INHERITED_AUTHORITY_PREFIXES = ['GIT_', 'GH_', 'GITHUB_', 'SOURDAW_GITHUB_
  *
  * Keys whose names the lane chooses — a `.gitattributes` filter, a merge or diff driver, a custom
  * `name::` remote helper — and URL-scoped `http.<url>.*` settings cannot be named here. They are kept
- * from the token instead: a git child never receives `GH_TOKEN` (`tokenFreeGitEnv`), and the only
+ * from the token instead: a git child never receives a GitHub token variable (`tokenFreeGitEnv`), and the only
  * git children that hold a credential, the network transports, run against a script-written git
  * directory (`withIsolatedGitTransport`) and read no lane-writable config.
  * Keeping the token from same-account processes is outside this boundary.
@@ -462,6 +464,10 @@ export function githubAuthorizationGitEnv(parent: NodeJS.ProcessEnv = process.en
     return env;
 }
 
+function isGitHubCliKey(key: string): boolean {
+    return key.toUpperCase().startsWith('GH_') || isGithubTokenKey(key);
+}
+
 /**
  * Git authenticates only through the credential helper `gitAuthenticatedArgs` installs, so no git child
  * needs the GitHub CLI's token or config directory. Dropping them keeps the token from every program a
@@ -470,7 +476,7 @@ export function githubAuthorizationGitEnv(parent: NodeJS.ProcessEnv = process.en
 export function tokenFreeGitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     const stripped: NodeJS.ProcessEnv = { ...env };
     for (const key of Object.keys(stripped)) {
-        if (key.toUpperCase().startsWith('GH_')) {
+        if (isGitHubCliKey(key)) {
             delete stripped[key];
         }
     }
@@ -740,7 +746,7 @@ const VALUELESS_GIT_GLOBAL_OPTIONS = new Set([
 ]);
 
 /** The valued global options a token-bearing git child may carry, spelled `--name=value`. */
-const VALUED_GIT_GLOBAL_OPTIONS = ['--git-dir=', '--work-tree='] as const;
+const VALUED_GIT_GLOBAL_OPTIONS = ['--git-dir='] as const;
 
 /**
  * The options before a git subcommand, which can change the repository and config it reads. `-C` and
@@ -834,11 +840,11 @@ function installsCredentialHelper(args: readonly string[], env: NodeJS.ProcessEn
 /**
  * A git child carries a token when it installs a credential helper: a program it runs could call
  * `git credential fill` through the `-c` overrides git passes down in `GIT_CONFIG_PARAMETERS` and
- * read the token back. A caller that still hands `GH_TOKEN` to a git child is treated the same,
- * although the child itself never receives it (`tokenFreeGitEnv`).
+ * read the token back. A caller that still hands a GitHub token variable to a git child is treated
+ * the same, although the child itself never receives it (`tokenFreeGitEnv`).
  */
 function isTokenBearingGitChild(args: readonly string[], env: NodeJS.ProcessEnv): boolean {
-    return env.GH_TOKEN !== undefined || installsCredentialHelper(args, env);
+    return carriesGithubToken(env) || installsCredentialHelper(args, env);
 }
 
 function gitEnvironmentEntries(env: NodeJS.ProcessEnv): Map<string, string> {

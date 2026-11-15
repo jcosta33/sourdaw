@@ -718,6 +718,16 @@ describe('credential-holding git children read config only from the sterile envi
         ],
         ['config parameters', [], { GIT_CONFIG_PARAMETERS: "'credential.helper'='!true'" }],
         ['an other-case key in config parameters', [], { GIT_CONFIG_PARAMETERS: "'Credential.Helper'='!true'" }],
+        [
+            'a URL-scoped key in config parameters',
+            [],
+            { GIT_CONFIG_PARAMETERS: "'credential.https://github.com.helper'='!true'" },
+        ],
+        [
+            'an other-case URL-scoped key in config parameters',
+            [],
+            { GIT_CONFIG_PARAMETERS: "'CREDENTIAL.https://github.com.HELPER'='!true'" },
+        ],
         // A Windows child reads environment variables whatever their case.
         ['lower-case config parameters', [], { git_config_parameters: "'credential.helper'='!true'" }],
         [
