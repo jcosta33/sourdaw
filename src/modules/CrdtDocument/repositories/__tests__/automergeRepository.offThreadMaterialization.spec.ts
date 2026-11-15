@@ -838,6 +838,55 @@ describe('repository canonical Worker candidate adoption', () => {
         }
     );
 
+    it('rejects evidence-only retirement for a canonical no-op', async () => {
+        const original = seed();
+        const heads = getHeads(original);
+        const history = native.getChangesMetaSince(original, []);
+        const evidence = original._storagePublicationEvidence;
+        const observer = vi.fn();
+        repository.onChange(observer);
+        mocks.request.mockImplementationOnce(async (request) => {
+            const document = load<Record<string, unknown>>(request.seed, { actor: request.actor });
+            const changed = change(document, { message: request.message }, (draft) => {
+                delete draft._storagePublicationEvidence;
+            });
+            try {
+                return {
+                    changes: getChangesSince(changed, [...request.heads]).map((bytes) => Uint8Array.from(bytes)),
+                    heads: getHeads(changed),
+                };
+            } finally {
+                free(changed);
+            }
+        });
+        const prepared = plan(original, true);
+        await prepared.requestMaterialization!(new AbortController().signal);
+        let refusal: unknown;
+        try {
+            const candidate = prepared.materialize();
+            publish(candidate);
+            candidate.discard();
+        } catch (error) {
+            refusal = error;
+        } finally {
+            prepared.discard();
+        }
+        expect(refusal).toMatchObject({ message: 'Prospective mutation Worker changed an unowned slot' });
+        expect(repository.getDoc('root')).toBe(original);
+        expect(original.slot.count).toBe(0);
+        expect(original._storagePublicationEvidence).toEqual(evidence);
+        expect(commandSourcePublicationContains(heads[0]!, 'member', 'source', 'digest')).toBe(true);
+        expect(getHeads(original)).toEqual(heads);
+        expect(native.getChangesMetaSince(original, [])).toEqual(history);
+        expect(observer).not.toHaveBeenCalled();
+        repository.changeDoc<Document>('root', (doc) => {
+            doc.slot.count = 7;
+        });
+        const current = repository.getDoc<Document>('root')!;
+        expect(current.slot.count).toBe(7);
+        expect(getChanges(original, current)).toHaveLength(1);
+    });
+
     it.each(['discard', 'abort', 'authority'] as const)(
         'frees its retained private handle without native insertion when %s prevents adoption',
         async (kind) => {
