@@ -421,6 +421,9 @@ export function startPlayheadScheduler(
     let previousFrozenMidiOwners = new Map<string, string>();
     const grainMs = state.scheduleGrainMs;
     schedulerTimingDiagnostics.reset(grainMs);
+    // When this session's last tick settled, on the clock the Worker stamps
+    // `sentAtMs` with. Scoped to the session so a restart never inherits it.
+    let lastTickSettledAtMs = Number.NEGATIVE_INFINITY;
 
     async function tick(initial = false): Promise<void> {
         // Second line of defence, not the primary filter: `worker.onmessage`
@@ -452,7 +455,8 @@ export function startPlayheadScheduler(
             await runTick(initial);
         } finally {
             if (schedulerSession.generation === schedulerGeneration) {
-                schedulerTimingDiagnostics.recordTickSettled(highResolutionEpochMs() - tickStartedAtMs);
+                lastTickSettledAtMs = highResolutionEpochMs();
+                schedulerTimingDiagnostics.recordTickSettled(lastTickSettledAtMs - tickStartedAtMs);
                 schedulerSession.tickInFlight = false;
             }
         }
@@ -2079,6 +2083,17 @@ export function startPlayheadScheduler(
                 message.sentAtMs,
                 receivedAtMs
             );
+            // A tick that runs synchronously past the grain blocks the thread
+            // while the Worker keeps posting. Every message sent before that
+            // tick settled was queued behind it: running a full tick for each
+            // would keep the thread from the event loop once per-tick work
+            // exceeds the grain (#6823). Drop them; the next message the Worker
+            // sends after settlement runs at most a grain later, and its window
+            // catches up the span this one would have covered.
+            if (message.sentAtMs + CLOCK_PRECISION_TOLERANCE_MS < lastTickSettledAtMs) {
+                schedulerTimingDiagnostics.recordTickSkippedBehindOverrun();
+                return;
+            }
             tick().catch((error: unknown) => {
                 logger.error(new Error('Transport scheduler tick failed', { cause: error }));
             });
