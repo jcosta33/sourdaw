@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, type TestContext } from 'vitest';
 
 import {
     SOURDAW_E2E_PORT_ENV,
@@ -141,6 +141,24 @@ async function killAndWait(pid: number | undefined): Promise<void> {
 // Each real guarded command ends in a storage file proof that can spend its whole
 // five-second deadline retaking catalogs on a busy host.
 const GUARDED_CASE_TIMEOUT_MS = 20_000;
+
+function captureGuardedFailure(onTestFailed: TestContext['onTestFailed'], name: string) {
+    const fixtureFinished = Promise.withResolvers<void>();
+    let result: GuardedCommandResult | undefined;
+    onTestFailed(async () => {
+        if (result === undefined) {
+            console.error(`guard fixture failure (${name}): awaiting terminal cleanup`);
+        }
+        await fixtureFinished.promise;
+        console.error(`guard fixture failure (${name}): ${JSON.stringify(result)}`);
+    }, GUARDED_CASE_TIMEOUT_MS);
+    return {
+        recordResult: (completed: GuardedCommandResult) => {
+            result = completed;
+        },
+        finish: () => fixtureFinished.resolve(),
+    };
+}
 
 describe('resource admission', () => {
     it('serializes admission updates', () => {
@@ -437,10 +455,14 @@ describe('process identity ownership', () => {
         const identities = new Map(starts);
         const signals: Array<[number, NodeJS.Signals | number | undefined]> = [];
         const windowsTrees: number[] = [];
+        const identityQueries: number[] = [];
         const host: ProcessTreeHost = {
             platform: () => 'linux',
             processTable: () => rows,
-            processStartedAt: (pid) => identities.get(pid),
+            processStartedAt: (pid) => {
+                identityQueries.push(pid);
+                return identities.get(pid);
+            },
             terminateWindowsTree: (pid) => {
                 windowsTrees.push(pid);
             },
@@ -460,7 +482,7 @@ describe('process identity ownership', () => {
                 return true;
             },
         };
-        return { host, signals, windowsTrees };
+        return { host, signals, windowsTrees, identityQueries };
     }
 
     function row(pid: number, parentPid: number, processGroupId: number, rssBytes: number, sessionOwned = false) {
@@ -506,6 +528,75 @@ describe('process identity ownership', () => {
         terminateProcessTree(100, 'SIGTERM', tracked, 'session', host);
 
         expect(signals.map(([pid]) => pid).sort((left, right) => left - right)).toEqual([-100, 100, 101, 300, 301]);
+    });
+
+    it('rejects descendants of an omitted historical parent with a positively replaced identity', () => {
+        const { host, signals } = fixture(
+            [row(100, 1, 100, 1), row(201, 200, 200, 32), row(202, 201, 200, 64)],
+            [
+                [100, originalStart],
+                [200, replacementStart],
+                [201, replacementStart],
+                [202, replacementStart],
+            ]
+        );
+        const tracked = new Map([
+            [100, originalStart],
+            [200, originalStart],
+        ]);
+
+        expect(sampleProcessTree(100, tracked, 'session', host)).toBe(1);
+        expect([...tracked.keys()]).toEqual([100, 200]);
+        terminateProcessTree(100, 'SIGTERM', tracked, 'session', host);
+        expect(signals.map(([pid]) => pid).sort((left, right) => left - right)).toEqual([-100, 100]);
+    });
+
+    it('rejects descendants of an omitted root with a positively replaced identity', () => {
+        const { host, signals } = fixture(
+            [row(101, 100, 100, 2), row(102, 101, 100, 4)],
+            [
+                [100, replacementStart],
+                [101, replacementStart],
+                [102, replacementStart],
+            ]
+        );
+        const tracked = new Map([[100, originalStart]]);
+
+        expect(sampleProcessTree(100, tracked, 'session', host)).toBe(0);
+        expect([...tracked.keys()]).toEqual([100]);
+        terminateProcessTree(100, 'SIGTERM', tracked, 'session', host);
+        expect(signals).toEqual([]);
+        expect(processTreeAlive(100, tracked, 'session', host)).toBe(false);
+    });
+
+    it('retains descendants of an omitted parent whose identity remains unreadable', () => {
+        const { host } = fixture(
+            [row(100, 1, 100, 1), row(201, 200, 200, 32)],
+            [
+                [100, originalStart],
+                [201, replacementStart],
+            ]
+        );
+        const tracked = new Map([
+            [100, originalStart],
+            [200, originalStart],
+        ]);
+
+        expect(sampleProcessTree(100, tracked, 'session', host)).toBe(33);
+        expect(tracked.get(200)).toBe(originalStart);
+        expect(tracked.get(201)).toBe(replacementStart);
+        expect(processTreeAlive(100, tracked, 'session', host)).toBe(true);
+    });
+
+    it('does not query historical identities absent from current rows and parent edges', () => {
+        const { host, identityQueries } = fixture([row(100, 1, 100, 1)], [[100, originalStart]]);
+        const tracked = new Map<number, string>([
+            [100, originalStart],
+            ...Array.from({ length: 500 }, (_, index): [number, string] => [1_000 + index, originalStart]),
+        ]);
+
+        expect(sampleProcessTree(100, tracked, 'session', host)).toBe(1);
+        expect(identityQueries).toEqual([100]);
     });
 
     it.each([
@@ -765,38 +856,49 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         expect(result.output).toContain('"processGroup":{"status":"unavailable"}');
     });
 
-    it('kills detached descendants after a deadline', async () => {
-        const root = fixtureRoot('descendant');
-        const pidPath = join(root, 'pid');
-        let descendantPid: number | undefined;
-        try {
-            const result = await runIsolatedGuardedCommand({
-                command: process.execPath,
-                args: [
-                    '-e',
-                    `const { spawn } = require('node:child_process'); const { writeFileSync } = require('node:fs'); const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { detached: true, stdio: 'ignore' }); writeFileSync(${JSON.stringify(pidPath)}, String(child.pid)); setInterval(() => {}, 1000);`,
-                ],
-                profile: 'focused',
-                timeoutMs: 100,
-                maxRssBytes: 2 * 1024 ** 3,
-                availableMemoryBytes: abundantMemoryBytes,
-                sampleIntervalMs: 20,
-            });
-            const recordedPid = Number(readFileSync(pidPath, 'utf8'));
-            descendantPid = recordedPid;
+    it(
+        'kills detached descendants after a deadline',
+        async ({ onTestFailed }) => {
+            const root = fixtureRoot('descendant');
+            const pidPath = join(root, 'pid');
+            let descendantPid: number | undefined;
+            const diagnostics = captureGuardedFailure(onTestFailed, 'detached deadline');
+            try {
+                const result = await runIsolatedGuardedCommand({
+                    command: process.execPath,
+                    args: [
+                        '-e',
+                        `const { spawn } = require('node:child_process'); const { writeFileSync } = require('node:fs'); const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { detached: true, stdio: 'ignore' }); writeFileSync(${JSON.stringify(pidPath)}, String(child.pid)); setInterval(() => {}, 1000);`,
+                    ],
+                    profile: 'focused',
+                    timeoutMs: 100,
+                    maxRssBytes: 2 * 1024 ** 3,
+                    availableMemoryBytes: abundantMemoryBytes,
+                    sampleIntervalMs: 20,
+                });
+                diagnostics.recordResult(result);
+                const recordedPid = Number(readFileSync(pidPath, 'utf8'));
+                descendantPid = recordedPid;
 
-            expect(result.reason).toBe('timeout');
-            expect(() => process.kill(recordedPid, 0)).toThrow();
-        } finally {
-            await killAndWait(descendantPid);
-            rmSync(root, { recursive: true, force: true });
-        }
-    }, 10_000);
+                expect(result.reason, result.output).toBe('timeout');
+                expect(() => process.kill(recordedPid, 0)).toThrow();
+            } finally {
+                try {
+                    await killAndWait(descendantPid);
+                    rmSync(root, { recursive: true, force: true });
+                } finally {
+                    diagnostics.finish();
+                }
+            }
+        },
+        GUARDED_CASE_TIMEOUT_MS
+    );
 
-    it('cleans a detached child that outlives its launcher', async () => {
+    it('cleans a detached child that outlives its launcher', async ({ onTestFailed }) => {
         const root = fixtureRoot('leak');
         const pidPath = join(root, 'pid');
         let childPid: number | undefined;
+        const diagnostics = captureGuardedFailure(onTestFailed, 'detached launcher');
         try {
             const result = await runIsolatedGuardedCommand({
                 command: process.execPath,
@@ -807,14 +909,19 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                 profile: 'focused',
                 availableMemoryBytes: abundantMemoryBytes,
             });
+            diagnostics.recordResult(result);
             const recordedPid = Number(readFileSync(pidPath, 'utf8'));
             childPid = recordedPid;
 
-            expect(result.reason).toBeUndefined();
+            expect(result.reason, result.output).toBeUndefined();
             expect(isAlive(childPid)).toBe(false);
         } finally {
-            await killAndWait(childPid);
-            rmSync(root, { recursive: true, force: true });
+            try {
+                await killAndWait(childPid);
+                rmSync(root, { recursive: true, force: true });
+            } finally {
+                diagnostics.finish();
+            }
         }
     }, 10_000);
 

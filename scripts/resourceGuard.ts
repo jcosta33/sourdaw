@@ -1118,9 +1118,9 @@ function sampleProcessRows(
     rows: ProcessRow[],
     host: ProcessTreeHost
 ): { rssBytes: number; selected: Set<number> } {
-    const present = new Set(rows.map((row) => row.pid));
+    const relevantPids = new Set(rows.flatMap((row) => [row.pid, row.parentPid]));
     const replaced = new Set(
-        [...tracked.keys()].filter((pid) => present.has(pid) && processIdentityReplaced(pid, tracked, host))
+        [...tracked.keys()].filter((pid) => relevantPids.has(pid) && processIdentityReplaced(pid, tracked, host))
     );
     const selected = new Set<number>([
         ...[rootPid, ...tracked.keys()].filter((pid) => !replaced.has(pid)),
@@ -2719,7 +2719,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             reason ??= 'leak';
         }
     }
-    if (child.pid !== undefined && (reason === 'leak' || !treeExitProved)) {
+    if (child.pid !== undefined && !treeExitProved) {
         let processGroup: ReturnType<typeof captureProcessGroupSnapshot>;
         try {
             processGroup = (input.processSnapshot ?? captureProcessGroupSnapshot)(child.pid);
