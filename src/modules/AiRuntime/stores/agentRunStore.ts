@@ -22,10 +22,8 @@ import {
     type AgentRunCommittedWork,
     type AgentRunDecision,
     type AgentRunError,
-    MAX_AUDIBLE_CLAIM_METRICS,
-    type AgentRunMeasuredAudibleMetric,
+    AGENT_RUN_MAX_TEXT_LENGTH,
     type AgentRunPlan,
-    type AgentRunPlanAudibleImpact,
     type AgentRunPendingEffect,
     type AgentRunPendingEffectContinuation,
     type AgentRunPendingEffectRecovery,
@@ -51,6 +49,7 @@ import {
     type ThreadContextEvidence,
 } from '../models/ThreadContext';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
+import { readAgentRunAudibleImpact } from '../validators/readAgentRunAudibleImpact';
 import { readPerceptualConstraintReading } from '../validators/readPerceptualConstraintReading';
 import { readScheduledVibeRunPlan } from '../validators/readScheduledVibeRunPlan';
 
@@ -72,7 +71,7 @@ export const MAX_PLAN_APPLICATION_TOOL_RECEIPTS = 1024;
  * the allowance every other collection keeps.
  */
 export const MAX_PLAN_CAPABILITIES = MAX_PLAN_APPLICATION_TOOL_RECEIPTS + MAX_COLLECTION_LENGTH;
-const MAX_TEXT_LENGTH = 128 * 1024;
+const MAX_TEXT_LENGTH = AGENT_RUN_MAX_TEXT_LENGTH;
 const MAX_SERIALIZED_BATCH_LENGTH = 1024 * 1024;
 
 type UnknownRecord = Record<string, unknown>;
@@ -917,66 +916,6 @@ function readWorkLease(value: unknown): AgentRunWorkLease | null {
     };
 }
 
-function readMeasuredFigure(value: unknown): { value: number; unit: string } | null {
-    if (!isRecord(value) || typeof value.value !== 'number' || !Number.isFinite(value.value)) {
-        return null;
-    }
-    const unit = readString(value.unit);
-    return unit === null ? null : { value: value.value, unit };
-}
-
-function readMeasuredRange(value: unknown): { startBeat: number; endBeat: number; sectionId: string | null } | null {
-    if (!isRecord(value) || typeof value.startBeat !== 'number' || typeof value.endBeat !== 'number') {
-        return null;
-    }
-    const sectionId = readNullableString(value.sectionId);
-    return !Number.isFinite(value.startBeat) || !Number.isFinite(value.endBeat) || sectionId === undefined
-        ? null
-        : { startBeat: value.startBeat, endBeat: value.endBeat, sectionId };
-}
-
-function readMeasuredAudibleMetric(value: unknown): AgentRunMeasuredAudibleMetric | null {
-    if (!isRecord(value)) {
-        return null;
-    }
-    const targetId = readString(value.targetId);
-    const targetKind =
-        value.targetKind === 'master' || value.targetKind === 'track' || value.targetKind === 'bus'
-            ? value.targetKind
-            : null;
-    const metricId = readString(value.metricId);
-    const range = readMeasuredRange(value.range);
-    const baseline = readMeasuredFigure(value.baseline);
-    const preview = readMeasuredFigure(value.preview);
-    const delta = readMeasuredFigure(value.delta);
-    return targetId === null ||
-        targetKind === null ||
-        range === null ||
-        metricId === null ||
-        baseline === null ||
-        preview === null ||
-        delta === null
-        ? null
-        : { targetId, targetKind, range, metricId, baseline, preview, delta };
-}
-
-/** A plan claims nothing audible, or the measured figures of one batch; any other shape is malformed. */
-function readAudibleImpact(value: UnknownRecord): AgentRunPlanAudibleImpact | null {
-    if (value.status === 'not-claimed') {
-        const reason = readString(value.reason);
-        return reason === null ? null : { status: 'not-claimed', reason };
-    }
-    if (value.status !== 'measured') {
-        return null;
-    }
-    const revision = readString(value.revision);
-    const batchContentHash = readString(value.batchContentHash);
-    const metrics = readCollection(value.metrics, readMeasuredAudibleMetric, MAX_AUDIBLE_CLAIM_METRICS);
-    return revision === null || batchContentHash === null || metrics === null
-        ? null
-        : { status: 'measured', revision, batchContentHash, metrics };
-}
-
 function readCollection<TItem>(
     value: unknown,
     readItem: (candidate: unknown) => TItem | null,
@@ -1597,7 +1536,7 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
         isRecord(value.expectedImpact) && isRecord(value.expectedImpact.audible)
             ? {
                   project: readStringArray(value.expectedImpact.project),
-                  audible: readAudibleImpact(value.expectedImpact.audible),
+                  audible: readAgentRunAudibleImpact(value.expectedImpact.audible),
               }
             : null;
     const capabilities = readCollection(

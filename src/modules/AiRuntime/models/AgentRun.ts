@@ -172,6 +172,9 @@ export type AgentRunMeasuredAudibleMetric = {
     delta: AgentRunMeasuredFigure;
 };
 
+/** The longest text a persisted run keeps in any one field; longer text is refused when the run is read. */
+export const AGENT_RUN_MAX_TEXT_LENGTH = 128 * 1024;
+
 /** The most figures a plan's audible claim lists; the persisted run is refused past it, so a claim never exceeds it. */
 export const MAX_AUDIBLE_CLAIM_METRICS = 256;
 
