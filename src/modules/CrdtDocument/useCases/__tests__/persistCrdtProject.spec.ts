@@ -1,9 +1,12 @@
+import { change, free, getChangesSince, getHeads, getMissingDeps, init, load, loadIncremental } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
 import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
+import * as prospectiveWorker from '../../repositories/prospectiveMutationWorkerClient';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
 import {
     EMPTY_PERSISTENCE_AUTHORITY,
@@ -219,6 +222,42 @@ describe('persistCrdtProject', () => {
         automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
             doc.firstEdit = 'retained';
         });
+        vi.spyOn(prospectiveWorker, 'requestProspectiveMutation').mockImplementation(async (request) => {
+            const seed = load<Record<string, unknown>>(request.seed, { actor: request.actor });
+            const candidate = change(seed, { message: request.message }, (draft) =>
+                applyCanonicalStorageSlotMutation(draft, request.mutation)
+            );
+            try {
+                return {
+                    changes: getChangesSince(candidate, [...request.heads]).map((bytes) => Uint8Array.from(bytes)),
+                    heads: getHeads(candidate),
+                };
+            } finally {
+                free(candidate);
+            }
+        });
+        const mutation = {
+            kind: 'canonical-json-slot-v1' as const,
+            key: 'firstEdit',
+            baseValue: 'retained',
+            value: 'retained-after-worker',
+            documentPresence: { slot: 'retained' },
+        };
+        const preparation = automergeRepository.cloneProspectiveMutation(
+            'root',
+            (draft) => applyCanonicalStorageSlotMutation(draft, mutation),
+            'Detect',
+            undefined,
+            ['firstEdit'],
+            mutation
+        );
+        await preparation.requestMaterialization!(new AbortController().signal);
+        automergeRepository.changeDoc('root', () => undefined, 'Detect', undefined, ['firstEdit'], {
+            preparedCandidate: preparation.materialize(),
+            validateDocument: () => undefined,
+            beforePublication: () => undefined,
+            onPublished: () => undefined,
+        });
         const saveIncrementalSpy = vi.spyOn(automergeRepository, 'saveDocIncremental');
 
         const firstAttempt = persistCrdtProject();
@@ -227,6 +266,17 @@ describe('persistCrdtProject', () => {
         expect(firstChunk).toBeDefined();
         firstTransaction.abort();
         await expect(firstAttempt).rejects.toThrow('IDB transaction aborted');
+        if (!firstChunk) {
+            throw new Error('Expected the real queue to retain its captured incremental');
+        }
+        const withoutBaseline = loadIncremental(init<Record<string, unknown>>(), firstChunk.value);
+        try {
+            // Replay alone also accepts a redundant full history. This chunk must require its durable baseline.
+            expect(getMissingDeps(withoutBaseline, []).length).toBeGreaterThan(0);
+            expect(withoutBaseline.firstEdit).toBeUndefined();
+        } finally {
+            free(withoutBaseline);
+        }
         expect(crdtProjectCompactionState.incrementalSaveCount).toBe(0);
         expect(saveIncrementalSpy).toHaveBeenCalledOnce();
 
@@ -262,7 +312,7 @@ describe('persistCrdtProject', () => {
             true
         );
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
-            firstEdit: 'retained',
+            firstEdit: 'retained-after-worker',
         });
 
         automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
@@ -286,7 +336,7 @@ describe('persistCrdtProject', () => {
             true
         );
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
-            firstEdit: 'retained',
+            firstEdit: 'retained-after-worker',
             secondEdit: 'survives-once',
         });
     });
@@ -539,6 +589,36 @@ describe('persistCrdtProject', () => {
 
         expect(persistence.getTransactions('readwrite')).toHaveLength(3);
         expect(getPersistedDocumentKeys(persistence)).toEqual(['root']);
+    });
+
+    it('retains a root edit when an abandoned failed full bundle returns to the durable root-only membership', async () => {
+        automergeRepository.createProject('project');
+        const baseline = compactProject();
+        (await persistence.waitForTransaction('readwrite', 1)).complete();
+        await baseline;
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.mustSurvive = true;
+        });
+        automergeRepository.createChildDoc('temporary');
+        const failed = persistCrdtProject();
+        const full = await persistence.waitForTransaction('readwrite', 2);
+        expect(full.writes.some((write) => write.key === 'temporary')).toBe(true);
+        full.abort();
+        await expect(failed).rejects.toThrow('IDB transaction aborted');
+        automergeRepository.removeDoc('temporary');
+        const saving = persistCrdtProject();
+        const next = await persistence.waitForTransaction('readwrite', 3);
+        expect(next.writes.every((write) => !write.key.startsWith('temporary'))).toBe(true);
+        next.complete();
+        await saving;
+        const bundle = await readCurrentBundle(persistence);
+        if (!bundle) {
+            throw new Error('Expected the root-only durable bundle');
+        }
+        expect(bundle.has('temporary')).toBe(false);
+        automergeRepository.reset();
+        await automergeRepository.loadAll({ bundle });
+        expect(automergeRepository.getDoc('root')).toMatchObject({ mustSurvive: true });
     });
 
     it('does not let an old-generation incremental completion overwrite a new project', async () => {
