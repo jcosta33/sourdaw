@@ -24,6 +24,14 @@ type UserAppActionRefusalEpisodeOptions = {
 
 type OpenEpisode = { action: AppAction; projectIdentity: string };
 
+/** Where an open episode stands now: replaced project, admitted again, or still refused. */
+function readVerdict(episode: OpenEpisode): 'stale' | 'admitted' | 'refused' {
+    if (episode.projectIdentity !== captureProjectIdentity()) {
+        return 'stale';
+    }
+    return isAppActionAdmitted(episode.action) ? 'admitted' : 'refused';
+}
+
 /**
  * Dispatch for edits that are already applied to a session store and committed
  * to the project by a store subscription, so one refused project would
@@ -42,6 +50,11 @@ type OpenEpisode = { action: AppAction; projectIdentity: string };
  * while an episode is open. Only the dispatch gate's admission refusal counts:
  * every other failure, a handler or storage conflict included, still rejects
  * unchanged.
+ *
+ * Admitted keys are delivered a microtask after the signal: a merge that unlocks the project also
+ * rewrites device state, and the device reconcile that loads a peer's state into the session stores
+ * is queued by the change notification ahead of the projection that fires the signal. Writing at
+ * once would put the stale session state over the peer's edit.
  */
 export function createUserAppActionRefusalEpisodes(
     options: UserAppActionRefusalEpisodeOptions = {}
@@ -49,28 +62,16 @@ export function createUserAppActionRefusalEpisodes(
     const open = new Map<string, OpenEpisode>();
     let unsubscribe: (() => void) | null = null;
 
-    const syncSubscription = (): void => {
+    function syncSubscription(): void {
         if (open.size === 0) {
             unsubscribe?.();
             unsubscribe = null;
             return;
         }
         unsubscribe ??= subscribeAppActionAdmissionChanges(closeAdmittedEpisodes);
-    };
+    }
 
-    /** Where an open episode stands now: replaced project, admitted again, or still refused. */
-    const readVerdict = (episode: OpenEpisode): 'stale' | 'admitted' | 'refused' => {
-        if (episode.projectIdentity !== captureProjectIdentity()) {
-            return 'stale';
-        }
-        return isAppActionAdmitted(episode.action) ? 'admitted' : 'refused';
-    };
-
-    // Delivered a microtask later. A merge that unlocks the project also rewrites device state, and
-    // the device reconcile that loads a peer's state into the session stores is queued by the change
-    // notification, ahead of the projection that fires this signal. Writing at once would put the
-    // stale session state over the peer's edit.
-    const deliverAdmitted = (admitted: [string, OpenEpisode][]): void => {
+    function deliverAdmitted(admitted: [string, OpenEpisode][]): void {
         queueMicrotask(() => {
             for (const [key, episode] of admitted) {
                 if (readVerdict(episode) === 'admitted') {
@@ -78,7 +79,7 @@ export function createUserAppActionRefusalEpisodes(
                 }
             }
         });
-    };
+    }
 
     function closeAdmittedEpisodes(): void {
         const admitted: [string, OpenEpisode][] = [];
@@ -98,12 +99,12 @@ export function createUserAppActionRefusalEpisodes(
         }
     }
 
-    const close = (key: string): void => {
+    function close(key: string): void {
         open.delete(key);
         syncSubscription();
-    };
+    }
 
-    const settleUncommitted = (key: string): void => {
+    function settleUncommitted(key: string): void {
         const episode = open.get(key);
         if (!episode) {
             return;
@@ -116,16 +117,16 @@ export function createUserAppActionRefusalEpisodes(
         if (verdict === 'admitted') {
             options.onAdmitted?.(key);
         }
-    };
+    }
 
     return {
         async execute(key, action, executeOptions) {
-            let committed = false;
+            const dispatch = { committed: false };
             try {
                 await executeAppAction(action, {
                     ...executeOptions,
                     onCommitted: () => {
-                        committed = true;
+                        dispatch.committed = true;
                         executeOptions?.onCommitted?.();
                     },
                 });
@@ -145,7 +146,7 @@ export function createUserAppActionRefusalEpisodes(
                 }
                 return 'refused';
             }
-            if (committed) {
+            if (dispatch.committed) {
                 close(key);
                 return 'committed';
             }

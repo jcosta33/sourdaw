@@ -10,13 +10,13 @@ import { getSettledProjectIdentity } from '#/modules/Project/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createDefaultKit } from '../../models/ToasterKit';
-import { defaultToasterState, toasterStore } from '../../stores/toasterStore';
 import { toToasterKitState } from '../../models/ToasterKitState';
+import { defaultToasterState, toasterStore } from '../../stores/toasterStore';
+import { copyMorphTargetPattern } from '../copyMorphTargetPattern';
 import { initToasterKitPersistence } from '../initToasterKitPersistence';
 import { setMorphPosition } from '../setMorphPosition/setMorphPosition';
 import { toggleMorph } from '../setMorphPosition/toggleMorph';
 import { toasterRefusalEpisodes } from '../toasterRefusalEpisodes';
-import { copyMorphTargetPattern } from '../copyMorphTargetPattern';
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -163,7 +163,7 @@ describe('commitToasterMorphKitChange on a refused project', () => {
                     const current = toasterStore.value?.[DEVICE_ID];
                     if (current && !changedKit) {
                         changedKit = true;
-                        toasterStore.set({ [DEVICE_ID]: { ...current, kit: { ...current.kit } } });
+                        toasterStore.set({ [DEVICE_ID]: { ...current, kit: { ...current.kit, swing: 0.1 } } });
                     }
                 },
             },

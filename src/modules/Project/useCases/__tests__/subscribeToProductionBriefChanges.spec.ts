@@ -4,6 +4,16 @@ import { createDefaultProductionBrief } from '../../models/ProductionBrief';
 import { defaultProjectStoreState, projectStore } from '../../stores/projectStore';
 import { subscribeToProductionBriefChanges } from '../subscribeToProductionBriefChanges';
 
+function replaceBrief(createdAt: number): void {
+    const state = projectStore.value ?? defaultProjectStoreState;
+    projectStore.set({ ...state, productionBrief: createDefaultProductionBrief(createdAt) });
+}
+
+function renameProject(): void {
+    const state = projectStore.value ?? defaultProjectStoreState;
+    projectStore.set({ ...state, name: 'Renamed' });
+}
+
 describe('subscribeToProductionBriefChanges', () => {
     afterEach(() => {
         projectStore.set(structuredClone(defaultProjectStoreState));
@@ -13,10 +23,7 @@ describe('subscribeToProductionBriefChanges', () => {
         const listener = vi.fn();
         const stop = subscribeToProductionBriefChanges(listener);
 
-        projectStore.update((state) => ({
-            ...(state ?? defaultProjectStoreState),
-            productionBrief: createDefaultProductionBrief('2026-01-01T00:00:00.000Z'),
-        }));
+        replaceBrief(1);
 
         expect(listener).toHaveBeenCalledTimes(1);
         stop();
@@ -26,11 +33,8 @@ describe('subscribeToProductionBriefChanges', () => {
         const listener = vi.fn();
         const stop = subscribeToProductionBriefChanges(listener);
 
-        projectStore.update((state) => ({
-            ...(state ?? defaultProjectStoreState),
-            productionBrief: createDefaultProductionBrief('2026-03-03T00:00:00.000Z'),
-        }));
-        projectStore.update((state) => ({ ...(state ?? defaultProjectStoreState), name: 'Renamed' }));
+        replaceBrief(3);
+        renameProject();
 
         expect(listener).toHaveBeenCalledTimes(1);
         stop();
@@ -40,14 +44,11 @@ describe('subscribeToProductionBriefChanges', () => {
         const listener = vi.fn();
         const stop = subscribeToProductionBriefChanges(listener);
 
-        projectStore.update((state) => ({ ...(state ?? defaultProjectStoreState), name: 'Renamed' }));
+        renameProject();
         expect(listener).not.toHaveBeenCalled();
 
         stop();
-        projectStore.update((state) => ({
-            ...(state ?? defaultProjectStoreState),
-            productionBrief: createDefaultProductionBrief('2026-02-02T00:00:00.000Z'),
-        }));
+        replaceBrief(2);
         expect(listener).not.toHaveBeenCalled();
     });
 });
