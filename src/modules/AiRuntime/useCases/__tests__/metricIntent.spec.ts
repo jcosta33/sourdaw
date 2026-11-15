@@ -155,12 +155,15 @@ describe('positive whole-request metric intent', () => {
     });
 
     it.each([
-        'Make Lead Vocal brighter',
-        'Make Lead Vocal warmer',
-        'Make Lead Vocal punchier',
-        'Make Lead Vocal louder than Bass',
-        'Make the drums glue together more',
-    ])('refuses the literal label on a request that names a perceptual quality: %s', (prompt) => {
+        ['Make Lead Vocal brighter', 'brighter'],
+        ['Make Lead Vocal warmer', 'warmer'],
+        ['Make Lead Vocal punchier', 'punchier'],
+        ['Make Lead Vocal louder than Bass', 'loudness'],
+        ['Make the drums glue together more', 'glue'],
+        ['Set Bass gain to -3 dB so the Lead Vocal sounds brighter', 'brighter'],
+        ['Make Lead Vocal brighter / set Bass gain to -3 dB', 'brighter'],
+        ['Quieter than Kick', 'loudness'],
+    ])('refuses the literal label on a request that names a perceptual quality: %s', (prompt, word) => {
         const value = fixture(prompt);
         const admitted = admitPlanningInterpretation({
             ...value,
@@ -168,7 +171,7 @@ describe('positive whole-request metric intent', () => {
             turn: 1,
         });
         expect(admitted.status).toBe('rejected');
-        expect(admitted).toMatchObject({ reason: expect.stringContaining('perceptual quality') });
+        expect(admitted).toMatchObject({ reason: expect.stringContaining(`"${word}", a perceptual quality`) });
     });
 
     it.each([
@@ -181,6 +184,8 @@ describe('positive whole-request metric intent', () => {
         'Keep the Lead Vocal intimate and set Bass gain to -3 dB',
         'Glue the MIDI clips',
         'Set punch in at beat 20',
+        'Set the punch in at beat 20',
+        'Move the punch in to beat 20',
     ])('still admits the literal label on a request with no unaccounted quality: %s', (prompt) => {
         const value = fixture(prompt);
         const admitted = admitPlanningInterpretation({
@@ -188,7 +193,7 @@ describe('positive whole-request metric intent', () => {
             projectRevision: 'metric-revision',
             turn: 1,
         });
-        expect(admitted.status).toBe('admitted');
+        expect(admitted).toMatchObject({ status: 'admitted', kind: 'literal' });
     });
 
     it.each([false, 3, 'literal', [], { kind: 'literal', objectives: [], uncertainty: 'none', value: 1 }])(
