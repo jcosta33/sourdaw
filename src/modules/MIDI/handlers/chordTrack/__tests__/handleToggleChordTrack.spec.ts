@@ -38,20 +38,20 @@ beforeEach(() => {
 });
 
 describe('handleToggleChordTrack — execute', () => {
-    it('calls toggleChordTrack with the target value (explicit)', () => {
-        handleToggleChordTrack.execute({ type: 'toggleChordTrack', payload: { enabled: true } });
+    it('calls toggleChordTrack with the target value (explicit)', async () => {
+        await handleToggleChordTrack.execute({ type: 'toggleChordTrack', payload: { enabled: true } });
         expect(mockedToggle).toHaveBeenCalledWith(true);
     });
 
-    it('toggles to opposite when no explicit payload', () => {
+    it('toggles to opposite when no explicit payload', async () => {
         mockValue = { enabled: false, events: [] };
-        handleToggleChordTrack.execute({ type: 'toggleChordTrack' });
+        await handleToggleChordTrack.execute({ type: 'toggleChordTrack' });
         expect(mockedToggle).toHaveBeenCalledWith(true);
     });
 
-    it('mutates action payload to carry resolved target', () => {
+    it('mutates action payload to carry resolved target', async () => {
         const action = { type: 'toggleChordTrack' as const, payload: undefined };
-        handleToggleChordTrack.execute(action);
+        await handleToggleChordTrack.execute(action);
         expect(action.payload).toEqual({ enabled: true });
     });
 });

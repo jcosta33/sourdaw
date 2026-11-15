@@ -29,6 +29,21 @@ pub enum ModuleId {
     Limiter = 4,
 }
 
+impl ModuleId {
+    /// The module a reorder message names by its discriminant, or `None` for a
+    /// value outside the chain.
+    fn from_wire(id: u8) -> Option<ModuleId> {
+        match id {
+            0 => Some(ModuleId::Eq),
+            1 => Some(ModuleId::Dynamics),
+            2 => Some(ModuleId::Imager),
+            3 => Some(ModuleId::Exciter),
+            4 => Some(ModuleId::Limiter),
+            _ => None,
+        }
+    }
+}
+
 const NUM_MODULES: usize = 5;
 // 6 taps: input + after each of the 5 modules
 const NUM_TAPS: usize = NUM_MODULES + 1;
@@ -315,23 +330,18 @@ impl ProofChain {
     /// Reorder modules. `new_order` contains ModuleId values in desired order.
     pub fn reorder(&mut self, new_order: [u8; NUM_MODULES]) {
         let mut seen = [false; NUM_MODULES];
-        for &id in &new_order {
-            if id as usize >= NUM_MODULES || seen[id as usize] {
+        let mut order = self.order;
+        for (slot, &id) in order.iter_mut().zip(&new_order) {
+            let Some(module) = ModuleId::from_wire(id) else {
+                return;
+            };
+            if seen[module as usize] {
                 return;
             }
-            seen[id as usize] = true;
+            seen[module as usize] = true;
+            *slot = module;
         }
-
-        for (i, &id) in new_order.iter().enumerate() {
-            self.order[i] = match id {
-                0 => ModuleId::Eq,
-                1 => ModuleId::Dynamics,
-                2 => ModuleId::Imager,
-                3 => ModuleId::Exciter,
-                4 => ModuleId::Limiter,
-                _ => unreachable!(),
-            };
-        }
+        self.order = order;
     }
 
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {

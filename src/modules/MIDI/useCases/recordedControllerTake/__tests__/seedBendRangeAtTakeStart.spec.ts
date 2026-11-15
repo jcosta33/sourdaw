@@ -56,7 +56,7 @@ vi.mock('#/modules/Command/useCases', () => ({
         const { handleAppendOverdubControllers } =
             await import('../../../handlers/overdubControllers/handleAppendOverdubControllers');
         if (action.type === 'appendOverdubControllers') {
-            handleAppendOverdubControllers.execute(action);
+            await handleAppendOverdubControllers.execute(action);
         }
     },
 }));

@@ -379,8 +379,13 @@ describe('Inspector discrete parameter history', () => {
                 };
             }
             fireEvent.change(screen.getByRole('combobox', { name: 'Waveform' }), { target: { value: '3' } });
+            // A repair requirement that lands after the engine write is the same admission
+            // refusal as one present before it, so the person gets the same warning.
             await waitFor(() =>
-                expect(notifyUser).toHaveBeenCalledWith(expect.any(String), when === 'before' ? 'warning' : 'error')
+                expect(notifyUser).toHaveBeenCalledWith(
+                    'Project repair is required before project actions can execute',
+                    'warning'
+                )
             );
             expect(values().waveform).toBe(2);
             expect(rawValues()?.waveform).toBe(2);

@@ -816,7 +816,7 @@ describe('project directory save and cold Recent open', () => {
             reason: expect.stringMatching(/^(asset-not-owned|missing-asset)$/),
         });
 
-        audio.clearRuntimeCachedAudioBuffers();
+        await audio.clearRuntimeCachedAudioBuffers();
         crdt.resetCrdtProjectAuthority('Blank');
         helpers.resetModuleStoresToDefault();
         projectStores.projectStore.set({
@@ -917,7 +917,7 @@ describe('project directory save and cold Recent open', () => {
         }
         expect(Array.from(new Uint8Array(await reopenedAsset.blob.arrayBuffer()))).toEqual(Array.from(originalBytes));
 
-        audio.clearRuntimeCachedAudioBuffers();
+        await audio.clearRuntimeCachedAudioBuffers();
         crdt.resetCrdtProjectAuthority('Boot blank');
         helpers.resetModuleStoresToDefault();
         projectStores.projectStore.set({
@@ -932,7 +932,7 @@ describe('project directory save and cold Recent open', () => {
         expect(await project.loadProject({ transaction: runProjectLoadTransaction() })).toBe(true);
         expect(projectStores.projectStore.value?.projectId).toBe(projectId);
 
-        audio.clearRuntimeCachedAudioBuffers();
+        await audio.clearRuntimeCachedAudioBuffers();
         crdt.resetCrdtProjectAuthority('Picker blank');
         helpers.resetModuleStoresToDefault();
         projectStores.projectStore.set({
@@ -946,7 +946,7 @@ describe('project directory save and cold Recent open', () => {
         expect(await openProjectDirectoryFromPicker()).toBe(true);
         expect(projectStores.projectStore.value?.projectId).toBe(projectId);
 
-        audio.clearRuntimeCachedAudioBuffers();
+        await audio.clearRuntimeCachedAudioBuffers();
         crdt.resetCrdtProjectAuthority('Bookmark blank');
         helpers.resetModuleStoresToDefault();
         projectStores.projectStore.set({
@@ -1269,7 +1269,7 @@ describe('project directory save and cold Recent open', () => {
         folder.cached.clear();
         runtime.crdt.resetCrdtProjectAuthority('Boot blank');
         runtime.helpers.resetModuleStoresToDefault();
-        runtime.audio.clearRuntimeCachedAudioBuffers();
+        await runtime.audio.clearRuntimeCachedAudioBuffers();
         runtime.projectStores.projectStore.set({
             ...runtime.metadata.createFreshProjectMetadata({ name: 'Boot blank', loading: false, initialized: true }),
             createdAt: runtime.projectStores.projectStore.value?.createdAt ?? 0,

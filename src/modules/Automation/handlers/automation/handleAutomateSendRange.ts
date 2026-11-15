@@ -5,7 +5,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { applySendAutomationRange } from '../../useCases/automation/applySendAutomationRange';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
-import { isLegacyRangeWriteSessionEntry } from './validateRangeWriteSessionEntries';
+import { isLegacyRangeWriteSessionEntry } from './isLegacyRangeWriteSessionEntry';
 
 type AutomateSendRangeAction = Extract<AppAction, { type: 'automateSendRange' }>;
 type MaterializedPayload = AutomateSendRangeAction['payload'] & {
