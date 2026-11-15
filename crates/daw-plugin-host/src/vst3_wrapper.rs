@@ -3,9 +3,11 @@
 //! Flow: open the module → `IPluginFactory::createInstance` for the class the
 //! descriptor names → `IComponent::initialize` → find or create the paired
 //! `IEditController` → connect them → `setupProcessing` → `setActive(true)` →
-//! `setProcessing(true)` on the audio thread → `IAudioProcessor::process`.
+//! `setProcessing(true)` on the processing thread → `IAudioProcessor::process`.
+//! The processing thread is the audio thread, or an offline instance's render
+//! thread.
 //!
-//! RT-safety: every buffer, parameter queue, bus array and event the audio
+//! RT-safety: every buffer, parameter queue, bus array and event the processing
 //! thread hands the plugin is allocated while activating — including the
 //! per-bus storage the negotiated layout sizes — and refilled in place.
 //! `process` takes no lock, allocates nothing, and performs no I/O.
@@ -1178,8 +1180,9 @@ impl Vst3Wrapper {
     }
 
     /// Activate buses, declare the processing setup, and make the component
-    /// active. Entering the processing state is left to the audio thread, which
-    /// is the only thread VST3 allows `setProcessing` from.
+    /// active. Entering the processing state is left to the processing thread —
+    /// the audio thread, or an offline instance's render thread — which is the
+    /// only thread VST3 allows `setProcessing` from.
     fn activate(&mut self) -> Result<(), String> {
         let component = self.instance.component();
         let Some(processor) = component.cast::<IAudioProcessor>() else {
