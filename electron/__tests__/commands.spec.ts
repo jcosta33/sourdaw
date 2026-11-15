@@ -56,6 +56,10 @@ const addonMethods = (): string[] =>
  * `#[napi] run_plugin_scan_worker` wrapper; it is now
  * `sourdaw-plugin-scan-helper`, a standalone executable outside the addon
  * entirely, and publishes nothing here to plumb.
+ *
+ * `stop_plugin_scan_helpers` is the scan utility's own terminate path, called
+ * by `scanWorker.ts` as that process is told to exit, so the renderer has no
+ * reason to reach it.
  */
 const ADDON_PLUMBING: ReadonlySet<string> = new Set([
     'with_runtime_scope_v1',
@@ -67,6 +71,7 @@ const ADDON_PLUMBING: ReadonlySet<string> = new Set([
     'resize_plugin_gui',
     'service_plugin_editor_run_loops',
     'shutdown',
+    'stop_plugin_scan_helpers',
 ]);
 
 /** Every command the product registers: the addon surface minus plumbing. */

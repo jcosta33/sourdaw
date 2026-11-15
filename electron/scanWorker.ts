@@ -167,6 +167,35 @@ export const handleScanRequest = async (message: unknown, scanPlugins: NativeCom
     }
 };
 
+export type StopHelpersOnTerminateInput = {
+    readonly onTerminate: (listener: () => void) => void;
+    readonly stopHelpers: () => unknown;
+    readonly exit: () => void;
+};
+
+/**
+ * Kill this process's per-plugin helpers before it exits on a terminate
+ * request.
+ *
+ * The supervisor's `kill()` — on quit and at its own timeout — is SIGTERM on
+ * POSIX, and the helpers live in process groups of their own, so nothing
+ * else reaches them. `scanPlugins` is an async native task, which leaves this
+ * thread free to run the handler mid-scan. The process exits even when the
+ * stop throws: it was asked to end, and the helpers' own parent watch still
+ * ends them once it has. On Windows `kill()` is `TerminateProcess` and no
+ * handler runs; the kill-on-close job each helper is assigned to ends it
+ * there.
+ */
+export const stopHelpersOnTerminate = ({ onTerminate, stopHelpers, exit }: StopHelpersOnTerminateInput): void => {
+    onTerminate(() => {
+        try {
+            stopHelpers();
+        } finally {
+            exit();
+        }
+    });
+};
+
 const main = (): void => {
     const runtimeScope = resolveRuntimeScope(process.env);
     const addon = loadNativeAddon({
@@ -195,6 +224,13 @@ const main = (): void => {
         },
     });
     const scanPlugins = nativeCommand(host, 'scanPlugins');
+    stopHelpersOnTerminate({
+        onTerminate: (listener) => {
+            process.on('SIGTERM', listener);
+        },
+        stopHelpers: nativeCommand(host, 'stopPluginScanHelpers'),
+        exit: () => process.exit(),
+    });
 
     process.parentPort.on('message', (event) => {
         void handleScanRequest(event.data, scanPlugins).then((response) => {
