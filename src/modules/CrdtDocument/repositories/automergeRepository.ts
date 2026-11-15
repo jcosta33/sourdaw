@@ -735,6 +735,8 @@ class AutomergeRepository {
                         const applyStarted = performance.now();
                         try {
                             if (changes.length > 0) {
+                                let ownedSlotChanged = false;
+                                let retiredEvidence = false;
                                 [loaded] = applyChanges(loaded, changes, {
                                     patchCallback: (patches) => {
                                         for (const patch of patches) {
@@ -745,9 +747,15 @@ class AutomergeRepository {
                                             if (patch.path[0] !== canonicalMutation?.key && !retiresEvidence) {
                                                 throw new Error('Prospective mutation Worker changed an unowned slot');
                                             }
+                                            ownedSlotChanged ||= patch.path[0] === canonicalMutation?.key;
+                                            retiredEvidence ||= retiresEvidence;
                                         }
                                     },
                                 });
+                                // Native patch order need not place the owned slot before metadata retirement.
+                                if (retiredEvidence && !ownedSlotChanged) {
+                                    throw new Error('Prospective mutation Worker changed an unowned slot');
+                                }
                             }
                         } finally {
                             performance.measure('automerge-prospective-apply-task', {
