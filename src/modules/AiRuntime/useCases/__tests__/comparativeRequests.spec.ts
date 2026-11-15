@@ -2711,7 +2711,19 @@ describe('comparisons by loudness, brightness, width, dynamics and punch', () =>
                 'a track named with a comparative: no loudness policy, the quality outside it',
                 'Make Louder Than Bombs darker',
                 'Louder Than Bombs',
-                offers(CENTROID),
+                offers(...LEGACY),
+            ],
+            [
+                'a track named with a width comparative: no side-energy policy',
+                'Make Drums thicker, like Wider Than Pictures',
+                'Wider Than Pictures',
+                offers(...LEGACY),
+            ],
+            [
+                'a quoted punch word: no crest-factor policy',
+                'Make Drums thicker, as the note says "punchy"',
+                null,
+                offers(...LEGACY),
             ],
             [
                 'quoted text: the quoted quality adds nothing, the legacy objectives stand',
@@ -2759,15 +2771,14 @@ describe('comparisons by loudness, brightness, width, dynamics and punch', () =>
         });
 
         it.each([
-            ['a track name that holds a brightness word', 'Make Dark Side thicker', 'Dark Side', offers(MATCH)],
+            ['a track name that holds a brightness word', 'Make Dark Side thicker', 'Dark Side'],
             [
                 'a closed quotation that holds the only brightness word',
                 'Make Drums thicker, as the note says "bright"',
                 null,
-                offers(MATCH),
             ],
-        ])('withholds the centroid pair when %s alone names brightness', async (_name, prompt, track, policies) => {
-            expect(await offeredPolicies(prompt, track)).toEqual(policies);
+        ])('still offers the centroid pair when %s alone names brightness', async (_name, prompt, track) => {
+            expect(await offeredPolicies(prompt, track)).toEqual(offers(...LEGACY));
         });
 
         it.each([
@@ -2784,10 +2795,19 @@ describe('comparisons by loudness, brightness, width, dynamics and punch', () =>
             }
         );
 
-        it('withholds the legacy objective a comparative track name alone would suggest', async () => {
+        it('keeps the legacy objectives for a comparative track name', async () => {
             expect(await offeredPolicies('Make Drums brighter than Louder Than Bombs', 'Louder Than Bombs')).toEqual(
-                offers(CENTROID)
+                offers(...LEGACY)
             );
+        });
+
+        it('keeps the loudness match when the quote scanner misreads an elision', async () => {
+            expect(
+                await offeredPolicies(
+                    "Make the drums punchier, 'cause the mix is soft and the 'Keys' track is bright",
+                    null
+                )
+            ).toContain(MATCH);
         });
     });
 });

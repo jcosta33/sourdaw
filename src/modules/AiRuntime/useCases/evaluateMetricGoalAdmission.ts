@@ -344,7 +344,7 @@ function satisfies(goal: MetricGoal, before: number, after: number, references: 
     if (references.length === 0) {
         return false;
     }
-    // An ordering holds against every reference figure, so a subject compared with several tracks clears all of them.
+    // A subject handed several references clears each of them; the pairing is decided before this.
     if (goal.relation === 'match-current') {
         return references.every(
             (reference) =>
@@ -385,9 +385,14 @@ function goalReferences(
     return { reference, failure };
 }
 
-/** The reference figures one target is held to: all of them for an ordering, its paired one for a match. */
+/**
+ * The reference figures one target is held to. A match pairs by index (one reference serves every subject).
+ * An ordering does too when subjects and references are equal in number, as on main; one reference serves
+ * every subject; otherwise each subject clears every reference ("brighter than the guitars").
+ */
 function referencesFor(goal: MetricGoal, reference: number[], index: number): number[] {
-    if (goal.relation !== 'match-current') {
+    const pairs = reference.length === goal.targetIds.length;
+    if (goal.relation !== 'match-current' && !pairs) {
         return reference;
     }
     const paired = reference.length === 1 ? reference[0] : reference[index];

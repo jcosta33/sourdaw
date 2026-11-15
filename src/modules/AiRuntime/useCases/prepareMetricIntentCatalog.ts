@@ -8,7 +8,7 @@ import { type AnswerInterpretationCatalog } from '../models/AnswerInterpretation
 import { expandMixRecipe } from './expandMixRecipe';
 import { type MetricGoal } from './metricGoalContractTypes';
 import { readRecipeExpectationTolerance } from './metricHoldTolerances';
-import { type ComparedQuality, type ComparedQualityReading, readComparedQualities } from './readComparedQualities';
+import { type ComparedQuality, readComparedQualities } from './readComparedQualities';
 import { readRequestMetricNumbers } from './readRequestMetricNumbers';
 
 type Objective = {
@@ -32,8 +32,6 @@ type AnswerScopes = AnswerInterpretationCatalog['scopes'];
 
 type OrderingPolicy = {
     quality: ComparedQuality;
-    /** Published for every request on main before comparisons were gated; a new objective is gated instead. */
-    legacy: boolean;
     idPrefix: string;
     metricId: 'integratedLoudness' | 'spectralCentroid' | 'sideEnergyFraction' | 'crestFactor';
     policyId: Extract<
@@ -53,7 +51,6 @@ type OrderingPolicy = {
 const ORDERING_POLICIES: readonly OrderingPolicy[] = [
     {
         quality: 'loudness',
-        legacy: false,
         idPrefix: 'loudness',
         metricId: 'integratedLoudness',
         policyId: 'integrated-loudness-comparison-v1',
@@ -61,7 +58,6 @@ const ORDERING_POLICIES: readonly OrderingPolicy[] = [
     },
     {
         quality: 'brightness',
-        legacy: true,
         idPrefix: 'centroid',
         metricId: 'spectralCentroid',
         policyId: 'spectral-centroid-comparison-v1',
@@ -69,7 +65,6 @@ const ORDERING_POLICIES: readonly OrderingPolicy[] = [
     },
     {
         quality: 'width',
-        legacy: false,
         idPrefix: 'side-energy',
         metricId: 'sideEnergyFraction',
         policyId: 'side-energy-fraction-comparison-v1',
@@ -77,7 +72,6 @@ const ORDERING_POLICIES: readonly OrderingPolicy[] = [
     },
     {
         quality: 'dynamics',
-        legacy: false,
         idPrefix: 'crest',
         metricId: 'crestFactor',
         policyId: 'crest-factor-comparison-v1',
@@ -126,36 +120,35 @@ function orderingObjectives(policy: OrderingPolicy, allScopeIds: string[]): Obje
 }
 
 /**
- * Two rules decide the comparison objectives. The ones main always published (loudness match and the
- * spectral-centroid pair) stay published for every request, withheld only when the request names their
- * quality solely inside a track name or a quotation. The objectives added since are published only when the
- * request names the quality outside names and quotes, which bounds the planner text local requests carry
- * (#6706).
+ * The loudness match and the spectral-centroid pair were published for every request on main, and stay so:
+ * no reading of the request's wording, which depends on quote heuristics that misread elisions, may withdraw
+ * them. The orderings added since cost planner text (#6706), so each is published only when the request
+ * names its quality outside track names and quotations.
  */
-function policyObjectives(scopes: AnswerScopes, allScopeIds: string[], reading: ComparedQualityReading): Objective[] {
+function policyObjectives(
+    scopes: AnswerScopes,
+    allScopeIds: string[],
+    named: ReadonlySet<ComparedQuality>
+): Objective[] {
     const objectives: Objective[] = [];
-    if (!reading.namedOnlyInside.has('loudness')) {
-        objectives.push(
-            policyObjective({
-                id: 'loudness-match',
-                label: 'Match actual preview integrated loudness; app policy integrated-loudness-match-v1 (0.1 LU)',
-                allScopeIds,
-                goal: {
-                    metricId: 'integratedLoudness',
-                    metricName: 'integratedLoudness',
-                    band: null,
-                    relation: 'match-current',
-                    targetValue: null,
-                    tolerance: 0.1,
-                    source: { kind: 'policy', policyId: 'integrated-loudness-match-v1' },
-                },
-            })
-        );
-    }
+    objectives.push(
+        policyObjective({
+            id: 'loudness-match',
+            label: 'Match actual preview integrated loudness; app policy integrated-loudness-match-v1 (0.1 LU)',
+            allScopeIds,
+            goal: {
+                metricId: 'integratedLoudness',
+                metricName: 'integratedLoudness',
+                band: null,
+                relation: 'match-current',
+                targetValue: null,
+                tolerance: 0.1,
+                source: { kind: 'policy', policyId: 'integrated-loudness-match-v1' },
+            },
+        })
+    );
     for (const policy of ORDERING_POLICIES) {
-        const published = policy.legacy
-            ? !reading.namedOnlyInside.has(policy.quality)
-            : reading.named.has(policy.quality);
+        const published = policy.quality === 'brightness' || named.has(policy.quality);
         if (published) {
             objectives.push(...orderingObjectives(policy, allScopeIds));
         }

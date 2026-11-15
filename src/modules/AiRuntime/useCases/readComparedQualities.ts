@@ -21,36 +21,26 @@ function namesQuality(text: string, words: readonly string[]): boolean {
     return new RegExp(String.raw`\b(?:${words.join('|')})\b`).test(text);
 }
 
-export type ComparedQualityReading = {
-    /** Qualities a word names outside every track name and quotation. */
-    readonly named: ReadonlySet<ComparedQuality>;
-    /** Qualities a word names in the prompt, but only inside a track name or a quotation. */
-    readonly namedOnlyInside: ReadonlySet<ComparedQuality>;
-};
-
 /**
  * Which qualities the request names, in any form. The provider chooses whether the request compares and
  * which subjects, and admission still requires a distinct reference scope, so offering a named quality costs
  * only planner text. A quality named only inside a track name or a quotation ("Louder Than Bombs") is never
  * read as the request's own, and no marker list is kept, because any phrasing can state a comparison. An
  * unclosed apostrophe ("'em", "'cause") leaves the masking unable to say what was quoted, so then every word
- * the prompt holds is the request's own.
+ * the prompt holds is the request's own. Only objectives added after main may depend on this reading.
  */
 export function readComparedQualities(
     prompt: string,
     context: AnswerInterpretationCatalog['context']
-): ComparedQualityReading {
+): ReadonlySet<ComparedQuality> {
     const quotesUnknown = !scanPromptQuotedText(prompt).complete;
     const masked = maskTrackReferences(prompt, context, ' ').toLowerCase();
     const raw = prompt.toLowerCase();
     const named = new Set<ComparedQuality>();
-    const namedOnlyInside = new Set<ComparedQuality>();
     for (const [quality, words] of Object.entries(QUALITY_WORDS) as Array<[ComparedQuality, readonly string[]]>) {
         if (namesQuality(masked, words) || (quotesUnknown && namesQuality(raw, words))) {
             named.add(quality);
-        } else if (namesQuality(raw, words)) {
-            namedOnlyInside.add(quality);
         }
     }
-    return { named, namedOnlyInside };
+    return named;
 }

@@ -166,6 +166,56 @@ describe('metric proof structure', () => {
             failure: 'incomparable',
         });
     });
+    it('pairs an ordering by index when subjects and references are equal in number, and holds each subject to every reference otherwise', () => {
+        const f = metricGuardFixture();
+        const authority = f.state.authorities[0]!;
+        const goal = authority.goals[0]!;
+        const proof = f.state.proofs[0]!;
+        const provenance = proof.preview.provenance!;
+        const figures: Record<string, number> = { 'subject-a': 5, 'subject-b': 8, 'reference-a': 4, 'reference-b': 6 };
+        const ids = Object.keys(figures);
+        const template = proof.preview.targets[0]!;
+        const targets = ids.map((targetId) => {
+            const entry = template.preview.spectralCentroid!;
+            const measured = { ...entry, value: figures[targetId]! };
+            return { ...template, targetId, preview: { spectralCentroid: measured } };
+        });
+        const evaluateOrdering = (subjects: string[], references: string[]) =>
+            f.evaluate(
+                f.bind({
+                    ...f.state,
+                    authorities: [
+                        { ...authority, goals: [{ ...goal, targetIds: subjects, referenceTargetIds: references }] },
+                    ],
+                    proofs: [
+                        {
+                            ...proof,
+                            preview: {
+                                ...proof.preview,
+                                scope: { kind: 'tracks' as const, ids },
+                                targets,
+                                provenance: {
+                                    ...provenance,
+                                    targets: ids.map((targetId) => ({ ...provenance.targets[0]!, targetId })),
+                                },
+                            },
+                        },
+                    ],
+                })
+            );
+        // 5 > 4 and 8 > 6 pair by index; 5 does not clear 6, which only an every-reference reading would demand.
+        expect(evaluateOrdering(['subject-a', 'subject-b'], ['reference-a', 'reference-b']).status).toBe('verified');
+        expect(evaluateOrdering(['subject-a', 'subject-b'], ['reference-b', 'reference-a'])).toMatchObject({
+            status: 'blocked',
+            failure: 'out-of-tolerance',
+        });
+        // Unequal counts: each subject must clear every reference.
+        expect(evaluateOrdering(['subject-b'], ['reference-a', 'reference-b']).status).toBe('verified');
+        expect(evaluateOrdering(['subject-a'], ['reference-a', 'reference-b'])).toMatchObject({
+            status: 'blocked',
+            failure: 'out-of-tolerance',
+        });
+    });
     it.each(['before', 'after'] as const)('rejects a rebound prefix with altered %s', (field) => {
         const f = metricGuardFixture();
         expect(f.evaluate(f.state).status).toBe('verified');
