@@ -8,7 +8,7 @@ import { readFirstPerceptualTerm } from './admitPerceptualGoalDecline';
 import { escapeRegExp } from './agentReference/groundingStrategies/escapeRegExp';
 import { maskTrackReferences } from './maskTrackReferences';
 import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
-import { LOUDNESS_WORDS, readComparedQualityWords } from './readComparedQualities';
+import { readComparedQualityWords } from './readComparedQualities';
 
 // A slash joins clauses only with space around it, so a registered phrase such as "punch in/out" stays whole.
 const CLAUSE_SEPARATOR = /[.;,!?\n&:()—–]|\s\/\s|\b(?:and|then|but|so|while|with|or|plus)\b/u;
@@ -17,8 +17,8 @@ const DECIBEL_UNIT = String.raw`(?:db|lufs|lkfs|dbfs|dbtp)`;
 const UNIT = String.raw`(?:${DECIBEL_UNIT}|%|ms|s)`;
 const FIGURE = String.raw`-?\d+(?:\.\d+)?`;
 const NOT_FREQUENCY = String.raw`(?!\s*k?hz\b)`;
-const DECIBEL_FIGURE = new RegExp(String.raw`(?<![\d.])${FIGURE}\s*${DECIBEL_UNIT}\b`, 'iu');
-const LOUDNESS_WORD = new RegExp(String.raw`\b(?:${LOUDNESS_WORDS.join('|')})\b`, 'giu');
+// "volume" and "level" name a fader control, so outside a comparison they state no quality.
+const CONTROL_NOUN = /\b(?:volume|level)\b/giu;
 const COMPARISON = /\bthan\b/iu;
 const DETERMINER = String.raw`(?:(?:the|a|an|this|that|my)\s+)?`;
 /** A figure qualifies a quality only in its own phrase: "3 dB louder", "louder by 3 dB", "gain-level to -6". */
@@ -34,9 +34,8 @@ function blank(text: string, start: number, end: number): string {
 }
 
 /**
- * A decibel figure states the clause's loudness wherever its words sit ("turn the vocal volume down 3 dB"), and
- * accounts for no other quality except the word it directly qualifies. A comparison ("louder than Bass")
- * states a quality against a target, which no figure accounts for.
+ * A figure accounts only for the word it directly qualifies ("3 dB louder", "louder by 3 dB"). A comparison
+ * ("louder than Bass") states a quality against a target, which no figure accounts for.
  */
 function blankFigureQualifiers(clause: string): string {
     if (COMPARISON.test(clause)) {
@@ -46,9 +45,7 @@ function blankFigureQualifiers(clause: string): string {
         (text, pattern) => text.replaceAll(pattern, (span) => ' '.repeat(span.length)),
         clause
     );
-    return DECIBEL_FIGURE.test(clause)
-        ? qualified.replaceAll(LOUDNESS_WORD, (span) => ' '.repeat(span.length))
-        : qualified;
+    return qualified.replaceAll(CONTROL_NOUN, (span) => ' '.repeat(span.length));
 }
 
 /** A clause the perceptual-constraint reader consumed becomes a constraint goal, so it states no literal claim. */
