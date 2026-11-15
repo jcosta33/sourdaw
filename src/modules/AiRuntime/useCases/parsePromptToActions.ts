@@ -4,7 +4,6 @@ import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
-import { type AppAction } from '#/utils/handlerContract';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { isNoAiBackendError } from '../errors/NoAiBackendError';
@@ -23,7 +22,7 @@ import { type IntentResult, type PlannedIntentResult } from '../models/IntentRes
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MeasurementAdmitter } from '../models/MeasurementBudget';
-import { type LastCommitContinuationLiteral, type MetricNativeLiteralUse } from '../models/MetricGoalAdmission';
+import { type MetricNativeLiteralUse } from '../models/MetricGoalAdmission';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type AnswerSuggestion, type ChatHandOffReason, type PlanningOutcome } from '../models/PlanningOutcome';
 import {
@@ -135,6 +134,7 @@ import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransfo
 import { projectPlanningProviderToolSchemas, type PlanningAnswerPhase } from './projectPlanningProviderToolSchemas';
 import { projectWorkflowMetricToolSchemas } from './projectWorkflowMetricToolSchemas';
 import { readBriefMixIntent } from './readBriefMixIntent';
+import { readContinuationLiterals } from './readContinuationLiterals';
 import { settledProjectContentMatches } from './settledProjectContentMatches';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
@@ -178,51 +178,6 @@ type CreateFastPathResultInput = {
     prompt: string;
     continuedFigures?: readonly ContinuedFigure[];
 };
-
-const METRIC_LITERAL_UNITS = ['LUFS', 'dBTP', 'dBFS', 'Hz'] as const;
-
-function isMetricLiteralUnit(unit: string): unit is LastCommitContinuationLiteral['unit'] {
-    return METRIC_LITERAL_UNITS.some((candidate) => candidate === unit);
-}
-
-/**
- * The continuation's figures stated in a unit metric admission reads, each bound to the one
- * materialized action that sets its landed value; a figure no action sets exactly is left unbound,
- * so metric admission refuses it as any unaccounted figure.
- */
-function readContinuationLiterals(
-    prompt: string,
-    figures: readonly ContinuedFigure[],
-    actions: readonly AppAction[]
-): LastCommitContinuationLiteral[] {
-    return figures.flatMap((figure) => {
-        if (!isMetricLiteralUnit(figure.unit)) {
-            return [];
-        }
-        const actionIndex = actions.findIndex(
-            (action) =>
-                action.type === 'setDeviceParameter' &&
-                action.payload.deviceId === figure.deviceId &&
-                action.payload.paramId === figure.paramId &&
-                action.payload.value === figure.landed
-        );
-        if (actionIndex < 0) {
-            return [];
-        }
-        return [
-            {
-                kind: 'last-commit-continuation' as const,
-                requestDigest: digest(prompt.trim()),
-                actionIndex,
-                unit: figure.unit,
-                figure: figure.figure,
-                comparative: figure.comparative,
-                committed: figure.committed,
-                landed: figure.landed,
-            },
-        ];
-    });
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

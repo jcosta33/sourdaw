@@ -30,6 +30,12 @@ findings without a concrete break ("I'd prefer if") are discarded.
    rule keys, sort order, duplicates and existence, so a sorted, unique added path passes it. Input:
    `git diff <merge-base> <head> -- oxlint.craft-baseline.mjs eslint.size-baseline.mjs`. Any added path is
    the finding; a removed path whose file still violates the rule must turn the `Lint` job red on the head.
+   Compare each changed file's actual integrated source with its recorded ceiling in
+   `scripts/lintSizeCeilings.json`, and require `scripts/__tests__/lintSizeBaseline.spec.ts` to observe
+   that combined version. #6618 and #6493 each grew the parser while a passing older checked tree
+   omitted the parallel growth; the integrated source exceeded its unchanged ceiling. A passing
+   older tree is no witness for the combined size. Extract a coherent responsibility to comply;
+   never raise the ceiling or compress blank lines to hide growth.
 4. **A `className` pile on a `ui/` primitive instead of a variant.** No lint rule observes this. Input: a
    call site that passes a run of layout or colour utilities (`className="h-8 px-3 …"`) to a primitive
    imported from `src/components/ui/`. The finding quotes `src/components/AGENTS.md` ("Do not pile Tailwind
