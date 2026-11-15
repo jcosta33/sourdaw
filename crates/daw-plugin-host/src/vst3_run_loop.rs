@@ -85,6 +85,8 @@ type DeadRegistration = (HandlerIdentity, FileDescriptor);
 /// `pointer` is an argument of an `IRunLoop` call, so it is either null or a
 /// live interface of the named type.
 unsafe fn handler_identity<I: vst3::Interface>(pointer: *mut I) -> Option<HandlerIdentity> {
+    // SAFETY: this fn's contract is `com_identity`'s: `pointer` is null or a
+    // live interface of type `I`.
     unsafe { com_identity(pointer) }.map(|identity| identity as HandlerIdentity)
 }
 
@@ -125,6 +127,8 @@ impl HostRunLoop {
     /// `pointer` is the argument of an `IRunLoop` call, so it is either null or
     /// a live interface of the named type.
     unsafe fn retain<I: vst3::Interface>(pointer: *mut I) -> Option<ComPtr<I>> {
+        // SAFETY: by this fn's contract `pointer` is null (which `from_raw`
+        // maps to `None`) or a live `I` the plugin keeps alive for the call.
         unsafe { ComRef::from_raw(pointer) }.map(|borrowed| borrowed.to_com_ptr())
     }
 
@@ -138,9 +142,13 @@ impl HostRunLoop {
         if descriptor < 0 {
             return kInvalidArgument;
         }
+        // SAFETY: `handler` is the `registerEventHandler` argument (this fn's
+        // contract), so null or a live `IEventHandler`, as `retain` requires.
         let Some(handler) = (unsafe { Self::retain(handler) }) else {
             return kInvalidArgument;
         };
+        // SAFETY: the pointer is non-null and kept alive by the `ComPtr`
+        // reference `retain` just took.
         let Some(identity) = (unsafe { handler_identity(handler.as_ptr()) }) else {
             return kInvalidArgument;
         };
@@ -156,6 +164,8 @@ impl HostRunLoop {
     /// # Safety
     /// `handler` is the pointer the plugin passed to `unregisterEventHandler`.
     pub unsafe fn unregister_event_handler(&self, handler: *mut IEventHandler) -> tresult {
+        // SAFETY: `handler` is the `unregisterEventHandler` argument (this fn's
+        // contract), so null or a live `IEventHandler` for the call.
         let Some(identity) = (unsafe { handler_identity(handler) }) else {
             return kInvalidArgument;
         };
@@ -174,9 +184,13 @@ impl HostRunLoop {
         handler: *mut ITimerHandler,
         milliseconds: TimerInterval,
     ) -> tresult {
+        // SAFETY: `handler` is the `registerTimer` argument (this fn's
+        // contract), so null or a live `ITimerHandler`, as `retain` requires.
         let Some(handler) = (unsafe { Self::retain(handler) }) else {
             return kInvalidArgument;
         };
+        // SAFETY: the pointer is non-null and kept alive by the `ComPtr`
+        // reference `retain` just took.
         let Some(identity) = (unsafe { handler_identity(handler.as_ptr()) }) else {
             return kInvalidArgument;
         };
@@ -194,6 +208,8 @@ impl HostRunLoop {
     /// # Safety
     /// `handler` is the pointer the plugin passed to `unregisterTimer`.
     pub unsafe fn unregister_timer(&self, handler: *mut ITimerHandler) -> tresult {
+        // SAFETY: `handler` is the `unregisterTimer` argument (this fn's
+        // contract), so null or a live `ITimerHandler` for the call.
         let Some(identity) = (unsafe { handler_identity(handler) }) else {
             return kInvalidArgument;
         };
@@ -619,14 +635,13 @@ mod tests {
             .as_ptr();
 
         // SAFETY: `raw` borrows a live handler this test owns.
-        unsafe {
-            assert_eq!(run_loop.register_timer(raw, 10), kResultOk);
-            assert_eq!(
-                run_loop.service_timers(Instant::now() + Duration::from_millis(10)),
-                1
-            );
-            assert_eq!(run_loop.unregister_timer(raw), kResultOk);
-        }
+        assert_eq!(unsafe { run_loop.register_timer(raw, 10) }, kResultOk);
+        assert_eq!(
+            run_loop.service_timers(Instant::now() + Duration::from_millis(10)),
+            1
+        );
+        // SAFETY: `raw` borrows a live handler this test owns.
+        assert_eq!(unsafe { run_loop.unregister_timer(raw) }, kResultOk);
 
         assert_eq!(
             run_loop.service_timers(Instant::now() + Duration::from_secs(1)),
@@ -649,8 +664,8 @@ mod tests {
             .expect("the fake handler implements IEventHandler")
             .as_ptr();
 
-        // SAFETY: `raw` borrows a live handler this test owns.
         assert_eq!(
+            // SAFETY: `raw` borrows a live handler this test owns.
             unsafe { run_loop.register_event_handler(raw, pipe.read) },
             kResultOk
         );
@@ -680,13 +695,18 @@ mod tests {
             .expect("the fake handler implements IEventHandler")
             .as_ptr();
 
-        // SAFETY: `raw` borrows a live handler this test owns.
-        unsafe {
-            assert_eq!(run_loop.register_event_handler(raw, pipe.read), kResultOk);
-            pipe.make_readable();
-            assert_eq!(run_loop.service_file_descriptors(), 1);
-            assert_eq!(run_loop.unregister_event_handler(raw), kResultOk);
-        }
+        assert_eq!(
+            // SAFETY: `raw` borrows a live handler this test owns.
+            unsafe { run_loop.register_event_handler(raw, pipe.read) },
+            kResultOk
+        );
+        pipe.make_readable();
+        assert_eq!(run_loop.service_file_descriptors(), 1);
+        assert_eq!(
+            // SAFETY: `raw` borrows a live handler this test owns.
+            unsafe { run_loop.unregister_event_handler(raw) },
+            kResultOk
+        );
 
         assert_eq!(
             run_loop.service_file_descriptors(),
@@ -718,8 +738,8 @@ mod tests {
                 .as_com_ref::<IEventHandler>()
                 .expect("the fake handler implements IEventHandler")
                 .as_ptr();
-            // SAFETY: `raw` borrows a live handler this test owns.
             assert_eq!(
+                // SAFETY: `raw` borrows a live handler this test owns.
                 unsafe { run_loop.register_event_handler(raw, pipe.read) },
                 kResultOk
             );
@@ -754,8 +774,8 @@ mod tests {
             .expect("the fake handler implements IEventHandler")
             .as_ptr();
 
-        // SAFETY: `raw` borrows a live handler this test owns.
         assert_eq!(
+            // SAFETY: `raw` borrows a live handler this test owns.
             unsafe { run_loop.register_event_handler(raw, pipe.read) },
             kResultOk
         );
@@ -786,8 +806,8 @@ mod tests {
             1,
             "the last wake is one wake"
         );
-        // SAFETY: `raw` borrows a live handler this test owns.
         assert_eq!(
+            // SAFETY: `raw` borrows a live handler this test owns.
             unsafe { run_loop.unregister_event_handler(raw) },
             kResultFalse,
             "the registry must no longer watch the ended descriptor"
@@ -814,37 +834,38 @@ mod tests {
                 .as_ptr()
         };
 
-        // SAFETY: both raw pointers borrow live handlers this test owns.
-        unsafe {
-            assert_eq!(
-                run_loop.register_event_handler(raw(&ending), pipe.read),
-                kResultOk
-            );
+        assert_eq!(
+            // SAFETY: `raw` borrows a live handler this test owns.
+            unsafe { run_loop.register_event_handler(raw(&ending), pipe.read) },
+            kResultOk
+        );
 
-            // What the pass settles before it dispatches: the registration that
-            // was on the descriptor when `poll` reported it dead.
-            let doomed = run_loop.registrations_on(&HashSet::from([pipe.read]));
+        // What the pass settles before it dispatches: the registration that
+        // was on the descriptor when `poll` reported it dead.
+        let doomed = run_loop.registrations_on(&HashSet::from([pipe.read]));
 
-            // What the plugin does while being dispatched: a new handler appears
-            // on the same descriptor number.
-            assert_eq!(
-                run_loop.register_event_handler(raw(&reconnected), pipe.read),
-                kResultOk
-            );
+        // What the plugin does while being dispatched: a new handler appears
+        // on the same descriptor number.
+        assert_eq!(
+            // SAFETY: `raw` borrows a live handler this test owns.
+            unsafe { run_loop.register_event_handler(raw(&reconnected), pipe.read) },
+            kResultOk
+        );
 
-            run_loop.drop_registrations(&doomed);
+        run_loop.drop_registrations(&doomed);
 
-            assert_eq!(
-                run_loop.unregister_event_handler(raw(&ending)),
-                kResultFalse,
-                "the registration the pass found dead must be gone"
-            );
-            assert_eq!(
-                run_loop.unregister_event_handler(raw(&reconnected)),
-                kResultOk,
-                "the registration made during the pass must have survived it"
-            );
-        }
+        assert_eq!(
+            // SAFETY: `raw` borrows a live handler this test owns.
+            unsafe { run_loop.unregister_event_handler(raw(&ending)) },
+            kResultFalse,
+            "the registration the pass found dead must be gone"
+        );
+        assert_eq!(
+            // SAFETY: `raw` borrows a live handler this test owns.
+            unsafe { run_loop.unregister_event_handler(raw(&reconnected)) },
+            kResultOk,
+            "the registration made during the pass must have survived it"
+        );
     }
 
     /// A descriptor the kernel refuses is never readable and never will be, and
@@ -860,16 +881,16 @@ mod tests {
             .expect("the fake handler implements IEventHandler")
             .as_ptr();
 
-        // SAFETY: `raw` borrows a live handler this test owns.
         assert_eq!(
+            // SAFETY: `raw` borrows a live handler this test owns.
             unsafe { run_loop.register_event_handler(raw, NEVER_OPEN_DESCRIPTOR) },
             kResultOk
         );
 
         assert_eq!(run_loop.service_file_descriptors(), 0);
 
-        // SAFETY: `raw` borrows a live handler this test owns.
         assert_eq!(
+            // SAFETY: `raw` borrows a live handler this test owns.
             unsafe { run_loop.unregister_event_handler(raw) },
             kResultFalse,
             "the refused descriptor's registration must already be gone"

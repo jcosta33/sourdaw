@@ -35,7 +35,9 @@ import {
     type ApplicationToolReceipt,
     type TerminalMeasurementSettlement,
 } from '../models/ApplicationOwnedTool';
+import { type BriefCompileResult } from '../models/BriefCompileResult';
 import { type BriefMixIntent } from '../models/BriefMixIntent';
+import { type BriefMixAlternative } from '../models/BriefReading';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
 import {
@@ -104,7 +106,6 @@ import {
 } from './composeMeasuredAnswer';
 import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
 import { discoverMixRecipes } from './discoverMixRecipes';
-import { type executeBriefCompile } from './executeBriefCompile';
 import { type executeRecipeExpansion } from './executeRecipeExpansion';
 import { type executeTransformCompile } from './executeTransformCompile';
 import { formatReceiptContext } from './formatReceiptContext';
@@ -160,7 +161,6 @@ export type ApplicationOwnedToolLoopInterpretationOutcome = 'none' | 'admitted' 
 
 type TransformCompileResult = ReturnType<typeof executeTransformCompile>;
 type RecipeExpansionResult = ReturnType<typeof executeRecipeExpansion>;
-type BriefCompileResult = ReturnType<typeof executeBriefCompile>;
 
 export type ApplicationOwnedToolLoopOutcome =
     | {
@@ -1451,6 +1451,7 @@ type ExecutedRead = {
     briefChangeLines?: readonly string[] | null;
     composedBrief?: ProjectContextProductionBrief | null;
     mixIntent?: BriefMixIntent | null;
+    mixAlternatives?: readonly BriefMixAlternative[];
 };
 
 function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedCommandSet): RetainedCompilation {
@@ -1468,6 +1469,7 @@ function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedComma
             changeLines: executed.briefChangeLines,
             brief: executed.composedBrief,
             mixIntent: executed.mixIntent,
+            ...(executed.mixAlternatives === undefined ? {} : { mixAlternatives: executed.mixAlternatives }),
         };
     }
     if (executed.measuredPreview !== undefined && executed.measuredPreview !== null) {

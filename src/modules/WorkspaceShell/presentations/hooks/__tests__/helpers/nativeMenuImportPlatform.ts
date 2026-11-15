@@ -110,6 +110,7 @@ class FileHost implements NativeHost {
         grants.add(path);
         return Promise.resolve();
     };
+    grantPluginFolder = () => Promise.reject(new Error('Unexpected plugin folder grant'));
     readFileBytes = (path: unknown) => {
         if (typeof path !== 'string' || !grants.has(path)) {
             throw new Error('File read lacks the selected grant');
