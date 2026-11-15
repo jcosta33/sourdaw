@@ -1021,6 +1021,28 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         expect(guard(payload)).toBe(true);
     });
 
+    describe('captureScratchPad section ids', () => {
+        it.each([
+            ['an absent payload', undefined, true],
+            ['an empty payload', {}, true],
+            ['unique non-empty ids', { sectionIds: ['pad-a', 'pad-b'] }, true],
+            ['more ids than marker sections', { sectionIds: ['pad-a', 'pad-b', 'pad-c', 'pad-d', 'pad-e'] }, true],
+            ['a repeated id', { sectionIds: ['x', 'x'] }, false],
+            ['an empty id', { sectionIds: [''] }, false],
+            ['a non-string id', { sectionIds: [42] }, false],
+            ['a string in place of a list', { sectionIds: 'ab' }, false],
+            ['an unknown key', { sectionIds: ['pad-a'], extra: true }, false],
+        ] as const)('decides %s', (_label, payload, accepted) => {
+            const guard = PAYLOAD_VALIDATORS.captureScratchPad;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard(payload)).toBe(accepted);
+        });
+    });
+
     describe('gain ceiling reaches the fader headroom, not unity', () => {
         it.each([
             ['setTrackGain', { trackId: 'track-1', gain: 1.5 }],

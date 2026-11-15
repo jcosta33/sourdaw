@@ -157,14 +157,19 @@ function beginTrackAlternativeCreate(
     };
 }
 
+function isStringList(value: unknown): value is readonly string[] {
+    return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
 function beginScratchPadCapture(
     action: ActionOf<'captureScratchPad'>,
     mappings: MacroReplayIdMappings
 ): MacroReplayCreate {
-    const recordedId = action.payload?.sectionIds;
+    const recorded: unknown = action.payload?.sectionIds;
     delete action.payload?.sectionIds;
     return {
-        recordedId,
+        // A stored macro is persisted data: a recorded value that is not a list of ids maps nothing.
+        recordedId: isStringList(recorded) ? recorded : undefined,
         remember: (recorded, generated) => {
             mappings.scratchPadSectionIds.set(recorded, generated);
         },

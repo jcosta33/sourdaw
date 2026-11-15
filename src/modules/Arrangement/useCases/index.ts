@@ -246,6 +246,7 @@ export { getRecordingMidiAdmission } from './recording/getRecordingMidiAdmission
 
 export { captureArrangementToScratchPad } from './scratchPad/captureCommit/captureArrangementToScratchPad';
 export { createScratchPadCaptureSectionIds } from './scratchPad/captureCommit/createScratchPadCaptureSectionIds';
+export { isScratchPadCaptureSectionIds } from './scratchPad/captureCommit/isScratchPadCaptureSectionIds';
 export { commitScratchPadToArrangement } from './scratchPad/captureCommit/commitScratchPadToArrangement';
 export { clearScratchPad } from './scratchPad/scratchPadCrud/clearScratchPad';
 

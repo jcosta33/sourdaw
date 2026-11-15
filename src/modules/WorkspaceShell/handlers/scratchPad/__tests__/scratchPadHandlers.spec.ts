@@ -136,6 +136,51 @@ describe('Workspace Scratch Pad Handlers', () => {
         });
     });
 
+    describe('handleCaptureScratchPad supplied section ids', () => {
+        // Payloads from outside the app are shaped by nothing but their senders.
+        function captureOf(payload: unknown): Extract<AppAction, { type: 'captureScratchPad' }> {
+            return { type: 'captureScratchPad', payload } as Extract<AppAction, { type: 'captureScratchPad' }>;
+        }
+        const validationContext = { actions: [], actionIndex: 0 };
+
+        const refused = [
+            ['a repeated id', { sectionIds: ['x', 'x'] }],
+            ['an empty id', { sectionIds: [''] }],
+            ['a non-string id', { sectionIds: [42] }],
+            ['a string in place of a list', { sectionIds: 'ab' }],
+        ] as const;
+        const accepted = [
+            ['an absent payload', undefined],
+            ['an empty payload', {}],
+            ['unique non-empty ids', { sectionIds: ['pad-a', 'pad-b'] }],
+            ['more ids than marker sections', { sectionIds: ['pad-a', 'pad-b', 'pad-c'] }],
+        ] as const;
+
+        it.each(refused)('validate refuses %s', (_label, payload) => {
+            expect(handleCaptureScratchPad.validate(captureOf(payload), validationContext)).toBe(false);
+        });
+
+        it.each(accepted)('validate accepts %s', (_label, payload) => {
+            expect(handleCaptureScratchPad.validate(captureOf(payload), validationContext)).toBe(true);
+        });
+
+        it.each(refused)('execute refuses %s before writing the pad or opening it', (_label, payload) => {
+            scratchPadStore.set({ sections: previousPad });
+            vi.mocked(workspaceStore.set).mockClear();
+
+            const result = handleCaptureScratchPad.execute(captureOf(payload));
+
+            expect(result).toEqual(expect.objectContaining({ status: 'conflict' }));
+            expect(captureArrangementToScratchPad).not.toHaveBeenCalled();
+            expect(scratchPadStore.value?.sections).toEqual(previousPad);
+            expect(workspaceStore.set).not.toHaveBeenCalled();
+        });
+
+        it('stays out of combined batches, since its description snapshots the live pad', () => {
+            expect(handleCaptureScratchPad.batchExecution).toBe('singleton');
+        });
+    });
+
     describe('handleCaptureScratchPad undo', () => {
         const action = { type: 'captureScratchPad' as const, payload: undefined };
 
