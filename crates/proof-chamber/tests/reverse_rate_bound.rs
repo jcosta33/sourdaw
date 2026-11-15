@@ -52,7 +52,7 @@ fn burst() -> (Vec<f32>, Vec<f32>) {
 /// no larger than `PROOF_CHAMBER_BLOCK_FRAMES`, which is that guarantee.
 unsafe fn read_output(ptr: *const f32, frames: usize) -> Vec<f32> {
     assert!(!ptr.is_null(), "process returned a null buffer");
-    (0..frames).map(|i| *ptr.add(i)).collect()
+    (0..frames).map(|i| unsafe { *ptr.add(i) }).collect()
 }
 
 /// Index of the largest-magnitude sample, and that magnitude.

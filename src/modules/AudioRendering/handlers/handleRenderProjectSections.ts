@@ -1,7 +1,8 @@
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type RenderProjectSectionJobSnapshot } from '../events/audioRenderingAppActions';
 import { getAgentSectionRenderArtifacts } from '../useCases/getAgentSectionRenderArtifacts';
 import { renderAgentProjectSections } from '../useCases/renderAgentProjectSections';
 

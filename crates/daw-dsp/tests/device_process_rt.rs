@@ -54,8 +54,8 @@ fn excitation(frame: usize) -> (f32, f32) {
 unsafe fn fill_input(left: *mut f32, right: *mut f32, frames: usize, offset: usize) {
     for i in 0..frames {
         let (l, r) = excitation(offset + i);
-        *left.add(i) = l;
-        *right.add(i) = r;
+        unsafe { *left.add(i) = l };
+        unsafe { *right.add(i) = r };
     }
 }
 
@@ -66,7 +66,7 @@ unsafe fn fill_input(left: *mut f32, right: *mut f32, frames: usize, offset: usi
 /// returns its own output buffer, sized at or above `frames`.
 unsafe fn read_output(ptr: *const f32, frames: usize) -> Vec<f32> {
     assert!(!ptr.is_null(), "render export returned a null buffer");
-    (0..frames).map(|i| *ptr.add(i)).collect()
+    (0..frames).map(|i| unsafe { *ptr.add(i) }).collect()
 }
 
 fn peak(samples: &[f32]) -> f32 {
