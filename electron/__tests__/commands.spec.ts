@@ -190,6 +190,17 @@ describe('the Electron command surface', () => {
         expect(isExposedCommand('close_all_plugin_guis')).toBe(false);
     });
 
+    it('keeps grant_plugin_folder denied while its list and revoke commands stay exposed', () => {
+        // Granting widens the roots a scan loads plugin code from, so only the
+        // main-process picker may call it, with the path its own dialog
+        // returned (#6574). Listing and revoking can only report or narrow.
+        expect(DENIED_COMMANDS).toContain('grant_plugin_folder');
+        expect(EXPOSED_COMMANDS).not.toContain('grant_plugin_folder');
+        expect(isExposedCommand('grant_plugin_folder')).toBe(false);
+        expect(isExposedCommand('get_plugin_folder_grants')).toBe(true);
+        expect(isExposedCommand('revoke_plugin_folder_grant')).toBe(true);
+    });
+
     it('gives a denied command no channel that collides with an exposed one', () => {
         const exposedChannels = new Set(EXPOSED_COMMANDS.map(commandChannel));
 
@@ -399,6 +410,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['get_crumbs_position', ['instance_id']],
     ['get_crumbs_recording_state', ['instance_id']],
     ['get_default_plugin_paths', []],
+    ['get_plugin_folder_grants', []],
     ['get_plugin_parameters', ['instance_id']],
     ['get_plugin_state_bytes', ['instance_id']],
     ['get_waveform_peaks', ['instance_id', 'sample_id', 'level', 'channel']],
@@ -423,6 +435,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['release_levain_bank', ['bank_key']],
     ['render_graph_offline', ['batch', 'frames', 'sample_rate']],
     ['retire_native_engine', []],
+    ['revoke_plugin_folder_grant', ['path']],
     ['scan_plugins', ['paths', 'retry_quarantined']],
     ['seal_export_file', ['token']],
     ['send_push_midi', ['bytes']],

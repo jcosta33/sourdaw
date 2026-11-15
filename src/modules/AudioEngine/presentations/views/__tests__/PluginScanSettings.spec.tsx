@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { PluginScanSettings } from '../PluginScanSettings';
@@ -13,6 +13,7 @@ vi.mock('#/infra/store/useStore', () => ({
         notices: [],
         lastScanTime: null,
         quarantined: [],
+        grantedFolders: [],
     })),
 }));
 
@@ -27,12 +28,15 @@ vi.mock('#/modules/PluginHost/stores', async (importOriginal) => ({
         notices: [],
         lastScanTime: null,
         quarantined: [],
+        grantedFolders: [],
     },
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
     removeScanPath: vi.fn(),
-    addScanPath: vi.fn(),
+    addPluginFolder: vi.fn(),
+    removePluginFolder: vi.fn(),
+    refreshPluginFolderGrants: vi.fn(),
     startPluginScan: vi.fn(),
 }));
 
@@ -49,7 +53,8 @@ vi.mock('#/components/ui/tooltip', () => ({
 }));
 
 const { useStore } = await import('#/infra/store/useStore');
-const { startPluginScan, addScanPath, removeScanPath } = await import('#/modules/PluginHost/useCases');
+const { startPluginScan, addPluginFolder, removePluginFolder, refreshPluginFolderGrants, removeScanPath } =
+    await import('#/modules/PluginHost/useCases');
 const { getPlatformCapabilities } = await import('#/utils/platformCapabilities');
 
 describe('PluginScanSettings', () => {
@@ -63,9 +68,12 @@ describe('PluginScanSettings', () => {
             notices: [],
             lastScanTime: null,
             quarantined: [],
+            grantedFolders: [],
         });
         (getPlatformCapabilities as ReturnType<typeof vi.fn>).mockReturnValue({ hasPluginScanning: true });
-        (addScanPath as ReturnType<typeof vi.fn>).mockResolvedValue({ added: true });
+        (addPluginFolder as ReturnType<typeof vi.fn>).mockResolvedValue({ added: true, path: '/Users/me/Plugins' });
+        (removePluginFolder as ReturnType<typeof vi.fn>).mockResolvedValue({ removed: true });
+        (refreshPluginFolderGrants as ReturnType<typeof vi.fn>).mockResolvedValue({ refreshed: true });
     });
 
     it('should render without crashing', () => {
@@ -82,20 +90,6 @@ describe('PluginScanSettings', () => {
         render(<PluginScanSettings />);
         expect(screen.getByText('/path/to/plugins')).toBeInTheDocument();
         expect(screen.getByText('/another/path')).toBeInTheDocument();
-    });
-
-    it('should render input for new path', () => {
-        render(<PluginScanSettings />);
-        expect(screen.getByPlaceholderText('/path/to/plugins...')).toBeInTheDocument();
-    });
-
-    it('should call addScanPath when new path is added', () => {
-        render(<PluginScanSettings />);
-        const input = screen.getByPlaceholderText('/path/to/plugins...');
-        fireEvent.change(input, { target: { value: '/new/path' } });
-        const addButton = screen.getByLabelText('Add plugin path');
-        fireEvent.click(addButton);
-        expect(addScanPath).toHaveBeenCalledWith('/new/path');
     });
 
     it('should call removeScanPath when remove button is clicked', () => {
@@ -121,6 +115,7 @@ describe('PluginScanSettings', () => {
             notices: [],
             lastScanTime: null,
             quarantined: [],
+            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('Scanning...')).toBeInTheDocument();
@@ -135,6 +130,7 @@ describe('PluginScanSettings', () => {
             notices: [],
             lastScanTime: null,
             quarantined: [],
+            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('Plugins Found')).toBeInTheDocument();
@@ -151,6 +147,7 @@ describe('PluginScanSettings', () => {
             notices: [],
             lastScanTime: now,
             quarantined: [],
+            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('Last Scan')).toBeInTheDocument();
@@ -165,6 +162,7 @@ describe('PluginScanSettings', () => {
             notices: [],
             lastScanTime: null,
             quarantined: [],
+            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('Failed to scan /invalid/path')).toBeInTheDocument();
@@ -179,6 +177,7 @@ describe('PluginScanSettings', () => {
             notices: [],
             lastScanTime: Date.now(),
             quarantined: [],
+            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('All plugins scanned successfully')).toBeInTheDocument();
@@ -190,68 +189,7 @@ describe('PluginScanSettings', () => {
         expect(screen.getByText('Desktop app required')).toBeInTheDocument();
     });
 
-    it('should add path on Enter key', () => {
-        render(<PluginScanSettings />);
-        const input = screen.getByPlaceholderText('/path/to/plugins...');
-        fireEvent.change(input, { target: { value: '/new/path' } });
-        fireEvent.keyDown(input, { key: 'Enter' });
-        expect(addScanPath).toHaveBeenCalledWith('/new/path');
-    });
-
-    it('shows the policy refusal naming the scannable folders and keeps the typed path', async () => {
-        // Regression (#2378): the add used to persist any typed path, which
-        // the scan policy then rejected on every scan. The refusal is the
-        // honest replacement — it names the folders scans cover, and the
-        // typed path stays in the input for correction.
-        (addScanPath as ReturnType<typeof vi.fn>).mockResolvedValue({
-            added: false,
-            reason: '/nope cannot be scanned. Plugin scans cover only: /root/vst3, /root/clap',
-        });
-        render(<PluginScanSettings />);
-        const input = screen.getByPlaceholderText('/path/to/plugins...');
-        fireEvent.change(input, { target: { value: '/nope' } });
-        fireEvent.click(screen.getByLabelText('Add plugin path'));
-
-        expect(await screen.findByText(/Plugin scans cover only: \/root\/vst3/)).toBeInTheDocument();
-        expect(input).toHaveValue('/nope');
-    });
-
-    it('clears the add refusal once the path is edited', async () => {
-        (addScanPath as ReturnType<typeof vi.fn>).mockResolvedValue({
-            added: false,
-            reason: '/nope cannot be scanned. Plugin scans cover only: /root/vst3',
-        });
-        render(<PluginScanSettings />);
-        const input = screen.getByPlaceholderText('/path/to/plugins...');
-        fireEvent.change(input, { target: { value: '/nope' } });
-        fireEvent.click(screen.getByLabelText('Add plugin path'));
-        expect(await screen.findByText(/cannot be scanned/)).toBeInTheDocument();
-
-        fireEvent.change(input, { target: { value: '/root/vst3' } });
-
-        expect(screen.queryByText(/cannot be scanned/)).not.toBeInTheDocument();
-    });
-
     // ── branch coverage: handler guards and success-badge short-circuits ──────
-
-    it('does not call addScanPath when the input is empty or whitespace', () => {
-        render(<PluginScanSettings />);
-        const input = screen.getByPlaceholderText('/path/to/plugins...');
-        const addButton = screen.getByLabelText('Add plugin path');
-        // Empty trimmed path ⇒ handleAddPath `if (trimmed)` false arm.
-        fireEvent.change(input, { target: { value: '   ' } });
-        fireEvent.click(addButton);
-        expect(addScanPath).not.toHaveBeenCalled();
-    });
-
-    it('does not call addScanPath for a non-Enter keypress', () => {
-        render(<PluginScanSettings />);
-        const input = screen.getByPlaceholderText('/path/to/plugins...');
-        fireEvent.change(input, { target: { value: '/new/path' } });
-        // Non-Enter key ⇒ `if (event.key === 'Enter')` false arm.
-        fireEvent.keyDown(input, { key: 'Escape' });
-        expect(addScanPath).not.toHaveBeenCalled();
-    });
 
     it('does not show the success badge when plugins exist but errors are present', () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
@@ -262,6 +200,7 @@ describe('PluginScanSettings', () => {
             notices: [],
             lastScanTime: null,
             quarantined: [],
+            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         expect(screen.queryByText('All plugins scanned successfully')).not.toBeInTheDocument();
@@ -276,6 +215,7 @@ describe('PluginScanSettings', () => {
             notices: [],
             lastScanTime: null,
             quarantined: [],
+            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         expect(screen.queryByText('All plugins scanned successfully')).not.toBeInTheDocument();
@@ -290,6 +230,7 @@ describe('PluginScanSettings', () => {
             notices: [],
             lastScanTime: null,
             quarantined: [],
+            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         // No remove buttons when paths list is empty.
@@ -319,6 +260,7 @@ describe('PluginScanSettings', () => {
                     quarantined_at_ms: 1_700_000_000_000,
                 },
             ],
+            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('1 quarantined')).toBeInTheDocument();
@@ -337,9 +279,195 @@ describe('PluginScanSettings', () => {
             quarantined: [
                 { path: '/plugins/broken.vst3', reason: 'Plugin scan helper timed out', quarantined_at_ms: 1 },
             ],
+            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         fireEvent.click(screen.getByText('Retry Quarantined'));
         expect(startPluginScan).toHaveBeenCalledWith({ retryQuarantined: true });
+    });
+
+    // ── added plugin folders (#6574) ──────────────────────────────────────
+
+    const withGrantedFolders = (grantedFolders: { path: string; unavailableReason: string | null }[]) => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scanPaths: [],
+            scannedPlugins: [],
+            isScanning: false,
+            errors: [],
+            notices: [],
+            lastScanTime: null,
+            quarantined: [],
+            grantedFolders,
+        });
+    };
+
+    it('offers an Add Folder button in place of a typed path', () => {
+        render(<PluginScanSettings />);
+
+        expect(screen.getByRole('button', { name: 'Add Folder' })).toBeEnabled();
+        expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    });
+
+    it('asks the shell to pick and grant a folder when Add Folder is clicked', async () => {
+        render(<PluginScanSettings />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Add Folder' }));
+
+        await waitFor(() => {
+            expect(addPluginFolder).toHaveBeenCalledTimes(1);
+        });
+        expect(addPluginFolder).toHaveBeenCalledWith();
+    });
+
+    it('disables Add Folder while an add is in flight', async () => {
+        let finish = (_outcome: { added: true; path: string }): void => {};
+        (addPluginFolder as ReturnType<typeof vi.fn>).mockReturnValue(
+            new Promise((resolve) => {
+                finish = resolve;
+            })
+        );
+        render(<PluginScanSettings />);
+        const button = screen.getByRole('button', { name: 'Add Folder' });
+
+        fireEvent.click(button);
+        await waitFor(() => {
+            expect(button).toBeDisabled();
+        });
+
+        finish({ added: true, path: '/Users/me/Plugins' });
+        await waitFor(() => {
+            expect(button).toBeEnabled();
+        });
+    });
+
+    it('announces the refusal reason the native policy gave', async () => {
+        (addPluginFolder as ReturnType<typeof vi.fn>).mockResolvedValue({
+            added: false,
+            reason: '/Volumes/USB is a symlinked folder and cannot be scanned',
+        });
+        render(<PluginScanSettings />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Add Folder' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            '/Volumes/USB is a symlinked folder and cannot be scanned'
+        );
+    });
+
+    it('shows nothing when the picker is cancelled', async () => {
+        (addPluginFolder as ReturnType<typeof vi.fn>).mockResolvedValue({ added: false, cancelled: true });
+        render(<PluginScanSettings />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Add Folder' }));
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Add Folder' })).toBeEnabled();
+        });
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('reads the added folders from the native side when settings open', async () => {
+        render(<PluginScanSettings />);
+
+        await waitFor(() => {
+            expect(refreshPluginFolderGrants).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    it('does not read added folders outside the desktop app', () => {
+        (getPlatformCapabilities as ReturnType<typeof vi.fn>).mockReturnValue({ hasPluginScanning: false });
+        render(<PluginScanSettings />);
+
+        expect(refreshPluginFolderGrants).not.toHaveBeenCalled();
+    });
+
+    it('lists no added folders section when none are granted', () => {
+        render(<PluginScanSettings />);
+
+        expect(screen.queryByRole('list', { name: 'Added folders' })).not.toBeInTheDocument();
+    });
+
+    it('lists each added folder with its unavailable reason and a Remove control', () => {
+        withGrantedFolders([
+            { path: '/Users/me/Plugins', unavailableReason: null },
+            { path: '/Volumes/USB/Plugins', unavailableReason: 'The folder is not available' },
+        ]);
+        render(<PluginScanSettings />);
+
+        const list = screen.getByRole('list', { name: 'Added folders' });
+        expect(list).toHaveTextContent('/Users/me/Plugins');
+        expect(list).toHaveTextContent('/Volumes/USB/Plugins');
+        expect(screen.getByText('The folder is not available')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Remove plugin folder /Users/me/Plugins' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Remove plugin folder /Volumes/USB/Plugins' })).toBeInTheDocument();
+    });
+
+    it('removes the folder its Remove control names', async () => {
+        withGrantedFolders([
+            { path: '/Users/me/Plugins', unavailableReason: null },
+            { path: '/Users/me/Plugins-old', unavailableReason: null },
+        ]);
+        render(<PluginScanSettings />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Remove plugin folder /Users/me/Plugins-old' }));
+
+        await waitFor(() => {
+            expect(removePluginFolder).toHaveBeenCalledWith('/Users/me/Plugins-old');
+        });
+        expect(removePluginFolder).toHaveBeenCalledTimes(1);
+    });
+
+    it('announces an added folder politely', async () => {
+        render(<PluginScanSettings />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Add Folder' }));
+
+        expect(await screen.findByRole('status')).toHaveTextContent('Added /Users/me/Plugins');
+    });
+
+    it('moves focus to Add Folder and announces the removal once a folder is removed', async () => {
+        withGrantedFolders([{ path: '/Users/me/Plugins', unavailableReason: null }]);
+        render(<PluginScanSettings />);
+        const remove = screen.getByRole('button', { name: 'Remove plugin folder /Users/me/Plugins' });
+
+        remove.focus();
+        fireEvent.click(remove);
+
+        expect(await screen.findByRole('status')).toHaveTextContent('Removed /Users/me/Plugins');
+        expect(screen.getByRole('button', { name: 'Add Folder' })).toHaveFocus();
+    });
+
+    it('announces a failed removal', async () => {
+        withGrantedFolders([{ path: '/Users/me/Plugins', unavailableReason: null }]);
+        (removePluginFolder as ReturnType<typeof vi.fn>).mockResolvedValue({
+            removed: false,
+            reason: 'Could not remove /Users/me/Plugins: grant store is read-only',
+        });
+        render(<PluginScanSettings />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Remove plugin folder /Users/me/Plugins' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('grant store is read-only');
+    });
+
+    it('keeps Add Folder and Remove reachable from the keyboard', () => {
+        // @testing-library/user-event is not a dependency, and jsdom does not
+        // synthesize a native button's Enter/Space activation. What the
+        // keyboard needs from this component is native, focusable buttons and
+        // a Remove control that becomes visible on focus rather than only on
+        // hover.
+        withGrantedFolders([{ path: '/Users/me/Plugins', unavailableReason: null }]);
+        render(<PluginScanSettings />);
+        const add = screen.getByRole('button', { name: 'Add Folder' });
+        const remove = screen.getByRole('button', { name: 'Remove plugin folder /Users/me/Plugins' });
+
+        add.focus();
+        expect(add).toHaveFocus();
+        expect(add.tagName).toBe('BUTTON');
+        remove.focus();
+        expect(remove).toHaveFocus();
+        expect(remove.tagName).toBe('BUTTON');
+        expect(remove).toHaveClass('focus-visible:opacity-100');
+        expect(remove).toHaveClass('group-focus-within:opacity-100');
     });
 });

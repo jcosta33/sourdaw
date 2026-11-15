@@ -89,6 +89,9 @@ const hostWith = (methods: Record<string, (...args: readonly unknown[]) => unkno
     stopDictation: refuseDictation('stopDictation'),
     cancelDictation: refuseDictation('cancelDictation'),
     grantPath: refuseGrant,
+    grantPluginFolder: () => {
+        throw new Error('Unexpected grant call from the command router: grantPluginFolder');
+    },
     ...methods,
 });
 

@@ -229,9 +229,12 @@ const unroutableStubs = {
     grantPath: () => {
         throw new Error('Unexpected grant call: grantPath');
     },
+    grantPluginFolder: () => {
+        throw new Error('Unexpected grant call: grantPluginFolder');
+    },
 } satisfies Pick<
     NativeHost,
-    'beginRendererSession' | 'startDictation' | 'stopDictation' | 'cancelDictation' | 'grantPath'
+    'beginRendererSession' | 'startDictation' | 'stopDictation' | 'cancelDictation' | 'grantPath' | 'grantPluginFolder'
 >;
 
 describe('reading a method off the addon', () => {
