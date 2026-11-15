@@ -111,6 +111,16 @@ describe('getLegacyTrimInverseReplayFailure', () => {
         );
     });
 
+    it('refuses a keyless trim after a persisted inverse named like an inherited property', () => {
+        seed();
+        // Persisted undo lists are untrusted JSON, so the type is not a known action name.
+        const inherited: AppAction = JSON.parse('{"type":"constructor","payload":{}}');
+
+        expect(getLegacyTrimInverseReplayFailure([inherited, keylessTrim('audio-clip')])).toBe(
+            'An earlier inverse cannot prove the legacy trim coordinates'
+        );
+    });
+
     it('refuses a keyless MIDI trim, which carries no captured offset', () => {
         seed();
 

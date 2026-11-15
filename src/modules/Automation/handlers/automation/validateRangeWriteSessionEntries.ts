@@ -1,5 +1,4 @@
 import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
-import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 import { isRecord } from '#/utils/structuralEquality';
 
 import { type AutomationPoint } from '../../models/Automation';
@@ -163,46 +162,6 @@ export function isRestoreAutomationLanePointsPayload(payload: unknown): boolean 
         isNonEmptyString(payload.laneId) &&
         isRestorableAutomationPointSet(payload.points) &&
         (!Object.hasOwn(payload, 'expectedPoints') || isRestorableAutomationPointSet(payload.expectedPoints))
-    );
-}
-
-type LegacyRangeWrite = Extract<
-    AppAction,
-    { type: 'automateTrackGainRange' | 'automateSendRange' | 'automateSendRanges' }
->['type'];
-
-const LEGACY_RANGE_REMOVAL: Record<
-    LegacyRangeWrite,
-    { type: AppAction['type']; isPayload: (payload: unknown) => boolean }
-> = {
-    automateTrackGainRange: {
-        type: 'removeTrackGainAutomationRange',
-        isPayload: isRemoveTrackGainAutomationRangePayload,
-    },
-    automateSendRange: { type: 'removeSendAutomationRange', isPayload: isRemoveSendAutomationRangePayload },
-    automateSendRanges: { type: 'removeSendAutomationRanges', isPayload: isRemoveSendAutomationRangesPayload },
-};
-
-/**
- * A retired section range write undoes through its guarded removal, which carries exactly the
- * materialized write, and redoes by replaying the write itself.
- */
-export function isLegacyRangeWriteSessionEntry(entry: HandlerSessionActionEntry): boolean {
-    const { action, inverseAction, redoAction } = entry;
-    if (
-        action.type !== 'automateTrackGainRange' &&
-        action.type !== 'automateSendRange' &&
-        action.type !== 'automateSendRanges'
-    ) {
-        return false;
-    }
-    const removal = LEGACY_RANGE_REMOVAL[action.type];
-    return (
-        redoAction === undefined &&
-        inverseAction !== null &&
-        inverseAction.type === removal.type &&
-        removal.isPayload(inverseAction.payload) &&
-        jsonValuesEqual(inverseAction.payload, action.payload)
     );
 }
 

@@ -195,7 +195,12 @@ impl SourdawNative {
 
     /// The current window host, cloned out so no caller holds the lock.
     fn window_host(&self) -> Arc<dyn PluginWindowHost> {
-        Arc::clone(&self.windows.read().expect("window host lock poisoned"))
+        Arc::clone(
+            &self
+                .windows
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        )
     }
 
     /// Register the shell's plugin-window callbacks (packet T-4).
@@ -236,7 +241,10 @@ impl SourdawNative {
                 show: show_editor_window,
             },
         )?;
-        *self.windows.write().expect("window host lock poisoned") = Arc::new(host);
+        *self
+            .windows
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Arc::new(host);
         Ok(())
     }
 

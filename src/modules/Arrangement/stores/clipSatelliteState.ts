@@ -8,6 +8,7 @@ import {
 
 import { decodePersistedStretchMode, type WarpMarker, type WarpState } from '../models/WarpMarker';
 
+import { getClipSatelliteReplacements } from './clipSatelliteReplacementByActionType';
 import { type ClipGainEnvelope, getEnvelope, removeEnvelope, setEnvelope } from './gainEnvelopeStore';
 import { getStoredWarpState, isDefaultWarpState, removeWarpState, setWarpState } from './warpStates';
 
@@ -188,12 +189,7 @@ export function clipSatelliteEntriesMatchSnapshot(
     return entries.every((entry) => {
         let projected = readClipSatelliteEntry(entry.clipId);
         for (const action of priorActions) {
-            let replacements: readonly ClipSatelliteEntrySnapshot[] | undefined;
-            if (action.type === 'restoreClip') {
-                replacements = action.payload.ripplePlan?.clipSatellites;
-            } else if (action.type === 'restoreClipSplitState') {
-                replacements = action.payload.replacement.clipSatellites;
-            }
+            const replacements = getClipSatelliteReplacements(action);
             const replacement = replacements?.find((candidate) => candidate.clipId === entry.clipId);
             if (replacement) {
                 projected = normalizeClipSatelliteEntry(replacement);

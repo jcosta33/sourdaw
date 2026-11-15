@@ -455,14 +455,13 @@ impl LevainBankStore {
         // identically: the zones below address their material through
         // `engine_ids` by string id, so the order is not otherwise observable —
         // what it buys is that a diagnostic naming engine sample 3 means the
-        // same file every run.
-        let mut sample_ids: Vec<String> = samples.keys().cloned().collect();
-        sample_ids.sort_unstable();
-        let mut engine_ids: HashMap<String, u32> = HashMap::new();
-        for sample_id in &sample_ids {
-            let sample = samples
-                .get_mut(sample_id)
-                .expect("the id came from this map's own keys");
+        // same file every run. Each id keeps the rate its material was decoded
+        // at beside its engine id, for the loop points below.
+        let mut ordered_samples: Vec<(&String, &mut LevainBankSample)> =
+            samples.iter_mut().collect();
+        ordered_samples.sort_unstable_by_key(|(sample_id, _)| *sample_id);
+        let mut engine_ids: HashMap<String, (u32, u32)> = HashMap::new();
+        for (sample_id, sample) in ordered_samples {
             let channels = sample.channels;
             let data = sample.data_at(engine_rate)?;
             let frames = data.len() / channels as usize;
@@ -471,11 +470,11 @@ impl LevainBankStore {
                 .ok_or_else(|| {
                     format!("levain bank '{bank_key}': the instrument refused sample '{sample_id}'")
                 })?;
-            engine_ids.insert(sample_id.clone(), engine_id);
+            engine_ids.insert(sample_id.clone(), (engine_id, sample.sample_rate));
         }
 
         for (index, zone) in layout.zones.iter().enumerate() {
-            let engine_id = *engine_ids.get(&zone.sample_id).ok_or_else(|| {
+            let (engine_id, from_hz) = *engine_ids.get(&zone.sample_id).ok_or_else(|| {
                 format!(
                     "levain bank '{bank_key}': zone {index} names sample '{}', which is not \
                      registered in it",
@@ -487,10 +486,6 @@ impl LevainBankStore {
             // rounding the conversion sizes its own output by, which is what
             // keeps a "loop to sample end" zone ending exactly at the converted
             // end.
-            let from_hz = samples
-                .get(&zone.sample_id)
-                .expect("the commit proved every zone's sample is registered")
-                .sample_rate;
             instance.add_zone(
                 index as u32,
                 engine_id,
@@ -518,7 +513,7 @@ impl LevainBankStore {
         }
 
         for transition in &layout.legato_transitions {
-            let engine_id = *engine_ids.get(&transition.sample_id).ok_or_else(|| {
+            let (engine_id, _) = *engine_ids.get(&transition.sample_id).ok_or_else(|| {
                 format!(
                     "levain bank '{bank_key}': a legato transition names sample '{}', which is \
                      not registered in it",
