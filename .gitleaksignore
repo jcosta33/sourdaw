@@ -9,3 +9,9 @@ d0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.s
 # RFC 6455 section 1.2 public WebSocket handshake nonce; historical test fixture, not a credential.
 # https://www.rfc-editor.org/rfc/rfc6455.html#section-1.2
 cc52a482abc4b62519a79e1984e683893c31cbc0:scripts/__tests__/viteUpgradeReset.spec.ts:generic-api-key:54
+
+# Synthetic tracker mutation lease nonce in a historical recovery test; never an issued credential.
+e07bd6ab2e0842f15b463b96e6ade5de66664d44:scripts/__tests__/reconcileTrackerIssue.spec.ts:generic-api-key:325
+# Legacy GitHub User node ID beside TOKEN_STALE in fake claim timelines; a public identifier, not a credential.
+853bf6ea254697dbfcdeb043b773181ba4b017fa:scripts/__tests__/claimTrackerIssue.spec.ts:generic-api-key:504
+16b51d5e90ed73304eb4fd02597f9c754e4a4401:scripts/__tests__/claimTrackerIssue.spec.ts:generic-api-key:569

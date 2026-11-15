@@ -55,11 +55,12 @@ describe('applyReverbParams', () => {
         const convolver = dn.namedNodes!.convolver as ConvolverNode;
         const defaultBuffer = convolver.buffer;
         expect(defaultBuffer).not.toBeNull();
-        // Descriptor default decay is 2 s at a 48 kHz mock context.
-        expect(defaultBuffer!.length).toBe(ctx.sampleRate * DEFAULT_REVERB_SHAPE.decay);
+        // Descriptor default decay is 2 s; its bucket renders 1.025 ** 28 s at a 48 kHz mock context.
+        expect(defaultBuffer!.length).toBe(Math.round(ctx.sampleRate * 1.025 ** 28));
+        expect(DEFAULT_REVERB_SHAPE.decay).toBe(2);
 
         applyReverbParams(dn, { 'rev-decay': 5 });
-        expect(convolver.buffer!.length).toBe(ctx.sampleRate * 5);
+        expect(convolver.buffer!.length).toBe(Math.round(ctx.sampleRate * 1.025 ** 65));
         expect(convolver.buffer).not.toBe(defaultBuffer);
 
         applyReverbParams(dn, { 'rev-size': 1 });
