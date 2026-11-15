@@ -3,6 +3,8 @@ import { type ReactElement, type ReactNode, useState } from 'react';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
+import { formatFigure, formatSignedDelta, measuredTargetName } from './measuredFigureText';
+
 type ApprovalIntentGroup = {
     id: string;
     summary: string;
@@ -23,7 +25,7 @@ type MeasuredFigure = { value: number; unit: string } | null;
 
 type MeasuredPreviewTarget = {
     targetId: string;
-    targetKind: string;
+    targetKind: 'master' | 'track' | 'bus';
     targetName: string | null;
     metrics: readonly {
         metricId: string;
@@ -249,23 +251,11 @@ function renderPreviousProposalDiff(diff: AgentApprovalView['previousProposalDif
     );
 }
 
-function formatFigure(figure: MeasuredFigure): string {
-    return figure === null ? 'n/a' : `${figure.value.toFixed(2)} ${figure.unit}`;
-}
-
 function formatMeasuredMetric(metric: MeasuredPreviewTarget['metrics'][number]): string {
     if (metric.delta === null) {
         return `${metric.metricId}: not comparable (${metric.incomparableReason ?? 'unavailable'})`;
     }
-    const sign = metric.delta.value > 0 ? '+' : '';
-    return `${metric.metricId}: ${formatFigure(metric.baseline)} → ${formatFigure(metric.preview)} (${sign}${metric.delta.value.toFixed(2)} ${metric.delta.unit})`;
-}
-
-function measuredTargetName(target: MeasuredPreviewTarget): string {
-    if (target.targetName !== null) {
-        return target.targetName;
-    }
-    return target.targetKind === 'master' ? 'Master' : target.targetId;
+    return `${metric.metricId}: ${formatFigure(metric.baseline)} → ${formatFigure(metric.preview)} (${formatSignedDelta(metric.delta)})`;
 }
 
 /** Each measured target's figures before and after the proposal, with the signed change and its unit. */

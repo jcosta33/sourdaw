@@ -2,51 +2,69 @@
  * Model metadata types and constants for AI backends.
  */
 
+/** Local model tiers, smallest to largest. The order is the contract: a reading offers every tier up to a limit. */
+export const LOCAL_MODEL_TIERS = ['light', 'standard', 'pro', 'large'] as const;
+
+export type LocalModelTier = (typeof LOCAL_MODEL_TIERS)[number];
+
 export type ModelInfo = {
     id: string;
     displayName: string;
     description: string;
     downloadSize: string;
+    /** The picker's memory text, always derived from `memoryGb`. */
     ramUsage: string;
+    /** Memory the model needs, in decimal gigabytes, rounded up to a tenth. A machine clears it with at least this much total memory. */
+    memoryGb: number;
+    tier: LocalModelTier;
     parameterCount: string;
 };
 
+type ModelInfoSpec = Omit<ModelInfo, 'ramUsage'>;
+
+function defineModelInfo(spec: ModelInfoSpec): ModelInfo {
+    return { ...spec, ramUsage: `~${spec.memoryGb.toFixed(1)} GB` };
+}
+
 // -- WebLLM model options (browser) --
 //
-// Each `ramUsage` is the GPU memory the model needs: the release manifest's VRAM figure, web-llm's
+// Each `memoryGb` (shown as `ramUsage`) is the GPU memory the model needs: the release manifest's VRAM figure, web-llm's
 // published requirement at its recorded 4,096-token window, plus the KV cache for every token up
 // to the window the model loads with (`WEBLLM_CONTEXT_WINDOW_TOKENS`). web-llm counts in MiB; the
 // figure is converted to decimal gigabytes, the unit `downloadSize` uses, and rounded up to the
 // next tenth.
 
 export const WEBLLM_MODELS: ModelInfo[] = [
-    {
+    defineModelInfo({
         id: 'Qwen3-1.7B-q4f16_1-MLC',
         displayName: 'Light',
         parameterCount: '1.7B',
         description:
             'Fast local chat and MIDI ideas. Cannot plan project edits: use the Pro local model or a hosted model.',
         downloadSize: '~0.99 GB',
-        ramUsage: '~2.7 GB',
-    },
-    {
+        memoryGb: 2.7,
+        tier: 'light',
+    }),
+    defineModelInfo({
         id: 'Qwen3-4B-q4f16_1-MLC',
         displayName: 'Standard',
         parameterCount: '4B',
         description:
             'Balanced local chat and MIDI ideas. Cannot plan project edits: use the Pro local model or a hosted model.',
         downloadSize: '~2.28 GB',
-        ramUsage: '~4.3 GB',
-    },
-    {
+        memoryGb: 4.3,
+        tier: 'standard',
+    }),
+    defineModelInfo({
         id: 'Qwen3-8B-q4f16_1-MLC',
         displayName: 'Pro',
         parameterCount: '8B',
         description:
             'The local model that plans project edits, with the best local chat and MIDI ideas. Needs a GPU with roughly 10 GB of memory. Recommended.',
         downloadSize: '~4.63 GB',
-        ramUsage: '~10.3 GB',
-    },
+        memoryGb: 10.3,
+        tier: 'pro',
+    }),
 ];
 
 /**
