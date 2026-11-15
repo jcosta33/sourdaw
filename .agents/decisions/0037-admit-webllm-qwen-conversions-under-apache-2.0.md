@@ -14,12 +14,15 @@ sources:
     - https://huggingface.co/Qwen/Qwen3-1.7B/blob/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e/LICENSE
     - https://huggingface.co/Qwen/Qwen3-4B/blob/1cfa9a7208912126459214e8b04321603b3df60c/LICENSE
     - https://huggingface.co/Qwen/Qwen3-8B/blob/b968826d9c46dd6066d109eabc6255188de91218/LICENSE
-    - https://github.com/mlc-ai/binary-mlc-llm-libs/pull/165
-    - https://github.com/mlc-ai/binary-mlc-llm-libs/tree/025bcaf3780fa8254f5e5efd3bfea0a5397248f4/web-llm-models/v0_2_84/base
-    - https://github.com/mlc-ai/mlc-llm/tree/2008fe8343e1f40ef89ee57b9287aebcf1b86c98
-    - https://github.com/apache/tvm/tree/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8
-    - https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/LICENSE
-    - https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/NOTICE
+    - https://github.com/mlc-ai/binary-mlc-llm-libs/pull/168
+    - https://github.com/mlc-ai/binary-mlc-llm-libs/tree/146ed9cd4b4062e967b017fd2291f7106b50599f/web-llm-models/v0_2_87/base
+    - https://github.com/mlc-ai/mlc-llm/tree/44fd06d04f22c87820e205b0f2b2e5e6a1f6ca85
+    - https://github.com/apache/tvm/tree/e345029cedf0be76a087fcad9c89a97bed4f7204
+    - https://raw.githubusercontent.com/apache/tvm-ffi/6628c464e3b824d09c9cf65ac0c6c24f973f6d56/LICENSE
+    - https://raw.githubusercontent.com/apache/tvm-ffi/6628c464e3b824d09c9cf65ac0c6c24f973f6d56/NOTICE
+    - https://github.com/apache/tvm-tirx/tree/198a04573ea44e060c1087c8223cf082c64a6c03
+    - https://raw.githubusercontent.com/apache/tvm-tirx/198a04573ea44e060c1087c8223cf082c64a6c03/LICENSE
+    - https://raw.githubusercontent.com/apache/tvm-tirx/198a04573ea44e060c1087c8223cf082c64a6c03/NOTICE
     - https://github.com/mlc-ai/web-llm/blob/9e572d6ed95e248f29634996cd32cc8f3023d89d/LICENSE
     - src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json
     - src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts
@@ -42,16 +45,18 @@ revisions. Immutable Qwen revisions establish licensed candidates, but not the c
 Qwen source/license chain or build inputs. The MLC/WebLLM runtime is Apache-2.0.
 
 The admitted WebGPU modules are byte-identical to files in binary-mlc-llm-libs merge
-`025bcaf3780fa8254f5e5efd3bfea0a5397248f4`. Its merged PR 165 attests MLC-LLM
-`2008fe8343e1f40ef89ee57b9287aebcf1b86c98` and Apache TVM
-`bc1a904ec1ad89454ee6577d66cde1268b8f6bc8` as source revisions. That TVM revision pins its
-`3rdparty/tvm-ffi` gitlink to `3c35034fd1026011736e19a4e0e1ed0f22058c42`. Sourdaw ships
-MLC-LLM's exact notice, TVM's exact root license and notice, tvm-ffi's exact root license and notice,
-and every file in the referenced license/notice trees. PR 165 does not record an exact emsdk
-revision, resolved build configuration, or build log. The release manifest pins the exact conversion
+`146ed9cd4b4062e967b017fd2291f7106b50599f`. Its merged PR 168 attests MLC-LLM
+`44fd06d04f22c87820e205b0f2b2e5e6a1f6ca85` and Apache TVM
+`e345029cedf0be76a087fcad9c89a97bed4f7204` as source revisions. That TVM revision pins
+tvm-tirx `198a04573ea44e060c1087c8223cf082c64a6c03`, which in turn pins
+tvm-ffi `6628c464e3b824d09c9cf65ac0c6c24f973f6d56`. Sourdaw ships MLC-LLM's exact notice, TVM's
+exact root license and notice, tvm-tirx's and tvm-ffi's exact root licenses and notices, and every
+file in the referenced license/notice trees. PR 168 does not record an exact emsdk revision,
+resolved build configuration, or build log. The release manifest pins the exact conversion
 revisions and verifies every downloaded artifact's byte count and SHA-256 before caching or
 inference, but the upstream record does not support a claim of exact Qwen checkpoint provenance,
-hermetic reproduction, or complete build-input provenance.
+hermetic reproduction, or complete build-input provenance. The dependency update in PR #6470
+re-pinned this set (libraries, sources and artifact-set digests) under the same licence decision.
 
 ## Decision
 
@@ -59,9 +64,9 @@ Admit only these exact WebLLM Qwen MLC conversions:
 
 | Qwen model | MLC conversion revision                    | Artifact-set digest                                                |
 | ---------- | ------------------------------------------ | ------------------------------------------------------------------ |
-| Qwen3 1.7B | `80b3abcec6c3b3f5355dc0cc99cc4fb578f192bc` | `932ad158daa0d6814a50c5fb6aa85f88c3d3892a58a0dc20d47ff0b9e6e0b255` |
-| Qwen3 4B   | `a5c9fab855e3ccbdfed2e7e69683d75f30332161` | `2438f2a6b58372e12ca0aa949443a49ca7b6060ad3e7971aed0d56b49a35195f` |
-| Qwen3 8B   | `b3d55c289eae58f77095f5b68c895eeea358ee09` | `7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb` |
+| Qwen3 1.7B | `80b3abcec6c3b3f5355dc0cc99cc4fb578f192bc` | `a8c02294f8d3c23e7ff2a9174d3a575e7809c7463870b6e23d2d6e6f1dac7991` |
+| Qwen3 4B   | `a5c9fab855e3ccbdfed2e7e69683d75f30332161` | `2e136079f88bb3aea4289642db64fef8d77a0cb4c503ca6ca90a4030e0b75756` |
+| Qwen3 8B   | `b3d55c289eae58f77095f5b68c895eeea358ee09` | `5121d9a5818d4693e0b0f2dc55f2982ece120b875c955203e4650a9269ad6d2a` |
 
 The corresponding immutable licensed Qwen candidate revisions are
 `70d244cc86ccca08cf5af4e1e306ecf908b1ad5e` (1.7B),
@@ -74,11 +79,11 @@ The admitted WebGPU modules remain exactly:
 
 | Model      | Binary path                                                       |     Bytes | SHA-256                                                            |
 | ---------- | ----------------------------------------------------------------- | --------: | ------------------------------------------------------------------ |
-| Qwen3 1.7B | `web-llm-models/v0_2_84/base/Qwen3-1.7B-q4f16_1_cs1k-webgpu.wasm` | 5,566,554 | `8161aaa4b40bccf19fcedb2f2e8c221eb9efb72d2198681f1958c9c1e05a682f` |
-| Qwen3 4B   | `web-llm-models/v0_2_84/base/Qwen3-4B-q4f16_1_cs1k-webgpu.wasm`   | 5,847,049 | `a986a53c92579714eb7ec36856004f5fb75272c9f69091f14eb6b2086eea4440` |
-| Qwen3 8B   | `web-llm-models/v0_2_84/base/Qwen3-8B-q4f16_1_cs1k-webgpu.wasm`   | 5,855,792 | `bf6384d9b30d6ae1eca567c65a893284ae2228fd57a432c3b795d06a803d9b72` |
+| Qwen3 1.7B | `web-llm-models/v0_2_87/base/Qwen3-1.7B-q4f16_1_cs1k-webgpu.wasm` | 6,589,747 | `363f4dbb789f0518e52295d1f4685d2d61feae4ac4e2a6a95621e4af29450bd7` |
+| Qwen3 4B   | `web-llm-models/v0_2_87/base/Qwen3-4B-q4f16_1_cs1k-webgpu.wasm`   | 6,874,869 | `2afc399ed01d8ae641beac0528567c8ce22e8c9c7203ba0827c44e13c62be99c` |
+| Qwen3 8B   | `web-llm-models/v0_2_87/base/Qwen3-8B-q4f16_1_cs1k-webgpu.wasm`   | 6,875,765 | `3a8d51dc4315f056b6cffc1b8828b1a5e13d29fe096da3bf19096ac637985b81` |
 
-The tvm-ffi root legal files pinned by that gitlink remain exactly:
+The tvm-ffi root legal files pinned by that chain remain exactly:
 
 | File      | SHA-256                                                            |
 | --------- | ------------------------------------------------------------------ |

@@ -39,8 +39,6 @@ future_incompatible = { level = "deny", priority = -1 }
 dead_code = "warn"
 unsafe_op_in_unsafe_fn = "warn"
 unused_assignments = "warn"
-unused_mut = "warn"
-unused_variables = "warn"
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
@@ -49,29 +47,15 @@ get_unwrap = "deny"
 todo = "deny"
 unimplemented = "deny"
 unwrap_used = "deny"
-await_holding_lock = "warn"
-bool_assert_comparison = "warn"
-default_constructed_unit_structs = "warn"
-field_reassign_with_default = "warn"
 if_same_then_else = "warn"
-int_plus_one = "warn"
 large_enum_variant = "warn"
 len_without_is_empty = "warn"
-manual_clamp = "warn"
-manual_div_ceil = "warn"
-manual_range_contains = "warn"
-manual_repeat_n = "warn"
-needless_borrows_for_generic_args = "warn"
-needless_lifetimes = "warn"
-new_ret_no_self = "warn"
 panic = "warn"
-result_large_err = "warn"
-result_unit_err = "warn"
-should_implement_trait = "warn"
 too_many_arguments = "warn"
-type_complexity = "warn"
-useless_conversion = "warn"
-vec_box = "warn"
+# Rejected: timeline tracks, buses and clips cross the scheduler command ring
+# as boxes, so the audio thread neither reallocates nor copies large structs
+# when one is added or removed.
+vec_box = "allow"
 
 [profile.release]
 opt-level = 3

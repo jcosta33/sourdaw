@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { fail, TRUSTED_GH_PATH_ENV, TRUSTED_GIT_PATH_ENV } from './prContract.ts';
-import { assertRunsInLiveIsolatedGitDirectory } from './tokenBearingChildPlacement.ts';
+import { assertRunsInLiveIsolatedGitDirectory, withGhChildLocation } from './tokenBearingChildPlacement.ts';
 
 export const AUTHOR_BOT_NODE_ID = 'BOT_kgDOEv71mA';
 export const REVIEWER_BOT_NODE_ID = 'BOT_kgDOEv74EA';
@@ -840,15 +840,17 @@ export function spawnCaptureBytes(command: string, args: string[], options: Capt
     const childCommand = trustedChildExecutable(command, options.env ?? process.env);
     const cwd = options.cwd ?? process.cwd();
     assertTokenBearingGitChildIsHookFree(childCommand, args, cwd, options.env ?? process.env);
-    const result = spawnSync(childCommand, args, {
-        cwd,
-        env: childEnvironment(childCommand, options.env),
-        // Ordinary commands retain 64 MiB; full review diffs explicitly request bounded headroom.
-        // Overflow still throws through result.error rather than returning a partial capture.
-        maxBuffer: maxBufferBytes,
-        shell: false,
-        input: options.input,
-    });
+    const result = withGhChildLocation(childCommand, args, cwd, options.env, (location) =>
+        spawnSync(childCommand, args, {
+            cwd: location.cwd,
+            env: childEnvironment(childCommand, location.env),
+            // Ordinary commands retain 64 MiB; full review diffs explicitly request bounded headroom.
+            // Overflow still throws through result.error rather than returning a partial capture.
+            maxBuffer: maxBufferBytes,
+            shell: false,
+            input: options.input,
+        })
+    );
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -877,14 +879,16 @@ export function spawnRun(
     const childCommand = trustedChildExecutable(command, options.env ?? process.env);
     const cwd = options.cwd ?? process.cwd();
     assertTokenBearingGitChildIsHookFree(childCommand, args, cwd, options.env ?? process.env);
-    const result = spawnSync(childCommand, args, {
-        cwd,
-        env: childEnvironment(childCommand, options.env),
-        // Captured stderr keeps a failing child's own words in the thrown error (#4344).
-        stdio: ['inherit', 'inherit', 'pipe'],
-        maxBuffer: 64 * 1024 * 1024,
-        shell: false,
-    });
+    const result = withGhChildLocation(childCommand, args, cwd, options.env, (location) =>
+        spawnSync(childCommand, args, {
+            cwd: location.cwd,
+            env: childEnvironment(childCommand, location.env),
+            // Captured stderr keeps a failing child's own words in the thrown error (#4344).
+            stdio: ['inherit', 'inherit', 'pipe'],
+            maxBuffer: 64 * 1024 * 1024,
+            shell: false,
+        })
+    );
     if (result.error !== undefined) {
         throw result.error;
     }

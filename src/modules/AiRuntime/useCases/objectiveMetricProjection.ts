@@ -38,6 +38,21 @@ export const OBJECTIVE_METRIC_UNITS: Readonly<Record<ObjectiveMetricId, string>>
     onsetCount: 'count',
 };
 
+/**
+ * The unit a measured change in each metric is stated in: a difference between two loudness figures is
+ * loudness units, between two level figures decibels, and any other metric keeps its figure unit. The
+ * measurement states its changes this way, and a spec builds them through the real comparison to hold
+ * this table to it.
+ */
+export const OBJECTIVE_METRIC_CHANGE_UNITS: Readonly<Record<ObjectiveMetricId, string>> = {
+    ...OBJECTIVE_METRIC_UNITS,
+    integratedLoudness: 'LU',
+    shortTermLoudnessMax: 'LU',
+    momentaryLoudnessMax: 'LU',
+    truePeak: 'dB',
+    rms: 'dB',
+};
+
 /** A physical scalar, including an explicitly frozen band, never a convenient projection of a map. */
 export function objectiveMetricProjection(
     metricId: ObjectiveMetricId,

@@ -38,11 +38,6 @@ export type DeviceStateChunkSnapshot = {
     readonly data: { readonly [key: string]: DeviceStateValueSnapshot };
 };
 
-export type DevicePatchStateSnapshot = {
-    deviceState: DeviceStateChunkSnapshot | null;
-    parameterValues: Record<string, number | null>;
-};
-
 export type DeviceSnapshot = {
     readonly id: string;
     readonly name: string;
@@ -914,14 +909,6 @@ export type AdjustmentLayerSnapshot = {
     readonly mix: number;
     readonly color: string;
 };
-/** A pitch-shift segment carried by `commitPitchEdit`. Command cannot import Knead's
- *  segment model (model isolation), so this specifies only the structural fields the
- *  pitch render consumes. Kept assignable to Knead's mutable shape (plain arrays). */
-export type PitchEditSegmentSnapshot = {
-    start_time_ms: number;
-    end_time_ms: number;
-    shift_semitones: number;
-};
 /** A pitch-contour point carried by `commitPitchEdit`. Structural mirror of Knead's
  *  `PitchPoint` — model isolation forbids importing the concrete model. */
 export type PitchContourPointSnapshot = {
@@ -1005,16 +992,6 @@ export type SendAutomationRangeSnapshot = {
     automationStartBeat: number;
 };
 
-export type RenderProjectSectionJobSnapshot = {
-    jobId: string;
-    sectionId: string;
-    sectionName: string;
-    startBeat: number;
-    endBeat: number;
-    sampleRate: number;
-    tailSeconds: number;
-};
-
 export type GrooveConsumerSnapshot = 'clip' | 'yeast-processor' | 'toaster-pattern' | 'arpeggiator' | 'sequencer';
 export type GrooveTemplateActionSnapshot = {
     id: string;
@@ -1062,98 +1039,10 @@ export type ChordTrackActionSnapshot = {
         readonly duration: number;
     }[];
 };
-export type MidiMappingActionSnapshot = {
-    readonly id: string;
-    readonly channel: number;
-    readonly cc: number;
-    readonly targetType: 'trackGain' | 'trackPan' | 'deviceParam' | 'fermenterGlobalParam';
-    readonly trackId?: string;
-    readonly deviceId?: string;
-    readonly paramId?: string;
-    readonly minValue: number;
-    readonly maxValue: number;
-    readonly scaleMode?: 'linear' | 'log' | 'exp';
-};
-export type MidiLearnMappingsActionSnapshot = {
-    readonly mappings: readonly MidiMappingActionSnapshot[];
-};
 export type DeletedGrooveTemplateActionSnapshot = {
     template: GrooveTemplateActionSnapshot;
     templateIndex: number;
     assignments: Array<{ index: number; assignment: GrooveAssignmentActionSnapshot }>;
-};
-
-/** Structural mirror of Yeast's `NoteSelector`. Kept structural, like every other
- *  snapshot here, so this neutral contract does not depend on a model owned by the
- *  Yeast module. */
-export type YeastArpNoteSelectorSnapshot =
-    | { readonly type: 'next' }
-    | { readonly type: 'previous' }
-    | { readonly type: 'index'; readonly index: number }
-    | { readonly type: 'random' }
-    | { readonly type: 'lowest' }
-    | { readonly type: 'highest' };
-
-/** Structural mirror of Yeast's `ArpStep` — one step of a custom arpeggiator
- *  pattern. Kept structural for the same reason the selector above is. */
-export type YeastArpStepSnapshot = {
-    readonly active: boolean;
-    readonly stepType: 'note' | 'rest' | 'tie' | 'chord' | 'random';
-    readonly noteSelector: YeastArpNoteSelectorSnapshot;
-    readonly velocity: number;
-    readonly velocityOverride: boolean;
-    readonly gateMul: number;
-    readonly octaveOffset: number;
-    readonly semitoneOffset: number;
-    readonly probability: number;
-    readonly ratchet: number;
-};
-
-/** Structural mirror of Yeast's `ProcessorType` catalog union. Keep in sync with
- *  `ProcessorCatalog.ProcessorType`; a new processor kind must be added here too,
- *  or the generated argument schema rejects the kind's every action payload. */
-export type YeastProcessorTypeSnapshot =
-    | 'arpeggiator'
-    | 'chord'
-    | 'chordMemory'
-    | 'scale'
-    | 'harmonizer'
-    | 'repeater'
-    | 'velocity'
-    | 'humanizer'
-    | 'filter'
-    | 'transposer'
-    | 'groove'
-    | 'ccGenerator'
-    | 'euclidean'
-    | 'markov'
-    | 'mutation';
-
-/** Structural mirror of one Yeast rack processor — the whole `YeastProcessorInfo`
- *  a remove-inverse carries to re-insert the exact processor it deleted. Kept
- *  structural for the same reason every other snapshot here is. */
-export type YeastProcessorSnapshot = {
-    readonly id: string;
-    readonly type: YeastProcessorTypeSnapshot;
-    readonly name: string;
-    readonly bypassed: boolean;
-    readonly params?: Record<string, number>;
-};
-
-/** Structural mirror of MIDI's groove-consumer union. Keep in sync with
- *  `GrooveTemplateState.GrooveConsumerType`; a new consumer kind must be added
- *  here too, or the generated argument schema rejects payloads carrying it. */
-export type GrooveConsumerTypeSnapshot = 'clip' | 'yeast-processor' | 'toaster-pattern' | 'arpeggiator' | 'sequencer';
-
-/** Structural mirror of MIDI's `GrooveTemplateAssignment` — one groove-template
- *  binding. `removeYeastProcessor` captures its processor's live bindings so the
- *  restore inverse can re-assign them without dispatching a nested undoable assign
- *  action. Kept structural for the same reason every other snapshot here is. */
-export type YeastGrooveAssignmentSnapshot = {
-    readonly consumerType: GrooveConsumerTypeSnapshot;
-    readonly consumerId: string;
-    readonly templateId: string;
-    readonly amount: number;
 };
 
 type LegacyVcaGroupSnapshot = {
@@ -1274,89 +1163,6 @@ export type DrumPreviewCandidateSnapshot = {
     readonly snareNotes: readonly MidiClipNoteSnapshot[];
     readonly hiHatNotes: readonly MidiClipNoteSnapshot[];
 };
-
-export type DrumPreviewBranchPlanSnapshot = {
-    readonly ownerId: string;
-    readonly createdAt: number;
-    readonly expectedSourceBranchId: string;
-    readonly expectedSourceHeads: readonly string[];
-    readonly expectedDocuments: readonly {
-        readonly docId: string;
-        readonly heads: readonly string[];
-    }[];
-    readonly expectedBranchState: {
-        readonly activeBranchId: string;
-        readonly branches: readonly {
-            readonly branchId: string;
-            readonly name: string;
-            readonly rootDocId: string;
-            readonly sourceBranchId: string | null;
-            readonly createdAt: number;
-            readonly createdFromHeads: readonly string[];
-            readonly note: string;
-        }[];
-    };
-    readonly sectionId: string;
-    readonly sectionName: string;
-    readonly sectionStartBeat: number;
-    readonly sectionEndBeat: number;
-    readonly candidateCount: 3;
-    readonly varyingRoles: readonly ['snare', 'hi-hat'];
-    readonly kick: DrumPreviewSourceClipSnapshot;
-    readonly snare: DrumPreviewSourceClipSnapshot;
-    readonly hiHat: DrumPreviewSourceClipSnapshot;
-    readonly candidates: readonly DrumPreviewCandidateSnapshot[];
-};
-
-export type DeleteDrumPreviewBranchesSnapshot = {
-    readonly ownerId: string;
-    readonly expectedSourceBranchId: string;
-    readonly branches: readonly {
-        readonly branchId: string;
-        readonly branchName: string;
-        readonly rootDocId: string;
-        readonly expectedHeads: readonly string[];
-    }[];
-};
-
-type MidiGenerationClipReplaySnapshot = {
-    id: string;
-    trackId: string;
-    name: string;
-    startBeat: number;
-    endBeat: number;
-    type: 'midi';
-};
-
-type MidiGenerationSourceReplaySnapshot = {
-    trackId: string;
-    clip: MidiGenerationClipReplaySnapshot;
-    notes: MidiClipNoteSnapshot[];
-};
-
-type GeneratedMidiReplayOperation =
-    | {
-          kind: 'replace-notes';
-          trackId: string;
-          clip: MidiGenerationClipReplaySnapshot;
-          expectedNotes: MidiClipNoteSnapshot[];
-          replacementNotes: MidiClipNoteSnapshot[];
-      }
-    | {
-          kind: 'create-clip';
-          source: MidiGenerationSourceReplaySnapshot;
-          targetTrackId: string;
-          clip: MidiGenerationClipReplaySnapshot;
-          notes: MidiClipNoteSnapshot[];
-      }
-    | {
-          kind: 'create-track';
-          source: MidiGenerationSourceReplaySnapshot;
-          trackJson: string;
-          trackIndex: number;
-          clip: MidiGenerationClipReplaySnapshot;
-          notes: MidiClipNoteSnapshot[];
-      };
 
 /**
  * Content-bound authority over gesture automation recording for one static
@@ -2004,30 +1810,6 @@ type LegacyAppAction =
       }
     | { type: 'setDeviceState'; payload: { deviceId: string; state: DeviceStateChunkSnapshot } }
     | {
-          type: 'setFermenterPatch';
-          payload: {
-              deviceId: string;
-              before: DeviceStateChunkSnapshot;
-              after: DeviceStateChunkSnapshot;
-              expectedCurrent: DeviceStateChunkSnapshot;
-              beforeProject: DevicePatchStateSnapshot;
-              afterProject: DevicePatchStateSnapshot;
-              expectedProject: DevicePatchStateSnapshot;
-              expectedTrackId: string;
-              expectedDeviceIds: readonly string[];
-              expectedTrackFrozen: boolean;
-              label: string;
-          };
-      }
-    | {
-          type: 'setGrandBouleDeviceState';
-          payload: {
-              deviceId: string;
-              before: DeviceStateChunkSnapshot;
-              after: DeviceStateChunkSnapshot;
-          };
-      }
-    | {
           type: 'createBus';
           payload: {
               name: string;
@@ -2201,21 +1983,6 @@ type LegacyAppAction =
           };
       }
     | {
-          type: 'renderProjectSections';
-          payload: {
-              sectionIds: string[];
-              jobs?: RenderProjectSectionJobSnapshot[];
-          };
-      }
-    | {
-          /** Internal guarded inverse for `renderProjectSections`. */
-          type: 'removeRenderedProjectSections';
-          payload: {
-              sectionIds: string[];
-              jobs: RenderProjectSectionJobSnapshot[];
-          };
-      }
-    | {
           type: 'automateTrackGainRange';
           payload: {
               trackIds: string[];
@@ -2380,15 +2147,6 @@ type LegacyAppAction =
               expectedClipLocked: boolean;
               expectedNotes: readonly MidiClipNoteSnapshot[];
           };
-      }
-    | {
-          type: 'createDrumPreviewBranches';
-          payload: DrumPreviewBranchPlanSnapshot;
-      }
-    | {
-          /** Internal guarded inverse for `createDrumPreviewBranches`. */
-          type: 'deleteDrumPreviewBranches';
-          payload: DeleteDrumPreviewBranchesSnapshot;
       }
     | {
           type: 'copyMidiArticulations';
@@ -2829,44 +2587,6 @@ type LegacyAppAction =
           };
       }
     | { type: 'savePreset'; payload: { trackId: string; name: string; category: string } }
-    | {
-          type: 'generateDrumPattern';
-          payload: {
-              style: string;
-              trackId?: string;
-              bars?: number;
-              density?: number;
-              startBeat?: number;
-              seed?: number;
-          };
-      }
-    | {
-          type: 'generateMelody';
-          payload: {
-              style: string;
-              key?: number;
-              scale?: string;
-              trackId?: string;
-              bars?: number;
-              octave?: number;
-              density?: number;
-              startBeat?: number;
-              seed?: number;
-          };
-      }
-    | {
-          type: 'generateChordProgression';
-          payload: {
-              style: string;
-              key?: number;
-              scale?: string;
-              trackId?: string;
-              bars?: number;
-              voicing?: string;
-              startBeat?: number;
-              seed?: number;
-          };
-      }
     | { type: 'setClipLoop'; payload: { clipId: string; enabled: boolean } }
     | {
           /** Internal exact-state replay for optional clip loop metadata. */
@@ -2977,48 +2697,9 @@ type LegacyAppAction =
           };
       }
     | { type: 'fitClipToBeats'; payload: { clipId: string; targetBeats: number } }
-    | { type: 'analyzeMix'; payload?: undefined }
-    | { type: 'autoFixMix'; payload?: undefined }
     | { type: 'enableMpe'; payload?: undefined }
     | { type: 'disableMpe'; payload?: undefined }
-    | { type: 'getLatencyReport'; payload?: undefined }
-    | { type: 'createCollabSession'; payload: { name?: string } }
-    | { type: 'joinCollabSession'; payload: { inviteString: string; peerName?: string } }
-    | { type: 'leaveCollabSession'; payload?: undefined }
-    | { type: 'scanPlugins'; payload?: undefined }
     | { type: 'loadExternalPlugin'; payload: { pluginId: string; trackId?: string } }
-    | { type: 'audioToMidi'; payload: { clipId: string; trackId?: string; sensitivity?: number; mode?: string } }
-    | {
-          /** Applies a manual pitch-shift render to an audio clip and swaps the clip's
-           *  file pointer to the rendered output. Flows through `executeAppAction`; its
-           *  handler's `describe()` emits `restoreClipFileId` as the inverse. */
-          type: 'commitPitchEdit';
-          payload: {
-              clipId: string;
-              segments: PitchEditSegmentSnapshot[];
-              contour: PitchContourSnapshot;
-              retuneSpeedMs?: number;
-              formantPreserve?: boolean;
-          };
-      }
-    | {
-          /** Inverse of `commitPitchEdit`. Restores everything the commit consumed:
-           *  the clip's file pointer, the buffer it plays from, and the pitch analysis
-           *  (contour plus the user's edited blobs) the commit dropped. Restoring the
-           *  pointers alone would leave the clip un-analysed and the user's blob edits
-           *  gone — a lossy undo. Emitted only by the `commitPitchEdit` handler's
-           *  `describe()`. Every field past `clipId` is optional: the commit skips the
-           *  buffer repoint on the native render path, and a clip can legitimately have
-           *  had no blobs or no contour. */
-          type: 'restoreClipFileId';
-          payload: {
-              clipId: string;
-              fileId: string;
-              audioBufferId?: string;
-              blobs?: KneadPitchBlobSnapshot[];
-              contour?: PitchContourSnapshot;
-          };
-      }
     | { type: 'muteClip'; payload: { clipId: string; muted: boolean; expectedMuted?: boolean } }
     | { type: 'clearSolos'; payload?: undefined }
     | {
@@ -3129,8 +2810,6 @@ type LegacyAppAction =
               replacement: StripSilenceActionSnapshot;
           };
       }
-    | { type: 'detectTempo'; payload: { clipId: string } }
-    | { type: 'detectKey'; payload: { clipId: string } }
     | { type: 'consolidateAllTracks'; payload?: undefined }
     | {
           type: 'arpeggiate';
@@ -3178,25 +2857,6 @@ type LegacyAppAction =
     | { type: 'saveTrackTemplate'; payload: { trackId: string; name: string; category: string } }
     | { type: 'loadTrackTemplate'; payload: { templateId: string } }
     | { type: 'deleteTrackTemplate'; payload: { templateId: string } }
-    | { type: 'createProjectFromTemplate'; payload: { templateId: string } }
-    | {
-          type: 'setProductionBrief';
-          payload: {
-              expectedRevision: number;
-              brief: unknown;
-          };
-      }
-    | {
-          /**
-           * User-initiated repair of a repair-required project (issue #3573):
-           * closes the document's unresolved conflicts by keeping the value each
-           * already resolved to and re-projects every slot. The one action type
-           * the repair-required admission gate admits while it holds; a
-           * user route only, deliberately absent from the agent surface.
-           */
-          type: 'repairProjectData';
-          payload?: undefined;
-      }
     | {
           type: 'createVcaGroup';
           payload: {
@@ -3251,28 +2911,6 @@ type LegacyAppAction =
           };
       }
     | {
-          type: 'completeMidi';
-          payload: { clipId: string; direction?: 'forward' | 'backward'; bars?: number };
-      }
-    | { type: 'variationMidi'; payload: { clipId: string; amount?: number } }
-    | { type: 'generateBassline'; payload: { clipId: string; style?: string; trackId?: string } }
-    | { type: 'replayGeneratedMidi'; payload: { operation: GeneratedMidiReplayOperation } }
-    | {
-          type: 'stemSeparate';
-          payload: { clipId: string; stems?: string[] };
-      }
-    | {
-          type: 'autoOrganizeProject';
-          payload: {
-              tracks: Array<{
-                  trackId: string;
-                  newName?: string;
-                  color?: string;
-                  folderName?: string;
-              }>;
-          };
-      }
-    | {
           type: 'addChordEvent';
           payload: { beat: number; root: number; quality: string; duration?: number; eventId?: string };
       }
@@ -3293,15 +2931,12 @@ type LegacyAppAction =
           type: 'restoreChordTrackState';
           payload: { expected: ChordTrackActionSnapshot; replacement: ChordTrackActionSnapshot };
       }
-    | { type: 'clearAllMidiMappings'; payload?: undefined }
-    | { type: 'completeMidiLearn'; payload: { channel: number; cc: number; mappingId: string } }
-    | { type: 'removeMidiMapping'; payload: { mappingId: string } }
-    | {
-          type: 'restoreMidiLearnMappings';
-          payload: { expected: MidiLearnMappingsActionSnapshot; replacement: MidiLearnMappingsActionSnapshot };
-      }
     | { type: 'commitScratchPad'; payload?: undefined }
     | { type: 'clearScratchPad'; payload?: undefined }
+    | { type: 'removeScratchPadSection'; payload: { sectionId: string } }
+    | { type: 'renameScratchPadSection'; payload: { sectionId: string; name: string } }
+    | { type: 'reorderScratchPadSection'; payload: { sectionId: string; direction: 'left' | 'right' } }
+    | { type: 'setScratchPadSectionColor'; payload: { sectionId: string; color: string } }
     | {
           type: 'createPatternInstance';
           payload: { sourceClipId: string; targetTrackId: string; startBeat: number; targetClipId?: string };
@@ -3323,38 +2958,13 @@ type LegacyAppAction =
               };
           };
       }
-    | { type: 'startMacroRecording'; payload?: undefined }
-    | { type: 'stopMacroRecording'; payload: { name: string } }
-    | { type: 'playMacro'; payload: { macroId: string } }
-    | { type: 'deleteMacro'; payload: { macroId: string } }
-    | { type: 'renameMacro'; payload: { macroId: string; name: string } }
-    | { type: 'undo'; payload?: undefined }
-    | { type: 'redo'; payload?: undefined }
-    | { type: 'toggleUndoTree'; payload?: undefined }
-    | { type: 'labelUndoBranch'; payload: { nodeId: string; label: string } }
     | { type: 'detectSongStructure'; payload: { trackId?: string } }
-    | { type: 'createProjectVersion'; payload: { label: string; description?: string } }
-    | { type: 'restoreProjectVersion'; payload: { versionId: string } }
-    | { type: 'createVersionBranch'; payload: { name: string } }
-    | { type: 'generateFill'; payload: { atBeat: number; durationBeats?: number; style?: string } }
-    | { type: 'generateAllTransitions'; payload?: undefined }
-    | { type: 'compareToReference'; payload?: undefined }
-    | { type: 'toggleControlRoomMono'; payload?: undefined }
-    | { type: 'toggleControlRoomDim'; payload?: undefined }
-    | { type: 'switchMonitor'; payload: { monitorId: string } }
-    | { type: 'getMentorTips'; payload?: undefined }
-    | { type: 'searchSamples'; payload: { query: string } }
     | {
           type: 'createCompGroup';
           /** `groupId` is application-owned and materialized before `describe`, so the
            *  inverse names the created group rather than guessing the newest one. */
           payload: { name: string; trackIds: string[]; groupId?: string };
       }
-    | { type: 'togglePunchRecording'; payload?: undefined }
-    | { type: 'toggleLoopRecord'; payload: { slotId: string } }
-    | { type: 'triggerScene'; payload: { column: number } }
-    | { type: 'nextSetlistItem'; payload?: undefined }
-    | { type: 'previousSetlistItem'; payload?: undefined }
     | { type: 'createAdjustmentLayer'; payload: { name: string; effectType: string; layerId?: string } }
     | { type: 'removeAdjustmentLayer'; payload: { layerId: string } }
     | { type: 'toggleAdjustmentLayer'; payload: { layerId: string } }
@@ -3427,116 +3037,7 @@ type LegacyAppAction =
               plan?: TransientQuantizePlanSnapshot;
           };
       }
-    | { type: 'openElasticEditor'; payload: { clipId: string } }
-    | { type: 'closeElasticEditor'; payload?: undefined }
-    | { type: 'elasticSetSensitivity'; payload: { sensitivity: number } }
-    | { type: 'elasticAddMarker'; payload: { clipId: string; localBeat: number } }
-    | { type: 'elasticRemoveMarker'; payload: { markerId: string } }
-    | { type: 'elasticToggleMarkerLock'; payload: { markerId: string } }
-    | {
-          type: 'elasticSetTool';
-          payload: { tool: 'select' | 'add-marker' | 'remove-marker' | 'lock-marker' };
-      }
-    | { type: 'toggleNodeView'; payload?: undefined }
-    | { type: 'setControlSurface'; payload: { protocol: 'mcu' | 'osc' | 'hui' | null } }
-    | { type: 'addCvOutput'; payload: { name: string; channel: number; type: string } }
-    | { type: 'removeCvOutput'; payload: { outputId: string } }
-    | { type: 'connectPush'; payload: { model: 'push2' | 'push3' } }
-    | { type: 'disconnectPush'; payload?: undefined }
-    | { type: 'exportDawProject'; payload?: undefined }
-    | { type: 'importDawProject'; payload?: undefined }
-    | { type: 'loadRaveModel'; payload: { modelId: string } }
-    | { type: 'setRaveBlend'; payload: { blend: number } }
     | { type: 'enableWarping'; payload: { clipId: string } }
-    | { type: 'setWarpAlgorithm'; payload: { clipId: string; algorithm: string } }
-    | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } }
-    | {
-          /**
-           * Guarded, undoable write of one Yeast processor parameter. `expectedValue`
-           * optimistic-locks the parameter's current value: `undefined` asserts nothing
-           * (fresh user intent over any current state), a number expects itself, so a
-           * peer edit to this same parameter between snapshot and admission conflicts
-           * instead of being silently overwritten. Self-inverse — the inverse writes
-           * the expected value back under the same guard. Per-key only: a peer edit to
-           * a DIFFERENT processor or parameter never blocks this undo (#2111).
-           * The groove processor's `amount` parameter is deliberately NOT routed here —
-           * it is owned by `assignGrooveTemplate` (already undoable); writing it through
-           * this action too would record the same gesture twice.
-           */
-          type: 'setYeastProcessorParam';
-          payload: { processorId: string; paramId: string; value: number; expectedValue?: number };
-      }
-    | {
-          /**
-           * Guarded, undoable write of one arpeggiator's custom step pattern. The
-           * guards compare the DECODED `pattern_*` subset only, so a peer editing a
-           * different parameter of the same processor never blocks this undo. A whole
-           * pattern is one edit unit: step-velocity paint strokes dispatch once per
-           * cell and coalesce into one undo group (#2111). Self-inverse — the inverse
-           * restores the prior steps under the same decoded-subset guard.
-           */
-          type: 'setYeastArpPattern';
-          payload: {
-              processorId: string;
-              steps: readonly YeastArpStepSnapshot[];
-              expectedSteps?: readonly YeastArpStepSnapshot[];
-          };
-      }
-    | {
-          /** Guarded self-inverse of one Yeast processor's bypass toggle; `muteTrack`
-           *  shape. `expectedBypassed` is required: a bypass write always knows the
-           *  state it replaces. */
-          type: 'setYeastProcessorBypass';
-          payload: { processorId: string; bypassed: boolean; expectedBypassed: boolean };
-      }
-    | {
-          /**
-           * Undoable creation of one Yeast rack processor. `processorId` is
-           * application-owned and materialized before dispatch so replay is
-           * deterministic — UUID minting moved to the call site (#2111). Its undo
-           * inverse is a guarded `removeYeastProcessor`; the same handler also serves
-           * the guarded restore leg of `removeYeastProcessor` through the internal
-           * `restore` metadata, which provider payloads cannot set.
-           */
-          type: 'addYeastProcessor';
-          payload: {
-              processorId: string;
-              type: YeastProcessorTypeSnapshot;
-              name: string;
-              /** Internal replay metadata for removeYeastProcessor's inverse. */
-              restore?: {
-                  readonly processor: YeastProcessorSnapshot;
-                  readonly atIndex: number;
-                  /** Groove assignments captured before the removal deleted them;
-                   *  the restore leg re-binds them directly, never as a nested
-                   *  undoable dispatch. */
-                  readonly grooveAssignments?: readonly YeastGrooveAssignmentSnapshot[];
-              };
-          };
-      }
-    | {
-          /**
-           * Guarded, undoable removal of one Yeast rack processor. The guards carry
-           * the whole expected processor and its index, so the undo inverse can
-           * re-insert exactly what was deleted, and a peer edit inside that processor
-           * between snapshot and undo conflicts instead of being silently dropped.
-           * Removal also deletes the processor's groove assignments in the groove
-           * store; the inverse payload carries the captured assignments so the
-           * restore re-binds them (#4124).
-           */
-          type: 'removeYeastProcessor';
-          payload: { processorId: string; expectedProcessor: YeastProcessorSnapshot; expectedIndex: number };
-      }
-    | {
-          /**
-           * Guarded, undoable move of one Yeast rack processor to `toIndex`. The
-           * guard compares the rack's processor-id SEQUENCE only, so a peer editing a
-           * parameter never blocks this undo — and the inverse is self-inverse,
-           * moving the processor back guarded on the post-move sequence.
-           */
-          type: 'reorderYeastProcessor';
-          payload: { processorId: string; toIndex: number; expectedOrder: readonly string[] };
-      }
     | {
           /** One completed recording gesture: the recorded clip materialized in
            *  its track as ONE history entry. The provisional clip, take lane, and

@@ -48,9 +48,8 @@ export const handleCommitScratchPad = createHandler<'commitScratchPad'>({
             inverseAction: {
                 type: 'restoreScratchPadState',
                 payload: {
-                    // This command never touches the pad, so both sides of its guard carry
-                    // the same live snapshot — same convention as `handleClearScratchPad`
-                    // guarding the markers it does not touch.
+                    // This command never touches the pad, so both pad sides carry the same
+                    // live snapshot; the restore's pad guard refuses if the pad changed since.
                     expectedSections: capturedPadSections,
                     replacementSections: capturedPadSections,
                     expectedMarkerSections: settledMarkerSections,

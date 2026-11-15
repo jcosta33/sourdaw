@@ -1081,10 +1081,13 @@ mod tests {
         }
     }
 
+    /// The `(width, height)` sizes a recording window was told, in order.
+    type WindowSizes = Arc<Mutex<Vec<(u32, u32)>>>;
+
     /// The host window a self-resizing editor reaches.
     fn recording_resizer(
         calls: &Arc<Mutex<Vec<&'static str>>>,
-    ) -> (EditorWindowResizer, Arc<Mutex<Vec<(u32, u32)>>>) {
+    ) -> (EditorWindowResizer, WindowSizes) {
         let sizes = Arc::new(Mutex::new(Vec::new()));
         let recorded = Arc::clone(&sizes);
         let calls = Arc::clone(calls);

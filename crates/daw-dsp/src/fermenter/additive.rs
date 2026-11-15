@@ -110,7 +110,7 @@ impl AdditiveEngine {
         }
 
         // Normalize by approximate partial count to prevent clipping
-        let active_count = self.num_partials.min(64).max(1) as f32;
+        let active_count = self.num_partials.clamp(1, 64) as f32;
         output / active_count.sqrt()
     }
 }
