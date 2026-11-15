@@ -845,15 +845,14 @@ mod tests {
             let run = (frames - rendered).min(RUN_FRAMES);
             let rendered_left = instance.process(run as u32);
             let rendered_right = instance.get_right_ptr();
-            // SAFETY: both pointers name the instrument's own channel buffers,
+            // SAFETY: `rendered_left` is the instrument's own left buffer,
             // sized at `LEVAIN_BLOCK_FRAMES` by its constructor and never
-            // resized; `run` is at most `RUN_FRAMES`, well inside that. The
-            // buffers are separate allocations, and nothing mutates the
-            // instrument between the render and these reads.
-            unsafe {
-                left.extend_from_slice(std::slice::from_raw_parts(rendered_left, run));
-                right.extend_from_slice(std::slice::from_raw_parts(rendered_right, run));
-            }
+            // resized; `run` is at most `RUN_FRAMES`, well inside that, and
+            // nothing mutates the instrument between the render and this read.
+            left.extend_from_slice(unsafe { std::slice::from_raw_parts(rendered_left, run) });
+            // SAFETY: `rendered_right` is the instrument's separate right
+            // buffer, sized and left untouched exactly as the left one above.
+            right.extend_from_slice(unsafe { std::slice::from_raw_parts(rendered_right, run) });
             rendered += run;
         }
         (left, right)

@@ -196,7 +196,7 @@ describe('registered Detect Tempo is analysis only', () => {
         if (audioBufferCache.has('analysis-buffer')) {
             await audioBufferCache.ensureDurable(['analysis-buffer']);
         }
-        clearRuntimeCachedAudioBuffers();
+        await clearRuntimeCachedAudioBuffers();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         tempoMapStore.set({ changes: [] });

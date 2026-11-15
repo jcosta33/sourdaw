@@ -78,21 +78,23 @@ describe('activateExternalPlugin', () => {
     });
 
     it('loads and restores exactly once across repeated activations (repeated ensureTrackStrips)', async () => {
-        activateExternalPlugin({
-            pluginId: 'p',
-            instanceId: 'inst-1',
-            stateChunk: SAVED_CHUNK,
-        });
-        activateExternalPlugin({
-            pluginId: 'p',
-            instanceId: 'inst-1',
-            stateChunk: SAVED_CHUNK,
-        });
-        activateExternalPlugin({
-            pluginId: 'p',
-            instanceId: 'inst-1',
-            stateChunk: SAVED_CHUNK,
-        });
+        await Promise.all([
+            activateExternalPlugin({
+                pluginId: 'p',
+                instanceId: 'inst-1',
+                stateChunk: SAVED_CHUNK,
+            }),
+            activateExternalPlugin({
+                pluginId: 'p',
+                instanceId: 'inst-1',
+                stateChunk: SAVED_CHUNK,
+            }),
+            activateExternalPlugin({
+                pluginId: 'p',
+                instanceId: 'inst-1',
+                stateChunk: SAVED_CHUNK,
+            }),
+        ]);
 
         await vi.waitFor(() => expect(mocks.setPluginStateRepo).toHaveBeenCalledTimes(1));
 
@@ -104,19 +106,20 @@ describe('activateExternalPlugin', () => {
     });
 
     it('marks the instance live synchronously so a same-tick second call is skipped', async () => {
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        const first = activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
 
         // The guard is set synchronously, so an immediate second call is skipped
         // before the first even reaches the (async) load IPC.
         expect(loadedExternalInstances.has('inst-1')).toBe(true);
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        const second = activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        await Promise.all([first, second]);
 
         await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1));
         expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1);
     });
 
     it('re-activates after the graph is torn down (clearLoadedExternalPlugins)', async () => {
-        activateExternalPlugin({
+        await activateExternalPlugin({
             pluginId: 'p',
             instanceId: 'inst-1',
             stateChunk: SAVED_CHUNK,
@@ -124,7 +127,7 @@ describe('activateExternalPlugin', () => {
         await vi.waitFor(() => expect(mocks.setPluginStateRepo).toHaveBeenCalledTimes(1));
 
         clearLoadedExternalPlugins();
-        activateExternalPlugin({
+        await activateExternalPlugin({
             pluginId: 'p',
             instanceId: 'inst-1',
             stateChunk: SAVED_CHUNK,
@@ -136,10 +139,10 @@ describe('activateExternalPlugin', () => {
     it('drops the guard and retries when instantiation fails', async () => {
         mocks.loadPluginRepo.mockRejectedValueOnce(new Error('boom'));
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        await activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
         await vi.waitFor(() => expect(loadedExternalInstances.has('inst-1')).toBe(false));
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        await activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
         await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(2));
         expect(loadedExternalInstances.has('inst-1')).toBe(true);
     });
@@ -224,7 +227,7 @@ describe('activateExternalPlugin', () => {
             engine_plugin_id: 1000,
         });
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        await activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
 
         await vi.waitFor(() =>
             expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({ status: 'active' })
@@ -235,7 +238,7 @@ describe('activateExternalPlugin', () => {
     it('publishes an error state when native activation fails', async () => {
         mocks.loadPluginRepo.mockRejectedValueOnce(new Error('unsupported plugin format'));
 
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        await activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
 
         await vi.waitFor(() =>
             expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({
@@ -413,7 +416,7 @@ describe('activateExternalPlugin', () => {
         });
         const onLatencyMs = vi.fn<(latencyMs: number) => void>();
 
-        activateExternalPlugin({
+        await activateExternalPlugin({
             pluginId: 'p',
             instanceId: 'inst-1',
             onLatencyMs,
@@ -424,7 +427,7 @@ describe('activateExternalPlugin', () => {
     });
 
     it('passes no rate to the load: the native engine activates on its own clock', async () => {
-        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+        await activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
 
         await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1));
         expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p', 'inst-1');
@@ -439,7 +442,7 @@ describe('activateExternalPlugin', () => {
         });
         const onLatencyMs = vi.fn<(latencyMs: number) => void>();
 
-        activateExternalPlugin({
+        await activateExternalPlugin({
             pluginId: 'p',
             instanceId: 'inst-1',
             onLatencyMs,
@@ -472,16 +475,18 @@ describe('activateExternalPlugin', () => {
         const firstSink = vi.fn<(latencyMs: number) => void>();
         const secondSink = vi.fn<(latencyMs: number) => void>();
 
-        activateExternalPlugin({
-            pluginId: 'p',
-            instanceId: 'inst-1',
-            onLatencyMs: firstSink,
-        });
-        activateExternalPlugin({
-            pluginId: 'p',
-            instanceId: 'inst-2',
-            onLatencyMs: secondSink,
-        });
+        await Promise.all([
+            activateExternalPlugin({
+                pluginId: 'p',
+                instanceId: 'inst-1',
+                onLatencyMs: firstSink,
+            }),
+            activateExternalPlugin({
+                pluginId: 'p',
+                instanceId: 'inst-2',
+                onLatencyMs: secondSink,
+            }),
+        ]);
         await vi.waitFor(() => expect(secondSink).toHaveBeenCalledWith(0));
 
         emitLatencyChange({ instance_id: 'inst-2', latency_ms: 8 });
@@ -501,7 +506,7 @@ describe('activateExternalPlugin', () => {
         mocks.unloadPluginRepo.mockResolvedValue({ unloadedInstanceIds: ['inst-1'], errors: [], reports: [] });
         const onLatencyMs = vi.fn<(latencyMs: number) => void>();
 
-        activateExternalPlugin({
+        await activateExternalPlugin({
             pluginId: 'p',
             instanceId: 'inst-1',
             onLatencyMs,
@@ -524,21 +529,23 @@ describe('activateExternalPlugin', () => {
             latency_ms: 0,
         });
 
-        activateExternalPlugin({
-            pluginId: 'p',
-            instanceId: 'inst-1',
-            onLatencyMs: vi.fn(),
-        });
-        activateExternalPlugin({
-            pluginId: 'p',
-            instanceId: 'inst-2',
-            onLatencyMs: vi.fn(),
-        });
-        activateExternalPlugin({
-            pluginId: 'p',
-            instanceId: 'inst-3',
-            onLatencyMs: vi.fn(),
-        });
+        await Promise.all([
+            activateExternalPlugin({
+                pluginId: 'p',
+                instanceId: 'inst-1',
+                onLatencyMs: vi.fn(),
+            }),
+            activateExternalPlugin({
+                pluginId: 'p',
+                instanceId: 'inst-2',
+                onLatencyMs: vi.fn(),
+            }),
+            activateExternalPlugin({
+                pluginId: 'p',
+                instanceId: 'inst-3',
+                onLatencyMs: vi.fn(),
+            }),
+        ]);
         await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(3));
 
         // The native event is a broadcast: one listener per instance would hand
@@ -551,7 +558,7 @@ describe('activateExternalPlugin', () => {
         mocks.loadPluginRepo.mockRejectedValueOnce(new Error('boom'));
         const onLatencyMs = vi.fn<(latencyMs: number) => void>();
 
-        activateExternalPlugin({
+        await activateExternalPlugin({
             pluginId: 'p',
             instanceId: 'inst-1',
             onLatencyMs,

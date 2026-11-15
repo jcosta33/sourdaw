@@ -1285,6 +1285,9 @@ describe('punch audio capture loop placement', () => {
         expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(51.1, 10);
         const handlers = getTransportHandlers();
         const setTempoHandler = handlers.setTempo;
+        if (setTempoHandler.previewExecution !== 'isolated-project') {
+            throw new Error('Expected synchronous project tempo write');
+        }
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap({

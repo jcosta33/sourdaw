@@ -20,7 +20,7 @@ describe('handleSetTrackOutput', () => {
         mocks.getTrackStoreState.mockReturnValue(null);
     });
 
-    it('executes setTrackOutput with the provided payload', () => {
+    it('executes setTrackOutput with the provided payload', async () => {
         const finalizeRuntimeEffect = vi.fn();
         const reconcileRuntimeEffect = vi.fn();
         mocks.setTrackOutput.mockReturnValue({
@@ -37,9 +37,9 @@ describe('handleSetTrackOutput', () => {
         if (!result || result instanceof Promise) {
             throw new Error('expected a synchronous handler result');
         }
-        result.afterCommit?.();
+        await result.afterCommit?.();
         expect(finalizeRuntimeEffect).toHaveBeenCalledOnce();
-        result.afterAmbiguousCommit?.();
+        await result.afterAmbiguousCommit?.();
         expect(reconcileRuntimeEffect).toHaveBeenCalledOnce();
     });
 

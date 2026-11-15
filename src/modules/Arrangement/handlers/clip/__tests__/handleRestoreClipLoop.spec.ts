@@ -77,10 +77,10 @@ describe('handleRestoreClipLoop — execute', () => {
         expect(result).toEqual({ status: 'conflict' });
     });
 
-    it('passes undefined when replacement.present is false', () => {
+    it('passes undefined when replacement.present is false', async () => {
         setClip({ id: 'c1', loopEnabled: undefined });
         mockedSetLoop.mockReturnValue(true);
-        handleRestoreClipLoop.execute({
+        await handleRestoreClipLoop.execute({
             type: 'restoreClipLoop',
             payload: {
                 clipId: 'c1',

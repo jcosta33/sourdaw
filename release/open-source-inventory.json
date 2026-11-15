@@ -171,8 +171,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:ce680ad6639d40da5baa584ebc892b81bbd72e77cd25b8db5a644ae584d037dc:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:a5ea2dfd11d48495416a4ec7a9c5c362216548789f550b80450345fee2108e4a:release/dependency-license-proofs.json"
+                "sha256:cebfb0041c36bfbe06d904bbb6402f3ea8e0bac936b1f7fadfdadee2b48b5fea:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:58c8b05d277e8f2713800539a03ff90051e5a2a8c77fcb9de3345cdc3090b0fb:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -424,7 +424,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:351943cd5aa4a889c19b2530e97de22fcb9263183f140b392d450a1d42e3c6a2",
+                "sha256:7d3fdded694c14036d3f658381ca01170ec3ecb7481772a6b9ca6a91bd4903e5",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -1230,9 +1230,9 @@
                 "tracked-set-sha256:20bcf828794365a588f32d7e13808657502a13d0e8427a6543cf78c2cec789ce:grand-boule-discovery-catalog",
                 "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
                 "tracked-set-sha256:eaa809018aea8e96f598f3b55ad0711e475c6a79f06c87491af507ad88d346bd:grand-boule-live-runtime",
-                "tracked-set-sha256:0062524129aaf83b241bb9e8a36e744df239f8bd9a372171479ba9ad8b745632:grand-boule-project-state",
+                "tracked-set-sha256:1c73e0f83832314868361023ac25d44bd27c643475562cb53e8a3778ea871bcf:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:f5696c7cabf2ddc890ea889ecf2c8060e1a86f8d76e2743282c99bbb5067d451:grand-boule-release-proof"
+                "tracked-set-sha256:2394514f6ddbfd99ca98667683e5d0a23a65a370c241293f81dc4021b2c350a8:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1380,13 +1380,13 @@
                 "wasm-pack 0.15.1",
                 "wasm-bindgen 0.2.130",
                 "wasm-opt bundled-by-wasm-pack@0.15.1",
-                "daw-dsp sha256:d8abae23b7d0f82e67caf84d7c0bc00128c75ed42fc2c302baee3680370d4a4e",
-                "daw-wasm-decoder sha256:882bf63722376749af1d9b5f690be6e496871be2cb68aaa6251d2d93a9d5d62a",
+                "daw-dsp sha256:98bf444ba662e2ec155b4c623844adf04425d36f3647ced6b42eddd3d0fbdaba",
+                "daw-wasm-decoder sha256:79f8fddfa46d63b9143d54b0c7e6d74a3f0274d4f3acb3e267b5e2c72dae6479",
                 "proof-chamber sha256:ace5bea07e7b4aa03fbbc1ad71765bdb4e32270ef114c8f2c99e48f1bf3b04b9",
-                "scoring sha256:7f8e7a8ace7d18ccfb93f4e289d5fd298f34cc4e9615a69f48c7fd88af05f3b5"
+                "scoring sha256:c5ab364d143ac65396c34872a9b85d575cc3bde7d8464349448a8d3fa1658735"
             ],
             "digests": [
-                "sha256:2f75d0f95a81b04b53df6aab1ef8d09048ae8c8f967b1991cd6394ffcf29d79f:public/wasm/manifest.json"
+                "sha256:3498e49d91814365f7a2d2b5238ba56896ec8ab0e74e81ef88ac9f7d925eb109:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1908,11 +1908,11 @@
         },
         {
             "path": "Cargo.toml",
-            "sha256": "a9770e91b27e3164e045ba7d41a03906d14ea58f7898232edc96222acb3021c3"
+            "sha256": "e0d41dbefe296c435d78563b6c1578f4ceeedf7d83d02a6ea689449992986c37"
         },
         {
             "path": "Cargo.lock",
-            "sha256": "351943cd5aa4a889c19b2530e97de22fcb9263183f140b392d450a1d42e3c6a2"
+            "sha256": "7d3fdded694c14036d3f658381ca01170ec3ecb7481772a6b9ca6a91bd4903e5"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -1920,7 +1920,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "2f75d0f95a81b04b53df6aab1ef8d09048ae8c8f967b1991cd6394ffcf29d79f"
+            "sha256": "3498e49d91814365f7a2d2b5238ba56896ec8ab0e74e81ef88ac9f7d925eb109"
         }
     ],
     "externalReferences": [

@@ -589,7 +589,7 @@ describe('handleRestoreTrack', () => {
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
 
-    it('preserves a concurrent selection made after removal', () => {
+    it('preserves a concurrent selection made after removal', async () => {
         const selected = TrackDummy.create({ id: 'selected-later' });
         const state: TrackStoreState = {
             tracks: [selected],
@@ -598,7 +598,7 @@ describe('handleRestoreTrack', () => {
         };
         mocks.getTrackStoreState.mockReturnValue(state);
 
-        handleRestoreTrack.execute(createRestoreTrackAction({ wasSelected: true }));
+        await handleRestoreTrack.execute(createRestoreTrackAction({ wasSelected: true }));
 
         expect(mocks.setTrackState).toHaveBeenCalledWith(expect.objectContaining({ selectedTrackId: selected.id }));
     });

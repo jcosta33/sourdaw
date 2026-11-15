@@ -91,14 +91,14 @@ describe('handleRestoreTrackGroupMemberships — execute', () => {
         expect(result).toEqual({ status: 'conflict' });
     });
 
-    it('applies nothing to the store when it conflicts', () => {
+    it('applies nothing to the store when it conflicts', async () => {
         setTracks([
             { id: 't1', groupId: 'g1', name: 'Kick' },
             { id: 't2', groupId: 'g2', name: 'Snare' },
             { id: 't3', groupId: null, name: 'Bass' },
         ]);
 
-        handleRestoreTrackGroupMemberships.execute({
+        await handleRestoreTrackGroupMemberships.execute({
             type: 'restoreTrackGroupMemberships',
             payload: {
                 expected: [

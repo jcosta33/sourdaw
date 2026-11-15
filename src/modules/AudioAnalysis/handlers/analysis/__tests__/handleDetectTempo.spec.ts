@@ -39,44 +39,44 @@ describe('handleDetectTempo', () => {
         mocks.trackStore.value = { tracks: [] };
     });
 
-    it('should detect tempo from a specific clip buffer if available', () => {
+    it('should detect tempo from a specific clip buffer if available', async () => {
         mocks.trackStore.value = {
             tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }],
         };
         mocks.detectTempoFromBuffer.mockReturnValue(125);
 
-        handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
+        await handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
 
         expect(mocks.detectTempoFromBuffer).toHaveBeenCalledWith('buf1');
         expect(mocks.notifyUser).toHaveBeenCalledWith('Detected tempo: 125 BPM');
     });
 
-    it('should notify failure if buffer tempo detection returns null', () => {
+    it('should notify failure if buffer tempo detection returns null', async () => {
         mocks.trackStore.value = {
             tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }],
         };
         mocks.detectTempoFromBuffer.mockReturnValue(null);
 
-        handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
+        await handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith('Could not detect tempo');
     });
 
-    it('should fall back to project tempo if clip buffer is missing', () => {
+    it('should fall back to project tempo if clip buffer is missing', async () => {
         mocks.trackStore.value = { tracks: [{ clips: [{ id: 'c1' }] }] };
         mocks.detectProjectTempo.mockReturnValue({ averageBpm: 120, minBpm: 110, maxBpm: 130, confidence: 0.8 });
 
-        handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
+        await handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
 
         expect(mocks.detectProjectTempo).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Detected tempo: 120 BPM (110–130 range)', 'success');
     });
 
-    it('should warn if project tempo confidence is too low', () => {
+    it('should warn if project tempo confidence is too low', async () => {
         mocks.trackStore.value = { tracks: [{ clips: [{ id: 'c1' }] }] };
         mocks.detectProjectTempo.mockReturnValue({ averageBpm: 120, minBpm: 110, maxBpm: 130, confidence: 0.3 });
 
-        handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
+        await handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith(
             'Could not confidently detect tempo — add more content first',
