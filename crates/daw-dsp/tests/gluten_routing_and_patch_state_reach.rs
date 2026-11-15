@@ -57,7 +57,7 @@ fn a_bare_sidechain_chain_uses_the_declared_hpf_default() {
 /// that do implement them.
 fn stimulus(index: usize) -> (f32, f32) {
     let t = index as f32 / SAMPLE_RATE;
-    let loud = (index / (SAMPLE_RATE as usize / 1000 * 60)) % 2 == 0;
+    let loud = (index / (SAMPLE_RATE as usize / 1000 * 60)).is_multiple_of(2);
     let amp = if loud { 0.9 } else { 0.05 };
     (
         amp * (std::f32::consts::TAU * 220.0 * t).sin(),

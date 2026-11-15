@@ -133,7 +133,7 @@ impl Activation {
                     + 2.455_507_5_f32 * ax
                     + (0.893_229_85_f32 + 0.821_226_67_f32 * ax) * x2)
                     / (2.445_066_3_f32
-                        + (2.445_066_3_f32 + x2) * (x + 0.814_642_73_f32 * x * ax).abs())
+                        + (2.445_066_3_f32 + x2) * (x + 0.814_642_7_f32 * x * ax).abs())
             }
             Activation::Relu => x.max(0.0),
             Activation::LeakyRelu(slope) => {

@@ -41,6 +41,7 @@ function isAgentCampaignEvidence(path: string): boolean {
 const STATIC_ANALYSIS_CONFIG = new Set([
     '.editorconfig',
     '.oxlintrc.json',
+    '.oxlint-plugins.json',
     '.prettierignore',
     '.prettierrc',
     'eslint.config.mjs',
@@ -51,6 +52,7 @@ const STATIC_ANALYSIS_CONFIG = new Set([
     'oxlint.craft-baseline.d.mts',
     'oxlint.craft-baseline.mjs',
     'tsconfig.eslint.json',
+    'tsconfig.eslint-config.json',
 ]);
 
 function isStaticAnalysisConfig(path: string): boolean {

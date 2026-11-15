@@ -74,10 +74,13 @@ libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 # The shell known-folder query behind the Windows plugin scan roots
-# (host/plugin_scan_policy.rs). The workspace pin daw-engine already resolves,
+# (host/plugin_scan_policy.rs), and the file identity in the plugin registry's
+# fingerprint (host/plugin_registry_store.rs), which std's unstable
+# `file_index` cannot supply. The workspace pin daw-engine already resolves,
 # so the graph keeps one windows-core family.
 windows = { workspace = true, features = [
     "Win32_Foundation",
+    "Win32_Storage_FileSystem",
     "Win32_System_Com",
     "Win32_UI_Shell",
 ] }

@@ -14,7 +14,11 @@ export type ArrangementScratchPadAppAction =
           };
       }
     | { type: 'commitScratchPad'; payload?: undefined }
-    | { type: 'clearScratchPad'; payload?: undefined };
+    | { type: 'clearScratchPad'; payload?: undefined }
+    | { type: 'removeScratchPadSection'; payload: { sectionId: string } }
+    | { type: 'renameScratchPadSection'; payload: { sectionId: string; name: string } }
+    | { type: 'reorderScratchPadSection'; payload: { sectionId: string; direction: 'left' | 'right' } }
+    | { type: 'setScratchPadSectionColor'; payload: { sectionId: string; color: string } };
 
 declare module '#/utils/handlerContract' {
     // eslint-disable-next-line @typescript-eslint/consistent-type-definitions -- declaration-merging target: a type alias cannot merge

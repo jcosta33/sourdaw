@@ -1158,8 +1158,18 @@ mod tests {
             "the surplus plane decodes Ok while carrying the previous packet's right channel"
         );
 
-        let first_right: Vec<f32> = first.chunks_exact(2).map(|frame| frame[1]).collect();
-        let second_right: Vec<f32> = second.chunks_exact(2).map(|frame| frame[1]).collect();
+        let first_right: Vec<f32> = first
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|frame| frame[1])
+            .collect();
+        let second_right: Vec<f32> = second
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|frame| frame[1])
+            .collect();
         assert_eq!(
             second_right, first_right,
             "the right lane of the second packet equals the right lane of the first"

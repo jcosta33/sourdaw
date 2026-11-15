@@ -369,16 +369,20 @@ impl CrumbsVoice {
                 sample_data,
                 frame,
                 fraction,
-                self.anti_alias_cutoff,
-                self.anti_alias_step_sin,
-                self.anti_alias_step_cos,
-                self.anti_alias_taps,
-                &self.anti_alias_window,
-                self.region_start,
-                self.loop_start,
-                self.loop_end,
-                self.loop_mode,
-                self.has_looped,
+                BandlimitedKernel {
+                    cutoff_scale: self.anti_alias_cutoff,
+                    sinc_step_sin: self.anti_alias_step_sin,
+                    sinc_step_cos: self.anti_alias_step_cos,
+                    tap_count: self.anti_alias_taps,
+                    window: &self.anti_alias_window,
+                },
+                PlaybackRegion {
+                    region_start: self.region_start,
+                    loop_start: self.loop_start,
+                    loop_end: self.loop_end,
+                    loop_mode: self.loop_mode,
+                    has_looped: self.has_looped,
+                },
             );
         }
 
@@ -970,12 +974,12 @@ fn windowed_sinc(t: f32, samples: &[f32; 8]) -> f32 {
     let mut sum = 0.0;
 
     // For n from -3 to 4
-    for i in 0..8 {
+    for (i, &sample) in samples.iter().enumerate() {
         let n = i as f32 - 3.0;
         let x = t - n;
 
         if x == 0.0 {
-            sum += samples[i];
+            sum += sample;
         } else {
             let pi_x = std::f32::consts::PI * x;
             let sinc = pi_x.sin() / pi_x;
@@ -983,7 +987,7 @@ fn windowed_sinc(t: f32, samples: &[f32; 8]) -> f32 {
             // Hann window over [-4, 4]
             let window = 0.5 * (1.0 + (std::f32::consts::PI * x / 4.0).cos());
 
-            sum += samples[i] * sinc * window;
+            sum += sample * sinc * window;
         }
     }
 
@@ -1016,21 +1020,50 @@ enum MappedTap {
     Nothing,
 }
 
-fn bandlimited_stereo_sample(
-    sample: &SampleData,
-    frame: usize,
-    fraction: f32,
+/// The anti-alias kernel one bandlimited read applies: the sinc's cutoff, the
+/// rotation step that advances its sine and cosine tap to tap, and the
+/// precomputed window over the taps in use.
+#[derive(Clone, Copy)]
+struct BandlimitedKernel<'a> {
     cutoff_scale: f32,
     sinc_step_sin: f32,
     sinc_step_cos: f32,
     tap_count: usize,
-    window: &[f32; MAX_BANDLIMITED_TAPS],
+    window: &'a [f32; MAX_BANDLIMITED_TAPS],
+}
+
+/// The playable region and loop a bandlimited read maps its out-of-range taps
+/// against.
+#[derive(Clone, Copy)]
+struct PlaybackRegion {
     region_start: u32,
     loop_start: u32,
     loop_end: u32,
     loop_mode: LoopMode,
     has_looped: bool,
+}
+
+fn bandlimited_stereo_sample(
+    sample: &SampleData,
+    frame: usize,
+    fraction: f32,
+    kernel: BandlimitedKernel,
+    region: PlaybackRegion,
 ) -> (f32, f32) {
+    let BandlimitedKernel {
+        cutoff_scale,
+        sinc_step_sin,
+        sinc_step_cos,
+        tap_count,
+        window,
+    } = kernel;
+    let PlaybackRegion {
+        region_start,
+        loop_start,
+        loop_end,
+        loop_mode,
+        has_looped,
+    } = region;
     let mut output_left = 0.0;
     let mut output_right = 0.0;
     let mut weight_sum = 0.0;
@@ -1047,7 +1080,7 @@ fn bandlimited_stereo_sample(
         sample.frame_count()
     };
 
-    for tap in 0..tap_count {
+    for (tap, &tap_window) in window.iter().enumerate().take(tap_count) {
         let lowpass = if distance.abs() < 1.0e-3 {
             let x = core::f32::consts::PI * distance * cutoff_scale;
             let x2 = x * x;
@@ -1055,7 +1088,7 @@ fn bandlimited_stereo_sample(
         } else {
             sinc_sin / (core::f32::consts::PI * distance)
         };
-        let weight = lowpass * window[tap];
+        let weight = lowpass * tap_window;
         let raw_index = frame as i64 + tap as i64 - tap_count as i64 / 2;
         let mut tap_left = 0.0;
         let mut tap_right = 0.0;
@@ -1535,16 +1568,20 @@ mod tests {
             &sample,
             0,
             0.0,
-            0.5,
-            step_sin,
-            step_cos,
-            MIN_BANDLIMITED_TAPS,
-            &window,
-            0,
-            0,
-            1,
-            LoopMode::Off,
-            false,
+            BandlimitedKernel {
+                cutoff_scale: 0.5,
+                sinc_step_sin: step_sin,
+                sinc_step_cos: step_cos,
+                tap_count: MIN_BANDLIMITED_TAPS,
+                window: &window,
+            },
+            PlaybackRegion {
+                region_start: 0,
+                loop_start: 0,
+                loop_end: 1,
+                loop_mode: LoopMode::Off,
+                has_looped: false,
+            },
         );
 
         assert!((left - 1.0).abs() < 1.0e-6, "left DC gain was {left}");
@@ -1735,16 +1772,20 @@ mod tests {
                     &sample,
                     frame as usize,
                     fraction,
-                    cutoff,
-                    step_sin,
-                    step_cos,
-                    taps,
-                    &window,
-                    0,
-                    0,
-                    frames as u32,
-                    LoopMode::Off,
-                    false,
+                    BandlimitedKernel {
+                        cutoff_scale: cutoff,
+                        sinc_step_sin: step_sin,
+                        sinc_step_cos: step_cos,
+                        tap_count: taps,
+                        window: &window,
+                    },
+                    PlaybackRegion {
+                        region_start: 0,
+                        loop_start: 0,
+                        loop_end: frames as u32,
+                        loop_mode: LoopMode::Off,
+                        has_looped: false,
+                    },
                 );
                 left
             })
@@ -1913,16 +1954,20 @@ mod tests {
                 &sample,
                 256,
                 fraction,
-                cutoff_scale,
-                sinc_step_sin,
-                sinc_step_cos,
-                tap_count,
-                &window,
-                0,
-                0,
-                512,
-                LoopMode::Forward,
-                false,
+                BandlimitedKernel {
+                    cutoff_scale,
+                    sinc_step_sin,
+                    sinc_step_cos,
+                    tap_count,
+                    window: &window,
+                },
+                PlaybackRegion {
+                    region_start: 0,
+                    loop_start: 0,
+                    loop_end: 512,
+                    loop_mode: LoopMode::Forward,
+                    has_looped: false,
+                },
             );
             assert!(
                 out_l.is_finite() && !out_l.is_nan(),

@@ -478,10 +478,13 @@ const REFERENCE_FRAMES: [usize; 5] = [
     FRAMES - 1,
 ];
 
+/// A captured `(left, right)` sample at each of the five probe frames.
+type ProbeReference = [(f32, f32); 5];
+
 /// Every stage-one × stage-two pairing at blend 0.6, the VCA in each of its
 /// detector modes, as `(label, stage one, stage two, feed_forward, reference)`.
 /// Captured with the single stages, from the same implementation.
-const PAIR_REFERENCES: [(&str, f32, f32, f32, [(f32, f32); 5]); 18] = [
+const PAIR_REFERENCES: [(&str, f32, f32, f32, ProbeReference); 18] = [
     (
         "Diode into VCA",
         DIODE,
@@ -720,7 +723,8 @@ const PAIR_REFERENCES: [(&str, f32, f32, f32, [(f32, f32); 5]); 18] = [
 
 #[test]
 fn lookahead_off_matches_the_captured_reference() {
-    let cases: [(&str, Vec<(&str, f32)>, [(f32, f32); 5]); 4] = [
+    type Stages<'a> = Vec<(&'a str, f32)>;
+    let cases: [(&str, Stages, ProbeReference); 4] = [
         (
             "Diode",
             single_stage(DIODE),

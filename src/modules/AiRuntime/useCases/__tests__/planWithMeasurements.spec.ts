@@ -28,6 +28,7 @@ import { agentWorkBudget } from '../agentWorkBudget';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { collectMetricGoalProof } from '../collectMetricGoalProof';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
+import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
@@ -104,6 +105,75 @@ afterEach(() => {
     aiBackendPreferenceStore.set('auto');
     resetMetricGoalProject();
 });
+
+const RISK_POLICY_MISMATCH = 'The approved trust mode or risk policy no longer matches.';
+
+/** What the approval card shows as moved for `confirmationId`: the oracle the plan's audible claim must equal. */
+function movedFiguresOnCard(confirmationId: string) {
+    return (getAgentApprovalView({ confirmationId })?.measuredPreview?.targets ?? []).flatMap((target) =>
+        target.metrics.flatMap((metric) => {
+            if (
+                metric.baseline === null ||
+                metric.preview === null ||
+                metric.delta === null ||
+                metric.delta.value === 0
+            ) {
+                return [];
+            }
+            return [
+                {
+                    targetId: target.targetId,
+                    targetKind: target.targetKind,
+                    range: getAgentApprovalView({ confirmationId })?.measuredPreview?.range,
+                    metricId: metric.metricId,
+                    baseline: metric.baseline,
+                    preview: metric.preview,
+                    delta: metric.delta,
+                },
+            ];
+        })
+    );
+}
+
+function planAudible() {
+    return agentRunLifecycle.get(RUN_ID)?.plan?.expectedImpact.audible;
+}
+
+const MODES = [
+    'matched',
+    'contradicted',
+    'render-failed',
+    'two-recipes',
+    'two-recipes-parameter-drift',
+    'two-recipes-order-drift',
+    'stopped-repreview',
+    'project-edited-repreview',
+    'project-saved-repreview',
+    'project-edited-saved-repreview',
+    'configuration-replaced-repreview',
+    'two-recipes-subset',
+] as const;
+type Mode = (typeof MODES)[number];
+
+/**
+ * What the plan claims once the first card is persisted: measured, with exactly the figures the card
+ * shows as moved, wherever that card carries a bound preview in which a metric moved; nothing where it
+ * carries none, or one in which nothing moved (the contradicted render changes no figure).
+ */
+const EXPECTED_CLAIM = {
+    matched: 'measured',
+    contradicted: 'not-claimed',
+    'render-failed': 'not-claimed',
+    'two-recipes': 'measured',
+    'two-recipes-parameter-drift': 'measured',
+    'two-recipes-order-drift': 'measured',
+    'stopped-repreview': 'measured',
+    'project-edited-repreview': 'measured',
+    'project-saved-repreview': 'measured',
+    'project-edited-saved-repreview': 'measured',
+    'configuration-replaced-repreview': 'measured',
+    'two-recipes-subset': 'measured',
+} as const satisfies Record<Mode, 'measured' | 'not-claimed'>;
 
 describe('configured mixing plan with actual measurements', () => {
     it.each(['save', 'unflushed edit', 'flushed edit', 'saved edit', 'edit and revert'] as const)(
@@ -335,20 +405,7 @@ describe('configured mixing plan with actual measurements', () => {
         }
     );
 
-    it.each([
-        'matched',
-        'contradicted',
-        'render-failed',
-        'two-recipes',
-        'two-recipes-parameter-drift',
-        'two-recipes-order-drift',
-        'stopped-repreview',
-        'project-edited-repreview',
-        'project-saved-repreview',
-        'project-edited-saved-repreview',
-        'configuration-replaced-repreview',
-        'two-recipes-subset',
-    ] as const)('keeps the real five-turn warm-vocal plan visible and verifies %s evidence', async (mode) => {
+    it.each(MODES)('keeps the real five-turn warm-vocal plan visible and verifies %s evidence', async (mode) => {
         const multipleRecipes = mode.startsWith('two-recipes');
         const lateRepreview = mode.endsWith('repreview');
         const matchedSingle = mode === 'matched' || lateRepreview;
@@ -792,6 +849,20 @@ describe('configured mixing plan with actual measurements', () => {
         expect(view).not.toBeNull();
         expect(view?.actionLabels).toHaveLength(expectedCommands);
         expect(view?.canConfirm).toBe(matchedSingle);
+        const claim = planAudible();
+        expect(claim?.status).toBe(EXPECTED_CLAIM[mode]);
+        expect(claim?.status === 'measured' ? claim.metrics : []).toEqual(movedFiguresOnCard(confirmationId));
+        if (mode === 'render-failed') {
+            // Confirm is refused for the missing measurement, not for a policy mismatch.
+            const refused = await confirmPendingChatActions({ confirmationId });
+            expect(refused).toMatchObject({
+                status: 'failed',
+                reason: expect.stringMatching(/measurement/iu),
+            });
+            expect(refused.status === 'failed' ? refused.reason : '').not.toBe(RISK_POLICY_MISMATCH);
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(undoHistoryStore.value).toEqual(before.undo);
+        }
         expect(view?.metricGoals.criteria[0]?.criterionText).toContain('frequency-band energy');
         expect(view?.metricGoals.criteria[0]?.criterionText).toContain('Lead Vocal');
         expect(view?.metricGoals.criteria[0]?.criterionText).not.toContain('recipeDigest');
@@ -837,6 +908,11 @@ describe('configured mixing plan with actual measurements', () => {
                     throw new Error('Expected the re-preview to survive the save.');
                 }
                 expect(getAgentApprovalView({ confirmationId: replaced.confirmationId })?.canConfirm).toBe(true);
+                const replacedClaim = planAudible();
+                if (replacedClaim?.status !== 'measured') {
+                    throw new Error('Expected the refreshed measurement to be claimed.');
+                }
+                expect(replacedClaim.metrics).toEqual(movedFiguresOnCard(replaced.confirmationId));
                 expect(trackStore.value).toEqual(settledBeforeResume.tracks);
                 expect(undoHistoryStore.value).toEqual(settledBeforeResume.undo);
                 return;

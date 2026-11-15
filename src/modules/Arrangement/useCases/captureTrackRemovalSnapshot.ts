@@ -4,7 +4,7 @@ import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { type HandlerMaterializationContext } from '#/utils/handlerContract';
 
 import { type RestoreTrackPayloadSnapshot } from '../events/arrangementTrackSnapshots';
-import { collectTrackClipIds } from '../services/collectTrackClipIds';
+import { getHeldClips } from '../models/TrackAlternativeClips';
 import { reconcileRoutingAfterRemoval } from '../services/reconcileRoutingAfterRemoval';
 import { readClipSatelliteEntry } from '../stores/clipSatelliteState';
 import { takeLaneStore } from '../stores/takeLaneStore';
@@ -93,7 +93,9 @@ export function captureTrackRemovalSnapshot(
     const automationLaneSnapshots = structuredClone(autoLanes);
 
     const midiState = midiStore.value;
-    const clipIds = collectTrackClipIds(track);
+    // Keyed like `removeTrack`'s cleanup: only the clips the track holds now,
+    // never a clip the active alternative's stale copy names after it moved.
+    const clipIds = [...new Set(getHeldClips(track).map((clip) => clip.id))];
     const midiNotesByClipId: Record<string, readonly MidiNoteEntry[]> = {};
     const midiCcByClipId: Record<string, readonly MidiCcEntry[]> = {};
     const midiPitchBendByClipId: Record<string, readonly MidiPitchBendEntry[]> = {};

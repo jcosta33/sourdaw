@@ -1146,7 +1146,7 @@ impl GraphCommand {
 /// one nor free it (ADR 0020): it installs the instance into the effect
 /// table, or hands it back over the retirement channel, and nothing else.
 pub enum PluginCore {
-    Knead(KneadEngine),
+    Knead(Box<KneadEngine>),
     Fermenter(Box<FermenterBody>),
     GrandBoule(Box<GrandBouleBody>),
     Gluten(Box<GlutenBody>),
@@ -1171,7 +1171,7 @@ impl PluginCore {
     /// built-in against different clocks.
     pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Self {
         match plugin_type {
-            BuiltinEffectType::Knead => Self::Knead(KneadEngine::new(sample_rate)),
+            BuiltinEffectType::Knead => Self::Knead(Box::new(KneadEngine::new(sample_rate))),
             BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
             BuiltinEffectType::GrandBoule => Self::grand_boule_with_patch(sample_rate, &[]),
             BuiltinEffectType::Gluten => Self::gluten_with_patch(sample_rate, &[]),
@@ -5029,7 +5029,7 @@ impl IdSlotIndex {
 
     #[inline]
     fn bit_at(id: usize, depth: u32) -> usize {
-        ((id >> (usize::BITS - 1 - depth)) & 1) as usize
+        (id >> (usize::BITS - 1 - depth)) & 1
     }
 
     #[inline]
@@ -9107,8 +9107,8 @@ mod tests {
         for ordinal in (0..64).step_by(2) {
             assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
         }
-        for ordinal in 64..128 {
-            assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
+        for (ordinal, id) in ids.iter().copied().enumerate().skip(64).take(64) {
+            assert_eq!(index.delete(id), Some(ordinal + 1_000));
         }
         assert!(
             index.last_delete_steps <= 2 * usize::BITS as usize,
@@ -9132,8 +9132,8 @@ mod tests {
         // Refill a fully removed shared-prefix branch. This would grow the node
         // store if deletion left dead paths behind; it also makes every
         // surviving mapping contend with reused radix nodes.
-        for ordinal in 64..128 {
-            assert!(index.insert(ids[ordinal], ordinal + 1_000));
+        for (ordinal, id) in ids.iter().copied().enumerate().skip(64).take(64) {
+            assert!(index.insert(id, ordinal + 1_000));
         }
         assert_eq!(
             index.nodes.len(),
@@ -12301,7 +12301,7 @@ mod tests {
             const FRAMES: usize = 512;
             let frame_total = material.len();
             assert!(
-                frame_total % FRAMES == 0,
+                frame_total.is_multiple_of(FRAMES),
                 "the fixture material must be a whole number of callbacks"
             );
             let callbacks = frame_total / FRAMES;
@@ -13123,9 +13123,7 @@ mod timeline_tests {
         }
     }
 
-    fn parameter_recording_plugin(
-        accepts: bool,
-    ) -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<(u32, f64)>>>) {
+    fn parameter_recording_plugin(accepts: bool) -> (Box<dyn NativePlugin>, QueuedParameters) {
         let queued = Arc::new(Mutex::new(Vec::new()));
         (
             Box::new(ParameterRecordingPlugin {
@@ -13225,6 +13223,9 @@ mod timeline_tests {
     /// allocation the guard exists to catch.
     const RECORDED_NOTE_CAPACITY: usize = 64;
 
+    /// The `(parameter id, value)` writes a recording plugin has accepted.
+    type QueuedParameters = Arc<Mutex<Vec<(u32, f64)>>>;
+
     /// One note as an instrument received it: the absolute frame it landed
     /// on, which note it named, and whether it pressed or released.
     type RecordedNote = (u64, u8, bool);
@@ -13249,7 +13250,7 @@ mod timeline_tests {
     }
 
     impl FrameRecordingInstrument {
-        fn new() -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<AddressedNote>>>) {
+        fn with_log() -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<AddressedNote>>>) {
             let received = Arc::new(Mutex::new(Vec::with_capacity(RECORDED_NOTE_CAPACITY)));
             let instrument = Box::new(Self {
                 processed: 0,
@@ -19040,7 +19041,7 @@ mod timeline_tests {
         const CLIP_FRAMES: usize = 8_192;
 
         track_with_constant_clip(harness, track_id, track_id + 100, 1.0, CLIP_FRAMES);
-        let (instrument, received) = FrameRecordingInstrument::new();
+        let (instrument, received) = FrameRecordingInstrument::with_log();
         insert_track_generator(harness, track_id, effect_id, instrument, 0);
         received
     }
@@ -19221,7 +19222,7 @@ mod timeline_tests {
     fn an_effect_without_a_store_refuses_scheduled_notes() {
         let mut harness = Harness::new(32);
         track_with_constant_clip(&mut harness, 1, 101, 1.0, 1_024);
-        let (instrument, received) = FrameRecordingInstrument::new();
+        let (instrument, received) = FrameRecordingInstrument::with_log();
         harness.send(GraphCommand::AddPlugin(7, instrument, None));
         harness.send(insert_track_device(1, effect(7), 0));
         harness.playing();
@@ -19906,6 +19907,8 @@ mod timeline_tests {
         audio_only_calls: Arc<AtomicUsize>,
     }
 
+    type SharedTransports = Arc<Mutex<Vec<RecordedTransport>>>;
+
     /// The transport facts the assertion reads, at a precision that compares.
     #[derive(Clone, Copy, PartialEq, Debug)]
     struct RecordedTransport {
@@ -19971,11 +19974,7 @@ mod timeline_tests {
         const CHAIN_DEVICE: usize = 8;
         const MASTER_DEVICE: usize = 9;
 
-        fn recording_plugin() -> (
-            Box<dyn NativePlugin>,
-            Arc<Mutex<Vec<RecordedTransport>>>,
-            Arc<AtomicUsize>,
-        ) {
+        fn recording_plugin() -> (Box<dyn NativePlugin>, SharedTransports, Arc<AtomicUsize>) {
             let transports = Arc::new(Mutex::new(Vec::new()));
             let audio_only_calls = Arc::new(AtomicUsize::new(0));
             let plugin = Box::new(TransportRecordingPlugin {
@@ -20061,7 +20060,7 @@ mod timeline_tests {
         const FILL_FROM: u64 = LOOP_END - crate::midi_fx::MIDI_EVENT_BUFFER_CAPACITY as u64;
 
         let mut harness = Harness::new(32);
-        let (instrument, received) = FrameRecordingInstrument::new();
+        let (instrument, received) = FrameRecordingInstrument::with_log();
         harness.send(GraphCommand::AddPlugin(
             7,
             instrument,
@@ -20470,7 +20469,7 @@ mod timeline_tests {
         const NOTE_ON: u64 = 8;
 
         let mut harness = Harness::new(32);
-        let (instrument, received) = FrameRecordingInstrument::new();
+        let (instrument, received) = FrameRecordingInstrument::with_log();
         harness.send(GraphCommand::AddPlugin(
             7,
             instrument,
@@ -23255,17 +23254,14 @@ mod timeline_tests {
     /// Render one pedal pressed alone, with the two single-pedal references to
     /// judge it against.
     ///
+    /// One rendered `(left, right)` pair.
+    type StereoRender = (Vec<f32>, Vec<f32>);
+
     /// Returns the hosted pair, the reference pair for `controller`'s own pedal,
     /// and the reference pair for the other switch pedal. Both references run
     /// the same programme and engage exactly one pedal, so the pair of them
     /// separates CC66 from CC67 rather than a pedal from no pedal.
-    fn render_one_grand_boule_pedal(
-        controller: u8,
-    ) -> (
-        (Vec<f32>, Vec<f32>),
-        (Vec<f32>, Vec<f32>),
-        (Vec<f32>, Vec<f32>),
-    ) {
+    fn render_one_grand_boule_pedal(controller: u8) -> (StereoRender, StereoRender, StereoRender) {
         const CALLBACK: usize = SINGLE_PEDAL_CALLBACK_FRAMES;
         const CALLBACKS: usize = 16;
         const RUNS: usize = CALLBACK * CALLBACKS / GRAND_BOULE_RUN_FRAMES;

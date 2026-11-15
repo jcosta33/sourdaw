@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
@@ -53,6 +53,23 @@ describe('executeAppAction admission refusal', () => {
         expect(isAppActionAdmissionRefusal(error)).toBe(true);
         expect(isAppActionConflictError(error)).toBe(true);
         expect((error as Error).name).toBe('AppActionConflictError');
+    });
+
+    it('refuses a repair-required project before capturing the production brief footprint', async () => {
+        const capture = vi.fn(() => ({ allowsCurrent: () => true }));
+        productionBriefAdmissionPort.setGuard(capture);
+        agentProjectRepairStateStore.set({
+            audioGraphValid: false,
+            detectedRevision: 'revision-1',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [],
+            status: 'repair-required',
+        });
+
+        expect(isAppActionAdmissionRefusal(await rejection())).toBe(true);
+        expect(capture).not.toHaveBeenCalled();
     });
 
     it('refuses a production-brief-locked project with the admission subclass', async () => {

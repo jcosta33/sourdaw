@@ -84,12 +84,9 @@ impl AutoDivisi {
 // ---------------------------------------------------------------------------
 
 /// Intelligent articulation selection based on playing patterns.
-/// Analyzes note duration and speed to suggest articulations.
+/// Analyzes playing speed and note overlap to suggest articulations.
 pub struct AutoArticulation {
     pub enabled: bool,
-    /// Duration thresholds (seconds).
-    pub short_threshold: f32,
-    pub medium_threshold: f32,
     /// Speed threshold for runs detection (notes per second).
     pub runs_speed_threshold: f32,
 
@@ -103,8 +100,6 @@ impl AutoArticulation {
     pub fn new() -> Self {
         Self {
             enabled: false,
-            short_threshold: 0.2,
-            medium_threshold: 0.5,
             runs_speed_threshold: 8.0,
             recent_note_times: [0.0; 8],
             recent_idx: 0,
@@ -123,7 +118,7 @@ impl AutoArticulation {
 
     /// Suggest an articulation based on recent playing patterns.
     /// Returns None if auto-articulation is disabled or no suggestion.
-    pub fn suggest(&self, note_duration: f32, has_overlap: bool) -> Option<ArticulationType> {
+    pub fn suggest(&self, has_overlap: bool) -> Option<ArticulationType> {
         if !self.enabled {
             return None;
         }
@@ -141,14 +136,7 @@ impl AutoArticulation {
             }
         }
 
-        // Duration-based.
-        if note_duration > 0.0 && note_duration < self.short_threshold {
-            Some(ArticulationType::Staccato)
-        } else if note_duration < self.medium_threshold {
-            Some(ArticulationType::Sustain)
-        } else {
-            Some(ArticulationType::Sustain)
-        }
+        Some(ArticulationType::Sustain)
     }
 
     /// Calculate notes-per-second from recent history.
@@ -171,6 +159,12 @@ impl AutoArticulation {
         }
 
         (count as f32 - 1.0) / time_span
+    }
+}
+
+impl Default for AutoArticulation {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -228,6 +222,12 @@ impl EnsembleTiming {
     }
 }
 
+impl Default for EnsembleTiming {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A well-mixed fraction in [0, 1) for one pitch (the `lowbias32` integer
 /// finaliser), so neighbouring notes take unrelated offsets.
 fn attack_spread_fraction(note: u8) -> f32 {
@@ -239,4 +239,47 @@ fn attack_spread_fraction(note: u8) -> f32 {
     x ^= x >> 16;
     // The top 24 bits fit an f32 mantissa exactly, keeping the result below 1.
     (x >> 8) as f32 / (1u32 << 24) as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn enabled() -> AutoArticulation {
+        let mut detector = AutoArticulation::new();
+        detector.enabled = true;
+        detector
+    }
+
+    #[test]
+    fn disabled_detector_suggests_nothing() {
+        let mut detector = AutoArticulation::new();
+        detector.record_note_on(0.0);
+        assert_eq!(detector.suggest(true), None);
+        assert_eq!(detector.suggest(false), None);
+    }
+
+    #[test]
+    fn overlapping_note_suggests_legato() {
+        assert_eq!(enabled().suggest(true), Some(ArticulationType::Legato));
+    }
+
+    #[test]
+    fn three_fast_note_ons_suggest_runs() {
+        let mut detector = enabled();
+        for i in 0..3 {
+            detector.record_note_on(i as f32 * 0.1);
+        }
+        assert_eq!(detector.suggest(false), Some(ArticulationType::Runs));
+    }
+
+    #[test]
+    fn slow_or_sparse_playing_suggests_sustain() {
+        let mut detector = enabled();
+        assert_eq!(detector.suggest(false), Some(ArticulationType::Sustain));
+        for i in 0..3 {
+            detector.record_note_on(i as f32 * 1.0);
+        }
+        assert_eq!(detector.suggest(false), Some(ArticulationType::Sustain));
+    }
 }

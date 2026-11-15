@@ -221,6 +221,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/syncParentLane.ts',
     'scripts/testInstructionVocabulary.ts',
     'scripts/testInstructions.ts',
+    'scripts/tokenBearingChildPlacement.ts',
     'scripts/trackerIssueReconciliation.ts',
     'scripts/trustedGithubWriteBootstrap.ts',
     'scripts/wasm-artifacts.ts',

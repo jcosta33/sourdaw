@@ -41,15 +41,17 @@ unsafe extern "C" fn get_info(
     for (slot, byte) in name.iter_mut().zip(b"Level\0".iter()) {
         *slot = *byte as c_char;
     }
-    *info = clap_param_info {
-        id: LEVEL_PARAM_ID,
-        flags: CLAP_PARAM_IS_AUTOMATABLE,
-        cookie: ptr::null_mut(),
-        name,
-        module: [0; CLAP_PATH_SIZE],
-        min_value: LEVEL_MIN,
-        max_value: LEVEL_MAX,
-        default_value: LEVEL_DEFAULT,
+    unsafe {
+        *info = clap_param_info {
+            id: LEVEL_PARAM_ID,
+            flags: CLAP_PARAM_IS_AUTOMATABLE,
+            cookie: ptr::null_mut(),
+            name,
+            module: [0; CLAP_PATH_SIZE],
+            min_value: LEVEL_MIN,
+            max_value: LEVEL_MAX,
+            default_value: LEVEL_DEFAULT,
+        }
     };
     true
 }
@@ -62,9 +64,9 @@ unsafe extern "C" fn get_value(
     if out_value.is_null() || param_id != LEVEL_PARAM_ID {
         return false;
     }
-    match tone_from_plugin(plugin) {
+    match unsafe { tone_from_plugin(plugin) } {
         Some(tone) => {
-            *out_value = tone.level();
+            unsafe { *out_value = tone.level() };
             true
         }
         None => false,
@@ -87,9 +89,9 @@ unsafe extern "C" fn value_to_text(
         return false;
     }
     for (index, byte) in bytes.iter().enumerate() {
-        *out_buffer.add(index) = *byte as c_char;
+        unsafe { *out_buffer.add(index) = *byte as c_char };
     }
-    *out_buffer.add(bytes.len()) = 0;
+    unsafe { *out_buffer.add(bytes.len()) = 0 };
     true
 }
 
@@ -102,12 +104,12 @@ unsafe extern "C" fn text_to_value(
     if param_id != LEVEL_PARAM_ID || param_value_text.is_null() || out_value.is_null() {
         return false;
     }
-    let Ok(text) = CStr::from_ptr(param_value_text).to_str() else {
+    let Ok(text) = unsafe { CStr::from_ptr(param_value_text) }.to_str() else {
         return false;
     };
     match text.trim().parse::<f64>() {
         Ok(value) => {
-            *out_value = value;
+            unsafe { *out_value = value };
             true
         }
         Err(_) => false,
@@ -127,7 +129,7 @@ unsafe extern "C" fn flush(
     in_: *const clap_input_events,
     _out: *const clap_output_events,
 ) {
-    if let Some(tone) = tone_from_plugin(plugin) {
-        apply_parameter_events(tone, in_);
+    if let Some(tone) = unsafe { tone_from_plugin(plugin) } {
+        unsafe { apply_parameter_events(tone, in_) };
     }
 }

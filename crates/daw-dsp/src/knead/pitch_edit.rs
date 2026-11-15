@@ -74,7 +74,7 @@ impl CompiledDeltaMap {
         total_samples: usize,
         hop_size: usize,
     ) -> Self {
-        let num_frames = (total_samples + hop_size - 1) / hop_size;
+        let num_frames = total_samples.div_ceil(hop_size);
         let mut deltas = vec![0.0_f32; num_frames];
 
         for segment in segments {
@@ -84,8 +84,8 @@ impl CompiledDeltaMap {
             let start_frame = start_sample / hop_size;
             let end_frame = (end_sample / hop_size).min(num_frames);
 
-            for i in start_frame..end_frame {
-                deltas[i] = segment.shift_semitones;
+            for delta in deltas.iter_mut().take(end_frame).skip(start_frame) {
+                *delta = segment.shift_semitones;
             }
         }
 

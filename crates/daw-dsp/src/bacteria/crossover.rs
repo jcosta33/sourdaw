@@ -108,9 +108,9 @@ const BRANCH_SECTIONS: [[SectionSpec; 4]; 4] = [
     // 48 dB/oct — LR8: two cascaded B4 (the two pole pairs).
     [
         biquad_section(0.541_196_1),
-        biquad_section(1.306_563_0),
+        biquad_section(1.306_563),
         biquad_section(0.541_196_1),
-        biquad_section(1.306_563_0),
+        biquad_section(1.306_563),
     ],
 ];
 
@@ -253,8 +253,8 @@ impl FirState {
             older = 0;
         }
         let mut younger = self.write; // newest, x[n]
-        for j in 0..FIR_DELAY {
-            acc += taps[j] * (self.history[older] + self.history[younger]);
+        for tap in taps.iter().take(FIR_DELAY) {
+            acc += tap * (self.history[older] + self.history[younger]);
             older += 1;
             if older == FIR_TAPS {
                 older = 0;
@@ -414,12 +414,12 @@ impl CrossoverPoint {
             stage.reset();
         }
         let mut impulse = [0.0_f32; DESIGN_FRAMES];
-        for frame in 0..DESIGN_FRAMES {
+        for (frame, slot) in impulse.iter_mut().enumerate() {
             let mut sample = if frame == 0 { 1.0 } else { 0.0 };
             for stage in prototype.iter_mut().take(self.section_count) {
                 sample = stage.process_sample(sample);
             }
-            impulse[frame] = sample;
+            *slot = sample;
         }
 
         let mut taps = [0.0_f32; FIR_TAPS];

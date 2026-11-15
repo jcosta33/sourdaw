@@ -557,12 +557,13 @@ mod tests {
 
     #[test]
     fn the_owed_arm_follows_the_resolved_id_and_never_rearms_a_matching_engine() {
-        let cases: [(
+        type OwedArmCase = (
             Option<DesiredRetrospectiveArm>,
             Option<usize>,
             Option<usize>,
             Option<(usize, usize)>,
-        ); 8] = [
+        );
+        let cases: [OwedArmCase; 8] = [
             // Nothing recorded owes nothing, whatever the engine holds.
             (None, None, None, None),
             (None, Some(4), None, None),

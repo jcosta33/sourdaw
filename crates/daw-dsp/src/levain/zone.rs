@@ -20,7 +20,7 @@ const VEL_BUCKET_SIZE: u8 = 8;
 const MAX_ZONE_ARENA: usize = 65536;
 
 /// Maximum LUT entries.
-const MAX_LUT_ENTRIES: usize = MAX_ARTICULATIONS * (MAX_MICS as usize) * 128 * VEL_BUCKETS;
+const MAX_LUT_ENTRIES: usize = MAX_ARTICULATIONS * MAX_MICS * 128 * VEL_BUCKETS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZoneMapBuildError {
@@ -233,7 +233,11 @@ impl ZoneTableStaging {
     /// entry's count does not fit a `u16` or its run reaches past the declared
     /// arena.
     pub fn write_lut_chunk(&mut self, start: usize, words: &[u32]) -> bool {
-        if self.installed || start != self.lut.len() || words.is_empty() || words.len() % 2 != 0 {
+        if self.installed
+            || start != self.lut.len()
+            || words.is_empty()
+            || !words.len().is_multiple_of(2)
+        {
             return false;
         }
         let entries = words.len() / 2;
@@ -242,15 +246,15 @@ impl ZoneTableStaging {
             return false;
         }
         let arena_entries = self.arena_entries;
-        let fits = |pair: &[u32]| {
+        let fits = |pair: &[u32; 2]| {
             let (offset, count) = (pair[0] as usize, pair[1] as usize);
             count <= usize::from(u16::MAX) && offset.saturating_add(count) <= arena_entries
         };
-        if !words.chunks_exact(2).all(fits) {
+        if !words.as_chunks::<2>().0.iter().all(fits) {
             return false;
         }
         self.lut
-            .extend(words.chunks_exact(2).map(|pair| ZoneListRef {
+            .extend(words.as_chunks::<2>().0.iter().map(|pair| ZoneListRef {
                 offset: pair[0],
                 count: pair[1] as u16,
             }));
@@ -395,8 +399,18 @@ impl SamplePool {
         self.entries.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     pub fn decoded_bytes(&self) -> usize {
         self.decoded_bytes
+    }
+}
+
+impl Default for SamplePool {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -582,6 +596,12 @@ impl ZoneMap {
     #[inline]
     fn lut_index(&self, art: usize, mic: usize, note: usize, vel_bucket: usize) -> usize {
         ((art * self.num_mics + mic) * 128 + note) * VEL_BUCKETS + vel_bucket
+    }
+}
+
+impl Default for ZoneMap {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

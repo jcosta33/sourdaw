@@ -264,7 +264,7 @@ impl CaptureRingWriter {
     #[inline]
     pub fn write_block(&mut self, block: &[f32], channels: usize) {
         if channels != self.channels
-            || block.len() % self.channels != 0
+            || !block.len().is_multiple_of(self.channels)
             || block.len() > self.block_ceiling_samples
             || self.producer.push_entire_slice(block).is_err()
         {
@@ -330,7 +330,7 @@ impl CaptureRingReader {
             return false;
         }
 
-        if out.len() > self.read_ceiling_samples || out.len() % self.channels != 0 {
+        if out.len() > self.read_ceiling_samples || !out.len().is_multiple_of(self.channels) {
             // Two reads the ring will not serve, and neither is reachable from
             // the engine: the ceiling covers the largest callback it accepts,
             // and a render callback's slice is always a whole number of frames.
