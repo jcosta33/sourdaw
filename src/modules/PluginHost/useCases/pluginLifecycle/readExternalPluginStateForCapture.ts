@@ -6,20 +6,8 @@ import { externalPluginActivationTasks } from './externalPluginActivationTasks';
 import { externalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { loadedExternalInstances } from './loadedExternalInstances';
+import { preservationReason } from './preservationReason';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
-
-export function preservationReason(instanceId: string): 'restore-failed' | 'restore-pending' | 'not-loaded' | null {
-    if (externalPluginRestoreFailures.has(instanceId)) {
-        return 'restore-failed';
-    }
-    if (externalPluginActivationTasks.has(instanceId)) {
-        return 'restore-pending';
-    }
-    if (!loadedExternalInstances.has(instanceId)) {
-        return 'not-loaded';
-    }
-    return null;
-}
 
 /** Read host state together with the exact native-instance generation that produced it. */
 export function readExternalPluginStateForCapture(instanceId: string): Promise<

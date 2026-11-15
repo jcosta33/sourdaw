@@ -13,7 +13,8 @@ export { isFaustInstrumentModule } from './faustEngine/isFaustInstrumentModule';
 export { getPluginHostHandlers } from './getPluginHostHandlers';
 
 export { loadPlugin } from './pluginLifecycle/loadPlugin';
-export { unloadPlugin, unloadPluginCarryingLiveState } from './pluginLifecycle/unloadPlugin';
+export { unloadPlugin } from './pluginLifecycle/unloadPlugin';
+export { unloadPluginCarryingLiveState } from './pluginLifecycle/unloadPluginCarryingLiveState';
 export { forgetRetiredPluginInstances } from './pluginLifecycle/forgetRetiredPluginInstances';
 export { readExternalPluginStatesBeforeEngineRetire } from './pluginLifecycle/readExternalPluginStatesBeforeEngineRetire';
 export { openPluginGui } from './pluginLifecycle/openPluginGui';

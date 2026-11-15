@@ -14,7 +14,8 @@ import { loadedExternalInstances } from '../loadedExternalInstances';
 import { readExternalPluginStatesBeforeEngineRetire } from '../readExternalPluginStatesBeforeEngineRetire';
 import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
 import { restorePluginState } from '../restorePluginState';
-import { unloadPlugin, unloadPluginCarryingLiveState } from '../unloadPlugin';
+import { unloadPlugin } from '../unloadPlugin';
+import { unloadPluginCarryingLiveState } from '../unloadPluginCarryingLiveState';
 
 import type { unloadPlugin as unloadPluginRepoSignature } from '../../../repositories/pluginBridge/unloadPlugin';
 
@@ -419,6 +420,7 @@ describe('live plugin state across an app-initiated teardown', () => {
             let repaired = false;
             void resetExternalPluginRuntimeForGraphRebuild().then(() => {
                 repaired = true;
+                return repaired;
             });
             await vi.advanceTimersByTimeAsync(5_000);
 

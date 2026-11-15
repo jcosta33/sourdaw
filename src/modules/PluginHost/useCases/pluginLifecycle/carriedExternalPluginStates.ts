@@ -14,15 +14,16 @@ export const carriedExternalPluginStates = new Map<string, { pluginId: string; s
 let carryGeneration = 0;
 
 /**
- * The generation of the carry store. A teardown read batch remembers the
+ * Generation fence over the carry store. A teardown read batch remembers the
  * generation it started in, so a commit landing after a drop is discarded
  * instead of carrying the outgoing project's state into the incoming one.
  */
-export function currentCarryGeneration(): number {
-    return carryGeneration;
-}
-
-export function dropCarriedExternalPluginStates(): void {
-    carriedExternalPluginStates.clear();
-    carryGeneration += 1;
-}
+export const carriedExternalPluginStateFence = {
+    generation(): number {
+        return carryGeneration;
+    },
+    dropAll(): void {
+        carriedExternalPluginStates.clear();
+        carryGeneration += 1;
+    },
+};

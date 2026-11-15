@@ -2,10 +2,10 @@ import { bytesToBase64 } from '#/utils/base64';
 
 import { getPluginState } from '../../repositories/pluginBridge/getPluginState';
 
-import { currentCarryGeneration } from './carriedExternalPluginStates';
+import { carriedExternalPluginStateFence } from './carriedExternalPluginStates';
 import { externalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { loadedExternalInstancePluginIds } from './loadedExternalInstances';
-import { preservationReason } from './readExternalPluginStateForCapture';
+import { preservationReason } from './preservationReason';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
 // The native read bounds only its wait on the plugin's real-time seam (2 s);
@@ -83,7 +83,7 @@ export async function readLiveStatesForTeardown(
     instanceIds: readonly string[],
     ordering: 'inside-lifecycle' | 'scheduled'
 ): Promise<TeardownStateReads> {
-    const generation = currentCarryGeneration();
+    const generation = carriedExternalPluginStateFence.generation();
     const reads = instanceIds.map(async (instanceId) => {
         const read = readForOrdering(instanceId, ordering);
         return [instanceId, await withinTeardownBudget(instanceId, read)] as const;

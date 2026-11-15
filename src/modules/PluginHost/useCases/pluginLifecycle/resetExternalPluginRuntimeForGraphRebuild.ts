@@ -5,7 +5,7 @@ import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptur
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { readLiveStatesForTeardown } from './readLiveStatesForTeardown';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
-import { unloadEveryPluginKeepingCarries } from './unloadPlugin';
+import { unloadEveryPluginKeepingCarries } from './unloadEveryPluginKeepingCarries';
 
 let activeReset: Promise<void> | null = null;
 

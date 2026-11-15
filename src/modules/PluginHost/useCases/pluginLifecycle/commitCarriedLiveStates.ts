@@ -1,6 +1,6 @@
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { carriedExternalPluginStates, currentCarryGeneration } from './carriedExternalPluginStates';
+import { carriedExternalPluginStateFence, carriedExternalPluginStates } from './carriedExternalPluginStates';
 
 import type { TeardownStateReads } from './readLiveStatesForTeardown';
 
@@ -15,7 +15,7 @@ import type { TeardownStateReads } from './readLiveStatesForTeardown';
  * edits the outgoing project no longer offers to keep.
  */
 export function commitCarriedLiveStates(reads: TeardownStateReads, tornDownInstanceIds: Iterable<string>): void {
-    if (reads.generation !== currentCarryGeneration()) {
+    if (reads.generation !== carriedExternalPluginStateFence.generation()) {
         return;
     }
     const lostPlugins = new Set<string>();
