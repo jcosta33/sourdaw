@@ -13,6 +13,7 @@ export type AmbiguousTrack = { id: string; name: string; order: number };
 type NamedTracks =
     | { status: 'named'; ids: string[] }
     | { status: 'ambiguous'; text: string; candidates: AmbiguousTrack[] }
+    | { status: 'collision'; text: string; name: string }
     | { status: 'unread' };
 
 type NamedRange = { id: string; start: number; end: number };
@@ -46,12 +47,27 @@ function orderAmongSameName(track: ListedTrack, tracks: readonly ListedTrack[]):
     return tracks.filter((candidate) => sameName(candidate.name, track.name)).findIndex((c) => c.id === track.id) + 1;
 }
 
+/**
+ * Whether the words of a phrase also read as the name of a track other than those called `name`
+ * ("the second Lead" beside a track "Second Lead" or "Second"): an order word is never read, or
+ * offered, where it would pick a track the same words name.
+ */
+export function readsAsAnotherTrack(phrase: string, name: string, tracks: readonly ListedTrack[]): boolean {
+    return getBestAgentReferenceNameRanges(phrase, tracks, 'with-number-forms').some((range) => {
+        const owner = tracks.find((track) => track.id === range.id);
+        return owner !== undefined && !sameName(owner.name, name);
+    });
+}
+
 type OrdinalReading =
-    { status: 'read'; ranges: NamedRange[] } | { status: 'beyond-the-tracks'; text: string; sharing: ListedTrack[] };
+    | { status: 'read'; ranges: NamedRange[] }
+    | { status: 'beyond-the-tracks'; text: string; sharing: ListedTrack[] }
+    | { status: 'collision'; text: string; name: string };
 
 /**
  * The "[the] second Lead" references of the text, each the k-th track of that whole name. A phrase
- * that is itself a track's whole name ("First Lead") is left to the name reading, and an ordinal past
+ * whose words also name another track is no order reference: for a name one track holds it is left to
+ * the name reading, and for a shared name it is a collision the caller must ask about. An ordinal past
  * the tracks sharing the name reads nothing but names those tracks, so the caller can ask which.
  */
 function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): OrdinalReading {
@@ -69,11 +85,16 @@ function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): Ordina
         for (const match of text.matchAll(pattern)) {
             const start = match.index;
             const end = start + match[0].length;
-            const phrase = match[0].replace(/^the\s+/iu, '');
-            if (tracks.some((track) => sameName(track.name, phrase)) || taken(start, end)) {
+            if (taken(start, end)) {
                 continue;
             }
             const sharing = tracks.filter((track) => sameName(track.name, name));
+            if (readsAsAnotherTrack(match[0], name, tracks)) {
+                if (sharing.length >= 2) {
+                    return { status: 'collision', text: match[0], name: sharing[0]!.name };
+                }
+                continue;
+            }
             const target = sharing[ORDINAL_WORDS.indexOf(match[1]!.toLowerCase())];
             if (target === undefined) {
                 return { status: 'beyond-the-tracks', text: match[0], sharing };
@@ -108,6 +129,9 @@ function joinsEveryName(text: string, ranges: ReadonlyArray<{ start: number; end
 export function readNamedTracks(text: string, context: ProjectContext): NamedTracks {
     const tracks = context.tracks.map((track) => ({ id: track.id, name: track.name }));
     const ordinal = readOrdinalRanges(text, tracks);
+    if (ordinal.status === 'collision') {
+        return ordinal;
+    }
     if (ordinal.status === 'beyond-the-tracks') {
         // One track of the name (or none) leaves the leftover ordinal word unread, as the name reading does.
         if (ordinal.sharing.length < 2) {

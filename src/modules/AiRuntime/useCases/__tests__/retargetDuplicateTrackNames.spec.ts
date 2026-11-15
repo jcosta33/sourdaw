@@ -497,20 +497,53 @@ describe('re-targeting a last commit onto same-named tracks', () => {
         expect(decibelsOf('lead-b')).toBe(0);
     });
 
-    it('a whole-name match wins over an ordinal reading', async () => {
-        setProjectTracks([
-            ['track-vocals', 'Vocals'],
-            ['lead-a', 'Lead'],
-            ['lead-b', 'Lead'],
-            ['first-lead', 'First Lead'],
-        ]);
+    const SECOND_LEAD_TRACKS: ReadonlyArray<NamedTrack> = [
+        ['track-vocals', 'Vocals'],
+        ['lead-a', 'Lead'],
+        ['lead-b', 'Lead'],
+        ['second-lead', 'Second Lead'],
+    ];
+    const SECOND_TRACKS: ReadonlyArray<NamedTrack> = [...TWO_LEADS, ['second', 'Second']];
+
+    /** The ask to rename: no ordinal is offered or read where its words are also another track's name. */
+    it.each<readonly [prompt: string, tracks: ReadonlyArray<NamedTrack>]>([
+        ['Lead too', SECOND_LEAD_TRACKS],
+        ['the second Lead too', SECOND_LEAD_TRACKS],
+        ['Second Lead too', SECOND_TRACKS],
+        ['First Lead too', [...TWO_LEADS, ['first-lead', 'First Lead']]],
+    ])('"%s" asks to rename same-named tracks and changes nothing', async (prompt, tracks) => {
+        setProjectTracks(tracks);
         scriptProvider([[VOCALS_DOWN_3_DB]]);
         await commitVocalsDown3Db();
+        const commits = undoHistoryStore.value?.past.length ?? 0;
+        const lastCommit = readChatThreadContext()?.lastCommit;
 
-        await sendChatMessage('First Lead too');
-        await confirmIfProposed();
+        await sendChatMessage(prompt);
 
-        expect(newestCommittedTrackIds()).toEqual(['first-lead']);
+        expect(lastAssistantMessage()?.content).toContain(
+            'Tracks named Lead cannot be told apart by order here; rename one of them and ask again.'
+        );
+        expect(proposedIds()).toEqual([]);
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(commits);
+        expect(readChatThreadContext()?.lastCommit).toEqual(lastCommit);
+        for (const [id] of tracks.filter(([trackId]) => trackId !== 'track-vocals')) {
+            expect(decibelsOf(id)).toBe(0);
+        }
+    });
+
+    it('labels a mixed question by each track order among its own name, not by its place in the list', async () => {
+        setProjectTracks([
+            ['track-vocals', 'Vocals'],
+            ['lead-guitar', 'Lead Guitar'],
+            ['guitar-lead-a', 'Guitar Lead'],
+            ['guitar-lead-b', 'Guitar Lead'],
+        ]);
+
+        const reply = await askAfterVocalsCommit('Lead Guitar Lead too');
+
+        expect(reply).toContain(
+            'Lead Guitar, the first Guitar Lead or the second Guitar Lead, counting from the top of the track list?'
+        );
     });
 
     it('takes "the first Lead" of a single Lead as that track', async () => {
@@ -538,6 +571,16 @@ describe('re-targeting a last commit onto same-named tracks', () => {
         ['the zeroth Lead', TWO_LEADS, 'ambiguous'],
         ['the second Lead', THREE_LEADS, 'named'],
         ['the fourth Lead', THREE_LEADS, 'ambiguous'],
+        ['the second Lead', SECOND_LEAD_TRACKS, 'collision'],
+        ['Second Lead', SECOND_TRACKS, 'collision'],
+        [
+            'First Lead',
+            [
+                ['lead-a', 'Lead'],
+                ['first-lead', 'First Lead'],
+            ],
+            'named',
+        ],
     ])('reads "%s" against its project', (prompt, tracks, status): void => {
         setProjectTracks(tracks);
 
