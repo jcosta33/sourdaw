@@ -837,7 +837,7 @@ impl LevainEngine {
                 .voices
                 .iter()
                 .any(|voice| voice.active && voice.held);
-            if let Some(suggested) = self.auto_articulation.suggest(0.0, has_overlap) {
+            if let Some(suggested) = self.auto_articulation.suggest(has_overlap) {
                 articulation = suggested as ArticulationId;
             }
         }
