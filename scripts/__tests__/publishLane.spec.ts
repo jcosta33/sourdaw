@@ -4000,6 +4000,8 @@ describe('lane publish', () => {
                 'label',
                 'create',
                 'glm-5.3',
+                '--repo',
+                'jcosta33/sourdaw',
                 '--color',
                 '8250df',
                 '--description',
@@ -4034,7 +4036,16 @@ describe('lane publish', () => {
             expect(projectListArgs('jcosta33')).toEqual(['project', 'list', '--owner', 'jcosta33', '--format', 'json']);
             // gh's default page is 30; the limit keeps a growing label set from being truncated,
             // and the description is what the authorship fence reads.
-            expect(labelListArgs()).toEqual(['label', 'list', '--limit', '200', '--json', 'name,description']);
+            expect(labelListArgs()).toEqual([
+                'label',
+                'list',
+                '--repo',
+                'jcosta33/sourdaw',
+                '--limit',
+                '200',
+                '--json',
+                'name,description',
+            ]);
             expect(pullRequestMetadataArgs(41)).toEqual([
                 'pr',
                 'view',

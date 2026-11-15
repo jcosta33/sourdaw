@@ -27,6 +27,7 @@ import {
     spawnCapture,
     spawnRun,
     tokenFreeGitEnv,
+    withGhChildLocation,
     type GhSession,
     type PublishingAuthorAuthorization,
 } from './githubAppIdentity.ts';
@@ -242,6 +243,8 @@ export function ensureModelLabelArgs(model: string): string[] {
         'label',
         'create',
         modelLabelName(model),
+        '--repo',
+        REQUIRED_REPOSITORY,
         '--color',
         MODEL_LABEL_COLOR,
         '--description',
@@ -494,7 +497,7 @@ export function derivedProjectFromSubject(subject: string): string | undefined {
  * rides along because it is what the authorship fence reads.
  */
 export function labelListArgs(): string[] {
-    return ['label', 'list', '--limit', '200', '--json', 'name,description'];
+    return ['label', 'list', '--repo', REQUIRED_REPOSITORY, '--limit', '200', '--json', 'name,description'];
 }
 
 export function labelRowsFromListing(rows: unknown): LabelRow[] {
@@ -2234,12 +2237,15 @@ export function shellPort(
             ),
         cwd: () => cwd,
         issueExists: (issue) => {
-            const result = spawnSync(executables.gh, issueLookupArgs(issue), {
-                cwd: primaryRoot,
-                env: session.env,
-                encoding: 'utf8',
-                shell: false,
-            });
+            const args = issueLookupArgs(issue);
+            const result = withGhChildLocation(executables.gh, args, primaryRoot, session.env, (location) =>
+                spawnSync(executables.gh, args, {
+                    cwd: location.cwd,
+                    env: location.env,
+                    encoding: 'utf8',
+                    shell: false,
+                })
+            );
             if (result.error !== undefined) {
                 throw result.error;
             }
