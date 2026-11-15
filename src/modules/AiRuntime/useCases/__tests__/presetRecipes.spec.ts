@@ -53,6 +53,9 @@ type MixRecipe = ReturnType<typeof getMixRecipeCatalog>['recipes'][number];
 
 type DiscoveryCandidate = {
     id: string;
+    descriptor: string | null;
+    effect: string | null;
+    metrics: unknown[];
     origin?: { kind: string; presetId: string; presetVersion: string; tags: string[] };
     roles: string[];
     steps: {
@@ -242,16 +245,32 @@ function publishedFrom(presetId: string): MixRecipe[] {
 }
 
 /** Discovery read directly with a page as wide as the catalog, so a census sees every match, not one page. */
-function discoverAll(descriptors: readonly string[], role: string | null, targetId: string | null = null) {
-    const result = discoverMixRecipes({ descriptors, targetId, role, limit: getMixRecipeCatalog().recipes.length });
+function discoverAll(
+    descriptors: readonly string[],
+    role: string | null,
+    targetId: string | null = null,
+    presetTerms: readonly string[] = []
+) {
+    const result = discoverMixRecipes({
+        descriptors,
+        presetTerms,
+        targetId,
+        role,
+        limit: getMixRecipeCatalog().recipes.length,
+    });
     if (result.status !== 'ok') {
         throw new Error(`discovery refused target ${String(targetId)}`);
     }
     return result;
 }
 
-function discoveredIds(descriptors: readonly string[], role: string | null, targetId: string | null = null) {
-    return discoverAll(descriptors, role, targetId).data.candidates.map((candidate) => candidate.id);
+function discoveredIds(
+    descriptors: readonly string[],
+    role: string | null,
+    targetId: string | null = null,
+    presetTerms: readonly string[] = []
+) {
+    return discoverAll(descriptors, role, targetId, presetTerms).data.candidates.map((candidate) => candidate.id);
 }
 
 /** A chain preset holds effect or utility devices only; any other device is an instrument. */
@@ -260,16 +279,6 @@ function isChainPreset(preset: SoundPreset): boolean {
         const category = getPluginById(device.type)?.category;
         return category === 'effect' || category === 'utility';
     });
-}
-
-function namesProducedDescriptor(preset: SoundPreset): boolean {
-    const catalog = getMixRecipeCatalog();
-    const tags = new Set(preset.tags.map((tag) => tag.toLowerCase().trim().replaceAll(/\s+/g, ' ')));
-    return catalog.descriptors.some(
-        (descriptor) =>
-            catalog.descriptorEffects[descriptor] === 'produces' &&
-            catalog.descriptorTerms[descriptor].some((term) => tags.has(term))
-    );
 }
 
 function storesUnwritableValue(preset: SoundPreset): boolean {
@@ -289,47 +298,54 @@ function storesUnwritableValue(preset: SoundPreset): boolean {
 /** The recipe roles a recipe with no authored role serves: every source, never a bus or the master. */
 const SOURCE_ROLES = ['vocal', 'drums', 'bass', 'guitar', 'keys'] as const;
 
-const NO_DESCRIPTOR = 'names no perceptual descriptor';
 const UNWRITABLE_VALUE = 'stores a value its parameter cannot hold';
 const OVERSIZE = 'expands past the batch ceiling even without redundant writes';
 
 /**
- * Every chain preset the catalog does not offer, and why. A chain naming no perceptual descriptor
- * could be found only by its role and authored character, which `recipe.discover` does not search,
- * so none is guessed for it. A stored value its parameter cannot hold would be written as another
- * setting, so that chain is refused rather than published approximately.
+ * Every chain preset discovery does not offer, and why. A stored value its parameter cannot hold
+ * would be written as another setting, so that chain is refused rather than published approximately.
+ * A chain that expands past the batch ceiling cannot be adopted whole, and the ceiling is never
+ * bypassed, so discovery withholds it with a warning. Every other chain preset is offered, by its
+ * descriptor when its tags name one and always by its authored name and tags.
  */
 const CHAIN_PRESET_EXCLUSIONS: Readonly<Record<string, string>> = {
-    'fx-eq-vocal-presence': NO_DESCRIPTOR,
-    'fx-eq-bass-scoop': NO_DESCRIPTOR,
-    'fx-eq-mid-forward': NO_DESCRIPTOR,
-    'fx-comp-parallel-crush': NO_DESCRIPTOR,
-    'fx-comp-sidechain-pump': NO_DESCRIPTOR,
-    'fx-rev-large-hall': NO_DESCRIPTOR,
-    'fx-rev-ambient-wash': NO_DESCRIPTOR,
-    'fx-rev-gated-80s': NO_DESCRIPTOR,
-    'fx-conv-cathedral': NO_DESCRIPTOR,
-    'fx-conv-warehouse': NO_DESCRIPTOR,
-    'fx-delay-slapback': NO_DESCRIPTOR,
-    'fx-delay-dotted-eighth': NO_DESCRIPTOR,
-    'fx-delay-dub-echo': NO_DESCRIPTOR,
-    'fx-chorus-slow-shimmer': NO_DESCRIPTOR,
-    'fx-phaser-slow-sweep': NO_DESCRIPTOR,
-    'fx-flanger-jet': NO_DESCRIPTOR,
-    'fx-leslie-sim': NO_DESCRIPTOR,
-    'fx-dist-fuzz': NO_DESCRIPTOR,
-    'fx-chain-vocal-strip': NO_DESCRIPTOR,
-    'fx-creative-space-echo': NO_DESCRIPTOR,
-    'fx-creative-shimmer': NO_DESCRIPTOR,
-    'fx-creative-industrial': NO_DESCRIPTOR,
-    // It says it controls vocal dynamics, but only the source-backed authored recipes are `controlled`.
-    'factory-faust-1176-vocal-control': NO_DESCRIPTOR,
-    'factory-faust-1176-drum-smash': NO_DESCRIPTOR,
-    'factory-faust-zita-huge-hall': NO_DESCRIPTOR,
-    'factory-faust-tape-space-echo': NO_DESCRIPTOR,
     'fx-chain-guitar-clean': OVERSIZE,
     'fx-chain-drum-punch': OVERSIZE,
+    'fx-chain-vocal-strip': OVERSIZE,
 };
+
+/**
+ * The chain presets whose tags name no perceptual descriptor, each with the terms of its own
+ * authored name and tags and the role that finds it, so no perceptual word is invented for it. A
+ * term of several words is matched word by word against the name and tags.
+ */
+const DESCRIPTOR_LESS_PRESET_QUERIES: readonly (readonly [string, readonly string[], string | null])[] = [
+    ['fx-eq-vocal-presence', ['presence'], 'vocal'],
+    ['fx-eq-bass-scoop', ['scoop'], 'bass'],
+    ['fx-eq-mid-forward', ['forward'], null],
+    ['fx-comp-parallel-crush', ['parallel'], null],
+    ['fx-comp-sidechain-pump', ['sidechain'], null],
+    ['fx-rev-large-hall', ['large'], null],
+    ['fx-rev-ambient-wash', ['dreamy'], null],
+    ['fx-rev-gated-80s', ['gated'], 'drums'],
+    ['fx-conv-cathedral', ['cathedral'], null],
+    ['fx-conv-warehouse', ['warehouse'], null],
+    ['fx-delay-slapback', ['slapback'], 'vocal'],
+    ['fx-delay-dotted-eighth', ['dotted'], 'guitar'],
+    ['fx-delay-dub-echo', ['reggae'], null],
+    ['fx-chorus-slow-shimmer', ['slow shimmer'], null],
+    ['fx-phaser-slow-sweep', ['psychedelic'], null],
+    ['fx-flanger-jet', ['flanger'], null],
+    ['fx-leslie-sim', ['leslie'], null],
+    ['fx-dist-fuzz', ['fuzz'], 'guitar'],
+    ['fx-creative-space-echo', ['echo wash'], null],
+    ['fx-creative-shimmer', ['shimmer reverb'], null],
+    ['fx-creative-industrial', ['industrial crush'], null],
+    ['factory-faust-1176-vocal-control', ['smooth'], 'vocal'],
+    ['factory-faust-1176-drum-smash', ['smash'], 'drums'],
+    ['factory-faust-zita-huge-hall', ['huge'], null],
+    ['factory-faust-tape-space-echo', ['space echo'], null],
+];
 
 /**
  * The recipes a preset publishes once its tags carry what its own description states, with the
@@ -463,6 +479,177 @@ describe('preset recipes', () => {
         });
     });
 
+    describe('a chain preset whose tags name no perceptual descriptor', () => {
+        const PRESET_IDS = DESCRIPTOR_LESS_PRESET_QUERIES.map(([presetId]) => presetId);
+
+        function descriptorLessRecipeId(presetId: string): string {
+            return `preset:${presetId}`;
+        }
+
+        /** The same chain built by hand as an authored recipe, from the stored chain and not from the preset recipe. */
+        function handBuiltRecipe(chain: readonly ChainDevice[], roles: MixRecipe['roles']): MixRecipe {
+            return {
+                id: 'hand-built-chain',
+                descriptor: 'glued',
+                roles,
+                title: 'Hand built chain',
+                steps: chain.map((device) => ({
+                    kind: 'insert',
+                    deviceType: device.deviceType,
+                    parameters: device.values.map(([paramId, value]) => ({ paramId, minimum: value, maximum: value })),
+                })),
+                prerequisites: [],
+                contraindications: [],
+                metrics: [],
+                source: 'test',
+            };
+        }
+
+        // Red when the table drifts from the catalogue: an adoptable chain publishing no descriptor must be queried here.
+        it('is listed here exactly when the catalogue publishes it without a descriptor and it fits the ceiling', () => {
+            const adoptable = getMixRecipeCatalog()
+                .recipes.filter((recipe) => recipe.origin !== undefined && recipe.descriptor === null)
+                .filter((recipe) => countRecipeExpansionCommands(recipe) <= RECIPE_EXPANSION_MAX_COMMANDS)
+                .map((recipe) => recipe.id)
+                .sort();
+
+            expect(adoptable).toEqual(PRESET_IDS.map(descriptorLessRecipeId).sort());
+        });
+
+        // Red when a chain stops being found by its own name or tags, or is published with a perceptual claim.
+        it.each(DESCRIPTOR_LESS_PRESET_QUERIES)(
+            '%s is found by %j in role %s as a recipe with no descriptor and its exact stored values',
+            async (presetId, presetTerms, role) => {
+                const preset = factoryPreset(presetId);
+
+                const data = await discover(
+                    `loop-less-${presetId}`,
+                    role === null ? { presetTerms } : { presetTerms, role }
+                );
+
+                const candidate = data.candidates.find((entry) => entry.id === descriptorLessRecipeId(presetId));
+                expect(candidate?.descriptor).toBeNull();
+                expect(candidate?.effect).toBeNull();
+                expect(candidate?.metrics).toEqual([]);
+                expect(candidate?.origin?.presetId).toBe(presetId);
+                expect(candidate?.steps.map((step) => step.deviceType)).toEqual(
+                    preset.devices.map((device) => device.type)
+                );
+                expect(candidate?.steps.flatMap((step) => step.parameters)).toEqual(
+                    chainOf(preset).flatMap((device) =>
+                        device.values.map(([paramId, value]) => ({ paramId, minimum: value, maximum: value }))
+                    )
+                );
+            }
+        );
+
+        // Red when a descriptor-less recipe is expanded by a path of its own, or a value is added or dropped.
+        it.each(DESCRIPTOR_LESS_PRESET_QUERIES)(
+            '%s expands to the commands of the same chain built by hand',
+            async (presetId) => {
+                const chain = chainOf(factoryPreset(presetId));
+                const recipe = publishedFrom(presetId).find((entry) => entry.id === descriptorLessRecipeId(presetId));
+                const roles = recipe?.roles ?? [];
+                offerRecipes(handBuiltRecipe(chain, roles));
+                setTracks([createTrack({ id: 'source-1', name: 'FX Return' })]);
+                const roleArgument = roles[0] === undefined ? {} : { role: roles[0] };
+
+                const fromPreset = readExpansion(
+                    await expand(`loop-less-preset-${presetId}`, {
+                        recipeId: descriptorLessRecipeId(presetId),
+                        targetId: 'source-1',
+                        ...roleArgument,
+                    })
+                );
+                const fromHandBuilt = readExpansion(
+                    await expand(`loop-less-hand-${presetId}`, {
+                        recipeId: 'hand-built-chain',
+                        targetId: 'source-1',
+                        ...roleArgument,
+                    })
+                );
+
+                expect(fromPreset.commands).toEqual(fromHandBuilt.commands);
+                expect(fromPreset.values).toEqual(fromHandBuilt.values);
+                expect(fromPreset.commands).toEqual(expectedCommands(chain, null, 'source-1'));
+            }
+        );
+
+        // Red when an expansion of a descriptor-less recipe retains a metric expectation the approval could promise.
+        it('derives no metric expectation to promise, where an authored recipe retains its own', () => {
+            setTracks([createTrack({ id: 'source-1', name: 'FX Return' })]);
+            offerRecipes(handBuiltRecipe(chainOf(factoryPreset('fx-eq-mid-forward')), []));
+            const expandRecipe = (recipeId: string) =>
+                executeRecipeExpansion({
+                    call: { id: 'call-1', name: 'recipe.expand', arguments: { recipeId, targetId: 'source-1' } },
+                    callId: 'call-1',
+                    turn: 1,
+                    ordinal: 1,
+                    context: getProjectContext(),
+                    revision: REVISION,
+                });
+
+            const fromPreset = expandRecipe(descriptorLessRecipeId('fx-eq-mid-forward'));
+            const fromAuthored = expandRecipe('hand-built-chain');
+
+            expect(fromPreset.receipt.status).toBe('success');
+            expect(fromPreset.metricRecipe).toBeUndefined();
+            expect(fromAuthored.metricRecipe?.expectations).toEqual([]);
+        });
+
+        it('is matched case-insensitively and by a word of a hyphenated tag', () => {
+            expect(discoveredIds([], null, null, ['CATHEDRAL'])).toContain('preset:fx-conv-cathedral');
+            expect(discoveredIds([], null, null, ['cut'])).toContain('preset:fx-eq-mid-forward');
+        });
+
+        // Red when a role-only call stops listing the presets of that role, or lists an authored recipe.
+        it('is listed by role alone among the preset recipes serving that role, never an authored recipe', () => {
+            const listed = discoverAll([], 'drums').data.candidates;
+
+            expect(listed.map((entry) => entry.id)).toEqual(
+                expect.arrayContaining(['preset:fx-rev-gated-80s', 'preset:fx-comp-drum-bus:glued'])
+            );
+            expect(listed.every((entry) => entry.origin !== undefined)).toBe(true);
+            expect(listed.map((entry) => entry.id)).not.toContain('preset:fx-eq-vocal-presence');
+        });
+
+        it('names a preset term no factory preset carries', () => {
+            const result = discoverAll([], null, null, ['no-such-preset-word']);
+
+            expect(result.data.candidates).toEqual([]);
+            expect(result.warnings.join(' ')).toContain('No factory preset name or tag matches: no-such-preset-word');
+        });
+
+        // Red when a preset term also selects authored recipes, or reads as a descriptor.
+        it('selects only preset recipes, even for a word that is also a descriptor term', () => {
+            const listed = discoverAll([], null, null, ['warm']).data.candidates;
+
+            expect(listed.length).toBeGreaterThan(0);
+            expect(listed.every((entry) => entry.origin !== undefined)).toBe(true);
+            expect(discoverAll([], null, null, ['warm']).data.candidates).not.toEqual(
+                discoverAll(['warm'], null).data.candidates
+            );
+        });
+
+        // Red when a chain too large to adopt whole is offered through its name instead of its descriptor.
+        it.each([
+            ['fx-chain-guitar-clean', 'clean', 'guitar'],
+            ['fx-chain-drum-punch', 'punch', 'drums'],
+            ['fx-chain-vocal-strip', 'channel-strip', 'vocal'],
+        ])('withholds %s found by the term %s, as it does by descriptor', async (presetId, term, role) => {
+            const receipt = await runTool(`loop-oversize-${presetId}`, 'recipe.discover', {
+                presetTerms: [term],
+                role,
+                limit: 8,
+            });
+
+            const data = receipt.data as DiscoveryData;
+            expect(publishedFrom(presetId).length).toBeGreaterThan(0);
+            expect(data.candidates.filter((entry) => entry.origin?.presetId === presetId)).toEqual([]);
+            expect(receipt.warnings.join(' ')).toContain('withheld');
+        });
+    });
+
     describe('presets whose own description names their descriptor or role', () => {
         // Red when a tag the preset's description states is dropped, or a recipe stops reaching discovery.
         it.each(DESCRIBED_PRESET_RECIPES)('%s publishes %s for its described roles', (presetId, recipeId, roles) => {
@@ -568,8 +755,8 @@ describe('preset recipes', () => {
 
     describe('every chain preset in the library', () => {
         /**
-         * The chain presets of a list that discovery does not offer under every descriptor they
-         * publish, with the ones `CHAIN_PRESET_EXCLUSIONS` does not account for, and the listed ids
+         * The chain presets of a list that discovery does not offer both under each descriptor they
+         * publish and by their first authored tag, with the ones `CHAIN_PRESET_EXCLUSIONS` does not account for, and the listed ids
          * that are no undiscovered chain preset of the list. Discoverability is read through the
          * catalogue and discovery, so a preset counts as offered only when the live catalogue
          * publishes it.
@@ -577,9 +764,15 @@ describe('preset recipes', () => {
         function censusChainPresets(presets: readonly SoundPreset[]) {
             const undiscovered = presets.filter(isChainPreset).filter((preset) => {
                 const published = publishedFrom(preset.id);
+                const byTag = discoveredIds([], null, null, [preset.tags[0] ?? preset.name]);
                 return (
                     published.length === 0 ||
-                    published.some((recipe) => !discoveredIds([recipe.descriptor], null).includes(recipe.id))
+                    published.some(
+                        (recipe) =>
+                            !byTag.includes(recipe.id) ||
+                            (recipe.descriptor !== null &&
+                                !discoveredIds([recipe.descriptor], null).includes(recipe.id))
+                    )
                 );
             });
             const undiscoveredIds = new Set(undiscovered.map((preset) => preset.id));
@@ -604,7 +797,7 @@ describe('preset recipes', () => {
         });
 
         // Red when a chain preset is neither offered by discovery nor excluded with a reason that holds.
-        it('is discovered under each descriptor it publishes, or excluded for a reason that holds', () => {
+        it('is discovered by its descriptors and its authored tag, or excluded for a reason that holds', () => {
             const { undiscovered, unaccounted, staleExclusions } = censusChainPresets(getFactoryPresets());
 
             // Compared as id sets: an undiscovered preset the table does not list must fail here.
@@ -612,15 +805,8 @@ describe('preset recipes', () => {
             for (const preset of undiscovered) {
                 const reason = CHAIN_PRESET_EXCLUSIONS[preset.id];
                 const published = publishedFrom(preset.id);
-                if (reason === NO_DESCRIPTOR) {
-                    expect([preset.id, namesProducedDescriptor(preset), published]).toEqual([preset.id, false, []]);
-                } else if (reason === UNWRITABLE_VALUE) {
-                    expect([
-                        preset.id,
-                        namesProducedDescriptor(preset),
-                        storesUnwritableValue(preset),
-                        published,
-                    ]).toEqual([preset.id, true, true, []]);
+                if (reason === UNWRITABLE_VALUE) {
+                    expect([preset.id, storesUnwritableValue(preset), published]).toEqual([preset.id, true, []]);
                 } else {
                     expect([preset.id, published.length > 0]).toEqual([preset.id, true]);
                     expect(published.map((recipe) => countRecipeExpansionCommands(recipe))).toEqual(

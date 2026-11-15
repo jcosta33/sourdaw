@@ -69,7 +69,7 @@ function trackScope(id: string, label: string): AnswerRequestAuthority['scopes']
 /** A real discovery receipt for the warm recipes, read against the same tracks the intake froze. */
 function discoveryRead(callId: string, targetId: string | null, role: string | null = null): AdmittedAnswerRead {
     const discovered = discoverMixRecipes(
-        { descriptors: ['warm'], targetId, role, limit: 4 },
+        { descriptors: ['warm'], presetTerms: [], targetId, role, limit: 4 },
         getProjectContext().tracks
     );
     if (discovered.status !== 'ok') {

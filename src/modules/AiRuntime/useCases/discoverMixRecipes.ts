@@ -1,4 +1,4 @@
-import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import { getFactoryPresets, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 
 import { RECIPE_EXPANSION_MAX_COMMANDS } from '../models/RecipeExpansionLimits';
 
@@ -35,8 +35,9 @@ type RecipeDiscoveryStep = {
 
 type RecipeDiscoveryCandidate = {
     id: string;
-    descriptor: RecipeDescriptor;
-    effect: RecipeDescriptorEffect;
+    /** Null only on a factory chain preset whose own tags name no perceptual descriptor. */
+    descriptor: RecipeDescriptor | null;
+    effect: RecipeDescriptorEffect | null;
     title: string;
     roles: readonly RecipeRole[];
     steps: readonly RecipeDiscoveryStep[];
@@ -70,6 +71,65 @@ function normalizeDescriptorTerm(raw: string): string {
 
 function resolveTermDescriptor(catalog: MixRecipeCatalog, term: string): RecipeDescriptor | null {
     return catalog.descriptors.find((descriptor) => catalog.descriptorTerms[descriptor].includes(term)) ?? null;
+}
+
+/** The words of a text, lowercased, so a term matches a name or tag word whatever its case or punctuation. */
+function readWords(text: string): string[] {
+    return normalizeDescriptorTerm(text)
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((word) => word.length > 0);
+}
+
+/**
+ * The words a preset answers to: its authored name's words, each authored tag, and each tag's words.
+ * A recipe published from a preset not in the factory library answers to its tags alone.
+ */
+function readPresetTokens(recipe: MixRecipe, presetNames: ReadonlyMap<string, string>): ReadonlySet<string> {
+    if (recipe.origin === undefined) {
+        return new Set();
+    }
+    const name = presetNames.get(recipe.origin.presetId) ?? '';
+    const tags = recipe.origin.tags.map(normalizeDescriptorTerm);
+    return new Set([...readWords(name), ...tags, ...tags.flatMap(readWords)]);
+}
+
+function matchesPresetTerm(tokens: ReadonlySet<string>, term: string): boolean {
+    const words = readWords(term);
+    return tokens.has(term) || (words.length > 0 && words.every((word) => tokens.has(word)));
+}
+
+/**
+ * The recipes a call asks for, in catalog order: those naming a resolved descriptor, and the preset
+ * recipes a preset term names. A call naming no descriptor term and no preset term asks for every
+ * preset recipe, so a role alone browses them. Also the preset terms no preset name or tag carries.
+ */
+function selectRequestedRecipes(
+    catalog: MixRecipeCatalog,
+    resolvedDescriptors: readonly RecipeDescriptor[],
+    presetTerms: readonly string[],
+    namesNoDescriptorTerm: boolean
+): { recipes: MixRecipe[]; unmatchedPresetTerms: string[] } {
+    const presetNames = new Map(getFactoryPresets().map((preset) => [preset.id, preset.name]));
+    const tokens = new Map(
+        catalog.recipes.map((recipe) => [recipe.id, readPresetTokens(recipe, presetNames)] as const)
+    );
+    const tokensOf = (recipe: MixRecipe): ReadonlySet<string> => tokens.get(recipe.id) ?? new Set();
+    const browsesPresets = namesNoDescriptorTerm && presetTerms.length === 0;
+    const isRequested = (recipe: MixRecipe): boolean => {
+        if (recipe.descriptor !== null && resolvedDescriptors.includes(recipe.descriptor)) {
+            return true;
+        }
+        return (
+            recipe.origin !== undefined &&
+            (browsesPresets || presetTerms.some((term) => matchesPresetTerm(tokensOf(recipe), term)))
+        );
+    };
+    return {
+        recipes: catalog.recipes.filter(isRequested),
+        unmatchedPresetTerms: presetTerms.filter(
+            (term) => !catalog.recipes.some((recipe) => matchesPresetTerm(tokensOf(recipe), term))
+        ),
+    };
 }
 
 function dedupeInFirstSeenOrder(values: readonly RecipeDescriptor[]): RecipeDescriptor[] {
@@ -125,12 +185,12 @@ function buildStep(step: MixRecipeStep, target: ResolvedTarget | null): RecipeDi
 function buildCandidate(
     recipe: MixRecipe,
     target: ResolvedTarget | null,
-    effect: RecipeDescriptorEffect
+    effects: MixRecipeCatalog['descriptorEffects']
 ): RecipeDiscoveryCandidate {
     const candidate: RecipeDiscoveryCandidate = {
         id: recipe.id,
         descriptor: recipe.descriptor,
-        effect,
+        effect: recipe.descriptor === null ? null : effects[recipe.descriptor],
         title: recipe.title,
         roles: recipe.roles,
         steps: recipe.steps.map((step) => buildStep(step, target)),
@@ -170,8 +230,13 @@ function describeAcceptedTerms(catalog: MixRecipeCatalog): string {
 }
 
 /**
- * Resolves perceptual descriptor terms and an optional target or role into a
- * bounded page of authored mixing recipes.
+ * Resolves perceptual descriptor terms, factory preset name or tag terms, and an optional target or
+ * role into a bounded page of mixing recipes.
+ *
+ * Descriptor terms select the recipes naming those descriptors, authored and preset. Preset terms
+ * select the preset recipes whose authored name words or tags contain a term, so a chain whose
+ * tags name no descriptor is still found. A call naming neither lists the preset recipes serving
+ * the role.
  *
  * A target's canonical role selects the recipe role only when no `role`
  * argument overrides it; either way, an existing target's device chain still
@@ -197,6 +262,7 @@ export function discoverMixRecipes(
         terms.flatMap((entry) => (entry.descriptor === null ? [] : [entry.descriptor]))
     );
     const unresolvedTerms = terms.filter((entry) => entry.descriptor === null).map((entry) => entry.term);
+    const presetTerms = input.presetTerms.map(normalizeDescriptorTerm);
 
     const resolution = resolveRecipeTarget({
         catalog,
@@ -240,9 +306,11 @@ export function discoverMixRecipes(
         );
     }
 
-    const roleMatches = catalog.recipes.filter(
-        (recipe) => resolvedDescriptors.includes(recipe.descriptor) && matchesRole(recipe, target, role)
-    );
+    const requested = selectRequestedRecipes(catalog, resolvedDescriptors, presetTerms, terms.length === 0);
+    if (requested.unmatchedPresetTerms.length > 0) {
+        warnings.push(`No factory preset name or tag matches: ${requested.unmatchedPresetTerms.join(', ')}.`);
+    }
+    const roleMatches = requested.recipes.filter((recipe) => matchesRole(recipe, target, role));
     const expandable = roleMatches.filter(
         (recipe) => countRecipeExpansionCommands(recipe) <= RECIPE_EXPANSION_MAX_COMMANDS
     );
@@ -267,7 +335,7 @@ export function discoverMixRecipes(
 
     const candidates = matches
         .slice(0, input.limit)
-        .map((recipe) => buildCandidate(recipe, target, catalog.descriptorEffects[recipe.descriptor]));
+        .map((recipe) => buildCandidate(recipe, target, catalog.descriptorEffects));
 
     return {
         status: 'ok',

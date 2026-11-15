@@ -179,18 +179,8 @@ export type MixRecipeOrigin = {
     tags: readonly string[];
 };
 
-/**
- * One mixing move.
- *
- * `prerequisites` are the conditions the source must already satisfy,
- * `contraindications` the conditions under which the move makes the mix worse,
- * and `source` the engineering rationale for the windows chosen. A recipe with
- * no `origin` is authored in the catalog files.
- */
-export type MixRecipe = {
+type MixRecipeBody = {
     id: string;
-    origin?: MixRecipeOrigin;
-    descriptor: MixRecipeDescriptor;
     roles: readonly MixRecipeRole[];
     title: string;
     steps: readonly MixRecipeStep[];
@@ -199,6 +189,21 @@ export type MixRecipe = {
     metrics: readonly MixRecipeMetricExpectation[];
     source: string;
 };
+
+/**
+ * One mixing move.
+ *
+ * `prerequisites` are the conditions the source must already satisfy,
+ * `contraindications` the conditions under which the move makes the mix worse,
+ * and `source` the engineering rationale for the windows chosen. A recipe with
+ * no `origin` is authored in the catalog files and always names its descriptor.
+ * A recipe published from a factory preset names a descriptor only when the
+ * preset's own tags do; otherwise its `descriptor` is null, it claims no
+ * perceptual character, and it carries no metric expectation.
+ */
+export type MixRecipe =
+    | (MixRecipeBody & { origin?: undefined; descriptor: MixRecipeDescriptor })
+    | (MixRecipeBody & { origin: MixRecipeOrigin; descriptor: MixRecipeDescriptor | null });
 
 /**
  * Catalog schema version.
