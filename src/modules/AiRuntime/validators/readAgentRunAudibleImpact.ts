@@ -166,14 +166,17 @@ function readSource(value: unknown): Source | null {
         const recipeDigest = readText(value.recipeDigest);
         const catalogVersion = readFiniteNumber(value.catalogVersion);
         const expectationIndex = readFiniteNumber(value.expectationIndex);
-        return recipeId === null ||
+        if (
+            recipeId === null ||
             recipeDigest === null ||
             catalogVersion === null ||
             expectationIndex === null ||
             !Number.isSafeInteger(expectationIndex) ||
             expectationIndex < 0
-            ? null
-            : { kind: 'recipe', recipeId, catalogVersion, recipeDigest, expectationIndex };
+        ) {
+            return null;
+        }
+        return { kind: 'recipe', recipeId, catalogVersion, recipeDigest, expectationIndex };
     }
     if (value.kind === 'request-number') {
         const candidateId = readText(value.candidateId);
@@ -195,7 +198,9 @@ function readOutcome(value: unknown): AgentRunAudiblePredictionOutcome | null {
     if (!isRecord(value) || (value.status !== 'verified' && value.status !== 'blocked')) {
         return null;
     }
-    const readNumbers = (candidate: unknown) => readList(candidate, readFiniteNumber);
+    function readNumbers(candidate: unknown) {
+        return readList(candidate, readFiniteNumber);
+    }
     const baseline = readNumbers(value.baseline);
     const observed = readNumbers(value.observed);
     const reference = readNumbers(value.reference);
@@ -211,7 +216,9 @@ function readPredictionSubject(value: Record<string, unknown>) {
     const stepId = readText(value.stepId);
     const metricId = readNullableText(value.metricId);
     const band = readNullableText(value.band);
-    const readIds = (candidate: unknown) => readList(candidate, (id) => readText(id));
+    function readIds(candidate: unknown) {
+        return readList(candidate, (id) => readText(id));
+    }
     const targetIds = readIds(value.targetIds);
     const referenceTargetIds = readIds(value.referenceTargetIds);
     const range = value.range === null ? null : readRange(value.range);

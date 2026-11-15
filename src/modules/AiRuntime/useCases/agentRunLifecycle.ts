@@ -57,7 +57,8 @@ import {
     type SettleAgentRunWorkLeaseResult as SettleWorkLeaseResult,
     settleAgentRunWorkLease as settleWorkLease,
 } from './agentRequestOrchestration/settleAgentRunWorkLease';
-import { derivePredictedAudibleImpact, NO_AUDIBLE_CLAIM_REASON } from './deriveMeasuredAudibleImpact';
+import { NO_AUDIBLE_CLAIM_REASON } from './deriveMeasuredAudibleImpact';
+import { derivePredictedAudibleImpact } from './derivePredictedAudibleImpact';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { projectAgentRunReceiptSaga, type AgentRunReceiptSagaInput } from './projectAgentRunReceiptSaga';
 

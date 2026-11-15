@@ -126,6 +126,19 @@ function proposeCard(input: {
     }
     const parsed = parseBatch(compiled.commandBatch);
     const batchContentHash = input.foreignHash === true ? 'another-batch' : digestCommandBatchContent(parsed.envelope);
+    let metricGoalState: ReturnType<typeof goalState> | ReturnType<typeof proofOnlyState>;
+    if (input.goals === undefined) {
+        metricGoalState = proofOnlyState(
+            compiled.commandBatch,
+            input.proofPreviews?.map((build) => build({ revision, batchContentHash }))
+        );
+    } else {
+        metricGoalState = goalState(compiled.commandBatch, {
+            kind: input.goals.kind,
+            goals: input.goals.goals,
+            previews: input.goals.proofPreviews?.map((build) => build({ revision, batchContentHash })) ?? [],
+        });
+    }
     const confirmationId = persistPromptActionConfirmation({
         runId: RUN_ID,
         prompt: 'Set the vocal gain',
@@ -137,17 +150,7 @@ function proposeCard(input: {
         agentApproval: compiled.agentApproval,
         affectedIds: ['vocal'],
         protectedUnchanged: [],
-        metricGoalState:
-            input.goals === undefined
-                ? proofOnlyState(
-                      compiled.commandBatch,
-                      input.proofPreviews?.map((build) => build({ revision, batchContentHash }))
-                  )
-                : goalState(compiled.commandBatch, {
-                      kind: input.goals.kind,
-                      goals: input.goals.goals,
-                      previews: input.goals.proofPreviews?.map((build) => build({ revision, batchContentHash })) ?? [],
-                  }),
+        metricGoalState,
         measuredPreview: input.preview?.({ revision, batchContentHash }),
         executionMode: 'atomic',
         group: { groupId: `group-${String(input.gain)}`, groupLabel: 'Set vocal gain' },

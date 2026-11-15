@@ -17,7 +17,7 @@ import { normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPla
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
-import { deriveAudibleImpact } from '../deriveMeasuredAudibleImpact';
+import { deriveAudibleImpact } from '../deriveAudibleImpact';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
 import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 import { getProjectContext } from '../getProjectContext';

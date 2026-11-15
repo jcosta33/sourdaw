@@ -13,7 +13,8 @@ import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
-import { deriveAudibleImpact, NO_AUDIBLE_CLAIM_REASON } from '../deriveMeasuredAudibleImpact';
+import { deriveAudibleImpact } from '../deriveAudibleImpact';
+import { NO_AUDIBLE_CLAIM_REASON } from '../deriveMeasuredAudibleImpact';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 
