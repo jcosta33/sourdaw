@@ -202,7 +202,8 @@ fn comparable_components(path: &Path) -> Vec<String> {
 
 /// macOS and Windows volumes are case-insensitive by default; folding on a
 /// case-sensitive one only refuses more. Windows also drops trailing dots and
-/// spaces from a name on its way to the filesystem.
+/// spaces from a name on its way to the filesystem, and APFS treats every
+/// Unicode normalization of a name as the same name.
 #[cfg(target_os = "windows")]
 fn comparable_name(name: &str) -> String {
     name.trim_end_matches(['.', ' ']).to_lowercase()
@@ -210,7 +211,9 @@ fn comparable_name(name: &str) -> String {
 
 #[cfg(target_os = "macos")]
 fn comparable_name(name: &str) -> String {
-    name.to_lowercase()
+    icu_normalizer::DecomposingNormalizerBorrowed::new_nfd()
+        .normalize(&name.to_lowercase())
+        .into_owned()
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -730,15 +733,14 @@ mod tests {
             .expect("a plugin folder has a parent")
             .to_path_buf();
         let bundle = plugin_folder.join("Evil.clap");
-        let respelled_bundle = parent
-            .join(
-                plugin_folder
-                    .file_name()
-                    .expect("a plugin folder has a name")
-                    .to_string_lossy()
-                    .to_uppercase(),
-            )
-            .join("Evil.clap");
+        let folder_name = plugin_folder
+            .file_name()
+            .expect("a plugin folder has a name")
+            .to_string_lossy()
+            .into_owned();
+        let respelled_name = swap_case(&folder_name);
+        assert_ne!(respelled_name, folder_name, "the respelling must differ");
+        let respelled_bundle = parent.join(respelled_name).join("Evil.clap");
         let elsewhere = parent.join("sourdaw-not-a-plugin-folder").join("song.wav");
 
         with_grants_for_test(
@@ -757,5 +759,69 @@ mod tests {
                 assert!(admits(&bundle, GrantMode::Read));
             },
         );
+    }
+    fn swap_case(name: &str) -> String {
+        name.chars()
+            .flat_map(|character| {
+                if character.is_uppercase() {
+                    character.to_lowercase().collect::<Vec<_>>()
+                } else {
+                    character.to_uppercase().collect::<Vec<_>>()
+                }
+            })
+            .collect()
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_plugin_folder_spelled_in_another_unicode_normalization_is_the_same_folder() {
+        let folders = vec![PathBuf::from("/Users/u/Plugins/Caf\u{e9}")];
+
+        for inside in [
+            "/Users/u/Plugins/Cafe\u{301}/Evil.clap",
+            "/Users/u/Plugins/CAFE\u{301}/Evil.clap",
+            "/Users/u/Plugins/CAF\u{c9}/Evil.clap",
+        ] {
+            assert!(
+                plugin_folder_containing(Path::new(inside), &folders).is_some(),
+                "{inside:?} is inside the plugin folder"
+            );
+        }
+        assert!(
+            plugin_folder_containing(Path::new("/Users/u/Plugins/Cafe/Evil.clap"), &folders)
+                .is_none(),
+            "a name without the accent is another folder"
+        );
+    }
+
+    #[test]
+    fn a_stored_plugin_folder_grant_refuses_writes_through_admits_available_or_not() {
+        use crate::host::plugin_folder_grants::test_support::{store_grants, TempTree};
+
+        let tree = TempTree::create("admits-stored-grant");
+        let available = tree.dir("Music/Plugins/Available");
+        let unplugged = tree.path("Music/Plugins/Caf\u{e9}");
+        store_grants(&tree.store(), &[available.clone(), unplugged.clone()]);
+        let song = tree.path("Music/song.wav");
+
+        plugin_folder_grants::with_store_location_for_test(&tree.store(), || {
+            with_grants_for_test(
+                vec![FileGrant {
+                    canonical: tree.root.clone(),
+                    mode: GrantMode::ReadWrite,
+                    recursive: true,
+                }],
+                || {
+                    assert!(admits(&song, GrantMode::ReadWrite));
+                    assert!(!admits(&available.join("Evil.clap"), GrantMode::ReadWrite));
+                    assert!(!admits(&unplugged.join("Evil.clap"), GrantMode::ReadWrite));
+                    assert!(admits(&available.join("Evil.clap"), GrantMode::Read));
+                    if cfg!(target_os = "macos") {
+                        let decomposed = tree.path("Music/Plugins/Cafe\u{301}/Evil.clap");
+                        assert!(!admits(&decomposed, GrantMode::ReadWrite));
+                    }
+                },
+            );
+        });
     }
 }
