@@ -346,7 +346,10 @@ describe('VCA activation quarantine', () => {
 
     it('keeps only legacy VCA actions in the registered and persisted action unions', () => {
         const handlers = source('src/modules/Arrangement/useCases/getArrangementHandlers.ts');
-        const appActions = source('src/utils/handlerContract.ts');
+        const appActions = productionSources()
+            .filter(({ path }) => path === 'src/utils/handlerContract.ts' || /\/events\/\w+AppActions\.ts$/.test(path))
+            .map(({ text }) => text)
+            .join('\n');
         const runtimeActions = parsedSource('src/modules/AiRuntime/models/RuntimeAction.ts');
         const registeredVcaActions = matches(handlers, /^\s{8}(\w*Vca\w*):/gm).map((row) => row.trim().split(':')[0]);
         const persistedVcaActions = matches(appActions, /type: '([^']*Vca[^']*)'/g).map(

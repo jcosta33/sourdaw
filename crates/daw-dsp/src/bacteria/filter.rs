@@ -6,6 +6,14 @@
 use crate::primitives::{flush_denormal, pole_from_ms};
 use std::f32::consts::PI;
 
+/// One SVF step's low-pass and band-pass outputs and the damping `k` the
+/// high-pass and notch responses subtract them with.
+struct SvfTaps {
+    low: f32,
+    band: f32,
+    damping: f32,
+}
+
 /// Filter mode selector.
 #[derive(Clone, Copy, PartialEq)]
 pub enum FilterMode {
@@ -115,11 +123,26 @@ impl SvfFilter {
     pub fn process_sample(&mut self, input: f32) -> f32 {
         match self.mode {
             FilterMode::Comb => self.process_comb(input),
-            _ => self.process_svf(input),
+            FilterMode::LowPass => self.advance_svf(input).low,
+            FilterMode::HighPass => {
+                let taps = self.advance_svf(input);
+                input - taps.damping * taps.band - taps.low
+            }
+            FilterMode::BandPass => self.advance_svf(input).band,
+            FilterMode::Notch => {
+                let taps = self.advance_svf(input);
+                input - taps.damping * taps.band
+            }
+            FilterMode::Formant => {
+                // Simple formant: resonant bandpass with boosted Q
+                self.advance_svf(input).band * 2.0
+            }
         }
     }
 
-    fn process_svf(&mut self, input: f32) -> f32 {
+    /// Advance the state-variable filter one sample and return the taps each
+    /// SVF response is mixed from.
+    fn advance_svf(&mut self, input: f32) -> SvfTaps {
         // Update envelope follower
         let abs_input = input.abs();
         if abs_input > self.env_level {
@@ -148,16 +171,10 @@ impl SvfFilter {
         self.ic1eq = flush_denormal(2.0 * v1 - self.ic1eq);
         self.ic2eq = flush_denormal(2.0 * v2 - self.ic2eq);
 
-        match self.mode {
-            FilterMode::LowPass => v2,
-            FilterMode::HighPass => input - k * v1 - v2,
-            FilterMode::BandPass => v1,
-            FilterMode::Notch => input - k * v1,
-            FilterMode::Formant => {
-                // Simple formant: resonant bandpass with boosted Q
-                v1 * 2.0
-            }
-            FilterMode::Comb => unreachable!(),
+        SvfTaps {
+            low: v2,
+            band: v1,
+            damping: k,
         }
     }
 

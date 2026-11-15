@@ -106,7 +106,10 @@ impl LstmLayer {
 
 /// The complete LSTM network.
 pub struct LstmModel {
-    layers: Vec<LstmLayer>,
+    /// Every layer below the top one, input side first.
+    lower: Vec<LstmLayer>,
+    /// The layer whose hidden state feeds the head.
+    top: LstmLayer,
     /// Row-major `(out_channels, hidden_size)`.
     head_w: Vec<f32>,
     head_b: Vec<f32>,
@@ -176,6 +179,11 @@ impl LstmModel {
                 weights,
             )?);
         }
+        let Some(top) = layers.pop() else {
+            return Err(NamModelError::InvalidConfig(
+                "LSTM config requires at least one layer".into(),
+            ));
+        };
 
         let head_needed = conv1x1_weight_count(hidden_size, out_channels, true);
         if weights.len() < head_needed {
@@ -197,7 +205,8 @@ impl LstmModel {
         }
 
         Ok(LstmModel {
-            layers,
+            lower: layers,
+            top,
             head_w,
             head_b,
             input: vec![0.0; 1],
@@ -212,15 +221,13 @@ impl LstmModel {
         // layer's hidden tail, copied out to keep the borrows disjoint.
         let mut x = [0.0_f32; 1];
         x.copy_from_slice(&self.input);
-        for index in 0..self.layers.len() {
-            self.layers[index].process(&x);
-            if index + 1 < self.layers.len() {
-                x[0] = self.layers[index].xh[self.layers[index].input_size];
-            }
+        for layer in &mut self.lower {
+            layer.process(&x);
+            x[0] = layer.xh[layer.input_size];
         }
+        self.top.process(&x);
 
-        let last = self.layers.last().expect("checked non-empty");
-        let hidden = last.hidden();
+        let hidden = self.top.hidden();
         let mut sum = self.head_b[0];
         for (weight, value) in self.head_w.iter().zip(hidden) {
             sum += weight * value;
@@ -230,9 +237,10 @@ impl LstmModel {
     }
 
     pub fn reset(&mut self) {
-        for layer in &mut self.layers {
+        for layer in &mut self.lower {
             layer.restore_initial_state();
         }
+        self.top.restore_initial_state();
     }
 
     /// NAMCore's LSTM prewarm: half a second of silence at the 48 kHz
