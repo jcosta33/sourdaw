@@ -5,7 +5,9 @@ type Stamp = { readonly [Type in AppActionType]: (action: ActionOf<Type>) => App
 
 const PROCESSING_ONLY_POLICY: AutomationRecordingPolicy = 'suppressed';
 
-const leaveUnstamped = (action: AppAction): AppAction => action;
+function leaveUnstamped(action: AppAction): AppAction {
+    return action;
+}
 
 function stampSetDeviceParameter(action: ActionOf<'setDeviceParameter'>): AppAction {
     if (action.payload.automationRecordingPolicy === PROCESSING_ONLY_POLICY) {

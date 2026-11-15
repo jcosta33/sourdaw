@@ -8,8 +8,12 @@ type RenderReceiptGatedAction = Extract<AppAction, { type: 'bounceSelection' | '
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 type GateLookup = { readonly [Type in AppActionType]: (action: ActionOf<Type>) => RenderReceiptGatedAction | null };
 
-const notRenderReceiptGated = (): null => null;
-const gateRenderReceipt = (action: RenderReceiptGatedAction): RenderReceiptGatedAction => action;
+function notRenderReceiptGated(): null {
+    return null;
+}
+function gateRenderReceipt(action: RenderReceiptGatedAction): RenderReceiptGatedAction {
+    return action;
+}
 
 /** Every action type answers, so a new action does not compile until it is gated or left ordinary. */
 const renderReceiptGateByActionType: GateLookup = {

@@ -102,7 +102,9 @@ function addressesGainLaneForDecibels(
 type ActionOf<Type extends RuntimeActionType> = Extract<RuntimeAction, { type: Type }>;
 type VcaTargetLookup = { readonly [Type in RuntimeActionType]: (action: ActionOf<Type>) => boolean };
 
-const noVcaTargets = (): boolean => true;
+function noVcaTargets(): boolean {
+    return true;
+}
 
 function allTracksExist(action: ActionOf<'createVcaGroup'>): boolean {
     const tracks = trackStore.value?.tracks ?? [];
