@@ -719,7 +719,7 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                         history: undoHistoryStore.value,
                     });
                 const history = undoHistoryStore.value;
-                if (!history?.past.length || !history.future.length) {
+                if (!history?.past.length || history.future.length === 0) {
                     throw new Error('Undo and Redo must both contain entries');
                 }
                 const beforeImport = snapshot();
