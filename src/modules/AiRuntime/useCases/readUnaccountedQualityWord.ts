@@ -13,6 +13,8 @@ import { readFirstPerceptualTerm } from './readFirstPerceptualTerm';
 
 // A slash joins clauses only with space around it, so a registered phrase such as "punch in/out" stays whole.
 const CLAUSE_SEPARATOR = /[.;,!?\n&:()—–]|\s\/\s|\b(?:and|then|but|so|while|with|or|plus)\b/u;
+// A clause with no letter holds no word, so a sample list or a run of figures is never rescanned clause by clause.
+const HAS_LETTER = /\p{L}/u;
 const DECIBEL_UNIT = String.raw`(?:db|lufs|lkfs|dbfs|dbtp)`;
 // A frequency states no amount of any quality, so it never accounts for the word beside it.
 const UNIT = String.raw`(?:${DECIBEL_UNIT}|%|ms|s)`;
@@ -135,6 +137,9 @@ export function readUnaccountedQualityWord(prompt: string, context: ProjectConte
     const named = maskProjectObjectNames(tracked, context, CLAUSE_SEPARATOR);
     const masked = blankConstraintClauses(named, prompt, context);
     for (const clause of masked.split(CLAUSE_SEPARATOR)) {
+        if (!HAS_LETTER.test(clause)) {
+            continue;
+        }
         const stated = blankCommandPhrase(
             blankPunchTransportTerms(blankFigureQualifiers(blankSuppliedName(clause))),
             phrases
