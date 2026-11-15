@@ -76,9 +76,11 @@ impl SvfFilter {
         }
     }
 
+    /// A zero or negative time is an instant follower: a coefficient of 0.0
+    /// makes `env_level` land on the input at once.
     fn time_to_coeff(ms: f32, sample_rate: f32) -> f32 {
         if ms <= 0.0 {
-            1.0
+            0.0
         } else {
             pole_from_ms(ms, sample_rate)
         }
@@ -193,16 +195,40 @@ impl SvfFilter {
 mod tests {
     use super::SvfFilter;
 
-    /// The filter envelope freezes at zero and negative times: a coefficient of
-    /// 1.0 holds `env_level` where it is. Pinned as found, not endorsed — the
-    /// other millisecond followers in this crate go instant at 0 ms instead.
     #[test]
-    fn filter_envelope_time_at_or_below_zero_is_a_coefficient_of_one() {
-        assert_eq!(SvfFilter::time_to_coeff(0.0, 48_000.0), 1.0);
-        assert_eq!(SvfFilter::time_to_coeff(-1.0, 48_000.0), 1.0);
+    fn filter_envelope_time_coefficients_are_instant_at_or_below_zero_and_unchanged_above() {
+        assert_eq!(SvfFilter::time_to_coeff(0.0, 48_000.0), 0.0);
+        assert_eq!(SvfFilter::time_to_coeff(-1.0, 48_000.0), 0.0);
         assert_eq!(
             SvfFilter::time_to_coeff(5.0, 48_000.0).to_bits(),
             0x3f7e_ef80
         );
+        assert_eq!(
+            SvfFilter::time_to_coeff(0.005, 48_000.0).to_bits(),
+            0.015_503_856_f32.to_bits()
+        );
+    }
+
+    #[test]
+    fn zero_attack_and_release_times_make_the_follower_track_the_input_instantly() {
+        let mut filter = SvfFilter::new(48_000.0);
+        filter.set_param("filterEnvAmount", 1.0);
+        filter.set_param("filterEnvAttack", 0.0);
+        filter.set_param("filterEnvRelease", 0.0);
+
+        for _ in 0..16 {
+            filter.process_sample(0.0);
+        }
+        assert_eq!(filter.env_level, 0.0);
+
+        filter.process_sample(0.5);
+        assert_eq!(filter.env_level, 0.5, "attack must be instant at 0 ms");
+        for _ in 0..16 {
+            filter.process_sample(0.5);
+        }
+        assert_eq!(filter.env_level, 0.5);
+
+        filter.process_sample(0.0);
+        assert_eq!(filter.env_level, 0.0, "release must be instant at 0 ms");
     }
 }
