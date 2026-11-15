@@ -28,18 +28,15 @@ import { GUARD_FAILURES_DIR, guardFailureReceiptPath, type GuardFailureReceipt }
 import {
     acquireResourceLock,
     clearGuardFailureReceipt,
-    createProcessTreeState,
     detectAuthorLane,
     enterResourceSession,
     hasExplicitTarget,
-    isSameProcess,
     main as runGuardCli,
     parseCgroupAvailableBytes,
     parseCliArgs,
     parseMemAvailableBytes,
     pnpmScriptName,
     psSamplingArgs,
-    processTreeAlive,
     readGuardFailureReceipt,
     reservationRssBytes,
     reservationIsLive,
@@ -49,14 +46,19 @@ import {
     RESOURCE_ROOT_ENV,
     RESOURCE_SESSION_ENV,
     runGuardedCommand,
-    sampleProcessTree,
-    terminateProcessTree,
     type DetectedLane,
     type GuardedCommandResult,
-    type ProcessTreeHost,
     type ResourceProfile,
     type WriteGuardFailureReceiptPorts,
 } from '../resourceGuard';
+import {
+    createProcessTreeState,
+    isSameProcess,
+    processTreeAlive,
+    sampleProcessTree,
+    terminateProcessTree,
+    type ProcessTreeHost,
+} from '../resourceGuardProcessTree';
 import { parseArgs as parseLintArgs } from '../runLint';
 
 import { readSignalAcknowledgement, startSignalFixture } from './fixtures/resourceGuardSignalHarness';
@@ -783,6 +785,17 @@ describe('process identity ownership', () => {
         const legacy = createProcessTreeState(new Map([[200, originalStart]]));
         expect(legacy.invalidated.size).toBe(0);
         expect(legacy.pending.size).toBe(0);
+    });
+
+    it('rejects retirement facts without a start identity in a partial snapshot', () => {
+        const tree = createProcessTreeState(new Map([[200, originalStart]]), {
+            childPid: 200,
+            invalidatedProcesses: [{ pid: 200 }],
+        });
+
+        expect(tree.identities.get(200)).toBe(originalStart);
+        expect(tree.invalidated.size).toBe(0);
+        expect(tree.pending.size).toBe(0);
     });
 
     it('preserves identity-scoped retirement and fresh bindings across reservation RSS reconstruction', () => {

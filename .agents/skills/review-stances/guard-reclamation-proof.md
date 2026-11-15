@@ -135,7 +135,8 @@ evidence out of the child output unless it explains retention`, where startup, s
     A missing leader preserves its original group; only positive root replacement retires its group authority
     ([POSIX Process ID Reuse][posix-pid-reuse]). Retain saved child identities across missing/empty lists, prefer
     newer bound identities, and never turn unknown RSS into lease release or an unbound legacy root into a false identity.
-    Mutation pointers: restore unchecked historical seeds or stale-edge readmission in `sampleProcessRows`, erase
+    Mutation pointers: restore unchecked historical seeds or stale-edge readmission in
+    `scripts/resourceGuardProcessTree.ts`, erase
     the saved tuple in `reservationProcessTree`, or restore the retired-child/zero-for-unknown shortcut in
     `reservationIsLive`; the named group must fail. It also rejects unconditional Unix-group/Windows-tree authority.
     In `scripts/__tests__/resourceGuardStorage.spec.ts`'s `unproved guard storage` group, the survivor cases require
