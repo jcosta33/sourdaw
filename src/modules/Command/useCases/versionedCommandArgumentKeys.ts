@@ -558,6 +558,7 @@ const schemaDefinitions = [
         properties: {
             color: 1,
             endBeat: 0,
+            index: 0,
             name: 1,
             sectionId: 1,
             startBeat: 0,
