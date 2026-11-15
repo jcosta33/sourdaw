@@ -20,23 +20,33 @@ function namesQuality(text: string, words: readonly string[]): boolean {
     return new RegExp(String.raw`\b(?:${words.join('|')})\b`).test(text);
 }
 
+export type ComparedQualityReading = {
+    /** Qualities a word names outside every track name and quotation. */
+    readonly named: ReadonlySet<ComparedQuality>;
+    /** Qualities a word names in the prompt, but only inside a track name or a quotation. */
+    readonly namedOnlyInside: ReadonlySet<ComparedQuality>;
+};
+
 /**
- * The qualities the request names, in any form, outside track names and quotations. The provider chooses
- * whether the request compares and which subjects, and admission still requires a distinct reference scope,
- * so offering a named quality costs only planner text, which the local window check bounds. Withholding a
- * quality the request never names outside names and quotes is what keeps a name or a quotation from reading
- * as a comparison; no marker list is kept, because any phrasing can state one ("equal to", "in comparison to").
+ * Which qualities the request names, in any form. The provider chooses whether the request compares and
+ * which subjects, and admission still requires a distinct reference scope, so offering a named quality costs
+ * only planner text. A quality named only inside a track name or a quotation ("Louder Than Bombs") is never
+ * read as the request's own, and no marker list is kept, because any phrasing can state a comparison.
  */
 export function readComparedQualities(
     prompt: string,
     context: AnswerInterpretationCatalog['context']
-): ReadonlySet<ComparedQuality> {
-    const text = maskTrackReferences(prompt, context, ' ').toLowerCase();
-    const compared = new Set<ComparedQuality>();
+): ComparedQualityReading {
+    const masked = maskTrackReferences(prompt, context, ' ').toLowerCase();
+    const raw = prompt.toLowerCase();
+    const named = new Set<ComparedQuality>();
+    const namedOnlyInside = new Set<ComparedQuality>();
     for (const [quality, words] of Object.entries(QUALITY_WORDS) as Array<[ComparedQuality, readonly string[]]>) {
-        if (namesQuality(text, words)) {
-            compared.add(quality);
+        if (namesQuality(masked, words)) {
+            named.add(quality);
+        } else if (namesQuality(raw, words)) {
+            namedOnlyInside.add(quality);
         }
     }
-    return compared;
+    return { named, namedOnlyInside };
 }

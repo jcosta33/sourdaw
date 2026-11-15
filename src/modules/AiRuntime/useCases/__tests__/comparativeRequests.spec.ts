@@ -2695,54 +2695,73 @@ describe('comparisons by loudness, brightness, width, dynamics and punch', () =>
         }
 
         const CENTROID = 'spectral-centroid-comparison-v1';
+        const MATCH = 'integrated-loudness-match-v1';
+        const LOUDNESS_HIGHER_LOWER = 'integrated-loudness-comparison-v1';
         const SIDE_ENERGY = 'side-energy-fraction-comparison-v1';
         const CREST = 'crest-factor-comparison-v1';
-        const LOUDNESS_POLICIES = ['integrated-loudness-comparison-v1', 'integrated-loudness-match-v1'];
+
+        /** The sorted policy ids a request offers: main's always-published ones plus those it adds. */
+        function offers(...ids: string[]): string[] {
+            return ids.sort();
+        }
+        const LEGACY = [MATCH, CENTROID];
 
         it.each([
             [
-                'a track named with a comparative, only the quality outside it',
+                'a track named with a comparative: no loudness policy, the quality outside it',
                 'Make Louder Than Bombs darker',
                 'Louder Than Bombs',
-                [CENTROID],
+                offers(CENTROID),
             ],
             [
-                'quoted text, only the quality outside it',
+                'quoted text: the quoted quality adds nothing, the legacy objectives stand',
                 'Make Drums darker, as the note says "wider than the keys"',
                 null,
-                [CENTROID],
+                offers(...LEGACY),
             ],
-            ['a request that names no quality', 'Make Drums thicker', null, []],
-            ['a bare direction', 'Make Drums louder', null, LOUDNESS_POLICIES],
-            ['a negated bare direction', "Don't make Drums brighter", null, [CENTROID]],
-            ['an as-as superlative of loudness', 'Make Drums as loud as possible', null, LOUDNESS_POLICIES],
-            ['an as-as superlative of width', 'Make Drums as wide as you can', null, [SIDE_ENERGY]],
-            ['an as-as superlative of brightness', 'Make Drums as bright as it gets', null, [CENTROID]],
-            ['an as-as superlative of punch', 'Make Drums as punchy as it can be', null, [CREST]],
-        ])('offers exactly what is named outside names and quotes for %s', async (_name, prompt, track, policies) => {
+            [
+                'a request that names no quality: the legacy objectives only',
+                'Make Drums thicker',
+                null,
+                offers(...LEGACY),
+            ],
+            ['a bare direction', 'Make Drums louder', null, offers(...LEGACY, LOUDNESS_HIGHER_LOWER)],
+            ['a negated bare direction', "Don't make Drums brighter", null, offers(...LEGACY)],
+            [
+                'an as-as superlative of loudness',
+                'Make Drums as loud as possible',
+                null,
+                offers(...LEGACY, LOUDNESS_HIGHER_LOWER),
+            ],
+            ['an as-as superlative of width', 'Make Drums as wide as you can', null, offers(...LEGACY, SIDE_ENERGY)],
+            ['an as-as superlative of brightness', 'Make Drums as bright as it gets', null, offers(...LEGACY)],
+            ['an as-as superlative of punch', 'Make Drums as punchy as it can be', null, offers(...LEGACY, CREST)],
+            ['a match with no quality word', 'Match Drums to Bass over Chorus', null, offers(...LEGACY)],
+            ['a synonym the word list lacks', 'Make the vocal sharper than the guitars', null, offers(...LEGACY)],
+        ])('offers exactly the right policies for %s', async (_name, prompt, track, policies) => {
             expect(await offeredPolicies(prompt, track)).toEqual(policies);
         });
 
         it.each([
-            ['a match of volume', 'Match Drums volume to Bass over Chorus', LOUDNESS_POLICIES],
-            ['the same volume', 'Make Drums the same volume as Bass', LOUDNESS_POLICIES],
-            ['as loud as a subject', 'Make Drums as loud as Bass', LOUDNESS_POLICIES],
-            ['as wide as a subject', 'Make Drums as wide as the keys', [SIDE_ENERGY]],
-            ['compared to', 'The guitar is too bright compared to the bass, turn it down', [CENTROID]],
-            ['relative to', 'Make Drums louder relative to Bass', LOUDNESS_POLICIES],
-            ['versus', 'Drums vs Bass: make Drums wider', [SIDE_ENERGY]],
-            ['compared with', 'Make Drums punchy compared with the snare', [CREST]],
-            ['compare to', "Compare the vocal's brightness to Guitar A", [CENTROID]],
-            ['equal to', "Make the vocal's loudness equal to Guitar A", LOUDNESS_POLICIES],
-            ['in comparison to', 'In comparison to Guitar A, make the vocal brighter', [CENTROID]],
+            ['a match of volume', 'Match Drums volume to Bass over Chorus', offers(...LEGACY, LOUDNESS_HIGHER_LOWER)],
+            ['the same volume', 'Make Drums the same volume as Bass', offers(...LEGACY, LOUDNESS_HIGHER_LOWER)],
+            ['as loud as a subject', 'Make Drums as loud as Bass', offers(...LEGACY, LOUDNESS_HIGHER_LOWER)],
+            ['as wide as a subject', 'Make Drums as wide as the keys', offers(...LEGACY, SIDE_ENERGY)],
+            ['compared to', 'The guitar is too bright compared to the bass, turn it down', offers(...LEGACY)],
+            ['relative to', 'Make Drums louder relative to Bass', offers(...LEGACY, LOUDNESS_HIGHER_LOWER)],
+            ['versus', 'Drums vs Bass: make Drums wider', offers(...LEGACY, SIDE_ENERGY)],
+            ['compared with', 'Make Drums punchy compared with the snare', offers(...LEGACY, CREST)],
+            ['compare to', "Compare the vocal's brightness to Guitar A", offers(...LEGACY)],
+            ['equal to', "Make the vocal's loudness equal to Guitar A", offers(...LEGACY, LOUDNESS_HIGHER_LOWER)],
+            ['in comparison to', 'In comparison to Guitar A, make the vocal brighter', offers(...LEGACY)],
         ])('offers its quality for %s', async (_name, prompt, policies) => {
             expect(await offeredPolicies(prompt, null)).toEqual(policies);
         });
 
-        it('offers only the quality a stated comparison names, beside a comparative track name', async () => {
-            expect(await offeredPolicies('Make Drums brighter than Louder Than Bombs', 'Louder Than Bombs')).toEqual([
-                CENTROID,
-            ]);
+        it('withholds the legacy objective a comparative track name alone would suggest', async () => {
+            expect(await offeredPolicies('Make Drums brighter than Louder Than Bombs', 'Louder Than Bombs')).toEqual(
+                offers(CENTROID)
+            );
         });
     });
 });

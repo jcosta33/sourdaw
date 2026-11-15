@@ -8,7 +8,7 @@ import { type AnswerInterpretationCatalog } from '../models/AnswerInterpretation
 import { expandMixRecipe } from './expandMixRecipe';
 import { type MetricGoal } from './metricGoalContractTypes';
 import { readRecipeExpectationTolerance } from './metricHoldTolerances';
-import { type ComparedQuality, readComparedQualities } from './readComparedQualities';
+import { type ComparedQuality, type ComparedQualityReading, readComparedQualities } from './readComparedQualities';
 import { readRequestMetricNumbers } from './readRequestMetricNumbers';
 
 type Objective = {
@@ -32,6 +32,8 @@ type AnswerScopes = AnswerInterpretationCatalog['scopes'];
 
 type OrderingPolicy = {
     quality: ComparedQuality;
+    /** Published for every request on main before comparisons were gated; a new objective is gated instead. */
+    legacy: boolean;
     idPrefix: string;
     metricId: 'integratedLoudness' | 'spectralCentroid' | 'sideEnergyFraction' | 'crestFactor';
     policyId: Extract<
@@ -51,6 +53,7 @@ type OrderingPolicy = {
 const ORDERING_POLICIES: readonly OrderingPolicy[] = [
     {
         quality: 'loudness',
+        legacy: false,
         idPrefix: 'loudness',
         metricId: 'integratedLoudness',
         policyId: 'integrated-loudness-comparison-v1',
@@ -58,6 +61,7 @@ const ORDERING_POLICIES: readonly OrderingPolicy[] = [
     },
     {
         quality: 'brightness',
+        legacy: true,
         idPrefix: 'centroid',
         metricId: 'spectralCentroid',
         policyId: 'spectral-centroid-comparison-v1',
@@ -65,6 +69,7 @@ const ORDERING_POLICIES: readonly OrderingPolicy[] = [
     },
     {
         quality: 'width',
+        legacy: false,
         idPrefix: 'side-energy',
         metricId: 'sideEnergyFraction',
         policyId: 'side-energy-fraction-comparison-v1',
@@ -72,6 +77,7 @@ const ORDERING_POLICIES: readonly OrderingPolicy[] = [
     },
     {
         quality: 'dynamics',
+        legacy: false,
         idPrefix: 'crest',
         metricId: 'crestFactor',
         policyId: 'crest-factor-comparison-v1',
@@ -119,14 +125,16 @@ function orderingObjectives(policy: OrderingPolicy, allScopeIds: string[]): Obje
     );
 }
 
-/** Comparison objectives are offered only for the qualities the request states as a comparison. */
-function policyObjectives(
-    scopes: AnswerScopes,
-    allScopeIds: string[],
-    compared: ReadonlySet<ComparedQuality>
-): Objective[] {
+/**
+ * Two rules decide the comparison objectives. The ones main always published (loudness match and the
+ * spectral-centroid pair) stay published for every request, withheld only when the request names their
+ * quality solely inside a track name or a quotation. The objectives added since are published only when the
+ * request names the quality outside names and quotes, which bounds the planner text local requests carry
+ * (#6706).
+ */
+function policyObjectives(scopes: AnswerScopes, allScopeIds: string[], reading: ComparedQualityReading): Objective[] {
     const objectives: Objective[] = [];
-    if (compared.has('loudness')) {
+    if (!reading.namedOnlyInside.has('loudness')) {
         objectives.push(
             policyObjective({
                 id: 'loudness-match',
@@ -145,7 +153,10 @@ function policyObjectives(
         );
     }
     for (const policy of ORDERING_POLICIES) {
-        if (compared.has(policy.quality)) {
+        const published = policy.legacy
+            ? !reading.namedOnlyInside.has(policy.quality)
+            : reading.named.has(policy.quality);
+        if (published) {
             objectives.push(...orderingObjectives(policy, allScopeIds));
         }
     }

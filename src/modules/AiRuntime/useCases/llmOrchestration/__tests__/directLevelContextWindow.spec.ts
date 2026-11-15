@@ -135,7 +135,7 @@ describe('direct level context window', () => {
 });
 
 /** Bounds the comparison objectives' share of the local prompt; the absolute floor for the metric-aware prompt is tracked in #6706. */
-const COMPARISON_OBJECTIVES_MAX_EXTRA_TOKENS = 700;
+const COMPARISON_OBJECTIVES_MAX_EXTRA_TOKENS = 500;
 
 /** The local planning prompt's cost for one request, built as production builds it, metric catalog included. */
 async function measureMetricAwareLocalPromptCost(prompt: string): Promise<number> {
