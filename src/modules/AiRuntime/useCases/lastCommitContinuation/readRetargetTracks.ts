@@ -2,9 +2,25 @@ import { clarify } from '../../models/LastCommitRefusal';
 import { type ProjectContext } from '../../models/ProjectContext';
 
 import { type LastCommitContinuation, type RetargetRequest } from './lastCommitOutcome';
-import { readNamedTracks } from './readNamedTracks';
+import { type AmbiguousTrack, ORDINAL_WORDS, readNamedTracks } from './readNamedTracks';
 
 type ReadTargets = { status: 'named'; ids: string[] } | { status: 'refused'; outcome: LastCommitContinuation };
+
+/** The options of the which-track question: same-named candidates by order, the rest by name. */
+function describeCandidates(candidates: readonly AmbiguousTrack[]): string {
+    const shares = (candidate: AmbiguousTrack): boolean =>
+        candidates.filter((other) => other.name.toLowerCase() === candidate.name.toLowerCase()).length > 1;
+    if (!candidates.some(shares)) {
+        return candidates.map((candidate) => candidate.name).join(' or ');
+    }
+    const options = candidates.map((candidate) =>
+        shares(candidate)
+            ?`the ${ORDINAL_WORDS[candidate.order - 1] ?? String(candidate.order)} ${candidate.name}`
+            : candidate.name
+    );
+    const last = options.at(-1);
+    return `${options.slice(0, -1).join(', ')} or ${last}, counting from the top of the track list`;
+}
 
 /** The tracks a re-target names, or the question a stretch it cannot read as tracks asks. */
 export function readRetargetTracks(request: RetargetRequest, context: ProjectContext): ReadTargets {
@@ -14,7 +30,7 @@ export function readRetargetTracks(request: RetargetRequest, context: ProjectCon
             status: 'refused',
             outcome: clarify(
                 `"${named.text}" names more than one track.`,
-                `Which track should take the last change: ${named.names.join(' or ')}?`
+                `Which track should take the last change: ${describeCandidates(named.candidates)}?`
             ),
         };
     }
