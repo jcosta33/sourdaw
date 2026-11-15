@@ -164,8 +164,8 @@ export function captureRelinkAudioSourceCommitValidation(
 } {
     const identity = captureProjectIdentity();
     const owner = getCurrentAutomergeStorageMutationOwner();
-    const root = getCrdtDoc<{ tracks: NonNullable<typeof trackStore.value> }>('root');
-    const rawTracks = root?.tracks.tracks;
+    const root = getCrdtDoc<{ tracks?: NonNullable<typeof trackStore.value> }>('root');
+    const rawTracks = root?.tracks?.tracks;
     let planned: ReturnType<typeof projectRelinkAudioSourceTracks> = null;
     if (Array.isArray(rawTracks)) {
         planned = projectRelinkAudioSourceTracks(rawTracks, context?.actions.slice(0, context.actionIndex) ?? []);

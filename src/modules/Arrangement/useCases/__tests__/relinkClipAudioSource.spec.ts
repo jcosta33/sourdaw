@@ -599,6 +599,35 @@ describe('relinkClipAudioSource', () => {
         expect(mocks.clearClipPitchAnalysis.mock.calls.map((call) => call[0])).toEqual(['clip-a', 'clip-b']);
     });
 
+    it('refuses a raw root without a tracks slot while projected relink targets still exist', () => {
+        const targets = captureRelinkAudioSourceTargets('buf-missing', 'buf-new');
+        expect(targets).toHaveLength(2);
+        const projectedBefore = trackStore.value;
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        const root = getCrdtDoc<Record<string, unknown>>('root');
+        if (!root) {
+            throw new Error('Expected the public empty root fixture');
+        }
+        expect(root.tracks).toBeUndefined();
+        const rawBefore = JSON.stringify(root);
+
+        const { validation } = captureRelinkAudioSourceCommitValidation(targets);
+        try {
+            expect(validation.beforeCommit()).not.toBeNull();
+            const beforeMutation = validation.beforeMutation;
+            if (!beforeMutation) {
+                throw new Error('Expected raw mutation admission to remain guarded');
+            }
+            expect(beforeMutation(root)).not.toBeNull();
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(rawBefore);
+            expect(trackStore.value).toBe(projectedBefore);
+            expect(undoHistoryStore.value?.past).toEqual([]);
+        } finally {
+            validation.release();
+        }
+    });
+
     it('rejects active-snapshot addresses at projected and raw publication boundaries', () => {
         const owner = TrackDummy.create({
             id: 'track-1',
