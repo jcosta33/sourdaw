@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
-import { type TimeOperationRestorePlanSnapshot } from '#/utils/handlerContract';
 
+import { type TimeOperationRestorePlanSnapshot } from '../../events/arrangementClipAppActions';
 import { deleteTime } from '../../useCases/timeOperations/deleteTime';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
 

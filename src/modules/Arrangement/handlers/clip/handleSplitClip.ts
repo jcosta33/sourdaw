@@ -6,11 +6,11 @@ import {
     type HandlerMaterializationContext,
     type HandlerValidationContext,
     type RetiredTakeLaneSnapshot,
-    type TakeReKeyLaneTransitionSnapshot,
 } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 import { type TempoSourceClock } from '#/utils/tempoSourceClock';
 
+import { type TakeReKeyLaneTransitionSnapshot } from '../../events/arrangementClipAppActions';
 import { type ZeroCrossingPosition } from '../../services/snapSplitBeatToZeroCrossing';
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
 import { captureClipSplitSource } from '../../useCases/clipEditing/captureClipSplitSource';
