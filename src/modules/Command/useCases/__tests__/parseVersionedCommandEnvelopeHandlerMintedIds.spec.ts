@@ -279,3 +279,13 @@ describe('local tempo-map row application IDs', () => {
         expect(readHandlerMintedApplicationIds('editTempoMap', { rowPlan: { before: [], after: [] } })).toEqual([]);
     });
 });
+
+describe('scratch pad capture application IDs', () => {
+    it('names each pad section id the capture drew by its position', () => {
+        expect(readHandlerMintedApplicationIds('captureScratchPad', { sectionIds: ['pad-a', 'pad-b'] })).toEqual([
+            { argument: 'sectionIds[0]', value: 'pad-a' },
+            { argument: 'sectionIds[1]', value: 'pad-b' },
+        ]);
+        expect(readHandlerMintedApplicationIds('captureScratchPad', {})).toEqual([]);
+    });
+});

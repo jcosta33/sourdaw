@@ -1,7 +1,7 @@
 import { markerStore, scratchPadStore } from '#/modules/Arrangement/stores';
-import { captureArrangementToScratchPad } from '#/modules/Arrangement/useCases';
+import { captureArrangementToScratchPad, createScratchPadCaptureSectionIds } from '#/modules/Arrangement/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type ScratchPadSectionSnapshot } from '#/utils/handlerContract';
+import { type AppAction, type ScratchPadSectionSnapshot } from '#/utils/handlerContract';
 
 import { workspaceStore } from '../../stores/workspaceStore';
 
@@ -10,8 +10,18 @@ function hasNothingToCapture(): boolean {
     return !markerState || markerState.sections.length === 0;
 }
 
-// `captureArrangementToScratchPad` mints fresh pad section ids (`crypto.randomUUID()`),
-// so the post-capture pad is only knowable after it runs. `describe()` runs before
+// The pad section ids are drawn into the payload before the capture runs, so the
+// dispatched and recorded action names exactly the ids the capture writes and a
+// replayed macro can map them onto the ids its own capture draws. The draw is
+// counted from the live markers, so it runs at execution, after the snapshot wait.
+function ensureCapturedSectionIds(action: Extract<AppAction, { type: 'captureScratchPad' }>): void {
+    if (action.payload?.sectionIds) {
+        return;
+    }
+    action.payload = { ...action.payload, sectionIds: createScratchPadCaptureSectionIds() };
+}
+
+// The post-capture pad is only knowable after the capture runs. `describe()` runs before
 // `execute()` and seeds this empty; `execute()` appends the minted sections in place
 // once the write lands, and both the inverse and redo actions already hold a reference
 // to this exact array — the same describe-then-finalize pattern `handleCommitScratchPad`
@@ -19,11 +29,13 @@ function hasNothingToCapture(): boolean {
 const pendingCapturedPadSections = new WeakMap<object, ScratchPadSectionSnapshot[]>();
 
 export const handleCaptureScratchPad = createHandler<'captureScratchPad'>({
+    materializeCommandArgumentsAt: 'execution',
+    materializeCommandArguments: ensureCapturedSectionIds,
     execute: (action) => {
         if (hasNothingToCapture()) {
             return { status: 'no-write' };
         }
-        captureArrangementToScratchPad();
+        captureArrangementToScratchPad(action.payload?.sectionIds);
         const pending = pendingCapturedPadSections.get(action);
         const settledPadState = scratchPadStore.value;
         if (pending && settledPadState) {

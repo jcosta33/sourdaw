@@ -16,15 +16,20 @@ export type ScratchPadSection = {
     order: number;
 };
 
+export function createScratchPadSectionId(): string {
+    return `scratch-${crypto.randomUUID()}`;
+}
+
 export function createScratchPadSection(
     startBeat: number,
     endBeat: number,
     name: string,
     color: string,
-    order: number
+    order: number,
+    id: string = createScratchPadSectionId()
 ): ScratchPadSection {
     return {
-        id: `scratch-${crypto.randomUUID()}`,
+        id,
         startBeat,
         endBeat,
         name,

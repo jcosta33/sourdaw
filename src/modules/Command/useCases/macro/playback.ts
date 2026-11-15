@@ -11,10 +11,12 @@ import {
 import { type MacroReplayIdMappings } from '../../models/MacroReplayIdMappings';
 import { keepRecordedPayload, macroReplayPayloadResetByActionType } from '../../models/MacroReplayPayloadReset';
 import { leaveReferencesUnmapped, macroReplayRemapByActionType } from '../../models/MacroReplayRemap';
+import { getHandlerByType } from '../../stores/handlerRegistry';
 import { macroStore } from '../../stores/macroStore';
 import { executeAppAction } from '../executeAppAction';
 import { generateGroupId } from '../generateGroupId';
 import { materializeCommandApplicationIds } from '../materializeCommandApplicationIds';
+import { materializeCommandHandlerArguments } from '../materializeCommandHandlerArguments';
 
 import { lowerSourceMacroAction } from './lowerSourceMacroAction';
 import { macroCoreReads } from './macroCoreReads';
@@ -42,20 +44,40 @@ function resolveMaterializedLaneId(generatedLaneId: string, target: { trackId: s
     );
 }
 
+type GeneratedIds = string | readonly string[] | undefined;
+
+/** The replayed create with the kernel's ids and then its handler's own drawn ids in place. */
+function materializeReplayedCreate(replayAction: AppAction): AppAction {
+    const kernelMaterialized = materializeCommandApplicationIds(replayAction).action;
+    const handler = getHandlerByType(kernelMaterialized.type);
+    if (!handler) {
+        return kernelMaterialized;
+    }
+    return materializeCommandHandlerArguments(kernelMaterialized, handler);
+}
+
 /**
- * Dispatch a replayed create and return the generated id the executed command
+ * Dispatch a replayed create and return the generated ids the executed command
  * carried. executeAppAction materializes its own copy of the action and never
- * writes generated ids back onto the caller's object (#4817), so the id is
- * minted here through the same materialization executeAppAction will repeat
- * idempotently, and read back from the action that was actually dispatched.
+ * writes generated ids back onto the caller's object (#4817), so the ids are
+ * minted here through the same kernel and handler materializations
+ * executeAppAction will repeat idempotently, and read back from the action that
+ * was actually dispatched.
  */
 async function executeGeneratedCreate(
     replayAction: AppAction,
     options: { groupId: string; groupLabel: string }
-): Promise<string | undefined> {
-    const materialized = materializeCommandApplicationIds(replayAction);
-    await executeAppAction(materialized.action, options);
-    return lookupGeneratedId(materialized.action);
+): Promise<GeneratedIds> {
+    const materialized = materializeReplayedCreate(replayAction);
+    await executeAppAction(materialized, options);
+    return lookupGeneratedId(materialized);
+}
+
+function toIdList(ids: GeneratedIds): readonly string[] {
+    if (ids === undefined) {
+        return [];
+    }
+    return typeof ids === 'string' ? [ids] : ids;
 }
 
 function lookupRemap<Type extends AppActionType>(action: ActionOf<Type>, mappings: MacroReplayIdMappings): void {
@@ -66,7 +88,7 @@ function lookupRemap<Type extends AppActionType>(action: ActionOf<Type>, mapping
     macroReplayRemapByActionType[action.type](action, mappings);
 }
 
-function lookupGeneratedId<Type extends AppActionType>(action: ActionOf<Type>): string | undefined {
+function lookupGeneratedId<Type extends AppActionType>(action: ActionOf<Type>): GeneratedIds {
     if (!Object.hasOwn(macroGeneratedIdByActionType, action.type)) {
         return noGeneratedId();
     }
@@ -104,9 +126,13 @@ async function executeMacroAction(
     const replayAction = lookupPayloadReset(lowerSourceMacroAction(action, mappings.tempoRowIds));
     const create = lookupCreate(replayAction, mappings);
     if (create) {
-        const generatedId = await executeGeneratedCreate(replayAction, options);
-        if (create.recordedId && generatedId) {
-            create.remember(create.recordedId, generatedId, macroReplayReads);
+        const generatedIds = toIdList(await executeGeneratedCreate(replayAction, options));
+        // A list create pairs its ids by position, up to the shorter list.
+        for (const [index, recordedId] of toIdList(create.recordedId).entries()) {
+            const generatedId = generatedIds[index];
+            if (recordedId && generatedId) {
+                create.remember(recordedId, generatedId, macroReplayReads);
+            }
         }
         return;
     }
@@ -148,6 +174,7 @@ export async function playMacro(macroId: string): Promise<void> {
         markerIds: new Map(),
         sectionIds: new Map(),
         trackAlternativeIds: new Map(),
+        scratchPadSectionIds: new Map(),
     };
 
     for (const action of macro.actions) {

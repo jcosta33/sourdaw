@@ -95,6 +95,7 @@ const HANDLER_MINTED_ID_READERS: ReadonlyMap<string, HandlerMintedIdReader> = ne
     ['arpeggiate', (argumentsValue) => readListedIds(argumentsValue, '', 'addedNotes', 'id')],
     ['duplicateClipAt', (argumentsValue) => readStringId(argumentsValue, 'targetClipId', 'targetClipId')],
     ['splitClip', (argumentsValue) => readIdList(argumentsValue, 'targetNoteIds')],
+    ['captureScratchPad', (argumentsValue) => readIdList(argumentsValue, 'sectionIds')],
 ]);
 
 /**
