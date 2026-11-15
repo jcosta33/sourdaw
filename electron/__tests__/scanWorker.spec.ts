@@ -27,6 +27,7 @@ import {
     SCAN_WORKER_COMMAND_ENV,
     scanWorkerCommand,
     scanWorkerLaunchEnvironment,
+    stopHelpersOnTerminate,
 } from '../scanWorker.js';
 
 import type { NativeHost } from '../native.js';
@@ -265,6 +266,43 @@ describe('reading a method off the addon', () => {
     });
 });
 
+describe('stopping helpers when the utility is told to terminate', () => {
+    const installed = (stopHelpers: () => unknown, calls: string[]): (() => void) => {
+        let listener: (() => void) | undefined;
+        stopHelpersOnTerminate({
+            onTerminate: (registered) => {
+                listener = registered;
+            },
+            stopHelpers,
+            exit: () => calls.push('exit'),
+        });
+        if (listener === undefined) {
+            throw new TypeError('no terminate listener was installed');
+        }
+        return listener;
+    };
+
+    it('stops the helpers before it exits', () => {
+        const calls: string[] = [];
+        const listener = installed(() => calls.push('stop'), calls);
+
+        expect(calls).toEqual([]);
+        listener();
+
+        expect(calls).toEqual(['stop', 'exit']);
+    });
+
+    it('still exits when stopping the helpers throws', () => {
+        const calls: string[] = [];
+        const listener = installed(() => {
+            throw new Error('addon refused');
+        }, calls);
+
+        expect(listener).toThrow('addon refused');
+        expect(calls).toEqual(['exit']);
+    });
+});
+
 describe('actual scoped scan utility entry', () => {
     it('selects the inherited root through the checked factory and keeps receiver-bound scan dispatch', async () => {
         const home = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-scan-scope-')));
@@ -310,7 +348,19 @@ describe('actual scoped scan utility entry', () => {
                 scan(...args);
                 return ['scanned'];
             }
+            stopPluginScanHelpers(this: Host) {
+                stopReceivers.push(this);
+                terminateOrder.push('stop');
+            }
         }
+        const stopReceivers: unknown[] = [];
+        const terminateOrder: string[] = [];
+        class ExitRequested extends Error {}
+        const terminateListenersBefore = new Set(process.listeners('SIGTERM'));
+        const exit = vi.spyOn(process, 'exit').mockImplementation(() => {
+            terminateOrder.push('exit');
+            throw new ExitRequested();
+        });
         const on = vi.fn();
         const postMessage = vi.fn();
         const originalArgv = process.argv;
@@ -334,7 +384,28 @@ describe('actual scoped scan utility entry', () => {
             listener({ data: { paths: ['/fixture/plugin.clap'], retryQuarantined: true } });
             await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith({ ok: true, result: ['scanned'] }));
             expect(scan).toHaveBeenCalledExactlyOnceWith(['/fixture/plugin.clap'], true);
+            const terminateListeners = process
+                .listeners('SIGTERM')
+                .filter((entry) => !terminateListenersBefore.has(entry));
+            expect(terminateListeners).toHaveLength(1);
+            expect(terminateOrder).toEqual([]);
+
+            const terminate = terminateListeners[0];
+            if (terminate === undefined) {
+                throw new TypeError('utility did not install a SIGTERM listener');
+            }
+            expect(() => terminate('SIGTERM')).toThrow(ExitRequested);
+
+            expect(terminateOrder).toEqual(['stop', 'exit']);
+            expect(stopReceivers).toHaveLength(1);
+            expect(stopReceivers[0]).toBeInstanceOf(Host);
         } finally {
+            exit.mockRestore();
+            for (const entry of process.listeners('SIGTERM')) {
+                if (!terminateListenersBefore.has(entry)) {
+                    process.removeListener('SIGTERM', entry);
+                }
+            }
             process.argv = originalArgv;
             if (originalPort === undefined) {
                 Reflect.deleteProperty(process, 'parentPort');

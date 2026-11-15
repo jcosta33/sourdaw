@@ -283,6 +283,56 @@ describe('captureTrackClipStates', () => {
         expect(snapshot?.midiNotesByClipId).toEqual({ hidden: [hiddenNote] });
     });
 
+    it("captures nothing for a clip moved to another track that the active alternative's stale copy still names (#6665)", () => {
+        // The active alternative's stored copy is refreshed only by a switch or a
+        // create, so after `x` moved to `b` it still names `x`; `b` owns `x` now.
+        const held = ClipDummy.create({ id: 'held', trackId: 'a', type: 'midi' });
+        const trackA = TrackDummy.create({
+            id: 'a',
+            clips: [held],
+            activeAlternativeId: 'alt-1',
+            alternatives: [
+                {
+                    id: 'alt-1',
+                    name: 'Alternative 1',
+                    clips: [held, ClipDummy.create({ id: 'x', trackId: 'a', type: 'midi' })],
+                },
+                {
+                    id: 'alt-2',
+                    name: 'Alternative 2',
+                    clips: [ClipDummy.create({ id: 'inactive', trackId: 'a', type: 'midi' })],
+                },
+            ],
+        });
+        const movedClip = ClipDummy.create({ id: 'x', trackId: 'b', type: 'midi' });
+        const trackB = TrackDummy.create({ id: 'b', clips: [movedClip] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [trackA, trackB] });
+        mocks.midiStoreValue.value = {
+            notesByClipId: {
+                held: [createMidiNote('note-held', 60)],
+                inactive: [createMidiNote('note-inactive', 62)],
+                x: [createMidiNote('note-x', 64)],
+            },
+            ccByClipId: { x: [createMidiControlChange('cc-x', 64)] },
+            pitchBendByClipId: { x: [createMidiPitchBend('bend-x', 64)] },
+        };
+        const gainEnvelope = { clipId: 'x', points: [{ id: 'g1', beatOffset: 0, gainDb: -6 }], enabled: true };
+        mocks.readClipSatelliteEntry.mockImplementation((clipId: string) => ({
+            clipId,
+            gainEnvelope: clipId === 'x' ? gainEnvelope : null,
+            warpState: null,
+        }));
+
+        const [snapshot] = captureTrackClipStates(['a'], ['held', 'inactive', 'x']);
+
+        expect(Object.keys(snapshot?.midiNotesByClipId ?? {}).sort()).toEqual(['held', 'inactive']);
+        expect(snapshot?.midiCcByClipId).toEqual({});
+        expect(snapshot?.midiPitchBendByClipId).toEqual({});
+        expect(snapshot?.clipSatellites).toEqual([]);
+        expect(mocks.readClipScopedAutomationLanes).toHaveBeenCalledWith(['held', 'inactive']);
+        expect(mocks.captureRetiredTakeLanes).toHaveBeenCalledWith(['held', 'inactive']);
+    });
+
     it('returns deep clones: mutating the result never reaches back into the live stores', () => {
         const clip = ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' });
         const track = TrackDummy.create({ id: 't1', clips: [clip] });

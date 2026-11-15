@@ -177,15 +177,22 @@ describe('handleFlattenTrack', () => {
 
     describe('take retirement (#4518)', () => {
         function frozenTrackWithTakes() {
+            const clipA = ClipDummy.create({ id: 'clip-a', trackId: 't1' });
+            const clipB = ClipDummy.create({ id: 'clip-b', trackId: 't1' });
             return frozenTrack({
-                clips: [
-                    ClipDummy.create({ id: 'clip-a', trackId: 't1' }),
-                    ClipDummy.create({ id: 'clip-b', trackId: 't1' }),
-                ],
+                clips: [clipA, clipB],
+                activeAlternativeId: 'alt-1',
                 alternatives: [
+                    // The active alternative's stored copy still names a clip since
+                    // moved off the track; the flatten must not retire its takes.
                     {
                         id: 'alt-1',
                         name: 'Alternative 1',
+                        clips: [clipA, clipB, ClipDummy.create({ id: 'clip-moved', trackId: 't1' })],
+                    },
+                    {
+                        id: 'alt-hidden',
+                        name: 'Hidden',
                         clips: [ClipDummy.create({ id: 'clip-hidden', trackId: 't1' })],
                     },
                 ],
@@ -199,9 +206,7 @@ describe('handleFlattenTrack', () => {
 
             expect(result).toEqual({ status: 'written' });
             expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
-            expect(mocks.removeTakesForClips).toHaveBeenCalledWith(
-                expect.arrayContaining(['clip-a', 'clip-b', 'clip-hidden'])
-            );
+            expect(mocks.removeTakesForClips).toHaveBeenCalledWith(['clip-a', 'clip-b', 'clip-hidden']);
         });
 
         it('retires nothing when the flatten refuses', () => {
@@ -219,10 +224,7 @@ describe('handleFlattenTrack', () => {
 
             handleFlattenTrack.describe({ type: 'flattenTrack', payload: { trackId: 't1' } });
 
-            expect(mocks.captureTrackClipStates).toHaveBeenCalledWith(
-                ['t1'],
-                expect.arrayContaining(['clip-a', 'clip-b', 'clip-hidden'])
-            );
+            expect(mocks.captureTrackClipStates).toHaveBeenCalledWith(['t1'], ['clip-a', 'clip-b', 'clip-hidden']);
         });
     });
 
