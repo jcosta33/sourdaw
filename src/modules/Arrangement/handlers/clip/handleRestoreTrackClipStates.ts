@@ -13,12 +13,12 @@ import {
     type TrackCollectionFieldsSnapshot,
 } from '#/utils/handlerContract';
 
+import { getHeldClips } from '../../models/TrackAlternativeClips';
 import {
     normalizeClipSatelliteEntry,
     readClipSatelliteEntry,
     writeClipSatelliteEntry,
 } from '../../stores/clipSatelliteState';
-import { getHeldClips } from '../../models/TrackAlternativeClips';
 import { type Clip, type Device, type Track, type TrackAlternative } from '../../stores/trackStore';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
