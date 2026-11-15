@@ -1981,9 +1981,29 @@ describe('token-bearing gh children start their git outside every repository', (
         });
     });
 
-    it('moves a checkout repository query that carries any further argument out of the repository', () => {
+    it.each([
+        ['a further argument', [...repositoryQuery, '--web']],
+        ['an argument fewer', repositoryQuery.slice(0, -1)],
+    ])('moves a checkout repository query with %s out of the repository', (_label, args) => {
         withGhFixture((f) => {
-            spawnCapture('gh', [...repositoryQuery, '--web'], { cwd: f.repository, env: f.tokenEnv });
+            spawnCapture('gh', args, { cwd: f.repository, env: f.tokenEnv });
+
+            expect(f.observed().toplevel).toBe('');
+            expect(f.observed().cwd).not.toBe(f.repository);
+        });
+    });
+
+    it.each(
+        ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'].flatMap((key) => [
+            key,
+            key.toLowerCase(),
+        ])
+    )('moves a gh child that carries its token only in %s out of the repository', (key) => {
+        withGhFixture((f) => {
+            spawnCapture('gh', ['api', 'repos/jcosta33/sourdaw'], {
+                cwd: f.repository,
+                env: { ...f.tokenFreeEnv, [key]: sentinel },
+            });
 
             expect(f.observed().toplevel).toBe('');
             expect(f.observed().cwd).not.toBe(f.repository);

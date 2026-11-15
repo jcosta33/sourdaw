@@ -65,7 +65,6 @@ import {
     issueExistsFromLookup,
     issueLookupArgs,
     laneIssueNumber,
-    lookupIssueExists,
     matchingOpenPullRequest,
     mergeabilityFromPullRequestRow,
     parsePublishLaneArgs,
@@ -2097,7 +2096,13 @@ describe('lane publish', () => {
             // Composed at runtime: the pull-request secret scan matches token-shaped literals in source.
             const token = ['ghs', 'issue', 'lookup', 'sentinel'].join('_');
 
-            const found = lookupIssueExists(gh, 12, primary, { PATH: process.env.PATH, GH_TOKEN: token });
+            const session: GhSession = {
+                configDir: join(root, 'app'),
+                env: { PATH: process.env.PATH, GH_TOKEN: token },
+                dispose: () => {},
+            };
+
+            const found = shellPort(session, primary, primary, { git: 'git', gh }).issueExists(12);
 
             const [cwd, toplevel] = readFileSync(record, 'utf8').split('\n');
             expect(found).toBe(true);

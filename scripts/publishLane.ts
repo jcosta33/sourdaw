@@ -2517,7 +2517,7 @@ export function issueLookupArgs(issue: number): string[] {
 }
 
 /** Asks GitHub whether the issue exists; a missing issue is an answer, any other failure throws. */
-export function lookupIssueExists(gh: string, issue: number, cwd: string, env: NodeJS.ProcessEnv): boolean {
+function lookupIssueExists(gh: string, issue: number, cwd: string, env: NodeJS.ProcessEnv): boolean {
     const args = issueLookupArgs(issue);
     const result = withGhChildLocation(gh, args, cwd, env, (location) =>
         spawnSync(gh, args, { cwd: location.cwd, env: location.env, encoding: 'utf8', shell: false })
