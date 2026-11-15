@@ -79,6 +79,46 @@ describe('createUserAppActionRefusalEpisodes', () => {
             expect(notifyUser).toHaveBeenCalledTimes(2);
         });
 
+        it('opens no episode for a refusal whose key was ended while it was dispatched', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            const dispatch = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction).mockReturnValueOnce(dispatch.promise);
+            const outcome = episodes.execute('device-1', action);
+
+            episodes.end('device-1');
+            dispatch.reject(new AppActionAdmissionRefusedError('addTrack'));
+
+            await expect(outcome).resolves.toBe('refused');
+            expect(notifyUser).not.toHaveBeenCalled();
+            // The ended key keeps no episode: its next refusal is a new one.
+            refuse();
+            await episodes.execute('device-1', action);
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+
+        it('opens no episode for a refusal dispatched before endAll()', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            const dispatch = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction).mockReturnValueOnce(dispatch.promise);
+            const outcome = episodes.execute('device-1', action);
+
+            episodes.endAll();
+            dispatch.reject(new AppActionAdmissionRefusedError('addTrack'));
+
+            await expect(outcome).resolves.toBe('refused');
+            expect(notifyUser).not.toHaveBeenCalled();
+        });
+
+        it('still opens the episode of a refusal whose key was ended before it was dispatched', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            episodes.end('device-1');
+            refuse();
+
+            await episodes.execute('device-1', action);
+
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+
         it('starts new episodes for every key after endAll()', async () => {
             const episodes = createUserAppActionRefusalEpisodes();
             refuse();
