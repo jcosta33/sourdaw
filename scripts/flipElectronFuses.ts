@@ -107,15 +107,8 @@ export const resolvePackagedResourcesPath = (context: AfterPackContext): string 
     return join(context.appOutDir, 'resources');
 };
 
-function electronLicenseSourceName(context: AfterPackContext): string {
-    return context.electronPlatformName === 'darwin' || context.electronPlatformName === 'mas'
-        ? 'LICENSE'
-        : 'LICENSE.electron.txt';
-}
-
 export const stageElectronLegalFiles = async (
     context: AfterPackContext,
-    sourceRoot = context.appOutDir,
     contract: ElectronRuntimeContract = ELECTRON_RUNTIME_CONTRACT
 ): Promise<void> => {
     const target = electronReleaseTarget(context.electronPlatformName, context.arch, contract);
@@ -128,10 +121,15 @@ export const stageElectronLegalFiles = async (
         LICENSE: contract.licenseSha256,
         'LICENSES.chromium.html': target.noticesSha256,
     } as const;
-    const destinationRoot = join(resolveExtractedResourcesPath(context), 'legal');
+    const resourcesPath = resolveExtractedResourcesPath(context);
+    const sourceRoot =
+        context.electronPlatformName === 'darwin' || context.electronPlatformName === 'mas'
+            ? resourcesPath
+            : context.appOutDir;
+    const destinationRoot = join(resourcesPath, 'legal');
     await mkdir(destinationRoot, { recursive: true });
     const sources = {
-        [electronLicenseSourceName(context)]: ELECTRON_LEGAL_FILES.LICENSE,
+        'LICENSE.electron.txt': ELECTRON_LEGAL_FILES.LICENSE,
         'LICENSES.chromium.html': ELECTRON_LEGAL_FILES['LICENSES.chromium.html'],
     };
     for (const [sourceName, destinationName] of Object.entries(sources)) {
@@ -149,7 +147,7 @@ export const stageElectronLegalFiles = async (
 export const createAfterExtract =
     (contract: ElectronRuntimeContract = ELECTRON_RUNTIME_CONTRACT) =>
     (context: AfterPackContext): Promise<void> =>
-        stageElectronLegalFiles(context, context.appOutDir, contract);
+        stageElectronLegalFiles(context, contract);
 
 export const afterExtract = createAfterExtract();
 
