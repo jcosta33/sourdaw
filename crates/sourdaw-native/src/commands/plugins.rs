@@ -177,10 +177,10 @@ pub(crate) struct ExclusiveGateHold {
 /// which is the only way a test in another module can observe that a caller of
 /// [`hold_plugin_runtime_gate`] really waits.
 #[cfg(test)]
-pub(crate) async fn hold_plugin_runtime_gate_exclusively() -> ExclusiveGateHold {
+pub(crate) fn hold_plugin_runtime_gate_exclusively() -> ExclusiveGateHold {
     let serial = serialize_against_exclusive_gate_holds();
     ExclusiveGateHold {
-        _gate: PLUGIN_RUNTIME_GATE.write().await,
+        _gate: crate::block_on_test(PLUGIN_RUNTIME_GATE.write()),
         _serial: serial,
     }
 }
@@ -2347,7 +2347,7 @@ struct EngineRegistration {
 /// critical section — see the block in [`load_plugin_under_runtime_gate`].
 enum EngineHandover {
     Registered(EngineRegistration),
-    Refused(RegistrationRefusal),
+    Refused(Box<RegistrationRefusal>),
     NoEngine(HostedRuntime),
 }
 
@@ -2366,11 +2366,11 @@ struct RegistrationRefusal {
 impl RegistrationRefusal {
     /// A refusal that arrived before the runtime moved into the shared owner,
     /// so it never left the caller's hands.
-    fn parked(reason: String, runtime: HostedRuntime) -> Self {
-        Self {
+    fn parked(reason: String, runtime: HostedRuntime) -> Box<Self> {
+        Box::new(Self {
             reason,
             runtime: Some(runtime),
-        }
+        })
     }
 
     /// A refusal that arrived after the move, taking the runtime back out of
@@ -2392,19 +2392,19 @@ impl RegistrationRefusal {
     /// would leave the final drop, and with it the plugin's teardown, to that
     /// other holder's thread, where neither format allows it. Retired, it is
     /// freed by the next sweep, on the shell's UI thread.
-    fn recovered(reason: String, shared: Arc<SharedHostedPlugin>, state: &AppState) -> Self {
+    fn recovered(reason: String, shared: Arc<SharedHostedPlugin>, state: &AppState) -> Box<Self> {
         match Arc::try_unwrap(shared) {
-            Ok(owner) => Self {
+            Ok(owner) => Box::new(Self {
                 reason,
                 runtime: Some(owner.into_inner()),
-            },
+            }),
             Err(shared) => {
                 shared.retire();
                 state.retain_retired_engine_plugin(shared);
-                Self {
+                Box::new(Self {
                     reason,
                     runtime: None,
-                }
+                })
             }
         }
     }
@@ -2438,7 +2438,7 @@ fn register_runtime_with_engine(
     parameters: &[PluginParameter],
     has_gui: bool,
     chain_kind: DeviceKind,
-) -> Result<EngineRegistration, RegistrationRefusal> {
+) -> Result<EngineRegistration, Box<RegistrationRefusal>> {
     // The load refuses an unactivated plugin before anything is parked, so
     // reaching this is a runtime that lost its activation after it was built.
     // Kept as a guard because handing one to the engine is unrecoverable: it
