@@ -9,7 +9,17 @@ import {
 } from '../llmMovedClipAutomationLaneIds';
 
 function lane(id: string, clipId: string): ProjectContextAutomationLane {
-    return { id, trackId: 'track-1', clipId, parameterId: 'gain', name: id, enabled: true, minValue: 0, maxValue: 1 };
+    return {
+        id,
+        trackId: 'track-1',
+        clipId,
+        parameterId: 'gain',
+        name: id,
+        enabled: true,
+        minValue: 0,
+        maxValue: 1,
+        points: [],
+    };
 }
 
 const context: ProjectContext = {
