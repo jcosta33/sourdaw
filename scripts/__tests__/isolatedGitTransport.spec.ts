@@ -698,6 +698,13 @@ describe('credential-holding git children read config only from the sterile envi
         ['a URL-scoped key', ['-c', 'credential.https://github.com.helper=!true'], {}],
         ['an upper-case URL-scoped key', ['-c', 'CREDENTIAL.https://github.com/x.HELPER=!true'], {}],
         ['a valueless key', ['-c', 'credential.helper'], {}],
+        // Git splits a -c value at its first `=` and a --config-env value at its last.
+        ['a helper value containing =', ['-c', 'credential.helper=!printf a=b'], {}],
+        [
+            'config-env whose URL-scoped key contains =',
+            ['--config-env=credential.https://github.com/?a=b.helper=SOURDAW_FIXTURE_HELPER'],
+            { SOURDAW_FIXTURE_HELPER: '!true' },
+        ],
         ['config-env', ['--config-env=credential.helper=SOURDAW_FIXTURE_HELPER'], { SOURDAW_FIXTURE_HELPER: '!true' }],
         [
             'URL-scoped config-env',
