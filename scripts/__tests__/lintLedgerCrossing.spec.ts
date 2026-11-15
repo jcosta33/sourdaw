@@ -116,6 +116,14 @@ describe('lint ledger crossing decision', () => {
         expect(lintLedgerCrossingPaths(main, pullRequest, unchanged(ledgers))).toEqual(crossing);
     });
 
+    it('crosses a file both sides edit that only the pull request head binds', () => {
+        const base = { [CEIL]: JSON.stringify({ 'src/y.ts': 700 }) };
+        const head = { [CEIL]: JSON.stringify({ 'src/y.ts': 700, 'src/x.ts': 600 }) };
+        expect(lintLedgerCrossingPaths(['src/x.ts'], ['src/x.ts', CEIL], { base, main: base, head })).toEqual([
+            'src/x.ts',
+        ]);
+    });
+
     const CRAFT_WITH = "export const craftBaselineFiles = {\n    'r': [\n        'src/x.ts',\n    ],\n};\n";
     const CRAFT_WITHOUT = "export const craftBaselineFiles = {\n    'r': [\n    ],\n};\n";
     const CRAFT_OTHER_RULE = "export const craftBaselineFiles = {\n    's': [\n        'src/x.ts',\n    ],\n};\n";
