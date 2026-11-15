@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, readFileSync } from 'node:fs';
 
 import { readHostedArtifactZip, hostedWasmOutputLimit } from './hostedWasmZip.ts';
+import { withGhChildLocation } from './tokenBearingChildPlacement.ts';
 
 const REPOSITORY = 'jcosta33/sourdaw';
 const REPOSITORY_ID = 1183242917;
@@ -262,7 +263,10 @@ type GhRead = (
     options: { env: NodeJS.ProcessEnv; maxBuffer: number; timeout: number }
 ) => Buffer;
 
-const execGh: GhRead = (args, options) => execFileSync('gh', [...args], options);
+const execGh: GhRead = (args, options) =>
+    withGhChildLocation('gh', args, process.cwd(), options.env, (location) =>
+        execFileSync('gh', [...args], { ...options, cwd: location.cwd, env: location.env })
+    );
 
 function ghOutput(token: string, route: string, runGh: GhRead, paged: boolean, maxBuffer: number): Buffer {
     const env: NodeJS.ProcessEnv = { ...process.env, GH_TOKEN: token, GH_HOST: 'github.com' };

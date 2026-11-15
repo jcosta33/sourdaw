@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,9 +13,11 @@ import {
     renderIssueSubmission,
     resolveTemplatePath,
     runCli,
+    spawnGh,
     titleSubject,
     type IssueSubmission,
 } from '../fileTrackerIssue';
+import { withRecordingGh } from './helpers/recordingGh.ts';
 
 const templates = join(process.cwd(), '.github/ISSUE_TEMPLATE');
 
@@ -640,5 +642,26 @@ describe('runCli', () => {
         expect(runCli([...filing, '--milestone', 'Editor Groundwork', '--create'], gh.run)).toBe(1);
 
         expect(String(consoleError.mock.calls[0]?.[0])).toBe('GraphQL: Could not resolve to a Repository');
+    });
+});
+
+describe('the default gh runner', () => {
+    it('starts a token-bearing gh outside the checkout it is run from', () => {
+        const previousToken = process.env.GH_TOKEN;
+        process.env.GH_TOKEN = `sentinel-${process.pid}`;
+        try {
+            withRecordingGh('', (recorded) => {
+                expect(spawnGh(['issue', 'list', '--repo', 'jcosta33/sourdaw']).status).toBe(0);
+
+                expect(recorded().toplevel).toBe('');
+                expect(recorded().cwd).not.toBe(realpathSync(process.cwd()));
+            });
+        } finally {
+            if (previousToken === undefined) {
+                delete process.env.GH_TOKEN;
+            } else {
+                process.env.GH_TOKEN = previousToken;
+            }
+        }
     });
 });
