@@ -267,6 +267,10 @@ impl MidiFxChain {
         self.slots.iter().filter(|slot| slot.is_some()).count()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.slots.iter().all(Option::is_none)
+    }
+
     /// Iterate the held instances in slot order. Slot order is the processing
     /// order of the chain, so it is load-bearing here.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Box<dyn MidiFx>> {

@@ -131,7 +131,7 @@ pub enum DrumSynthEngine {
     Perc(PercEngine),
     Tom(TomEngine),
     Cymbal(CymbalEngine),
-    Modal(ModalEngine),
+    Modal(Box<ModalEngine>),
     FmPerc(FmPercEngine),
     Cowbell(PercEngine),
     Clave(PercEngine),
@@ -185,7 +185,7 @@ impl DrumSynthEngine {
             DrumEngineType::Perc => Self::Perc(PercEngine::new(sample_rate)),
             DrumEngineType::Tom => Self::Tom(TomEngine::new(sample_rate)),
             DrumEngineType::Cymbal => Self::Cymbal(CymbalEngine::new(sample_rate)),
-            DrumEngineType::Modal => Self::Modal(ModalEngine::new(sample_rate)),
+            DrumEngineType::Modal => Self::Modal(Box::new(ModalEngine::new(sample_rate))),
             DrumEngineType::FmPerc => Self::FmPerc(FmPercEngine::new(sample_rate)),
             DrumEngineType::Cowbell => {
                 let mut e = PercEngine::new(sample_rate);

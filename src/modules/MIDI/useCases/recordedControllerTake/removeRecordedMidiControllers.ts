@@ -1,5 +1,4 @@
-import { type OverdubControllerRowIds } from '#/utils/handlerContract';
-
+import { type OverdubControllerRowIds } from '../../events/midiAppActions';
 import { midiStore } from '../../stores/midiStore';
 
 type RowsByClipId<TRow> = Record<string, TRow[]>;

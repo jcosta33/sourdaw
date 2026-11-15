@@ -105,6 +105,10 @@ impl LegatoTransitionStore {
     pub fn len(&self) -> usize {
         self.transitions.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.transitions.is_empty()
+    }
 }
 
 impl Default for LegatoTransitionStore {

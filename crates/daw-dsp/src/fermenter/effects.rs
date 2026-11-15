@@ -425,6 +425,21 @@ pub struct Compressor {
     envelope: f32,
 }
 
+/// The user-facing settings of one [`Compressor::process_block`] call.
+#[derive(Clone, Copy)]
+pub struct CompressorSettings {
+    /// dB (-60 to 0).
+    pub threshold: f32,
+    /// 1:1 to 20:1.
+    pub ratio: f32,
+    /// ms (0.1-100).
+    pub attack: f32,
+    /// ms (10-1000).
+    pub release: f32,
+    /// 0-1.
+    pub mix: f32,
+}
+
 impl Compressor {
     pub fn new() -> Self {
         Self { envelope: 0.0 }
@@ -434,13 +449,16 @@ impl Compressor {
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
-        threshold: f32, // dB (-60 to 0)
-        ratio: f32,     // 1:1 to 20:1
-        attack: f32,    // ms (0.1-100)
-        release: f32,   // ms (10-1000)
-        mix: f32,       // 0-1
+        settings: CompressorSettings,
         sample_rate: f32,
     ) {
+        let CompressorSettings {
+            threshold,
+            ratio,
+            attack,
+            release,
+            mix,
+        } = settings;
         if mix < 0.001 {
             return;
         }
@@ -965,7 +983,9 @@ impl PlateReverb {
 
 #[cfg(test)]
 mod tests {
-    use super::{Compressor, DelayLine, PlateReverb, StereoChorus, StereoPhaser};
+    use super::{
+        Compressor, CompressorSettings, DelayLine, PlateReverb, StereoChorus, StereoPhaser,
+    };
 
     const SAMPLE_RATE: f32 = 48_000.0;
     const FRAMES: usize = 128;
@@ -1059,39 +1079,24 @@ mod tests {
         let mut prime_right = [0.8; FRAMES];
         let mut sleeping_prime_left = prime_left;
         let mut sleeping_prime_right = prime_right;
-        continuous.process_block(
-            &mut prime_left,
-            &mut prime_right,
-            -24.0,
-            8.0,
-            1.0,
-            250.0,
-            1.0,
-            SAMPLE_RATE,
-        );
+        let settings = CompressorSettings {
+            threshold: -24.0,
+            ratio: 8.0,
+            attack: 1.0,
+            release: 250.0,
+            mix: 1.0,
+        };
+        continuous.process_block(&mut prime_left, &mut prime_right, settings, SAMPLE_RATE);
         sleeping.process_block(
             &mut sleeping_prime_left,
             &mut sleeping_prime_right,
-            -24.0,
-            8.0,
-            1.0,
-            250.0,
-            1.0,
+            settings,
             SAMPLE_RATE,
         );
 
         let mut zero_left = [0.0; FRAMES];
         let mut zero_right = [0.0; FRAMES];
-        continuous.process_block(
-            &mut zero_left,
-            &mut zero_right,
-            -24.0,
-            8.0,
-            1.0,
-            250.0,
-            1.0,
-            SAMPLE_RATE,
-        );
+        continuous.process_block(&mut zero_left, &mut zero_right, settings, SAMPLE_RATE);
         sleeping.advance_silence(FRAMES, 250.0, SAMPLE_RATE);
 
         let mut continuous_left = [0.4; FRAMES];
@@ -1101,21 +1106,13 @@ mod tests {
         continuous.process_block(
             &mut continuous_left,
             &mut continuous_right,
-            -24.0,
-            8.0,
-            1.0,
-            250.0,
-            1.0,
+            settings,
             SAMPLE_RATE,
         );
         sleeping.process_block(
             &mut sleeping_left,
             &mut sleeping_right,
-            -24.0,
-            8.0,
-            1.0,
-            250.0,
-            1.0,
+            settings,
             SAMPLE_RATE,
         );
 
