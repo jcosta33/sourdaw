@@ -1,11 +1,8 @@
 import { createHandler } from '#/utils/createHandler';
-import {
-    type AppAction,
-    type HandlerValidationContext,
-    type TransientQuantizePlanSnapshot,
-} from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
+import { type TransientQuantizePlanSnapshot } from '../../events/arrangementClipAppActions';
 import { prepareTransientQuantize } from '../../useCases/prepareTransientQuantize';
 import { restoreStripSilenceState } from '../../useCases/restoreStripSilenceState';
 

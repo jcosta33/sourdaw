@@ -679,6 +679,7 @@ fn names_private_directory(component: &str) -> bool {
 /// Ensures the private state directory exists for both production and test
 /// addon initializations. [`create_private_state_directory`] is where the
 /// work is, and that is what tests drive directly.
+#[cfg(any(feature = "napi-addon", not(test)))]
 pub(crate) fn ensure_private_state_directory() {
     let Some(directory) = private_state_directory() else {
         return;
@@ -717,10 +718,14 @@ fn project_directory() -> Option<PathBuf> {
     Some(dirs::document_dir()?.join(PROJECT_DIR_NAME))
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 const MAX_EXPORT_CHUNK_BYTES: usize = 1024 * 1024;
+#[cfg(any(feature = "napi-addon", test))]
 const MAX_EXPORT_MANIFEST_BYTES: u64 = 4 * 1024 * 1024;
+#[cfg(any(feature = "napi-addon", test))]
 const EXPORT_MANIFEST_VERSION: u32 = 2;
 
+#[cfg(any(feature = "napi-addon", test))]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExportTempRecord {
@@ -731,6 +736,7 @@ struct ExportTempRecord {
     identity: Option<ExportFileIdentity>,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "platform", deny_unknown_fields)]
 enum ExportFileObjectId {
@@ -738,6 +744,7 @@ enum ExportFileObjectId {
     Windows { volume: u64, file_id: [u8; 16] },
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExportFileCreationTime {
@@ -745,6 +752,7 @@ struct ExportFileCreationTime {
     nanos: u32,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExportFileIdentity {
@@ -752,6 +760,7 @@ struct ExportFileIdentity {
     created: Option<ExportFileCreationTime>,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 fn export_file_identity(file: &std::fs::File) -> Result<ExportFileIdentity, String> {
     let metadata = file
         .metadata()
@@ -775,6 +784,7 @@ fn export_file_identity(file: &std::fs::File) -> Result<ExportFileIdentity, Stri
     })
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[cfg(unix)]
 fn export_file_object_id(
     _file: &std::fs::File,
@@ -787,6 +797,7 @@ fn export_file_object_id(
     })
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[cfg(windows)]
 fn export_file_object_id(
     file: &std::fs::File,
@@ -838,6 +849,7 @@ fn export_file_object_id(
     })
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[cfg(not(any(unix, windows)))]
 fn export_file_object_id(
     _file: &std::fs::File,
@@ -846,6 +858,7 @@ fn export_file_object_id(
     Err("Created export file identity is unavailable on this platform".into())
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExportManifest {
@@ -854,6 +867,7 @@ struct ExportManifest {
     authentication: String,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 struct ExportFileTransaction {
     record: ExportTempRecord,
     generation: u64,
@@ -861,10 +875,12 @@ struct ExportFileTransaction {
     sealed: bool,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 struct ExportFileLock {
     file: std::fs::File,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 impl ExportFileLock {
     fn acquire(file: std::fs::File) -> Result<Self, String> {
         file.try_lock()
@@ -873,6 +889,7 @@ impl ExportFileLock {
     }
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 impl Drop for ExportFileLock {
     fn drop(&mut self) {
         // Passive duplicates must not extend ownership beyond this acquired owner's lifetime.
@@ -880,6 +897,7 @@ impl Drop for ExportFileLock {
     }
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 /// One host holds an OS lock for its entire lifetime. Recovery never races another live host.
 /// The authenticated manifest is private native state, never renderer-authored delete authority.
 pub(crate) struct ExportFileRegistry {
@@ -890,6 +908,7 @@ pub(crate) struct ExportFileRegistry {
     transactions: std::collections::BTreeMap<String, ExportFileTransaction>,
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 fn export_manifest_mac(
     key: &[u8; 32],
     version: u32,
@@ -916,6 +935,7 @@ fn export_manifest_mac(
         .collect())
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 fn refuse_export_symlink(path: &Path) -> Result<(), String> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -927,6 +947,7 @@ fn refuse_export_symlink(path: &Path) -> Result<(), String> {
     }
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 fn validate_export_temp(record: &ExportTempRecord) -> Result<(), String> {
     if uuid::Uuid::parse_str(&record.token)
         .map_err(|_| "Invalid export recovery token")?
@@ -960,6 +981,7 @@ fn validate_export_temp(record: &ExportTempRecord) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 /// Hold the inspected object through its pathname operation. Observed substitution
 /// refuses; pathname rename/unlink can still race another same-user process.
 fn verified_export_temp(
@@ -1002,6 +1024,7 @@ fn verified_export_temp(
     Ok(Some(file))
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 impl ExportFileRegistry {
     pub(crate) fn open(directory: &Path) -> Result<Self, String> {
         use std::io::Read;
@@ -1321,6 +1344,7 @@ impl ExportFileRegistry {
     }
 }
 
+#[cfg(any(feature = "napi-addon", test))]
 impl Drop for ExportFileRegistry {
     fn drop(&mut self) {
         if !self.initializing {

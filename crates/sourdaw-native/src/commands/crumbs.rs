@@ -2901,27 +2901,6 @@ pub(crate) mod tests {
         }
     }
 
-    /// The writes an instance has parked, or a panic if it is not dormant.
-    fn parked_writes<T>(
-        state: &CrumbsState,
-        instance_id: &str,
-        read: impl FnOnce(&DormantCrumbsWrites) -> T,
-    ) -> T {
-        let instances = state
-            .instances
-            .lock()
-            .expect("crumbs state lock should be available");
-        let instance = instances
-            .get(instance_id)
-            .unwrap_or_else(|| panic!("instance '{instance_id}' should own a map entry"));
-        match &instance.engine_slot {
-            CrumbsEngineSlot::Dormant(writes) => read(writes),
-            CrumbsEngineSlot::Attached { .. } => {
-                panic!("instance '{instance_id}' should still be dormant")
-            }
-        }
-    }
-
     #[test]
     fn sample_load_result_serializes_decode_warnings_for_the_typescript_boundary() {
         let result = SampleLoadResult {

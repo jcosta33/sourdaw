@@ -288,6 +288,7 @@ struct DictationSessionGuard {
 }
 
 impl DictationSessionGuard {
+    #[cfg(test)]
     fn new(session_active: Arc<AtomicBool>, events: Arc<dyn EventSink>) -> Self {
         Self::with_session(
             session_active,

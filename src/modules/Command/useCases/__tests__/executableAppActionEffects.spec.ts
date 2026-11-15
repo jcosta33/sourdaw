@@ -1,15 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import { commandBatchEffectByActionType } from '../../models/CommandBatchActionEffect';
 import { type ExecutableAppActionEffect } from '../../models/ExecutableAppActionEffect';
 import { executableAppActionEffectsByType, getExecutableAppActionEffect } from '../executableAppActionEffects';
 import { executableAppActionDescriptors, isExecutableAppActionType } from '../executableAppActionRegistry';
-import {
-    CREATE_OPERATIONS,
-    DELETE_OPERATIONS,
-    MASTER_OPERATIONS,
-    ROUTING_OPERATIONS,
-    TEMPO_OPERATIONS,
-} from '../getVersionedCommandBatchEffects';
 
 const descriptorActionTypes = executableAppActionDescriptors.map((descriptor) => descriptor.actionType);
 const executableActionTypeSet = new Set<string>(descriptorActionTypes);
@@ -23,6 +17,14 @@ function rowFor(actionType: string): ExecutableAppActionEffect {
         throw new Error(`unknown executable action type: ${actionType}`);
     }
     return executableAppActionEffectsByType[actionType];
+}
+
+function actionTypesWith(flag: 'create' | 'delete' | 'routing' | 'tempo' | 'master'): ReadonlySet<string> {
+    return new Set(
+        Object.entries(commandBatchEffectByActionType)
+            .filter(([, effect]) => effect[flag] === true)
+            .map(([actionType]) => actionType)
+    );
 }
 
 function onlyExecutableActionTypes(operations: ReadonlySet<string>): readonly string[] {
@@ -99,27 +101,27 @@ describe('executableAppActionEffectsByType', () => {
     });
 
     it('S6: cross-checks against the exported grant sets from getVersionedCommandBatchEffects', () => {
-        for (const actionType of onlyExecutableActionTypes(ROUTING_OPERATIONS)) {
+        for (const actionType of onlyExecutableActionTypes(actionTypesWith('routing'))) {
             expect(rowFor(actionType).dimensions, `${actionType}: ROUTING_OPERATIONS member`).toContain('routing');
         }
 
-        for (const actionType of onlyExecutableActionTypes(TEMPO_OPERATIONS)) {
+        for (const actionType of onlyExecutableActionTypes(actionTypesWith('tempo'))) {
             expect(rowFor(actionType).dimensions, `${actionType}: TEMPO_OPERATIONS member`).toContain('project-timing');
         }
 
-        for (const actionType of onlyExecutableActionTypes(MASTER_OPERATIONS)) {
+        for (const actionType of onlyExecutableActionTypes(actionTypesWith('master'))) {
             expect(rowFor(actionType).dimensions, `${actionType}: MASTER_OPERATIONS member`).toContain('master');
         }
 
         const expectedCreateOperations = new Set(
             descriptorActionTypes.filter((actionType) => (rowFor(actionType).creates?.length ?? 0) > 0)
         );
-        expect(CREATE_OPERATIONS).toEqual(expectedCreateOperations);
+        expect(actionTypesWith('create')).toEqual(expectedCreateOperations);
 
         const expectedDeleteOperations = new Set(
             descriptorActionTypes.filter((actionType) => (rowFor(actionType).removes?.length ?? 0) > 0)
         );
-        expect(DELETE_OPERATIONS).toEqual(expectedDeleteOperations);
+        expect(actionTypesWith('delete')).toEqual(expectedDeleteOperations);
     });
 
     it('S7: getExecutableAppActionEffect returns the row identity for known types and null for unknown names', () => {

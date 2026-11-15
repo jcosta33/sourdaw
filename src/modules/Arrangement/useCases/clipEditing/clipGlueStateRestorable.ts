@@ -1,7 +1,7 @@
 import { midiClipGlueStateMatches } from '#/modules/MIDI/useCases';
-import { type ClipGlueActionSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type ClipGlueActionSnapshot } from '../../events/arrangementClipAppActions';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 
 import { getClipIdCensus } from './getClipIdCensus';

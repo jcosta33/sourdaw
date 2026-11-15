@@ -36,7 +36,6 @@ windows = "0.62.2"
 unused = { level = "deny", priority = -1 }
 nonstandard_style = { level = "deny", priority = -1 }
 future_incompatible = { level = "deny", priority = -1 }
-dead_code = "warn"
 unsafe_op_in_unsafe_fn = "warn"
 unused_assignments = "warn"
 

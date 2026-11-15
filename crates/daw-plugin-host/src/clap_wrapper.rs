@@ -107,8 +107,9 @@ pub struct ClapWrapper {
     entry: *const clap_plugin_entry,
     /// Pointer to the clap_plugin struct.
     plugin: *const clap_plugin,
-    /// Host descriptor — must outlive the plugin.
-    host: Box<clap_host>,
+    /// Host descriptor — the plugin holds a pointer to it, so it must outlive
+    /// the plugin. Never read after construction; held for its lifetime.
+    _host: Box<clap_host>,
     /// Whether the plugin has been activated.
     activated: bool,
     /// Plugin name for logging.
@@ -868,7 +869,7 @@ impl ClapWrapper {
             _library: None,
             entry: entry_ptr,
             plugin,
-            host,
+            _host: host,
             activated,
             name,
             sample_rate,
@@ -915,7 +916,7 @@ impl ClapWrapper {
             _library: None,
             entry: ptr::null(),
             plugin: ptr::null(),
-            host: Box::new(create_host_descriptor()),
+            _host: Box::new(create_host_descriptor()),
             activated: true,
             name: name.to_string(),
             sample_rate: Self::ENGINE_OWNED_COMMAND_FIXTURE_SAMPLE_RATE,
@@ -3455,7 +3456,7 @@ mod tests {
             _library: None,
             entry: ptr::null(),
             plugin,
-            host: Box::new(create_host_descriptor()),
+            _host: Box::new(create_host_descriptor()),
             activated: true,
             name: "stub".to_string(),
             sample_rate: 48_000.0,
@@ -3614,7 +3615,7 @@ mod tests {
     /// exactly as the loader does before the plugin is created, so the
     /// plugin's own callbacks find it through `host_data`.
     fn pin_host_state(wrapper: &mut ClapWrapper) {
-        wrapper.host.host_data = (&*wrapper.host_state as *const HostCallbackState) as *mut c_void;
+        wrapper._host.host_data = (&*wrapper.host_state as *const HostCallbackState) as *mut c_void;
     }
 
     /// The issue's own repro: a plugin raises `request_callback` — twice, to
@@ -3634,12 +3635,12 @@ mod tests {
 
         // Through the descriptor, the only route a real plugin has.
         let request_callback = wrapper
-            .host
+            ._host
             .request_callback
             .expect("the host descriptor installs request_callback");
         unsafe {
-            request_callback(&*wrapper.host);
-            request_callback(&*wrapper.host);
+            request_callback(&*wrapper._host);
+            request_callback(&*wrapper._host);
         }
 
         wrapper.service_main_thread_callback();
@@ -3655,7 +3656,7 @@ mod tests {
         assert_eq!(MAIN_THREAD_CALLBACKS.load(Ordering::Relaxed), 1);
 
         // A fresh ask is recorded and serviced in its turn.
-        unsafe { request_callback(&*wrapper.host) };
+        unsafe { request_callback(&*wrapper._host) };
         wrapper.service_main_thread_callback();
         assert_eq!(MAIN_THREAD_CALLBACKS.load(Ordering::Relaxed), 2);
     }
