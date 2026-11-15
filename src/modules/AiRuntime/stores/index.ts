@@ -40,7 +40,6 @@ export { voiceStatusStore } from './voiceStatusStore';
 export type { VoiceStatus } from './voiceStatusStore';
 
 export { machineMemoryStore } from './machineMemoryStore';
-export type { MachineMemoryReading } from './machineMemoryStore';
 export { voiceInputAvailabilityStore } from './voiceInputAvailabilityStore';
 export type { VoiceInputAvailability } from './voiceInputAvailabilityStore';
 

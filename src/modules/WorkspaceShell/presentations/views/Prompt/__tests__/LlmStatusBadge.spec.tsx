@@ -7,7 +7,9 @@ import { capabilityStore } from '#/modules/BrowserAi/stores';
 
 import { LlmStatusBadge } from '../LlmStatusBadge';
 
-import type { MachineMemoryReading } from '#/modules/AiRuntime/stores';
+import type { listOfferedLocalModels } from '#/modules/AiRuntime/useCases';
+
+type MachineMemoryReading = Parameters<typeof listOfferedLocalModels>[0];
 
 // Nothing here is stubbed: the badge resolves its backend through the real
 // admission chain, so the capability report is the only input that decides what

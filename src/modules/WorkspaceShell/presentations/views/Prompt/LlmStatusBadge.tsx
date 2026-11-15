@@ -16,7 +16,6 @@ import {
     hostedLlmProviderStatusStore,
     type LlmEngineStatus,
     machineMemoryStore,
-    type MachineMemoryReading,
 } from '#/modules/AiRuntime/stores';
 import {
     chooseLocalModel,
@@ -29,6 +28,8 @@ import {
     getActiveModelId,
 } from '#/modules/AiRuntime/useCases';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
+
+type MachineMemoryReading = Parameters<typeof listOfferedLocalModels>[0];
 
 type LlmStatusBadgeProps = {
     status: LlmEngineStatus;

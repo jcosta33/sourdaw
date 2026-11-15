@@ -1,8 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 
-import { type MachineMemoryReading as Reading } from '../models/MachineMemoryReading';
-
-export type MachineMemoryReading = Reading;
+import { type MachineMemoryReading } from '../models/MachineMemoryReading';
 
 export const machineMemoryStore = createStore<MachineMemoryReading>({
     initialData: { state: 'unread' },
