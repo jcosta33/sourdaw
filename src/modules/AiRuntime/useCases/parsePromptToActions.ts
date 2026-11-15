@@ -708,29 +708,11 @@ function createAdoptedRecipeResult(input: {
             rejectionReason: `The recipe's expectations could not be prepared for verification: ${adopted.reason}.`,
         };
     }
-    const authority: MetricRequestAuthority =
-        adopted.status === 'perceptual'
-            ? adopted.authority
-            : {
-                  schemaVersion: 1,
-                  authorityId: `${input.origin}-${creativeAuthority.authorityId}`,
-                  origin: input.origin,
-                  callId: null,
-                  turn: null,
-                  catalogId: creativeAuthority.catalogId,
-                  requestDigest: creativeAuthority.requestDigest,
-                  revision: creativeAuthority.revision,
-                  projectId: captureProjectIdentity(),
-                  selection: getCreativeSelectionSnapshot(input.context),
-                  kind: 'literal',
-                  goals: [],
-                  creativeAuthority,
-              };
     const result: IntentResult = {
         metricGoalState: serializePromptMetricState({
             actions: grounded.actions,
-            steps: adopted.status === 'perceptual' ? adopted.steps : [],
-            authorities: [authority],
+            steps: adopted.steps,
+            authorities: [adopted.authority],
             metricProofs: [],
             inheritedMetricState: null,
             nativeLiteralUses: [],

@@ -15,10 +15,36 @@ import { readTargetCarriesAudio } from './readTargetCarriesAudio';
 type RecipeCompilation = Extract<RetainedCompilation, { kind: 'recipe' }>;
 
 type AdoptedRecipeMetricAuthority =
-    /** Nothing the user adopted states an expectation to verify, so the batch is the literal choice it always was. */
-    | { status: 'literal' }
-    | { status: 'perceptual'; authority: MetricRequestAuthority; steps: MetricGoalState['steps'][number][] }
+    | { status: 'authority'; authority: MetricRequestAuthority; steps: MetricGoalState['steps'][number][] }
     | { status: 'refused'; reason: string };
+
+/** Nothing the user adopted states an expectation to verify, so the batch is the literal choice it always was. */
+function literalAuthority(input: {
+    origin: 'answer-suggestion' | 'last-commit-recipe';
+    context: ProjectContext;
+    creativeAuthority: CreativeRequestAuthority;
+}): AdoptedRecipeMetricAuthority {
+    const { context, creativeAuthority } = input;
+    return {
+        status: 'authority',
+        steps: [],
+        authority: {
+            schemaVersion: 1,
+            authorityId: `${input.origin}-${creativeAuthority.authorityId}`,
+            origin: input.origin,
+            callId: null,
+            turn: null,
+            catalogId: creativeAuthority.catalogId,
+            requestDigest: creativeAuthority.requestDigest,
+            revision: creativeAuthority.revision,
+            projectId: captureProjectIdentity(),
+            selection: getCreativeSelectionSnapshot(context),
+            kind: 'literal',
+            goals: [],
+            creativeAuthority,
+        },
+    };
+}
 
 /**
  * The objective a batch of recipes the application expanded itself is approved against: every
@@ -39,7 +65,7 @@ export function compileAdoptedRecipeMetricAuthority(input: {
     const { context, creativeAuthority } = input;
     const range = readArrangementRange(context);
     if (range === null) {
-        return { status: 'literal' };
+        return literalAuthority(input);
     }
     const catalog = getMixRecipeCatalog();
     const goals: MetricGoal[] = [];
@@ -67,7 +93,7 @@ export function compileAdoptedRecipeMetricAuthority(input: {
         goals.push(...read.goals);
     }
     if (goals.length === 0) {
-        return { status: 'literal' };
+        return literalAuthority(input);
     }
     const compiledSteps = compileRecipeBatchSteps({
         stepIds: input.compilations.map(({ recipe }) => readRecipeStepId(recipe)),
@@ -82,7 +108,7 @@ export function compileAdoptedRecipeMetricAuthority(input: {
         return compiledSteps;
     }
     return {
-        status: 'perceptual',
+        status: 'authority',
         steps: compiledSteps.steps,
         authority: {
             schemaVersion: 1,
