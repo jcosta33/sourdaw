@@ -20,8 +20,8 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
-import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 
+import { type TrackClipStateSnapshot } from '../../../events/arrangementTrackSnapshots';
 import { type Clip, createTrack } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
 import { trimClipStart } from '../../../useCases/clipEditing/trimClipStart';

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type StemImportTrackSnapshot } from '#/modules/Arrangement/events';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -10,7 +11,7 @@ import {
     type getVersionedCommandBatchIdempotentReplay,
     parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
-import { type AppAction, type StemImportTrackSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 const mocks = vi.hoisted(() => ({
     cancelDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'cancelled' }),

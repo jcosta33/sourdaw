@@ -1,8 +1,8 @@
+import { type GeneratedMidiStateGuard } from '#/modules/Arrangement/events';
 import { type Track } from '#/modules/Arrangement/stores';
 import { addClip, addTrack, getTrackStoreState, selectClipWithFocus } from '#/modules/Arrangement/useCases';
 import { batchAddMidiNotes, setNotesForClip } from '#/modules/MIDI/useCases';
 import {
-    type GeneratedMidiStateGuard,
     type HandlerDescribeResult,
     type HandlerExecutionResult,
     type MidiClipNoteSnapshot,

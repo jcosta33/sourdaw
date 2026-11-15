@@ -1,6 +1,8 @@
 import { commitRedoInverseCapture } from '#/modules/Command/useCases';
 import { captureDurableDocumentWitness, captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
-import { type AppAction, type GeneratedMidiStateGuard, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+
+import { type GeneratedMidiStateGuard } from '../../events/arrangementClipSnapshots';
 
 import { captureClipReplayPublication } from './captureClipReplayPublication';
 

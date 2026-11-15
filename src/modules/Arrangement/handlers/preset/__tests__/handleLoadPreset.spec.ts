@@ -4,8 +4,9 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { type initializeTrackStripFromSnapshot } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
-import { type AppAction, type DeviceSnapshot, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type DeviceSnapshot } from '../../../models/DeviceSnapshot';
 import {
     type applyDeviceChainRuntimeDelta,
     type ApplyDeviceChainRuntimeDeltaResult,

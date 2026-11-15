@@ -1,7 +1,7 @@
+import { type ScratchPadSectionSnapshot } from '#/modules/Arrangement/events';
 import { markerStore, scratchPadStore } from '#/modules/Arrangement/stores';
 import { captureArrangementToScratchPad } from '#/modules/Arrangement/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type ScratchPadSectionSnapshot } from '#/utils/handlerContract';
 
 import { workspaceStore } from '../../stores/workspaceStore';
 

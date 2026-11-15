@@ -1,7 +1,8 @@
 import { digest } from '#/utils/canonicalDigest';
-import { type CompAudioSourceInputProof, type CompAudioSourceOwnerSnapshot } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 import { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
+
+import { type CompAudioSourceInputProof, type CompAudioSourceOwnerSnapshot } from '../events/arrangementClipSnapshots';
 
 type CompAudioSourceLaneInputs = {
     readonly trackId: string;

@@ -1,5 +1,4 @@
-import { type CompAudioSourceOwnerSnapshot } from '#/utils/handlerContract';
-
+import { type CompAudioSourceOwnerSnapshot } from '../../events/arrangementClipSnapshots';
 import { type CompAudioSourcePromotionSnapshot } from '../../events/arrangementTakeAppActions';
 import { type ResolvedClip } from '../../models/ResolvedClip';
 import { type CompRegion, type TakeLane } from '../../models/TakeLane';

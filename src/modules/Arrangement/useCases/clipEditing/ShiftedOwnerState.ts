@@ -1,6 +1,7 @@
-import { type ClipAutomationLaneSnapshot, type ClipSnapshot } from '#/utils/handlerContract';
+import { type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
 import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
 
+import { type ClipSnapshot } from '../../events/arrangementClipSnapshots';
 import { type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip, type Track } from '../../stores/trackStore';

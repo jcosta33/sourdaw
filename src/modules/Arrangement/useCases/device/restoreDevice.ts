@@ -7,7 +7,8 @@ import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 import { applyDeviceChainRuntimeDelta } from './applyDeviceChainRuntimeDelta';
 import { getRuntimeDeviceDeltaPostCommitFailure } from './runtimeDeviceDeltaPostCommit';
 
-import type { DeviceSnapshot, HandlerValidationContext } from '#/utils/handlerContract';
+import type { HandlerValidationContext } from '#/utils/handlerContract';
+import type { DeviceSnapshot } from '../../models/DeviceSnapshot';
 import type { Device } from '../../models/Track';
 
 type RestoreDeviceInput = {

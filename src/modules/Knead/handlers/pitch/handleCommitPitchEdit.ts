@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
-import { type KneadPitchBlobSnapshot } from '#/utils/handlerContract';
 
+import { type KneadPitchBlobSnapshot } from '../../events/kneadAppActions';
 import { kneadStore } from '../../stores/kneadStore';
 import { commitPitchEdit } from '../../useCases/pitch/commitPitchEdit';
 import { findPitchEditClip } from '../../useCases/pitch/findPitchEditClip';

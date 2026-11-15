@@ -295,3 +295,7 @@ declare module '#/utils/handlerContract' {
         midi: MidiAppAction;
     }
 }
+
+export type MidiNotesSnapshot = readonly { readonly id: string }[];
+export type MidiCcSnapshot = readonly { readonly id: string }[];
+export type MidiPitchBendSnapshot = readonly { readonly id: string }[];

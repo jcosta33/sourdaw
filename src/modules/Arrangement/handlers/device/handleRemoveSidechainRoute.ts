@@ -1,6 +1,8 @@
 import { getSidechainRoutesForTrack, removeSidechainRouteSnapshot } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type SidechainRouteSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
+
+import { type SidechainRouteSnapshot } from '../../events/arrangementTrackSnapshots';
 
 type RemoveSidechainRouteAction = Extract<AppAction, { type: 'removeSidechainRoute' }>;
 type RouteResolution =

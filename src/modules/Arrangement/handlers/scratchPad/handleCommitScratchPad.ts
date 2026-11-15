@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
-import { type MarkerSectionSnapshot } from '#/utils/handlerContract';
 
+import { type MarkerSectionSnapshot } from '../../events/arrangementClipSnapshots';
 import { markerStore } from '../../stores/markerStore';
 import { scratchPadStore } from '../../stores/scratchPadStore';
 import { commitScratchPadToArrangement } from '../../useCases/scratchPad/captureCommit/commitScratchPadToArrangement';

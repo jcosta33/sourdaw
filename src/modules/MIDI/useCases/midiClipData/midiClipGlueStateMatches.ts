@@ -1,4 +1,4 @@
-import { type MidiClipGlueActionSnapshot } from '#/utils/handlerContract';
+import { type MidiClipGlueActionSnapshot } from '#/modules/Arrangement/events';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';

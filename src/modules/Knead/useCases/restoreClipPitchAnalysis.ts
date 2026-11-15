@@ -1,6 +1,6 @@
 import { updateClipInStore } from '#/modules/Arrangement/stores';
-import { type KneadPitchBlobSnapshot, type PitchContourSnapshot } from '#/utils/handlerContract';
 
+import { type KneadPitchBlobSnapshot, type PitchContourSnapshot } from '../events/kneadAppActions';
 import { kneadStore, type NoteBlob } from '../stores/kneadStore';
 
 import { projectClipKneadState } from './projectClipKneadState';

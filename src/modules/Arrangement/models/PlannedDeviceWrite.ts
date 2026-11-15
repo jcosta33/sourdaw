@@ -1,6 +1,7 @@
-import { type AppAction, type DeviceSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { type DevicePatchState } from './DevicePatchState';
+import { type DeviceSnapshot } from './DeviceSnapshot';
 
 export type PlannedDeviceOwnerSource = {
     id: string;

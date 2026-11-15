@@ -1,10 +1,6 @@
-import {
-    type AppAction,
-    type AppActionType,
-    type MidiCcSnapshot,
-    type MidiPitchBendSnapshot,
-} from '#/utils/handlerContract';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
+import { type MidiCcSnapshot, type MidiPitchBendSnapshot } from '../../events/midiAppActions';
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
 import { decodeMidiClipDataSnapshots } from '../../services/decodeMidiClipDataSnapshots';
 import { midiStore } from '../../stores/midiStore';

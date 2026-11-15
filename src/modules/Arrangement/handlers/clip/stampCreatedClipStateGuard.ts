@@ -1,6 +1,6 @@
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
-import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
+import { type GeneratedMidiStateGuard } from '../../events/arrangementClipSnapshots';
 import { serializeClipSatelliteEntries } from '../../stores/clipSatelliteState';
 import { serializeClipScopedAutomationLanes } from '../../useCases/clip/serializeClipScopedAutomationLanes';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';

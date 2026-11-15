@@ -7,13 +7,10 @@ import {
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
-import {
-    type AppAction,
-    type DeviceChainTopologySnapshot,
-    type DeviceSnapshot,
-    type HandlerValidationContext,
-} from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type DeviceChainTopologySnapshot } from '../../events/arrangementTrackSnapshots';
+import { type DeviceSnapshot } from '../../models/DeviceSnapshot';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { type Track } from '../../stores/trackStore';
 import { compileTrackStripInitializationSnapshot } from '../../useCases/compileTrackStripInitializationSnapshot';

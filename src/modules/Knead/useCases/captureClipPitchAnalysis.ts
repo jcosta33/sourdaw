@@ -1,5 +1,4 @@
-import { type KneadPitchBlobSnapshot, type PitchContourSnapshot } from '#/utils/handlerContract';
-
+import { type KneadPitchBlobSnapshot, type PitchContourSnapshot } from '../events/kneadAppActions';
 import { kneadStore } from '../stores/kneadStore';
 
 export type ClipPitchAnalysisSnapshot = {

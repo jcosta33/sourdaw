@@ -1,6 +1,7 @@
 import { clipAutomationMoveStateMatches, isExactAutomationLaneSnapshots } from '#/modules/Automation/useCases';
-import { type AppAction, type ClipAutomationLaneSnapshot, type RippleShiftSnapshot } from '#/utils/handlerContract';
+import { type AppAction, type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
 
+import { type RippleShiftSnapshot } from '../../events/arrangementClipSnapshots';
 import { projectClipReplayPrefix } from '../clipEditing/projectClipReplayPrefix';
 
 /** Authenticate every collateral owner before any part of the restore writes. */

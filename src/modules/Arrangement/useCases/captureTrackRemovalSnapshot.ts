@@ -1,8 +1,9 @@
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
-import { type HandlerMaterializationContext, type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
+import { type HandlerMaterializationContext } from '#/utils/handlerContract';
 
+import { type RestoreTrackPayloadSnapshot } from '../events/arrangementTrackSnapshots';
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
 import { reconcileRoutingAfterRemoval } from '../services/reconcileRoutingAfterRemoval';
 import { readClipSatelliteEntry } from '../stores/clipSatelliteState';

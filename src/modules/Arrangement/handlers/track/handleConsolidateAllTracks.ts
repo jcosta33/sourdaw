@@ -1,7 +1,7 @@
 import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { createHandler } from '#/utils/createHandler';
-import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 
+import { type TrackClipStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { type Track } from '../../models/Track';
 import { captureTrackClipStates } from '../../useCases/captureTrackClipStates';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';

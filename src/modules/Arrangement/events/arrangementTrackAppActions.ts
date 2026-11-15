@@ -1,13 +1,16 @@
+import { type AutomationMode } from '#/modules/Automation/events';
+import { type AutomationRecordingPolicy } from '#/utils/handlerContract';
+
 import {
-    type AutomationMode,
-    type AutomationRecordingPolicy,
     type ClipSnapshot,
-    type FreezeStateSnapshot,
     type GeneratedMidiStateGuard,
-    type RestoreTrackPayloadSnapshot,
     type StemImportTrackSnapshot,
+} from './arrangementClipSnapshots';
+import {
+    type FreezeStateSnapshot,
+    type RestoreTrackPayloadSnapshot,
     type TrackKind,
-} from '#/utils/handlerContract';
+} from './arrangementTrackSnapshots';
 
 export type TrackGroupMembershipSnapshot = { readonly trackId: string; readonly groupId: string | null };
 export type TrackHeightSnapshot = { readonly trackId: string; readonly height: number };

@@ -1,6 +1,6 @@
-import { type MarkerSectionSnapshot, type ScratchPadSectionSnapshot } from '#/utils/handlerContract';
 import { isRecord } from '#/utils/structuralEquality';
 
+import { type MarkerSectionSnapshot, type ScratchPadSectionSnapshot } from '../../events/arrangementClipSnapshots';
 import { type ArrangementSection } from '../../models/Marker';
 import { type ScratchPadSection } from '../../models/ScratchPadSection';
 import { is_valid_arrangement_section } from '../../stores/markerStore';

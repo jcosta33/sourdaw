@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
-import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
+import { type GeneratedMidiStateGuard } from '../../events/arrangementClipSnapshots';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 import { handleAddTrack } from './handleAddTrack';

@@ -1,6 +1,6 @@
 import { replaceFrozenMidiTakeRow } from '#/modules/MIDI/useCases';
-import { type OriginalMidiTakeRowCopy } from '#/utils/handlerContract';
 
+import { type OriginalMidiTakeRowCopy } from '../../events/arrangementClipSnapshots';
 import { type OriginalMidiTakeRowReplacementPayload } from '../../events/arrangementTakeAppActions';
 import { type MidiTakeSource } from '../../models/TakeLane';
 import { type TakeLaneStoreState } from '../../stores/takeLaneStore';

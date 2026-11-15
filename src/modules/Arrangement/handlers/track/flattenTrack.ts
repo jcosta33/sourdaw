@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
-import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 
+import { type TrackClipStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { captureTrackClipStates } from '../../useCases/captureTrackClipStates';

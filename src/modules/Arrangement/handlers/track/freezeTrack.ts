@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
-import { type FreezeStateSnapshot } from '#/utils/handlerContract';
 
+import { type FreezeStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { captureFreezeStateSnapshot } from '../../useCases/freezeBounce/freezeStateSnapshot';
 import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';

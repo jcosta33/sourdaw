@@ -1,8 +1,9 @@
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type GeneratedMidiStateGuard } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
+import { type GeneratedMidiStateGuard } from '../../events/arrangementClipSnapshots';
 import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { collaborationAssetTransfer } from '../../useCases/collaborationAssetTransfer';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';

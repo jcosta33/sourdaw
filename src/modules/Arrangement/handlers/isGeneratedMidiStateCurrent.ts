@@ -2,10 +2,11 @@ import { modulationStore } from '#/modules/Automation/stores';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
-import { type AppAction, type GeneratedMidiStateGuard } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type GeneratedMidiStateGuard } from '../events/arrangementClipSnapshots';
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
 import { serializeClipSatelliteEntries, serializeProjectedClipSatelliteEntries } from '../stores/clipSatelliteState';
 import { getEnvelope } from '../stores/gainEnvelopeStore';

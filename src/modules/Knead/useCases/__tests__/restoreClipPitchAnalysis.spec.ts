@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Clip, updateClipInStore } from '#/modules/Arrangement/stores';
-import { type KneadPitchBlobSnapshot, type PitchContourSnapshot } from '#/utils/handlerContract';
 
+import { type KneadPitchBlobSnapshot, type PitchContourSnapshot } from '../../events/kneadAppActions';
 import { defaultKneadState, kneadStore, type KneadClipState } from '../../stores/kneadStore';
 import { restoreClipPitchAnalysis } from '../restoreClipPitchAnalysis';
 

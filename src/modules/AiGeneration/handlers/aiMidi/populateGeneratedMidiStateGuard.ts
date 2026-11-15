@@ -1,5 +1,5 @@
+import { type GeneratedMidiStateGuard } from '#/modules/Arrangement/events';
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
-import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
 type PopulateGeneratedMidiStateGuardInput = {
     guard: GeneratedMidiStateGuard;

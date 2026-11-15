@@ -8,9 +8,10 @@ import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
 import { createHandler } from '#/utils/createHandler';
-import { type HandlerExecutionResult, type TrackClipStateSnapshot } from '#/utils/handlerContract';
+import { type HandlerExecutionResult } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { type TrackClipStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { createWarpMarker } from '../../models/WarpMarker';
 import {
     getStoredWarpState,

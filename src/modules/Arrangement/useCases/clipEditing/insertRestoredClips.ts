@@ -1,4 +1,4 @@
-import { type ClipSnapshot } from '#/utils/handlerContract';
+import { type ClipSnapshot } from '../../events/arrangementClipSnapshots';
 
 import { type LocatedClip } from './ShiftedOwnerState';
 
