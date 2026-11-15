@@ -5,6 +5,18 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: notifyUserMock,
 }));
 
+const pluginHostMocks = vi.hoisted(() => ({
+    activateExternalPlugin: vi.fn(),
+    unloadPlugin: vi.fn(),
+}));
+// The subject is which instance ids the duplicate action requests from the
+// plugin host, not the native host itself, so only the two lifecycle calls are stubbed.
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    activateExternalPlugin: pluginHostMocks.activateExternalPlugin,
+    unloadPlugin: pluginHostMocks.unloadPlugin,
+}));
+
 // `discardCreatedTrack` tears the copy's engine strip down through the deferred
 // removal effects; jsdom's stubbed AudioContext cannot build one. The subject
 // here is what project truth holds after undo, so the engine seam is stubbed
@@ -58,7 +70,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getRuntimeGraphRevision: vi.fn(),
     getTrackAnalyser: vi.fn(() => null),
     getTrackStrip: vi.fn(),
-    initializeTrackStripFromSnapshot: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     matchesRuntimeDeviceChainTopology: vi.fn(),
     removeBusStrip: vi.fn(),
     removeMidiFxFromStrip: vi.fn(),
@@ -112,6 +124,7 @@ import { LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '#/modules/MIDI/stores';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { ArrangementEventBus, setArrangementEventBus } from '../../../useCases/arrangementEventBus';
+import { handleDuplicateTrack } from '../duplicateTrack';
 
 class NoopArrangementEventBus extends ArrangementEventBus {
     async emit(): Promise<void> {}
@@ -141,6 +154,26 @@ function clipScopedLane(laneId: string, trackId: string, clipId: string) {
         minValue: 0,
         maxValue: 1,
     };
+}
+
+function hostedPluginSourceTrack() {
+    return TrackDummy.create({
+        id: 'track-1',
+        name: 'Source',
+        kind: 'audio',
+        devices: [
+            {
+                id: 'device-native',
+                name: 'Reverb',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalPluginId: 'plugin-abc',
+                externalInstanceId: 'plugin-abc-live',
+                externalStateChunk: 'c2F2ZWQ=',
+            },
+        ],
+    });
 }
 
 function sourceTrack() {
@@ -293,5 +326,65 @@ describe('handleDuplicateTrack atomic integration', () => {
 
         expect(trackStore.value!.tracks).toHaveLength(2);
         expect(midiStore.value!.notesByClipId[copyClip.id]).toHaveLength(1);
+    });
+
+    it('gives a duplicated hosted plugin its own instance, activates it with the copied state, and unloads only it on undo', async () => {
+        trackStore.set({ tracks: [hostedPluginSourceTrack()], selectedTrackId: 'track-1', ghostClips: [] });
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+
+        await duplicateTrack();
+
+        const copiedInstanceId = copyTrack().devices[0]!.externalInstanceId;
+        expect(copiedInstanceId).toMatch(/^plugin-abc-.+/);
+        expect(copiedInstanceId).not.toBe('plugin-abc-live');
+        expect(pluginHostMocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({
+                pluginId: 'plugin-abc',
+                instanceId: copiedInstanceId,
+                stateChunk: 'c2F2ZWQ=',
+            })
+        );
+        expect(pluginHostMocks.unloadPlugin).not.toHaveBeenCalled();
+
+        await undo();
+
+        expect(trackStore.value!.tracks.map((track) => track.id)).toEqual(['track-1']);
+        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledTimes(1);
+        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledWith(copiedInstanceId);
+        expect(pluginHostMocks.unloadPlugin).not.toHaveBeenCalledWith('plugin-abc-live');
+    });
+
+    it('gives every duplicate of the same source a distinct instance id', async () => {
+        trackStore.set({ tracks: [hostedPluginSourceTrack()], selectedTrackId: 'track-1', ghostClips: [] });
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+
+        await executeAppAction({ type: 'duplicateTrack', payload: { trackId: 'track-1' } }, { source: 'manual' });
+        await executeAppAction({ type: 'duplicateTrack', payload: { trackId: 'track-1' } }, { source: 'manual' });
+
+        const instanceIds = trackStore.value!.tracks.map((track) => track.devices[0]!.externalInstanceId);
+        expect(instanceIds).toHaveLength(3);
+        expect(new Set(instanceIds).size).toBe(3);
+    });
+
+    it('activates the copy with its committed id and copied chunk when commit status is ambiguous', async () => {
+        trackStore.set({ tracks: [hostedPluginSourceTrack()], selectedTrackId: 'track-1', ghostClips: [] });
+        pluginHostMocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+
+        const result = await handleDuplicateTrack.execute({
+            type: 'duplicateTrack',
+            payload: { trackId: 'track-1', targetTrackId: 'track-dup-ambiguous' },
+        });
+        if (!result?.afterAmbiguousCommit) {
+            throw new Error('Expected an afterAmbiguousCommit effect for a track holding a hosted plugin');
+        }
+        const copiedInstanceId = copyTrack().devices[0]!.externalInstanceId;
+        expect(pluginHostMocks.activateExternalPlugin).not.toHaveBeenCalled();
+
+        await result.afterAmbiguousCommit();
+
+        expect(pluginHostMocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({ pluginId: 'plugin-abc', instanceId: copiedInstanceId, stateChunk: 'c2F2ZWQ=' })
+        );
     });
 });

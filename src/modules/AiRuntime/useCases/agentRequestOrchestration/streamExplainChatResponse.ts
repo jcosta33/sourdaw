@@ -54,6 +54,7 @@ import { createModelProviderStreamWriter } from '../createModelProviderStreamWri
 import { createThinkBlockParser } from '../createThinkBlockParser';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { getProjectContext } from '../getProjectContext';
+import { readAnsweringStatus } from '../llmOrchestration/readAnsweringStatus';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 
@@ -190,7 +191,7 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
         reason: 'User cancelled the run while the provider response was active.',
     });
     const previousLlmStatus = llmStatusStore.value;
-    llmStatusStore.set({ state: 'generating' });
+    llmStatusStore.set(readAnsweringStatus(backend));
     const thinkParser = createThinkBlockParser();
     // Reasoning a provider streams as its own events, kept apart from the `<think>` block a
     // model writes inside its answer text. A turn produces one form or the other; both are
