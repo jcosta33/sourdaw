@@ -138,6 +138,8 @@ vi.mock('#/modules/Preferences/stores', () => ({
     },
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeAppAction: vi.fn(),
     executeUserAppAction: mocks.executeUserAppAction,
     generateGroupId: mocks.generateGroupId,

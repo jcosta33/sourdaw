@@ -543,6 +543,7 @@ function trustedPublishFixture(root: string, policy: string): void {
     writeFileSync(join(root, 'scripts/prContract.ts'), PR_CONTRACT_TRUSTED_ENV_STUB);
     for (const path of [
         ...stackSummarySources,
+        'scripts/isolatedGitTransport.ts',
         'scripts/testInstructions.ts',
         'scripts/testInstructionVocabulary.ts',
     ]) {
@@ -632,6 +633,7 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
     writeFileSync(join(root, 'scripts/prContract.ts'), PR_CONTRACT_TRUSTED_ENV_STUB);
     for (const path of [
         'githubAppIdentity.ts',
+        'isolatedGitTransport.ts',
         'reconstructReviewRounds.ts',
         'reviewRoundEscalation.ts',
         'reviewPublicationLegacyIncidents.ts',
@@ -1194,6 +1196,7 @@ describe('package scripts and gitignore', () => {
             'scripts/evidenceSafety.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/guardRecoveryProof.ts',
+            'scripts/isolatedGitTransport.ts',
             'scripts/laneActivity.ts',
             'scripts/pnpmModulesPreflight.ts',
             'scripts/prContract.ts',
@@ -1258,6 +1261,7 @@ describe('package scripts and gitignore', () => {
             'scripts/reviewBundleLocator.ts',
             'scripts/pullRequestMutationLock.ts',
             'scripts/githubAppIdentity.ts',
+            'scripts/isolatedGitTransport.ts',
             'scripts/prContract.ts',
             ...approvalSources,
         ]);
@@ -1348,6 +1352,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/evidenceSafety.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/guardRecoveryProof.ts',
+                    'scripts/isolatedGitTransport.ts',
                     'scripts/laneActivity.ts',
                     'scripts/pnpmModulesPreflight.ts',
                     'scripts/prContract.ts',
@@ -1409,6 +1414,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewBundleLocator.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/isolatedGitTransport.ts',
                     'scripts/prContract.ts',
                     ...approvalSources,
                 ],
@@ -1444,6 +1450,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewBundleLocator.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/isolatedGitTransport.ts',
                     'scripts/prContract.ts',
                     ...approvalSources,
                 ],
@@ -1483,6 +1490,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewBundleLocator.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/isolatedGitTransport.ts',
                     'scripts/prContract.ts',
                     ...approvalSources,
                 ],
@@ -1574,6 +1582,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/syncParentLane.ts',
                     'scripts/publishLane.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/isolatedGitTransport.ts',
                     'scripts/prContract.ts',
                     'scripts/testInstructions.ts',
                     'scripts/testInstructionVocabulary.ts',
@@ -2545,6 +2554,7 @@ describe('package scripts and gitignore', () => {
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/publishLane.ts',
             'scripts/githubAppIdentity.ts',
+            'scripts/isolatedGitTransport.ts',
             'scripts/prContract.ts',
             'scripts/testInstructions.ts',
             'scripts/testInstructionVocabulary.ts',

@@ -27,8 +27,8 @@ import { useAgentWorkspaceRunSelection } from '../hooks/useAgentWorkspaceRunSele
 
 import { AgentReferenceControls } from './AgentReferenceControls';
 
-function renderApprovalAudition(input: Parameters<typeof MeasuredPreviewAudition>[0]): ReactElement {
-    return <MeasuredPreviewAudition {...input} />;
+function renderApprovalAudition(input: Omit<Parameters<typeof MeasuredPreviewAudition>[0], 'surface'>): ReactElement {
+    return <MeasuredPreviewAudition {...input} surface="agent-workspace" />;
 }
 
 function stopApprovalAudition(confirmationId: string): void {

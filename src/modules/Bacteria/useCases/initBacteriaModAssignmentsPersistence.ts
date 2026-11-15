@@ -1,3 +1,5 @@
+import { createUserAppActionRefusalEpisodes } from '#/modules/Command/useCases';
+
 import { rowsEqual } from '../models/BacteriaModAssignmentsState';
 import { type BacteriaModAssignment } from '../models/BacteriaPatch';
 import { bacteriaStore } from '../stores/bacteriaStore';
@@ -34,10 +36,12 @@ import { hydrateBacteriaModAssignmentsFromProject } from './hydrateBacteriaModAs
  */
 export function initBacteriaModAssignmentsPersistence(): () => void {
     const committedTables = new Map<string, BacteriaModAssignment[]>();
+    const episodes = createUserAppActionRefusalEpisodes();
 
     return bacteriaStore.subscribe((instances) => {
         if (!instances) {
             committedTables.clear();
+            episodes.endAll();
             return;
         }
 
@@ -54,7 +58,7 @@ export function initBacteriaModAssignmentsPersistence(): () => void {
                 continue;
             }
 
-            commitBacteriaModAssignments(deviceId);
+            commitBacteriaModAssignments(deviceId, episodes);
         }
 
         // Drop devices that are gone, so a device id reused by a later load is
@@ -62,6 +66,7 @@ export function initBacteriaModAssignmentsPersistence(): () => void {
         for (const deviceId of committedTables.keys()) {
             if (!(deviceId in instances)) {
                 committedTables.delete(deviceId);
+                episodes.end(deviceId);
             }
         }
     });

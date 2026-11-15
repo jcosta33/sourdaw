@@ -72,6 +72,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     commitUndoEntry: vi.fn(),
     createUndoEntry: vi.fn(),
     commitRedoInverseCapture: vi.fn(),
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),

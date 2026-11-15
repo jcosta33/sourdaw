@@ -1230,6 +1230,8 @@ describe('buildAgentContext', () => {
             });
 
             expect(keptCapabilitiesOf(built.localMessage)).toEqual({ sidechainRoutingCapability: requested });
+            // The local offer grounds only what the local message kept, never what it left out.
+            expect(built.localWorkflowCapabilityIds).toEqual(['sidechain-routing']);
             expect(contextOmissionsOf(built.localMessage)).toContainEqual(
                 expect.stringContaining('leaves out bassProcessingCopyCapability, which did not fit')
             );

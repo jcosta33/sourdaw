@@ -11,6 +11,7 @@ import { type PlanningContextBinding } from '../models/PlanningContextBinding';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { PROJECT_CONTEXT_LEVEL_LAW, type ProjectContext } from '../models/ProjectContext';
 import { type ThreadContext } from '../models/ThreadContext';
+import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
 import { fitThreadContext } from '../transformers/fitThreadContext';
 import {
     buildLlmActionUserMessage,
@@ -70,6 +71,26 @@ const LOCAL_CAPABILITY_KIND = {
 
 type LocalCapabilityKey = keyof typeof LOCAL_CAPABILITY_KIND;
 
+/**
+ * The workflow each capability entry grounds, so the local offer can name the workflows whose
+ * capability the local message kept. Every key has an answer, so a new capability cannot be
+ * added without saying which workflow, if any, it grounds.
+ */
+const LOCAL_CAPABILITY_WORKFLOW = {
+    sidechainRoutingCapability: 'sidechain-routing',
+    stemImportCapability: 'stem-import-starting-mix',
+    articulationTransferCapability: 'articulation-transfer',
+    backingVocalPlateCapability: 'backing-vocal-plate',
+    bassProcessingCopyCapability: 'bass-processing-copy',
+    drumRoutingCapability: 'drum-routing',
+    drumRenderComparisonCapability: 'drum-render-comparison',
+    drumPreviewBranchesCapability: 'drum-preview-branches',
+    midiOverlapTransformCapability: 'midi-overlap-shortening',
+    sharedVocalFxBusesCapability: 'shared-vocal-fx-buses',
+    syncopatedArpeggioCapability: 'syncopated-arpeggio',
+    creativeInterpretationCatalog: null,
+} as const satisfies Record<keyof LlmActionCapabilityData, WorkflowCapabilityId | null>;
+
 function isLocalCapabilityKey(key: string): key is LocalCapabilityKey {
     return Object.hasOwn(LOCAL_CAPABILITY_KIND, key);
 }
@@ -101,6 +122,7 @@ function capabilityTier(key: LocalCapabilityKey): number {
 function selectLocalCapabilities(capabilityData: LlmActionCapabilityData | undefined): {
     serialized: string;
     omitted: string[];
+    workflowCapabilityIds: WorkflowCapabilityId[];
 } {
     const capabilityKeys = Object.keys(LOCAL_CAPABILITY_KIND).filter(isLocalCapabilityKey);
     const present = capabilityKeys
@@ -115,7 +137,13 @@ function selectLocalCapabilities(capabilityData: LlmActionCapabilityData | undef
                 left.key.localeCompare(right.key)
         );
     const { kept, omitted } = fitWholeCapabilityEntries(present.map(({ key, value }) => [key, value] as const));
-    return { serialized: stableJson(capabilityData === undefined ? null : kept), omitted };
+    const workflowCapabilityIds = Object.keys(kept)
+        .filter(isLocalCapabilityKey)
+        .flatMap((key) => {
+            const capabilityId = LOCAL_CAPABILITY_WORKFLOW[key];
+            return capabilityId === null ? [] : [capabilityId];
+        });
+    return { serialized: stableJson(capabilityData === undefined ? null : kept), omitted, workflowCapabilityIds };
 }
 
 function describeOmittedCapabilities(omitted: readonly string[]): string {
@@ -583,6 +611,8 @@ export function buildAgentContext(input: BuildAgentContextInput): {
     planningBinding: PlanningContextBinding;
     message: string;
     localMessage: string;
+    /** The workflows whose capability data `localMessage` kept, the only ones the local model can ground. */
+    localWorkflowCapabilityIds: WorkflowCapabilityId[];
     evidence: AgentContextEvidence;
     /** Whether the hosted message's thread context carries measured figures, the `measurement` category. */
     hostedThreadCarriesMeasurement: boolean;
@@ -784,6 +814,7 @@ export function buildAgentContext(input: BuildAgentContextInput): {
         evidence,
         message: `fixed_policy:\n${input.fixedPolicy}\n\n${hostedSections}${projectContextMessage('hosted')}`,
         localMessage: `${localSections}${projectContextMessage('local')}`,
+        localWorkflowCapabilityIds: localCapabilities.workflowCapabilityIds,
         hostedThreadCarriesMeasurement: hostedThread?.carriesMeasurement === true,
     };
 }
