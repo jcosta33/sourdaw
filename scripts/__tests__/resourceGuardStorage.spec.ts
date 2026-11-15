@@ -449,6 +449,8 @@ function expectMarkedRecovery(
     }
 }
 
+// Cases here that run the real file census need a host without heavy process churn: that census is
+// fail-closed by contract, so while short-lived processes keep starting it returns unknown, not dead.
 describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it('defaults to the canonical Git primary or the non-Git command volume', () => {
         const commonDirectory = execFileSync('git', ['rev-parse', '--git-common-dir'], { encoding: 'utf8' }).trim();
