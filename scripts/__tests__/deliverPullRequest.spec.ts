@@ -59,10 +59,11 @@ import {
     type GitHubJsonClient,
     type MintPermissions,
 } from '../githubAppIdentity.ts';
-import type { LintLedgerCrossing } from '../lintLedgerCrossing.ts';
 import { composeDeliveryReceipt } from '../prContract.ts';
 import { reviewBundlePath } from '../reviewBundleLocator.ts';
 import { summarizeGateWorkflow } from '../trustedGithubWriteBootstrap.ts';
+
+import type { LintLedgerCrossing } from '../lintLedgerCrossing.ts';
 
 const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
 

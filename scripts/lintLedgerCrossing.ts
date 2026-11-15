@@ -37,7 +37,7 @@ function normalizedLedgerPath(value: string): string {
 
 /** Every single- or double-quoted string on one line: the shape ledger paths take in JSON and ESM. */
 function quotedStrings(text: string): string[] {
-    return [...text.matchAll(/"([^"\n]*)"|'([^'\n]*)'/gu)].map((match) => match[1] ?? match[2] ?? '');
+    return Array.from(text.matchAll(/"([^"\n]*)"|'([^'\n]*)'/gu), (match) => match[1] ?? match[2] ?? '');
 }
 
 /** Ledger file name to its text in one tree; a ledger the tree lacks has no entry. */
@@ -51,17 +51,25 @@ function ledgerBoundPaths(trees: readonly LedgerTree[]): Set<string> {
     );
 }
 
+/** Code-unit order, independent of locale, so both sides of a comparison sort keys identically. */
+function compareKeys(left: string, right: string): number {
+    if (left < right) {
+        return -1;
+    }
+    return left > right ? 1 : 0;
+}
+
 function canonicalJson(value: unknown): string {
     if (Array.isArray(value)) {
         return `[${value.map(canonicalJson).join(',')}]`;
     }
     if (typeof value === 'object' && value !== null) {
         const members = Object.entries(value)
-            .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+            .sort(([left], [right]) => compareKeys(left, right))
             .map(([key, member]) => `${JSON.stringify(key)}:${canonicalJson(member)}`);
         return `{${members.join(',')}}`;
     }
-    return JSON.stringify(value) ?? 'undefined';
+    return JSON.stringify(value);
 }
 
 /** Removes `//` and block comments outside strings so the JSONC `.oxlintrc.json` parses as JSON. */
@@ -96,7 +104,7 @@ function parseLedgerJson(name: string, side: string, text: string): unknown {
     try {
         return JSON.parse(withoutJsonComments(text));
     } catch {
-        fail(`lint ledger ${name} in ${side} is not valid JSON`);
+        return fail(`lint ledger ${name} in ${side} is not valid JSON`);
     }
 }
 
@@ -109,7 +117,12 @@ type BindingIndex = Map<string, Set<string>>;
 
 function addBinding(index: BindingIndex, path: string, binding: string): void {
     const key = normalizedLedgerPath(path);
-    index.set(key, new Set([...(index.get(key) ?? []), binding]));
+    const bindings = index.get(key);
+    if (bindings === undefined) {
+        index.set(key, new Set([binding]));
+        return;
+    }
+    bindings.add(binding);
 }
 
 function indexKeyedJson(index: BindingIndex, name: string, side: string, text: string): void {
@@ -131,7 +144,7 @@ function indexKeyedJson(index: BindingIndex, name: string, side: string, text: s
 
 /** An oxlint rule value that disables the rule: `"off"`/`"allow"`/`0`, bare or leading a `[severity, options]` array. */
 function isOxlintSeverityOff(value: unknown): boolean {
-    const severity = Array.isArray(value) ? value[0] : value;
+    const severity: unknown = Array.isArray(value) ? value[0] : value;
     return severity === 'off' || severity === 'allow' || severity === 0;
 }
 
@@ -147,16 +160,16 @@ function indexOxlintOverrides(
     text: string
 ): void {
     const parsed = parseLedgerJson(name, side, text);
-    const overrides = isRecord(parsed) && Array.isArray(parsed['overrides']) ? parsed['overrides'] : [];
+    const overrides = isRecord(parsed) && Array.isArray(parsed.overrides) ? parsed.overrides : [];
     for (const override of overrides) {
-        if (!isRecord(override) || !Array.isArray(override['files']) || !isRecord(override['rules'])) {
+        if (!isRecord(override) || !Array.isArray(override.files) || !isRecord(override.rules)) {
             continue;
         }
-        for (const file of override['files']) {
+        for (const file of override.files) {
             if (typeof file !== 'string') {
                 continue;
             }
-            for (const [rule, value] of Object.entries(override['rules'])) {
+            for (const [rule, value] of Object.entries(override.rules)) {
                 const binding = `${name}:${JSON.stringify(rule)}=${canonicalJson(value)}`;
                 addBinding(index, file, binding);
                 if (!isOxlintSeverityOff(value)) {
@@ -208,10 +221,10 @@ function bindingIndex(tree: LedgerTree, side: string): LedgerBindings {
  * relaxes or newly binds a path and never turns a green pair red.
  */
 function rebound(base: LedgerBindings, side: LedgerBindings): string[] {
-    const lost = [...base.entries]
+    const lost = Array.from(base.entries)
         .filter(([path, entries]) => [...entries].some((entry) => side.entries.get(path)?.has(entry) !== true))
         .map(([path]) => path);
-    const tightened = [...side.enforcing]
+    const tightened = Array.from(side.enforcing)
         .filter(([path, entries]) => [...entries].some((entry) => base.entries.get(path)?.has(entry) !== true))
         .map(([path]) => path);
     return [...lost, ...tightened];
@@ -234,7 +247,9 @@ export function lintLedgerCrossingPaths(
         ...pullRequestChanged,
         ...rebound(base, bindingIndex(trees.head, 'the pull request head')),
     ]);
-    return [...mainSide].filter((path) => pullRequestSide.has(path) && bound.has(path)).sort();
+    return Array.from(mainSide)
+        .filter((path) => pullRequestSide.has(path) && bound.has(path))
+        .sort();
 }
 
 function nulSeparated(output: string): string[] {
@@ -264,7 +279,7 @@ function commitObject(git: GitCapture, revision: string): string {
     try {
         return git(['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`]).trim();
     } catch {
-        fail(`commit ${revision} is not available locally`);
+        return fail(`commit ${revision} is not available locally`);
     }
 }
 
