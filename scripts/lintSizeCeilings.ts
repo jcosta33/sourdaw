@@ -228,20 +228,47 @@ export function describeSizeBaselineGrowth(growth: SizeBaselineGrowth): string[]
 
 /**
  * The paths quoted inside the `sizeBaselineFiles` array literal of the baseline module's text, read as text so
- * the base's code is never evaluated. Throws when no array or no entry is found, so a check never passes blind.
+ * the base's code is never evaluated. Only quoted strings, commas, whitespace and comments may appear inside the
+ * array; any other token (template literal, spread, identifier, nested bracket) throws, because a form this reader
+ * cannot see would be dropped from the comparison. Throws when no array or no entry is found.
  */
 export function parseSizeBaselineFilesText(text: string): string[] {
     const declaration = /\bsizeBaselineFiles\s*=\s*\[/.exec(text);
     if (declaration === null) {
         throw new Error('no sizeBaselineFiles array found in the baseline text.');
     }
-    const start = declaration.index + declaration[0].length;
-    const end = text.indexOf('\n];', start);
-    const body = text
-        .slice(start, end === -1 ? undefined : end)
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/.*$/gm, '');
-    const paths = [...body.matchAll(/'([^'\\\n]*)'|"([^"\\\n]*)"/g)].map((match) => match[1] ?? match[2] ?? '');
+    const paths: string[] = [];
+    let index = declaration.index + declaration[0].length;
+    while (index < text.length && text.charAt(index) !== ']') {
+        const char = text.charAt(index);
+        if (/[\s,]/.test(char)) {
+            index += 1;
+        } else if (text.startsWith('//', index)) {
+            const newline = text.indexOf('\n', index);
+            index = newline === -1 ? text.length : newline + 1;
+        } else if (text.startsWith('/*', index)) {
+            const close = text.indexOf('*/', index + 2);
+            if (close === -1) {
+                throw new Error('unterminated block comment in the sizeBaselineFiles array.');
+            }
+            index = close + 2;
+        } else if (char === "'" || char === '"') {
+            const close = text.indexOf(char, index + 1);
+            const value = close === -1 ? '' : text.slice(index + 1, close);
+            if (close === -1 || value.includes('\n') || value.includes('\\')) {
+                throw new Error(`unreadable string at offset ${index} in the sizeBaselineFiles array.`);
+            }
+            paths.push(value);
+            index = close + 1;
+        } else {
+            throw new Error(
+                `unsupported token ${JSON.stringify(text.slice(index, index + 12))} in the sizeBaselineFiles array; only quoted strings and comments are readable.`
+            );
+        }
+    }
+    if (index >= text.length) {
+        throw new Error('the sizeBaselineFiles array is not closed.');
+    }
     if (paths.length === 0) {
         throw new Error('the sizeBaselineFiles array holds no entries; refusing to compare against an empty base.');
     }

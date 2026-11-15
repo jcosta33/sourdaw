@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,18 +33,31 @@ function resolveMergeBase(root: string): string {
     }
 }
 
+function existsAtCommit(root: string, commit: string, path: string): boolean {
+    return git(root, ['ls-tree', '--name-only', commit, '--', path]).trim() !== '';
+}
+
+/** A ceilings file absent on a side reads as an empty ledger; any other read or parse failure still throws. */
+function readBaseCeilings(root: string, mergeBase: string): Record<string, number> {
+    if (!existsAtCommit(root, mergeBase, SIZE_CEILINGS_PATH)) {
+        return {};
+    }
+    return parseSizeCeilingsText(git(root, ['show', `${mergeBase}:${SIZE_CEILINGS_PATH}`]));
+}
+
+function readHeadCeilings(root: string): Record<string, number> {
+    const path = resolve(root, SIZE_CEILINGS_PATH);
+    return existsSync(path) ? parseSizeCeilingsText(readFileSync(path, 'utf8')) : {};
+}
+
 /** Compares the working tree's baseline and ceilings with the merge base's; returns one message per finding. */
 export function checkSizeBaselineShrinks(root: string): string[] {
     const mergeBase = resolveMergeBase(root);
     const baseFiles = parseSizeBaselineFilesText(git(root, ['show', `${mergeBase}:${BASELINE_PATH}`]));
-    const baseCeilings = parseSizeCeilingsText(git(root, ['show', `${mergeBase}:${SIZE_CEILINGS_PATH}`]));
     const headFiles = parseSizeBaselineFilesText(readFileSync(resolve(root, BASELINE_PATH), 'utf8'));
     const growth = findSizeBaselineGrowth(
-        { baselineFiles: baseFiles, ceilings: baseCeilings },
-        {
-            baselineFiles: headFiles,
-            ceilings: parseSizeCeilingsText(readFileSync(resolve(root, SIZE_CEILINGS_PATH), 'utf8')),
-        }
+        { baselineFiles: baseFiles, ceilings: readBaseCeilings(root, mergeBase) },
+        { baselineFiles: headFiles, ceilings: readHeadCeilings(root) }
     );
     return describeSizeBaselineGrowth(growth);
 }

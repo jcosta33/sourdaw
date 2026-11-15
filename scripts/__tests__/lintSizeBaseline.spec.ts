@@ -23,8 +23,8 @@
  * with its merge base on origin/main and refuses both.
  */
 
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -479,8 +479,24 @@ describe('size baseline list text', () => {
     it.each([
         { name: 'no array', text: 'export const other = [];\n' },
         { name: 'an empty array', text: 'export const sizeBaselineFiles = [\n    // nothing\n];\n' },
+        {
+            name: 'a template literal entry',
+            text: "export const sizeBaselineFiles = [\n    `a.ts`,\n    'b.ts',\n];\n",
+        },
+        { name: 'a spread entry', text: "export const sizeBaselineFiles = [\n    ...extra,\n    'b.ts',\n];\n" },
+        { name: 'an unclosed array', text: "export const sizeBaselineFiles = [\n    'a.ts',\n" },
     ])('should throw for $name', ({ text }) => {
         expect(() => parseSizeBaselineFilesText(text)).toThrow();
+    });
+
+    it('should keep a real entry that follows a string containing a double slash', () => {
+        const text = "export const sizeBaselineFiles = [\n    'x//', 'src/real.ts',\n];\n";
+        expect(parseSizeBaselineFilesText(text)).toEqual(['x//', 'src/real.ts']);
+    });
+
+    it('should read the real baseline module text', () => {
+        const text = readFileSync(resolve(__dirname, '../../eslint.size-baseline.mjs'), 'utf8');
+        expect(parseSizeBaselineFilesText(text)).toEqual(sizeBaselineFiles);
     });
 });
 
@@ -531,5 +547,70 @@ describe('size baseline check against the merge base', () => {
 
     it('should fail closed when origin/main is missing', () => {
         expect(() => checkSizeBaselineShrinks(dir)).toThrow('refs/remotes/origin/main is missing');
+    });
+
+    function removeCeilingsFile(): void {
+        git('rm', '-q', SIZE_CEILINGS_PATH);
+        commit('base without ceilings');
+    }
+
+    it('should accept a head that adds nothing when the merge base has no ceilings file', () => {
+        removeCeilingsFile();
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        writeFileSync(join(dir, 'unrelated.txt'), 'x\n');
+        commit('head');
+        rmSync(join(dir, SIZE_CEILINGS_PATH), { force: true });
+        expect(checkSizeBaselineShrinks(dir)).toEqual([]);
+    });
+
+    it('should report a ceiling key the head adds when the merge base has no ceilings file', () => {
+        removeCeilingsFile();
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        writeBaseline(['a.ts', 'b.ts'], { 'a.ts': 700 });
+        commit('head');
+        expect(checkSizeBaselineShrinks(dir)).toEqual([
+            `a.ts: new ceiling in ${SIZE_CEILINGS_PATH}; ceilings exist only for files already baselined.`,
+        ]);
+    });
+
+    it('should compare against the merge base, not an origin/main that moved on with its own shrink', () => {
+        const base = git('rev-parse', 'HEAD').trim();
+        writeBaseline(['a.ts'], { 'a.ts': 700 });
+        commit('main shrinks');
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        git('checkout', '-q', '-b', 'feature', base);
+        writeFileSync(join(dir, 'unrelated.txt'), 'x\n');
+        commit('head');
+        expect(checkSizeBaselineShrinks(dir)).toEqual([]);
+    });
+
+    describe('as a command', () => {
+        function runCli(): { status: number; stdout: string; stderr: string } {
+            mkdirSync(join(dir, 'scripts'), { recursive: true });
+            for (const name of ['checkSizeBaselineShrinks.ts', 'lintSizeCeilings.ts']) {
+                copyFileSync(resolve(__dirname, '..', name), join(dir, 'scripts', name));
+            }
+            const result = spawnSync('node', ['scripts/checkSizeBaselineShrinks.ts'], { cwd: dir, encoding: 'utf8' });
+            return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
+        }
+
+        it('should exit 1 and print the finding for an added path', () => {
+            git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+            writeBaseline(['a.ts', 'b.ts', 'z.ts'], { 'a.ts': 700, 'b.ts': 800, 'z.ts': 950 });
+            const { status, stderr } = runCli();
+            expect({ status, mentionsPath: stderr.includes('z.ts: added to eslint.size-baseline.mjs') }).toEqual({
+                status: 1,
+                mentionsPath: true,
+            });
+        });
+
+        it('should exit 0 and print the success line for a clean head', () => {
+            git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+            const { status, stdout } = runCli();
+            expect({ status, stdout }).toEqual({
+                status: 0,
+                stdout: 'Size baseline only shrinks against the merge base.\n',
+            });
+        });
     });
 });
