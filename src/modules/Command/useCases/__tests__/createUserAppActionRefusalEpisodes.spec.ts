@@ -32,93 +32,105 @@ describe('createUserAppActionRefusalEpisodes', () => {
         });
     });
 
-    it('notifies once for a sweep of refused executes on one key', async () => {
-        const episodes = createUserAppActionRefusalEpisodes();
-        for (let step = 0; step < 20; step++) {
+    describe('while the project stays locked', () => {
+        // A refusal comes from a gate that refuses; one that admits by then is the race the
+        // 'when the project becomes changeable' cases cover.
+        beforeEach(() => {
+            productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => false }));
+        });
+
+        afterEach(() => {
+            productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
+        });
+
+        it('notifies once for a sweep of refused executes on one key', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            for (let step = 0; step < 20; step++) {
+                refuse();
+                await expect(episodes.execute('device-1', action)).resolves.toBe('refused');
+            }
+
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+            expect(notifyUser).toHaveBeenCalledWith(
+                "Add track was refused because the project can't be changed right now. Further edits to this device are not saved until the project can be changed.",
+                'warning'
+            );
+        });
+
+        it('notifies again for a refusal after a successful execute on that key', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
             refuse();
-            await expect(episodes.execute('device-1', action)).resolves.toBe('refused');
-        }
+            await episodes.execute('device-1', action);
+            await episodes.execute('device-1', action);
+            refuse();
+            await episodes.execute('device-1', action);
 
-        expect(notifyUser).toHaveBeenCalledTimes(1);
-        expect(notifyUser).toHaveBeenCalledWith(
-            "Add track was refused because the project can't be changed right now. Further edits to this device are not saved until the project can be changed.",
-            'warning'
-        );
-    });
+            expect(notifyUser).toHaveBeenCalledTimes(2);
+        });
 
-    it('notifies again for a refusal after a successful execute on that key', async () => {
-        const episodes = createUserAppActionRefusalEpisodes();
-        refuse();
-        await episodes.execute('device-1', action);
-        await episodes.execute('device-1', action);
-        refuse();
-        await episodes.execute('device-1', action);
+        it('starts a new episode after end(key)', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            refuse();
+            await episodes.execute('device-1', action);
+            episodes.end('device-1');
+            refuse();
+            await episodes.execute('device-1', action);
 
-        expect(notifyUser).toHaveBeenCalledTimes(2);
-    });
+            expect(notifyUser).toHaveBeenCalledTimes(2);
+        });
 
-    it('starts a new episode after end(key)', async () => {
-        const episodes = createUserAppActionRefusalEpisodes();
-        refuse();
-        await episodes.execute('device-1', action);
-        episodes.end('device-1');
-        refuse();
-        await episodes.execute('device-1', action);
+        it('starts new episodes for every key after endAll()', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            refuse();
+            await episodes.execute('device-1', action);
+            refuse();
+            await episodes.execute('device-2', action);
+            episodes.endAll();
+            refuse();
+            await episodes.execute('device-1', action);
+            refuse();
+            await episodes.execute('device-2', action);
 
-        expect(notifyUser).toHaveBeenCalledTimes(2);
-    });
+            expect(notifyUser).toHaveBeenCalledTimes(4);
+        });
 
-    it('starts new episodes for every key after endAll()', async () => {
-        const episodes = createUserAppActionRefusalEpisodes();
-        refuse();
-        await episodes.execute('device-1', action);
-        refuse();
-        await episodes.execute('device-2', action);
-        episodes.endAll();
-        refuse();
-        await episodes.execute('device-1', action);
-        refuse();
-        await episodes.execute('device-2', action);
+        it('keeps one key episode independent of another', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            refuse();
+            await episodes.execute('device-1', action);
+            refuse();
+            await episodes.execute('device-2', action);
+            refuse();
+            await episodes.execute('device-1', action);
+            // A success on device-2 ends only device-2's episode.
+            await episodes.execute('device-2', action);
+            refuse();
+            await episodes.execute('device-1', action);
 
-        expect(notifyUser).toHaveBeenCalledTimes(4);
-    });
+            expect(notifyUser).toHaveBeenCalledTimes(2);
+        });
 
-    it('keeps one key episode independent of another', async () => {
-        const episodes = createUserAppActionRefusalEpisodes();
-        refuse();
-        await episodes.execute('device-1', action);
-        refuse();
-        await episodes.execute('device-2', action);
-        refuse();
-        await episodes.execute('device-1', action);
-        // A success on device-2 ends only device-2's episode.
-        await episodes.execute('device-2', action);
-        refuse();
-        await episodes.execute('device-1', action);
+        it('rejects a plain conflict unchanged, notifies nothing and opens no episode', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            const conflict = new AppActionConflictError('addTrack');
+            vi.mocked(executeAppAction).mockRejectedValueOnce(conflict);
 
-        expect(notifyUser).toHaveBeenCalledTimes(2);
-    });
+            await expect(episodes.execute('device-1', action)).rejects.toBe(conflict);
+            expect(notifyUser).not.toHaveBeenCalled();
 
-    it('rejects a plain conflict unchanged, notifies nothing and opens no episode', async () => {
-        const episodes = createUserAppActionRefusalEpisodes();
-        const conflict = new AppActionConflictError('addTrack');
-        vi.mocked(executeAppAction).mockRejectedValueOnce(conflict);
+            refuse();
+            await episodes.execute('device-1', action);
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
 
-        await expect(episodes.execute('device-1', action)).rejects.toBe(conflict);
-        expect(notifyUser).not.toHaveBeenCalled();
+        it('rejects a non-conflict failure unchanged and notifies nothing', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            const failure = new Error('disk full');
+            vi.mocked(executeAppAction).mockRejectedValueOnce(failure);
 
-        refuse();
-        await episodes.execute('device-1', action);
-        expect(notifyUser).toHaveBeenCalledTimes(1);
-    });
-
-    it('rejects a non-conflict failure unchanged and notifies nothing', async () => {
-        const episodes = createUserAppActionRefusalEpisodes();
-        const failure = new Error('disk full');
-        vi.mocked(executeAppAction).mockRejectedValueOnce(failure);
-
-        await expect(episodes.execute('device-1', action)).rejects.toBe(failure);
-        expect(notifyUser).not.toHaveBeenCalled();
+            await expect(episodes.execute('device-1', action)).rejects.toBe(failure);
+            expect(notifyUser).not.toHaveBeenCalled();
+        });
     });
 
     describe('when the project becomes changeable', () => {
@@ -158,11 +170,14 @@ describe('createUserAppActionRefusalEpisodes', () => {
         });
 
         it('warns again for a refusal after the project was unlocked and relocked', async () => {
-            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted: vi.fn() });
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
             lock();
             refuse();
             await episodes.execute('A', action);
             unlock();
+            await afterMicrotasks();
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
             lock();
             refuse();
             await episodes.execute('A', action);
@@ -299,9 +314,15 @@ describe('createUserAppActionRefusalEpisodes', () => {
             refuse();
             await episodes.execute('A', action);
 
-            unlock();
+            // The dispatch commits while the episode is still open: no admission signal has
+            // reached it, so only the committed dispatch can end it.
             await expect(episodes.execute('A', action, { onCommitted })).resolves.toBe('committed');
             expect(onCommitted).toHaveBeenCalledTimes(1);
+
+            // The episode ended: the next refusal on the key warns afresh.
+            refuse();
+            await episodes.execute('A', action);
+            expect(notifyUser).toHaveBeenCalledTimes(2);
         });
 
         it('reports a key when a later refused action is admitted after the first stays refused', async () => {
@@ -349,6 +370,98 @@ describe('createUserAppActionRefusalEpisodes', () => {
             resetCrdtProjectAuthority('Replacement');
             await afterMicrotasks();
 
+            expect(onAdmitted).not.toHaveBeenCalled();
+        });
+
+        it('delivers a key whose project became changeable before its refusal reached the episode', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            vi.mocked(executeAppAction).mockImplementationOnce(async () => {
+                // The repair clears after the gate refused, before the refusal is handled.
+                queueMicrotask(unlock);
+                throw new AppActionAdmissionRefusedError('addTrack');
+            });
+
+            await expect(episodes.execute('A', action)).resolves.toBe('refused');
+            await afterMicrotasks();
+
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
+            // The project admits the edit and it is written: nothing to warn about.
+            expect(notifyUser).not.toHaveBeenCalled();
+        });
+
+        it('keeps the episode open when the project unlocks and relocks before delivery', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+
+            // Two gate transitions in one synchronous task, before the delivery microtask runs.
+            unlock();
+            lock();
+            await afterMicrotasks();
+            expect(onAdmitted).not.toHaveBeenCalled();
+
+            // Still the same episode: a further refusal stays silent.
+            refuse();
+            await episodes.execute('A', action);
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+
+            unlock();
+            await afterMicrotasks();
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
+        });
+
+        it('stays silent for a refusal that lands while the key awaits delivery', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+
+            // The second refusal is handled after the unlock signal and before its delivery.
+            refuse();
+            const refused = episodes.execute('A', action);
+            unlock();
+            lock();
+            await expect(refused).resolves.toBe('refused');
+            await afterMicrotasks();
+
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+            expect(onAdmitted).not.toHaveBeenCalled();
+        });
+
+        it('does not deliver a key that was ended between the signal and the delivery', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+
+            unlock();
+            episodes.end('A');
+            await afterMicrotasks();
+
+            expect(onAdmitted).not.toHaveBeenCalled();
+        });
+
+        it('opens no episode for a refusal whose project was replaced while it was dispatched', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            vi.mocked(executeAppAction).mockImplementationOnce(async () => {
+                resetCrdtProjectAuthority('Replacement');
+                lock();
+                throw new AppActionAdmissionRefusedError('addTrack');
+            });
+
+            await expect(episodes.execute('A', action)).resolves.toBe('refused');
+            expect(notifyUser).not.toHaveBeenCalled();
+
+            unlock();
+            await afterMicrotasks();
             expect(onAdmitted).not.toHaveBeenCalled();
         });
 
