@@ -72,6 +72,7 @@ const ParameterRow = ({ instanceId, row, onAnnounce }: ParameterRowProps): React
                 if (latestSend.current === send) {
                     setPendingValue(null);
                 }
+                return undefined;
             })
             .catch(() => {
                 if (latestSend.current === send) {

@@ -18,12 +18,13 @@ findings without a concrete break ("I'd prefer if") are discarded.
    under the matching rule id in `oxlint.craft-baseline.mjs` on the head. A listed file is the finding: no
    check goes red, so the reviewer is the check, citing the rule id and `docs/07-conventions.md`.
    `{ ...record, field }` and `fn(...args)` are legal.
-2. **A craft construct in an unlisted file reaches a green Lint job.** Runs: CI; the reviewer reads the
-   `Lint` job on the head. Input: any probe-1 construct in a file not listed for its rule. The `Lint` job
-   must report the plugin's message for that rule (for a conditional spread, "Do not spread a conditional
-   or logical expression"). A green `Lint` over such a hunk means the rule does not match that syntactic
-   form: name the form and carry it to probe 6 as a missing `invalid` row in
-   `scripts/oxlintCraft/__tests__/plugin.spec.ts`.
+2. **A craft construct in an unlisted file reaches a green Lint job.** Runs: CI; first establish the
+   `Lint` job's actual checked merge ref, source and relevant rule configuration and severity. Input: any
+   probe-1 construct in a file not listed for its rule. A checked tree containing both the added source
+   and current enforcing configuration must report the plugin's message (for a conditional spread,
+   "Do not spread a conditional or logical expression"). Only a green `Lint` on that combined tree
+   means the rule does not match that syntactic form: name the form and carry it to probe 6 as a missing
+   `invalid` row in `scripts/oxlintCraft/__tests__/plugin.spec.ts`.
 3. **The diff widens a lint baseline instead of complying.** `oxlint.craft-baseline.mjs` and
    `eslint.size-baseline.mjs` only burn down: "No path is ever added". `craftBaseline.spec.ts` checks only
    rule keys, sort order, duplicates and existence, so a sorted, unique added path passes it. Input:
@@ -63,3 +64,9 @@ findings without a concrete break ("I'd prefer if") are discarded.
    that skips the ESLint leg or removes the configuration's required default-export exception must fail.
    Widening that exception to ordinary or nested modules must fail their default-export probes. Removing
    a typed helper or recursive traversal must fail the affected invalid custom-rule fixtures.
+9. **Parallel source and rule promotion share no enforcing witness.** #6537 promoted
+   `promise/always-return` to error while #6594's passing `Lint` checked an older merge tree where it
+   still warned. Input: an unbaselined `.then(() => {})` must fail with `promise(always-return)` under
+   the promoted error configuration. Before accepting green `Lint`, require evidence whose checked
+   tree contains both the added source and the current enforcing configuration. An older `--quiet`
+   warning pass proves neither combined compliance nor a missing rule visitor.
