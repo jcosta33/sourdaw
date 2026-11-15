@@ -1,4 +1,5 @@
 use crate::host::native_bridge::SharedHostedPlugin;
+use crate::host::plugin_registry_store::FileFingerprint;
 use crate::host::ui_thread::{release_on_ui_thread, UiThread};
 use daw_engine::timeline::DeviceKind;
 use daw_engine::EngineHandle;
@@ -576,6 +577,14 @@ pub struct PluginRegistryEntry {
     /// at load (`commands::plugins::load_plugin`) and carried onto the
     /// instance record so a chain splice never has to re-read the registry.
     pub chain_kind: DeviceKind,
+    /// The fingerprint of `path`'s file when this entry was last checked
+    /// against it: at the scan that published it, at the hydration that
+    /// admitted it, or around the targeted rescan that refreshed it.
+    ///
+    /// A load compares the file against this before it opens anything
+    /// (`commands::plugins::resolve_registry_entry`), so `None` — an entry
+    /// nobody fingerprinted — is a mismatch, never a pass.
+    pub(crate) scanned_fingerprint: Option<FileFingerprint>,
 }
 
 impl PluginRegistryEntry {
@@ -589,7 +598,13 @@ impl PluginRegistryEntry {
     /// `capability_metadata_reason` travels with the values it qualifies and is
     /// never dropped on the way through. A row that kept the counts and lost
     /// the reason would state as fact what the scan recorded as unknown.
-    pub fn from_scanned(plugin: &ScannedPlugin) -> Self {
+    ///
+    /// The fingerprint is the caller's, because only the caller knows when it
+    /// last looked at the file; see [`Self::scanned_fingerprint`].
+    pub(crate) fn from_scanned(
+        plugin: &ScannedPlugin,
+        scanned_fingerprint: Option<FileFingerprint>,
+    ) -> Self {
         Self {
             path: plugin.path.clone(),
             stable_id: plugin.id.clone(),
@@ -601,6 +616,7 @@ impl PluginRegistryEntry {
             has_custom_ui: plugin.has_custom_ui,
             capability_metadata_reason: plugin.capability_metadata_reason.clone(),
             chain_kind: chain_kind_for_category(&plugin.category),
+            scanned_fingerprint,
         }
     }
 }
@@ -1597,7 +1613,8 @@ mod tests {
     /// signal instead of joining it.
     #[test]
     fn an_instrument_registry_entry_splices_as_a_generator() {
-        let entry = PluginRegistryEntry::from_scanned(&scanned_plugin_with_category("instrument"));
+        let entry =
+            PluginRegistryEntry::from_scanned(&scanned_plugin_with_category("instrument"), None);
 
         assert_eq!(entry.chain_kind, DeviceKind::Generator);
     }
@@ -1609,7 +1626,8 @@ mod tests {
     #[test]
     fn an_effect_registry_entry_splices_as_an_effect() {
         for category in ["effect", "reverb", ""] {
-            let entry = PluginRegistryEntry::from_scanned(&scanned_plugin_with_category(category));
+            let entry =
+                PluginRegistryEntry::from_scanned(&scanned_plugin_with_category(category), None);
 
             assert_eq!(
                 entry.chain_kind,

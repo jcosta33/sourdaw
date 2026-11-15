@@ -62,6 +62,7 @@ import {
     type GitHubJsonClient,
     spawnRun,
 } from '../githubAppIdentity.ts';
+import { createIsolatedGitDirectory, releaseIsolatedGitDirectory } from '../tokenBearingChildPlacement.ts';
 import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
 
 vi.mock('node:child_process', async (importOriginal) => {
@@ -1564,10 +1565,9 @@ describe('sterile Git child environments', () => {
                 join(root, 'hooks', 'reference-transaction'),
                 `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > ${JSON.stringify(leaked)}\n`
             );
-            const fetchArgs = [
-                `--git-dir=${join(repository, '.git')}`,
-                ...gitAuthenticatedArgs('ghs_sentinel', join(root, 'helper'), ['fetch', source, 'main']),
-            ];
+            // The caller's GH_TOKEN alone makes the child token-bearing; a credential helper would
+            // need a transport-created git directory, which no lane config reaches.
+            const fetchArgs = [`--git-dir=${join(repository, '.git')}`, 'fetch', source, 'main'];
             const env = githubChildEnv('ghs_sentinel', join(root, 'gh-config'));
 
             spawnCapture('git', fetchArgs, { cwd: repository, env });
@@ -1656,17 +1656,28 @@ describe('sterile Git child environments', () => {
             expect(() => spawnRun('git', ['-C', repository, ...fetchArgs], { env })).toThrow(
                 'repository config defines hook.lane.event'
             );
-            const credentialArgs = [
-                `--git-dir=${join(repository, '.git')}`,
-                '-c',
-                'credential.helper=',
-                '-c',
-                'credential.helper=!true',
-                ...fetchArgs,
-            ];
-            expect(() =>
-                spawnCapture('git', credentialArgs, { cwd: repository, env: githubAuthorizationGitEnv() })
-            ).toThrow('repository config defines hook.lane.event');
+            // A credential-holding child must run in a transport-created git directory; one whose
+            // config defines a hook still refuses.
+            const isolated = createIsolatedGitDirectory();
+            try {
+                fixtureGit(root, ['init', '-q', '--bare', isolated]);
+                fixtureGit(root, ['--git-dir', isolated, 'config', 'hook.lane.event', 'reference-transaction']);
+                fixtureGit(root, ['--git-dir', isolated, 'config', 'hook.lane.command', program]);
+                const credentialArgs = [
+                    `--git-dir=${isolated}`,
+                    '-c',
+                    'credential.helper=',
+                    '-c',
+                    'credential.helper=!true',
+                    ...fetchArgs,
+                ];
+                expect(() =>
+                    spawnCapture('git', credentialArgs, { cwd: repository, env: githubAuthorizationGitEnv() })
+                ).toThrow('repository config defines hook.lane.event');
+            } finally {
+                releaseIsolatedGitDirectory(isolated);
+                rmSync(isolated, { recursive: true, force: true });
+            }
             expect(existsSync(leaked)).toBe(false);
 
             // The fixed-name overrides alone do not stop a config-defined hook: it runs beside the token.

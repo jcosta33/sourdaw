@@ -432,6 +432,9 @@ function lookup<Type extends AppActionType>(
     state: ShiftedOwnerState,
     trackIds: readonly string[]
 ): ShiftedOwnerState | null {
+    if (!Object.hasOwn(projectClipActionByActionType, action.type)) {
+        return keepState(action, state);
+    }
     return projectClipActionByActionType[action.type](action, state, trackIds);
 }
 
