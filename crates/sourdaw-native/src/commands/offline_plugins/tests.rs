@@ -1195,6 +1195,40 @@ fn an_unload_of_every_plugin_does_not_wait_out_an_exports_build() {
     assert!(still_building, "the export had not finished building");
 }
 
+/// The live state read refuses while parameter writes wait for the live
+/// engine, rather than draining them, so the render refuses by that reason and
+/// builds nothing.
+#[test]
+fn a_live_instance_with_parameter_writes_pending_refuses_the_render_by_that_reason() {
+    let fx = InstalledFx::create("pending-writes");
+    let (state, live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    live.enqueue_parameter(GAIN_PARAM_ID, 0.7)
+        .expect("the write is queued for the live engine");
+    assert!(live.has_pending_parameter_writes());
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &fx.seams(),
+        None,
+    )
+    .expect_err("a print past unprocessed parameter writes is refused");
+
+    assert!(
+        refusal.contains("'d-fx'")
+            && refusal.contains("'Sourdaw Harness Fx'")
+            && refusal.contains("the plugin has parameter writes pending"),
+        "{refusal}"
+    );
+    assert_eq!(ui.tasks_run(), 0, "nothing is built");
+    assert!(
+        live.has_pending_parameter_writes(),
+        "the render leaves the live writes for the live engine"
+    );
+}
+
 #[test]
 fn a_cancel_mid_render_stops_it_and_releases_its_clap_instance_on_the_ui_thread() {
     a_cancel_mid_render_stops_the_render_of(Format::Clap);

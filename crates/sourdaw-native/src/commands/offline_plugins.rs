@@ -7,9 +7,12 @@
 //! instead, built here for that render alone and released when it ends.
 //!
 //! The live instance is touched exactly once, by the state read that captures
-//! what the user set on it (`plugins::read_plugin_state_chunk`, which drains
-//! the parameter writes still pending first). It is never reactivated,
-//! re-rated, re-moded or spliced into the render.
+//! what the user set on it (`plugins::read_plugin_state_chunk`). That read
+//! does not drain parameter writes still waiting for the live engine to
+//! process them: it refuses while any are pending, and so does the render,
+//! naming that reason, since a state read past them would print settings the
+//! user has already moved. It is never reactivated, re-rated, re-moded or
+//! spliced into the render.
 //!
 //! Each offline instance is built the way a load builds one: on the shell's UI
 //! thread, from the very file the live instance's load vetted, re-vetted
@@ -434,6 +437,19 @@ impl Drop for OfflinePluginInstances<'_> {
     }
 }
 
+/// Whether the live engine instance under `instance_id` holds parameter
+/// writes its process path has not applied yet. Its state read refuses rather
+/// than drain them, so the render names that refusal itself.
+fn has_pending_parameter_writes(instance_id: &str, state: &AppState) -> Result<bool, String> {
+    let engine_plugins = state
+        .engine_plugins
+        .lock()
+        .map_err(|error| format!("Failed to lock engine plugins: {error}"))?;
+    Ok(engine_plugins
+        .get(instance_id)
+        .is_some_and(|record| record.runtime.has_pending_parameter_writes()))
+}
+
 /// Leaves every offline instance's processing state when dropped; see
 /// [`leaves_processing_on_drop`]. A drop runs once, so
 /// the state is left exactly once.
@@ -500,6 +516,13 @@ pub(crate) async fn build_offline_instances<'a>(
 
     let mut captured = Vec::with_capacity(bound.len());
     for instance in bound {
+        if has_pending_parameter_writes(&instance.instance_id, state)? {
+            return Err(refusal(
+                instance,
+                "its live state could not be read: the plugin has parameter writes pending that \
+                 the live engine has not processed yet",
+            ));
+        }
         let chunk = (seams.capture_state)(&instance.instance_id, state).map_err(|reason| {
             refusal(
                 instance,
