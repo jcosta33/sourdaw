@@ -42,9 +42,9 @@ const action = {
     payload: { deviceId: 'device-1', state: { version: 1, data: {} } },
 } as const;
 
-async function rejection(): Promise<unknown> {
+async function rejection(dispatched: AppAction = action): Promise<unknown> {
     try {
-        await executeAppAction(action);
+        await executeAppAction(dispatched);
     } catch (error) {
         return error;
     }
@@ -108,9 +108,7 @@ describe('executeAppAction admission refusal', () => {
     it('refuses with the admission subclass when repair becomes required between preflight and commit', async () => {
         registerGateChangingHandler(() => agentProjectRepairStateStore.set(repairRequired));
 
-        const error = await executeAppAction({ type: 'setEditingTool', payload: { tool: 'marquee' } }).catch(
-            (failure: unknown) => failure
-        );
+        const error = await rejection({ type: 'setEditingTool', payload: { tool: 'marquee' } });
 
         expect(error).toBeInstanceOf(AppActionAdmissionRefusedError);
     });
@@ -122,9 +120,7 @@ describe('executeAppAction admission refusal', () => {
             briefAllows = false;
         });
 
-        const error = await executeAppAction({ type: 'setEditingTool', payload: { tool: 'marquee' } }).catch(
-            (failure: unknown) => failure
-        );
+        const error = await rejection({ type: 'setEditingTool', payload: { tool: 'marquee' } });
 
         expect(error).toBeInstanceOf(AppActionAdmissionRefusedError);
     });
