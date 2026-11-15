@@ -1025,10 +1025,11 @@ describe('handleRestoreTrack', () => {
         // The state a cross-track move leaves: the moved clip is live on the
         // target, and the source's active alternative still holds it in the
         // stored copy, which only a switch or a create refreshes.
-        it("restores a row whose active alternative's stale copy holds a clip since moved to a survivor", () => {
-            const movedClipId = 'clip-moved';
+        const movedClipId = 'clip-moved';
+
+        function rowWithStaleMovedClip(): Track {
             const base = storeTrackRow();
-            const row: Track = {
+            return {
                 ...base,
                 alternatives: base.alternatives.map((alternative) => {
                     if (alternative.id !== base.activeAlternativeId) {
@@ -1037,30 +1038,86 @@ describe('handleRestoreTrack', () => {
                     return { ...alternative, clips: [...alternative.clips, clipOf(removedTrackId, movedClipId)] };
                 }),
             };
-            const target = TrackDummy.create({
-                id: survivor.id,
-                clips: [...survivor.clips, clipOf(survivor.id, movedClipId)],
-            });
+        }
+
+        const moveTarget = TrackDummy.create({
+            id: survivor.id,
+            clips: [...survivor.clips, clipOf(survivor.id, movedClipId)],
+        });
+
+        // Captures the removal of `row` while the survivor holds the moved clip
+        // live, with MIDI and a gain envelope on it, then leaves the survivor alone.
+        function captureBesideMoveTarget(row: Track): RestoreTrackPayload {
             mocks.capturedStores.midi = {
-                notesByClipId: { [movedClipId]: [{ id: 'note-moved' }] },
-                ccByClipId: {},
-                pitchBendByClipId: {},
+                notesByClipId: { [movedClipId]: [{ id: 'note-moved' }], 'clip-zero': [{ id: 'note-zero' }] },
+                ccByClipId: { [movedClipId]: [{ id: 'cc-moved' }] },
+                pitchBendByClipId: { [movedClipId]: [{ id: 'bend-moved' }] },
             };
-            mocks.getTrackStoreState.mockReturnValue({ tracks: [target, row], selectedTrackId: null, ghostClips: [] });
-            mocks.takeLaneStoreState.value = { lanes: [] };
+            mocks.readClipSatelliteEntry.mockImplementation((clipId) => ({
+                clipId,
+                gainEnvelope: clipId === movedClipId ? { clipId, points: [], enabled: true } : null,
+                warpState: null,
+            }));
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [moveTarget, row],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            mocks.takeLaneStoreState.value = { lanes: [survivorLane] };
             const payload = requireDefined(
                 captureTrackRemovalSnapshot(removedTrackId) ?? undefined,
                 'a removal snapshot'
             );
-            mocks.getTrackStoreState.mockReturnValue({ tracks: [target], selectedTrackId: null, ghostClips: [] });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [moveTarget], selectedTrackId: null, ghostClips: [] });
             vi.clearAllMocks();
+            return payload;
+        }
+
+        // The state a cross-track move leaves: the moved clip is live on the
+        // target, and the source's active alternative still holds it in the
+        // stored copy, which only a switch or a create refreshes. The capture
+        // keys only held clips, so it carries nothing of the moved clip.
+        it("restores a row whose active alternative's stale copy holds a clip since moved to a survivor", () => {
+            const row = rowWithStaleMovedClip();
+            const payload = captureBesideMoveTarget(row);
             const action: RestoreTrackAction = { type: 'restoreTrack', payload };
 
-            expect(Object.keys(payload.midiNotesByClipId)).toEqual([movedClipId]);
+            expect(payload.midiNotesByClipId).toEqual({ 'clip-zero': [{ id: 'note-zero' }] });
+            expect(payload.midiCcByClipId).toEqual({});
+            expect(payload.midiPitchBendByClipId).toEqual({});
+            expect(payload.clipSatellites).toEqual([]);
             expect(handleRestoreTrack.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
             expect(handleRestoreTrack.execute(action)).toMatchObject({ status: 'written' });
-            expect(mocks.setTrackState.mock.calls[0]?.[0].tracks).toStrictEqual([target, row]);
+            expect(mocks.setTrackState.mock.calls[0]?.[0].tracks).toStrictEqual([moveTarget, row]);
+            expect(mocks.restoreMidiClipData.mock.calls.map(([input]) => input.clipId)).toEqual(['clip-zero']);
+            expect(mocks.writeClipSatelliteEntry).not.toHaveBeenCalled();
         });
+
+        it.each([
+            ['MIDI notes', () => ({ midiNotesByClipId: { [movedClipId]: [] } })],
+            ['MIDI controllers', () => ({ midiCcByClipId: { [movedClipId]: [] } })],
+            ['MIDI pitch bend', () => ({ midiPitchBendByClipId: { [movedClipId]: [] } })],
+            [
+                'a satellite',
+                () => ({
+                    clipSatellites: [
+                        {
+                            clipId: movedClipId,
+                            gainEnvelope: { clipId: movedClipId, points: [], enabled: true },
+                            warpState: null,
+                        },
+                    ],
+                }),
+            ],
+            ['a clip automation lane', () => ({ automationLaneSnapshots: [clipLane('lane-moved', movedClipId)] })],
+        ])(
+            'refuses before any write a payload keying %s by a stale-copy clip a survivor holds',
+            (_label, members: () => Partial<RestoreTrackPayload>) => {
+                const payload = captureBesideMoveTarget(rowWithStaleMovedClip());
+
+                expectNothingWritten({ type: 'restoreTrack', payload: { ...payload, ...members() } });
+            }
+        );
 
         describe('a grouped restore of all tracks', () => {
             function groupedRow(trackId: string, clipId: string): RestoreTrackPayload {

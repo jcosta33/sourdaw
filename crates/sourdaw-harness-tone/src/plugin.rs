@@ -36,11 +36,11 @@ pub(crate) unsafe fn tone_from_plugin<'a>(plugin: *const clap_plugin) -> Option<
     if plugin.is_null() {
         return None;
     }
-    let data = (*plugin).plugin_data;
+    let data = unsafe { (*plugin).plugin_data };
     if data.is_null() {
         return None;
     }
-    Some(&*(data as *const Tone))
+    Some(unsafe { &*(data as *const Tone) })
 }
 
 pub(crate) unsafe extern "C" fn init(_plugin: *const clap_plugin) -> bool {
@@ -54,11 +54,11 @@ pub(crate) unsafe extern "C" fn destroy(plugin: *const clap_plugin) {
     if plugin.is_null() {
         return;
     }
-    let data = (*plugin).plugin_data;
+    let data = unsafe { (*plugin).plugin_data };
     if !data.is_null() {
-        drop(Box::from_raw(data as *mut Tone));
+        drop(unsafe { Box::from_raw(data as *mut Tone) });
     }
-    drop(Box::from_raw(plugin as *mut clap_plugin));
+    drop(unsafe { Box::from_raw(plugin as *mut clap_plugin) });
 }
 
 pub(crate) unsafe extern "C" fn activate(
@@ -67,7 +67,7 @@ pub(crate) unsafe extern "C" fn activate(
     _min_frames_count: u32,
     _max_frames_count: u32,
 ) -> bool {
-    match tone_from_plugin(plugin) {
+    match unsafe { tone_from_plugin(plugin) } {
         Some(tone) => {
             tone.activate(sample_rate);
             true
@@ -93,7 +93,7 @@ pub(crate) unsafe extern "C" fn stop_processing(_plugin: *const clap_plugin) {}
 /// Force silence without a full `activate`: restart the phase, per CLAP's
 /// `reset` contract, leaving the recorded sample rate and `Level` alone.
 pub(crate) unsafe extern "C" fn reset(plugin: *const clap_plugin) {
-    if let Some(tone) = tone_from_plugin(plugin) {
+    if let Some(tone) = unsafe { tone_from_plugin(plugin) } {
         tone.reset();
     }
 }
@@ -109,7 +109,7 @@ pub(crate) unsafe extern "C" fn get_extension(
     if extension_id.is_null() {
         return ptr::null();
     }
-    let id = CStr::from_ptr(extension_id);
+    let id = unsafe { CStr::from_ptr(extension_id) };
     if id == CLAP_EXT_AUDIO_PORTS {
         return &raw const AUDIO_PORTS as *const c_void;
     }
@@ -126,12 +126,12 @@ pub(crate) unsafe extern "C" fn process(
     if plugin.is_null() || process.is_null() {
         return CLAP_PROCESS_ERROR;
     }
-    let Some(tone) = tone_from_plugin(plugin) else {
+    let Some(tone) = (unsafe { tone_from_plugin(plugin) }) else {
         return CLAP_PROCESS_ERROR;
     };
-    let process_ref = &*process;
-    apply_parameter_events(tone, process_ref.in_events);
-    render_block(tone, process_ref);
+    let process_ref = unsafe { &*process };
+    unsafe { apply_parameter_events(tone, process_ref.in_events) };
+    unsafe { render_block(tone, process_ref) };
     CLAP_PROCESS_CONTINUE
 }
 
@@ -147,26 +147,26 @@ pub(crate) unsafe fn apply_parameter_events(tone: &Tone, in_events: *const clap_
     if in_events.is_null() {
         return;
     }
-    let events = &*in_events;
+    let events = unsafe { &*in_events };
     let (Some(size_fn), Some(get_fn)) = (events.size, events.get) else {
         return;
     };
-    let count = size_fn(in_events);
+    let count = unsafe { size_fn(in_events) };
     for index in 0..count {
-        let header = get_fn(in_events, index);
-        if header.is_null() || (*header).type_ != CLAP_EVENT_PARAM_VALUE {
+        let header = unsafe { get_fn(in_events, index) };
+        if header.is_null() || unsafe { (*header).type_ } != CLAP_EVENT_PARAM_VALUE {
             continue;
         }
         // A foreign event space may reuse this event type with a payload
         // this plugin does not understand; only the core space's own
         // `clap_event_param_value` layout is safe to cast the header to.
-        if (*header).space_id != CLAP_CORE_EVENT_SPACE_ID {
+        if unsafe { (*header).space_id } != CLAP_CORE_EVENT_SPACE_ID {
             continue;
         }
-        if ((*header).size as usize) < size_of::<clap_event_param_value>() {
+        if (unsafe { (*header).size } as usize) < size_of::<clap_event_param_value>() {
             continue;
         }
-        let event = &*(header as *const clap_event_param_value);
+        let event = unsafe { &*(header as *const clap_event_param_value) };
         if event.param_id == LEVEL_PARAM_ID {
             tone.set_level(event.value.clamp(LEVEL_MIN, LEVEL_MAX));
         }
@@ -180,7 +180,7 @@ unsafe fn render_block(tone: &Tone, process: &clap_process) {
     if process.audio_outputs.is_null() || process.audio_outputs_count == 0 {
         return;
     }
-    let output = &mut *process.audio_outputs;
+    let output = unsafe { &mut *process.audio_outputs };
     if output.data32.is_null() || output.channel_count == 0 {
         return;
     }
@@ -189,11 +189,11 @@ unsafe fn render_block(tone: &Tone, process: &clap_process) {
     for frame in 0..frames {
         let sample = tone.next_sample();
         for channel in 0..channels {
-            let channel_ptr = *output.data32.add(channel);
+            let channel_ptr = unsafe { *output.data32.add(channel) };
             if channel_ptr.is_null() {
                 continue;
             }
-            *channel_ptr.add(frame) = sample;
+            unsafe { *channel_ptr.add(frame) = sample };
         }
     }
 }
@@ -211,7 +211,7 @@ mod tests {
     }
 
     unsafe extern "C" fn fixture_size(list: *const clap_input_events) -> u32 {
-        let fixture = &*((*list).ctx as *const EventListFixture);
+        let fixture = unsafe { &*((*list).ctx as *const EventListFixture) };
         fixture.events.len() as u32
     }
 
@@ -219,7 +219,7 @@ mod tests {
         list: *const clap_input_events,
         index: u32,
     ) -> *const clap_sys::events::clap_event_header {
-        let fixture = &*((*list).ctx as *const EventListFixture);
+        let fixture = unsafe { &*((*list).ctx as *const EventListFixture) };
         &fixture.events[index as usize].header
     }
 

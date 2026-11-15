@@ -811,8 +811,8 @@ fn excitation(frame: usize) -> (f32, f32) {
 unsafe fn fill_input(left: *mut f32, right: *mut f32, block: usize) {
     for frame in 0..QUANTUM {
         let (l, r) = excitation(block * QUANTUM + frame);
-        *left.add(frame) = l;
-        *right.add(frame) = r;
+        unsafe { *left.add(frame) = l };
+        unsafe { *right.add(frame) = r };
     }
 }
 
@@ -821,8 +821,8 @@ unsafe fn fill_input(left: *mut f32, right: *mut f32, block: usize) {
 unsafe fn rms_at(left: *const f32, right: *const f32) -> f32 {
     let mut sum = 0.0_f64;
     for frame in 0..QUANTUM {
-        let l = *left.add(frame) as f64;
-        let r = *right.add(frame) as f64;
+        let l = unsafe { *left.add(frame) } as f64;
+        let r = unsafe { *right.add(frame) } as f64;
         sum += l * l + r * r;
     }
     (sum / (2 * QUANTUM) as f64).sqrt() as f32

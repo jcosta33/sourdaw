@@ -203,7 +203,10 @@ export function executeBriefCompile(input: {
     prompt: string;
     context: ProjectContext;
     sourceRunId: string | null;
-    /** Whether this request was offered the brief at all: only a hosted chat request is. */
+    /**
+     * Whether this request was offered the brief at all: only a chat request, or a Prompt Bar chat
+     * hand-off, on an all-hosted or all-local chain is.
+     */
     isBriefOffered: boolean;
     isBriefRequested: () => boolean;
 }): BriefCompileResult {
@@ -213,7 +216,7 @@ export function executeBriefCompile(input: {
     if (!input.isBriefOffered) {
         return failure(
             'brief-not-requested',
-            'brief.compile is offered only to a hosted chat request; this request cannot write the production brief.',
+            'brief.compile is offered only to a chat request; this request cannot write the production brief.',
             false
         );
     }

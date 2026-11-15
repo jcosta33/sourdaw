@@ -43,6 +43,9 @@ export function getHandlerMap(): HandlerMap {
 export function getHandlerByType<ActionType extends AppAction['type']>(
     actionType: ActionType
 ): ActionHandler<Extract<AppAction, { type: ActionType }>> | undefined {
+    if (!Object.hasOwn(registry, actionType)) {
+        return undefined;
+    }
     return registry[actionType];
 }
 
