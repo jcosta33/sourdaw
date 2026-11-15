@@ -25,6 +25,7 @@ import {
     type MintPermissions,
 } from './githubAppIdentity.ts';
 import { type GitRunner, withIsolatedGitTransport } from './isolatedGitTransport.ts';
+import { lintLedgerCrossingRefusal, readLintLedgerCrossing, type LintLedgerCrossing } from './lintLedgerCrossing.ts';
 import {
     assertConventionalSubject,
     assertPullRequestBody,
@@ -141,6 +142,11 @@ export type GateProvenanceFacts = {
 
 export type DeliveryPort = CheckEvidencePort & {
     fetch: () => void;
+    /**
+     * Read from fetched object data only: the paths a lint ledger binds that the head and the
+     * fetched `origin/main` both changed since their merge base.
+     */
+    lintLedgerCrossing: (headRefOid: string) => LintLedgerCrossing;
     pullRequest: (number: number) => PullRequestSnapshot;
     reviewState: (number: number, expectedHead: string) => ReviewState;
     reviewBundleDeliveryAuthorization: (number: number, head: string) => DeliveryAuthorizationBinding;
@@ -451,6 +457,18 @@ function validatePullRequest(
     validateCiAdmission(pullRequest, checks, ciAdmissionMode);
     if (pullRequest.reviewDecision === 'CHANGES_REQUESTED') {
         fail(`PR #${pullRequest.number} has requested changes`);
+    }
+}
+
+/**
+ * The ruleset is non-strict, so `Gate` measured the head merged into an older `main`. Lint ledgers
+ * bind exact per-file figures, and a file both sides changed since the merge base can combine two
+ * green measurements into a red `main`; a fresh `Gate` on a head carrying current `main` decides it.
+ */
+function validateLintLedgerCrossing(pullRequest: PullRequestSnapshot, port: DeliveryPort): void {
+    const refusal = lintLedgerCrossingRefusal(pullRequest.number, port.lintLedgerCrossing(pullRequest.headRefOid));
+    if (refusal !== undefined) {
+        fail(refusal);
     }
 }
 
@@ -3109,6 +3127,7 @@ function deliverPullRequestWithCiAdmission(
     validateBaseBranch(initial);
     const initialTrackerTarget = trackerCompletionTarget(initial);
     validatePullRequest(initial, port, ciAdmissionMode);
+    validateLintLedgerCrossing(initial, port);
     const initialReview = port.reviewState(number, initial.headRefOid);
     validateReview(number, initialReview);
     validateDeliveryAuthorization(initial, initialReview, port);
@@ -3183,6 +3202,7 @@ function deliverPullRequestWithCiAdmission(
                 validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
                 validateStablePullRequest(initial, finalSnapshot);
                 validatePullRequest(finalSnapshot, port, ciAdmissionMode);
+                validateLintLedgerCrossing(finalSnapshot, port);
                 validateBaseBranch(finalSnapshot);
                 const finalReview = port.reviewState(number, finalSnapshot.headRefOid);
                 validateReview(number, finalReview);
@@ -4036,6 +4056,12 @@ export function shellPort(
                 shell.run('git', fetchArgs);
             }
         },
+        lintLedgerCrossing: (headRefOid) =>
+            readLintLedgerCrossing(
+                (args) => shell.capture('git', args),
+                `refs/remotes/origin/${REQUIRED_BASE_BRANCH}`,
+                headRefOid
+            ),
         pullRequest: (number) => {
             const snapshot = toPullRequestSnapshot(
                 shell.capture('gh', ['pr', 'view', String(number), '--repo', repository, '--json', pullRequestFields]),

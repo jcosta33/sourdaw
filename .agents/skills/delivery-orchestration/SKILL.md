@@ -568,6 +568,11 @@ rules from the launcher's pinned `origin/main` workflow copy; lanes cannot selec
 GitHub structural mergeability independently gates base compatibility: delivery retries one
 transient `UNKNOWN`, refusing conflicts or a second `UNKNOWN`.
 
+Delivery refuses, before any remote write, a pull request when `main` changed since their merge base
+a file the pull request also changed and a lint ledger (`LINT_LEDGER_FILES` in
+`scripts/lintLedgerCrossing.ts`) binds that file: the non-strict ruleset's `Gate` never measured the
+two edits together. Merge current `main` into the lane and publish; the fresh `Gate` decides.
+
 For a crashed delivery, repair, confirmation, closure, or review publication, follow the
 operation-specific [lock recovery](references/repair-and-lock-recovery.md); recovery itself does not
 perform the original operation.
