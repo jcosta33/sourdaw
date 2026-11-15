@@ -10,6 +10,7 @@ import {
     restoreActionReplayCapability,
     retainActionReplayMarkReconciliation,
 } from '../stores/actionReplayCapabilities';
+import { discardRedoFuture } from '../stores/undoStore';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { executeAppAction } from './executeAppAction';
@@ -90,6 +91,8 @@ export async function revertAction(entryId: string): RevertActionOutput {
         return { status: 'unavailable' };
     }
 
+    // The landed inverse is a new edit: a redo would replay its forward over a state the revert
+    // changed, so every landed path discards the redo future, as any new edit does.
     try {
         await runPreparedUndoReplay({ actions: [claim.inverseAction] }, () =>
             executeAppAction(claim.inverseAction, {
@@ -104,6 +107,7 @@ export async function revertAction(entryId: string): RevertActionOutput {
             return { status: 'conflict' };
         }
         if (error instanceof AppActionCommittedError) {
+            discardRedoFuture();
             let mark_outcome: 'marked' | 'unavailable';
             try {
                 mark_outcome = markCommittedReplay({ entryId, claim });
@@ -124,6 +128,7 @@ export async function revertAction(entryId: string): RevertActionOutput {
         throw error;
     }
 
+    discardRedoFuture();
     const mark_outcome = markCommittedReplay({ entryId, claim });
     return mark_outcome === 'marked' ? { status: 'executed' } : { status: 'executed-unmarked' };
 }
