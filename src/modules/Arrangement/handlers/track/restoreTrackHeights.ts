@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
-import { type TrackHeightSnapshot } from '#/utils/handlerContract';
 
+import { type TrackHeightSnapshot } from '../../events/arrangementTrackAppActions';
 import { DEFAULT_TRACK_HEIGHT } from '../../useCases/clampTrackHeight';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackStoreState } from '../../useCases/setTrackStoreState';
