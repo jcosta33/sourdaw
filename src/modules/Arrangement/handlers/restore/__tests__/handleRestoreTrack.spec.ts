@@ -33,7 +33,8 @@ const mocks = vi.hoisted(() => {
     const capturedStores: {
         midi: CapturedMidiState | null;
         automationLanes: RestoreTrackPayload['automationLaneSnapshots'] | null;
-    } = { midi: null, automationLanes: null };
+        modulators: RestoreTrackPayload['ownedModulatorSnapshots'] | null;
+    } = { midi: null, automationLanes: null, modulators: null };
 
     return {
         takeLaneStoreState,
@@ -162,6 +163,12 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => ({
             return lanes ? { lanes } : null;
         },
     },
+    modulationStore: {
+        get value(): { modulators: RestoreTrackPayload['ownedModulatorSnapshots'] } | null {
+            const modulators = mocks.capturedStores.modulators;
+            return modulators ? { modulators } : null;
+        },
+    },
 }));
 
 vi.mock('../../../stores/clipSatelliteState', () => ({
@@ -233,6 +240,7 @@ describe('handleRestoreTrack', () => {
         mocks.takeLaneStoreState.value = { lanes: [] };
         mocks.capturedStores.midi = null;
         mocks.capturedStores.automationLanes = null;
+        mocks.capturedStores.modulators = null;
         mocks.readClipSatelliteEntry.mockImplementation((clipId) => ({ clipId, gainEnvelope: null, warpState: null }));
         mocks.restoreSidechainRoutes.mockReturnValue(mocks.finalizeSidechainRestore);
     });
@@ -589,7 +597,7 @@ describe('handleRestoreTrack', () => {
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
 
-    it('preserves a concurrent selection made after removal', () => {
+    it('preserves a concurrent selection made after removal', async () => {
         const selected = TrackDummy.create({ id: 'selected-later' });
         const state: TrackStoreState = {
             tracks: [selected],
@@ -598,7 +606,7 @@ describe('handleRestoreTrack', () => {
         };
         mocks.getTrackStoreState.mockReturnValue(state);
 
-        handleRestoreTrack.execute(createRestoreTrackAction({ wasSelected: true }));
+        await handleRestoreTrack.execute(createRestoreTrackAction({ wasSelected: true }));
 
         expect(mocks.setTrackState).toHaveBeenCalledWith(expect.objectContaining({ selectedTrackId: selected.id }));
     });
@@ -780,6 +788,7 @@ describe('handleRestoreTrack', () => {
             expect(mocks.restoreAutomationLanes).not.toHaveBeenCalled();
             expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
             expect(mocks.writeClipSatelliteEntry).not.toHaveBeenCalled();
+            expect(mocks.restoreTrackModulationReferences).not.toHaveBeenCalled();
             expect(mocks.takeLaneStoreState.value).toEqual({ lanes: [survivorLane] });
         }
 
@@ -931,6 +940,104 @@ describe('handleRestoreTrack', () => {
             ]);
             expect(mocks.writeClipSatelliteEntry).toHaveBeenCalledTimes(3);
             expect(mocks.restoreAutomationLanes).toHaveBeenCalledWith(payload.automationLaneSnapshots);
+        });
+
+        function modulator(
+            id: string,
+            trackId: string,
+            targetTrackIds: readonly string[]
+        ): RestoreTrackPayload['ownedModulatorSnapshots'][number] {
+            return {
+                id,
+                name: id,
+                trackId,
+                enabled: true,
+                kind: 'step',
+                config: { kind: 'step', steps: [0, 1], rate: 1, smooth: 0 },
+                mappings: targetTrackIds.map((targetTrackId) => ({
+                    targetTrackId,
+                    targetDeviceId: 'device-1',
+                    targetParamId: 'param-1',
+                    amount: 0.5,
+                })),
+            };
+        }
+
+        // `moveClip` writes no take, so a lane left on the old track keeps naming
+        // a clip a survivor now holds. The capture emits it, so the restore must
+        // accept it: a take's clip id cannot tell this state from a forged one.
+        it('restores a take lane whose take names a clip that moved to a survivor', () => {
+            const lane = storeTakeLane();
+            const [take] = lane.takes;
+            const movedLane = { ...lane, takes: [{ ...requireDefined(take, 'a take'), clipId: survivorClipId }] };
+            const row = storeTrackRow();
+            const payload = captureRemoval(row, movedLane);
+            expect(payload.takeLaneSnapshots).toStrictEqual([movedLane]);
+
+            expectRestored({ type: 'restoreTrack', payload }, row);
+            expect(mocks.insertTakeLane.mock.calls[0]?.[0]).toStrictEqual(movedLane);
+        });
+
+        describe('modulation members', () => {
+            const owned = modulator('mod-owned', removedTrackId, [survivor.id, removedTrackId]);
+            const survivorModulator = modulator('mod-survivor', survivor.id, [removedTrackId, survivor.id]);
+
+            function captureModulation(): RestoreTrackPayload {
+                mocks.capturedStores.modulators = [owned, survivorModulator];
+                const payload = captureRemoval(storeTrackRow(), storeTakeLane());
+                vi.clearAllMocks();
+                return payload;
+            }
+
+            it('restores an owned modulator that maps another track and an incoming mapping, exactly', () => {
+                const payload = captureModulation();
+                expect(payload.ownedModulatorSnapshots).toStrictEqual([owned]);
+                expect(payload.incomingModulationMappingSnapshots).toStrictEqual([
+                    { modulatorId: 'mod-survivor', mapping: survivorModulator.mappings[0] },
+                ]);
+                const action: RestoreTrackAction = { type: 'restoreTrack', payload };
+
+                expect(handleRestoreTrack.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
+                expect(handleRestoreTrack.execute(action)).toMatchObject({ status: 'written' });
+                expect(mocks.restoreTrackModulationReferences).toHaveBeenCalledWith({
+                    ownedModulators: payload.ownedModulatorSnapshots,
+                    incomingMappings: payload.incomingModulationMappingSnapshots,
+                });
+            });
+
+            it('refuses before any write an incoming mapping that targets another track', () => {
+                const payload = captureModulation();
+                const foreign = survivorModulator.mappings[1];
+                if (!foreign) {
+                    throw new Error('Expected a foreign mapping');
+                }
+
+                expectNothingWritten({
+                    type: 'restoreTrack',
+                    payload: {
+                        ...payload,
+                        incomingModulationMappingSnapshots: [
+                            ...payload.incomingModulationMappingSnapshots,
+                            { modulatorId: 'mod-survivor', mapping: foreign },
+                        ],
+                    },
+                });
+            });
+
+            it('refuses before any write an owned modulator that belongs to another track', () => {
+                const payload = captureModulation();
+
+                expectNothingWritten({
+                    type: 'restoreTrack',
+                    payload: {
+                        ...payload,
+                        ownedModulatorSnapshots: [
+                            ...payload.ownedModulatorSnapshots,
+                            modulator('mod-unused', survivor.id, []),
+                        ],
+                    },
+                });
+            });
         });
 
         // A clip automation lane rides its clip's id; the contract type names

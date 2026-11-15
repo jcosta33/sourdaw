@@ -12,14 +12,14 @@ describe('WebMIDI MPE handlers', () => {
         vi.clearAllMocks();
     });
 
-    it('should enable MPE input handling', () => {
-        handleEnableMpe.execute({ type: 'enableMpe', payload: undefined });
+    it('should enable MPE input handling', async () => {
+        await handleEnableMpe.execute({ type: 'enableMpe', payload: undefined });
 
         expect(setMpeEnabledMock).toHaveBeenCalledWith(true);
     });
 
-    it('should disable MPE input handling', () => {
-        handleDisableMpe.execute({ type: 'disableMpe', payload: undefined });
+    it('should disable MPE input handling', async () => {
+        await handleDisableMpe.execute({ type: 'disableMpe', payload: undefined });
 
         expect(setMpeEnabledMock).toHaveBeenCalledWith(false);
     });

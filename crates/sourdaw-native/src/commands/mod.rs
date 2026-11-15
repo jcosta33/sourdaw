@@ -15,6 +15,7 @@ pub mod midi;
 pub mod midi_watcher;
 pub mod offline_plugins;
 pub mod pitch_edit;
+pub mod plugin_folders;
 pub mod plugin_gui;
 pub mod plugins;
 pub mod provider_gateway;

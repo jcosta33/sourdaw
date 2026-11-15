@@ -24,6 +24,14 @@ export const DIALOG_OPEN_CHANNEL = 'sourdaw:dialog:open';
 export const DIALOG_SAVE_CHANNEL = 'sourdaw:dialog:save';
 export const DIALOG_MESSAGE_CHANNEL = 'sourdaw:dialog:message';
 
+/**
+ * Renderer → main, invoke: pick a folder and grant it as a plugin scan root.
+ *
+ * Takes no arguments. The folder is whatever the native picker in main
+ * returns, so no renderer message can name the path that gets granted.
+ */
+export const PLUGIN_FOLDER_ADD_CHANNEL = 'sourdaw:plugin-folders:add';
+
 /** Renderer → main, invoke: the two path helpers. */
 export const PATHS_SAMPLES_BASE_CHANNEL = 'sourdaw:paths:samples-base';
 export const PATHS_JOIN_CHANNEL = 'sourdaw:paths:join';
@@ -70,6 +78,12 @@ export type RendererSessionQuiesceResult = {
     readonly requestId: number;
     readonly outcome: RendererSessionQuiesceOutcome;
 };
+
+/** What asking main to pick and grant a plugin folder came to. */
+export type PluginFolderAddResult =
+    | { readonly status: 'cancelled' }
+    | { readonly status: 'granted'; readonly path: string }
+    | { readonly status: 'refused'; readonly reason: string };
 
 /** A filter in an open or save dialog. */
 export type DialogFilter = {
@@ -175,6 +189,13 @@ export type SourdawBridge = {
         readonly open: (options?: OpenDialogOptions) => Promise<string | string[] | null>;
         readonly save: (options?: SaveDialogOptions) => Promise<string | null>;
         readonly message: (options: MessageDialogOptions) => Promise<void>;
+    };
+    /**
+     * Plugin scan folders the user grants. Deliberately outside generic
+     * `invoke`: the grant is minted in main from the picker's own answer.
+     */
+    pluginFolders: {
+        readonly add: () => Promise<PluginFolderAddResult>;
     };
     paths: {
         /** Base URL the bundled sample content is reachable at from the renderer. */

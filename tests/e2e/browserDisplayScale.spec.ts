@@ -164,6 +164,8 @@ async function expectScrolledIntoDialog(control: Locator, dialogBox: Box, label:
     const box = requireBox(await control.boundingBox(), label);
     expect(box.y).toBeGreaterThanOrEqual(dialogBox.y);
     expect(box.y + box.height).toBeLessThanOrEqual(dialogBox.y + dialogBox.height);
+    // A trial click runs Playwright's receives-events hit test without firing the control, so an ancestor clipping the control fails here.
+    await control.click({ trial: true, timeout: 10_000 });
 }
 
 async function expectPreferencesUsable(app: FrameLocator, dialog: Locator, scale: number): Promise<void> {

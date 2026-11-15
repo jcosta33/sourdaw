@@ -183,27 +183,30 @@ fn first_audio_module_class_of_factory(
     // there is nothing to describe the class with.
     let factory2 = factory.cast::<IPluginFactory2>()?;
 
-    // SAFETY: the factory is live; each `info` is a valid out parameter.
-    unsafe {
-        let count = factory2.countClasses();
-        for index in 0..count {
-            let mut info: vst3::Steinberg::PClassInfo2 = std::mem::zeroed();
-            if factory2.getClassInfo2(index, &mut info) != kResultOk {
-                continue;
-            }
-            if read_char8(&info.category) != AUDIO_MODULE_CLASS {
-                continue;
-            }
-            return Some(Vst3DescriptorMetadata {
-                vendor: fallback(&read_char8(&info.vendor), &vendor),
-                class_id: format_class_id(&info.cid),
-                version: read_char8(&info.version),
-                sub_categories: split_sub_categories(&read_char8(&info.subCategories)),
-                parameters: None,
-                parameter_metadata_reason: None,
-                capabilities: None,
-            });
+    // SAFETY: `factory2` is a cast of the caller's live factory reference.
+    let count = unsafe { factory2.countClasses() };
+    for index in 0..count {
+        // SAFETY: `PClassInfo2` is plain C data (integers and char arrays), for
+        // which all-zero bytes are a valid value.
+        let mut info: vst3::Steinberg::PClassInfo2 = unsafe { std::mem::zeroed() };
+        // SAFETY: `factory2` is live (above); `info` is a writable local and
+        // `index < count`.
+        let result = unsafe { factory2.getClassInfo2(index, &mut info) };
+        if result != kResultOk {
+            continue;
         }
+        if read_char8(&info.category) != AUDIO_MODULE_CLASS {
+            continue;
+        }
+        return Some(Vst3DescriptorMetadata {
+            vendor: fallback(&read_char8(&info.vendor), &vendor),
+            class_id: format_class_id(&info.cid),
+            version: read_char8(&info.version),
+            sub_categories: split_sub_categories(&read_char8(&info.subCategories)),
+            parameters: None,
+            parameter_metadata_reason: None,
+            capabilities: None,
+        });
     }
     None
 }
@@ -285,24 +288,25 @@ fn audio_channel_counts(instance: &Vst3Instance) -> ScannedAudioChannelCounts {
 
 fn bus_channel_total(instance: &Vst3Instance, direction: int32) -> u32 {
     let component = instance.component();
-    // SAFETY: the component is live and initialised; each `info` is a valid out
-    // parameter.
-    unsafe {
-        let count = component
-            .getBusCount(MediaTypes_::kAudio as int32, direction)
-            .min(MAX_SCANNED_AUDIO_BUSES);
-        (0..count)
-            .filter_map(|index| {
-                let mut info: BusInfo = std::mem::zeroed();
-                if component.getBusInfo(MediaTypes_::kAudio as int32, direction, index, &mut info)
-                    != kResultOk
-                {
-                    return None;
-                }
-                u32::try_from(info.channelCount).ok()
-            })
-            .sum()
-    }
+    // SAFETY: `component` comes from the live `instance`, which stays initialised
+    // for this call.
+    let reported = unsafe { component.getBusCount(MediaTypes_::kAudio as int32, direction) };
+    let count = reported.min(MAX_SCANNED_AUDIO_BUSES);
+    (0..count)
+        .filter_map(|index| {
+            // SAFETY: `BusInfo` is plain C data (integers and a char array), for
+            // which all-zero bytes are a valid value.
+            let mut info: BusInfo = unsafe { std::mem::zeroed() };
+            // SAFETY: `component` is live (above); `info` is a writable local.
+            let result = unsafe {
+                component.getBusInfo(MediaTypes_::kAudio as int32, direction, index, &mut info)
+            };
+            if result != kResultOk {
+                return None;
+            }
+            u32::try_from(info.channelCount).ok()
+        })
+        .sum()
 }
 
 /// VST3 writes sub-categories as one pipe-separated string in `PClassInfo2`.
