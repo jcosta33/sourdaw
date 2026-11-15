@@ -386,17 +386,23 @@ pub struct QuarantinedPlugin {
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+/// The sixteen hex digits of a SHA-256 digest's first eight bytes, read
+/// big-endian.
+fn hex_id_from_digest(digest: [u8; 32]) -> String {
+    let [b0, b1, b2, b3, b4, b5, b6, b7, ..] = digest;
+    format!(
+        "{:016x}",
+        u64::from_be_bytes([b0, b1, b2, b3, b4, b5, b6, b7])
+    )
+}
+
 /// Compute a stable, version-independent ID for a plugin path.
 /// Uses the first 8 bytes of SHA-256 of the canonical path string.
 /// Safe to persist in project files — deterministic across Rust versions and builds.
 pub fn stable_id(path: &Path) -> String {
     let mut hasher = Sha256::new();
     hasher.update(path.to_string_lossy().as_bytes());
-    let digest = hasher.finalize();
-    format!(
-        "{:016x}",
-        u64::from_be_bytes(digest[..8].try_into().expect("sha256 is 32 bytes"))
-    )
+    hex_id_from_digest(hasher.finalize().into())
 }
 
 /// Why Sourdaw will not load a plugin of a format it recognises.
@@ -755,11 +761,7 @@ pub fn bundle_sibling_id(path: &Path, descriptor_id: &str) -> String {
     // pair's concatenation.
     hasher.update([0]);
     hasher.update(descriptor_id.as_bytes());
-    let digest = hasher.finalize();
-    format!(
-        "{:016x}",
-        u64::from_be_bytes(digest[..8].try_into().expect("sha256 is 32 bytes"))
-    )
+    hex_id_from_digest(hasher.finalize().into())
 }
 
 /// [`scanned_plugin`] with the id the caller already decided, so the one-plugin

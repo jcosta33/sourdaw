@@ -3076,7 +3076,7 @@ pub(crate) mod tests {
         let state = CrumbsState::default();
         let app_state = AppState::default();
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         {
             *app_state
                 .engine
@@ -3167,7 +3167,7 @@ pub(crate) mod tests {
         let state = CrumbsState::default();
         let app_state = AppState::default();
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(256);
+            daw_engine::engine_handle_for_command_capture(256).unwrap();
         *app_state
             .engine
             .lock()
@@ -3246,7 +3246,7 @@ pub(crate) mod tests {
         // Idle create publishes a fence and slot. An explicit sentinel below
         // fills the remaining position without reallocating the channel.
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(3);
+            daw_engine::engine_handle_for_command_capture(3).unwrap();
         *app_state
             .engine
             .lock()
@@ -3330,7 +3330,7 @@ pub(crate) mod tests {
         let app_state = Arc::new(AppState::default());
         let first_reached_engine_lock = state.observe_next_create_before_engine_lock();
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         *app_state
             .engine
             .lock()
@@ -3707,7 +3707,8 @@ pub(crate) mod tests {
     fn idle_crumbs_slot_acquires_capture_only_for_an_accepted_take() {
         let state = CrumbsState::default();
         let app_state = AppState::default();
-        let (engine, mut commands, _adoptions) = daw_engine::engine_handle_for_command_capture(8);
+        let (engine, mut commands, _adoptions) =
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         *app_state.engine.lock().unwrap() = Some(engine);
         crate::block_on_test(create_crumbs("idle".into(), &state, &app_state)).unwrap();
         while let Ok(command) = commands.pop() {
@@ -3772,7 +3773,8 @@ pub(crate) mod tests {
     fn create_crumbs_registers_only_the_persistent_slot() {
         let state = CrumbsState::default();
         let app = AppState::default();
-        let (engine, mut commands, _retired) = daw_engine::engine_handle_for_command_capture(8);
+        let (engine, mut commands, _retired) =
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         *app.engine.lock().unwrap() = Some(engine);
         crate::block_on_test(create_crumbs("idle".into(), &state, &app)).unwrap();
         let id = pop_create_commands(&mut commands);
@@ -3790,7 +3792,7 @@ pub(crate) mod tests {
         let state = CrumbsState::default();
         let app = AppState::default();
         let (mut engine, mut commands, _retired) =
-            daw_engine::engine_handle_for_command_capture(16);
+            daw_engine::engine_handle_for_command_capture(16).unwrap();
         for id in 0..CRUMBS_CAPTURE_RESERVE {
             engine.register_capture_consumer(id).unwrap();
         }
@@ -3890,7 +3892,7 @@ pub(crate) mod tests {
         .expect("state the slot reads on its first pass queues while dormant");
 
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         *app_state
             .engine
             .lock()
@@ -3967,7 +3969,7 @@ pub(crate) mod tests {
             .recording()
             .incarnation;
         let (mut engine, mut commands, _retired) =
-            daw_engine::engine_handle_for_command_capture(16);
+            daw_engine::engine_handle_for_command_capture(16).unwrap();
         for id in 0..CRUMBS_CAPTURE_RESERVE {
             engine.register_capture_consumer(id).unwrap();
         }
@@ -4069,7 +4071,7 @@ pub(crate) mod tests {
         }
 
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         *app_state
             .engine
             .lock()
@@ -4174,7 +4176,7 @@ pub(crate) mod tests {
             .expect("a create before the engine runs must degrade, not refuse");
 
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         *app_state
             .engine
             .lock()
@@ -4214,7 +4216,7 @@ pub(crate) mod tests {
         let state = CrumbsState::default();
         let app_state = AppState::default();
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         *app_state
             .engine
             .lock()
@@ -4276,7 +4278,7 @@ pub(crate) mod tests {
         let app = AppState::default();
         crate::block_on_test(create_crumbs("dormant".into(), &state, &app)).unwrap();
         let (mut engine, mut commands, _retired) =
-            daw_engine::engine_handle_for_command_capture(16);
+            daw_engine::engine_handle_for_command_capture(16).unwrap();
         for id in 0..CRUMBS_CAPTURE_RESERVE {
             engine.register_capture_consumer(id).unwrap();
         }
@@ -4319,7 +4321,7 @@ pub(crate) mod tests {
         let state = CrumbsState::default();
         let app_state = AppState::default();
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         *app_state
             .engine
             .lock()

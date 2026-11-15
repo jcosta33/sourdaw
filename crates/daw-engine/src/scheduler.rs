@@ -288,7 +288,7 @@ impl MidiFxKind {
 /// theirs, never by the drain that applies the command.
 #[cfg(test)]
 fn knead_instance() -> PluginCore {
-    PluginCore::builtin(BuiltinEffectType::Knead, 48_000.0)
+    PluginCore::builtin(BuiltinEffectType::Knead, 48_000.0).unwrap()
 }
 
 /// A built-in effect the graph can register, addressed without a name for the
@@ -1168,9 +1168,10 @@ impl PluginCore {
     /// [`BuiltinEffectType`] name mapping: every sender that resolves a wire
     /// name builds its instance here, against the sample rate the stream
     /// actually opened at, so no two producers can construct the same
-    /// built-in against different clocks.
-    pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Self {
-        match plugin_type {
+    /// built-in against different clocks. Fails when the body refuses the
+    /// sample rate.
+    pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Result<Self, String> {
+        Ok(match plugin_type {
             BuiltinEffectType::Knead => Self::Knead(KneadEngine::new(sample_rate)),
             BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
             BuiltinEffectType::GrandBoule => Self::grand_boule_with_patch(sample_rate, &[]),
@@ -1199,9 +1200,9 @@ impl PluginCore {
             }
             BuiltinEffectType::Scoring => Self::scoring_with_patch(sample_rate, &[]),
             BuiltinEffectType::TransientShaper => {
-                Self::transient_shaper_with_patch(sample_rate, &[])
+                Self::transient_shaper_with_patch(sample_rate, &[])?
             }
-        }
+        })
     }
 
     /// Build a Fermenter carrying `patch`, on the control thread.
@@ -1417,17 +1418,16 @@ impl PluginCore {
     pub fn transient_shaper_with_patch(
         sample_rate: f32,
         patch: &[(BuiltinParamName, f32)],
-    ) -> Self {
+    ) -> Result<Self, String> {
         let mut body = TransientShaperBody {
-            engine: daw_dsp::toaster::transient::TransientShaperInstance::new(sample_rate)
-                .expect("native stream sample rate must be positive and finite"),
+            engine: daw_dsp::toaster::transient::TransientShaperInstance::new(sample_rate)?,
             attack_gain: 1.0,
             sustain_gain: 1.0,
         };
         for (name, value) in patch {
             body.set_param(name.as_str(), *value);
         }
-        Self::TransientShaper(Box::new(body))
+        Ok(Self::TransientShaper(Box::new(body)))
     }
 
     /// The detection channel of the Tuner this core is, or `None` for every
@@ -5201,9 +5201,8 @@ impl SlotWorkSet {
             return;
         }
         let index = position as usize - 1;
-        let moved = self.slots.pop().expect("work-set position names a slot");
-        if index < self.slots.len() {
-            self.slots[index] = moved;
+        self.slots.swap_remove(index);
+        if let Some(&moved) = self.slots.get(index) {
             self.positions[moved] = index as u32 + 1;
         }
         self.positions[slot] = 0;
@@ -10190,7 +10189,7 @@ mod tests {
         command_tx
             .push(GraphCommand::AddEffect(
                 7,
-                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0),
+                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0).unwrap(),
                 Some(MidiNoteStore::new()),
             ))
             .unwrap();
@@ -10227,7 +10226,7 @@ mod tests {
         command_tx
             .push(GraphCommand::AddEffect(
                 9,
-                PluginCore::builtin(BuiltinEffectType::GrandBoule, 48_000.0),
+                PluginCore::builtin(BuiltinEffectType::GrandBoule, 48_000.0).unwrap(),
                 Some(MidiNoteStore::new()),
             ))
             .unwrap();
@@ -10271,7 +10270,7 @@ mod tests {
         command_tx
             .push(GraphCommand::AddDetachedEffect(
                 7,
-                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0),
+                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0).unwrap(),
                 Some(MidiNoteStore::new()),
             ))
             .unwrap();
@@ -28159,7 +28158,7 @@ mod timeline_tests {
         const RUNS: usize = 8;
 
         let PluginCore::Levain(mut body) =
-            PluginCore::builtin(BuiltinEffectType::Levain, LEVAIN_RATE)
+            PluginCore::builtin(BuiltinEffectType::Levain, LEVAIN_RATE).unwrap()
         else {
             unreachable!("the name path builds the levain variant");
         };
@@ -28837,7 +28836,7 @@ mod timeline_tests {
         track_with_constant_clip(&mut harness, 1, 9, 0.5, frames);
         harness.send(GraphCommand::AddDetachedEffect(
             7,
-            PluginCore::builtin(BuiltinEffectType::TransientShaper, 48_000.0),
+            PluginCore::builtin(BuiltinEffectType::TransientShaper, 48_000.0).unwrap(),
             None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
@@ -28989,7 +28988,8 @@ mod timeline_tests {
                             (BuiltinParamName::parse("attackGain").unwrap(), 2.0),
                             (BuiltinParamName::parse("sustainGain").unwrap(), 2.0),
                         ],
-                    ),
+                    )
+                    .unwrap(),
                     None,
                 ));
                 harness.send(GraphCommand::AddPlugin(

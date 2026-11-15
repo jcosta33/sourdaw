@@ -9,7 +9,11 @@
 
 #![cfg_attr(
     test,
-    allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
+    allow(
+        clippy::unwrap_used,
+        clippy::unreachable,
+        reason = "tests assert by unwrapping"
+    )
 )]
 
 pub mod commands;

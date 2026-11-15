@@ -3584,7 +3584,7 @@ mod tests {
     fn native_activation_sample_rate_pins_the_engine_rate_through_its_own_wiring() {
         let state = AppState::default();
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let rate = native_activation_sample_rate(&state).expect("the engine lock is free");
@@ -3627,7 +3627,7 @@ mod tests {
     fn a_runtime_activated_at_another_rate_is_parked_with_both_rates_named() {
         let state = AppState::default();
         let (mut engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
 
         let mut wrapper =
             ClapWrapper::new_engine_owned_command_fixture("Mistuned Fixture", Vec::new(), false);
@@ -3674,7 +3674,7 @@ mod tests {
         let plugins = LoadFixtureRoot::create("load-plugin-activates-with-no-rate-from-the-caller");
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
@@ -4483,7 +4483,7 @@ mod tests {
         }
 
         let (mut engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         let runtime: HostedRuntime =
             ClapWrapper::new_engine_owned_command_fixture("Recovered Fixture", Vec::new(), false)
                 .into();
@@ -4545,7 +4545,7 @@ mod tests {
     fn registering_a_latent_plugin_publishes_its_declared_latency_with_a_dry_delay() {
         let state = AppState::default();
         let (mut engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
 
         let mut wrapper =
             ClapWrapper::new_engine_owned_command_fixture("Latent Fixture", Vec::new(), false);
@@ -4609,7 +4609,7 @@ mod tests {
             LoadFixtureRoot::create("a-load-the-engine-refuses-tears-its-runtime-down-holding-no-");
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
@@ -4709,7 +4709,7 @@ mod tests {
             LoadFixtureRoot::create("a-load-whose-editor-ask-never-reached-the-shell-tears-down-o");
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
@@ -4800,7 +4800,7 @@ mod tests {
             LoadFixtureRoot::create("a-load-installs-the-host-request-wake-with-the-engine-lock-f");
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
@@ -4862,7 +4862,7 @@ mod tests {
         let plugins = LoadFixtureRoot::create("a-loaded-instrument-registers-its-generator-kind");
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         plugins.publish(
             &state,
@@ -4915,7 +4915,7 @@ mod tests {
         let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let wrapper =
@@ -4959,7 +4959,7 @@ mod tests {
         let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let mut wrapper =
@@ -5009,7 +5009,7 @@ mod tests {
         let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let installs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -5083,7 +5083,7 @@ mod tests {
         let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         for instance_id in ["counted-instance", "parked-after-the-count"] {
@@ -5249,7 +5249,7 @@ mod tests {
             LoadFixtureRoot::create("a-load-sweeps-retired-runtimes-only-after-releasing-the-runt");
         let state = Arc::new(AppState::default());
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
@@ -5334,7 +5334,7 @@ mod tests {
             LoadFixtureRoot::create("a-keyed-unload-sweeps-retired-runtimes-only-after-releasing-");
         let state = Arc::new(AppState::default());
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
@@ -5430,7 +5430,7 @@ mod tests {
         let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = Arc::new(AppState::default());
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
 
@@ -5517,7 +5517,7 @@ mod tests {
         let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         // Sorts first, and never activated, so the attach reaches it first and
@@ -9498,7 +9498,7 @@ mod tests {
         let state = AppState::default();
         insert_engine_owned_fixture(&state, "inst-1", vec![]);
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         bind_the_fixture_to_a_strip(&state, &mut command_rx);
         let fences_before = fenced_batches(&state);
@@ -9527,7 +9527,7 @@ mod tests {
         let state = AppState::default();
         insert_engine_owned_fixture(&state, "inst-1", vec![]);
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         let fences_before = fenced_batches(&state);
 
@@ -9557,7 +9557,7 @@ mod tests {
         let state = AppState::default();
         insert_engine_owned_fixture(&state, "inst-1", vec![]);
         let (engine, mut command_rx, retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         bind_the_fixture_to_a_strip(&state, &mut command_rx);
         let fences_before = fenced_batches(&state);
@@ -9726,7 +9726,7 @@ mod tests {
         insert_engine_owned_fixture_with_id(&state, "inst-proq", 202);
         insert_engine_owned_fixture_with_id(&state, "inst-limiter", 203);
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         bind_three_fixtures_to_a_strip(&state, &mut command_rx);
 
@@ -9758,7 +9758,7 @@ mod tests {
         let state = AppState::default();
         insert_engine_owned_fixture(&state, "inst-1", vec![]);
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let unload_response = crate::block_on_test(unload_plugin(
@@ -9785,7 +9785,7 @@ mod tests {
         insert_engine_owned_fixture_with_id(&state, "inst-a", 301);
         insert_engine_owned_fixture_with_id(&state, "inst-b", 302);
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         bind_two_fixtures_to_a_strip(&state, &mut command_rx);
 

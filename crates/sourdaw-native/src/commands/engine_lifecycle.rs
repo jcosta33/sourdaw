@@ -482,7 +482,7 @@ mod tests {
     /// lazy bootstrap in `apply_graph_commands` from opening a real device.
     fn fill_slot_with_capture_engine(state: &AppState) -> rtrb::Consumer<GraphCommand> {
         let (engine, commands, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         commands
     }
