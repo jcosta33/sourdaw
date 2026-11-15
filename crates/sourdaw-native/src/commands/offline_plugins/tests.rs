@@ -160,6 +160,7 @@ impl InstalledFx {
             capture_state: read_plugin_state_chunk,
             construct: create_hosted_runtime,
             after_build: None,
+            before_restore: None,
         }
     }
 }
@@ -1132,6 +1133,66 @@ fn the_export_sample_rate_is_bounded_before_anything_is_built() {
     for sample_rate in [8_000.0, 384_000.0] {
         render_at(json!([]), sample_rate).expect("a built-in-only render at the bound renders");
     }
+}
+
+/// The runtime gate covers an instance's vet and construction, not the rest
+/// of the build: an unload of every plugin issued while an instance waits to
+/// have its state restored completes before the export finishes building.
+#[test]
+fn an_unload_of_every_plugin_does_not_wait_out_an_exports_build() {
+    let _serial = crate::commands::plugins::serialize_against_exclusive_gate_holds();
+    let fx = InstalledFx::create("gate-scope");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let (restoring, restore_reached) = mpsc::channel::<()>();
+    let (release_restore, restore_released) = mpsc::channel::<()>();
+    let restore_released = Mutex::new(restore_released);
+    let mut seams = fx.seams();
+    seams.before_restore = Some(Box::new(move || {
+        let _ = restoring.send(());
+        let _ = restore_released
+            .lock()
+            .expect("release")
+            .recv_timeout(Duration::from_secs(30));
+    }));
+
+    let unloaded_while_building = thread::scope(|scope| {
+        let building = scope.spawn(|| {
+            render(
+                batch(impulse_track(json!([fx_device()]))),
+                &state,
+                &ui,
+                &seams,
+                None,
+            )
+        });
+        restore_reached
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the build constructs its instance");
+        let (unloaded, unload_done) = mpsc::channel();
+        let state = &state;
+        scope.spawn(move || {
+            let reply = block_on_test(crate::commands::plugins::unload_plugin(
+                None,
+                &crate::host::plugin_window::NoWindowHost,
+                &state,
+            ));
+            let _ = unloaded.send(reply.map(|_| ()));
+        });
+        let outcome = unload_done.recv_timeout(Duration::from_secs(5));
+        let still_building = !building.is_finished();
+        let _ = release_restore.send(());
+        let _ = building.join().expect("the build thread returns");
+        (outcome, still_building)
+    });
+
+    let (outcome, still_building) = unloaded_while_building;
+    // Unload-all takes the runtime gate exclusively before it reads which
+    // instances exist, so its answering at all means the gate was free.
+    outcome
+        .expect("the unload completes while the export is still building")
+        .expect("the unload answers");
+    assert!(still_building, "the export had not finished building");
 }
 
 #[test]

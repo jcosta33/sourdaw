@@ -14,9 +14,11 @@
 //! Each offline instance is built the way a load builds one: on the shell's UI
 //! thread, from the very file the live instance's load vetted, re-vetted
 //! against the same fingerprint, under `PLUGIN_RUNTIME_GATE` in read mode
-//! (`plugins::construct_runtime_on_ui_thread`). It is activated at the export
+//! (`plugins::construct_runtime_on_ui_thread`). The gate is held for that vet
+//! and construction alone, one instance at a time, so an unload waits on one
+//! construction rather than on a whole export's. It is activated at the export
 //! rate in [`ProcessMode::Offline`], and the captured state is restored on the
-//! control path before the render. Every failure refuses the render by device
+//! control path, with the gate free, before the render. Every failure refuses the render by device
 //! and plugin name: nothing renders dry silently.
 //!
 //! The render thread is each instance's audio thread. It processes every
@@ -276,6 +278,10 @@ pub(crate) struct OfflinePluginSeams {
     /// put one in a state no real plugin can be made to reach on cue.
     #[cfg(test)]
     pub(crate) after_build: Option<AfterBuild>,
+    /// Run for each instance once it is constructed and the runtime gate is
+    /// free again, just before its live state is restored into it.
+    #[cfg(test)]
+    pub(crate) before_restore: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl OfflinePluginSeams {
@@ -286,6 +292,8 @@ impl OfflinePluginSeams {
             construct: create_hosted_runtime,
             #[cfg(test)]
             after_build: None,
+            #[cfg(test)]
+            before_restore: None,
         }
     }
 }
@@ -522,21 +530,24 @@ pub(crate) async fn build_offline_instances<'a>(
             .collect::<Result<Vec<_>, String>>()?
     };
 
-    // Declared after `built`, so a refusal releases the gate before the
-    // instances already built are torn down — the order a load's refusal keeps.
-    let _runtime_gate = hold_plugin_runtime_gate().await;
     for ((instance, chunk), vetted) in bound.iter().zip(captured).zip(load_resolutions) {
         let backend =
             host_backend(&vetted.entry.format).map_err(|reason| refusal(instance, &reason))?;
-        let runtime = construct_runtime_on_ui_thread(
-            ui,
-            backend,
-            seams.scan_policy.clone(),
-            vetted,
-            sample_rate,
-            ProcessMode::Offline,
-            seams.construct,
-        )
+        // The gate spans this instance's vet and construction only: released
+        // here, before the state restore and before any refusal tears down the
+        // instances already built — the order a load's refusal keeps.
+        let runtime = {
+            let _runtime_gate = hold_plugin_runtime_gate().await;
+            construct_runtime_on_ui_thread(
+                ui,
+                backend,
+                seams.scan_policy.clone(),
+                vetted,
+                sample_rate,
+                ProcessMode::Offline,
+                seams.construct,
+            )
+        }
         .map_err(|reason| refusal(instance, &reason))?;
         let activated = runtime.is_activated();
         let shared = Arc::new(SharedHostedPlugin::new(runtime));
@@ -550,6 +561,10 @@ pub(crate) async fn build_offline_instances<'a>(
                 instance,
                 &activation_refusal_reason(&instance.plugin_name),
             ));
+        }
+        #[cfg(test)]
+        if let Some(before_restore) = &seams.before_restore {
+            before_restore();
         }
         let latency_frames = shared
             .with_control(OFFLINE_CONTROL_TIMEOUT, |plugin| {
