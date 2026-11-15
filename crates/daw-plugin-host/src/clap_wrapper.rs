@@ -49,7 +49,7 @@ use crate::scanner::{category_from_clap_features, clap_library_path, owned_featu
 use crate::traits::{
     signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostMidiEvent,
     HostParameterUpdate, HostTransport, HostedPluginRuntime, PluginHostRequestNotifier,
-    ProcessingGate, MAX_MIDI_EVENTS_PER_BLOCK,
+    ProcessMode, ProcessingGate, MAX_MIDI_EVENTS_PER_BLOCK,
 };
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
@@ -79,6 +79,7 @@ use clap_sys::ext::params::{
     clap_param_info, clap_plugin_params, CLAP_EXT_PARAMS, CLAP_PARAM_IS_AUTOMATABLE,
     CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_READONLY,
 };
+use clap_sys::ext::render::{clap_plugin_render, CLAP_EXT_RENDER, CLAP_RENDER_OFFLINE};
 use clap_sys::ext::state::{clap_plugin_state, CLAP_EXT_STATE};
 use clap_sys::ext::tail::{clap_plugin_tail, CLAP_EXT_TAIL};
 use clap_sys::factory::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
@@ -682,6 +683,22 @@ impl ClapWrapper {
     ///   differ, and the plugin only ever sees engine-rendered audio, so
     ///   activating on the device's clock detunes everything the plugin does.
     pub fn new(plugin_path: &str, plugin_id: &str, sample_rate: f64) -> Result<Self, String> {
+        Self::new_with_mode(plugin_path, plugin_id, sample_rate, ProcessMode::Realtime)
+    }
+
+    /// [`ClapWrapper::new`], with the process mode the instance renders in.
+    ///
+    /// `Offline` asks the plugin, through `clap.render`, to render offline
+    /// before it is activated, and refuses construction when it cannot. A
+    /// plugin without `clap.render` does not distinguish the two modes and is
+    /// loaded as it is. `Realtime` tells the plugin nothing: it is CLAP's
+    /// default.
+    pub fn new_with_mode(
+        plugin_path: &str,
+        plugin_id: &str,
+        sample_rate: f64,
+        mode: ProcessMode,
+    ) -> Result<Self, String> {
         let path = Path::new(plugin_path);
         let library_path = clap_library_path(path)?;
         unsafe {
@@ -715,7 +732,8 @@ impl ClapWrapper {
             // 4-9. `load_initialized_entry` owns the back half of the entry's
             // init/deinit pairing on every path out — including its own
             // failures, which is why the `?` below cannot leak an init.
-            let mut wrapper = Self::load_initialized_entry(entry_ptr, plugin_id, sample_rate)?;
+            let mut wrapper =
+                Self::load_initialized_entry(entry_ptr, plugin_id, sample_rate, mode)?;
 
             // The entry and plugin pointers the wrapper holds are only sound
             // while this library stays loaded, so it is attached before the
@@ -744,8 +762,10 @@ impl ClapWrapper {
         entry_ptr: *const clap_plugin_entry,
         plugin_id: &str,
         sample_rate: f64,
+        mode: ProcessMode,
     ) -> Result<Self, String> {
-        let loaded = unsafe { Self::create_instance_from_entry(entry_ptr, plugin_id, sample_rate) };
+        let loaded =
+            unsafe { Self::create_instance_from_entry(entry_ptr, plugin_id, sample_rate, mode) };
         match loaded {
             Ok(wrapper) => Ok(wrapper),
             Err(error) => {
@@ -767,6 +787,7 @@ impl ClapWrapper {
         entry_ptr: *const clap_plugin_entry,
         plugin_id: &str,
         sample_rate: f64,
+        mode: ProcessMode,
     ) -> Result<Self, String> {
         // 4. Get the plugin factory
         let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr();
@@ -853,6 +874,20 @@ impl ClapWrapper {
         }
         if !gui_ext.is_null() {
             eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_GUI", name);
+        }
+
+        // `clap.render` is `[main-thread]` and its mode is set before
+        // activation. A refusal tears the instance down as an `init` failure
+        // does: the plugin was initialised and never activated.
+        // SAFETY: `plugin` was created and initialised above and is not yet
+        // active; on refusal it is destroyed exactly once and never used again.
+        unsafe {
+            if let Err(error) = Self::enter_render_mode(plugin_ref, &name, mode) {
+                if let Some(destroy) = plugin_ref.destroy {
+                    destroy(plugin);
+                }
+                return Err(error);
+            }
         }
 
         // 9. Activate the plugin. Activation is [main-thread]; entering the
@@ -1130,6 +1165,53 @@ impl ClapWrapper {
     #[doc(hidden)]
     pub fn engine_owned_command_fixture_refusal_reported(&self) -> bool {
         self.process_refusal_reported
+    }
+
+    /// Put an initialised, inactive plugin into the requested render mode.
+    ///
+    /// Only `Offline` asks anything, so a realtime load makes exactly the
+    /// calls it always has. A plugin that declares a hard real-time
+    /// requirement, or whose `set` refuses offline rendering, cannot serve an
+    /// offline render and is refused by name.
+    ///
+    /// # Safety
+    /// `plugin_ref` must be a live, initialised, inactive `clap_plugin`.
+    unsafe fn enter_render_mode(
+        plugin_ref: &clap_plugin,
+        name: &str,
+        mode: ProcessMode,
+    ) -> Result<(), String> {
+        if mode == ProcessMode::Realtime {
+            return Ok(());
+        }
+        // SAFETY: the caller guarantees the plugin is live.
+        let render =
+            unsafe { Self::query_extension::<clap_plugin_render>(plugin_ref, CLAP_EXT_RENDER) };
+        if render.is_null() {
+            return Ok(());
+        }
+        // SAFETY: a non-null extension pointer addresses the plugin's static
+        // `clap_plugin_render`, live for the plugin's life.
+        let render = unsafe { &*render };
+        let plugin = plugin_ref as *const clap_plugin;
+        // SAFETY: both are the plugin's own `[main-thread]` callbacks, called
+        // on the plugin they belong to before activation.
+        let hard_realtime = render
+            .has_hard_realtime_requirement
+            .is_some_and(|requires| unsafe { requires(plugin) });
+        if hard_realtime {
+            return Err(format!(
+                "[CLAP] '{name}' requires real-time rendering and cannot render offline"
+            ));
+        }
+        // SAFETY: as above.
+        let accepted = render
+            .set
+            .is_some_and(|set| unsafe { set(plugin, CLAP_RENDER_OFFLINE) });
+        if !accepted {
+            return Err(format!("[CLAP] '{name}' refused to render offline"));
+        }
+        Ok(())
     }
 
     /// Query a plugin extension by ID. Returns null if not supported.
@@ -3965,6 +4047,7 @@ mod tests {
                 &raw const RECORDING_ENTRY,
                 LIFECYCLE_PLUGIN_ID,
                 48_000.0,
+                ProcessMode::Realtime,
             )
         }
         .expect("the recording fake loads");
@@ -3995,6 +4078,7 @@ mod tests {
                 &raw const NULL_FACTORY_ENTRY,
                 LIFECYCLE_PLUGIN_ID,
                 48_000.0,
+                ProcessMode::Realtime,
             )
         }
         .err()
@@ -4018,6 +4102,7 @@ mod tests {
                 &raw const FAILING_PLUGIN_ENTRY,
                 LIFECYCLE_PLUGIN_ID,
                 48_000.0,
+                ProcessMode::Realtime,
             )
         }
         .err()
@@ -4041,6 +4126,7 @@ mod tests {
                 &raw const RECORDING_ENTRY,
                 LIFECYCLE_PLUGIN_ID,
                 48_000.0,
+                ProcessMode::Realtime,
             )
         }
         .expect("the recording fake loads");
@@ -4049,6 +4135,7 @@ mod tests {
                 &raw const RECORDING_ENTRY,
                 LIFECYCLE_PLUGIN_ID,
                 48_000.0,
+                ProcessMode::Realtime,
             )
         }
         .expect("the recording fake loads");
@@ -4086,6 +4173,190 @@ mod tests {
             "the sibling instance stays paired to its own init until its own drop — \
              the host loads one entry per instance, so no shared owner defers deinit"
         );
+    }
+
+    // ── Offline construction through clap.render ────────────────────────
+
+    const RENDER_ACCEPTING_PLUGIN_ID: &str = "org.sourdaw.test.render-accepting";
+    const RENDER_REFUSING_PLUGIN_ID: &str = "org.sourdaw.test.render-refusing";
+
+    unsafe extern "C" fn render_no_hard_requirement(_plugin: *const clap_plugin) -> bool {
+        false
+    }
+
+    unsafe extern "C" fn render_set_accepting(
+        _plugin: *const clap_plugin,
+        mode: clap_sys::ext::render::clap_plugin_render_mode,
+    ) -> bool {
+        if mode == CLAP_RENDER_OFFLINE {
+            record_lifecycle_call("render_set_offline");
+        }
+        true
+    }
+
+    unsafe extern "C" fn render_set_refusing(
+        _plugin: *const clap_plugin,
+        _mode: clap_sys::ext::render::clap_plugin_render_mode,
+    ) -> bool {
+        record_lifecycle_call("render_set_refused");
+        false
+    }
+
+    static ACCEPTING_RENDER: clap_plugin_render = clap_plugin_render {
+        has_hard_realtime_requirement: Some(render_no_hard_requirement),
+        set: Some(render_set_accepting),
+    };
+
+    static REFUSING_RENDER: clap_plugin_render = clap_plugin_render {
+        has_hard_realtime_requirement: Some(render_no_hard_requirement),
+        set: Some(render_set_refusing),
+    };
+
+    unsafe extern "C" fn accepting_render_get_extension(
+        _plugin: *const clap_plugin,
+        id: *const i8,
+    ) -> *const c_void {
+        // SAFETY: the host passes a NUL-terminated extension id.
+        if unsafe { CStr::from_ptr(id) } == CLAP_EXT_RENDER {
+            return &raw const ACCEPTING_RENDER as *const c_void;
+        }
+        ptr::null()
+    }
+
+    unsafe extern "C" fn refusing_render_get_extension(
+        _plugin: *const clap_plugin,
+        id: *const i8,
+    ) -> *const c_void {
+        // SAFETY: the host passes a NUL-terminated extension id.
+        if unsafe { CStr::from_ptr(id) } == CLAP_EXT_RENDER {
+            return &raw const REFUSING_RENDER as *const c_void;
+        }
+        ptr::null()
+    }
+
+    /// A recording plugin whose `clap.render` accepts or refuses offline
+    /// rendering, chosen by the id the host asks for.
+    unsafe extern "C" fn render_create_plugin(
+        _factory: *const clap_plugin_factory,
+        _host: *const clap_host,
+        plugin_id: *const i8,
+    ) -> *const clap_plugin {
+        let get_extension =
+            // SAFETY: the host passes a NUL-terminated plugin id.
+            if unsafe { CStr::from_ptr(plugin_id) }.to_bytes() == RENDER_REFUSING_PLUGIN_ID.as_bytes() {
+                refusing_render_get_extension
+            } else {
+                accepting_render_get_extension
+            };
+        Box::into_raw(Box::new(clap_plugin {
+            desc: ptr::null(),
+            plugin_data: ptr::null_mut(),
+            init: Some(recording_plugin_init),
+            destroy: Some(recording_plugin_destroy),
+            activate: Some(recording_plugin_activate),
+            deactivate: Some(recording_plugin_deactivate),
+            start_processing: None,
+            stop_processing: None,
+            reset: None,
+            process: None,
+            get_extension: Some(get_extension),
+            on_main_thread: None,
+        }))
+    }
+
+    static RENDER_FACTORY: clap_plugin_factory = clap_plugin_factory {
+        get_plugin_count: None,
+        get_plugin_descriptor: None,
+        create_plugin: Some(render_create_plugin),
+    };
+
+    unsafe extern "C" fn render_get_factory(_factory_id: *const i8) -> *const c_void {
+        &raw const RENDER_FACTORY as *const c_void
+    }
+
+    static RENDER_ENTRY: clap_plugin_entry = clap_plugin_entry {
+        clap_version: CLAP_VERSION,
+        init: None,
+        deinit: Some(recording_entry_deinit),
+        get_factory: Some(render_get_factory),
+    };
+
+    fn load_render_fake(plugin_id: &str, mode: ProcessMode) -> Result<ClapWrapper, String> {
+        unsafe {
+            ClapWrapper::load_initialized_entry(&raw const RENDER_ENTRY, plugin_id, 48_000.0, mode)
+        }
+    }
+
+    #[test]
+    fn an_offline_load_sets_offline_rendering_before_activating() {
+        let _guard = ENTRY_LIFECYCLE_LOCK.lock().unwrap();
+        clear_entry_lifecycle();
+
+        let wrapper = load_render_fake(RENDER_ACCEPTING_PLUGIN_ID, ProcessMode::Offline)
+            .expect("a plugin accepting offline rendering loads offline");
+
+        assert_eq!(
+            entry_lifecycle(),
+            ["plugin_init", "render_set_offline", "plugin_activate"],
+            "clap.render's mode is a [main-thread & !active] call, so it precedes activation"
+        );
+        drop(wrapper);
+    }
+
+    #[test]
+    fn a_realtime_load_never_tells_the_plugin_a_render_mode() {
+        let _guard = ENTRY_LIFECYCLE_LOCK.lock().unwrap();
+        clear_entry_lifecycle();
+
+        let wrapper = load_render_fake(RENDER_ACCEPTING_PLUGIN_ID, ProcessMode::Realtime)
+            .expect("the plugin loads realtime");
+
+        assert_eq!(entry_lifecycle(), ["plugin_init", "plugin_activate"]);
+        drop(wrapper);
+    }
+
+    #[test]
+    fn a_plugin_refusing_offline_rendering_is_refused_by_name_and_torn_down() {
+        let _guard = ENTRY_LIFECYCLE_LOCK.lock().unwrap();
+        clear_entry_lifecycle();
+
+        let error = load_render_fake(RENDER_REFUSING_PLUGIN_ID, ProcessMode::Offline)
+            .err()
+            .expect("a plugin whose render.set refuses offline must not load offline");
+
+        assert_eq!(
+            error,
+            format!("[CLAP] '{RENDER_REFUSING_PLUGIN_ID}' refused to render offline")
+        );
+        assert_eq!(
+            entry_lifecycle(),
+            [
+                "plugin_init",
+                "render_set_refused",
+                "plugin_destroy",
+                "entry_deinit"
+            ],
+            "the refused instance is destroyed unactivated and its entry still deinits"
+        );
+    }
+
+    #[test]
+    fn a_plugin_without_clap_render_loads_offline_unchanged() {
+        let _guard = ENTRY_LIFECYCLE_LOCK.lock().unwrap();
+        clear_entry_lifecycle();
+
+        let wrapper = unsafe {
+            ClapWrapper::load_initialized_entry(
+                &raw const RECORDING_ENTRY,
+                LIFECYCLE_PLUGIN_ID,
+                48_000.0,
+                ProcessMode::Offline,
+            )
+        }
+        .expect("a plugin that does not distinguish modes loads offline");
+
+        assert!(wrapper.is_activated());
+        assert_eq!(entry_lifecycle(), ["plugin_init", "plugin_activate"]);
     }
 
     // ── Plugin-initiated host requests: editor resize + state dirty ─────
@@ -5103,6 +5374,7 @@ mod tests {
                 &raw const PORT_DECLARING_ENTRY,
                 "org.sourdaw.test.port-declaring",
                 48_000.0,
+                ProcessMode::Realtime,
             )
         }
         .expect("a plugin describing its ports loads");
