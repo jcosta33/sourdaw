@@ -1,15 +1,18 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useId, useRef, useState } from 'react';
 
 import { DawSearchInput } from '#/components/daw/DawSearchInput';
 import { Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { type AutomationStoreState, automationStore } from '#/modules/Automation/stores';
 import {
     defaultExternalPluginActivationState,
     defaultExternalPluginParameterState,
     defaultExternalPluginRestoreFailureState,
     defaultPluginScanState,
     externalPluginActivationStore,
+    type ExternalPluginParameter,
     externalPluginParameterStore,
     externalPluginRestoreFailureStore,
     pluginScanStore,
@@ -18,7 +21,10 @@ import {
     editExternalPluginParameter,
     hasUnresolvedExternalPluginRestoreFailure,
     isSupportedPluginFormat,
+    refreshExternalPluginParameters,
 } from '#/modules/PluginHost/useCases';
+import { transportStore } from '#/modules/Transport/stores';
+import { getDeviceAutomationOwnerId, getDeviceAutomationParameterId } from '#/utils/automationDeviceTarget';
 
 import { type Device } from '../../../models/TrackViewTypes';
 import { MetaText } from '../../components/Inspector/MetaText';
@@ -29,9 +35,30 @@ import {
     formatExternalPluginParameterValue,
     resolveExternalPluginParameterStatus,
 } from '../../helpers/externalPluginParameterRows';
+import { useFollowedAutomationValue } from '../../hooks/useFollowedAutomationValue';
 
 const PAGE_SIZE = 50;
 const REFUSED_MESSAGE = 'The plugin refused this change.';
+const FOLLOWING_VALUE_TEXT = 'Following automation';
+
+/** Sorted, comma-joined plugin parameter ids that any lane on this device, track-level or clip-level, drives. */
+function selectAutomatedIdsKey(state: AutomationStoreState | null, deviceId: string): string {
+    const ids = new Set<number>();
+    for (const lane of state?.lanes ?? []) {
+        if (getDeviceAutomationOwnerId(lane.parameterId) !== deviceId) {
+            continue;
+        }
+        const parameterId = Number(getDeviceAutomationParameterId(lane.parameterId));
+        if (Number.isInteger(parameterId)) {
+            ids.add(parameterId);
+        }
+    }
+    return [...ids].sort((a, b) => a - b).join(',');
+}
+
+function parseAutomatedIdsKey(key: string): ReadonlySet<number> {
+    return new Set(key === '' ? [] : key.split(',').map(Number));
+}
 
 function pluralParameters(count: number): string {
     return count === 1 ? '1 parameter' : `${String(count)} parameters`;
@@ -50,12 +77,32 @@ type ExternalPluginParameterListProps = {
 
 type ParameterRowProps = {
     instanceId: string;
+    deviceId: string;
+    automated: boolean;
+    /** The parameter's own store object; a patch to this parameter replaces it. */
+    settledParameter: ExternalPluginParameter | undefined;
     row: ExternalPluginParameterRow;
     /** Writes to the list's live region, which is mounted before any edit so the text is announced. */
     onAnnounce: (message: string) => void;
 };
 
-const ParameterRow = ({ instanceId, row, onAnnounce }: ParameterRowProps): ReactElement => {
+const ParameterRow = ({
+    instanceId,
+    deviceId,
+    automated,
+    settledParameter,
+    row,
+    onAnnounce,
+}: ParameterRowProps): ReactElement => {
+    const rowRef = useRef<HTMLLIElement>(null);
+    const automatedDescriptionId = useId();
+    const followed = useFollowedAutomationValue({
+        deviceId,
+        parameterId: row.id,
+        automated,
+        element: rowRef,
+        settledToken: settledParameter,
+    });
     const [refused, setRefused] = useState(false);
     // The store moves only once the plugin accepts a change, so while the latest send is in flight the
     // row holds the value it asked for; otherwise a second nudge would start from the stale store value.
@@ -86,18 +133,39 @@ const ParameterRow = ({ instanceId, row, onAnnounce }: ParameterRowProps): React
         void sendEdit(requested, send);
     };
 
-    const value = pendingValue ?? row.value;
-    const valueText = pendingValue === null ? row.valueText : formatExternalPluginParameterValue(row, pendingValue);
+    const shownValue = pendingValue ?? followed.value;
+    const value = shownValue ?? row.value;
+    const valueText = shownValue === null ? row.valueText : formatExternalPluginParameterValue(row, shownValue);
+    // The visible number moves with the lane; announcing every step would flood a screen reader.
+    const followingAnnounced = followed.following && pendingValue === null;
+    const describedBy = automated ? automatedDescriptionId : undefined;
 
     return (
-        <li className="flex flex-col gap-0.5" data-testid={`external-parameter-${String(row.id)}`}>
+        <li
+            ref={rowRef}
+            className="flex flex-col gap-0.5"
+            data-testid={`external-parameter-${String(row.id)}`}
+            data-automated={automated ? 'true' : undefined}
+        >
             <div className="flex items-start gap-2">
                 <span className="min-w-0 flex-1 break-words text-[10px] text-foreground">{row.name}</span>
+                {automated && (
+                    <>
+                        <span
+                            aria-hidden="true"
+                            className="mt-1 size-1.5 shrink-0 rounded-full bg-[var(--color-accent-peach)]"
+                        />
+                        <span id={automatedDescriptionId} className="sr-only">
+                            Automated
+                        </span>
+                    </>
+                )}
                 {row.kind === 'toggle' && (
                     <input
                         type="checkbox"
                         role="switch"
                         aria-label={row.name}
+                        aria-describedby={describedBy}
                         checked={value - row.min >= 0.5}
                         aria-checked={value - row.min >= 0.5}
                         onChange={(event) => edit(event.target.checked ? row.max : row.min)}
@@ -109,7 +177,8 @@ const ParameterRow = ({ instanceId, row, onAnnounce }: ParameterRowProps): React
                 <input
                     type="range"
                     aria-label={row.name}
-                    aria-valuetext={valueText}
+                    aria-describedby={describedBy}
+                    aria-valuetext={followingAnnounced ? FOLLOWING_VALUE_TEXT : valueText}
                     className="w-full"
                     min={row.min}
                     max={row.max}
@@ -141,12 +210,40 @@ const RestoreFailureNotice = ({ instanceId }: { instanceId: string }): ReactElem
     );
 };
 
+/**
+ * Host-side automation writes are not echoed as edits, so the store holds the pre-play value; on each
+ * stop edge (and on mount) re-read what the plugin actually holds. A patch is not an edit.
+ */
+const useRefreshAfterAutomatedPlayback = (
+    instanceId: string | undefined,
+    automatedIdsKey: string,
+    isPlaying: boolean
+): void => {
+    const hadAutomationRef = useRef(false);
+    useEffect(() => {
+        if (automatedIdsKey !== '') {
+            hadAutomationRef.current = true;
+        }
+        if (isPlaying || !instanceId) {
+            return;
+        }
+        // A list that never had automation has nothing the host could have moved; losing the last lane
+        // still re-reads, because the row holds a followed value the store does not have.
+        if (automatedIdsKey === '' && !hadAutomationRef.current) {
+            return;
+        }
+        void refreshExternalPluginParameters(instanceId);
+    }, [isPlaying, automatedIdsKey, instanceId]);
+};
+
 export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterListProps): ReactElement => {
     const scanState = useStore(pluginScanStore, defaultPluginScanState);
     const activationState = useStore(externalPluginActivationStore, defaultExternalPluginActivationState);
     const parameterState = useStore(externalPluginParameterStore, defaultExternalPluginParameterState);
     // The marker set is plain module memory; the store's version is the render signal for it.
     const restoreFailure = useStore(externalPluginRestoreFailureStore, defaultExternalPluginRestoreFailureState);
+    const automatedIdsKey = useStoreSelector(automationStore, (state) => selectAutomatedIdsKey(state, device.id));
+    const isPlaying = useStoreSelector(transportStore, (state) => state?.isPlaying ?? false);
     const [query, setQuery] = useState('');
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [announcement, setAnnouncement] = useState('');
@@ -168,6 +265,8 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
         .filter((plugin) => isSupportedPluginFormat(plugin.format))
         .find((plugin) => plugin.id === device.externalPluginId || plugin.descriptor_id === device.externalPluginId);
     const snapshot = instanceId ? parameterState.byInstanceId[instanceId] : undefined;
+    const automatedParameterIds = parseAutomatedIdsKey(automatedIdsKey);
+    useRefreshAfterAutomatedPlayback(instanceId, automatedIdsKey, isPlaying);
 
     const status = resolveExternalPluginParameterStatus({
         device,
@@ -193,6 +292,7 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
         query
     );
     const shown = rows.slice(0, visibleCount);
+    const settledById = new Map(snapshot.parameters.map((parameter) => [parameter.id, parameter]));
 
     const changeQuery = (next: string): void => {
         setQuery(next);
@@ -217,7 +317,15 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
             </div>
             <ul ref={listRef} className="flex flex-col gap-1.5" aria-label="Plugin parameters">
                 {shown.map((row) => (
-                    <ParameterRow key={row.id} instanceId={instanceId} row={row} onAnnounce={setAnnouncement} />
+                    <ParameterRow
+                        key={row.id}
+                        instanceId={instanceId}
+                        deviceId={device.id}
+                        automated={automatedParameterIds.has(row.id)}
+                        settledParameter={settledById.get(row.id)}
+                        row={row}
+                        onAnnounce={setAnnouncement}
+                    />
                 ))}
             </ul>
             {shown.length < rows.length && (

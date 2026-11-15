@@ -482,15 +482,23 @@ pub(crate) static MAIN_THREAD_CALLBACK_SIGNAL_TEST_LOCK: std::sync::Mutex<()> =
 /// Borrow the host callback state pinned into a `clap_host`'s `host_data`.
 /// Returns `None` when `host` or `host_data` is null (e.g. a descriptor created
 /// without per-instance state, such as legacy test fixtures).
+///
+/// # Safety
+/// `host` must be null or point to a live `clap_host`, and that descriptor's
+/// `host_data` must be null or point to a `HostCallbackState` that stays alive
+/// and is not mutated through a unique reference for `'a`.
 unsafe fn host_state<'a>(host: *const clap_host) -> Option<&'a HostCallbackState> {
     if host.is_null() {
         return None;
     }
-    let data = (*host).host_data as *const HostCallbackState;
+    // SAFETY: `host` is non-null (checked above) and live per this fn's contract.
+    let data = unsafe { (*host).host_data } as *const HostCallbackState;
     if data.is_null() {
         return None;
     }
-    Some(&*data)
+    // SAFETY: `data` is non-null (checked above) and, per this fn's contract,
+    // points to a `HostCallbackState` valid for `'a`.
+    Some(unsafe { &*data })
 }
 
 static HOST_NAME: &[u8] = b"Sourdaw\0";
@@ -525,7 +533,9 @@ unsafe extern "C" fn host_get_extension(
         return std::ptr::null();
     }
 
-    let id = CStr::from_ptr(extension_id);
+    // SAFETY: `extension_id` is non-null (checked above), and CLAP requires the
+    // plugin to pass a NUL-terminated string that outlives this call.
+    let id = unsafe { CStr::from_ptr(extension_id) };
 
     if id == CLAP_EXT_PARAMS {
         return &HOST_PARAMS as *const clap_host_params as *const c_void;
@@ -560,7 +570,10 @@ unsafe extern "C" fn host_request_restart(host: *const clap_host) {
     // heap-copied instance id and channel node are a missed device period.
     // #3745 was that allocation. The flag is the record; the latency watcher
     // services the hint and makes the same re-query the channel wake did.
-    if let Some(state) = host_state(host) {
+    //
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    if let Some(state) = unsafe { host_state(host) } {
         state.flag_latency_requery();
     }
 }
@@ -581,7 +594,9 @@ unsafe extern "C" fn host_request_process(_host: *const clap_host) {
 /// deferred worker results and editor updates forever pending; #6566 was its
 /// wake allocating on the calling thread.
 unsafe extern "C" fn host_request_callback(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_main_thread_callback_requested();
     }
 }
@@ -602,7 +617,9 @@ static HOST_PARAMS: clap_host_params = clap_host_params {
 /// only says that there is work. Deliberately unlogged: it can arrive from a
 /// plugin's own thread, where stderr I/O is not acceptable.
 unsafe extern "C" fn host_params_rescan(host: *const clap_host, _flags: u32) {
-    if let Some(state) = host_state(host) {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_parameters_rescan();
     }
 }
@@ -630,7 +647,9 @@ unsafe extern "C" fn host_params_clear(_host: *const clap_host, _param_id: u32, 
 /// and deciding that plus making the call is the control path's job; this
 /// callback is `[thread-safe]` and may be the audio thread.
 unsafe extern "C" fn host_params_request_flush(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    if let Some(state) = unsafe { host_state(host) } {
         state.request_parameters_flush();
     }
 }
@@ -666,7 +685,9 @@ unsafe extern "C" fn host_gui_request_resize(
     width: u32,
     height: u32,
 ) -> bool {
-    match host_state(host) {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    match unsafe { host_state(host) } {
         Some(state) => state.request_editor_resize(width, height),
         None => false,
     }
@@ -701,7 +722,9 @@ static HOST_STATE: clap_host_state = clap_host_state {
 /// for the same reason nothing here reaches the renderer directly. The control
 /// path consumes the flag and publishes the change.
 unsafe extern "C" fn host_state_mark_dirty(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_state_dirty();
     }
 }
@@ -716,7 +739,9 @@ static HOST_LATENCY: clap_host_latency = clap_host_latency {
 /// main thread; latency itself may only change across a deactivate/reactivate,
 /// so we flag the instance dirty and let the control thread re-query.
 unsafe extern "C" fn host_latency_changed(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_latency_dirty();
     }
     eprintln!("[CLAP Host] Plugin reported a latency change");
@@ -735,7 +760,9 @@ static HOST_TAIL: clap_host_tail = clap_host_tail {
 /// stderr and making a write syscall is a dropout. Re-reading `clap.tail` is the
 /// control path's job.
 unsafe extern "C" fn host_tail_changed(host: *const clap_host) {
-    if let Some(state) = host_state(host) {
+    // SAFETY: `host` is the `clap_host` this crate handed the plugin, whose
+    // `host_data` is null or the `HostCallbackState` pinned for the instance's life.
+    if let Some(state) = unsafe { host_state(host) } {
         state.mark_tail_dirty();
     }
 }
@@ -759,6 +786,8 @@ mod tests {
         let host = host_with_state(&state);
 
         assert!(!state.take_latency_dirty(), "flag starts clear");
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_latency_changed(&host as *const clap_host) };
         assert!(
             state.take_latency_dirty(),
@@ -777,6 +806,8 @@ mod tests {
         let state = HostCallbackState::default();
         let host = host_with_state(&state);
 
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_request_restart(&host as *const clap_host) };
         assert!(
             state.take_latency_dirty(),
@@ -810,6 +841,8 @@ mod tests {
             0,
             "no wake before a callback"
         );
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_latency_changed(&host as *const clap_host) };
         assert_eq!(
             wakes.load(Ordering::Relaxed),
@@ -820,6 +853,8 @@ mod tests {
         // `request_restart` is [thread-safe], so a plugin may call it from the
         // audio thread: waking the allocating channel from there is the #3745
         // defect, and the wait-free hint is the wake instead.
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_request_restart(&host as *const clap_host) };
         assert_eq!(
             wakes.load(Ordering::Relaxed),
@@ -833,6 +868,8 @@ mod tests {
 
         // A second install is refused, so the wake cannot be hijacked mid-life.
         assert!(!state.set_latency_notifier(Box::new(|| {})));
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_latency_changed(&host as *const clap_host) };
         assert_eq!(
             wakes.load(Ordering::Relaxed),
@@ -854,6 +891,8 @@ mod tests {
         let host = host_with_state(&state);
         take_pending_latency_requery_signal();
 
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_request_restart(&host as *const clap_host) };
 
         assert!(
@@ -881,10 +920,11 @@ mod tests {
         let host = host_with_state(&state);
         take_pending_latency_requery_signal();
 
-        unsafe {
-            host_request_restart(&host as *const clap_host);
-            host_request_restart(&host as *const clap_host);
-        }
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
+        unsafe { host_request_restart(&host as *const clap_host) };
+        // SAFETY: as above.
+        unsafe { host_request_restart(&host as *const clap_host) };
 
         assert!(state.take_latency_dirty());
         assert!(
@@ -912,6 +952,8 @@ mod tests {
             !state.take_main_thread_callback_requested(),
             "nothing is pending before the call"
         );
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_request_callback(&host as *const clap_host) };
 
         assert!(
@@ -927,7 +969,11 @@ mod tests {
             "the ask is recorded, so a lost hint costs a delay and never the call"
         );
 
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_request_callback(&host as *const clap_host) };
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_request_callback(&host as *const clap_host) };
         assert!(
             state.take_main_thread_callback_requested(),
@@ -954,6 +1000,8 @@ mod tests {
 
         let before = crate::allocation_counter::allocation_count();
         for _ in 0..64 {
+            // SAFETY: `host` is a live local descriptor whose `host_data` points
+            // at a `state` that outlives the call.
             unsafe { host_request_callback(&host as *const clap_host) };
         }
         let allocations = crate::allocation_counter::allocation_count() - before;
@@ -987,6 +1035,8 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let state = HostCallbackState::default();
         let host = host_with_state(&state);
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_request_callback(&host as *const clap_host) };
         assert!(take_pending_main_thread_callback_signal());
 
@@ -1025,10 +1075,11 @@ mod tests {
         take_pending_latency_requery_signal();
         take_pending_main_thread_callback_signal();
 
-        unsafe {
-            host_request_restart(&host as *const clap_host);
-            host_request_callback(&host as *const clap_host);
-        }
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null,
+        // which `host_state` maps to `None`.
+        unsafe { host_request_restart(&host as *const clap_host) };
+        // SAFETY: as above.
+        unsafe { host_request_callback(&host as *const clap_host) };
 
         assert!(
             !take_pending_latency_requery_signal(),
@@ -1058,10 +1109,11 @@ mod tests {
         // Legacy descriptors (e.g. command fixtures) carry a null host_data.
         let host = create_host_descriptor();
         assert!(host.host_data.is_null());
-        unsafe {
-            host_latency_changed(&host as *const clap_host);
-            host_request_restart(&host as *const clap_host);
-        }
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null,
+        // which `host_state` maps to `None`.
+        unsafe { host_latency_changed(&host as *const clap_host) };
+        // SAFETY: as above.
+        unsafe { host_request_restart(&host as *const clap_host) };
     }
 
     /// Serialises every test that raises the process-wide flush hint, so one
@@ -1094,6 +1146,8 @@ mod tests {
         let host = host_with_state(&state);
         take_pending_editor_resize_signal();
 
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
         let accepted = unsafe { host_gui_request_resize(&host as *const clap_host, 1024, 768) };
 
         assert!(accepted, "an applicable request is accepted");
@@ -1118,7 +1172,11 @@ mod tests {
 
         // Consumption must clear the slot, not disarm it: a plugin resizes its
         // editor repeatedly over one editor's life.
-        assert!(unsafe { host_gui_request_resize(&host as *const clap_host, 800, 600) });
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
+        let accepted_again =
+            unsafe { host_gui_request_resize(&host as *const clap_host, 800, 600) };
+        assert!(accepted_again);
         assert!(
             take_pending_editor_resize_signal(),
             "an ask made after the last one was consumed raises the hint in its turn"
@@ -1150,6 +1208,8 @@ mod tests {
         let host = host_with_state(&state);
         take_pending_editor_resize_signal();
 
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
         let accepted = unsafe { host_gui_request_resize(&host as *const clap_host, 1024, 768) };
 
         assert!(accepted, "the ask is recorded, only silently");
@@ -1176,10 +1236,11 @@ mod tests {
         let (state, _requests) = state_with_open_editor();
         let host = host_with_state(&state);
 
-        unsafe {
-            host_gui_request_resize(&host as *const clap_host, 640, 480);
-            host_gui_request_resize(&host as *const clap_host, 1280, 720);
-        }
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
+        unsafe { host_gui_request_resize(&host as *const clap_host, 640, 480) };
+        // SAFETY: as above.
+        unsafe { host_gui_request_resize(&host as *const clap_host, 1280, 720) };
 
         assert_eq!(state.take_editor_resize(), Some((1280, 720)));
     }
@@ -1196,7 +1257,10 @@ mod tests {
         let host = host_with_state(&state);
         take_pending_editor_resize_signal();
 
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
         let zero_width = unsafe { host_gui_request_resize(&host as *const clap_host, 0, 480) };
+        // SAFETY: as above.
         let zero_height = unsafe { host_gui_request_resize(&host as *const clap_host, 640, 0) };
 
         assert!(!zero_width);
@@ -1218,6 +1282,8 @@ mod tests {
         state.set_editor_resize_available(false);
         let host = host_with_state(&state);
 
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
         let accepted = unsafe { host_gui_request_resize(&host as *const clap_host, 1024, 768) };
 
         assert!(!accepted);
@@ -1234,6 +1300,8 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let (state, _requests) = state_with_open_editor();
         let host = host_with_state(&state);
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
         unsafe { host_gui_request_resize(&host as *const clap_host, 1024, 768) };
 
         state.set_editor_resize_available(false);
@@ -1274,7 +1342,10 @@ mod tests {
         state.set_editor_resize_available(true);
         let host = host_with_state(&state);
 
-        assert!(!unsafe { host_gui_request_resize(&host as *const clap_host, 1024, 768) });
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
+        let accepted = unsafe { host_gui_request_resize(&host as *const clap_host, 1024, 768) };
+        assert!(!accepted);
         assert_eq!(state.take_editor_resize(), None);
     }
 
@@ -1284,6 +1355,8 @@ mod tests {
         let host = host_with_state(&state);
 
         assert!(!state.take_state_dirty(), "flag starts clear");
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_state_mark_dirty(&host as *const clap_host) };
 
         assert_eq!(
@@ -1298,6 +1371,8 @@ mod tests {
 
         // Clearing must re-arm rather than disarm, or only a session's first
         // plugin edit would ever reach the project.
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_state_mark_dirty(&host as *const clap_host) };
         assert!(
             state.take_state_dirty(),
@@ -1313,6 +1388,8 @@ mod tests {
         let state = HostCallbackState::default();
         let host = host_with_state(&state);
 
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_state_mark_dirty(&host as *const clap_host) };
 
         assert!(state.take_state_dirty());
@@ -1325,14 +1402,12 @@ mod tests {
         let host = create_host_descriptor();
         assert!(host.host_data.is_null());
 
-        unsafe {
-            assert!(!host_gui_request_resize(
-                &host as *const clap_host,
-                640,
-                480
-            ));
-            host_state_mark_dirty(&host as *const clap_host);
-        }
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null,
+        // which `host_state` maps to `None`.
+        let accepted = unsafe { host_gui_request_resize(&host as *const clap_host, 640, 480) };
+        assert!(!accepted);
+        // SAFETY: as above.
+        unsafe { host_state_mark_dirty(&host as *const clap_host) };
     }
 
     /// The whole of AC-002's first half: the callback used to be a comment. The
@@ -1343,6 +1418,8 @@ mod tests {
         let host = host_with_state(&state);
 
         assert!(!state.take_parameters_rescan(), "flag starts clear");
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_params_rescan(&host as *const clap_host, 0) };
 
         assert_eq!(
@@ -1365,6 +1442,8 @@ mod tests {
             let state = HostCallbackState::default();
             let host = host_with_state(&state);
 
+            // SAFETY: `host` is a live local descriptor whose `host_data` points
+            // at a `state` that outlives the call.
             unsafe { host_params_rescan(&host as *const clap_host, flags) };
 
             assert!(state.take_parameters_rescan(), "flags {flags} were ignored");
@@ -1388,6 +1467,8 @@ mod tests {
         crate::parameter_events::take_pending_parameter_flush_signal();
 
         assert!(!state.take_parameters_flush(), "flag starts clear");
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
         unsafe { host_params_request_flush(&host as *const clap_host) };
 
         assert!(
@@ -1410,6 +1491,8 @@ mod tests {
         let (state, requests) = state_with_open_editor();
         let host = host_with_state(&state);
 
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null or
+        // points at a `state` that outlives the call.
         unsafe { host_params_rescan(&host as *const clap_host, 0) };
 
         assert_eq!(
@@ -1429,10 +1512,11 @@ mod tests {
         let state = HostCallbackState::default();
         let host = host_with_state(&state);
 
-        unsafe {
-            host_params_rescan(&host as *const clap_host, 0);
-            host_params_request_flush(&host as *const clap_host);
-        }
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
+        unsafe { host_params_rescan(&host as *const clap_host, 0) };
+        // SAFETY: as above.
+        unsafe { host_params_request_flush(&host as *const clap_host) };
 
         assert!(state.take_parameters_flush());
         assert!(
@@ -1451,10 +1535,11 @@ mod tests {
         let state = HostCallbackState::default();
         let host = host_with_state(&state);
 
-        unsafe {
-            host_params_rescan(&host as *const clap_host, 0);
-            host_params_request_flush(&host as *const clap_host);
-        }
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
+        unsafe { host_params_rescan(&host as *const clap_host, 0) };
+        // SAFETY: as above.
+        unsafe { host_params_request_flush(&host as *const clap_host) };
 
         assert!(state.take_parameters_rescan());
         assert!(state.take_parameters_flush());
@@ -1468,11 +1553,13 @@ mod tests {
         let host = create_host_descriptor();
         assert!(host.host_data.is_null());
 
-        unsafe {
-            host_params_rescan(&host as *const clap_host, 0);
-            host_params_request_flush(&host as *const clap_host);
-            host_params_clear(&host as *const clap_host, 3, 0);
-        }
+        // SAFETY: `host` is a live local descriptor whose `host_data` is null,
+        // which `host_state` maps to `None`.
+        unsafe { host_params_rescan(&host as *const clap_host, 0) };
+        // SAFETY: as above.
+        unsafe { host_params_request_flush(&host as *const clap_host) };
+        // SAFETY: `host_params_clear` ignores its arguments.
+        unsafe { host_params_clear(&host as *const clap_host, 3, 0) };
     }
 
     /// `clear` is deliberately deferred, and "deferred" has to mean it records
@@ -1483,6 +1570,8 @@ mod tests {
         let (state, requests) = state_with_open_editor();
         let host = host_with_state(&state);
 
+        // SAFETY: `host_params_clear` ignores its arguments; `host` is a live local
+        // descriptor anyway.
         unsafe { host_params_clear(&host as *const clap_host, 3, u32::MAX) };
 
         assert!(requests.lock().expect("request log").is_empty());
@@ -1493,24 +1582,28 @@ mod tests {
 
     #[test]
     fn get_extension_exposes_the_params_extension_with_every_callback_bound() {
-        unsafe {
-            let ptr = host_get_extension(std::ptr::null(), CLAP_EXT_PARAMS.as_ptr());
-            assert!(!ptr.is_null(), "host advertises clap.params");
-            let ext = &*(ptr as *const clap_host_params);
-            assert!(ext.rescan.is_some());
-            assert!(ext.clear.is_some());
-            assert!(ext.request_flush.is_some());
-        }
+        // SAFETY: `host_get_extension` ignores its host argument, and
+        // `CLAP_EXT_PARAMS` is a NUL-terminated C string.
+        let ptr = unsafe { host_get_extension(std::ptr::null(), CLAP_EXT_PARAMS.as_ptr()) };
+        assert!(!ptr.is_null(), "host advertises clap.params");
+        // SAFETY: for `clap.params` the host returns `&HOST_PARAMS`, a `'static`
+        // `clap_host_params`, and the assert above ruled out null.
+        let ext = unsafe { &*(ptr as *const clap_host_params) };
+        assert!(ext.rescan.is_some());
+        assert!(ext.clear.is_some());
+        assert!(ext.request_flush.is_some());
     }
 
     #[test]
     fn get_extension_exposes_the_latency_extension() {
-        unsafe {
-            let ptr = host_get_extension(std::ptr::null(), CLAP_EXT_LATENCY.as_ptr());
-            assert!(!ptr.is_null(), "host advertises clap.latency");
-            let ext = &*(ptr as *const clap_host_latency);
-            assert!(ext.changed.is_some());
-        }
+        // SAFETY: `host_get_extension` ignores its host argument, and
+        // `CLAP_EXT_LATENCY` is a NUL-terminated C string.
+        let ptr = unsafe { host_get_extension(std::ptr::null(), CLAP_EXT_LATENCY.as_ptr()) };
+        assert!(!ptr.is_null(), "host advertises clap.latency");
+        // SAFETY: for `clap.latency` the host returns `&HOST_LATENCY`, a `'static`
+        // `clap_host_latency`, and the assert above ruled out null.
+        let ext = unsafe { &*(ptr as *const clap_host_latency) };
+        assert!(ext.changed.is_some());
     }
 
     /// A plugin only calls `clap_host_tail.changed` if the host answers the
@@ -1518,12 +1611,14 @@ mod tests {
     /// every tail the host reports is the one read at load and nothing else.
     #[test]
     fn get_extension_exposes_the_tail_extension() {
-        unsafe {
-            let ptr = host_get_extension(std::ptr::null(), CLAP_EXT_TAIL.as_ptr());
-            assert!(!ptr.is_null(), "host advertises clap.tail");
-            let ext = &*(ptr as *const clap_host_tail);
-            assert!(ext.changed.is_some());
-        }
+        // SAFETY: `host_get_extension` ignores its host argument, and
+        // `CLAP_EXT_TAIL` is a NUL-terminated C string.
+        let ptr = unsafe { host_get_extension(std::ptr::null(), CLAP_EXT_TAIL.as_ptr()) };
+        assert!(!ptr.is_null(), "host advertises clap.tail");
+        // SAFETY: for `clap.tail` the host returns `&HOST_TAIL`, a `'static`
+        // `clap_host_tail`, and the assert above ruled out null.
+        let ext = unsafe { &*(ptr as *const clap_host_tail) };
+        assert!(ext.changed.is_some());
     }
 
     #[test]
@@ -1539,6 +1634,8 @@ mod tests {
             "nothing is pending before the call"
         );
 
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
         unsafe { host_tail_changed(&host as *const clap_host) };
 
         assert!(state.take_tail_dirty(), "the callback records the change");
@@ -1562,6 +1659,8 @@ mod tests {
         let host = host_with_state(&state);
         take_pending_tail_change_signal();
 
+        // SAFETY: `host` is a live local descriptor whose `host_data` points at
+        // a `state` that outlives the call.
         unsafe { host_tail_changed(&host as *const clap_host) };
 
         assert!(take_pending_tail_change_signal(), "the hint is raised");

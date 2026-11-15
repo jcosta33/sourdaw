@@ -116,13 +116,8 @@ impl RuntimeScope {
                 "native/ipc",
                 "native/projects",
             ] {
-                let directory = root.join(relative);
                 let mut current = root.clone();
-                for component in directory
-                    .strip_prefix(&root)
-                    .expect("scope relative path")
-                    .components()
-                {
+                for component in Path::new(relative).components() {
                     current.push(component);
                     match std::fs::create_dir(&current) {
                         Ok(()) => {}

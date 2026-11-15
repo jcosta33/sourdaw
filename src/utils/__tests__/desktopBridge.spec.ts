@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
     createChannel,
     beginExportFile,
+    desktopAddPluginFolder,
     appendExportFile,
     sealExportFile,
     commitExportFiles,
@@ -42,6 +43,9 @@ const createBridgeMock = (platform = 'linux') => ({
         open: vi.fn().mockResolvedValue('/bridge-picked'),
         save: vi.fn().mockResolvedValue('/bridge-saved'),
         message: vi.fn().mockResolvedValue(undefined),
+    },
+    pluginFolders: {
+        add: vi.fn().mockResolvedValue({ status: 'granted', path: '/bridge-granted' }),
     },
     paths: {
         samplesBase: vi.fn().mockResolvedValue('app://sourdaw/samples'),
@@ -133,6 +137,7 @@ describe('desktopBridge', () => {
             ['desktopListen', async () => desktopListen('evt', () => undefined)],
             ['desktopOpenDialog', async () => desktopOpenDialog({ directory: true })],
             ['desktopSaveDialog', async () => desktopSaveDialog({ defaultPath: 'mix.wav' })],
+            ['desktopAddPluginFolder', async () => desktopAddPluginFolder()],
             ['desktopPathJoin', async () => desktopPathJoin('/exports', 'mix.wav')],
             ['desktopSamplesBaseUrl', async () => desktopSamplesBaseUrl()],
             ['desktopTotalMemoryBytes', async () => desktopTotalMemoryBytes()],
@@ -445,6 +450,13 @@ describe('desktopBridge', () => {
 
             expect(bridge.dialog.open).toHaveBeenCalledWith({ directory: true, multiple: false, title: 'Pick' });
             expect(bridge.dialog.save).toHaveBeenCalledWith({ defaultPath: 'mix.wav' });
+        });
+
+        it('should ask the bridge to pick and grant a plugin folder, sending nothing', async () => {
+            const bridge = installBridge();
+
+            await expect(desktopAddPluginFolder()).resolves.toEqual({ status: 'granted', path: '/bridge-granted' });
+            expect(bridge.pluginFolders.add.mock.calls).toEqual([[]]);
         });
 
         it('should join paths through the bridge', async () => {

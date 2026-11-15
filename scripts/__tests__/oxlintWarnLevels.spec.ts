@@ -10,13 +10,24 @@ const ALLOWED_WARN_RULES: ReadonlyArray<readonly [entry: string, reason: string]
     ['root:jsx-a11y/click-events-have-key-events', TRACKED_IN_6486],
     ['root:jsx-a11y/label-has-associated-control', TRACKED_IN_6486],
     ['root:jsx-a11y/no-static-element-interactions', TRACKED_IN_6486],
-    ['**/*.spec.{ts,tsx}:typescript/no-explicit-any', TRACKED_IN_6486],
-    ['**/*.spec.{ts,tsx}:typescript/no-unsafe-argument', TRACKED_IN_6486],
-    ['**/*.spec.{ts,tsx}:typescript/no-unsafe-assignment', TRACKED_IN_6486],
-    ['**/*.spec.{ts,tsx}:typescript/no-unsafe-call', TRACKED_IN_6486],
-    ['**/*.spec.{ts,tsx}:typescript/no-unsafe-member-access', TRACKED_IN_6486],
-    ['**/*.spec.{ts,tsx}:typescript/no-unsafe-return', TRACKED_IN_6486],
-    ['**/*.spec.{ts,tsx}:typescript/no-floating-promises', TRACKED_IN_6486],
+];
+
+const TEST_FILES_GLOB = '**/*.spec.{ts,tsx}';
+const IDIOMATIC_IN_TESTS = 'fires on idiomatic test code: matchers, JSON.parse and mocks are typed any';
+const ASYNC_TEST_CALLBACK = 'an async test callback with no await is how Vitest is written';
+
+const RULES_OFF_IN_TESTS: ReadonlyArray<readonly [rule: string, reason: string]> = [
+    ['import/first', 'vi.mock calls are hoisted above imports by design'],
+    ['jsx-a11y/click-events-have-key-events', 'test harness elements are not user controls'],
+    ['jsx-a11y/no-static-element-interactions', 'test harness elements are not user controls'],
+    ['typescript/no-empty-object-type', 'test fixtures declare empty prop and state shapes'],
+    ['typescript/no-explicit-any', IDIOMATIC_IN_TESTS],
+    ['typescript/no-unsafe-argument', IDIOMATIC_IN_TESTS],
+    ['typescript/no-unsafe-assignment', IDIOMATIC_IN_TESTS],
+    ['typescript/no-unsafe-call', IDIOMATIC_IN_TESTS],
+    ['typescript/no-unsafe-member-access', IDIOMATIC_IN_TESTS],
+    ['typescript/no-unsafe-return', IDIOMATIC_IN_TESTS],
+    ['typescript/require-await', ASYNC_TEST_CALLBACK],
 ];
 
 const BASELINED_RULES: readonly string[] = [
@@ -95,6 +106,20 @@ describe('.oxlintrc.json warn levels', () => {
     it('configures exactly the tracked rules at warn', () => {
         const allowed = ALLOWED_WARN_RULES.map(([entry]) => entry).sort();
         expect(warnEntriesOf(parsedOxlintConfig()).sort()).toEqual(allowed);
+    });
+
+    it('switches off in test files exactly the rules named with a reason', () => {
+        const config = parsedOxlintConfig();
+        const overrides: unknown[] = Array.isArray(config.overrides) ? config.overrides : [];
+        const testOverrides = overrides
+            .filter(isRecord)
+            .filter((override) => overrideScope(override) === TEST_FILES_GLOB);
+        expect(testOverrides).toHaveLength(1);
+        const [testOverride] = testOverrides;
+        const rules = isRecord(testOverride?.rules) ? testOverride.rules : {};
+        const offEntries = Object.entries(rules).filter(([, setting]) => setting === 'off' || setting === 0);
+        const off = offEntries.map(([rule]) => rule).sort();
+        expect(off).toEqual(RULES_OFF_IN_TESTS.map(([rule]) => rule).sort());
     });
 
     it.each(BASELINED_RULES)(

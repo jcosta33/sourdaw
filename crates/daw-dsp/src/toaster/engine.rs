@@ -635,20 +635,15 @@ impl ToasterEngine {
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
-        mut pad_outputs: Option<&mut [f32]>,
+        pad_outputs: Option<&mut [f32]>,
         pad_stride: usize,
     ) {
         let len = left.len().min(right.len()).min(self.bus_buffers_l[0].len());
         let required_pad_samples = self.pads.len().saturating_mul(2).saturating_mul(pad_stride);
-        let pad_outputs_valid = pad_stride >= len
-            && pad_outputs
-                .as_ref()
-                .is_some_and(|outputs| outputs.len() >= required_pad_samples);
+        let mut pad_outputs = pad_outputs
+            .filter(|outputs| pad_stride >= len && outputs.len() >= required_pad_samples);
 
-        if pad_outputs_valid {
-            let outputs = pad_outputs
-                .as_deref_mut()
-                .expect("validated pad output buffer");
+        if let Some(outputs) = pad_outputs.as_deref_mut() {
             for channel in 0..self.pads.len() * 2 {
                 let start = channel * pad_stride;
                 outputs[start..start + len].fill(0.0);
@@ -722,10 +717,7 @@ impl ToasterEngine {
                     let sl = sample * l_gain;
                     let sr = sample * r_gain;
 
-                    if pad_outputs_valid {
-                        let outputs = pad_outputs
-                            .as_deref_mut()
-                            .expect("validated pad output buffer");
+                    if let Some(outputs) = pad_outputs.as_deref_mut() {
                         let tap_start = pad_idx * 2 * pad_stride;
                         // The engine owns master gain for both the parent mix and
                         // routed pad taps so every output follows one render-quantum

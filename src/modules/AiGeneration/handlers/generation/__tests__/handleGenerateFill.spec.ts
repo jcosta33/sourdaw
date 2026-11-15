@@ -92,25 +92,25 @@ describe('handleGenerateFill', () => {
         expect(mocks.notifyUser).toHaveBeenCalledWith(`Placed 9-note drum fill on "Drums" at beat 14`, 'success');
     });
 
-    it('prefers the drum-named track over the selected track', () => {
+    it('prefers the drum-named track over the selected track', async () => {
         seedTracks({
             tracks: [midiTrack('t-bass', 'Bass'), midiTrack('t-drums', 'Drums 2')],
             selectedTrackId: 't-bass',
         });
 
-        handleGenerateFill.execute({ type: 'generateFill', payload: { atBeat: 8 } });
+        await handleGenerateFill.execute({ type: 'generateFill', payload: { atBeat: 8 } });
 
         expect(clipsOnTrack('t-drums')).toHaveLength(1);
         expect(clipsOnTrack('t-bass')).toHaveLength(0);
     });
 
-    it('falls back to the selected MIDI track when none is drum-named', () => {
+    it('falls back to the selected MIDI track when none is drum-named', async () => {
         seedTracks({
             tracks: [midiTrack('t-keys', 'Keys'), midiTrack('t-bass', 'Bass')],
             selectedTrackId: 't-bass',
         });
 
-        handleGenerateFill.execute({ type: 'generateFill', payload: { atBeat: 4 } });
+        await handleGenerateFill.execute({ type: 'generateFill', payload: { atBeat: 4 } });
 
         expect(clipsOnTrack('t-bass')).toHaveLength(1);
         expect(clipsOnTrack('t-keys')).toHaveLength(0);
@@ -137,7 +137,7 @@ describe('handleGenerateFill', () => {
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('invalid'), 'error');
     });
 
-    it('describes a guarded inverse whose clip id is the one the write creates', () => {
+    it('describes a guarded inverse whose clip id is the one the write creates', async () => {
         seedTracks({ tracks: [midiTrack('t-drums', 'Drums')] });
 
         const action = { type: 'generateFill', payload: { atBeat: 8 } } as const;
@@ -145,7 +145,7 @@ describe('handleGenerateFill', () => {
         expect(described.label).toBe('Generate Fill');
         expect(described.inverseAction?.type).toBe('discardDuplicatedClip');
 
-        handleGenerateFill.execute(action);
+        await handleGenerateFill.execute(action);
 
         if (described.inverseAction?.type !== 'discardDuplicatedClip') {
             throw new Error('Expected a guarded clip discard inverse');

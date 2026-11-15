@@ -41,9 +41,9 @@ describe('handleBounceToNewTrack', () => {
         expect(fileUndoEntry).not.toHaveBeenCalled();
 
         // Each settlement path files the entry exactly once, only when it runs.
-        result.afterCommit();
+        await result.afterCommit();
         expect(fileUndoEntry).toHaveBeenCalledTimes(1);
-        result.afterAmbiguousCommit();
+        await result.afterAmbiguousCommit();
         expect(fileUndoEntry).toHaveBeenCalledTimes(2);
     });
 

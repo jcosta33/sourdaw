@@ -36,7 +36,14 @@ const HEAD_WINDOW: usize = 64;
 unsafe fn read_channel(ptr: *const f32, frames: usize) -> Vec<f32> {
     assert!(!ptr.is_null(), "process returned a null buffer");
     (0..frames)
-        .map(|index| unsafe { *ptr.add(index) })
+        .map(|index| {
+            // SAFETY: this function's `# Safety` contract makes `ptr` valid for `frames` reads,
+            // and `index < frames`, so the offset stays inside that buffer.
+            let slot = unsafe { ptr.add(index) };
+            // SAFETY: `slot` is in bounds of that readable, initialised buffer per the same
+            // contract, and nothing writes it during the read.
+            unsafe { *slot }
+        })
         .collect()
 }
 
