@@ -343,6 +343,49 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
             </span>
         );
     }
+    const needsLicenceNotice =
+        backend === 'webllm' &&
+        offeredModels.find((model) => model.id === selectedModelId)?.licenceNotice !== undefined;
+    // A licensed model's notice sits beside every offer to download it, so its retry opens the setup panel.
+    if (needsLicenceNotice) {
+        return (
+            <Popover open={showPanel} onOpenChange={setShowPanel}>
+                <PopoverTrigger asChild>
+                    <Button
+                        variant="outline"
+                        size="xs"
+                        type="button"
+                        className="h-6 gap-1 px-2 text-[10px] font-medium border-destructive/30 text-destructive/80 hover:text-destructive hover:bg-destructive/10"
+                        title={status.message}
+                    >
+                        Retry Model Download
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                    align="end"
+                    sideOffset={8}
+                    aria-label="AI Model Retry"
+                    className="daw-floating-surface w-[260px] p-0 overflow-y-auto rounded-xl"
+                >
+                    <ModelSetupPanel
+                        backend={backend}
+                        backendLabel={backendLabel}
+                        tierKey={tierKey}
+                        modelInfo={modelInfo}
+                        selectedModelId={selectedModelId}
+                        refusalMessage={status.message}
+                        onSelectModel={setWantedModelId}
+                        offeredModels={offeredModels}
+                        machineMemory={machineMemory}
+                        onLoad={(modelId) => {
+                            setShowPanel(false);
+                            onLoad(modelId);
+                        }}
+                    />
+                </PopoverContent>
+            </Popover>
+        );
+    }
     return (
         <Button
             variant="outline"

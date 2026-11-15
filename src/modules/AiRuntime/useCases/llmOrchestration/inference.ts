@@ -58,6 +58,7 @@ import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
 import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
+import { machineMemoryStore } from '../../stores/machineMemoryStore';
 import { budgetLocalPlanningRequest } from '../../transformers/budgetLocalPlanningRequest';
 import {
     describeLocalContextWindowShortfall,
@@ -67,6 +68,7 @@ import {
 } from '../../transformers/localContextWindowRefusal';
 import { narrowWebLlmWorkflowSelector, readLocalWorkflowOffer } from '../../transformers/narrowWebLlmWorkflowTools';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
+import { offeredLocalModels } from '../../transformers/offeredLocalModels';
 import { serializeWebLlmToolPlanningPrompt } from '../../transformers/serializeWebLlmToolPlanningPrompt';
 import { type ToolCallResult, type ToolPlanningOutcome } from '../../transformers/toolCallParser';
 import {
@@ -423,7 +425,13 @@ async function generateLocalToolPlanningOutcome(input: {
 }): Promise<LocalToolPlanningAttempt> {
     const activeModelId = getActiveModelId();
     if (!WEBLLM_PLANNING_MODEL_IDS.has(activeModelId)) {
-        return { status: 'not-a-planner', reason: describeLocalPlannerRequired(activeModelId) };
+        return {
+            status: 'not-a-planner',
+            reason: describeLocalPlannerRequired(
+                activeModelId,
+                readOfferedLocalPlanners().map((model) => model.displayName)
+            ),
+        };
     }
     const windowTokens = getWebLlmContextWindowSize();
     const budget = budgetLocalPlanningRequest({
@@ -464,12 +472,16 @@ async function generateLocalToolPlanningOutcome(input: {
     }
 }
 
+/** The planning-capable local models the picker offers this machine, so a refusal never names a hidden one. */
+function readOfferedLocalPlanners(): typeof WEBLLM_MODELS {
+    return offeredLocalModels(WEBLLM_MODELS, machineMemoryStore.value).filter((model) =>
+        WEBLLM_PLANNING_MODEL_IDS.has(model.id)
+    );
+}
+
 /** The display name of a local model whose larger window would hold a refused request, if one exists. */
 function findLocalModelHolding(shortfall: LocalContextWindowShortfall): string | undefined {
-    return WEBLLM_MODELS.find((model) => {
-        if (!WEBLLM_PLANNING_MODEL_IDS.has(model.id)) {
-            return false;
-        }
+    return readOfferedLocalPlanners().find((model) => {
         const windowTokens = WEBLLM_CONTEXT_WINDOW_TOKENS[model.id] ?? 0;
         return windowTokens > shortfall.windowTokens && windowTokens >= shortfall.neededTokens;
     })?.displayName;

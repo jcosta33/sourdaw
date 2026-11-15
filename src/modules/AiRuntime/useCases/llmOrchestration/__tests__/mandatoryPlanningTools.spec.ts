@@ -41,6 +41,7 @@ import { initWebLlmEngine } from '../../../repositories/webLlm/initWebLlmEngine'
 import { agentReferenceStore } from '../../../stores/agentReferenceStore';
 import { readAgentResourceLimits } from '../../../stores/agentResourceLimitsStore';
 import { llmStatusStore } from '../../../stores/llmStatusStore';
+import { machineMemoryStore } from '../../../stores/machineMemoryStore';
 import { buildPlanningSystemPrompt } from '../../../transformers/buildPlanningSystemPrompt';
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { describeLocalContextWindowShortfall } from '../../../transformers/localContextWindowRefusal';
@@ -700,6 +701,7 @@ describe('mandatory planning tools', () => {
 
             afterEach(() => {
                 engineState.activeModelId = DEFAULT_WEBLLM_MODEL_ID;
+                machineMemoryStore.set({ state: 'unread' });
             });
             const REQUEST = 'make the chorus wider and tame the harshness on the lead vocal';
             const VIBE_REQUEST = "make this warm and punchy, don't touch the low end";
@@ -1124,6 +1126,42 @@ describe('mandatory planning tools', () => {
                     expect(LOCAL_PLANNER_REQUIRED_FAILURE_CODE).not.toBe(LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE);
                 }
             );
+
+            it.each([
+                { memory: { state: 'known', totalBytes: 16_000_000_000 }, names: ['Pro'], hides: ['Large'] },
+                { memory: { state: 'unavailable' }, names: ['Pro'], hides: ['Large'] },
+                { memory: { state: 'known', totalBytes: 64_000_000_000 }, names: ['Pro', 'Large'], hides: [] },
+            ] as const)(
+                'names only the planners the $memory.state memory reading offers when refusing the Light model',
+                async ({ memory, names, hides }) => {
+                    machineMemoryStore.set(memory);
+                    engineState.activeModelId = 'Qwen3-1.7B-q4f16_1-MLC';
+                    const { outcome } = await sendLocalRequest(emptyProject());
+
+                    if (outcome.status !== 'rejected') {
+                        throw new Error('Expected the non-planning local model to be refused.');
+                    }
+                    for (const name of names) {
+                        expect(outcome.reason).toContain(`the ${name} local model`);
+                    }
+                    for (const name of hides) {
+                        expect(outcome.reason).not.toContain(name);
+                    }
+                }
+            );
+
+            it('names no local model and points to a hosted one when the machine is offered no planner', async () => {
+                machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000 });
+                engineState.activeModelId = 'Qwen3-1.7B-q4f16_1-MLC';
+                const { outcome } = await sendLocalRequest(emptyProject());
+
+                if (outcome.status !== 'rejected') {
+                    throw new Error('Expected the non-planning local model to be refused.');
+                }
+                expect(outcome.reason).not.toContain('Pro');
+                expect(outcome.reason).not.toContain('Large');
+                expect(outcome.reason).toContain('Use a hosted model');
+            });
 
             it('admits the Large model to plan like Pro, at the same window, instead of refusing it', async () => {
                 const largeModelId = 'Llama-3.1-70B-Instruct-q3f16_1-MLC';

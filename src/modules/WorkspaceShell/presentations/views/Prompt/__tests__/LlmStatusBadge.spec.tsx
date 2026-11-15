@@ -322,6 +322,42 @@ describe('LlmStatusBadge', () => {
             expect(onLoad).toHaveBeenCalledWith('Qwen3-4B-q4f16_1-MLC');
         });
 
+        it('retries a Qwen model directly on a 64 GB machine, as it always did', () => {
+            machineMemoryStore.set({ state: 'known', totalBytes: 64_000_000_000 });
+            const onLoad = vi.fn();
+            render(<LlmStatusBadge status={errorStatus} onLoad={onLoad} />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Retry Model Download' }));
+
+            expect(onLoad).toHaveBeenCalledWith('Qwen3-8B-q4f16_1-MLC');
+            expect(screen.queryByText(/Built with Llama/)).not.toBeInTheDocument();
+        });
+
+        it('shows the Llama notice before retrying the Large download, and loads only on Download & Load', async () => {
+            machineMemoryStore.set({ state: 'known', totalBytes: 64_000_000_000 });
+            const onLoad = vi.fn();
+            const { rerender } = render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={onLoad} />);
+            fireEvent.click(screen.getByRole('button', { name: 'Load AI' }));
+            fireEvent.click(screen.getByRole('button', { name: /^Large/ }));
+            // The first attempt closes the panel, as it does for a user; it then fails.
+            fireEvent.click(screen.getByRole('button', { name: 'Download & Load Large' }));
+            onLoad.mockClear();
+            rerender(<LlmStatusBadge status={errorStatus} onLoad={onLoad} />);
+
+            fireEvent.click(await screen.findByRole('button', { name: 'Retry Model Download' }));
+
+            expect(onLoad).not.toHaveBeenCalled();
+            const consentLine = screen.getByText(/^Downloads and verifies this model for private use/);
+            expect(consentLine).toHaveTextContent(/Built with Llama/);
+            expect(consentLine).toHaveTextContent(/Llama 3\.1 Community License/);
+            expect(screen.getByRole('alert')).toHaveTextContent('The model download failed.');
+
+            fireEvent.click(screen.getByRole('button', { name: 'Download & Load Large' }));
+
+            expect(onLoad).toHaveBeenCalledTimes(1);
+            expect(onLoad).toHaveBeenCalledWith('Llama-3.1-70B-Instruct-q3f16_1-MLC');
+        });
+
         it('offers no local retry when no local model fits', () => {
             machineMemoryStore.set({ state: 'known', totalBytes: 1_000_000_000 });
             render(<LlmStatusBadge status={errorStatus} onLoad={vi.fn()} />);
