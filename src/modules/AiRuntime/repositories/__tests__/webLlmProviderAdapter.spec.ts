@@ -1116,6 +1116,8 @@ type AdmissionGap =
     | 'decision-record-missing'
     | 'decision-record-not-accepted'
     | 'decision-record-lacks-revision-or-digest'
+    | 'decision-record-lacks-libraries-revision'
+    | 'decision-record-lacks-library-hash'
     | 'digest-differs-from-manifest'
     | 'no-licence'
     | 'licence-not-named-by-decision-record';
@@ -1153,6 +1155,13 @@ function findAdmissionGaps({ manifest, prebuiltList, admission, decisionText }: 
             !decisionText.includes(manifest.artifactSetDigest)
         ) {
             gaps.push('decision-record-lacks-revision-or-digest');
+        }
+        if (!decisionText.includes(manifest.wasmSource.revision)) {
+            gaps.push('decision-record-lacks-libraries-revision');
+        }
+        const library = manifest.artifacts.find((artifact) => artifact.kind === 'model-library');
+        if (library === undefined || !decisionText.includes(library.sha256)) {
+            gaps.push('decision-record-lacks-library-hash');
         }
     }
     if (admission.artifactSetDigest !== manifest.artifactSetDigest) {
@@ -1278,6 +1287,25 @@ describe('WebLLM catalogue admission record', () => {
                 alter: (input) => ({
                     ...input,
                     decisionText: acceptedText().replaceAll(input.manifest.artifactSetDigest, '0'.repeat(64)),
+                }),
+            },
+            {
+                label: 'the decision record lacks the model libraries revision',
+                gap: 'decision-record-lacks-libraries-revision',
+                alter: (input) => ({
+                    ...input,
+                    decisionText: acceptedText().replaceAll(input.manifest.wasmSource.revision, 'x'.repeat(40)),
+                }),
+            },
+            {
+                label: 'the decision record lacks the model library hash',
+                gap: 'decision-record-lacks-library-hash',
+                alter: (input) => ({
+                    ...input,
+                    decisionText: acceptedText().replaceAll(
+                        input.manifest.artifacts.find((artifact) => artifact.kind === 'model-library')?.sha256 ?? '',
+                        '0'.repeat(64)
+                    ),
                 }),
             },
             {
