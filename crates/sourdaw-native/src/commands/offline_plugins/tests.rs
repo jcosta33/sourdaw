@@ -888,6 +888,66 @@ fn a_reload_under_the_same_id_never_pairs_one_loads_state_with_anothers_file() {
     );
 }
 
+/// A live runtime reloaded away while the render reads its state is held by
+/// the render alone once the read returns. That last reference is retired for
+/// the sweep to tear down on the UI thread, never dropped on the render's own
+/// thread.
+#[test]
+fn a_live_runtime_reloaded_away_during_its_state_read_is_retired_not_dropped_by_the_render() {
+    let fx = InstalledFx::create("retired-first");
+    let reloaded_fx = InstalledFx::create("retired-second");
+    let (state, live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let teardown_threads = Arc::new(Mutex::new(Vec::new()));
+    live.witness_teardown(Arc::clone(&teardown_threads));
+    let reloaded_away = Arc::downgrade(&live);
+    drop(live);
+    let descriptor = processing_class(Format::Clap);
+    RELOAD.with(|reload| {
+        *reload.borrow_mut() = Some((
+            live_runtime(&reloaded_fx, Format::Clap, &descriptor),
+            reloaded_fx.load_resolution(Format::Clap, &descriptor),
+        ))
+    });
+    let mut seams = fx.seams();
+    seams.scan_policy =
+        PluginScanPolicy::with_allowed_roots(vec![fx.root.clone(), reloaded_fx.root.clone()]);
+    seams.capture_state = capture_then_reload_under_the_same_id;
+
+    render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &seams,
+        None,
+    )
+    .expect("the render prints the load whose state it read");
+
+    assert!(
+        RELOAD.with(|reload| reload.borrow().is_none()),
+        "the reload landed during the state read"
+    );
+    assert!(
+        teardown_threads.lock().expect("teardown").is_empty(),
+        "the reloaded-away runtime was not torn down by the render"
+    );
+    {
+        let retired = state.retired_engine_plugins.lock().expect("retired");
+        assert_eq!(retired.len(), 1, "the render's last reference is retired");
+        assert!(
+            std::ptr::eq(Arc::as_ptr(&retired[0]), reloaded_away.as_ptr()),
+            "the retired runtime is the one reloaded away"
+        );
+    }
+
+    state.sweep_retired_engine_plugins(&ui);
+    assert_eq!(
+        *teardown_threads.lock().expect("teardown"),
+        vec![ui.thread_id],
+        "the sweep tears it down on the UI thread"
+    );
+}
+
 /// The mapping and the build read the live records under separate locks. A
 /// reload under the instance's id between them — here an instrument from
 /// another file, under another engine plugin id — is refused by the plugin the
