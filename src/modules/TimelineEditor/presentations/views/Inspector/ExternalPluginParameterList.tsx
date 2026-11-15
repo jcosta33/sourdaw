@@ -28,7 +28,6 @@ import { getDeviceAutomationOwnerId, getDeviceAutomationParameterId } from '#/ut
 
 import { type Device } from '../../../models/TrackViewTypes';
 import { MetaText } from '../../components/Inspector/MetaText';
-import { useFollowedAutomationValue } from '../../hooks/useFollowedAutomationValue';
 import {
     buildExternalPluginParameterRows,
     type ExternalPluginParameterRow,
@@ -36,6 +35,7 @@ import {
     formatExternalPluginParameterValue,
     resolveExternalPluginParameterStatus,
 } from '../../helpers/externalPluginParameterRows';
+import { useFollowedAutomationValue } from '../../hooks/useFollowedAutomationValue';
 
 const PAGE_SIZE = 50;
 const REFUSED_MESSAGE = 'The plugin refused this change.';
@@ -210,6 +210,32 @@ const RestoreFailureNotice = ({ instanceId }: { instanceId: string }): ReactElem
     );
 };
 
+/**
+ * Host-side automation writes are not echoed as edits, so the store holds the pre-play value; on each
+ * stop edge (and on mount) re-read what the plugin actually holds. A patch is not an edit.
+ */
+const useRefreshAfterAutomatedPlayback = (
+    instanceId: string | undefined,
+    automatedIdsKey: string,
+    isPlaying: boolean
+): void => {
+    const hadAutomationRef = useRef(false);
+    useEffect(() => {
+        if (automatedIdsKey !== '') {
+            hadAutomationRef.current = true;
+        }
+        if (isPlaying || !instanceId) {
+            return;
+        }
+        // A list that never had automation has nothing the host could have moved; losing the last lane
+        // still re-reads, because the row holds a followed value the store does not have.
+        if (automatedIdsKey === '' && !hadAutomationRef.current) {
+            return;
+        }
+        void refreshExternalPluginParameters(instanceId);
+    }, [isPlaying, automatedIdsKey, instanceId]);
+};
+
 export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterListProps): ReactElement => {
     const scanState = useStore(pluginScanStore, defaultPluginScanState);
     const activationState = useStore(externalPluginActivationStore, defaultExternalPluginActivationState);
@@ -222,7 +248,6 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [announcement, setAnnouncement] = useState('');
     const listRef = useRef<HTMLUListElement>(null);
-    const hadAutomationRef = useRef(false);
     const focusIndexAfterRevealRef = useRef<number | null>(null);
 
     // Revealing a page can unmount the focused Show more button; move focus to the first revealed control.
@@ -241,23 +266,7 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
         .find((plugin) => plugin.id === device.externalPluginId || plugin.descriptor_id === device.externalPluginId);
     const snapshot = instanceId ? parameterState.byInstanceId[instanceId] : undefined;
     const automatedParameterIds = parseAutomatedIdsKey(automatedIdsKey);
-
-    // Host-side automation writes are not echoed as edits, so the store holds the pre-play value; on each
-    // stop edge (and on mount) re-read what the plugin actually holds. A patch is not an edit.
-    useEffect(() => {
-        if (automatedIdsKey !== '') {
-            hadAutomationRef.current = true;
-        }
-        if (isPlaying || !instanceId) {
-            return;
-        }
-        // A list that never had automation has nothing the host could have moved; losing the last lane
-        // still re-reads, because the row holds a followed value the store does not have.
-        if (automatedIdsKey === '' && !hadAutomationRef.current) {
-            return;
-        }
-        void refreshExternalPluginParameters(instanceId);
-    }, [isPlaying, automatedIdsKey, instanceId]);
+    useRefreshAfterAutomatedPlayback(instanceId, automatedIdsKey, isPlaying);
 
     const status = resolveExternalPluginParameterStatus({
         device,
