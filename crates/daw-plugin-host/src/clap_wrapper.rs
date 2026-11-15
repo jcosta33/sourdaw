@@ -3151,6 +3151,10 @@ impl HostedPluginRuntime for ClapWrapper {
     fn report_plugin_observations(&mut self) {
         ClapWrapper::report_plugin_observations(self)
     }
+
+    fn has_failed_a_process_call(&self) -> bool {
+        self.process_refused
+    }
 }
 
 impl Drop for ClapWrapper {

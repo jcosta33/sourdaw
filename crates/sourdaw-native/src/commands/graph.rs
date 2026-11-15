@@ -6204,7 +6204,7 @@ fn render_offline_ops(
         return Err(render.cancelled());
     };
     if let Some(plugins) = plugins {
-        plugins.ensure_every_block_served()?;
+        plugins.ensure_every_block_processed()?;
     }
 
     // Belt and braces under refuse-don't-drop: `map_batch` refuses anything

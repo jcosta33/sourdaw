@@ -295,9 +295,16 @@ impl OfflinePluginInstances<'_> {
         }
     }
 
-    /// Refuse a print in which any instance missed a block: that block passed
-    /// through dry, and a print with a dry hole in it is not the project.
-    pub(crate) fn ensure_every_block_served(&self) -> Result<(), String> {
+    /// Refuse a print in which any instance missed a block or failed one.
+    ///
+    /// A block the slot could not serve passed through dry; a block the plugin
+    /// was served but answered with a process failure (CLAP's
+    /// `CLAP_PROCESS_ERROR`, a VST3 `process` that did not return `kResultOk`)
+    /// was passed through dry or silenced by its wrapper. Either way the print
+    /// has a hole in it and is not the project. Called after the last block,
+    /// once the render thread has left every instance's processing state, so
+    /// the control-path read of the wrapper's failure latch sees every block.
+    pub(crate) fn ensure_every_block_processed(&self) -> Result<(), String> {
         for instance in &self.instances {
             let missed = instance.runtime.unserved_blocks();
             if missed > 0 {
@@ -307,6 +314,24 @@ impl OfflinePluginInstances<'_> {
                         "it was not served {missed} block(s) of the render, which would pass \
                          through dry"
                     ),
+                ));
+            }
+            let failed = instance
+                .runtime
+                .with_control(OFFLINE_CONTROL_TIMEOUT, |plugin| {
+                    Ok(plugin.has_failed_a_process_call())
+                })
+                .map_err(|reason| {
+                    refusal(
+                        &instance.bound,
+                        &format!("whether it processed every block could not be read: {reason}"),
+                    )
+                })?;
+            if failed {
+                return Err(refusal(
+                    &instance.bound,
+                    "it failed to process a block of the render, which its host passed through \
+                     unprocessed",
                 ));
             }
         }

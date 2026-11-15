@@ -72,8 +72,9 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   instance's state captured once at render start, construction on the UI thread from the file its
   load vetted, activation at the export rate in offline mode, and release on the UI thread on every
   path out. The live instance is touched only by that state read. An instance the engine does not
-  hold, a hosted instrument, an unreadable state, a failed construction and a block the offline
-  instance was not served each refuse the render by device and plugin name; nothing prints dry.
+  hold, a hosted instrument, an unreadable state, a failed construction, and a block the offline
+  instance was not served or failed to process each refuse the render by device and plugin name;
+  nothing prints dry.
   `map_graph_batch` admits and refuses exactly that set, through the same mapping.
 
 ## Constraints

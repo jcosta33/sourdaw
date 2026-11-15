@@ -24,8 +24,9 @@ use daw_plugin_host::{ClapWrapper, HostParameterUpdate, Vst3Wrapper};
 use serde_json::{json, Value};
 use sourdaw_harness_fx::state::{decode, RecordedState, MODE_NEVER_SET};
 use sourdaw_harness_fx::{
-    CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_PLUGIN_ID, ECHO_FRAMES, GAIN_PARAM_ID, LATENCY_FRAMES,
-    VST3_CLASS_ID,
+    CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_PLUGIN_ID, CLAP_PROCESS_ERROR_PLUGIN_ID, ECHO_FRAMES,
+    FAILING_PROCESS_CALL, GAIN_PARAM_ID, LATENCY_FRAMES, VST3_CLASS_ID,
+    VST3_PROCESS_ERROR_CLASS_ID,
 };
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -287,16 +288,18 @@ impl UiThread for RecordingUiThread {
 /// A live, realtime instance at the live rate, whose Gain the user moved to
 /// `LIVE_GAIN` after the load — delivered through its process path, the way
 /// a knob reaches a running plugin.
-fn live_runtime(fx: &InstalledFx, format: Format, clap_id: &str) -> HostedRuntime {
+fn live_runtime(fx: &InstalledFx, format: Format, descriptor_id: &str) -> HostedRuntime {
     let mut runtime: HostedRuntime = match format {
-        Format::Clap => ClapWrapper::new(fx.clap_path.to_str().expect("utf8"), clap_id, LIVE_RATE)
-            .expect("the live CLAP instance loads")
+        Format::Clap => ClapWrapper::new(
+            fx.clap_path.to_str().expect("utf8"),
+            descriptor_id,
+            LIVE_RATE,
+        )
+        .expect("the live CLAP instance loads")
+        .into(),
+        Format::Vst3 => Vst3Wrapper::new(&fx.vst3_bundle, descriptor_id, LIVE_RATE)
+            .expect("the live VST3 instance loads")
             .into(),
-        Format::Vst3 => {
-            Vst3Wrapper::new(&fx.vst3_bundle, &format_class_id(&VST3_CLASS_ID), LIVE_RATE)
-                .expect("the live VST3 instance loads")
-                .into()
-        }
     };
     let silence = [0.0f32; 64];
     let (mut left, mut right) = ([0.0f32; 64], [0.0f32; 64]);
@@ -339,16 +342,36 @@ fn attach(
     shared
 }
 
-fn state_with_live_fx(fx: &InstalledFx, format: Format) -> (AppState, Arc<SharedHostedPlugin>) {
-    let state = AppState::default();
-    let descriptor = match format {
+/// The descriptor id of the class that processes every block.
+fn processing_class(format: Format) -> String {
+    match format {
         Format::Clap => CLAP_PLUGIN_ID.to_string(),
         Format::Vst3 => format_class_id(&VST3_CLASS_ID),
-    };
+    }
+}
+
+/// The descriptor id of the class that fails one process call.
+fn failing_class(format: Format) -> String {
+    match format {
+        Format::Clap => CLAP_PROCESS_ERROR_PLUGIN_ID.to_string(),
+        Format::Vst3 => format_class_id(&VST3_PROCESS_ERROR_CLASS_ID),
+    }
+}
+
+fn state_with_live_fx(fx: &InstalledFx, format: Format) -> (AppState, Arc<SharedHostedPlugin>) {
+    state_with_live_class(fx, format, &processing_class(format))
+}
+
+fn state_with_live_class(
+    fx: &InstalledFx,
+    format: Format,
+    descriptor: &str,
+) -> (AppState, Arc<SharedHostedPlugin>) {
+    let state = AppState::default();
     let live = attach(
         &state,
-        live_runtime(fx, format, CLAP_PLUGIN_ID),
-        fx.load_resolution(format, &descriptor),
+        live_runtime(fx, format, descriptor),
+        fx.load_resolution(format, descriptor),
         DeviceKind::Effect,
     );
     register_material(&state);
@@ -935,4 +958,57 @@ fn an_offline_instance_that_misses_a_block_refuses_the_render_by_name() {
         2,
         "the refused render still releases its instance"
     );
+}
+
+// ── A block the offline instance failed to process ─────────────────────
+
+/// A class that answers one process call with a failure, mid-render: the
+/// wrapper latches it and passes that block through unprocessed, so the print
+/// is refused by name, and the instance is still released on the UI thread.
+fn an_offline_instance_that_fails_a_block_refuses_the_render_by_name(format: Format) {
+    let fx = InstalledFx::create(&format!("process-error-{format:?}"));
+    let (state, _live) = state_with_live_class(&fx, format, &failing_class(format));
+    let ui = RecordingUiThread::start();
+    let frames_before_the_failure =
+        (FAILING_PROCESS_CALL as usize + 1) * daw_engine::offline::OFFLINE_BLOCK_FRAMES;
+    assert!(
+        FRAMES > frames_before_the_failure,
+        "the render reaches the failing call"
+    );
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &fx.seams(),
+        None,
+    )
+    .expect_err("a print a plugin failed to process is refused");
+
+    assert!(
+        refusal.contains("'d-fx'")
+            && refusal.contains("'Sourdaw Harness Fx'")
+            && refusal.contains("it failed to process a block of the render"),
+        "{refusal}"
+    );
+    assert_eq!(
+        ui.tasks_run(),
+        2,
+        "the refused render still releases its instance"
+    );
+    assert!(state
+        .retired_engine_plugins
+        .lock()
+        .expect("retired")
+        .is_empty());
+}
+
+#[test]
+fn an_offline_clap_instance_that_fails_a_block_refuses_the_render_by_name() {
+    an_offline_instance_that_fails_a_block_refuses_the_render_by_name(Format::Clap);
+}
+
+#[test]
+fn an_offline_vst3_instance_that_fails_a_block_refuses_the_render_by_name() {
+    an_offline_instance_that_fails_a_block_refuses_the_render_by_name(Format::Vst3);
 }

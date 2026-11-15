@@ -39,7 +39,6 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['arm_retrospective_capture', ['track_id', 'channels']],
     ['begin_export_file', ['path']],
     ['begin_levain_bank', ['bank_key', 'instrument_id']],
-    ['cancel_graph_offline', ['render_id']],
     ['cancel_provider_gateway_request', ['request_id']],
     ['close_midi_input', []],
     ['close_plugin_gui', ['instance_id']],

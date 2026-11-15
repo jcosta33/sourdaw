@@ -574,6 +574,15 @@ pub trait HostedPluginRuntime: AudioPlugin {
     /// visit driven by [`take_pending_process_refusal_signal`] calls it on every
     /// instance, and only the one that failed has anything to say.
     fn report_plugin_observations(&mut self) {}
+
+    /// Whether the plugin has failed a process call since it was created — the
+    /// latch [`Self::report_plugin_observations`] reports from. Control path
+    /// only. A block it failed passed through dry or silent, so a caller that
+    /// needs every block processed (an offline print) refuses on it. The
+    /// default is `false`: a backend with no failure signal has none to latch.
+    fn has_failed_a_process_call(&self) -> bool {
+        false
+    }
 }
 
 /// Process-wide hint that some plugin latched a process failure.

@@ -185,6 +185,15 @@ describe('the Electron command surface', () => {
         expect(isExposedCommand('close_all_plugin_guis')).toBe(false);
     });
 
+    it('keeps cancel_graph_offline registered but denied until a src caller invokes it', () => {
+        // The export's cancel is the caller this waits for; exposing it first
+        // would widen the surface ahead of the need.
+        expect(registeredCommands()).toContain('cancel_graph_offline');
+        expect(DENIED_COMMANDS).toContain('cancel_graph_offline');
+        expect(isExposedCommand('cancel_graph_offline')).toBe(false);
+        expect(SOURDAW_COMMAND_ARGUMENTS.has('cancel_graph_offline')).toBe(false);
+    });
+
     it('gives a denied command no channel that collides with an exposed one', () => {
         const exposedChannels = new Set(EXPOSED_COMMANDS.map(commandChannel));
 
@@ -370,7 +379,6 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['arm_retrospective_capture', ['track_id', 'channels']],
     ['begin_export_file', ['path']],
     ['begin_levain_bank', ['bank_key', 'instrument_id']],
-    ['cancel_graph_offline', ['render_id']],
     ['cancel_provider_gateway_request', ['request_id']],
     ['close_midi_input', []],
     ['close_plugin_gui', ['instance_id']],

@@ -1,11 +1,15 @@
-//! The CLAP front end: `clap_entry`, a factory with two classes over the same
-//! DSP, and the extensions the host's process-mode path reads.
+//! The CLAP front end: `clap_entry`, a factory with three classes over the
+//! same DSP, and the extensions the host's process-mode path reads.
 //!
 //! The second class differs only in its `clap.render` answer: it declares a
 //! hard real-time requirement, which is what a host building an offline
-//! instance must refuse.
+//! instance must refuse. The third differs only in answering one process call
+//! ([`crate::FAILING_PROCESS_CALL`]) with `CLAP_PROCESS_ERROR`, which is what a
+//! host must not let pass as processed audio.
 
-use crate::echo::{Echo, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, GAIN_MAX, GAIN_MIN, LATENCY_FRAMES};
+use crate::echo::{
+    Echo, ProcessCalls, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, GAIN_MAX, GAIN_MIN, LATENCY_FRAMES,
+};
 use crate::state::CHUNK_BYTES;
 use clap_sys::entry::clap_plugin_entry;
 use clap_sys::events::{
@@ -43,13 +47,17 @@ use std::ptr;
 pub const CLAP_PLUGIN_ID: &str = "com.sourdaw.harness-fx";
 /// The class whose `clap.render` declares a hard real-time requirement.
 pub const CLAP_HARD_REALTIME_PLUGIN_ID: &str = "com.sourdaw.harness-fx.hard-realtime";
+/// The class that fails one process call.
+pub const CLAP_PROCESS_ERROR_PLUGIN_ID: &str = "com.sourdaw.harness-fx.process-error";
 /// The `Gain` parameter's id, in both formats.
 pub const GAIN_PARAM_ID: u32 = 0;
 
 static PLUGIN_ID: &[u8] = b"com.sourdaw.harness-fx\0";
 static HARD_REALTIME_PLUGIN_ID: &[u8] = b"com.sourdaw.harness-fx.hard-realtime\0";
+static PROCESS_ERROR_PLUGIN_ID: &[u8] = b"com.sourdaw.harness-fx.process-error\0";
 static PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx\0";
 static HARD_REALTIME_PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx Hard Realtime\0";
+static PROCESS_ERROR_PLUGIN_NAME: &[u8] = b"Sourdaw Harness Fx Process Error\0";
 static PLUGIN_VENDOR: &[u8] = b"Sourdaw\0";
 static PLUGIN_VERSION: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 static FEATURE_AUDIO_EFFECT: &[u8] = b"audio-effect\0";
@@ -87,11 +95,14 @@ const fn descriptor(id: &'static [u8], name: &'static [u8]) -> clap_plugin_descr
 static DESCRIPTOR: clap_plugin_descriptor = descriptor(PLUGIN_ID, PLUGIN_NAME);
 static HARD_REALTIME_DESCRIPTOR: clap_plugin_descriptor =
     descriptor(HARD_REALTIME_PLUGIN_ID, HARD_REALTIME_PLUGIN_NAME);
+static PROCESS_ERROR_DESCRIPTOR: clap_plugin_descriptor =
+    descriptor(PROCESS_ERROR_PLUGIN_ID, PROCESS_ERROR_PLUGIN_NAME);
 
 /// One instance, boxed behind `clap_plugin.plugin_data`.
 struct ClapInstance {
     echo: Echo,
     hard_realtime: bool,
+    process_calls: ProcessCalls,
 }
 
 // ── Entry and factory ───────────────────────────────────────────────────
@@ -130,7 +141,7 @@ static FACTORY: clap_plugin_factory = clap_plugin_factory {
 };
 
 unsafe extern "C" fn plugin_count(_factory: *const clap_plugin_factory) -> u32 {
-    2
+    3
 }
 
 unsafe extern "C" fn plugin_descriptor(
@@ -140,6 +151,7 @@ unsafe extern "C" fn plugin_descriptor(
     match index {
         0 => &raw const DESCRIPTOR,
         1 => &raw const HARD_REALTIME_DESCRIPTOR,
+        2 => &raw const PROCESS_ERROR_DESCRIPTOR,
         _ => ptr::null(),
     }
 }
@@ -154,10 +166,12 @@ unsafe extern "C" fn create_plugin(
     }
     // SAFETY: the host passes a NUL-terminated plugin id.
     let requested = unsafe { CStr::from_ptr(plugin_id) }.to_bytes_with_nul();
-    let (desc, hard_realtime) = if requested == PLUGIN_ID {
-        (&raw const DESCRIPTOR, false)
+    let (desc, hard_realtime, fails_a_process_call) = if requested == PLUGIN_ID {
+        (&raw const DESCRIPTOR, false, false)
     } else if requested == HARD_REALTIME_PLUGIN_ID {
-        (&raw const HARD_REALTIME_DESCRIPTOR, true)
+        (&raw const HARD_REALTIME_DESCRIPTOR, true, false)
+    } else if requested == PROCESS_ERROR_PLUGIN_ID {
+        (&raw const PROCESS_ERROR_DESCRIPTOR, false, true)
     } else {
         return ptr::null();
     };
@@ -165,6 +179,7 @@ unsafe extern "C" fn create_plugin(
     let instance = Box::into_raw(Box::new(ClapInstance {
         echo: Echo::new(),
         hard_realtime,
+        process_calls: ProcessCalls::new(fails_a_process_call),
     }));
     Box::into_raw(Box::new(clap_plugin {
         desc,
@@ -297,6 +312,9 @@ unsafe extern "C" fn process(
     let Some(instance) = (unsafe { instance_of(plugin) }) else {
         return CLAP_PROCESS_ERROR;
     };
+    if instance.process_calls.this_call_fails() {
+        return CLAP_PROCESS_ERROR;
+    }
     // SAFETY: `process` is valid for the duration of this call.
     let process = unsafe { &*process };
     // SAFETY: `in_events` is valid for the duration of this call.

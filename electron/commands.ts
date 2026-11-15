@@ -64,7 +64,6 @@ export const EXPOSED_COMMANDS = [
     'arm_retrospective_capture',
     'begin_export_file',
     'begin_levain_bank',
-    'cancel_graph_offline',
     'cancel_provider_gateway_request',
     'close_midi_input',
     'close_plugin_gui',
@@ -215,6 +214,10 @@ export const EXPOSED_COMMANDS = [
  * loaded instance's parameters through it whenever the automation menu or
  * panel opens, so its caller never went away.
  *
+ * `cancel_graph_offline` is denied until the export's cancel invokes it: the
+ * body and the transport's `cancelNativeGraphOfflineRender` exist, but no
+ * `src/` caller does yet.
+ *
  * The raw native CRDT document commands are denied because project truth and
  * synchronization use the browser Automerge repository. Their renderer
  * repository wrappers have no product consumers: a wrapper's command-name
@@ -225,6 +228,7 @@ export const EXPOSED_COMMANDS = [
 export const DENIED_COMMANDS = [
     'begin_renderer_session',
     'cancel_dictation',
+    'cancel_graph_offline',
     'close_all_plugin_guis',
     'collab_apply_change',
     'collab_create_project',

@@ -2014,6 +2014,10 @@ impl HostedPluginRuntime for Vst3Wrapper {
     fn report_plugin_observations(&mut self) {
         Vst3Wrapper::report_plugin_observations(self)
     }
+
+    fn has_failed_a_process_call(&self) -> bool {
+        self.process_refused
+    }
 }
 
 // ---------------------------------------------------------------------------
