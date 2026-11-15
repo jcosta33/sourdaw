@@ -10,6 +10,7 @@ import {
     realpathSync,
     rmSync,
     statSync,
+    symlinkSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -62,7 +63,7 @@ import {
     type GitHubJsonClient,
     spawnRun,
 } from '../githubAppIdentity.ts';
-import { TRUSTED_GH_PATH_ENV } from '../prContract.ts';
+import { TRUSTED_GH_PATH_ENV, TRUSTED_GIT_PATH_ENV } from '../prContract.ts';
 import { createIsolatedGitDirectory, releaseIsolatedGitDirectory } from '../tokenBearingChildPlacement.ts';
 import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
 
@@ -2077,6 +2078,114 @@ describe('token-bearing gh children start their git outside every repository', (
             spawnCapture('gh', ['pr', 'view', '1'], { cwd: f.repository, env: f.tokenFreeEnv });
 
             expect(f.observed()).toEqual({ cwd: f.repository, token: '', toplevel: f.repository, marker: 'planted' });
+        });
+    });
+
+    it('names the real parent of its directory as the ceiling when the temporary directory is a symlink into the repository', () => {
+        withGhFixture((f) => {
+            const real = join(f.repository, 'real-tmp');
+            const link = join(f.root, 'tmp-link');
+            mkdirSync(real);
+            symlinkSync(real, link, 'dir');
+            const previous = process.env.TMPDIR;
+            process.env.TMPDIR = link;
+            try {
+                spawnCapture('gh', ['api', 'repos/jcosta33/sourdaw'], { cwd: f.repository, env: f.tokenEnv });
+            } finally {
+                if (previous === undefined) {
+                    delete process.env.TMPDIR;
+                } else {
+                    process.env.TMPDIR = previous;
+                }
+            }
+
+            const observed = f.observed();
+            const ceiling = f
+                .routing()
+                .split('\n')
+                .find((line) => line.startsWith('GIT_CEILING_DIRECTORIES='));
+            expect(observed.cwd.startsWith(`${real}/`)).toBe(true);
+            // The child starts in the resolved directory and names its resolved parent, so the
+            // ceiling and the start directory cannot name different places if the link moves.
+            expect(ceiling).toBe(`GIT_CEILING_DIRECTORIES=${dirname(observed.cwd)}`);
+            expect(observed.toplevel).toBe('');
+            expect(observed.marker).toBe('');
+        });
+    });
+});
+
+describe('git children the launcher resolves to git.exe', () => {
+    // Composed at runtime: the pull-request secret scan matches token-shaped literals in source.
+    const sentinel = ['ghs', 'git', 'exe', 'sentinel'].join('_');
+    const credentialArgs = (root: string) => [
+        '-c',
+        'credential.helper=',
+        '-c',
+        'credential.helper=!/x/helper',
+        'ls-remote',
+        `file://${join(root, 'missing.git')}`,
+    ];
+    // Git runs a `!` alias through the shell with the child's environment.
+    const tokenProbe = ['-c', `alias.probe=!printf '[%s]' "$GH_TOKEN"`, 'probe'];
+
+    /** A link to the real git under `fileName`, as the launcher hands the trusted path to children. */
+    function withLinkedGit(fileName: string, body: (fixture: { root: string; git: string }) => void): void {
+        withScratch('sourdaw-git-exe-', (root) => {
+            const located = spawnSync('/bin/sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+            const git = join(root, 'bin', fileName);
+            mkdirSync(dirname(git));
+            symlinkSync(realpathSync(located), git);
+            fixtureGit(root, ['init', '-q', '-b', 'main']);
+            body({ root, git });
+        });
+    }
+
+    it.each([
+        ['spawnCapture', (args: string[], env: NodeJS.ProcessEnv) => spawnCapture('git', args, { env })],
+        ['spawnCaptureBytes', (args: string[], env: NodeJS.ProcessEnv) => spawnCaptureBytes('git', args, { env })],
+        ['spawnRun', (args: string[], env: NodeJS.ProcessEnv) => spawnRun('git', args, { env })],
+    ])('%s refuses a credential-holding git.exe child outside an isolated git directory', (_label, spawn) => {
+        withLinkedGit('git.exe', ({ root, git }) => {
+            const env = { ...githubAuthorizationGitEnv(), [TRUSTED_GIT_PATH_ENV]: git };
+
+            expect(() => spawn(credentialArgs(root), env)).toThrow(
+                'refusing a token-bearing git child outside an isolated git directory'
+            );
+        });
+    });
+
+    it.each(['git.exe', 'GIT.EXE', 'git'])('keeps the token from a trusted git child named %s', (fileName) => {
+        withLinkedGit(fileName, ({ root, git }) => {
+            const env = { ...githubChildEnv(sentinel, join(root, 'gh-config')), [TRUSTED_GIT_PATH_ENV]: git };
+
+            expect(spawnCapture('git', tokenProbe, { cwd: root, env })).toBe('[]');
+            // Unguarded, the same child prints the token.
+            expect(spawnSync(git, tokenProbe, { cwd: root, env, encoding: 'utf8' }).stdout).toBe(`[${sentinel}]`);
+        });
+    });
+
+    it('treats the requested git as git whatever name its trusted path resolves to', () => {
+        // Not `git-<name>`: git runs a program named that way as the builtin `<name>`.
+        withLinkedGit('trusted-scm', ({ root, git }) => {
+            const env = { ...githubChildEnv(sentinel, join(root, 'gh-config')), [TRUSTED_GIT_PATH_ENV]: git };
+
+            expect(spawnCapture('git', tokenProbe, { cwd: root, env })).toBe('[]');
+            expect(() =>
+                spawnCapture('git', credentialArgs(root), {
+                    env: { ...githubAuthorizationGitEnv(), [TRUSTED_GIT_PATH_ENV]: git },
+                })
+            ).toThrow('refusing a token-bearing git child outside an isolated git directory');
+        });
+    });
+
+    it('treats a git.exe named by absolute path as git', () => {
+        withLinkedGit('git.exe', ({ root, git }) => {
+            expect(
+                spawnCapture(git, tokenProbe, { cwd: root, env: githubChildEnv(sentinel, join(root, 'gh-config')) })
+            ).toBe('[]');
+            expect(() => spawnCapture(git, credentialArgs(root), { env: githubAuthorizationGitEnv() })).toThrow(
+                'refusing a token-bearing git child outside an isolated git directory'
+            );
         });
     });
 });

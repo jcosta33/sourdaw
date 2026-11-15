@@ -60,7 +60,14 @@ a concurrent update refuses. A credential-holding Git child refuses to start unl
 `--git-dir` it names is, character for character, a directory a running transport created; the
 shared repository's own Git directory, a look-alike temporary directory, and a transport directory
 after its transport returned all refuse, and so does a child whose environment sets
-`GIT_COMMON_DIR`, which would move its config back to the shared repository.
+`GIT_COMMON_DIR`, which would move its config back to the shared repository. Git also reads config
+from the environment and from global options, so such a child's `GIT_*` environment must equal the
+sterile authorization environment exactly, keys matched as written (another global or system
+config file, `GIT_CONFIG_PARAMETERS`, a further numbered entry, or `GIT_EXEC_PATH` all refuse), and
+its global options are an allowlist that excludes `--config-env` and `--exec-path`. A child counts
+as credential-holding whenever anything installs a helper: any key case, a URL-scoped
+`credential.<url>.helper`, `--config-env`, or environment config. A child is Git when the caller
+asked for `git` or the path it starts is named `git`, with any `.exe` suffix and in any case.
 Working-tree and object commands (status, diff, merge, show) need lane config but no token, and
 run in the lane or primary without it.
 

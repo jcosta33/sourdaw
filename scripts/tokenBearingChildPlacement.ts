@@ -75,9 +75,14 @@ const GIT_REPOSITORY_ROUTING_KEYS = new Set([
 /** `gh repo view` names the checkout's repository from its git remotes, so only it reads one. */
 const CHECKOUT_REPOSITORY_QUERY = ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'] as const;
 
-/** The program a path starts, without the `.exe` suffix the launcher resolves on Windows. */
-function executableName(command: string): string {
-    return basename(command).replace(/\.exe$/iu, '');
+/**
+ * The program a path starts, without the `.exe` suffix the launcher resolves on Windows, in lower
+ * case because Windows file names ignore it.
+ */
+export function executableName(command: string): string {
+    return basename(command)
+        .toLowerCase()
+        .replace(/\.exe$/u, '');
 }
 
 function carriesGithubToken(env: NodeJS.ProcessEnv): boolean {
