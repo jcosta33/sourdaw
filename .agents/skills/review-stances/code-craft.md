@@ -80,6 +80,9 @@ findings without a concrete break ("I'd prefer if") are discarded.
    promoted by #6537. Refs named `latestSend` or `focusIndexAfterReveal` without the `Ref` suffix
    (#6594) must fail `@eslint-react/naming-convention-ref-name` under #6540's promotion. #6594's
    checked tree preceded that promotion; #6540's enforcing checked tree omitted the Inspector source.
-   Before accepting green `Lint`, require evidence whose checked tree contains both the added source
-   and the current enforcing configuration. An older `--quiet` warning pass proves neither combined
-   compliance nor a missing rule visitor.
+   The non-strict ruleset can admit independently green source and promotion heads (#6676).
+   Before approving a rule promotion or baseline shrink, require current-integrated-tree CI `Lint`
+   or an exact focused diagnostic for the relevant overlap; the checked tree must contain both the
+   added source and current enforcing configuration. Refresh that witness when either relevant
+   source or enforcing configuration changes. An older `--quiet` warning pass proves neither
+   combined compliance nor a missing rule visitor.

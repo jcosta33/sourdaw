@@ -47,9 +47,13 @@ function getExistingVcaMembershipCollectionKeys(context: ProjectContext, trackId
         .map((group) => `vca-members:${group.id}`);
 }
 
-const noKeys = (): string[] => [];
+function noKeys(): string[] {
+    return [];
+}
 
-const actionTypeKey = (action: ActionOf<'setTempo' | 'setTimeSignature' | 'reorderTrack'>): string[] => [action.type];
+function actionTypeKey(action: ActionOf<'setTempo' | 'setTimeSignature' | 'reorderTrack'>): string[] {
+    return [action.type];
+}
 
 function renameSectionKeys(
     action: ActionOf<'renameSection'>,
@@ -90,7 +94,7 @@ function removeFromVcaKeys(action: ActionOf<'removeFromVca'>, context: ProjectCo
     ];
 }
 
-const automationLanePointsKeys = (
+function automationLanePointsKeys(
     action: ActionOf<
         | 'scaleAutomation'
         | 'stretchAutomation'
@@ -99,18 +103,20 @@ const automationLanePointsKeys = (
         | 'thinAutomation'
         | 'quantizeAutomation'
     >
-): string[] => [`automation-lane-points:${action.payload.laneId}`];
+): string[] {
+    return [`automation-lane-points:${action.payload.laneId}`];
+}
 
-const sendKeys = (action: ActionOf<'setSend' | 'addSend' | 'removeSend'>): string[] => [
-    `send:${action.payload.trackId}:${action.payload.busId}`,
-];
+function sendKeys(action: ActionOf<'setSend' | 'addSend' | 'removeSend'>): string[] {
+    return [`send:${action.payload.trackId}:${action.payload.busId}`];
+}
 
 function addSidechainRouteKeys(action: ActionOf<'addSidechainRoute'>): string[] {
     const targetDeviceId = action.payload.targetDeviceId ?? action.payload.targetTrackId;
     return [`sidechain:${action.payload.sourceTrackId}:${targetDeviceId}`];
 }
 
-const trackScopedKeys = (
+function trackScopedKeys(
     action: ActionOf<
         | 'renameTrack'
         | 'muteTrack'
@@ -122,7 +128,9 @@ const trackScopedKeys = (
         | 'setTrackColor'
         | 'setAutomationMode'
     >
-): string[] => [`${action.type}:${action.payload.trackId}`];
+): string[] {
+    return [`${action.type}:${action.payload.trackId}`];
+}
 
 function moveClipKeys(action: ActionOf<'moveClip'>, context: ProjectContext): string[] {
     return [
