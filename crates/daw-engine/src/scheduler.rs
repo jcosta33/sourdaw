@@ -5029,7 +5029,7 @@ impl IdSlotIndex {
 
     #[inline]
     fn bit_at(id: usize, depth: u32) -> usize {
-        ((id >> (usize::BITS - 1 - depth)) & 1) as usize
+        (id >> (usize::BITS - 1 - depth)) & 1
     }
 
     #[inline]
@@ -9107,8 +9107,8 @@ mod tests {
         for ordinal in (0..64).step_by(2) {
             assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
         }
-        for ordinal in 64..128 {
-            assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
+        for (ordinal, id) in ids.iter().copied().enumerate().skip(64).take(64) {
+            assert_eq!(index.delete(id), Some(ordinal + 1_000));
         }
         assert!(
             index.last_delete_steps <= 2 * usize::BITS as usize,
@@ -9132,8 +9132,8 @@ mod tests {
         // Refill a fully removed shared-prefix branch. This would grow the node
         // store if deletion left dead paths behind; it also makes every
         // surviving mapping contend with reused radix nodes.
-        for ordinal in 64..128 {
-            assert!(index.insert(ids[ordinal], ordinal + 1_000));
+        for (ordinal, id) in ids.iter().copied().enumerate().skip(64).take(64) {
+            assert!(index.insert(id, ordinal + 1_000));
         }
         assert_eq!(
             index.nodes.len(),
@@ -12301,7 +12301,7 @@ mod tests {
             const FRAMES: usize = 512;
             let frame_total = material.len();
             assert!(
-                frame_total % FRAMES == 0,
+                frame_total.is_multiple_of(FRAMES),
                 "the fixture material must be a whole number of callbacks"
             );
             let callbacks = frame_total / FRAMES;

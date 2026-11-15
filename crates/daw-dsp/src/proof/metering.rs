@@ -231,7 +231,7 @@ const LOUDNESS_OFFSET_DB: f64 = -0.691;
 /// [`SILENCE_DB`] floor the meters have always shown for silence.
 #[inline]
 fn loudness_from_energy(energy: f64) -> f32 {
-    if !(energy > 1e-20) {
+    if energy.is_nan() || energy <= 1e-20 {
         return SILENCE_DB;
     }
     (LOUDNESS_OFFSET_DB + 10.0 * energy.log10()) as f32
@@ -780,7 +780,7 @@ fn gated_loudness_range(blocks: &[f64], scratch: &mut Vec<f64>) -> f32 {
 
     // A range is a *difference* of loudnesses, so the −0.691 offset cancels and
     // this is the ratio of the two energies in decibels.
-    if !(low > 0.0) || !(high > 0.0) {
+    if low.is_nan() || low <= 0.0 || high.is_nan() || high <= 0.0 {
         return 0.0;
     }
     (10.0 * (high / low).log10()) as f32
@@ -917,6 +917,12 @@ impl TruePeakDetector {
     }
 }
 
+impl Default for TruePeakDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Loudness Range (LRA) — EBU R128.
 /// Computed from short-term LUFS blocks using percentile method.
 /// Lowest loudness the quantile histogram resolves. Blocks at or under the
@@ -1004,11 +1010,11 @@ impl LoudnessQuantiles {
     fn push(&mut self, energy: f64) {
         self.total += 1;
         // Rejects NaN as well as anything at or under the absolute gate.
-        if !(energy > absolute_gate_energy()) || !energy.is_finite() {
+        if energy <= absolute_gate_energy() || !energy.is_finite() {
             return;
         }
         let lufs = loudness_from_energy(energy);
-        if !(lufs > QUANTILE_MIN_LUFS) || !lufs.is_finite() {
+        if lufs <= QUANTILE_MIN_LUFS || !lufs.is_finite() {
             return;
         }
         self.gate_energy_sum += energy;
@@ -2796,7 +2802,7 @@ mod loudness_block_store_tests {
         let sr = 48_000.0;
         let mut meter = LoudnessRange::new(sr);
         for n in 0..(sr as usize * 32) {
-            let loud = (n / (sr as usize * 8)) % 2 == 0;
+            let loud = (n / (sr as usize * 8)).is_multiple_of(2);
             let amp = if loud { 0.5 } else { 0.05 };
             let s = amp * (2.0 * core::f64::consts::PI * 1_000.0 * n as f64 / sr).sin();
             meter.process_sample(s as f32, s as f32);

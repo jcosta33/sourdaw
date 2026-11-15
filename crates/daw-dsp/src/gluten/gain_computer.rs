@@ -42,7 +42,7 @@ pub fn auto_makeup(threshold: f32, ratio: f32) -> f32 {
 #[inline]
 pub fn db_to_linear(db: f32) -> f32 {
     // 10^(db/20) = 2^(db * log2(10)/20) = 2^(db * 0.16609...)
-    (db * 0.16609640474436813_f32).exp2()
+    (db * 0.166_096_4_f32).exp2()
 }
 
 /// Fast linear to dB.

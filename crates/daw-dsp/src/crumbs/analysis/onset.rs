@@ -98,14 +98,14 @@ pub fn detect_superflux(samples: &[f32], config: &OnsetConfig) -> OnsetResult {
 
         // Apply max filter to previous frame (vibrato suppression).
         let mut prev_filtered = vec![0.0f32; num_bins];
-        for bin in 0..num_bins {
+        for (bin, slot) in prev_filtered.iter_mut().enumerate() {
             let lo = bin.saturating_sub(MAX_FILTER_WIDTH);
             let hi = (bin + MAX_FILTER_WIDTH + 1).min(num_bins);
             let mut max_val = 0.0f32;
-            for filtered_bin in lo..hi {
-                max_val = max_val.max(prev[filtered_bin]);
+            for &filtered in prev.iter().take(hi).skip(lo) {
+                max_val = max_val.max(filtered);
             }
-            prev_filtered[bin] = max_val;
+            *slot = max_val;
         }
 
         // Spectral flux: sum of positive differences (half-wave rectification).

@@ -57,9 +57,10 @@ pub const MIPMAP_BASE_BLOCK: usize = 64;
 // ── Enumerations ───────────────────────────────────────────────────────
 
 /// Top-level crumbs operating mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CrumbsMode {
     /// Chromatic playback across the keyboard.
+    #[default]
     Quick,
     /// MPC-style pad grid with choke groups and one-shots.
     Drum,
@@ -71,31 +72,21 @@ pub enum CrumbsMode {
     Record,
 }
 
-impl Default for CrumbsMode {
-    fn default() -> Self {
-        Self::Quick
-    }
-}
-
 /// Voice-level playback mode (how a single voice behaves).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PlaybackMode {
     /// Play once, then stop.
     OneShot,
     /// Sustain while key held, release on note-off.
+    #[default]
     Sustain,
 }
 
-impl Default for PlaybackMode {
-    fn default() -> Self {
-        Self::Sustain
-    }
-}
-
 /// Loop behavior within a voice.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LoopMode {
     /// No looping — play through and stop.
+    #[default]
     Off,
     /// Loop forward continuously.
     Forward,
@@ -105,29 +96,18 @@ pub enum LoopMode {
     Reverse,
 }
 
-impl Default for LoopMode {
-    fn default() -> Self {
-        Self::Off
-    }
-}
-
 /// Filter mode selector.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FilterType {
+    #[default]
     Lowpass,
     Highpass,
     Bandpass,
     Notch,
 }
 
-impl Default for FilterType {
-    fn default() -> Self {
-        Self::Lowpass
-    }
-}
-
 /// Sample content classification for auto-mode detection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SampleCategory {
     /// Percussive / transient-heavy content.
     Percussive,
@@ -136,13 +116,8 @@ pub enum SampleCategory {
     /// Tonal / melodic content.
     Tonal,
     /// Unknown — user must choose mode.
+    #[default]
     Unknown,
-}
-
-impl Default for SampleCategory {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 // ── Data Structures ────────────────────────────────────────────────────
@@ -241,20 +216,15 @@ pub struct SampleMeta {
 }
 
 /// Recording state for the Recorder mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RecordState {
     /// Waiting for input signal to exceed threshold.
     Armed,
     /// Actively recording.
     Recording,
     /// Not recording.
+    #[default]
     Idle,
-}
-
-impl Default for RecordState {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 /// Commands sent from the non-RT management thread to the RT audio thread.

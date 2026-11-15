@@ -46,8 +46,10 @@ use tom_808::{Tom808Engine, TomVariant};
 /// Which synthesis algorithm a pad uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum DrumEngineType {
     // Existing generic engines (unchanged)
+    #[default]
     Kick,
     Snare,
     HiHat,
@@ -119,12 +121,6 @@ impl DrumEngineType {
     }
 }
 
-impl Default for DrumEngineType {
-    fn default() -> Self {
-        Self::Kick
-    }
-}
-
 /// Polymorphic drum synth engine wrapping all engine types.
 pub enum DrumSynthEngine {
     // Existing generic engines
@@ -169,6 +165,12 @@ impl DrumEngineResources {
         Self {
             hihat_909_buffer: HiHat909Engine::generate_buffer(),
         }
+    }
+}
+
+impl Default for DrumEngineResources {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

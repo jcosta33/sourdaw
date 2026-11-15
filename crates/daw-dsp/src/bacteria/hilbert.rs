@@ -112,15 +112,9 @@ pub const QUADRATURE_HIGH_NORM: f32 = 0.45;
 
 // Polyphase half-band all-pass coefficients for a wideband 90° phase
 // difference. Coefficients are design values `a`; each section squares its own.
-const QUADRATURE_BRANCH_COEFFS: [f32; 4] =
-    [0.6923878, 0.9360654322959, 0.9882295226860, 0.9987488452737];
+const QUADRATURE_BRANCH_COEFFS: [f32; 4] = [0.6923878, 0.936_065_44, 0.988_229_5, 0.998_748_84];
 
-const IN_PHASE_BRANCH_COEFFS: [f32; 4] = [
-    0.4021921162426,
-    0.8561710882420,
-    0.9722909545651,
-    0.9952884791278,
-];
+const IN_PHASE_BRANCH_COEFFS: [f32; 4] = [0.402_192_12, 0.856_171_1, 0.972_290_93, 0.995_288_5];
 
 impl HilbertShifter {
     pub fn new(sample_rate: f32) -> Self {

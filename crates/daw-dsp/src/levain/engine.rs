@@ -587,10 +587,9 @@ impl LevainEngine {
             voice.cancel_pending_attack();
         }
         self.auto_divisi.clear();
-        let zone_map = std::mem::replace(&mut self.zone_map, ZoneMap::new());
+        let zone_map = std::mem::take(&mut self.zone_map);
         let sample_pool = std::mem::replace(&mut self.sample_pool, Arc::new(SamplePool::new()));
-        let legato_transitions =
-            std::mem::replace(&mut self.legato.transitions, LegatoTransitionStore::new());
+        let legato_transitions = std::mem::take(&mut self.legato.transitions);
         self.retired_bank = Some(RetiredBank::from_live(
             zone_map,
             sample_pool,
@@ -1858,7 +1857,9 @@ mod tests {
 
     fn window_peaks(samples: &[f32]) -> Vec<f32> {
         samples
-            .chunks_exact(ENVELOPE_WINDOW)
+            .as_chunks::<ENVELOPE_WINDOW>()
+            .0
+            .iter()
             .map(|window| {
                 window
                     .iter()

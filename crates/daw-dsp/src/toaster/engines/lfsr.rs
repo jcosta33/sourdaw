@@ -135,9 +135,9 @@ mod tests {
         }
         // The sequence must be consistent across runs (determinism is the key property)
         let mut lfsr2 = Lfsr31::new(0x00000001);
-        for i in 0..8 {
+        for (i, &expected) in seq.iter().enumerate() {
             let v2 = lfsr2.step();
-            assert_eq!(seq[i], v2, "Sequence mismatch at step {i}");
+            assert_eq!(expected, v2, "Sequence mismatch at step {i}");
         }
     }
 }

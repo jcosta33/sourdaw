@@ -718,7 +718,10 @@ pub fn factory_is_non_discardable(factory: &ComPtr<IPluginFactory>) -> bool {
     let Some(info) = factory_info(factory) else {
         return false;
     };
-    info.flags & FactoryFlags_::kComponentNonDiscardable as i32 != 0
+    // The flag constant is `c_int` on Windows and `c_uint` elsewhere, while
+    // the field is always `i32`; reinterpreting the bytes is the same bits.
+    let non_discardable = i32::from_ne_bytes(FactoryFlags_::kComponentNonDiscardable.to_ne_bytes());
+    info.flags & non_discardable != 0
 }
 
 /// The factory's own `PFactoryInfo`, or `None` when it refuses to describe

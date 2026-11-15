@@ -2512,7 +2512,7 @@ fn fader_gain(stored_gain: f64, vca_multiplier: f32) -> Result<f32, String> {
         return Err("gain is negative".to_string());
     }
     let folded = stored as f32 * vca_multiplier;
-    if !(folded > 0.0) {
+    if folded.is_nan() || folded <= 0.0 {
         return Ok(0.0);
     }
     Ok(folded.min(fader_max_gain()))
@@ -4979,7 +4979,7 @@ fn map_schedule_clip(
 /// the same one the renderer holds, applied per channel.
 pub(crate) fn pcm_frame_count(pcm_len: usize, channels: usize) -> Result<usize, String> {
     let bytes_per_frame = 4 * channels;
-    if pcm_len % bytes_per_frame != 0 {
+    if !pcm_len.is_multiple_of(bytes_per_frame) {
         return Err(format!(
             "PCM byte length {pcm_len} is not a whole number of {channels}-channel f32 frames"
         ));
@@ -18206,7 +18206,9 @@ mod tests {
             .await
             .unwrap();
         let decoded: Vec<_> = output
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
             .collect();
         assert!(decoded.iter().all(|value| value.is_finite()));
@@ -18439,7 +18441,12 @@ mod tests {
         let mut oracle = daw_dsp::toaster::transient::TransientShaper::new(48_000.0);
         oracle.set_attack(1.5);
         oracle.set_sustain(0.25);
-        for (dry, frame) in unity.chunks_exact(2).zip(shaped.chunks_exact(2)) {
+        for (dry, frame) in unity
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .zip(shaped.as_chunks::<2>().0.iter())
+        {
             assert_eq!(dry, &[0.5, 0.5]);
             let expected = oracle.process(0.5);
             assert_eq!(frame, &[expected, expected]);
@@ -18530,7 +18537,7 @@ mod tests {
         .unwrap();
         let mut scalar = daw_dsp::toaster::transient::TransientShaper::new(48000.0);
         scalar.set_sustain(0.25);
-        for (frame, pair) in rendered.chunks_exact(2).enumerate() {
+        for (frame, pair) in rendered.as_chunks::<2>().0.iter().enumerate() {
             scalar.set_attack(if frame < 512 { 1.5 } else { 2.0 });
             let expected = scalar.process(0.5);
             assert_eq!(

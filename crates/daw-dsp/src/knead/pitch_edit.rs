@@ -84,8 +84,8 @@ impl CompiledDeltaMap {
             let start_frame = start_sample / hop_size;
             let end_frame = (end_sample / hop_size).min(num_frames);
 
-            for i in start_frame..end_frame {
-                deltas[i] = segment.shift_semitones;
+            for delta in deltas.iter_mut().take(end_frame).skip(start_frame) {
+                *delta = segment.shift_semitones;
             }
         }
 

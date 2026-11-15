@@ -122,3 +122,9 @@ impl SpectralWarp {
         }
     }
 }
+
+impl Default for SpectralWarp {
+    fn default() -> Self {
+        Self::new()
+    }
+}

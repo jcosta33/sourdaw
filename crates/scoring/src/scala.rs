@@ -1,14 +1,14 @@
-/// Scala .scl and AnaMark .tun file format parsers.
-///
-/// Scala: comments (!), description, note count N, then N pitch values
-/// as either cents (408.0) or ratios (5/4).
-///
-/// AnaMark (.tun, spec "AnaMark Tuning file format V2.00", mark-henning.de):
-/// an INI-style file whose scale block is `[Tuning]` (V1) or `[Exact Tuning]`
-/// (V2, nested inside `[Scale Begin]` / `[Scale End]`). Each entry is
-/// `note <midi> = <cents>` with cents measured from MIDI note 0, so 12-TET
-/// writes `note 0 = 0.0` through `note 127 = 12700.0`. Lines starting with ';'
-/// are comments.
+//! Scala .scl and AnaMark .tun file format parsers.
+//!
+//! Scala: comments (!), description, note count N, then N pitch values
+//! as either cents (408.0) or ratios (5/4).
+//!
+//! AnaMark (.tun, spec "AnaMark Tuning file format V2.00", mark-henning.de):
+//! an INI-style file whose scale block is `[Tuning]` (V1) or `[Exact Tuning]`
+//! (V2, nested inside `[Scale Begin]` / `[Scale End]`). Each entry is
+//! `note <midi> = <cents>` with cents measured from MIDI note 0, so 12-TET
+//! writes `note 0 = 0.0` through `note 127 = 12700.0`. Lines starting with ';'
+//! are comments.
 
 /// A parsed Scala scale.
 pub struct ScalaScale {
@@ -127,6 +127,12 @@ impl ScalaScale {
         }
 
         offsets
+    }
+}
+
+impl Default for ScalaScale {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -251,12 +257,18 @@ impl AnaMarkTuning {
     pub fn to_12tet_offsets(&self) -> [f32; 12] {
         let mut offsets = [0.0_f32; 12];
         // Use notes around middle octave (60-71 = C4-B4)
-        for i in 0..12 {
+        for (i, offset) in offsets.iter_mut().enumerate() {
             let note = 60 + i;
             let tet_cents = note as f32 * 100.0;
-            offsets[i] = self.cents[note] - tet_cents;
+            *offset = self.cents[note] - tet_cents;
         }
         offsets
+    }
+}
+
+impl Default for AnaMarkTuning {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -490,7 +502,7 @@ note 60 = 5990.000   ; trailing comment
         let text = tun_v2("BaseFreq = 8.1757989156\nnote 69 = 6900.0\n");
         let tuning = AnaMarkTuning::parse_tun(&text).expect("valid .tun rejected");
         let base = tuning.base_freq.expect("declared BaseFreq dropped");
-        assert!((base - 8.1757989).abs() < 1e-5, "read {base}");
+        assert!((base - 8.175_799).abs() < 1e-5, "read {base}");
     }
 
     #[test]

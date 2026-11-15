@@ -700,7 +700,10 @@ impl GlutenEngine {
 
     fn compute_auto_makeup(&self) -> f32 {
         let primary = self.topology_auto_makeup(self.active_topology);
-        if !(self.blend_amount > 0.001) || self.blend_topology == self.active_topology {
+        if self.blend_amount.is_nan()
+            || self.blend_amount <= 0.001
+            || self.blend_topology == self.active_topology
+        {
             return primary;
         }
         primary + self.topology_auto_makeup(self.blend_topology) * self.blend_amount

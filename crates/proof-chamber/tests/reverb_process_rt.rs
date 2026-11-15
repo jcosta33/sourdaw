@@ -49,7 +49,11 @@ fn excitation(frame: usize) -> f32 {
     // An impulse train keeps energy going into the tail for the whole run
     // instead of letting it decay to denormals halfway through.
     let tone = (t * 330.0 * std::f32::consts::TAU).sin() * 0.4;
-    let click = if frame % 4_096 == 0 { 0.9 } else { 0.0 };
+    let click = if frame.is_multiple_of(4_096) {
+        0.9
+    } else {
+        0.0
+    };
     tone + click
 }
 

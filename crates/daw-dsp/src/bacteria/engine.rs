@@ -209,7 +209,7 @@ impl MsAlignmentDelay {
     /// An inactive source is explicitly empty, so it cannot resurrect a tail.
     fn configure(&mut self, delay_eighths: usize, active: bool) {
         let whole = delay_eighths / 8;
-        let fractional = delay_eighths % 8 != 0;
+        let fractional = !delay_eighths.is_multiple_of(8);
         debug_assert!(!fractional || whole >= MS_ALIGNMENT_SUPPORT);
         debug_assert!(
             whole + if fractional { MS_ALIGNMENT_SUPPORT } else { 0 } < ALIGNMENT_RING_LEN
@@ -1301,7 +1301,7 @@ impl BacteriaEngine {
         } else {
             0
         };
-        let support = if configured_mid % 8 != 0 || configured_side % 8 != 0 {
+        let support = if !configured_mid.is_multiple_of(8) || configured_side % 8 != 0 {
             MS_ALIGNMENT_SUPPORT
         } else {
             0
@@ -3554,11 +3554,11 @@ mod tests {
             .map(|(index, _)| index)
             .unwrap();
         assert_eq!(
-            peak, FIR_DELAY as usize,
+            peak, FIR_DELAY,
             "the impulse must leave at the reported delay, found at {peak}"
         );
         assert!(
-            left[..FIR_DELAY as usize].iter().all(|s| s.abs() < 1e-4),
+            left[..FIR_DELAY].iter().all(|s| s.abs() < 1e-4),
             "no output may appear before the reported delay"
         );
 

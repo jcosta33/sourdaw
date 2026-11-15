@@ -1,10 +1,10 @@
-/// Real CLAP plugin wrapper — loads .clap shared libraries and hosts them.
-///
-/// Flow: dlopen → clap_entry.init() → factory.create_plugin(host, id) → plugin.activate() → plugin.process()
-///
-/// RT-safety: `process_audio_internal` and `process_with_midi` are called on the audio thread.
-/// All scratch buffers are preallocated in `new` — no heap allocation occurs
-/// on the RT path.
+//! Real CLAP plugin wrapper — loads .clap shared libraries and hosts them.
+//!
+//! Flow: dlopen → clap_entry.init() → factory.create_plugin(host, id) → plugin.activate() → plugin.process()
+//!
+//! RT-safety: `process_audio_internal` and `process_with_midi` are called on the audio thread.
+//! All scratch buffers are preallocated in `new` — no heap allocation occurs
+//! on the RT path.
 
 /// Maximum audio buffer size this host supports (must match the max_frames_count passed to activate).
 ///
@@ -766,7 +766,7 @@ impl ClapWrapper {
         sample_rate: f64,
     ) -> Result<Self, String> {
         // 4. Get the plugin factory
-        let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr() as *const i8;
+        let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr();
         let factory_ptr = if let Some(get_factory) = (*entry_ptr).get_factory {
             get_factory(factory_id)
         } else {
@@ -2268,9 +2268,8 @@ fn fill_input_scratch(audio: &mut AudioBusLayout, inputs: &[&[f32]], n_samp: usi
         .first()
         .map_or(0, |main_port| main_port.channel_count as usize);
     let channels = (inputs.len().min(2)).min(connected_channels);
-    for channel in 0..channels {
+    for (channel, source) in inputs.iter().enumerate().take(channels) {
         let destination = &mut audio.input_scratch[channel * MAX_BUFFER..][..n_samp];
-        let source = &inputs[channel];
         let len = source.len().min(n_samp);
         destination[..len].copy_from_slice(&source[..len]);
         destination[len..].fill(0.0);

@@ -153,6 +153,12 @@ impl MidiEventBuffer {
     }
 }
 
+impl Default for MidiEventBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A parameter of a user-placeable MIDI FX, addressed without a name for the
 /// reason given on [`crate::timeline::AutomationTarget`]: a command carrying a
 /// `String` would have its allocation freed on the audio thread when the
@@ -265,6 +271,12 @@ impl MidiFxChain {
     /// order of the chain, so it is load-bearing here.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Box<dyn MidiFx>> {
         self.slots.iter_mut().flatten()
+    }
+}
+
+impl Default for MidiFxChain {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

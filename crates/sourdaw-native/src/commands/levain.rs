@@ -323,7 +323,9 @@ impl LevainBankStore {
             ));
         }
         let interleaved: Arc<[f32]> = pcm
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|word| f32::from_le_bytes([word[0], word[1], word[2], word[3]]))
             .collect();
         bank.samples.insert(
