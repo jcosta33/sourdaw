@@ -247,7 +247,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts",
-                    "digest": "9958887aa9883ef9ac45edb99c940e1a2728601b7b2b098c0d83048cd9aec3e0"
+                    "digest": "cc7cac5501186013008cfae5891f58e030cb772b031205e059e9d05fbd133497"
                 }
             ]
         },
@@ -383,7 +383,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts",
-                    "digest": "baedf3d7680f085f307b0c8123ddb7dc7be547b5584e3b7dead60b04a133f7c8"
+                    "digest": "0c4e8f56363bbf241c070526539bf84a3ef07209aa020efae5b40e61b365af1a"
                 }
             ]
         },
@@ -745,7 +745,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "67579169f9bfa8ae0054ed4cf49c98cf42c648f833f78fb3de83290ed69c29b8"
+                    "digest": "c18875ec49857fcdd4b91d282fb74d7f4de986956a51249fcbc875029e00dab0"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",
