@@ -13,6 +13,14 @@ import { toasterRefusalEpisodes } from '../toasterRefusalEpisodes';
 type MorphQueue = { tail: Promise<void>; lastCommittedKit: ToasterKit | null };
 const morphQueues = new Map<string, MorphQueue>();
 
+/** The reason the commit guard refuses a morph whose kit changed under it. */
+const STALE_MORPH_AUTHORITY = 'Toaster kit changed before morph commit';
+
+/** The guard's own abort, which is the guard doing its job rather than a failure. */
+function isStaleMorphAuthority(error: unknown): boolean {
+    return isAppActionConflictError(error) && error.reason === STALE_MORPH_AUTHORITY;
+}
+
 /**
  * Morph gestures write document truth before changing the session projection.
  * A project switch or peer edit refuses the stale operation rather than
@@ -93,7 +101,7 @@ async function commitCurrentToasterMorphKitChange(
             {
                 skipMacroRecording: true,
                 shouldExecute: stillCurrent,
-                authorizeFirstHandler: () => (stillCurrent() ? null : 'Toaster kit changed before morph commit'),
+                authorizeFirstHandler: () => (stillCurrent() ? null : STALE_MORPH_AUTHORITY),
                 onCommitted: () => {
                     committed = true;
                     const current = toasterStore.value?.[deviceId];
@@ -115,8 +123,9 @@ async function commitCurrentToasterMorphKitChange(
             queue.lastCommittedKit = nextKit;
         }
     } catch (error) {
-        // A stale-authority abort is the guard above doing its job, not a failure.
-        if (!isAppActionConflictError(error)) {
+        // A storage conflict (a peer write landing before the commit) drops the morph too, so only
+        // the guard's own abort stays quiet.
+        if (!isStaleMorphAuthority(error)) {
             logger.error(new Error('Toaster morph commit failed', { cause: error }));
         }
         return committed;
