@@ -161,10 +161,7 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                         </Row>
                         {prefs.preRollEnabled ? (
                             <Stack gap={1}>
-                                <span
-                                    id={`${groupId}-pre-roll`}
-                                    className="text-[10px] text-muted-foreground block"
-                                >
+                                <span id={`${groupId}-pre-roll`} className="text-[10px] text-muted-foreground block">
                                     Pre-roll bars
                                 </span>
                                 <Row role="group" aria-labelledby={`${groupId}-pre-roll`} align="stretch" gap={1}>

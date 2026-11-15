@@ -49,35 +49,35 @@ export const AutomationContextMenu = ({
             className="min-w-[160px]"
             role="menu"
         >
-                {section !== 'shape' ? (
-                    <>
-                        <DawMenuSectionLabel className="px-2">Curve Type</DawMenuSectionLabel>
-                        {CURVE_OPTIONS.map((opt) => (
-                            <DawMenuButton
-                                key={opt.value}
-                                className={cn(
-                                    'justify-start px-3 text-foreground hover:bg-accent/50 hover:text-foreground',
-                                    points.find((param) => Math.abs(param.beat - beat) < 0.05)?.curve === opt.value &&
-                                        'text-primary font-medium'
-                                )}
-                                onClick={() => onCurveSelect(opt.value)}
-                            >
-                                {opt.label}
-                            </DawMenuButton>
-                        ))}
-                        <DawMenuSeparator />
-                    </>
-                ) : null}
-                <DawMenuSectionLabel className="px-2">Insert Shape</DawMenuSectionLabel>
-                {SHAPE_OPTIONS.map((opt) => (
-                    <DawMenuButton
-                        key={opt.value}
-                        className="justify-start px-3 text-foreground hover:bg-accent/50 hover:text-foreground"
-                        onClick={() => onShapeInsert(opt.value)}
-                    >
-                        {opt.label}
-                    </DawMenuButton>
-                ))}
+            {section !== 'shape' ? (
+                <>
+                    <DawMenuSectionLabel className="px-2">Curve Type</DawMenuSectionLabel>
+                    {CURVE_OPTIONS.map((opt) => (
+                        <DawMenuButton
+                            key={opt.value}
+                            className={cn(
+                                'justify-start px-3 text-foreground hover:bg-accent/50 hover:text-foreground',
+                                points.find((param) => Math.abs(param.beat - beat) < 0.05)?.curve === opt.value &&
+                                    'text-primary font-medium'
+                            )}
+                            onClick={() => onCurveSelect(opt.value)}
+                        >
+                            {opt.label}
+                        </DawMenuButton>
+                    ))}
+                    <DawMenuSeparator />
+                </>
+            ) : null}
+            <DawMenuSectionLabel className="px-2">Insert Shape</DawMenuSectionLabel>
+            {SHAPE_OPTIONS.map((opt) => (
+                <DawMenuButton
+                    key={opt.value}
+                    className="justify-start px-3 text-foreground hover:bg-accent/50 hover:text-foreground"
+                    onClick={() => onShapeInsert(opt.value)}
+                >
+                    {opt.label}
+                </DawMenuButton>
+            ))}
         </DawContextMenuSurface>
     );
 };

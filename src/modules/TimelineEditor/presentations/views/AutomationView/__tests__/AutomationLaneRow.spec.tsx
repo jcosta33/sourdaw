@@ -11,6 +11,7 @@ import {
     toggleAutomationVisibility,
     removeAutomationLane,
     restoreAutomationLanes,
+    getAutomationValueAtBeat,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
@@ -19,6 +20,7 @@ import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
 import { type AutomationLane, type AutomationPoint } from '../../../../models/AutomationViewTypes';
 import {
+    addAutomationPointWithUndo,
     onDrawMouseDown,
     onPointMouseDown,
     onRubberBandStart,
@@ -110,6 +112,7 @@ vi.mock('../../../helpers/automationLaneConstants', () => ({
 }));
 
 vi.mock('../../../helpers/automationDrag', () => ({
+    addAutomationPointWithUndo: vi.fn(),
     onDrawMouseDown: vi.fn(),
     onRubberBandStart: vi.fn(),
     onTensionMouseDown: vi.fn(),
@@ -160,6 +163,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
     deleteSelectedPoints: vi.fn(),
     adjustYZoom: vi.fn(),
     zoomToUsedRange: vi.fn(),
+    getAutomationValueAtBeat: vi.fn(() => null),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -715,5 +719,61 @@ describe('AutomationLaneRow', () => {
             "M 0 93.6 ",
           ]
         `);
+    });
+
+    describe('keyboard cursor at the playhead', () => {
+        const getLane = () => screen.getByRole('group', { name: 'Volume automation lane' });
+
+        it('adds a point where the line sits at the playhead on Enter and claims the key', () => {
+            playheadPositionRef.current = 6;
+            vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.4);
+            render(<AutomationLaneRow {...defaultProps} />);
+
+            expect(fireEvent.keyDown(getLane(), { key: 'Enter' })).toBe(false);
+
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 6);
+            expect(addAutomationPointWithUndo).toHaveBeenCalledWith('lane-1', 6, 0.4);
+        });
+
+        it('adds nothing when the lane draws no value at the playhead, yet still claims Enter', () => {
+            vi.mocked(getAutomationValueAtBeat).mockReturnValue(null);
+            render(<AutomationLaneRow {...defaultProps} />);
+
+            expect(fireEvent.keyDown(getLane(), { key: 'Enter' })).toBe(false);
+            expect(addAutomationPointWithUndo).not.toHaveBeenCalled();
+        });
+
+        it.each([{ key: 'ContextMenu' }, { key: 'F10', shiftKey: true }])(
+            'opens the shape menu at the playhead beat on $key',
+            (keyInit) => {
+                playheadPositionRef.current = 3;
+                render(<AutomationLaneRow {...defaultProps} />);
+
+                expect(fireEvent.keyDown(getLane(), keyInit)).toBe(false);
+
+                const menu = screen.getByTestId('context-menu');
+                expect(menu).toHaveAttribute('data-section', 'shape');
+                expect(menu).toHaveAttribute('data-beat', '3');
+            }
+        );
+
+        it('leaves Enter from inside the lane and modified Enter to their owners', () => {
+            vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.4);
+            const { container } = render(<AutomationLaneRow {...defaultProps} />);
+
+            expect(fireEvent.keyDown(container.querySelector('svg')!, { key: 'Enter' })).toBe(true);
+            expect(fireEvent.keyDown(getLane(), { key: 'Enter', shiftKey: true })).toBe(true);
+            expect(addAutomationPointWithUndo).not.toHaveBeenCalled();
+        });
+
+        it('starts no curve gesture for a press on the lane header', () => {
+            render(<AutomationLaneRow {...defaultProps} />);
+
+            fireEvent.mouseDown(screen.getByTestId('lane-header'), { button: 0 });
+            fireEvent.contextMenu(screen.getByTestId('lane-header'));
+
+            expect(onRubberBandStart).not.toHaveBeenCalled();
+            expect(screen.queryByTestId('context-menu')).not.toBeInTheDocument();
+        });
     });
 });

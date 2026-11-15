@@ -189,7 +189,8 @@ export const TrackListView = ({
     // The grid owns selection for both inputs: the keyboard in `handleKeyDown`,
     // the pointer through the row a click lands in.
     const handleRowClick = (event: MouseEvent<HTMLDivElement>): void => {
-        const row = event.target instanceof Element ? event.target.closest('[role="row"]') : null;
+        // Keyed by the track id, not the row role: the track header renders a row of its own.
+        const row = event.target instanceof Element ? event.target.closest('[data-track-id]') : null;
         const trackId = row?.getAttribute('data-track-id');
         if (trackId) {
             selectTrack(trackId);

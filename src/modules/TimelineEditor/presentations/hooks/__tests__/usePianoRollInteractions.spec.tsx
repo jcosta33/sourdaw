@@ -44,12 +44,12 @@ const mocks = vi.hoisted(() => {
                 {
                     id: 'track-1',
                     kind: 'midi',
-                    clips: [{ id: 'clip-1', type: 'midi' }],
+                    clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 64 }],
                 },
                 {
                     id: 'track-2',
                     kind: 'midi',
-                    clips: [{ id: 'clip-2', type: 'midi' }],
+                    clips: [{ id: 'clip-2', type: 'midi', startBeat: 0, endBeat: 64 }],
                 },
             ],
         },
@@ -1285,8 +1285,8 @@ describe('usePianoRollInteractions', () => {
                 loopLength?: number;
             };
 
-            /** Replaces clip-1's arrangement placement; the default is an unplaced clip. */
-            const placeClip = (placement: Omit<ClipFixture, 'id' | 'type'> = {}): void => {
+            /** Replaces clip-1's arrangement placement; the default spans beats 0 to 64. */
+            const placeClip = (placement: Omit<ClipFixture, 'id' | 'type'> = { startBeat: 0, endBeat: 64 }): void => {
                 const [primaryTrack] = mocks.trackState.tracks;
                 if (primaryTrack) {
                     primaryTrack.clips = [{ id: 'clip-1', type: 'midi', ...placement }];

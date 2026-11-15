@@ -66,6 +66,27 @@ export const onDrawMouseDown = (
     );
 };
 
+// ── Point insertion ──────────────────────────────────────────────────────────
+
+/** Add one linear point to a lane as a single undoable edit: the click and keyboard routes share it. */
+export const addAutomationPointWithUndo = (laneId: string, beat: number, value: number): void => {
+    // The id is what makes the undo side remove exactly the point this edit
+    // added; removing by beat would also take any other point already sitting
+    // at the same beat.
+    const pointId = `auto-point-${crypto.randomUUID()}`;
+    const point: AutomationPoint = { id: pointId, beat, value, curve: 'linear', tension: 0 };
+    addAutomationPoint(laneId, point);
+    pushUndoEntry(
+        'Add automation point',
+        () => {
+            removeAutomationPointById(laneId, pointId);
+        },
+        () => {
+            addAutomationPoint(laneId, point);
+        }
+    );
+};
+
 // ── Rubber-band selection ────────────────────────────────────────────────────
 
 export const onRubberBandStart = (
@@ -130,23 +151,7 @@ export const onRubberBandStart = (
                     setSelectedPoints(found);
                 }
             } else if (!isShift) {
-                const beat = Math.max(0, coords.xToBeat(x));
-                const value = coords.yToValue(y);
-                // The id is what makes the undo side remove exactly the point
-                // this click added; removing by beat would also take any other
-                // point already sitting at the same beat.
-                const pointId = `auto-point-${crypto.randomUUID()}`;
-                const point: AutomationPoint = { id: pointId, beat, value, curve: 'linear', tension: 0 };
-                addAutomationPoint(lane.id, point);
-                pushUndoEntry(
-                    'Add automation point',
-                    () => {
-                        removeAutomationPointById(lane.id, pointId);
-                    },
-                    () => {
-                        addAutomationPoint(lane.id, point);
-                    }
-                );
+                addAutomationPointWithUndo(lane.id, Math.max(0, coords.xToBeat(x)), coords.yToValue(y));
             }
             setRubberBand(null);
         },

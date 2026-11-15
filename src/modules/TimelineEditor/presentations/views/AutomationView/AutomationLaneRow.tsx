@@ -15,6 +15,7 @@ import {
     adjustYZoom,
     zoomToUsedRange,
     getAutomationLaneCeiling,
+    getAutomationValueAtBeat,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
@@ -25,6 +26,7 @@ import { isDragGestureActive, isPlainEscapePress } from '#/utils/UI/activeDragGe
 
 import { type AutomationLane, type AutomationCurveType } from '../../../models/AutomationViewTypes';
 import {
+    addAutomationPointWithUndo,
     onDrawMouseDown,
     onRubberBandStart,
     onTensionMouseDown,
@@ -250,9 +252,15 @@ export const AutomationLaneRow = ({
     // Selection bounding box
     const selBounds = selectedPoints.length > 1 ? getSelectionBounds(lane.id, selectedPoints) : null;
 
-    // ── SVG dispatcher ───────────────────────────────────────────────────────
-    const handleSvgMouseDown = (event: MouseEvent<SVGSVGElement>) => {
-        if (event.button !== 0) {
+    // ── Curve surface dispatcher ─────────────────────────────────────────────
+    // The lane row owns pointer and keyboard input together; only presses on
+    // the curve surface draw, select or open the shape menu, never presses on
+    // the header or the lane controls.
+    const isOnCurveSurface = (target: EventTarget): boolean =>
+        target instanceof Node && svgRef.current !== null && svgRef.current.contains(target);
+
+    const handleSvgMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+        if (event.button !== 0 || !isOnCurveSurface(event.target)) {
             return;
         }
         if (isDrawMode) {
@@ -262,8 +270,8 @@ export const AutomationLaneRow = ({
         }
     };
 
-    const handleSvgContextMenu = (event: MouseEvent<SVGSVGElement>) => {
-        if ((event.target as Element).closest('[data-auto-point]')) {
+    const handleSvgContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+        if (!isOnCurveSurface(event.target) || (event.target as Element).closest('[data-auto-point]')) {
             return;
         }
         event.preventDefault();
@@ -332,7 +340,48 @@ export const AutomationLaneRow = ({
     };
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
-    const handleKeyDown = (event: KeyboardEvent) => {
+    // The playhead is the lane's keyboard cursor: Enter adds a point where the
+    // line already sits there, and the menu key opens the shape menu for it.
+    const insertPointAtPlayhead = (): void => {
+        const beat = playheadPositionRef.current;
+        const value = getAutomationValueAtBeat(lane.id, beat);
+        if (value === null) {
+            return;
+        }
+        addAutomationPointWithUndo(lane.id, beat, value);
+    };
+
+    const openShapeMenuAtPlayhead = (laneElement: HTMLElement): void => {
+        const beat = playheadPositionRef.current;
+        const rect = laneElement.getBoundingClientRect();
+        const x = rect.left + Math.min(Math.max(beatToX(beat), 0), rect.width);
+        setContextMenu({ x, y: rect.bottom, beat, section: 'shape' });
+    };
+
+    const handleLaneCursorKey = (event: KeyboardEvent<HTMLDivElement>): boolean => {
+        if (event.target !== event.currentTarget) {
+            return false;
+        }
+        const isPlainEnter =
+            event.key === 'Enter' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
+        const opensMenu = event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10');
+        if (!isPlainEnter && !opensMenu) {
+            return false;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        if (isPlainEnter) {
+            insertPointAtPlayhead();
+        } else {
+            openShapeMenuAtPlayhead(event.currentTarget);
+        }
+        return true;
+    };
+
+    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+        if (handleLaneCursorKey(event)) {
+            return;
+        }
         const isDelete = event.key === 'Delete' || event.key === 'Backspace';
         if (isDelete && selectedPoints.length > 0) {
             event.preventDefault();
@@ -413,7 +462,10 @@ export const AutomationLaneRow = ({
             aria-label={`${lane.parameterName} automation lane`}
             // eslint-disable-next-line jsx-a11y-x/no-noninteractive-tabindex -- handles keyboard events (arrow key point editing); tabIndex needed for focus
             tabIndex={0}
+            aria-keyshortcuts="Enter ContextMenu Shift+F10"
             onKeyDown={handleKeyDown}
+            onMouseDown={handleSvgMouseDown}
+            onContextMenu={handleSvgContextMenu}
             ref={rowRef}
         >
             <AutomationLaneHeader
@@ -437,8 +489,6 @@ export const AutomationLaneRow = ({
             <svg
                 ref={svgRef}
                 className={cn('w-full h-full', isDrawMode ? 'cursor-cell' : 'cursor-crosshair')}
-                onMouseDown={handleSvgMouseDown}
-                onContextMenu={handleSvgContextMenu}
                 style={{ width: containerWidth }}
             >
                 {/* Transparent rect for event capture on empty SVG space */}

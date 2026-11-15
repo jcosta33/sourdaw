@@ -147,7 +147,8 @@ export const StepPatternEditor = ({
                     };
                     const octaveBadge = () => {
                         if (step.octaveOffset !== 0) {
-                            const octaveLabel = step.octaveOffset > 0 ? `+${step.octaveOffset}` : `${step.octaveOffset}`;
+                            const octaveLabel =
+                                step.octaveOffset > 0 ? `+${step.octaveOffset}` : `${step.octaveOffset}`;
                             return (
                                 <Button
                                     variant="bare"
@@ -203,52 +204,52 @@ export const StepPatternEditor = ({
                                 badge is the cell's sibling, so pressing it
                                 never starts a stroke. */}
                             <div className="relative">
-                            <div
-                                role="button"
-                                tabIndex={0}
-                                aria-label={`Step ${index + 1}`}
-                                aria-pressed={step.active}
-                                className="relative bg-surface-inset rounded-sm overflow-hidden"
-                                style={{ width: STEP_WIDTH - 4, height: STEP_HEIGHT }}
-                                onPointerDown={(event) => {
-                                    beginStroke();
-                                    paintVelocity(index, event);
-                                }}
-                                onPointerEnter={(event) => {
-                                    if (!strokeActiveRef.current) {
-                                        return;
-                                    }
-                                    paintVelocity(index, event);
-                                }}
-                                onKeyDown={(event) => {
-                                    if (event.key !== 'Enter' && event.key !== ' ') {
-                                        return;
-                                    }
-                                    event.preventDefault();
-                                    toggleStep(index);
-                                }}
-                                onContextMenu={(event) => {
-                                    event.preventDefault();
-                                    toggleStep(index);
-                                }}
-                            >
-                                {/* Fill */}
                                 <div
-                                    className={`absolute bottom-0 left-0 right-0 rounded-sm transition-all ${stepFillClass()}`}
-                                    style={{
-                                        height: `${velNorm * 100}%`,
-                                        width: `${Math.min(100, step.gateMul * 100)}%`,
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={`Step ${index + 1}`}
+                                    aria-pressed={step.active}
+                                    className="relative bg-surface-inset rounded-sm overflow-hidden"
+                                    style={{ width: STEP_WIDTH - 4, height: STEP_HEIGHT }}
+                                    onPointerDown={(event) => {
+                                        beginStroke();
+                                        paintVelocity(index, event);
                                     }}
-                                />
+                                    onPointerEnter={(event) => {
+                                        if (!strokeActiveRef.current) {
+                                            return;
+                                        }
+                                        paintVelocity(index, event);
+                                    }}
+                                    onKeyDown={(event) => {
+                                        if (event.key !== 'Enter' && event.key !== ' ') {
+                                            return;
+                                        }
+                                        event.preventDefault();
+                                        toggleStep(index);
+                                    }}
+                                    onContextMenu={(event) => {
+                                        event.preventDefault();
+                                        toggleStep(index);
+                                    }}
+                                >
+                                    {/* Fill */}
+                                    <div
+                                        className={`absolute bottom-0 left-0 right-0 rounded-sm transition-all ${stepFillClass()}`}
+                                        style={{
+                                            height: `${velNorm * 100}%`,
+                                            width: `${Math.min(100, step.gateMul * 100)}%`,
+                                        }}
+                                    />
 
-                                {/* Ratchet indicator */}
-                                {step.ratchet > 1 ? (
-                                    <div className="absolute top-0.5 right-0.5 text-[5px] font-bold text-[var(--color-accent-peach)]">
-                                        ×{step.ratchet}
-                                    </div>
-                                ) : null}
-                            </div>
-                            {octaveBadge()}
+                                    {/* Ratchet indicator */}
+                                    {step.ratchet > 1 ? (
+                                        <div className="absolute top-0.5 right-0.5 text-[5px] font-bold text-[var(--color-accent-peach)]">
+                                            ×{step.ratchet}
+                                        </div>
+                                    ) : null}
+                                </div>
+                                {octaveBadge()}
                             </div>
                             {/* Step number doubles as the step-type cycle. */}
                             <Button
