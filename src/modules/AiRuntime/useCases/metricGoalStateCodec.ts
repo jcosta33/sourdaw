@@ -93,7 +93,13 @@ function creative(entry: unknown): entry is CreativeRequestAuthority {
         entry.targets.every(
             (target: unknown) =>
                 record(target) &&
-                oneOf(target.provenance, ['explicit-reference', 'contextual-selection', 'new-object-slot']) &&
+                oneOf(target.provenance, [
+                    'explicit-reference',
+                    'contextual-selection',
+                    'new-object-slot',
+                    'role-reference',
+                    'agent-decided',
+                ]) &&
                 oneOf(target.objectType, ['track', 'clip', 'clip-set']) &&
                 strings(target.objectIds) &&
                 (target.parentTrackId === null || text(target.parentTrackId))

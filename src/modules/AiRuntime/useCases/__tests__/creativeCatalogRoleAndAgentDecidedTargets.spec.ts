@@ -4,11 +4,19 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getCanonicalTrackRole } from '#/modules/Project/useCases';
 
-import { type CreativeInterpretationCatalog } from '../../models/CreativeInterpretation';
+import { type CreativeInterpretationCatalog, type CreativeTargetCandidate } from '../../models/CreativeInterpretation';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { admitPlanningInterpretation } from '../admitPlanningInterpretation';
+import { resolveWorkflowTrackIds } from '../agentReference/resolveWorkflowTrackIds';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
+import { prepareMetricIntentCatalog } from '../prepareMetricIntentCatalog';
+
+registerDeviceEnginePorts();
 
 const REPOSITORY_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../../..');
 const REVISION = 'revision-creative-targets';
@@ -57,5 +65,240 @@ describe('creative catalog creation slots', () => {
         }
         const ids = catalog.creationSlots.map((slot) => slot.candidateId);
         expect(new Set(ids).size).toBe(ids.length);
+    });
+});
+
+function targetIds(catalog: CreativeInterpretationCatalog): string[][] {
+    return catalog.targets.map((target) => target.objectIds);
+}
+
+function provenances(catalog: CreativeInterpretationCatalog): string[] {
+    return [...new Set(catalog.targets.map((target) => target.provenance))];
+}
+
+function targetFor(catalog: CreativeInterpretationCatalog, trackId: string): CreativeTargetCandidate {
+    const target = catalog.targets.find((candidate) => candidate.objectIds.includes(trackId));
+    if (target === undefined) {
+        throw new Error(`Expected a published target for ${trackId}.`);
+    }
+    return target;
+}
+
+type MetricKind = 'literal' | 'non-acoustic' | 'perceptual' | 'comparative';
+
+/** One joint planning interpretation editing exactly `trackId`'s processing, with or without metric intent. */
+function admitEdit(input: {
+    prompt: string;
+    trackId: string;
+    kind: MetricKind | null;
+    catalog?: CreativeInterpretationCatalog;
+}) {
+    const context = fixtureContext();
+    const creative = input.catalog ?? prepare(input.prompt, context);
+    const answer = prepareAnswerInterpretationCatalog({ prompt: input.prompt, context, projectRevision: REVISION });
+    const metric = prepareMetricIntentCatalog({ prompt: input.prompt, answer });
+    const unsupported = metric.objectives.find((objective) =>
+        objective.goals.every((goal) => goal.source.kind === 'unsupported')
+    );
+    if (unsupported === undefined) {
+        throw new Error('Expected the published unsupported objective.');
+    }
+    const acoustic = input.kind === 'perceptual' || input.kind === 'comparative';
+    const metricIntent =
+        input.kind === null
+            ? null
+            : {
+                  kind: input.kind,
+                  uncertainty: 'none',
+                  objectives: acoustic
+                      ? [
+                            {
+                                objectiveId: unsupported.id,
+                                scopeCandidateId: null,
+                                referenceScopeCandidateId: null,
+                                rangeCandidateId: null,
+                            },
+                        ]
+                      : [],
+              };
+    return admitPlanningInterpretation({
+        creative,
+        answer,
+        metric,
+        projectRevision: REVISION,
+        turn: 1,
+        call: {
+            id: 'joint-intake',
+            name: 'selectCreativeInterpretation',
+            arguments: {
+                catalogId: creative.catalogId,
+                modeId: 'edit',
+                targetCandidateIds: [targetFor(creative, input.trackId).candidateId],
+                editDimensionCandidateIds: creative.dimensions
+                    .filter((entry) => entry.dimension === 'processing')
+                    .map((entry) => entry.candidateId),
+                constraintCandidateIds: [],
+                creationSlotIds: [],
+                uncertainty: 'none',
+                answer: null,
+                metricIntent,
+            },
+        },
+    });
+}
+
+describe('creative catalog role-family targets', () => {
+    it.each([
+        { prompt: 'tighten up the drums', family: 'drums' as const },
+        { prompt: 'the bass is too muddy in the chorus', family: 'bass' as const },
+    ])('publishes "$prompt" as the $family family, one editable target per track', ({ prompt, family }) => {
+        const context = fixtureContext();
+        const catalog = prepare(prompt, context);
+        const familyIds = resolveWorkflowTrackIds(context, 'expected-family', { all: [{ roleFamily: family }] });
+
+        expect(familyIds.length).toBeGreaterThan(0);
+        expect(catalog.modes).toContain('edit');
+        expect(provenances(catalog)).toEqual(['role-reference']);
+        expect(targetIds(catalog)).toEqual(familyIds.map((id) => [id]));
+        for (const target of catalog.targets) {
+            expect(slotParents(catalog, 'device')).toContain(target.candidateId);
+        }
+    });
+
+    it('resolves the bass family to Bass DI under the roles production derives', () => {
+        expect(targetIds(prepare('the bass is too muddy in the chorus'))).toEqual([['track-bass-di']]);
+    });
+
+    it('reads a role family inside a protection clause as kept out, never as a target', () => {
+        const context = fixtureContext();
+        const catalog = prepare('make it punchier but leave the drums alone', context);
+        const drums = resolveWorkflowTrackIds(context, 'expected-drums', { all: [{ roleFamily: 'drums' }] });
+        const offered = catalog.targets.flatMap((target) => target.objectIds);
+
+        expect(provenances(catalog)).toEqual(['agent-decided']);
+        expect(offered).toContain('track-bass-di');
+        expect(offered.filter((id) => drums.includes(id))).toEqual([]);
+    });
+});
+
+describe('creative catalog agent-decided targets', () => {
+    it.each([
+        { prompt: 'polish the low end', chosen: 'track-bass-di' },
+        { prompt: 'make the chorus hit harder', chosen: 'track-kick' },
+    ])('offers every plannable source for "$prompt" and admits a perceptual edit of $chosen', ({ prompt, chosen }) => {
+        const catalog = prepare(prompt);
+
+        expect(catalog.modes).toContain('edit');
+        expect(provenances(catalog)).toEqual(['agent-decided']);
+        expect(catalog.targets.every((target) => target.objectIds.length === 1)).toBe(true);
+        expect(catalog.targets.flatMap((target) => target.objectIds)).toEqual(
+            expect.arrayContaining(['track-bass-di', 'track-kick'])
+        );
+        expect(slotParents(catalog, 'device')).toContain(targetFor(catalog, chosen).candidateId);
+
+        const admission = admitEdit({ prompt, trackId: chosen, kind: 'perceptual' });
+        expect(admission).toMatchObject({ status: 'admitted', kind: 'creative' });
+        if (admission.status !== 'admitted' || !('authority' in admission)) {
+            throw new Error('Expected admitted creative authority.');
+        }
+        expect(admission.authority.targets).toEqual([
+            { provenance: 'agent-decided', objectType: 'track', objectIds: [chosen], parentTrackId: null },
+        ]);
+    });
+
+    it('leaves out frozen, folder and protected tracks', () => {
+        const base = fixtureContext();
+        const context: ProjectContext = {
+            ...base,
+            tracks: base.tracks.map((track) => (track.id === 'track-guitar' ? { ...track, frozen: true } : track)),
+        };
+        const catalog = prepare('polish the low end, leave Keys alone', context);
+        const offered = catalog.targets.flatMap((target) => target.objectIds);
+
+        expect(offered).toContain('track-bass-di');
+        expect(offered).not.toContain('track-guitar');
+        expect(offered).not.toContain('track-keys');
+    });
+
+    it.each([{ kind: 'literal' as const }, { kind: 'non-acoustic' as const }, { kind: null }])(
+        'refuses an agent-decided edit under $kind metric intent',
+        ({ kind }) => {
+            const admission = admitEdit({ prompt: 'polish the low end', trackId: 'track-bass-di', kind });
+
+            expect(admission).toEqual({ status: 'rejected', reason: expect.stringMatching(/agent-decided/u) });
+        }
+    );
+
+    it('publishes no agent-decided candidate beside a named track or a selection', () => {
+        const named = prepare('make the guitar brighter than the hi-hat in the intro');
+        const selected = prepare('polish it', { ...fixtureContext(), selectedTrackId: 'track-keys' });
+
+        expect(provenances(named)).toEqual(['explicit-reference']);
+        expect(provenances(selected)).toEqual(['contextual-selection']);
+        expect(targetIds(selected)).toEqual([['track-keys']]);
+    });
+
+    it('refuses an agent-decided target the catalog published beside a role reference', () => {
+        const prompt = 'tighten up the drums';
+        const roleCatalog = prepare(prompt);
+        const catalog: CreativeInterpretationCatalog = {
+            ...roleCatalog,
+            targets: [
+                ...roleCatalog.targets,
+                {
+                    candidateId: 'target-agent',
+                    provenance: 'agent-decided',
+                    objectType: 'track',
+                    objectIds: ['track-guitar'],
+                    parentTrackId: null,
+                    label: 'Guitar',
+                },
+            ],
+        };
+
+        const admission = admitEdit({ prompt, trackId: 'track-guitar', kind: 'perceptual', catalog });
+        expect(admission).toEqual({ status: 'rejected', reason: expect.stringMatching(/outrank/u) });
+    });
+});
+
+describe('persisted creative authority provenance', () => {
+    it('decodes every provenance a stored authority may carry and refuses an unknown one', () => {
+        const admission = admitEdit({ prompt: 'polish the low end', trackId: 'track-bass-di', kind: 'perceptual' });
+        if (admission.status !== 'admitted' || !('metricAuthority' in admission) || !admission.metricAuthority) {
+            throw new Error('Expected admitted metric authority.');
+        }
+        const { metricAuthority } = admission;
+        const stored = (provenance: string) =>
+            JSON.stringify({
+                schemaVersion: 1,
+                authorities: [
+                    {
+                        ...metricAuthority,
+                        creativeAuthority: {
+                            ...metricAuthority.creativeAuthority,
+                            targets: metricAuthority.creativeAuthority?.targets.map((target) => ({
+                                ...target,
+                                provenance,
+                            })),
+                        },
+                    },
+                ],
+                steps: [],
+                proofs: [],
+                binding: null,
+            });
+
+        for (const provenance of [
+            'explicit-reference',
+            'contextual-selection',
+            'new-object-slot',
+            'role-reference',
+            'agent-decided',
+        ]) {
+            expect(metricGoalStateCodec(stored(provenance))?.authorities[0]?.creativeAuthority?.targets).toEqual([
+                expect.objectContaining({ provenance, objectIds: ['track-bass-di'] }),
+            ]);
+        }
+        expect(metricGoalStateCodec(stored('invented'))).toBeNull();
     });
 });
