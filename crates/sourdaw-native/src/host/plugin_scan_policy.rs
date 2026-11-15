@@ -31,11 +31,21 @@ impl PluginScanPolicy {
     /// grant store is read fresh on every call, so a grant the main process
     /// just recorded or revoked is what the scan process enforces next.
     pub fn production() -> Self {
-        Self::over_grant_store(
-            default_plugin_scan_roots(),
+        Self::over_platform_defaults_and_grant_store(
             plugin_folder_grants::production_store_location().as_deref(),
             &ForbiddenRoots::production(),
         )
+    }
+
+    /// The platform's plugin folders plus the valid grants in the store at
+    /// `store`: [`Self::production`]'s composition over a chosen store, so a
+    /// route that must enforce what production enforces can be tested against
+    /// a temporary one.
+    pub(crate) fn over_platform_defaults_and_grant_store(
+        store: Option<&Path>,
+        forbidden: &ForbiddenRoots,
+    ) -> Self {
+        Self::over_grant_store(default_plugin_scan_roots(), store, forbidden)
     }
 
     /// `allowed_roots` plus the valid grants in the store at `store`, if any.

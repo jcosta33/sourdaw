@@ -41,6 +41,7 @@ use crate::commands::plugins::{
     hold_plugin_runtime_gate, host_backend, HostBackend, VettedRegistryEntry,
 };
 use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
+use crate::host::plugin_folder_grants::{self, ForbiddenRoots};
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::ui_thread::{release_on_ui_thread, UiThread};
 use crate::state::AppState;
@@ -50,6 +51,7 @@ use daw_engine::pdc::CompensationDelay;
 use daw_engine::scheduler::{GraphCommand, HOSTED_PLUGIN_RESERVE};
 use daw_plugin_host::{AudioPlugin, HostedPluginRuntime, HostedRuntime, ProcessMode};
 use std::collections::{HashMap, VecDeque};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -311,9 +313,23 @@ pub(crate) struct OfflinePluginSeams {
 }
 
 impl OfflinePluginSeams {
+    /// The seams every export uses, built per render so the grant store is
+    /// read fresh: a folder granted or revoked since the last export is what
+    /// this one's re-vet enforces.
     pub(crate) fn production() -> Self {
+        Self::over_grant_store(
+            plugin_folder_grants::production_store_location().as_deref(),
+            &ForbiddenRoots::production(),
+        )
+    }
+
+    /// The production seams over the grant store at `store`. The re-vet
+    /// authorizes exactly what a live load does — the platform folders plus
+    /// the user's granted folders — so a plugin loaded live from a granted
+    /// folder is not refused at export.
+    pub(crate) fn over_grant_store(store: Option<&Path>, forbidden: &ForbiddenRoots) -> Self {
         Self {
-            scan_policy: PluginScanPolicy::platform_defaults(),
+            scan_policy: PluginScanPolicy::over_platform_defaults_and_grant_store(store, forbidden),
             capture_state: read_live_state,
             construct: create_hosted_runtime,
             #[cfg(test)]
