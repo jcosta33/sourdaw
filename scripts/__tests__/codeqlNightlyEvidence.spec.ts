@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, realpathSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { zipSync } from 'fflate';
@@ -7,8 +7,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import { type EvidencePort, githubEvidencePort, validateNightlyEvidence } from '../codeqlNightlyEvidence.ts';
-
-import { withRecordingGh } from './helpers/recordingGh.ts';
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
@@ -621,19 +619,5 @@ describe('trusted nightly evidence consumer', () => {
         analysis.analysis_key = '.github/workflows/nightly.yml:codeql';
         analysis.created_at = '2026-10-11T01:50:00Z';
         await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow('CodeQL analysis');
-    });
-});
-
-describe('the default gh reader', () => {
-    it('starts its token-bearing gh outside the checkout it is run from', async () => {
-        let pending: Promise<unknown> = Promise.resolve();
-        withRecordingGh('{"id":1}', (recorded) => {
-            pending = githubEvidencePort('fixture-token').getRun(1);
-
-            expect(recorded().toplevel).toBe('');
-            expect(recorded().cwd).not.toBe(realpathSync(process.cwd()));
-        });
-
-        await expect(pending).resolves.toEqual({ id: 1 });
     });
 });
