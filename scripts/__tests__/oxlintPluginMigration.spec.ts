@@ -8,7 +8,6 @@ import { ESLint, type Linter } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
 import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
-
 import { buildEslintArgv, eslintEnvironment } from '../runLint.ts';
 
 import { configuredSourdawRules } from './helpers/configuredSourdawRules.ts';
