@@ -147,22 +147,24 @@ export const StepPatternEditor = ({
                     };
                     const octaveBadge = () => {
                         if (step.octaveOffset !== 0) {
+                            const octaveLabel = step.octaveOffset > 0 ? `+${step.octaveOffset}` : `${step.octaveOffset}`;
                             return (
-                                <div
-                                    className="absolute bottom-0.5 left-0.5 text-[5px] font-bold cursor-pointer"
+                                <Button
+                                    variant="bare"
+                                    size="bare"
+                                    type="button"
+                                    aria-label={`Step ${index + 1} octave ${octaveLabel}`}
+                                    className="absolute bottom-0.5 left-0.5 text-[5px] font-bold leading-none"
                                     style={{
                                         color:
                                             step.octaveOffset > 0
                                                 ? 'var(--color-accent-cyan)'
                                                 : 'var(--color-accent-lavender)',
                                     }}
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        cycleOctave(index);
-                                    }}
+                                    onClick={() => cycleOctave(index)}
                                 >
-                                    {step.octaveOffset > 0 ? `+${step.octaveOffset}` : step.octaveOffset}
-                                </div>
+                                    {octaveLabel}
+                                </Button>
                             );
                         } else {
                             return null;
@@ -197,7 +199,10 @@ export const StepPatternEditor = ({
                                 dragging across cells repaints each one it
                                 crosses; the keyboard has no height, so
                                 Enter/Space performs the same on/off toggle
-                                the right-click gesture does. */}
+                                the right-click gesture does. The octave
+                                badge is the cell's sibling, so pressing it
+                                never starts a stroke. */}
+                            <div className="relative">
                             <div
                                 role="button"
                                 tabIndex={0}
@@ -242,9 +247,8 @@ export const StepPatternEditor = ({
                                         ×{step.ratchet}
                                     </div>
                                 ) : null}
-
-                                {/* Octave badge */}
-                                {octaveBadge()}
+                            </div>
+                            {octaveBadge()}
                             </div>
                             {/* Step number doubles as the step-type cycle. */}
                             <Button

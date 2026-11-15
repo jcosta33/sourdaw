@@ -25,7 +25,7 @@ async function addItems(page: Page, count: number): Promise<void> {
     await expect(add).toBeVisible();
     for (let i = 1; i <= count; i += 1) {
         await add.click();
-        await expect(page.getByRole('list', { name: 'Setlist items' }).getByRole('listitem')).toHaveCount(i);
+        await expect(page.getByRole('grid', { name: 'Setlist items' }).getByRole('row')).toHaveCount(i);
     }
 }
 
@@ -38,7 +38,7 @@ test.describe('Setlist per-item controls — Move up / Move down reorder', () =>
 
     test('Move down swaps the first two items and Move up swaps them back', async ({ page }) => {
         await addItems(page, 3);
-        const items = page.getByRole('list', { name: 'Setlist items' }).getByRole('listitem');
+        const items = page.getByRole('grid', { name: 'Setlist items' }).getByRole('row');
 
         // The move cluster is opacity-0 until the row is hovered
         // (group-hover); hovering the row first keeps the click on the
@@ -62,7 +62,7 @@ test.describe('Setlist per-item controls — Move up / Move down reorder', () =>
 
     test('boundary buttons are disabled and follow the item, not the position', async ({ page }) => {
         await addItems(page, 2);
-        const items = page.getByRole('list', { name: 'Setlist items' }).getByRole('listitem');
+        const items = page.getByRole('grid', { name: 'Setlist items' }).getByRole('row');
 
         const song1 = items.filter({ hasText: 'Song 1' });
         await song1.hover();

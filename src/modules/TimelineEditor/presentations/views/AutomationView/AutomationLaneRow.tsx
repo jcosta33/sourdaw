@@ -409,6 +409,8 @@ export const AutomationLaneRow = ({
                 isDisabled ? 'opacity-50' : ''
             )}
             style={{ height: LANE_HEIGHT }}
+            role="group"
+            aria-label={`${lane.parameterName} automation lane`}
             // eslint-disable-next-line jsx-a11y-x/no-noninteractive-tabindex -- handles keyboard events (arrow key point editing); tabIndex needed for focus
             tabIndex={0}
             onKeyDown={handleKeyDown}

@@ -19,7 +19,7 @@ test.describe('Mixer channel gain — keyboard response', () => {
 
     test('channel gain fader responds to ArrowUp', async ({ page }) => {
         const mixer = page.getByRole('region', { name: 'Mixer panel' });
-        const kick = mixer.getByRole('group', { name: 'Kick channel', exact: true });
+        const kick = mixer.getByRole('row', { name: 'Kick channel', exact: true });
         await expect(kick).toBeVisible({ timeout: 5000 });
 
         const gainSlider = kick.getByRole('slider', { name: 'Kick gain', exact: true });
@@ -34,8 +34,8 @@ test.describe('Mixer channel gain — keyboard response', () => {
     test('track gain menu enters, resets, copies, pastes, and replays a gain change', async ({ page }) => {
         await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
         const mixer = page.getByRole('region', { name: 'Mixer panel' });
-        const first = mixer.getByRole('group', { name: 'Kick channel', exact: true });
-        const second = mixer.getByRole('group', { name: 'Clap channel', exact: true });
+        const first = mixer.getByRole('row', { name: 'Kick channel', exact: true });
+        const second = mixer.getByRole('row', { name: 'Clap channel', exact: true });
         await expect(first).toBeVisible({ timeout: 5000 });
         await expect(second).toBeVisible({ timeout: 5000 });
         const firstGain = first.getByRole('slider', { name: 'Kick gain', exact: true });
@@ -121,8 +121,8 @@ test.describe('Mixer channel gain — keyboard response', () => {
     test('track pan menu resets, enters exact values, copies, pastes, and replays pan changes', async ({ page }) => {
         await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
         const mixer = page.getByRole('region', { name: 'Mixer panel' });
-        const kick = mixer.getByRole('group', { name: 'Kick channel', exact: true });
-        const clap = mixer.getByRole('group', { name: 'Clap channel', exact: true });
+        const kick = mixer.getByRole('row', { name: 'Kick channel', exact: true });
+        const clap = mixer.getByRole('row', { name: 'Clap channel', exact: true });
         await expect(kick).toBeVisible({ timeout: 5000 });
         await expect(clap).toBeVisible({ timeout: 5000 });
         const kickPan = kick.getByRole('slider', { name: 'Kick pan', exact: true });

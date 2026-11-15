@@ -3,6 +3,7 @@ import {
     type CSSProperties,
     type DragEvent,
     type KeyboardEvent,
+    type MouseEvent,
     useRef,
     useState,
     useLayoutEffect,
@@ -185,6 +186,16 @@ export const TrackListView = ({
         setDragOverIndex(null);
     };
 
+    // The grid owns selection for both inputs: the keyboard in `handleKeyDown`,
+    // the pointer through the row a click lands in.
+    const handleRowClick = (event: MouseEvent<HTMLDivElement>): void => {
+        const row = event.target instanceof Element ? event.target.closest('[role="row"]') : null;
+        const trackId = row?.getAttribute('data-track-id');
+        if (trackId) {
+            selectTrack(trackId);
+        }
+    };
+
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         // Keystrokes typed into an inline editor (track rename) bubble to
         // this container; they must edit text, not navigate or delete —
@@ -348,9 +359,8 @@ export const TrackListView = ({
                 ref={scrollRef}
                 className="min-h-0 flex-[1_1_0px] overflow-y-auto overflow-x-hidden"
                 onScroll={handleScroll}
-                onKeyDown={handleKeyDown}
             >
-                <div role="grid" aria-label="Track list">
+                <div role="grid" aria-label="Track list" onKeyDown={handleKeyDown} onClick={handleRowClick}>
                     {visibleTracks.map((track, index) => {
                         return (
                             <div
@@ -374,7 +384,7 @@ export const TrackListView = ({
                                     handleDrop(index);
                                 }}
                                 onDragEnd={handleDragEnd}
-                                onClick={() => selectTrack(track.id)}
+                                data-track-id={track.id}
                                 className={
                                     dragOverIndex === index
                                         ? 'border-t-2 border-ring outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70'

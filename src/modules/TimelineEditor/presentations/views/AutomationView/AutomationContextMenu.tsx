@@ -1,12 +1,12 @@
 /**
  * Context menu for automation lane — curve type selection and shape insertion.
  */
-import { type ReactElement } from 'react';
+import { type ReactElement, useRef } from 'react';
 
-import { createPortal } from 'react-dom';
-
+import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { cn } from '#/utils/Styles/cn';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type AutomationPoint, type AutomationCurveType } from '../../../models/AutomationViewTypes';
 import { CURVE_OPTIONS, SHAPE_OPTIONS } from '../../helpers/automationLaneConstants';
@@ -33,18 +33,22 @@ export const AutomationContextMenu = ({
     onCurveSelect,
     onShapeInsert,
     onClose,
-}: AutomationContextMenuProps): ReactElement =>
-    createPortal(
-        <>
-            <div className="fixed inset-0 z-50" onClick={onClose} />
-            <div
-                className="daw-floating-surface fixed z-50 min-w-[160px] rounded-md py-1"
-                style={{
-                    left: Math.min(x, window.innerWidth - 200),
-                    ...(y > window.innerHeight - 300 ? { bottom: window.innerHeight - y } : { top: y }),
-                }}
-                role="menu"
-            >
+}: AutomationContextMenuProps): ReactElement => {
+    const menuRef = useRef<HTMLDivElement>(null);
+    useContextMenuDismiss(menuRef, onClose);
+
+    return (
+        <DawContextMenuSurface
+            ref={menuRef}
+            x={x}
+            y={y}
+            xClampOffset={200}
+            yClampOffset={300}
+            backdrop
+            onClose={onClose}
+            className="min-w-[160px]"
+            role="menu"
+        >
                 {section !== 'shape' ? (
                     <>
                         <DawMenuSectionLabel className="px-2">Curve Type</DawMenuSectionLabel>
@@ -74,7 +78,6 @@ export const AutomationContextMenu = ({
                         {opt.label}
                     </DawMenuButton>
                 ))}
-            </div>
-        </>,
-        document.body
+        </DawContextMenuSurface>
     );
+};

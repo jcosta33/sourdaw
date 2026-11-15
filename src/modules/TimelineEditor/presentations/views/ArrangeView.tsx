@@ -1,7 +1,9 @@
 import {
     type ReactElement,
+    type KeyboardEvent as ReactKeyboardEvent,
     type MouseEvent as ReactMouseEvent,
     type DragEvent,
+    useId,
     useState,
     useRef,
     useLayoutEffect,
@@ -97,6 +99,7 @@ export const ArrangeView = (): ReactElement => {
 
     const arrangeRowRef = useRef<HTMLDivElement>(null);
     const timelineContainerRef = useRef<HTMLDivElement>(null);
+    const timelineColumnId = useId();
     const [arrangeWidth, setArrangeWidth] = useState(0);
     const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
 
@@ -310,6 +313,7 @@ export const ArrangeView = (): ReactElement => {
             ) : null}
             <Stack
                 grow
+                id={timelineColumnId}
                 className="overflow-hidden relative min-w-0"
                 ref={timelineContainerRef}
                 style={{ minWidth: MIN_TIMELINE_COLUMN_WIDTH }}
@@ -335,6 +339,7 @@ export const ArrangeView = (): ReactElement => {
                 ) : null}
                 <TimelineSurface />
                 <TimelineHScrollbar
+                    controlsId={timelineColumnId}
                     scrollX={scrollX}
                     pixelsPerBeat={pixelsPerBeat}
                     tracks={tracks}
@@ -355,12 +360,43 @@ export const ArrangeView = (): ReactElement => {
 
 type HScrollbarTrack = { clips: { endBeat: number }[] };
 
+type KeyboardScrollInput = { scrollX: number; maxScrollX: number; pixelsPerBeat: number; viewportWidth: number };
+
+/**
+ * The scroll a key moves the thumb by: a beat for an arrow, as a nudge on the
+ * timeline does, a viewport for Page Up/Down, and the ends for Home and End.
+ * `null` leaves every other key to the window shortcut layer.
+ */
+const getKeyboardScrollTarget = (
+    key: string,
+    { scrollX, maxScrollX, pixelsPerBeat, viewportWidth }: KeyboardScrollInput
+): number | null => {
+    switch (key) {
+        case 'ArrowLeft':
+            return scrollX - pixelsPerBeat;
+        case 'ArrowRight':
+            return scrollX + pixelsPerBeat;
+        case 'PageUp':
+            return scrollX - viewportWidth;
+        case 'PageDown':
+            return scrollX + viewportWidth;
+        case 'Home':
+            return 0;
+        case 'End':
+            return maxScrollX;
+        default:
+            return null;
+    }
+};
+
 const TimelineHScrollbar = ({
+    controlsId,
     scrollX,
     pixelsPerBeat,
     tracks,
     viewportWidth,
 }: {
+    controlsId: string;
     scrollX: number;
     pixelsPerBeat: number;
     tracks: HScrollbarTrack[];
@@ -435,6 +471,20 @@ const TimelineHScrollbar = ({
         window.addEventListener('mouseup', onMouseUp);
     };
 
+    const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+            return;
+        }
+        const target = getKeyboardScrollTarget(event.key, { scrollX, maxScrollX, pixelsPerBeat, viewportWidth });
+        if (target === null) {
+            return;
+        }
+        // Claimed so the arrows do not also nudge the selection behind it.
+        event.preventDefault();
+        event.stopPropagation();
+        setTimelineHorizontalScrollbarScrollX({ scrollX: target, maxScrollX });
+    };
+
     return (
         <TimelineChromeSurface
             tone="subtle"
@@ -444,7 +494,15 @@ const TimelineHScrollbar = ({
             data-testid="timeline-horizontal-scrollbar"
         >
             <div
-                className="daw-scrollbar-thumb absolute rounded-full"
+                role="scrollbar"
+                tabIndex={0}
+                aria-label="Scroll timeline horizontally"
+                aria-controls={controlsId}
+                aria-orientation="horizontal"
+                aria-valuemin={0}
+                aria-valuemax={Math.round(maxScrollX)}
+                aria-valuenow={Math.round(Math.min(maxScrollX, Math.max(0, scrollX)))}
+                className="daw-scrollbar-thumb absolute rounded-full outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
                 style={{
                     top: 2,
                     bottom: 2,
@@ -453,6 +511,7 @@ const TimelineHScrollbar = ({
                     cursor: 'grab',
                 }}
                 onMouseDown={handleMouseDown}
+                onKeyDown={handleKeyDown}
             />
         </TimelineChromeSurface>
     );
