@@ -46,6 +46,20 @@ const SAVED_CHUNK = 'c2F2ZWQ=';
 const SAVED_BYTES = new Uint8Array([115, 97, 118, 101, 100]);
 const LIVE_BYTES = new Uint8Array([108, 105, 118, 101]);
 
+function pluginInstance(): PluginInstance {
+    return {
+        instance_id: INSTANCE_ID,
+        plugin_id: PLUGIN_ID,
+        name: PLUGIN_ID,
+        parameters: [],
+        is_active: true,
+        latency_samples: 0,
+        latency_ms: 0,
+        tail_samples: 0,
+        engine_plugin_id: 1000,
+    };
+}
+
 function activate(stateChunk: string | undefined, pluginId = PLUGIN_ID) {
     return activateExternalPlugin({ pluginId, instanceId: INSTANCE_ID, stateChunk });
 }
@@ -66,13 +80,7 @@ describe('live plugin state across an app-initiated teardown', () => {
         clearLoadedExternalPlugins();
         carriedExternalPluginStates.clear();
         externalPluginActivationStore.set(defaultExternalPluginActivationState);
-        mocks.loadPlugin.mockResolvedValue({
-            instance_id: INSTANCE_ID,
-            parameters: [],
-            latency_samples: 0,
-            latency_ms: 0,
-            engine_plugin_id: 1000,
-        });
+        mocks.loadPlugin.mockResolvedValue(pluginInstance());
         mocks.getPluginState.mockResolvedValue(LIVE_BYTES);
         mocks.setPluginState.mockResolvedValue(undefined);
         mocks.unloadPlugin.mockImplementation((instanceId) =>
@@ -194,6 +202,24 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
         });
 
+        it.each([
+            ['reports an error', () => Promise.resolve({ unloadedInstanceIds: [], errors: ['busy'], reports: [] })],
+            ['rejects', () => Promise.reject(new Error('bridge down'))],
+        ])('keeps no carry when the unload %s', async (_label, failedUnload) => {
+            await activateAndEdit(SAVED_CHUNK);
+            mocks.unloadPlugin.mockImplementationOnce(failedUnload);
+
+            await expect(resetExternalPluginRuntimeForGraphRebuild()).rejects.toThrow();
+            expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(true);
+            expect(carriedExternalPluginStates.size).toBe(0);
+            // The instance survives, so a later non-carrying teardown is what destroys it.
+            await unloadPlugin(INSTANCE_ID);
+            await activate(SAVED_CHUNK);
+
+            expect(carriedExternalPluginStates.size).toBe(0);
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+
         it('keeps the carry for the next activation when a rebuild supersedes the one consuming it', async () => {
             await activateAndEdit(SAVED_CHUNK);
             await unloadPluginCarryingLiveState(INSTANCE_ID);
@@ -202,13 +228,7 @@ describe('live plugin state across an app-initiated teardown', () => {
 
             const superseded = activate(SAVED_CHUNK);
             const repair = resetExternalPluginRuntimeForGraphRebuild();
-            load.resolve({
-                instance_id: INSTANCE_ID,
-                parameters: [],
-                latency_samples: 0,
-                latency_ms: 0,
-                engine_plugin_id: 1000,
-            });
+            load.resolve(pluginInstance());
             await expect(superseded).resolves.toMatchObject({ status: 'failed' });
             await repair;
             await activate(SAVED_CHUNK);

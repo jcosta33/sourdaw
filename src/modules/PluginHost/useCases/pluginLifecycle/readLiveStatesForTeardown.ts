@@ -46,6 +46,13 @@ function withinTeardownBudget(instanceId: string, read: Promise<TeardownStateRea
     return Promise.race([read, deadline]).finally(() => clearTimeout(timer));
 }
 
+function readForOrdering(instanceId: string, ordering: 'inside-lifecycle' | 'scheduled'): Promise<TeardownStateRead> {
+    if (ordering === 'inside-lifecycle') {
+        return readLiveState(instanceId);
+    }
+    return serializePluginLifecycle(instanceId, () => readLiveState(instanceId));
+}
+
 /**
  * Read the live state of instances an app-initiated teardown is about to
  * destroy, in parallel. Nothing is carried yet: `commitCarriedLiveStates`
@@ -56,14 +63,11 @@ function withinTeardownBudget(instanceId: string, read: Promise<TeardownStateRea
  * on itself. `scheduled` takes each instance's own lifecycle turn.
  */
 export async function readLiveStatesForTeardown(
-    instanceIds: Iterable<string>,
+    instanceIds: readonly string[],
     ordering: 'inside-lifecycle' | 'scheduled'
 ): Promise<ReadonlyMap<string, TeardownStateRead>> {
-    const reads = [...instanceIds].map(async (instanceId) => {
-        const read =
-            ordering === 'inside-lifecycle'
-                ? readLiveState(instanceId)
-                : serializePluginLifecycle(instanceId, () => readLiveState(instanceId));
+    const reads = instanceIds.map(async (instanceId) => {
+        const read = readForOrdering(instanceId, ordering);
         return [instanceId, await withinTeardownBudget(instanceId, read)] as const;
     });
     return new Map(await Promise.all(reads));
