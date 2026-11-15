@@ -22,7 +22,6 @@ import { useStore } from '#/infra/store/useStore';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureGestureBeat } from '#/modules/Transport/stores';
 import { cn } from '#/utils/Styles/cn';
-import { handleRovingRowKeyDown } from '#/utils/UI/rovingRowKeyboard';
 
 import {
     adjustmentLayerStore,
@@ -34,6 +33,14 @@ import {
 } from '../../stores/adjustmentLayer';
 import { trackStore, defaultTrackState } from '../../stores/trackStore';
 
+import {
+    handleLayerRowKeyDown,
+    handleRegionEdgeKeyDown,
+    handleRegionKeyDown,
+    MIN_REGION_BEATS,
+    type RegionEdge,
+} from './adjustmentLayerKeyboard';
+import { AdjustmentRegionBand, type FadePreview } from './AdjustmentRegionBand';
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
 type AdjustmentLayerStripProps = {
@@ -79,40 +86,8 @@ type DragState =
       }
     | null;
 
-type FadePreview = { regionId: string; fadeInBeats: number; fadeOutBeats: number };
-
 const ROW_HEIGHT = 20;
 const MIN_DRAG_PX = 3;
-/** The shortest region a resize may leave, by pointer or keyboard. */
-const MIN_REGION_BEATS = 0.25;
-/** Arrow keys nudge a region or its edge by a sixteenth; Shift nudges by a beat. */
-const NUDGE_BEATS = 0.25;
-const LARGE_NUDGE_BEATS = 1;
-
-type RegionEdge = 'start' | 'end';
-
-const opensContextMenu = (event: ReactKeyboardEvent): boolean =>
-    event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10');
-
-const isPlainKey = (event: ReactKeyboardEvent, key: string): boolean =>
-    event.key === key && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
-
-/** The arrow nudge a key asks for, or null for any other key. */
-const readNudgeBeats = (event: ReactKeyboardEvent): number | null => {
-    if (event.altKey || event.ctrlKey || event.metaKey) {
-        return null;
-    }
-    const step = event.shiftKey ? LARGE_NUDGE_BEATS : NUDGE_BEATS;
-    if (event.key === 'ArrowLeft') {
-        return -step;
-    }
-    return event.key === 'ArrowRight' ? step : null;
-};
-
-const claimKey = (event: ReactKeyboardEvent): void => {
-    event.preventDefault();
-    event.stopPropagation();
-};
 
 export const getAdjustmentLayerStripHeight = (layerCount: number): number =>
     Math.max(ROW_HEIGHT, layerCount * ROW_HEIGHT) + ROW_HEIGHT;
@@ -443,83 +418,35 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
     };
 
     // ── Keyboard ──────────────────────────────────────────────────────
-    // A focused layer row treats the playhead as its cursor: Enter adds a
-    // region there, the route Alt+click takes at the pointer. A focused region
-    // opens its inspector on Enter, as a double-click does, and moves by arrow
-    // nudges; its edge separators resize it by the same nudges.
+    const onLayerRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, layer: AdjustmentLayer) =>
+        handleLayerRowKeyDown(event, {
+            openMenu: (position) => setContextMenu({ kind: 'layer', ...position, layer }),
+            // The key press is the gesture: its beat is stamped by the gesture clock.
+            addRegionAtPlayhead: () => addRegionAtBeat(layer.id, captureGestureBeat()),
+        });
+
     const moveRegion = (regionId: string, startBeat: number, endBeat: number) => {
         void executeUserAppAction({ type: 'moveAdjustmentRegion', payload: { regionId, startBeat, endBeat } });
     };
 
-    const menuPositionBelow = (element: HTMLElement): { x: number; y: number } => {
-        const rect = element.getBoundingClientRect();
-        return { x: rect.left, y: rect.bottom };
-    };
-
-    const handleLayerRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, layer: AdjustmentLayer) => {
-        if (event.target !== event.currentTarget) {
-            return;
-        }
-        if (opensContextMenu(event)) {
-            claimKey(event);
-            setContextMenu({ kind: 'layer', ...menuPositionBelow(event.currentTarget), layer });
-            return;
-        }
-        // Space stays the transport's; only Enter adds a region.
-        if (event.key === ' ') {
-            return;
-        }
-        // The key press is the gesture: its beat is stamped by the gesture clock.
-        handleRovingRowKeyDown(event, 'vertical', () => addRegionAtBeat(layer.id, captureGestureBeat()));
-    };
-
-    const handleRegionKeyDown = (
+    const onRegionKeyDown = (
         event: ReactKeyboardEvent<HTMLButtonElement>,
         layer: AdjustmentLayer,
         region: AdjustmentRegion
-    ) => {
-        if (opensContextMenu(event)) {
-            claimKey(event);
-            setContextMenu({ kind: 'region', ...menuPositionBelow(event.currentTarget), layer, region });
-            return;
-        }
-        if (isPlainKey(event, 'Enter')) {
-            claimKey(event);
-            setInspector({ layerId: layer.id });
-            return;
-        }
-        if (isPlainKey(event, 'Delete') || isPlainKey(event, 'Backspace')) {
-            claimKey(event);
-            removeRegion(layer.id, region.id);
-            return;
-        }
-        const nudge = readNudgeBeats(event);
-        if (nudge === null) {
-            return;
-        }
-        claimKey(event);
-        const startBeat = Math.max(0, region.startBeat + nudge);
-        moveRegion(region.id, startBeat, startBeat + (region.endBeat - region.startBeat));
-    };
+    ) =>
+        handleRegionKeyDown(event, region, {
+            openMenu: (position) => setContextMenu({ kind: 'region', ...position, layer, region }),
+            openInspector: () => setInspector({ layerId: layer.id }),
+            remove: () => removeRegion(layer.id, region.id),
+            move: (startBeat, endBeat) => moveRegion(region.id, startBeat, endBeat),
+        });
 
-    const handleRegionEdgeKeyDown = (
+    const onRegionEdgeKeyDown = (
         event: ReactKeyboardEvent<HTMLDivElement>,
         region: AdjustmentRegion,
         edge: RegionEdge
-    ) => {
-        const nudge = readNudgeBeats(event);
-        if (nudge === null) {
-            return;
-        }
-        claimKey(event);
-        if (edge === 'start') {
-            const startBeat = Math.max(0, Math.min(region.startBeat + nudge, region.endBeat - MIN_REGION_BEATS));
-            moveRegion(region.id, startBeat, region.endBeat);
-            return;
-        }
-        const endBeat = Math.max(region.startBeat + MIN_REGION_BEATS, region.endBeat + nudge);
-        moveRegion(region.id, region.startBeat, endBeat);
-    };
+    ) =>
+        handleRegionEdgeKeyDown(event, region, edge, (startBeat, endBeat) => moveRegion(region.id, startBeat, endBeat));
 
     const inspectorLayer = inspector ? (layers.find((l) => l.id === inspector.layerId) ?? null) : null;
     const tabStopLayerId = layers.some((layer) => layer.id === focusedLayerId) ? focusedLayerId : layers[0]?.id;
@@ -568,11 +495,11 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                             onRowFocus={() => setFocusedLayerId(layer.id)}
                             onLaneClick={handleLaneClick}
                             onLayerContextMenu={handleLayerContextMenu}
-                            onLayerRowKeyDown={handleLayerRowKeyDown}
+                            onLayerRowKeyDown={onLayerRowKeyDown}
                             onRegionContextMenu={handleRegionContextMenu}
                             onRegionDoubleClick={handleRegionDoubleClick}
-                            onRegionKeyDown={handleRegionKeyDown}
-                            onRegionEdgeKeyDown={handleRegionEdgeKeyDown}
+                            onRegionKeyDown={onRegionKeyDown}
+                            onRegionEdgeKeyDown={onRegionEdgeKeyDown}
                             onRegionDragStart={startRegionDrag}
                             onFadeDragStart={startFadeDrag}
                             onToggleEnabled={() => toggleLayer(layer.id)}
@@ -897,61 +824,22 @@ const AdjustmentLayerRow = ({
                         />
                     );
                 }
-                const rangeLabel = `${liveRegion.startBeat.toFixed(2)} to ${liveRegion.endBeat.toFixed(2)}`;
                 return (
-                    <div
+                    <AdjustmentRegionBand
                         key={region.id}
-                        role="gridcell"
-                        className="absolute top-0 bottom-0 rounded-sm border"
+                        region={region}
+                        liveRegion={liveRegion}
                         style={bandStyle}
-                        // The cell owns the region's menu and inspector for its body, edges and fades alike.
+                        pixelsPerBeat={pixelsPerBeat}
+                        width={Math.max(4, width)}
+                        fadePreview={fadePreview}
                         onContextMenu={(e) => onRegionContextMenu(e, layer, region)}
                         onDoubleClick={(e) => onRegionDoubleClick(e, layer)}
-                    >
-                        {/* The band body is the region's focus target; the edges and fades sit above it. */}
-                        <Button
-                            variant="bare"
-                            size="bare"
-                            type="button"
-                            aria-label={`Adjustment region, beats ${rangeLabel}`}
-                            aria-keyshortcuts="Enter ArrowLeft ArrowRight Delete ContextMenu Shift+F10"
-                            className="absolute inset-0 cursor-grab rounded-sm active:cursor-grabbing"
-                            onMouseDown={(e) => onRegionDragStart(e, layer, region, 'move')}
-                            onKeyDown={(e) => onRegionKeyDown(e, layer, region)}
-                        />
-                        <div
-                            role="separator"
-                            tabIndex={0}
-                            aria-orientation="vertical"
-                            aria-label="Region start"
-                            aria-valuenow={liveRegion.startBeat}
-                            aria-valuemin={0}
-                            aria-valuemax={liveRegion.endBeat - MIN_REGION_BEATS}
-                            aria-valuetext={`Beat ${liveRegion.startBeat.toFixed(2)}`}
-                            className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize bg-white/40 outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
-                            onMouseDown={(e) => onRegionDragStart(e, layer, region, 'resizeStart')}
-                            onKeyDown={(e) => onRegionEdgeKeyDown(e, region, 'start')}
-                        />
-                        <div
-                            role="separator"
-                            tabIndex={0}
-                            aria-orientation="vertical"
-                            aria-label="Region end"
-                            aria-valuenow={liveRegion.endBeat}
-                            aria-valuemin={liveRegion.startBeat + MIN_REGION_BEATS}
-                            aria-valuetext={`Beat ${liveRegion.endBeat.toFixed(2)}`}
-                            className="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize bg-white/40 outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
-                            onMouseDown={(e) => onRegionDragStart(e, layer, region, 'resizeEnd')}
-                            onKeyDown={(e) => onRegionEdgeKeyDown(e, region, 'end')}
-                        />
-                        <FadeTriangles
-                            region={region}
-                            pixelsPerBeat={pixelsPerBeat}
-                            width={Math.max(4, width)}
-                            fadePreview={fadePreview}
-                            onFadeDragStart={(e, kind) => onFadeDragStart(e, layer, region, kind)}
-                        />
-                    </div>
+                        onDragStart={(e, kind) => onRegionDragStart(e, layer, region, kind)}
+                        onFadeDragStart={(e, kind) => onFadeDragStart(e, layer, region, kind)}
+                        onKeyDown={(e) => onRegionKeyDown(e, layer, region)}
+                        onEdgeKeyDown={(e, edge) => onRegionEdgeKeyDown(e, region, edge)}
+                    />
                 );
             })}
         </div>
@@ -1070,89 +958,6 @@ const AdjustmentLayerParamEditor = ({
                 </Stack>
             </DialogContent>
         </Dialog>
-    );
-};
-
-type FadeTrianglesProps = {
-    region: AdjustmentRegion;
-    pixelsPerBeat: number;
-    width: number;
-    fadePreview: FadePreview | null;
-    onFadeDragStart: (e: ReactMouseEvent, kind: 'fadeIn' | 'fadeOut') => void;
-};
-
-const FADE_HANDLE_SIZE = 8;
-
-const FadeTriangles = ({
-    region,
-    pixelsPerBeat,
-    width,
-    fadePreview,
-    onFadeDragStart,
-}: FadeTrianglesProps): ReactElement => {
-    const liveFade =
-        fadePreview && fadePreview.regionId === region.id
-            ? { fadeInBeats: fadePreview.fadeInBeats, fadeOutBeats: fadePreview.fadeOutBeats }
-            : { fadeInBeats: region.fadeInBeats, fadeOutBeats: region.fadeOutBeats };
-    const fadeInPx = Math.max(0, Math.min(width, liveFade.fadeInBeats * pixelsPerBeat));
-    const fadeOutPx = Math.max(0, Math.min(width, liveFade.fadeOutBeats * pixelsPerBeat));
-
-    return (
-        <>
-            {fadeInPx > 0 ? (
-                <svg
-                    className="pointer-events-none absolute left-0 top-0 h-full"
-                    width={fadeInPx}
-                    height="100%"
-                    viewBox={`0 0 ${fadeInPx} 20`}
-                    preserveAspectRatio="none"
-                    aria-hidden="true"
-                >
-                    <polygon points={`0,20 ${fadeInPx},20 ${fadeInPx},0`} fill="rgba(255,255,255,0.18)" />
-                </svg>
-            ) : null}
-            {fadeOutPx > 0 ? (
-                <svg
-                    className="pointer-events-none absolute top-0 h-full"
-                    style={{ right: 0 }}
-                    width={fadeOutPx}
-                    height="100%"
-                    viewBox={`0 0 ${fadeOutPx} 20`}
-                    preserveAspectRatio="none"
-                    aria-hidden="true"
-                >
-                    <polygon points={`0,20 ${fadeOutPx},20 0,0`} fill="rgba(255,255,255,0.18)" />
-                </svg>
-            ) : null}
-            <div
-                role="slider"
-                aria-label="Fade in"
-                aria-valuenow={liveFade.fadeInBeats}
-                tabIndex={-1}
-                className="absolute top-0 cursor-col-resize bg-white/80"
-                style={{
-                    left: Math.max(0, fadeInPx - FADE_HANDLE_SIZE / 2),
-                    width: FADE_HANDLE_SIZE,
-                    height: FADE_HANDLE_SIZE,
-                    clipPath: 'polygon(0 0, 100% 0, 100% 100%)',
-                }}
-                onMouseDown={(e) => onFadeDragStart(e, 'fadeIn')}
-            />
-            <div
-                role="slider"
-                aria-label="Fade out"
-                aria-valuenow={liveFade.fadeOutBeats}
-                tabIndex={-1}
-                className="absolute top-0 cursor-col-resize bg-white/80"
-                style={{
-                    right: Math.max(0, fadeOutPx - FADE_HANDLE_SIZE / 2),
-                    width: FADE_HANDLE_SIZE,
-                    height: FADE_HANDLE_SIZE,
-                    clipPath: 'polygon(0 0, 100% 0, 0 100%)',
-                }}
-                onMouseDown={(e) => onFadeDragStart(e, 'fadeOut')}
-            />
-        </>
     );
 };
 

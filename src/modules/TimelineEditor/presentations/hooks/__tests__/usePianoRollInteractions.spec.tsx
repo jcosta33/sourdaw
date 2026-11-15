@@ -1290,8 +1290,8 @@ describe('usePianoRollInteractions', () => {
             type ClipFixture = {
                 id: string;
                 type: string;
-                startBeat?: number;
-                endBeat?: number;
+                startBeat: number;
+                endBeat: number;
                 midiOffsetBeats?: number;
                 loopEnabled?: boolean;
                 loopLength?: number;
