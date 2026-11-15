@@ -31,6 +31,13 @@ afterEach(() => {
  */
 
 const SAMPLE_RATE = 48_000;
+/** Canonical decay of bucket 28, the bucket of 2 s: 1.025 ** 28. */
+const DECAY_BUCKET_28_SEC = 1.025 ** 28;
+
+/** A Decay write renders its bucket's canonical decay, within half a 2.5 % bucket step of the written value. */
+function expectDecayLength(length: number, writtenSec: number, sampleRate = SAMPLE_RATE): void {
+    expect(Math.abs(length / (writtenSec * sampleRate) - 1)).toBeLessThanOrEqual(0.0126);
+}
 
 function makeContext(): MockAudioContext {
     return createMockAudioContext();
@@ -126,12 +133,49 @@ function deviceWithShape(shape: Partial<ReverbImpulseShape>): ReturnType<typeof 
     return dn;
 }
 
+const LOW_RATE = 1_000;
+
+function contentOf(buffer: AudioBuffer): number[][] {
+    return [0, 1].map((channel) => Array.from(buffer.getChannelData(channel)));
+}
+
+function lowRateDevice(params: Record<string, number>, sampleRate = LOW_RATE): ReturnType<typeof createReverb> {
+    const ctx = makeContext();
+    ctx.sampleRate = sampleRate;
+    const dn = createReverb(asBaseAudioContext(ctx));
+    applyReverbParams(dn, params);
+    return dn;
+}
+
+/**
+ * Reads the unit value a Size or Damping write left installed: the impulse is
+ * deterministic, so it is the 0.01 step whose fresh static render is identical.
+ */
+function installedUnitValue(dn: ReturnType<typeof createReverb>, key: 'rev-size' | 'rev-damping'): number {
+    const installedBuffer = impulseOf(dn);
+    const installed = contentOf(installedBuffer);
+    for (let step = 0; step <= 100; step++) {
+        const candidate = contentOf(impulseOf(lowRateDevice({ [key]: step / 100 }, installedBuffer.sampleRate)));
+        if (JSON.stringify(candidate) === JSON.stringify(installed)) {
+            return step / 100;
+        }
+    }
+    throw new Error(`installed ${key} impulse matches no 0.01 step`);
+}
+
+function writeRamp(dn: ReturnType<typeof createReverb>, from: number, to: number): void {
+    const ticks = 7_900;
+    for (let tick = 0; tick <= ticks; tick++) {
+        applyReverbParams(dn, { 'rev-decay': from + ((to - from) * tick) / ticks });
+    }
+}
+
 describe('reverb impulse rendering (#3731)', () => {
     it('renders decay-time semantics: the buffer runs to the declared -60 dB point', () => {
         const impulse = impulseOf(deviceWithShape({ size: 0.5, decay: 3, damping: 0.5 }));
 
         expect(impulse.sampleRate).toBe(SAMPLE_RATE);
-        expect(impulse.length).toBe(SAMPLE_RATE * 3);
+        expectDecayLength(impulse.length, 3);
 
         const data = impulse.getChannelData(0);
         // The envelope must fall from unity at the tail's start to -60 dB
@@ -146,8 +190,8 @@ describe('reverb impulse rendering (#3731)', () => {
         const short = impulseOf(deviceWithShape({ decay: 0.5 }));
         const long = impulseOf(deviceWithShape({ decay: 8 }));
 
-        expect(short.length).toBe(SAMPLE_RATE * 0.5);
-        expect(long.length).toBe(SAMPLE_RATE * 8);
+        expectDecayLength(short.length, 0.5);
+        expectDecayLength(long.length, 8);
 
         const shortRender = convolve(shortBurst(), short.getChannelData(0));
         const longRender = convolve(shortBurst(), long.getChannelData(0).subarray(0, short.length));
@@ -204,8 +248,8 @@ describe('reverb impulse rendering (#3731)', () => {
         // were indistinguishable. The full wet renders must now differ.
         const quiet = impulseOf(deviceWithShape({ size: 0, decay: 0.1, damping: 0 }));
         const vast = impulseOf(deviceWithShape({ size: 1, decay: 20, damping: 1 }));
-        expect(quiet.length).toBe(SAMPLE_RATE * 0.1);
-        expect(vast.length).toBe(SAMPLE_RATE * 20);
+        expectDecayLength(quiet.length, 0.1);
+        expectDecayLength(vast.length, 20);
 
         const quietRender = convolve(shortBurst(), quiet.getChannelData(0));
         const vastRender = convolve(shortBurst(), vast.getChannelData(0).subarray(0, quiet.length));
@@ -221,11 +265,11 @@ describe('reverb impulse rendering (#3731)', () => {
         const dn = createReverb(asBaseAudioContext(ctx));
         applyReverbParams(dn, { 'rev-decay': 5 });
         const afterDecay = impulseOf(dn);
-        expect(afterDecay.length).toBe(SAMPLE_RATE * 5);
+        expectDecayLength(afterDecay.length, 5);
 
         // A damping-only write must keep the 5 s decay, not reset to default 2 s.
         applyReverbParams(dn, { 'rev-damping': 1 });
-        expect(impulseOf(dn).length).toBe(SAMPLE_RATE * 5);
+        expectDecayLength(impulseOf(dn).length, 5);
     });
 
     it('reuses one buffer per context and shape and stays deterministic across contexts', () => {
@@ -329,8 +373,8 @@ describe('reverb impulse rendering (#3731)', () => {
         applyReverbParams(dn, { 'rev-damping': 0.8 });
 
         expect(setter).toHaveBeenCalledOnce();
-        expect(impulseOf(dn).length).toBe(Math.round(ctx.sampleRate * 2.0001));
-        expect(impulseOf(dn).length).not.toBe(installed.length);
+        expect(impulseOf(dn).length).toBe(Math.round(ctx.sampleRate * DECAY_BUCKET_28_SEC));
+        expect(impulseOf(dn)).not.toBe(installed);
     });
 
     it.each(['render', 'install'])('retries the first installation after a failed %s', (failure) => {
@@ -360,7 +404,7 @@ describe('reverb impulse rendering (#3731)', () => {
         applyReverbImpulseShape(dn, undefined, DEFAULT_REVERB_SHAPE);
 
         expect(convolver.buffer).not.toBeNull();
-        expect(impulseOf(dn).length).toBe(SAMPLE_RATE * 2);
+        expectDecayLength(impulseOf(dn).length, 2);
         expect(setter).toHaveBeenCalledTimes(failure === 'render' ? 1 : 2);
         expect(ctx.createBuffer).toHaveBeenCalledTimes(failure === 'render' ? 2 : 1);
     });
@@ -381,7 +425,7 @@ describe('reverb impulse rendering (#3731)', () => {
 
         expect(setter).toHaveBeenCalledTimes(2);
         expect(ctx.createBuffer).toHaveBeenCalledTimes(2);
-        expect(impulseOf(dn).length).toBe(SAMPLE_RATE * 3);
+        expectDecayLength(impulseOf(dn).length, 3);
     });
 
     /**
@@ -394,11 +438,12 @@ describe('reverb impulse rendering (#3731)', () => {
      */
     it.each([
         { key: 'rev-decay', from: 3.2, to: 11, maxRenders: 60 },
-        { key: 'rev-size', from: 0, to: 1, maxRenders: 101 },
-        { key: 'rev-damping', from: 0, to: 1, maxRenders: 101 },
+        { key: 'rev-size', from: 0, to: 0.97, maxRenders: 101 },
+        { key: 'rev-damping', from: 0, to: 0.97, maxRenders: 101 },
     ] as const)('re-renders a continuous $key ramp per audible step, not per tick', ({ key, from, to, maxRenders }) => {
         const ctx = makeContext();
-        ctx.sampleRate = 1_000;
+        // Size and Damping are only distinguishable per 0.01 step at a finer rate than Decay needs.
+        ctx.sampleRate = key === 'rev-decay' ? 1_000 : 8_000;
         const dn = createReverb(asBaseAudioContext(ctx));
         ctx.createBuffer.mockClear();
         const ticks = 7_900;
@@ -409,6 +454,11 @@ describe('reverb impulse rendering (#3731)', () => {
 
         expect(ctx.createBuffer.mock.calls.length).toBeGreaterThan(1);
         expect(ctx.createBuffer.mock.calls.length).toBeLessThanOrEqual(maxRenders);
+        if (key === 'rev-decay') {
+            return;
+        }
+        // The installed shape must still follow the ramp to its end, within one step.
+        expect(Math.abs(installedUnitValue(dn, key) - to)).toBeLessThanOrEqual(0.01);
     });
 
     it('keeps the installed Decay within an inaudible distance of the end of a ramp', () => {
@@ -425,10 +475,45 @@ describe('reverb impulse rendering (#3731)', () => {
         expect(Math.abs(impulseOf(dn).length / (11 * ctx.sampleRate) - 1)).toBeLessThan(0.05);
     });
 
+    describe('canonical bucket impulse', () => {
+        it('installs for a written value what a fresh context renders for it, after a descending ramp', () => {
+            const ramped = lowRateDevice({});
+            writeRamp(ramped, 11, 3.2);
+
+            const fresh = lowRateDevice({ 'rev-decay': 3.2 });
+
+            expect(impulseOf(ramped).length).toBe(impulseOf(fresh).length);
+            expect(contentOf(impulseOf(ramped))).toEqual(contentOf(impulseOf(fresh)));
+        });
+
+        it('installs the same impulse for a static write after a ramp entered the bucket at another value', () => {
+            const ramped = lowRateDevice({});
+            // The ramp passes through 2.02 s, inside the bucket of 2.0 s.
+            writeRamp(ramped, 1.5, 2.02);
+            applyReverbParams(ramped, { 'rev-decay': 2 });
+
+            const fresh = lowRateDevice({ 'rev-decay': 2 });
+
+            expect(impulseOf(ramped).length).toBe(impulseOf(fresh).length);
+            expect(contentOf(impulseOf(ramped))).toEqual(contentOf(impulseOf(fresh)));
+        });
+
+        it('installs identical buffers in two contexts with different histories reaching one written value', () => {
+            const live = lowRateDevice({});
+            writeRamp(live, 1.5, 2.02);
+            applyReverbParams(live, { 'rev-decay': 2.01 });
+
+            const offline = lowRateDevice({ 'rev-decay': 2.01 });
+
+            expect(impulseOf(live)).not.toBe(impulseOf(offline));
+            expect(contentOf(impulseOf(live))).toEqual(contentOf(impulseOf(offline)));
+        });
+    });
+
     it('clamps out-of-range writes to the declared parameter window', () => {
         const ctx = makeContext();
         const dn = createReverb(asBaseAudioContext(ctx));
         applyReverbParams(dn, { 'rev-decay': 500, 'rev-size': 7, 'rev-damping': -3 });
-        expect(impulseOf(dn).length).toBe(SAMPLE_RATE * 20);
+        expectDecayLength(impulseOf(dn).length, 20);
     });
 });
