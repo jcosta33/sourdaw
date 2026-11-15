@@ -14,7 +14,6 @@ vi.mock('#/modules/Command/useCases', () => ({
     isAppActionCommittedError: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    duplicateTrack: vi.fn(),
     removeTrack: vi.fn(),
     renameClip: vi.fn(),
     splitClip: vi.fn(),

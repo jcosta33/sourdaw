@@ -18,6 +18,7 @@ import { InspectorDetailHeader } from '../../components/Inspector/InspectorDetai
 import { MetaText } from '../../components/Inspector/MetaText';
 
 import { resolveDeviceLayout } from './deviceLayoutRegistry';
+import { ExternalPluginParameterList } from './ExternalPluginParameterList';
 import { GenericDeviceLayout } from './GenericDeviceLayout';
 import { resolveDevicePlugin } from './resolveDevicePlugin';
 import {
@@ -97,13 +98,13 @@ function deriveParamsFromValues(device: Device): DeviceParameter[] {
 }
 
 /**
- * Where a third-party plugin's parameters are edited, per the state of its editor. A plugin's parameters
- * are never listed here, so no builtin's controls can stand in for them.
+ * Where a third-party plugin's parameters are edited, per the state of its editor. The plugin's own
+ * parameters are listed beneath the hint, so no builtin's controls can stand in for them.
  */
 const EXTERNAL_PLUGIN_EDITOR_HINTS: Record<ExternalPluginEditorAccess, string> = {
     openable:
-        "Edit this plugin's parameters in its own window: use Open editor on its device in the track's device list.",
-    'no-editor': 'This plugin has no editor window of its own, and its parameters are not listed here.',
+        "Parameters are listed below and can also be edited in the plugin's own window: use Open editor on its device in the track's device list.",
+    'no-editor': 'This plugin has no editor window of its own; its parameters are listed below.',
     'not-loaded': "Its editor can be opened from its device in the track's device list once the plugin is loaded.",
 };
 
@@ -124,9 +125,13 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
     const renderDeviceLayout = (): ReactElement => {
         if (isExternalPluginDeviceType(device.type)) {
             return (
-                <div className="px-1">
-                    <MetaText>{EXTERNAL_PLUGIN_EDITOR_HINTS[editorAccess]}</MetaText>
-                </div>
+                <Stack gap={2}>
+                    <div className="px-1">
+                        <MetaText>{EXTERNAL_PLUGIN_EDITOR_HINTS[editorAccess]}</MetaText>
+                    </div>
+                    {/* Keyed by instance so pending values, refusals, filter and page reset on a device switch. */}
+                    <ExternalPluginParameterList key={device.externalInstanceId ?? device.id} device={device} />
+                </Stack>
             );
         }
         if (LayoutComponent) {
