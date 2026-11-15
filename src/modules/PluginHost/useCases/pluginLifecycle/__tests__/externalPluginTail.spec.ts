@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { externalPluginTailStore } from '../../../stores/externalPluginTailStore';
 import { activateExternalPlugin } from '../activateExternalPlugin';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
+import { forgetRetiredPluginInstances } from '../forgetRetiredPluginInstances';
 import { unloadPlugin } from '../unloadPlugin';
 
 import type { PluginInstance, PluginTailChange } from '../../../repositories/pluginBridge/types';
@@ -107,6 +108,51 @@ describe('external plugin tail store', () => {
         await activation;
 
         expect(tailOf('inst-1')).toBeUndefined();
+    });
+
+    /**
+     * Holds a 240000 revision for `inst-1` against a first load that has not
+     * returned yet, and hands back the way to let that load return 96000.
+     */
+    async function holdRevisionDuringLoad(): Promise<{ finishFirstLoad: () => Promise<unknown> }> {
+        let resolveFirstLoad: (instance: PluginInstance) => void = () => {};
+        mocks.loadPluginRepo.mockImplementationOnce(
+            () =>
+                new Promise<PluginInstance>((resolve) => {
+                    resolveFirstLoad = resolve;
+                })
+        );
+        const firstActivation = activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+        await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1));
+        emitTailChange({ instance_id: 'inst-1', tail_samples: 240_000 });
+        return {
+            finishFirstLoad: () => {
+                resolveFirstLoad(loadedInstance('inst-1', 96_000));
+                return firstActivation;
+            },
+        };
+    }
+
+    it('seeds the in-flight load from its own answer once the engine retired the instance', async () => {
+        const { finishFirstLoad } = await holdRevisionDuringLoad();
+
+        // An engine retire forgets the instance without waiting for its load,
+        // which unload's lifecycle queue would.
+        forgetRetiredPluginInstances(['inst-1']);
+        await finishFirstLoad();
+
+        expect(tailOf('inst-1')).toBe(96_000);
+    });
+
+    it('seeds a reactivation from its own load once the graph generation ended', async () => {
+        const { finishFirstLoad } = await holdRevisionDuringLoad();
+
+        clearLoadedExternalPlugins();
+        await finishFirstLoad();
+        await activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+
+        expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(2);
+        expect(tailOf('inst-1')).toBe(96_000);
     });
 
     it('records no tail for an instance the process does not hold', async () => {
