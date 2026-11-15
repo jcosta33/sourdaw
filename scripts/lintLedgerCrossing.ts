@@ -104,10 +104,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-type BindingIndex = Map<string, string[]>;
+/** Per path, the set of binding entries a ledger records for it; entries are never joined. */
+type BindingIndex = Map<string, Set<string>>;
 
 function addBinding(index: BindingIndex, path: string, binding: string): void {
-    index.set(normalizedLedgerPath(path), [...(index.get(normalizedLedgerPath(path)) ?? []), binding]);
+    const key = normalizedLedgerPath(path);
+    index.set(key, new Set([...(index.get(key) ?? []), binding]));
 }
 
 function indexKeyedJson(index: BindingIndex, name: string, side: string, text: string): void {
@@ -116,7 +118,14 @@ function indexKeyedJson(index: BindingIndex, name: string, side: string, text: s
         fail(`lint ledger ${name} in ${side} is not valid JSON`);
     }
     for (const [path, value] of Object.entries(parsed)) {
-        addBinding(index, path, `${name}=${canonicalJson(value)}`);
+        if (isRecord(value)) {
+            // One entry per rule, so a rule newly suppressed for a path is an addition, not a change.
+            for (const [rule, figure] of Object.entries(value)) {
+                addBinding(index, path, `${name}:${JSON.stringify(rule)}=${canonicalJson(figure)}`);
+            }
+        } else {
+            addBinding(index, path, `${name}=${canonicalJson(value)}`);
+        }
     }
 }
 
@@ -148,7 +157,7 @@ function indexModuleList(index: BindingIndex, name: string, text: string): void 
     }
 }
 
-function bindingIndex(tree: LedgerTree, side: string): Map<string, string> {
+function bindingIndex(tree: LedgerTree, side: string): BindingIndex {
     const index: BindingIndex = new Map();
     for (const [name, text] of Object.entries(tree)) {
         if (name === '.oxlintrc.json') {
@@ -159,12 +168,17 @@ function bindingIndex(tree: LedgerTree, side: string): Map<string, string> {
             indexModuleList(index, name, text);
         }
     }
-    return new Map([...index].map(([path, bindings]) => [path, bindings.sort().join('\n')]));
+    return index;
 }
 
-/** Paths whose ledger binding differs between the merge base and one side, with no file edit needed. */
-function rebound(base: Map<string, string>, side: Map<string, string>): string[] {
-    return [...new Set([...base.keys(), ...side.keys()])].filter((path) => base.get(path) !== side.get(path));
+/**
+ * Paths for which one side lost a binding entry the merge base held, with no file edit needed. An
+ * entry the side only adds can relax or newly bind a path but never turns a green pair red.
+ */
+function rebound(base: BindingIndex, side: BindingIndex): string[] {
+    return [...base]
+        .filter(([path, entries]) => [...entries].some((entry) => side.get(path)?.has(entry) !== true))
+        .map(([path]) => path);
 }
 
 /**

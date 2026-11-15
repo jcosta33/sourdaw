@@ -174,6 +174,42 @@ describe('lint ledger crossing decision', () => {
         expect(lintLedgerCrossingPaths([], [], { base, main: edited, head: base })).toEqual([]);
     });
 
+    it('crosses when main changes the rules of an override whose files list stays the same', () => {
+        const withRules = (rule: string): LedgerTree => ({
+            [OXC]: `{ "overrides": [{ "files": ["./src/x.ts"], "rules": { "${rule}": "off" } }] }`,
+        });
+        const base = withRules('r');
+        const edited = withRules('s');
+        expect(lintLedgerCrossingPaths([], ['src/x.ts'], { base, main: edited, head: base })).toEqual(['src/x.ts']);
+        expect(lintLedgerCrossingPaths(['src/x.ts'], [], { base, main: base, head: edited })).toEqual(['src/x.ts']);
+    });
+
+    const additions: Array<{ name: string; base: LedgerTree; added: LedgerTree }> = [
+        {
+            name: 'the path added to a new off override',
+            base: { [OXC]: '{ "overrides": [{ "files": ["./src/y.ts"], "rules": { "r": "off" } }] }' },
+            added: {
+                [OXC]: '{ "overrides": [{ "files": ["./src/y.ts"], "rules": { "r": "off" } }, { "files": ["./src/x.ts"], "rules": { "s": "off" } }] }',
+            },
+        },
+        {
+            name: 'a new rule suppressed for a path already suppressed',
+            base: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-void': { count: 2 } } }) },
+            added: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-void': { count: 2 }, 'no-var': { count: 1 } } }) },
+        },
+        {
+            name: 'a new ceiling key for a path',
+            base: { [CEIL]: JSON.stringify({ 'src/y.ts': 700 }) },
+            added: { [CEIL]: JSON.stringify({ 'src/y.ts': 700, 'src/x.ts': 600 }) },
+        },
+    ];
+
+    it.each(additions)('does not cross $name on main while the pull request edits the file, and the mirror', (edit) => {
+        const { base, added } = edit;
+        expect(lintLedgerCrossingPaths([], ['src/x.ts'], { base, main: added, head: base })).toEqual([]);
+        expect(lintLedgerCrossingPaths(['src/x.ts'], [], { base, main: base, head: added })).toEqual([]);
+    });
+
     it.each([SUP, OXC, CEIL])('fails closed when %s does not parse', (name) => {
         const good = { [name]: '{}' };
         const bad = { [name]: '{ not json' };
