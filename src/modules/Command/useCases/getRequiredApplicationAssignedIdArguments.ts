@@ -35,10 +35,12 @@ const REQUIRED_ID_ARGUMENTS: { readonly [Type in AppActionType]: RequiredIdArgum
         return argumentsList;
     },
     discardImportedStemSet: ruleDrivenArguments,
-    addTrack: (argumentsValue) =>
-        argumentsValue.kind === 'midi'
-            ? ['id', 'initialAlternativeId', 'initialDeviceId']
-            : ['id', 'initialAlternativeId'],
+    addTrack: (argumentsValue) => {
+        if (argumentsValue.kind === 'midi') {
+            return ['id', 'initialAlternativeId', 'initialDeviceId'];
+        }
+        return ['id', 'initialAlternativeId'];
+    },
     removeTrack: ruleDrivenArguments,
     discardCreatedTrack: ruleDrivenArguments,
     restoreTrack: ruleDrivenArguments,
