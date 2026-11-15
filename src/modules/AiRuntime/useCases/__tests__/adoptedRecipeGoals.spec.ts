@@ -201,16 +201,17 @@ function routeSourcesToBuses(): void {
             throw new TypeError('Expected project tracks');
         }
         const bus = (id: string, name: string) => createTrack({ id, name, kind: 'bus' });
+        const busOutputs = new Map([
+            [VOCAL_ID, 'bus-a'],
+            ['track-bass', 'bus-b'],
+        ]);
         trackStore.set({
             ...state,
             tracks: [
-                ...state.tracks.map((track) =>
-                    track.id === VOCAL_ID
-                        ? { ...track, outputId: 'bus-a' }
-                        : track.id === 'track-bass'
-                          ? { ...track, outputId: 'bus-b' }
-                          : track
-                ),
+                ...state.tracks.map((track) => {
+                    const outputId = busOutputs.get(track.id);
+                    return outputId === undefined ? track : { ...track, outputId };
+                }),
                 bus('bus-a', 'Bus A'),
                 bus('bus-b', 'Bus B'),
                 bus('bus-empty', 'Empty Bus'),
@@ -235,8 +236,7 @@ function rewireBusB(rewire: (tracks: readonly Track[]) => Track[]): void {
                     if (track.id !== 'track-bass') {
                         return track;
                     }
-                    const { outputId: _removed, ...rest } = track;
-                    return rest;
+                    return { ...track, outputId: 'master' };
                 })
             ),
         });

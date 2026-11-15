@@ -5,10 +5,11 @@ import { type CreativeRequestAuthority, getCreativeSelectionSnapshot } from '../
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 
-import { compileRecipeBatchSteps, readRecipeStepId } from './compileRecipeBatchSteps';
+import { compileRecipeBatchSteps } from './compileRecipeBatchSteps';
 import { type MetricGoal, type MetricGoalState, type MetricRequestAuthority } from './metricGoalContractTypes';
 import { readArrangementRange } from './readArrangementRange';
 import { readAuthoredRecipeGoals } from './readAuthoredRecipeGoals';
+import { readRecipeStepId } from './readRecipeStepId';
 import { readTargetCarriesAudio } from './readTargetCarriesAudio';
 
 type RecipeCompilation = Extract<RetainedCompilation, { kind: 'recipe' }>;

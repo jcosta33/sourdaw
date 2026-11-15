@@ -6,16 +6,12 @@ import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { compilePreviewMeasurementProposal } from './compilePreviewMeasurementProposal';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { type MetricGoalState } from './metricGoalContractTypes';
+import { readRecipeStepId } from './readRecipeStepId';
 
 type RecipeCompilation = Extract<RetainedCompilation, { kind: 'recipe' }>;
 
 type CompiledRecipeBatchSteps =
     { status: 'compiled'; steps: MetricGoalState['steps'][number][] } | { status: 'refused'; reason: string };
-
-/** The logical step one recipe on one target forms inside a batch of recipe expansions. */
-export function readRecipeStepId(recipe: Pick<RecipeCompilation['recipe'], 'recipeId' | 'targetId'>): string {
-    return `recipe:${recipe.recipeId}:${recipe.targetId}`;
-}
 
 /**
  * One step per recipe expansion, in batch order, each bound to the exact cumulative commands its

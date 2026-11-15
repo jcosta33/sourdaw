@@ -17,7 +17,7 @@ export type AuthoredRecipeGoals = { status: 'read'; goals: MetricGoal[] } | { st
  */
 export function readAuthoredRecipeGoals(input: {
     recipe: MixRecipeCatalog['recipes'][number];
-    catalogVersion: string;
+    catalogVersion: number;
     targetId: string;
     stepId: string;
     ranges: readonly NonNullable<MetricGoal['range']>[];

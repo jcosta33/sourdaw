@@ -43,10 +43,10 @@ export async function measureAdoptedRecipeProposal(input: {
     ) {
         return { status: 'not-applicable' };
     }
-    const isStopped = () => {
+    function isStopped(): boolean {
         const run = agentRunLifecycle.get(runId);
         return run === null || AGENT_RUN_TERMINAL_PHASES.has(run.phase) || run.cancellation.requestedAt !== null;
-    };
+    }
     updateChatMessage(assistantMessageId, {
         stoppableRunId: runId,
         content: 'Measuring what the recipe promises before proposing it...',
