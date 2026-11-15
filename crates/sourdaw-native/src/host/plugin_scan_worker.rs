@@ -1059,8 +1059,16 @@ impl HelperRegistry {
     }
 
     /// Reap the helper if it has exited, deregistering it under the same lock.
+    ///
+    /// On Unix an exit that is observed ends the helper's whole process group
+    /// first (see [`kill_group_of_exited_helper`]), so a child the plugin
+    /// forked cannot outlive a helper that returned on its own.
     fn try_reap(&self, child: &mut Child) -> std::io::Result<Option<ExitStatus>> {
         let mut state = self.lock_unless_stopped();
+        #[cfg(unix)]
+        if !kill_group_of_exited_helper(child.id())? {
+            return Ok(None);
+        }
         let Some(status) = child.try_wait()? else {
             return Ok(None);
         };
@@ -1239,6 +1247,8 @@ fn terminate_process_tree(registry: &HelperRegistry, child: &mut Child) {
 }
 
 /// Every helper leads its own process group, so its pid is the group's id.
+/// The helper itself is signalled too, so one that moved itself out of its
+/// group still dies.
 #[cfg(unix)]
 fn kill_helper_tree(pid: u32) {
     let Ok(group) = libc::pid_t::try_from(pid) else {
@@ -1246,6 +1256,61 @@ fn kill_helper_tree(pid: u32) {
     };
     // SAFETY: kill takes plain values; the group is unreaped while registered.
     let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
+    // SAFETY: kill takes plain values; the helper is unreaped while registered.
+    let _ = unsafe { libc::kill(group, libc::SIGKILL) };
+}
+
+/// Whether the helper `pid` has exited, observed without reaping it; if it
+/// has, its process group is killed before this returns.
+///
+/// The helper stays a zombie until the caller reaps it, and while it does,
+/// neither its pid nor its group id can be handed to another process, so the
+/// kill cannot land on a stranger. Killing after the reap would race that
+/// reuse. `ESRCH` from the kill means the group is already empty.
+#[cfg(unix)]
+fn kill_group_of_exited_helper(pid: u32) -> std::io::Result<bool> {
+    let Ok(group) = libc::pid_t::try_from(pid) else {
+        return Err(std::io::Error::other("helper pid does not fit a pid_t"));
+    };
+    // SAFETY: an all-zero siginfo_t is a valid value for the plain C struct.
+    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    loop {
+        // SAFETY: waitid takes plain values and a valid out-pointer, and with
+        // WNOHANG never blocks; WNOWAIT leaves the zombie for the caller.
+        let result = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid as libc::id_t,
+                &mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        if result == 0 {
+            break;
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+    if siginfo_pid(&info) == 0 {
+        return Ok(false);
+    }
+    // SAFETY: kill takes plain values; the group's leader is an unreaped
+    // zombie, so the group id cannot belong to anyone else.
+    let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
+    Ok(true)
+}
+
+#[cfg(all(unix, target_os = "linux"))]
+fn siginfo_pid(info: &libc::siginfo_t) -> libc::pid_t {
+    // SAFETY: waitid filled the SIGCHLD member, or left it zeroed.
+    unsafe { info.si_pid() }
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn siginfo_pid(info: &libc::siginfo_t) -> libc::pid_t {
+    info.si_pid
 }
 #[cfg(windows)]
 fn kill_helper_tree(pid: u32) {
@@ -1564,14 +1629,17 @@ mod tests {
 #[repr(C)] struct Version{major:u32,minor:u32,revision:u32}
 #[repr(C)] struct Entry{version:Version,init:Option<unsafe extern "C" fn(*const c_char)->bool>,deinit:Option<unsafe extern "C" fn()>,get_factory:Option<unsafe extern "C" fn(*const c_char)->*const c_void>}
 #[cfg(unix)] unsafe extern "C" { fn fork()->i32; }
-#[cfg(unix)] fn fork_a_spinning_child_then_hang(pid_file:std::ffi::OsString)->!{
+#[cfg(unix)] fn fork_a_spinning_child(pid_file:std::ffi::OsString){
  let child=unsafe{fork()};
  if child==0{loop{std::hint::spin_loop();}}
  let _=std::fs::write(pid_file,child.to_string());
- loop{std::thread::sleep(std::time::Duration::from_secs(1));}
 }
 unsafe extern "C" fn init(_: *const c_char)->bool{
- #[cfg(unix)] if let Some(pid_file)=std::env::var_os("SOURDAW_TEST_PLUGIN_FORK_PID_FILE"){fork_a_spinning_child_then_hang(pid_file);}
+ #[cfg(unix)] if let Some(pid_file)=std::env::var_os("SOURDAW_TEST_PLUGIN_FORK_PID_FILE"){
+  fork_a_spinning_child(pid_file);
+  if std::env::var_os("SOURDAW_TEST_PLUGIN_FORK_THEN_RETURN").is_some(){return true;}
+  loop{std::thread::sleep(std::time::Duration::from_secs(1));}
+ }
  if std::env::var_os("SOURDAW_TEST_PLUGIN_HANG").is_some(){loop{std::thread::sleep(std::time::Duration::from_secs(1));}}
  std::process::abort();
 }
@@ -2141,6 +2209,69 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         assert!(
             process_has_exited_within(forked, Duration::from_secs(2)),
             "the plugin's forked child {forked} outlived its helper"
+        );
+    }
+
+    const RETURNING_HELPER_MARKER_ENV: &str = "SOURDAW_TEST_RETURNING_HELPER";
+
+    /// The stand-in helper for a plugin that forks a spinning child and then
+    /// returns: the real worker entry, ended by its own exit code.
+    #[test]
+    fn returning_helper_child() {
+        if std::env::var_os(RETURNING_HELPER_MARKER_ENV).is_none() {
+            return;
+        }
+        let code = run_from_process_args().expect("the worker arguments name an extraction");
+        std::process::exit(code);
+    }
+
+    /// A helper that exits on its own, with no timeout and no stop, still
+    /// takes its process group with it: the spawner kills the group when it
+    /// observes the exit, before it reaps the helper.
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_that_returns_leaves_no_forked_child_behind() {
+        let fixture = build_hostile_clap("fork-return");
+        let fork_pid_file =
+            std::env::temp_dir().join(format!("sourdaw-returned-child-{}", uuid::Uuid::new_v4()));
+        let mut stragglers = Stragglers::cleaning(vec![fork_pid_file.clone()]);
+        let launcher = ScanWorkerCommand {
+            program: std::env::current_exe().expect("test executable should exist"),
+            // `--` hands the worker arguments to libtest as extra filters,
+            // which match no test, rather than as unknown options.
+            args: vec![
+                "--exact".to_string(),
+                "host::plugin_scan_worker::tests::returning_helper_child".to_string(),
+                "--".to_string(),
+            ],
+            env: BTreeMap::from([
+                (RETURNING_HELPER_MARKER_ENV.to_string(), "1".to_string()),
+                (
+                    "SOURDAW_TEST_PLUGIN_FORK_PID_FILE".to_string(),
+                    fork_pid_file.display().to_string(),
+                ),
+                (
+                    "SOURDAW_TEST_PLUGIN_FORK_THEN_RETURN".to_string(),
+                    "1".to_string(),
+                ),
+            ]),
+        };
+
+        let _ = scan_worker_with::<Vec<ScannedDescriptor>>(
+            &launcher,
+            PluginFormat::Clap,
+            &fixture.plugin_path,
+            None,
+            WORKER_TIMEOUT,
+            WORKER_ARGUMENT,
+        );
+
+        let forked = read_pid_within(&fork_pid_file, Duration::from_secs(1))
+            .expect("the plugin should have forked its child and recorded its pid");
+        stragglers.pids.push(forked);
+        assert!(
+            process_has_exited_within(forked, Duration::from_secs(3)),
+            "the plugin's forked child {forked} outlived the helper that returned"
         );
     }
 
