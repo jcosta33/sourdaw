@@ -488,11 +488,12 @@ describe('handleDuplicateTrack atomic integration', () => {
         const state = trackStore.value!;
         trackStore.set({
             ...state,
-            tracks: state.tracks.map((track) =>
-                track.id === copyId
-                    ? { ...track, devices: track.devices.map((device) => ({ ...device, bypassed: true })) }
-                    : track
-            ),
+            tracks: state.tracks.map((track) => {
+                if (track.id !== copyId) {
+                    return track;
+                }
+                return { ...track, devices: track.devices.map((device) => ({ ...device, bypassed: true })) };
+            }),
         });
 
         await expectUndoRefused();
