@@ -171,7 +171,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:15790c50eecb4714d7898b15b0912096fae4f8b352be18e1382f9b910c3774f0:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:01f578c3b15487baa5c51aa2b1021bcf96c92ab829437172a1ea1b2e59f0daa2:release/dependency-license-proofs.json"
+                "sha256:bfb70bdd78c63d4d8541856f306a99d183b2c83fe0e4f842234f9f9a8f988326:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1379,13 +1379,13 @@
                 "wasm-pack 0.15.1",
                 "wasm-bindgen 0.2.130",
                 "wasm-opt bundled-by-wasm-pack@0.15.1",
-                "daw-dsp sha256:479fe58456fcb325ca0477779da099bd18a578f45a7098d01cc3f55f3a981402",
+                "daw-dsp sha256:f747746d4df4a9f5a156ed45c7198256f81dd0921d88f10c225a90c8afa5d4f6",
                 "daw-wasm-decoder sha256:5d2caa4f7fe69567038fedd20e423825260d3c8a146305f683511a7b989fc996",
-                "proof-chamber sha256:10a96efa87684cfc3999799f8d959e6b085dc587477e75e56360d8243fa027d9",
-                "scoring sha256:a13a39f6f39dab4f09c566ec7c0f65defd28690b840d5b6debd1256a71f7497b"
+                "proof-chamber sha256:401f400e45edbddff14c0e6c09e69a6f4fd47f0d24e1d1357124d1569c09af08",
+                "scoring sha256:fce97221ed986041f93117df97fe8f024a5d21971453e19121f5e14fb7775d85"
             ],
             "digests": [
-                "sha256:9bed8578f73983b421d3ff74060b20a75094aaba4edd6da19c5a72a49bb29319:public/wasm/manifest.json"
+                "sha256:a3fa9bba580ec36bbf0bb81887cba60475831e927e50a8855d0fdfa63c6e6b47:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1907,7 +1907,7 @@
         },
         {
             "path": "Cargo.toml",
-            "sha256": "72e703a4b8c90e8c7e40e31a5c9c6d664cd4801b6b01a48f2225f0150a2cee0e"
+            "sha256": "3a13e58e939eae530fc9892451b6a90196904b38d027787caa734f7ee911f57e"
         },
         {
             "path": "Cargo.lock",
@@ -1919,7 +1919,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "9bed8578f73983b421d3ff74060b20a75094aaba4edd6da19c5a72a49bb29319"
+            "sha256": "a3fa9bba580ec36bbf0bb81887cba60475831e927e50a8855d0fdfa63c6e6b47"
         }
     ],
     "externalReferences": [
