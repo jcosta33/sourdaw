@@ -2667,8 +2667,22 @@ describe('comparisons by loudness, brightness, width, dynamics and punch', () =>
             ['quoted comparative text', 'Make Drums darker, as the note says "wider than the keys"', null],
             ['a bare direction', 'Make Drums louder', null],
             ['a negated bare direction', "Don't make Drums brighter", null],
+            ['an as-as superlative of loudness', 'Make Drums as loud as possible', null],
+            ['an as-as superlative of width', 'Make Drums as wide as you can', null],
+            ['an as-as superlative of brightness', 'Make Drums as bright as it gets', null],
+            ['an as-as superlative of punch', 'Make Drums as punchy as it can be', null],
         ])('offers no comparison for %s', async (_name, prompt, track) => {
             expect(await offeredPolicies(prompt, track)).toEqual([]);
+        });
+
+        const LOUDNESS_POLICIES = ['integrated-loudness-comparison-v1', 'integrated-loudness-match-v1'];
+        it.each([
+            ['a match of volume', 'Match Drums volume to Bass over Chorus', LOUDNESS_POLICIES],
+            ['the same volume', 'Make Drums the same volume as Bass', LOUDNESS_POLICIES],
+            ['as loud as a subject', 'Make Drums as loud as Bass', LOUDNESS_POLICIES],
+            ['as wide as a subject', 'Make Drums as wide as the keys', ['side-energy-fraction-comparison-v1']],
+        ])('offers its quality for %s', async (_name, prompt, policies) => {
+            expect(await offeredPolicies(prompt, null)).toEqual(policies);
         });
 
         it('offers only the quality a stated comparison names, beside a comparative track name', async () => {
