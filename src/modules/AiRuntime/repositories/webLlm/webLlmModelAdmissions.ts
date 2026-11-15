@@ -3,11 +3,14 @@ export type WebLlmModelAdmission = {
     decisionRecord: string;
     /** The artifact-set digest the decision record admits; it must equal the release manifest's. */
     artifactSetDigest: string;
-    /** SPDX identifier of the licence the decision record names for the model. */
+    /** Identifier of the licence (an SPDX id, or a `LicenseRef-` one where none exists) the decision record names for the model. */
     licence: string;
 };
 
 const QWEN_ADMISSION_RECORD = '.agents/decisions/0037-admit-webllm-qwen-conversions-under-apache-2.0.md';
+
+const LLAMA_ADMISSION_RECORD =
+    '.agents/decisions/0060-admit-webllm-llama-3-1-70b-under-the-llama-3-1-community-license.md';
 
 /** One entry per catalogue model id. A spec fails a catalogue model with no entry here. */
 export const WEBLLM_MODEL_ADMISSIONS: Readonly<Record<string, WebLlmModelAdmission>> = {
@@ -25,5 +28,10 @@ export const WEBLLM_MODEL_ADMISSIONS: Readonly<Record<string, WebLlmModelAdmissi
         decisionRecord: QWEN_ADMISSION_RECORD,
         artifactSetDigest: '5121d9a5818d4693e0b0f2dc55f2982ece120b875c955203e4650a9269ad6d2a',
         licence: 'Apache-2.0',
+    },
+    'Llama-3.1-70B-Instruct-q3f16_1-MLC': {
+        decisionRecord: LLAMA_ADMISSION_RECORD,
+        artifactSetDigest: 'c5b181b8df7e33660d14aba38131081bab344cfd09f6f6616df93b69b0023ff0',
+        licence: 'LicenseRef-Llama-3.1-Community-License',
     },
 };

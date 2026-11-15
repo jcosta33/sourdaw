@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -134,6 +137,7 @@ describe('LlmStatusBadge', () => {
         const light = /^Light/;
         const standard = /^Standard/;
         const pro = /^Pro/;
+        const large = /^Large/;
 
         async function openPicker(reading: MachineMemoryReading, onLoad = vi.fn()): Promise<void> {
             capabilityStore.set({ phase: 'done', report: verifiedWebGpuReport });
@@ -153,37 +157,55 @@ describe('LlmStatusBadge', () => {
                 label: '8 GB clears Light and Standard only',
                 bytes: 8_000_000_000,
                 listed: [light, standard],
-                hidden: [pro],
+                hidden: [pro, large],
             },
             {
                 label: '16 GB clears Light, Standard and Pro',
                 bytes: 16_000_000_000,
                 listed: [light, standard, pro],
+                hidden: [large],
+            },
+            {
+                label: '64 GB clears every tier',
+                bytes: 64_000_000_000,
+                listed: [light, standard, pro, large],
                 hidden: [],
+            },
+            {
+                label: 'exactly the Large figure clears Large',
+                bytes: 42_100_000_000,
+                listed: [light, standard, pro, large],
+                hidden: [],
+            },
+            {
+                label: 'one byte under the Large figure does not',
+                bytes: 42_099_999_999,
+                listed: [light, standard, pro],
+                hidden: [large],
             },
             {
                 label: 'exactly the Pro figure clears Pro',
                 bytes: 10_300_000_000,
                 listed: [light, standard, pro],
-                hidden: [],
+                hidden: [large],
             },
             {
                 label: 'one byte under the Pro figure does not',
                 bytes: 10_299_999_999,
                 listed: [light, standard],
-                hidden: [pro],
+                hidden: [pro, large],
             },
             {
                 label: 'exactly the Standard figure clears Standard',
                 bytes: 4_300_000_000,
                 listed: [light, standard],
-                hidden: [pro],
+                hidden: [pro, large],
             },
             {
                 label: 'one byte under the Standard figure does not',
                 bytes: 4_299_999_999,
                 listed: [light],
-                hidden: [standard, pro],
+                hidden: [standard, pro, large],
             },
         ])('lists only what the reported memory clears: $label', async ({ bytes, listed, hidden }) => {
             await openPicker({ state: 'known', totalBytes: bytes });
@@ -205,6 +227,59 @@ describe('LlmStatusBadge', () => {
             expect(screen.getByRole('button', { name: light })).toHaveTextContent('~2.7 GB');
             expect(screen.getByRole('button', { name: standard })).toHaveTextContent('~4.3 GB');
             expect(screen.getByRole('button', { name: pro })).toHaveTextContent('~10.3 GB');
+            expect(screen.queryByRole('button', { name: large })).not.toBeInTheDocument();
+        });
+
+        it('lists the Large model as one that plans project edits, with its memory figure', async () => {
+            await openPicker({ state: 'known', totalBytes: 64_000_000_000 });
+
+            const card = screen.getByRole('button', { name: large });
+            expect(card).toHaveTextContent('plans project edits');
+            expect(card).toHaveTextContent('~42.1 GB');
+            expect(card).toHaveTextContent('~31.80 GB');
+        });
+
+        describe('the Llama 3.1 Community License duties', () => {
+            const builtWithLlama = /Built with Llama/;
+            const licenceName = /Llama 3\.1 Community License/;
+            const consent = 'Downloads and verifies this model for private use in this browser.';
+
+            it('shows the notice on the Large card and in the consent line once Large is selected', async () => {
+                await openPicker({ state: 'known', totalBytes: 64_000_000_000 });
+
+                const card = screen.getByRole('button', { name: large });
+                expect(card).toHaveTextContent(builtWithLlama);
+                expect(card).toHaveTextContent(licenceName);
+
+                fireEvent.click(card);
+                const consentLine = screen.getByText(new RegExp(`^${consent.replace('.', '\\.')}`));
+                expect(consentLine).toHaveTextContent(builtWithLlama);
+                expect(consentLine).toHaveTextContent(licenceName);
+            });
+
+            it('keeps the notice off the Qwen cards and their consent line', async () => {
+                await openPicker({ state: 'known', totalBytes: 64_000_000_000 });
+
+                for (const name of [light, standard, pro]) {
+                    expect(screen.getByRole('button', { name })).not.toHaveTextContent(builtWithLlama);
+                }
+                fireEvent.click(screen.getByRole('button', { name: pro }));
+                const consentLine = screen.getByText(consent);
+                expect(consentLine).not.toHaveTextContent(builtWithLlama);
+                expect(consentLine).not.toHaveTextContent(licenceName);
+            });
+
+            it('is carried by the open-source inventory entry that ships the model', () => {
+                const inventory = JSON.parse(
+                    readFileSync(resolve(__dirname, '../../../../../../../release/open-source-inventory.json'), 'utf8')
+                ) as { surfaces: Array<{ id: string; paths: string[]; obligations: string[] }> };
+                const surface = inventory.surfaces.find((entry) => entry.id === 'webllm-qwen-artifacts');
+
+                expect(surface?.paths).toContain('public/legal/Llama-3.1-LICENSE.txt');
+                const obligations = surface?.obligations.join('\n') ?? '';
+                expect(obligations).toMatch(builtWithLlama);
+                expect(obligations).toMatch(licenceName);
+            });
         });
 
         it('selects the largest offered model, not the unoffered default, and loads that one', async () => {

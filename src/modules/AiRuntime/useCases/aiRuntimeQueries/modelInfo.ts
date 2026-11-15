@@ -13,6 +13,7 @@ type ModelInfoProjection = {
     memoryGb: number;
     tier: LocalModelTier;
     parameterCount: string;
+    licenceNotice?: string;
 };
 
 export const WEBLLM_MODELS: ModelInfoProjection[] = model_webllm_models.map((model_info) => ({
@@ -24,6 +25,7 @@ export const WEBLLM_MODELS: ModelInfoProjection[] = model_webllm_models.map((mod
     memoryGb: model_info.memoryGb,
     tier: model_info.tier,
     parameterCount: model_info.parameterCount,
+    ...(model_info.licenceNotice === undefined ? {} : { licenceNotice: model_info.licenceNotice }),
 }));
 
 const defaultModel = WEBLLM_MODELS.find((model) => model.id === DEFAULT_WEBLLM_MODEL_ID);

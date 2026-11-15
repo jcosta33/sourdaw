@@ -1125,6 +1125,19 @@ describe('mandatory planning tools', () => {
                 }
             );
 
+            it('admits the Large model to plan like Pro, at the same window, instead of refusing it', async () => {
+                const largeModelId = 'Llama-3.1-70B-Instruct-q3f16_1-MLC';
+                engineState.activeModelId = largeModelId;
+                mocks.isWebLlmLoaded.mockReturnValue(true);
+                mocks.generateWebLlmCompletion.mockResolvedValue('[]');
+
+                const { outcome, sent } = await sendLocalRequest(fiveTrackProject());
+
+                expect(outcome, JSON.stringify(outcome)).toMatchObject({ status: 'complete' });
+                expect(sent).toBeDefined();
+                expect(getWebLlmContextWindowSize(largeModelId)).toBe(getWebLlmContextWindowSize(PRO_MODEL_ID));
+            });
+
             it('reports the loaded non-planning model, not the default, after refusing on it', async () => {
                 engineState.activeModelId = 'Qwen3-4B-q4f16_1-MLC';
                 mocks.isWebLlmLoaded.mockReturnValue(true);

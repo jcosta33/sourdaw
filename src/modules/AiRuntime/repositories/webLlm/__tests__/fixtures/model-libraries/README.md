@@ -1,12 +1,13 @@
 # WebLLM model-library ABI fixtures
 
-These are lossless gzip copies (mtime0) of the exact three model-library bytes selected by the production artifact manifest. They contain no model weights, config or tokenizer. The ABI spec verifies uncompressed size and SHA256 against that manifest before real public-runtime instantiation; it never initializes GPU, fetches artifacts, or invokes the allocation function.
+These are lossless gzip copies (mtime0) of the exact model-library bytes of every catalogue model selected by the production artifact manifest. They contain no model weights, config or tokenizer. The ABI spec verifies uncompressed size and SHA256 against that manifest before real public-runtime instantiation; it never initializes GPU, fetches artifacts, or invokes the allocation function.
 
 Source: https://github.com/mlc-ai/binary-mlc-llm-libs/tree/146ed9cd4b4062e967b017fd2291f7106b50599f/web-llm-models/v0_2_87/base (PR168).
 
 - `Qwen3-1.7B-q4f16_1_cs1k-webgpu.wasm`: 6589747bytes, SHA256 `363f4dbb789f0518e52295d1f4685d2d61feae4ac4e2a6a95621e4af29450bd7`; gzip 990663bytes.
 - `Qwen3-4B-q4f16_1_cs1k-webgpu.wasm`: 6874869bytes, SHA256 `2afc399ed01d8ae641beac0528567c8ce22e8c9c7203ba0827c44e13c62be99c`; gzip 1028169bytes.
 - `Qwen3-8B-q4f16_1_cs1k-webgpu.wasm`: 6875765bytes, SHA256 `3a8d51dc4315f056b6cffc1b8828b1a5e13d29fe096da3bf19096ac637985b81`; gzip 1029462bytes.
+- `Llama-3_1-70B-Instruct-q3f16_1_cs1k-webgpu.wasm`: 9541090bytes, SHA256 `db78950bc873f57c08f03298091069e2b0aa0c9c1eb89d1d625c57fe9bea9c31`; gzip 1352089bytes.
 
 The test resolves runtime0.28.0-dev2 through SDK0.2.88's declared dependency. The raw SDK executable SHA256 is5460309cbb350e97fe63c817d73718588976049e7125ef66b657818a0e31818a; runtime executable SHA256 is7919d6c599b9b86da020cdd20738bbe4a2e06d5643f79f3907d07a80ca279e62. The SDK and standalone runtime RuntimeContext and Instance classes match after leading source indentation normalization. Their audited normalized SHA256s are5070a2e4f10f3f0b0b310ef8dc0a92dc747d996f44207cac8974bee35b483bb5 and97e57c7531cfd78b5801932aae0a557b894abd5be424dedfad43868f93a422a7. An SDK/runtime executable change requires a new source-equivalence and actual-binary ABI audit, not merely replacing these expected hashes.
 

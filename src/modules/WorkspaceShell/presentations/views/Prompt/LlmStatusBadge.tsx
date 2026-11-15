@@ -43,6 +43,7 @@ type BadgeModelInfo = {
     downloadSize: string;
     ramUsage: string;
     parameterCount: string;
+    licenceNotice?: string;
 };
 
 type OfferedModelInfo = BadgeModelInfo & { id: string };
@@ -399,6 +400,7 @@ const ModelSetupPanel = ({
 }: ModelSetupPanelProps): ReactElement => {
     const selectedName = offeredModels.find((model) => model.id === selectedModelId)?.displayName ?? 'Model';
     const nothingFits = backend === 'webllm' && offeredModels.length === 0;
+    const licenceNotice = offeredModels.find((model) => model.id === selectedModelId)?.licenceNotice;
     return (
         <>
             <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
@@ -460,7 +462,21 @@ const ModelSetupPanel = ({
                         {backend === 'webllm' && !nothingFits ? (
                             <p className="px-1 text-[10px] text-muted-foreground leading-relaxed">
                                 Downloads and verifies this model for private use in this browser.
+                                {licenceNotice === undefined
+                                    ? null
+                                    : ` ${licenceNotice} Its use follows the licence’s Acceptable Use Policy; both texts are in the legal notices.`}
                             </p>
+                        ) : null}
+                        {backend === 'webllm' && !nothingFits && licenceNotice !== undefined ? (
+                            <Button
+                                variant="link"
+                                size="xs"
+                                type="button"
+                                className="h-auto justify-start px-1 text-[10px]"
+                                onClick={() => window.open('/legal/THIRD-PARTY-NOTICES.md', '_blank')}
+                            >
+                                Legal notices
+                            </Button>
                         ) : null}
                         {nothingFits ? null : (
                             <Button
@@ -512,5 +528,10 @@ const ModelOption = ({ model, isSelected, onSelect }: ModelOptionProps): ReactEl
                 {model.ramUsage}
             </Row>
         </Row>
+        {model.licenceNotice === undefined ? null : (
+            <span className="mt-1 block text-[9px] leading-relaxed text-muted-foreground/70">
+                {model.licenceNotice}
+            </span>
+        )}
     </DawChooserCard>
 );

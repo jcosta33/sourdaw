@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { ToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { WEB_LLM_COMPLETION_TEMPERATURE } from '../../models/LlmSamplingTemperatures';
+import { WEBLLM_THINKING_MODEL_IDS } from '../../models/ModelInfo';
 
 import { engineState } from './engineLifecycleState';
 import { initWebLlmEngine } from './initWebLlmEngine';
@@ -12,7 +13,7 @@ type GenerateWebLlmCompletionOptions = {
     maxTokens?: number;
     signal?: AbortSignal;
     requireComplete?: boolean;
-    /** `false` sends Qwen3's empty thinking block, so the reply starts at the answer. */
+    /** `false` sends a thinking model's empty thinking block, so the reply starts at the answer; a model without one is sent nothing. */
     enableThinking?: boolean;
     /** The caller's prompt-token estimate, logged beside the count the engine reports. */
     estimatedPromptTokens?: number;
@@ -47,7 +48,7 @@ export async function generateWebLlmCompletion(
         max_tokens: options?.maxTokens ?? 2048,
         seed: 0,
     };
-    if (options?.enableThinking === false) {
+    if (shouldDisableThinking(options?.enableThinking)) {
         payload.extra_body = { enable_thinking: false };
     }
     if (options?.responseFormatSchema !== undefined) {
@@ -83,6 +84,11 @@ export async function generateWebLlmCompletion(
     // Qwen3 prefixes answers with <think>...</think> reasoning blocks.
     // Strip them so callers receive only the final output.
     return raw.replaceAll(/<think>[\s\S]*?<\/think>/g, '').trim();
+}
+
+// web-llm prepends an empty thinking block for any model it is sent the switch for, so a model with no thinking block never gets it.
+function shouldDisableThinking(enableThinking: boolean | undefined): boolean {
+    return enableThinking === false && WEBLLM_THINKING_MODEL_IDS.has(engineState.activeModelId);
 }
 
 function readCompleteToolPlanningResponse(response: unknown): string {

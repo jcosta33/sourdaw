@@ -1730,6 +1730,3254 @@
         }
       ],
       "artifactSetDigest": "5121d9a5818d4693e0b0f2dc55f2982ece120b875c955203e4650a9269ad6d2a"
+    },
+    {
+      "modelId": "Llama-3.1-70B-Instruct-q3f16_1-MLC",
+      "modelSource": {
+        "origin": "https://huggingface.co",
+        "repository": "mlc-ai/Llama-3.1-70B-Instruct-q3f16_1-MLC",
+        "revision": "9d30b348cad6c840c8568ae585e1690f19f4338c"
+      },
+      "wasmSource": {
+        "origin": "https://raw.githubusercontent.com",
+        "repository": "mlc-ai/binary-mlc-llm-libs",
+        "revision": "146ed9cd4b4062e967b017fd2291f7106b50599f"
+      },
+      "engine": {
+        "contextWindowSize": 4096,
+        "vramRequiredMb": 31153.13,
+        "lowResourceRequired": false
+      },
+      "artifacts": [
+        {
+          "kind": "config",
+          "source": "model",
+          "path": "mlc-chat-config.json",
+          "sizeBytes": 2263,
+          "sha256": "31c21f32f45ab30391ec6a8874cc9cb5f2b455ae72a6ef3199b171b7e03d2ab7"
+        },
+        {
+          "kind": "weight-index",
+          "source": "model",
+          "path": "tensor-cache.json",
+          "sizeBytes": 411045,
+          "sha256": "e9b9f57707c6db422beb3d655f1fa77b1b2c0d9e954ec6aa7194262cf5055c6d"
+        },
+        {
+          "kind": "tokenizer",
+          "source": "model",
+          "path": "tokenizer.json",
+          "sizeBytes": 9084449,
+          "sha256": "bbc1904d35169c542dffbe1f7589a5994ec7426d9e5b609d07bab876f32e97ab"
+        },
+        {
+          "kind": "tokenizer",
+          "source": "model",
+          "path": "tokenizer_config.json",
+          "sizeBytes": 50870,
+          "sha256": "24e8a6dc2547164b7002e3125f10b415105644fcf02bf9ad8b674c87b1eaaed6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_0.bin",
+          "sizeBytes": 420679680,
+          "sha256": "dea8ea3b8b20efbd30f64dff386633b23ae645356865a39def4eb19f4a5f355a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_1.bin",
+          "sizeBytes": 52584960,
+          "sha256": "3cedc0b847c7fc518b975ad7f9e73cced0b79637d9a1bcedc79483c7ea8e2abf"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_2.bin",
+          "sizeBytes": 420679680,
+          "sha256": "286d588b514c0653193977aba3ed51af56221ba7e2e3406fcf5c3734f786049e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_3.bin",
+          "sizeBytes": 52584960,
+          "sha256": "76f8d1372ea7cead5bcef8ae0028b61a993ebe6680049537360973ec5d2cbc70"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_4.bin",
+          "sizeBytes": 93978624,
+          "sha256": "edfda1c93f0cc9f77f53abe7fd4d26d5bbf0eafbe89cf8f2ce67ffa90e45a865"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_5.bin",
+          "sizeBytes": 188088320,
+          "sha256": "757afc8f05d2660bb4077de45de8287ca9a2fb7b8cd421874b3850c75f32e4f0"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_6.bin",
+          "sizeBytes": 23511040,
+          "sha256": "81775620688472daa9f5554af1660f89edf95d28f2e9838868226d6d26f999f3"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_7.bin",
+          "sizeBytes": 33587200,
+          "sha256": "e2d1e32e9885691cf1163a4768f56c3f047ed8d0fd1b1e44e7690ef6e6378288"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_8.bin",
+          "sizeBytes": 26869760,
+          "sha256": "140c1ebb9b29755fb9ac518ce29f84f3d737d6aa96cfbf49da37de269503449a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_9.bin",
+          "sizeBytes": 188088320,
+          "sha256": "7f15fd8fa00b78f9b1d976ddfd927b5fa3a44e2e5e7aa085b4873c83b28a1b66"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_10.bin",
+          "sizeBytes": 23511040,
+          "sha256": "d215b245f2b3c5c260fa593d37d3b1f0c73004bf357c129be1494385f3939da4"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_11.bin",
+          "sizeBytes": 33587200,
+          "sha256": "7647adea8c531bc05daa6f79918645f778c903391fc925fb142321cd49ca325e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_12.bin",
+          "sizeBytes": 26869760,
+          "sha256": "3426bbcde78cca0451a8fa227f166962536a03beb2c9799407ae1e2fe3676aa9"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_13.bin",
+          "sizeBytes": 93978624,
+          "sha256": "996ea63d4e4eb323a8c5e42a4847e8156eeb5531ff301a7784bf181c904d7a2c"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_14.bin",
+          "sizeBytes": 26910720,
+          "sha256": "71138804e567f1748dc96fe852ef70538888c0acca01aaaa78a3ebec31ec6091"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_15.bin",
+          "sizeBytes": 93978624,
+          "sha256": "ffc36360925b15c877eead8e075f60889d3f2ab10964e72dd511d2bd89c900df"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_16.bin",
+          "sizeBytes": 188088320,
+          "sha256": "6a8f5ea9079a20c31983a1828925addfb0e96aacbbc13121c3e94d286fb96af9"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_17.bin",
+          "sizeBytes": 23511040,
+          "sha256": "8b538ecffed3f3d4c2b6943c6ec4ad4b6464e76f006a7954b56e3508a0e03d78"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_18.bin",
+          "sizeBytes": 33587200,
+          "sha256": "fc042b872146052561f439b3d173d6650695812c79fa264941c4006447e8c719"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_19.bin",
+          "sizeBytes": 26869760,
+          "sha256": "502b4e9ad64d964a5a9fe6cb1e4449cce3c441ffffbf4a1484634dd1ef93c075"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_20.bin",
+          "sizeBytes": 93978624,
+          "sha256": "20d711a791bc25e54c439d0283abdc2eefcea49f6d5cacb72aca0df6c6a65654"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_21.bin",
+          "sizeBytes": 31117312,
+          "sha256": "8a54e159e018ee9640c472572853a0fabe941c6758e50d8bdc521fa337259df3"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_22.bin",
+          "sizeBytes": 188088320,
+          "sha256": "cc94c3751e15140c6c18fea05a784f7df7e2010ac28a9382a4b785e4e0479f83"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_23.bin",
+          "sizeBytes": 23511040,
+          "sha256": "a2a04cd2bbeed36ee951a1e282ed7281fdd94ff503fd493217d0a20bf8455288"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_24.bin",
+          "sizeBytes": 33587200,
+          "sha256": "553543e6308c71912fb8cd299e8f18a5f07af4f5922e463e88838d0fbf978ef5"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_25.bin",
+          "sizeBytes": 26869760,
+          "sha256": "542725320e1333211a003d14fa30605528211679027b5e3eb05167a84a28c6ad"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_26.bin",
+          "sizeBytes": 33587200,
+          "sha256": "7da6c12ce105197e77db9ebba554a83831a711ad6065e21d940709f2718838cf"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_27.bin",
+          "sizeBytes": 26869760,
+          "sha256": "38cc2b76f327ed3f037f27d4bfe8d7ace2637bc839c800ddae6bc4674bf10077"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_28.bin",
+          "sizeBytes": 93978624,
+          "sha256": "42db602b8721489e711b5ae4d3226f86d2ccb60ce7d3b9764cbf2a47b0c6b914"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_29.bin",
+          "sizeBytes": 26894336,
+          "sha256": "bdcfaa9cef63491704601553ab76ca5bfc598bca0ade51af7accd23d8db9f67d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_30.bin",
+          "sizeBytes": 188088320,
+          "sha256": "e0d1755f68336514b1d7950250899bfbac617e24b3c201a8eb183f37ebeaa9a4"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_31.bin",
+          "sizeBytes": 23511040,
+          "sha256": "60e98f9bf932767e2a5573254505b20d5916c0ddd217913f415192559e06c197"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_32.bin",
+          "sizeBytes": 33587200,
+          "sha256": "b6441a85fff1f56b93bf0700de9bfcba5f3a423dcf74af6b4fd5ab18d66c02b1"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_33.bin",
+          "sizeBytes": 26869760,
+          "sha256": "335af8cea712cb7c719a604d621ff4a73c86978625df944c47c67fb5535f5360"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_34.bin",
+          "sizeBytes": 93978624,
+          "sha256": "9efe7a48af52e6e5db37dde70db4da8b86b628de8cb8a2fc5b6385ba7d573cf2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_35.bin",
+          "sizeBytes": 188088320,
+          "sha256": "a8f3fe43b3210f08592cdc3cc083b4f222bcbd52cbc36e24ef2d0f0d47420316"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_36.bin",
+          "sizeBytes": 23511040,
+          "sha256": "198a1e6d5b0b6245fc336a160dee8c18f7c1d9b1fe3e7118c22e37532d85be6f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_37.bin",
+          "sizeBytes": 33587200,
+          "sha256": "70bd1510ed8809d6e77df28c58a45d9fcc4e10cfd4005623cb5e4c5cf8bd2062"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_38.bin",
+          "sizeBytes": 31100928,
+          "sha256": "6c5740296d061a652e8ec2299e29d488a6127c0935d1214632378461bdab6c0b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_39.bin",
+          "sizeBytes": 31068160,
+          "sha256": "224911ab667ba3a0f1c0600c35870cd9bb8e4fe2889233c3e1ca084f198032a6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_40.bin",
+          "sizeBytes": 188088320,
+          "sha256": "fec47de5a48cd798b32b40c7a649f0d768bf532033190c85c0010bc807b3794a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_41.bin",
+          "sizeBytes": 33587200,
+          "sha256": "14f1e97ee3fb2795278ad8e53714234987300a3dc835012a23273e1d157216ff"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_42.bin",
+          "sizeBytes": 26869760,
+          "sha256": "2bd1bea2446ac56a391d1810803df3de9f93b79b927419d533bac0dda762afa6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_43.bin",
+          "sizeBytes": 31068160,
+          "sha256": "2cf1299fe2b0f47af2e3ade857a816320302c95c1aecc05c27f0a1648d1756bd"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_44.bin",
+          "sizeBytes": 93978624,
+          "sha256": "440d32444ec91a65f52d4a03c976168a86026ff7f1636630cc2b49f988428e55"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_45.bin",
+          "sizeBytes": 93978624,
+          "sha256": "669d36e61778d062c8a3b14ab5a6562f3eaef37295ab41ae2aaf68ed5cca65be"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_46.bin",
+          "sizeBytes": 188088320,
+          "sha256": "78587748e0c8579988d5308d9cc720a454dd75042e28e64b5274fbb860fa128e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_47.bin",
+          "sizeBytes": 23511040,
+          "sha256": "847cd0a38c02796374a8d895cfc2a90433aaad402e3d854614c4f5f43c0f4104"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_48.bin",
+          "sizeBytes": 33587200,
+          "sha256": "929c29f179f139b644442f6b0f43f38f1da014b4e4f2302f8bd77102186c0cdf"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_49.bin",
+          "sizeBytes": 26869760,
+          "sha256": "c855ca1380464547bde3b86475ab49d1c42199701336631beab1c8911cb17b52"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_50.bin",
+          "sizeBytes": 31117312,
+          "sha256": "a5bdf7a75eebe583f818b56651cafd53d707eaf694c62d9ed65acd1608ea4d2a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_51.bin",
+          "sizeBytes": 93978624,
+          "sha256": "8439b5996452db1a5c9df7c4abca0fb40f33f312bd005c4f39952defbbde9bd5"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_52.bin",
+          "sizeBytes": 188088320,
+          "sha256": "a9764e9c7b91c41556fd53619cf22f1ed2368d977f75f4a4ea7e127002a66fea"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_53.bin",
+          "sizeBytes": 23511040,
+          "sha256": "1061bf61569840de54d9ba212cda5b137dcbdb1de2e050a99a93da2690d50712"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_54.bin",
+          "sizeBytes": 33587200,
+          "sha256": "8ea245254af10837e147edb2788be754f4f98deb45e2ff402bf92a51d8a97b28"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_55.bin",
+          "sizeBytes": 26869760,
+          "sha256": "dc6b632c6d4160429b71107f734ba5815c5a2c439ddb33e58de8a951ccf40ced"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_56.bin",
+          "sizeBytes": 188088320,
+          "sha256": "124b97857a93d00016952f90fe01dba45c60efb1c1fa1e9c046b08dc54689a9e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_57.bin",
+          "sizeBytes": 23511040,
+          "sha256": "4ac2ce705386b1987643a2262318beb7faae260b1a76b5333fe7af43502a6168"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_58.bin",
+          "sizeBytes": 33587200,
+          "sha256": "472f55a8af7750e59dfa2b5df8948b565ed43066d0d46e7f1f2d5b0918275319"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_59.bin",
+          "sizeBytes": 26869760,
+          "sha256": "87b6245c08733fb3a9201e10ae28c5ed97aa8a1e96fcb2974714cb02299ce86d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_60.bin",
+          "sizeBytes": 93978624,
+          "sha256": "7b3be20593caa90f212ebd6aab0a8cb6c1222115f8a281d36ed109df1eff4684"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_61.bin",
+          "sizeBytes": 30269440,
+          "sha256": "89108c394cf03497bec44e707f231617efc37f9952cf066608a2d25edd02c3f1"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_62.bin",
+          "sizeBytes": 93978624,
+          "sha256": "9007d6bf55f820da5a86d62237f953e22727f7c4b427b4859749ea7c3fb38034"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_63.bin",
+          "sizeBytes": 188088320,
+          "sha256": "bcbb8cb851c9588c488542fc215e52985c2ddb8873705a00d15447e622d468af"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_64.bin",
+          "sizeBytes": 23511040,
+          "sha256": "116bda85e702ed6034c4d5b9e0b4dc4f920fda794bdf1e8a75bae257eb65e54f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_65.bin",
+          "sizeBytes": 33587200,
+          "sha256": "2ed8f0a6c73b9b25fed0b0274fed77262f3f044b376a566c1c378fda33f13f42"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_66.bin",
+          "sizeBytes": 26869760,
+          "sha256": "c79fc354baa9c419984f05fe025688f0596da58ee1d6843d2353c7e9b88e8cb4"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_67.bin",
+          "sizeBytes": 93978624,
+          "sha256": "2394a18178f189ccafa22d5cd71b367743ec85b376715efc0f174af4e7773496"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_68.bin",
+          "sizeBytes": 31117312,
+          "sha256": "f84e1d6fc19f6fc320f73931d6bfb0cb0f2071aaead7238e5a1a35a1625448be"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_69.bin",
+          "sizeBytes": 188088320,
+          "sha256": "b0b8bd32494ffc9c494ba0f9dc37f2d38e4e5547048eed1bc5886c4c315397c2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_70.bin",
+          "sizeBytes": 23511040,
+          "sha256": "812b2cf8b79b6b8d063fcc30dc658cd51d8231bf280d9e8f03c0ec0de283bfb9"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_71.bin",
+          "sizeBytes": 33587200,
+          "sha256": "787c3ff24a8808b559a5a1d948933af56c06c7806aa018b7f3641a4bd7d25ed7"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_72.bin",
+          "sizeBytes": 26869760,
+          "sha256": "7d8c5ed19617700e78f658bf9e766a1913be7fb44bdbbc898c8d3a40e8228926"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_73.bin",
+          "sizeBytes": 33587200,
+          "sha256": "cf2613f68a9dd85ed6815360a98477d4805de3d8324ad794b024b1638b4ec59f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_74.bin",
+          "sizeBytes": 26869760,
+          "sha256": "8ffdc972758b4aa3015c54430e4a012760b24e55b7d76c3732f02b3778f74f89"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_75.bin",
+          "sizeBytes": 93978624,
+          "sha256": "75d87aab242caceb47632a9456248beace3db43810908ba30143581150b7ae9f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_76.bin",
+          "sizeBytes": 26894336,
+          "sha256": "f973d028457ce814cb7b0361e2457a4967a4ac81cabaa418f0c7dacc95887bfc"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_77.bin",
+          "sizeBytes": 188088320,
+          "sha256": "1d3d8f961d01fba741b5c7a004cc583480c15cf9d787af6048df52410cfd942e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_78.bin",
+          "sizeBytes": 23511040,
+          "sha256": "7614d150b72911e444f285e11787834b9b89165c0e53d8d6e38b536761127ca3"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_79.bin",
+          "sizeBytes": 93978624,
+          "sha256": "3df5d51d98e32bcfac54bd6ee520f17e8cf8ab9f59bca6806e9e9e87ac2e1a47"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_80.bin",
+          "sizeBytes": 188088320,
+          "sha256": "e7f1a6e97a0759605303e916f4f94223af491f3325deda4331d017107c3f8153"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_81.bin",
+          "sizeBytes": 23511040,
+          "sha256": "e12e584659088fa615d15b1be1582066597e9c7bf2139881a9389cacb23b6e0e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_82.bin",
+          "sizeBytes": 33587200,
+          "sha256": "201e78091b27f6fcffac8a78e441afa5749940d9da278bf30d2ff2f71347e918"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_83.bin",
+          "sizeBytes": 26869760,
+          "sha256": "c96eac646d78c41fe283657338f86ebe7c2eb09b820519c2f2354a633532b698"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_84.bin",
+          "sizeBytes": 93978624,
+          "sha256": "d891c047a96d5e12c71c6bf11987674962d2d7208ce18ce05bfd4a4af6a3a05b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_85.bin",
+          "sizeBytes": 31117312,
+          "sha256": "009d72b670be9c3378f2f38b0a1441e440142999acabbbacf175697f320c7489"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_86.bin",
+          "sizeBytes": 188088320,
+          "sha256": "d4e9fe50b2f3ff0273fdb9f1b216ee1c36120b9432b6d33ad37c18a15a54bcf4"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_87.bin",
+          "sizeBytes": 23511040,
+          "sha256": "e38aaf5e3f668c2ebf8a3e599accf1d86907b7365b6fd4bef7cd1b832c0065c8"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_88.bin",
+          "sizeBytes": 33587200,
+          "sha256": "ac9928da34c17a2fe1313a2c6bd644c42435a5e59394a36b3e9695ceed133b16"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_89.bin",
+          "sizeBytes": 26869760,
+          "sha256": "cfe2e6bb68bbd5bcfc857c1544aeacee2d9ab0da6e4809e44da36f4bbacd34b2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_90.bin",
+          "sizeBytes": 33587200,
+          "sha256": "7f12006c9ab4d3ed1ef4b84c9fa2f4943a335013633c0c5445d6d89f5cceee1e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_91.bin",
+          "sizeBytes": 93978624,
+          "sha256": "db17552b70c7508583e4ef6f9027c15c062bd0914a6fbbe9eed2bf10140a0fd2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_92.bin",
+          "sizeBytes": 23535616,
+          "sha256": "03d7b3adcbc18eef44a55d41caf9177fb9994bfe6e46c26e8378dfa222f0b24f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_93.bin",
+          "sizeBytes": 188088320,
+          "sha256": "cd2cf01b3e42944ed754b983c5d9a46805d1800dd43aac1c517f73ef254b40b9"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_94.bin",
+          "sizeBytes": 23511040,
+          "sha256": "ecf84c1b378b9ce338870ad58625394643b2d4c05172d76268e1b0cee3b656b6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_95.bin",
+          "sizeBytes": 26869760,
+          "sha256": "bc08a9e6fbfd270a1310b7e599a72c4fc92915ec3691f871204556ff88affa45"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_96.bin",
+          "sizeBytes": 93978624,
+          "sha256": "c64c9bced799ff0307a346c8f162cc3afe2aad86f362b93a7e6b73adb9a3e9e5"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_97.bin",
+          "sizeBytes": 188088320,
+          "sha256": "1a99e296b07c0992016921a41025385556a83d5bf9079632ac0986c527744de0"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_98.bin",
+          "sizeBytes": 23511040,
+          "sha256": "f4f7d53b6a6232f3ef8f56d8c2d9854adc67a200799f362a4a870514b39a991e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_99.bin",
+          "sizeBytes": 33587200,
+          "sha256": "523adf94972f5aa3d37005a952975460539f41150c4f840cda10aba85c112966"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_100.bin",
+          "sizeBytes": 26869760,
+          "sha256": "f8b2614d2e8b464d0c8d2fa91009b4fd307d35ae5c64851652feebfa4348d223"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_101.bin",
+          "sizeBytes": 31100928,
+          "sha256": "38601acf8027626e7865bac95c2b8e140930a948025964e815b7c20199b7f19b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_102.bin",
+          "sizeBytes": 93978624,
+          "sha256": "6ce6a90d09d38b37459295aed7203ebda09f07e494cd33a7dbd2d40569bffec0"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_103.bin",
+          "sizeBytes": 188088320,
+          "sha256": "aa5b535b1e87823a54a0a1b63e9a45dea4a2c97da433949615c3cf93c56c92d2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_104.bin",
+          "sizeBytes": 23511040,
+          "sha256": "ca2fa9fde069460bad2221f91bc59d5ee1b805c723396d424b03bd50fca8e96a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_105.bin",
+          "sizeBytes": 33587200,
+          "sha256": "bd4625c851c5c89e0b8adcbaa7d9d4889dea59eec0b0594c35c2e88a585a4c91"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_106.bin",
+          "sizeBytes": 26869760,
+          "sha256": "df5455e0523d67d59f2e7c0d2a707d276451fe2ae2741b9701999bff4caf07d4"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_107.bin",
+          "sizeBytes": 93978624,
+          "sha256": "b174c2d1ce8dd9db3a6140e8c627b6095ea4d016a8f031a4300ef4fb9e7a2062"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_108.bin",
+          "sizeBytes": 22712320,
+          "sha256": "eb24c0d9217a0be1f13a5062c2c0dccc96d38489e4472838771a032b1916534d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_109.bin",
+          "sizeBytes": 188088320,
+          "sha256": "49a0f497034c844e949cd4045ad3074608f0752c153ad38b1de615dcb704937d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_110.bin",
+          "sizeBytes": 23511040,
+          "sha256": "19fdba357bc3eeee1ae3567ffdb9875ef9bd21c8ecc9bdab59146ef8150346df"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_111.bin",
+          "sizeBytes": 33587200,
+          "sha256": "e46fb2afae0b0eaaf25fa766cd08d6f9cd7f2587c0b127704ba958a622adf4f7"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_112.bin",
+          "sizeBytes": 26869760,
+          "sha256": "f6fd2af7564ccc5955078cd196468a6efec47b3d56d6dd20e4785432092464e1"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_113.bin",
+          "sizeBytes": 93978624,
+          "sha256": "3cd70b218ec53d6fcb7b169f2f10bac191cbfefc6f23335d037835032b4a7c59"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_114.bin",
+          "sizeBytes": 188088320,
+          "sha256": "276151e11953ec766ec91fa70be215be9ba39eaebed05fd545ad9a15ad7ef08e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_115.bin",
+          "sizeBytes": 23511040,
+          "sha256": "0ee6c8a7d1c5772095a397ddfcd8d2d5592b87e4d6007da5508fcd2f654d2ec1"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_116.bin",
+          "sizeBytes": 33587200,
+          "sha256": "5233da288d5e1a58d0d25b71ea5447e765af544d6a2c0b9b48dc3bec07fb448a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_117.bin",
+          "sizeBytes": 31100928,
+          "sha256": "b76ce0ff6afb54069ddb584fe596dae4c42ed6fa9bfd958255ac63b3a91352d5"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_118.bin",
+          "sizeBytes": 31068160,
+          "sha256": "9fd57709f93dc28cdcc7b5639c9231bd06bf44aab982930e83b877a8d7755680"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_119.bin",
+          "sizeBytes": 188088320,
+          "sha256": "2c2cdf9095edebda0b913618debf1eeba1446c0302037613f406d17684ceecaf"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_120.bin",
+          "sizeBytes": 33587200,
+          "sha256": "50f6f504a6c899e4575c0f603e1f87a333160c0b05d0b57c5585715c8dee871d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_121.bin",
+          "sizeBytes": 26869760,
+          "sha256": "88e3db6caef239d0e6ffbb575228c014894f79c3047893016eb77e7a79067a11"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_122.bin",
+          "sizeBytes": 31068160,
+          "sha256": "7bd230e56d365e56e76da5c5108166c4119005b7967520462e4f13487e3c04d1"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_123.bin",
+          "sizeBytes": 93978624,
+          "sha256": "93bbc9b99f0cb9f5a3e757b773818a3fb6b85117991f48c030e507eee86e2229"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_124.bin",
+          "sizeBytes": 93978624,
+          "sha256": "c3f6970ee56b45be2d8cf2335197c786852f6da5a5171af9646b54e838cb4e24"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_125.bin",
+          "sizeBytes": 188088320,
+          "sha256": "5fbc50bd3be32357897c45fa0e4f608cace143ba7c124ce26cac650a31d02dc0"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_126.bin",
+          "sizeBytes": 23511040,
+          "sha256": "4bb99e0ec4d2ebb024e52a00379c7f2e7bdbb10ec94dd809b0f7ea4647557152"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_127.bin",
+          "sizeBytes": 33587200,
+          "sha256": "1322381c3c3621cd82da2d3ee8b7e4d34a2ea402e7accf7b1da20574ab7a9154"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_128.bin",
+          "sizeBytes": 26869760,
+          "sha256": "81b76b71bb2e827659a1009988ecb6fa495bfc0c7ff3369ef5c338b5c9fc0b70"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_129.bin",
+          "sizeBytes": 31117312,
+          "sha256": "7378af8a43663e27815f580433a0a390318caea6c54968d16eade415c5fa2fcb"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_130.bin",
+          "sizeBytes": 93978624,
+          "sha256": "aa9ca6b9c07202b7dcc87a36671522bb84be785298a5abf867b8c8f5416d56e9"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_131.bin",
+          "sizeBytes": 188088320,
+          "sha256": "fce56b5b5fdb29280975d94bc5bfcf52f9972531f3712848c36d789ab7b3c1ab"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_132.bin",
+          "sizeBytes": 23511040,
+          "sha256": "cd0ca9521fe8a826457a599c80303c8ef1dfa71d43d09bfa3c6168c46051910f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_133.bin",
+          "sizeBytes": 33587200,
+          "sha256": "5380299096c91382d171778736d4429b093feeb781e3d61331ae70115e1c8a1f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_134.bin",
+          "sizeBytes": 26869760,
+          "sha256": "72742e961e0f549b94d6c29e283b7edc3923bd0c17c965ad2c9d520face7b5d2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_135.bin",
+          "sizeBytes": 188088320,
+          "sha256": "92c901b4778647ef776d30481b179234691be0d124c20e1ca02ff50f878589e1"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_136.bin",
+          "sizeBytes": 23511040,
+          "sha256": "1ceb7b97a723bbf26817d4052c847ba6568b9360b5c4a942c05c3fb6f6ba2a78"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_137.bin",
+          "sizeBytes": 33587200,
+          "sha256": "6e4693826ed24a1dbc416a852d56b4fdecb82e728a6f7428e83dd86e3a3f3b00"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_138.bin",
+          "sizeBytes": 26869760,
+          "sha256": "961eb4fe1923336410e3dd031597f1b0b88bec5d22a0522895b74900484c42b6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_139.bin",
+          "sizeBytes": 93978624,
+          "sha256": "65b1b49af6c494b3017f7a5ad5883ff197fd1d8b404c539d4aaf0fada2a65cab"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_140.bin",
+          "sizeBytes": 30269440,
+          "sha256": "6640450085ff75d1b31e93233091281db6a7accf8cbf5929b39a042126e83c09"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_141.bin",
+          "sizeBytes": 93978624,
+          "sha256": "933cb95bf0326dcdb0e0492204b615dc5dd76d15adfc4cf5eba0571a00c79d77"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_142.bin",
+          "sizeBytes": 188088320,
+          "sha256": "dadfd8c9d42f40bfd4e87a9a178c2275ca64a49c390be5138b598b0c679b5f49"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_143.bin",
+          "sizeBytes": 23511040,
+          "sha256": "c32bb06918240d978d45b275170308f715f94907fa6e10cc81a70b628f76a05a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_144.bin",
+          "sizeBytes": 33587200,
+          "sha256": "95f8fdff7e6e7f2c4f1ee90c9c800a968b538000522046841c2b2e1cab06e99b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_145.bin",
+          "sizeBytes": 26869760,
+          "sha256": "f773d6bf32edeb5f2dddf2f571c284e631c20ec7d1c85505ac7a6ca1e53c9425"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_146.bin",
+          "sizeBytes": 93978624,
+          "sha256": "7161098b5ed3af7d67fc62b001be9f5ffcfcd3ea197bc511be6bd765112b9aed"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_147.bin",
+          "sizeBytes": 31117312,
+          "sha256": "595b39f88973390f4b1ecc4d4f585d01d476e557354f31a8cb8abd3a1c2c4861"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_148.bin",
+          "sizeBytes": 188088320,
+          "sha256": "bfcfc0d460071665139b0543766f5a50806c676c2183dd730a4b14703f6f0ef6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_149.bin",
+          "sizeBytes": 23511040,
+          "sha256": "cad0833c047c18c36d8b55e39c75d64e4902a03a6173285cf13b7054a9e2d9da"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_150.bin",
+          "sizeBytes": 33587200,
+          "sha256": "07ab233a96aee79c9f5a7e3597cdcb1b9e8d81a72dc5da1a710b65d04a13fa59"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_151.bin",
+          "sizeBytes": 26869760,
+          "sha256": "651bf3ec1e626aadc6cdbb41bc639b403d38de164d5e2ba2da36d9118cb34172"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_152.bin",
+          "sizeBytes": 33587200,
+          "sha256": "1e6d9d2dd9f2b315f59f959fe90eb299aa0a745d8a583495b53dc65ee580c0f2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_153.bin",
+          "sizeBytes": 26869760,
+          "sha256": "81961a4991bd79776fc54fe1404971f1303d53f5b1434082b505c89c204328e7"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_154.bin",
+          "sizeBytes": 93978624,
+          "sha256": "4241b5db540b1f43474a1d587b40aab4bbe2efed9e8d913c9d4d6e66fdf6b7f1"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_155.bin",
+          "sizeBytes": 26894336,
+          "sha256": "facc17f771bdbd17db7b6f4009184ef081bae957c9f6fa8c6ea70ad04f07ebfc"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_156.bin",
+          "sizeBytes": 188088320,
+          "sha256": "e0c0e23f56497a853e937b5ea9bde5ff4ead5f8006af0daa8cbc387f266f912e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_157.bin",
+          "sizeBytes": 23511040,
+          "sha256": "f58c5943bfd0d4321d62bffa9ef6d3719bee033412678688f6d0340dc2f85618"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_158.bin",
+          "sizeBytes": 93978624,
+          "sha256": "d5c98e42c5510667505b2f79d45d0d1656949579524c9e64e55679410207ca10"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_159.bin",
+          "sizeBytes": 188088320,
+          "sha256": "2604030dfa71649c923b9756856f8ad595e925911f2e026b5593d157949ca9ae"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_160.bin",
+          "sizeBytes": 23511040,
+          "sha256": "0e1495a6a991fac9b80124c990901e5ae8a2452fb5e1a3ba688e652085d5a12c"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_161.bin",
+          "sizeBytes": 33587200,
+          "sha256": "811606154081473c87071919e22e17165e5228a0e74f290b0bd7b9f8ad77537f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_162.bin",
+          "sizeBytes": 26869760,
+          "sha256": "d3e0290025ce0b9809cf7c7b8f118d6b2071a4cc3a66b7bd0736f6d740a7d70e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_163.bin",
+          "sizeBytes": 93978624,
+          "sha256": "710bbaf50525a8bf268da84df923e26e2b4c926adf51a5c82edf57c0dea69ac8"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_164.bin",
+          "sizeBytes": 31117312,
+          "sha256": "802f80f0cbcfa34b72e855ba18c2a3cc6f87f5190dd3bd8d92042dc250e162ce"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_165.bin",
+          "sizeBytes": 188088320,
+          "sha256": "4f2bef6b0051637f0c8361ab1c9e008d9f9e9f6d41147dad3197df9f72dd1e0e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_166.bin",
+          "sizeBytes": 23511040,
+          "sha256": "b8a843300173e4f199e39f603a03d45636c9e5e2137b0847c4a34af28168eaa4"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_167.bin",
+          "sizeBytes": 33587200,
+          "sha256": "2065f50e46dd1bcab1a4bd1ab1ef622afb5baccde45b95ed18e09d3f6b9f629e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_168.bin",
+          "sizeBytes": 26869760,
+          "sha256": "90112881ec1844f64e9a6482947775555714513a20bef86925a5c7cb70da81ee"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_169.bin",
+          "sizeBytes": 33587200,
+          "sha256": "17a73105944fb27670045df2d5d215c0e8c8589cc5b082b0dab967f2f7f8d1af"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_170.bin",
+          "sizeBytes": 93978624,
+          "sha256": "ed334b0d49b1f9b697cc1701fe58cb1b5842a81d7cc8bb204147617c27e4cb1a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_171.bin",
+          "sizeBytes": 23535616,
+          "sha256": "2ab58d8452099f21b3656fbeebe235e96865383a937c73e868c326b08943a5ac"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_172.bin",
+          "sizeBytes": 188088320,
+          "sha256": "4ec0f480e1649094451533246794413c408d330637dd709a947e5fccb1b1df69"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_173.bin",
+          "sizeBytes": 23511040,
+          "sha256": "ea54b85869116e42f028c44af539ca42fb2c12fd4aa172a534b2f1102c6dcc56"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_174.bin",
+          "sizeBytes": 26869760,
+          "sha256": "42f7dc1b2b40079a34c91f821529069c485d66411b7e3a20156bb2161e9493d7"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_175.bin",
+          "sizeBytes": 93978624,
+          "sha256": "4e90dcc59e1775899eb833e9c707634c998ac9496749f81553a2c479c0dd6aff"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_176.bin",
+          "sizeBytes": 188088320,
+          "sha256": "17d52d75581643e1210b5240bc7442c6174a2410c3d7cfe7a83466b8e8053f20"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_177.bin",
+          "sizeBytes": 23511040,
+          "sha256": "bda74424ab99be621c96eb0fcd1bdb2cd330a5d14e55b62c1718ce6d37b91c88"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_178.bin",
+          "sizeBytes": 33587200,
+          "sha256": "d9f696eeac5e31c720aec59e5857fdf22413d7ba4a7a0fefb3f6d8be9466d9eb"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_179.bin",
+          "sizeBytes": 26869760,
+          "sha256": "6010b69f12404747fc203863bfc943342208646966c2806fd532b4aefde2e26a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_180.bin",
+          "sizeBytes": 31100928,
+          "sha256": "9184640a3cd7e7f25fd3f9db19b42f8d688284bf2a162c2aa0279cecd65126d0"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_181.bin",
+          "sizeBytes": 93978624,
+          "sha256": "a86cc4d40a7951f8f8463ee028d0a91de1804034716e5754fafc41ef91202d59"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_182.bin",
+          "sizeBytes": 188088320,
+          "sha256": "e29bf68002cbea52ad8aeec2e87d934846bd78300ddf22f6d52dc30fd4e19bbe"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_183.bin",
+          "sizeBytes": 23511040,
+          "sha256": "3617e83938267cf093a90b003a1ee25b8c8d551322ad39ab2865bc89520ae028"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_184.bin",
+          "sizeBytes": 33587200,
+          "sha256": "50b7271ba9b7a7a5652266e3e4e3974255e26c5caa2aa7ceb6993512a6ff9d00"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_185.bin",
+          "sizeBytes": 26869760,
+          "sha256": "9f769a8cef3a49e5778773b6670d9bc6a2cff9cab2c58dd62727735ff3971613"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_186.bin",
+          "sizeBytes": 93978624,
+          "sha256": "9533c675bb1d192c7d713a1902ae37ebffb87a15dd4363dd5137ec312a42a911"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_187.bin",
+          "sizeBytes": 22712320,
+          "sha256": "39d802c2bdf89fa7b01f4dfe9f19106357aa1060a2a8d5c113bc07ea35eff9ad"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_188.bin",
+          "sizeBytes": 188088320,
+          "sha256": "031746db5d6096c72c201000e67e99a35e6b9b36dcf282257b0cc9b6800a877b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_189.bin",
+          "sizeBytes": 23511040,
+          "sha256": "ad60faa35b59b8e1a9163b7bcec302853cc26e6c5a367b0fefbbdbca3fcf217b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_190.bin",
+          "sizeBytes": 33587200,
+          "sha256": "b561e3a1daaae8c4a6ffbba36346d7f255388b2af301d57896505a922120e9d2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_191.bin",
+          "sizeBytes": 26869760,
+          "sha256": "5ef02a1781ad502295470c65bc5e092284d852de72bd81b3be9e7f29aec8d14b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_192.bin",
+          "sizeBytes": 93978624,
+          "sha256": "a1d639c0026aad171c8ccc6f8dd2eb4b4908a5e36218bedc29137fc0d490d8ab"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_193.bin",
+          "sizeBytes": 188088320,
+          "sha256": "fed719e8d98c74a8344c5594c098c1acad159633b7c0073574104e955ab494d2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_194.bin",
+          "sizeBytes": 23511040,
+          "sha256": "b77c3df269e6c46624d4ce96f854ef7ba339f53ce14af1abe3969d53a5afc0f7"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_195.bin",
+          "sizeBytes": 33587200,
+          "sha256": "2e426b4f2725377d1fd6068be193683087587425b70503aae3d5823ad6762c51"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_196.bin",
+          "sizeBytes": 31100928,
+          "sha256": "12bc5f2edd2c7ee8f77261b5f71852cfe14a4ae5cacc748dd4679396b8c82597"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_197.bin",
+          "sizeBytes": 31068160,
+          "sha256": "4e3570ae69bd02b1df4a613911abbef873e6ad1e8156eca5875c8dcb927b1059"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_198.bin",
+          "sizeBytes": 188088320,
+          "sha256": "84b34b95ec0a81491380967acafe228999e9e81dc5c039b3ac14f32a1eaea989"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_199.bin",
+          "sizeBytes": 33587200,
+          "sha256": "c2abeb58787926a17b8062fbed76bc346552d7b41cec9e6f07e3f6542ef97706"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_200.bin",
+          "sizeBytes": 26869760,
+          "sha256": "4d9a0d6405c21a7b2c70591554b4a18b443c5cdc11fceb0b659dc6d4b328b471"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_201.bin",
+          "sizeBytes": 31068160,
+          "sha256": "b0a8c2c8be4ad41c4542e71bbaf9690f287753a6d26fb58ef9a8323d70c82870"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_202.bin",
+          "sizeBytes": 93978624,
+          "sha256": "b39451328afedf7073a87dce7767aed6aaf0ba540f59444da41ce19ea695df96"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_203.bin",
+          "sizeBytes": 188088320,
+          "sha256": "93d3708b07b9aca3806038daf2da07d074cee9f15f110d1b5895431682d9bae9"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_204.bin",
+          "sizeBytes": 23511040,
+          "sha256": "89402c28367ced0a789e411f14a13fdaa53c70471cb2df0d3c9f0e68255713e2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_205.bin",
+          "sizeBytes": 93978624,
+          "sha256": "43d85f8f35ca306eaee5393856b4c16f69143abfa886d5d7cba81048011647f7"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_206.bin",
+          "sizeBytes": 188088320,
+          "sha256": "b6faeb012cd273962b74b0b6a5a3c18483fcae2779ea1737855b4f8149ded848"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_207.bin",
+          "sizeBytes": 23511040,
+          "sha256": "be4d70d370e27e871b0a181ef888fccc6cfaf4847ab9143e5a78698166ca1034"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_208.bin",
+          "sizeBytes": 33587200,
+          "sha256": "b795800024e0a4f43dc2b2149fa9f2b276ac61a864a6ec0de98ffc5116a7fd8e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_209.bin",
+          "sizeBytes": 26869760,
+          "sha256": "d287b2fcc5c32c88d0055bb8c7fe844d909c24d32dd37c3c3a1a9e7c07549658"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_210.bin",
+          "sizeBytes": 31117312,
+          "sha256": "a1a435bef09e4900e2c7140d6900edbcac523f0a8e2237fb8e44c2e58d08d2ca"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_211.bin",
+          "sizeBytes": 93978624,
+          "sha256": "0c2dfc2aad361bb4bcd0b75345516f4ca423a9e97a142514c8d00463332c43a0"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_212.bin",
+          "sizeBytes": 188088320,
+          "sha256": "f06bb40032e572574ba7a978507fe6e61d1b37daccfcdcbfe0d19c8168920419"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_213.bin",
+          "sizeBytes": 23511040,
+          "sha256": "04a92d8a2dafe11f938ecd9a7b2662332286ccad2f9d5a7de807b6909d0395fd"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_214.bin",
+          "sizeBytes": 33587200,
+          "sha256": "c9f94ce482e3590757d190cb4badf8acc5e32f2f2ba45aca86607774d273d863"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_215.bin",
+          "sizeBytes": 26869760,
+          "sha256": "5c295ee2c71fe7bffb2dddebbffb28680ffa9e8fdb83a109b9e2bff3d4cadef6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_216.bin",
+          "sizeBytes": 33587200,
+          "sha256": "9b1ed375a95df0a1794439c47bf426ab48d50af15ab513549a202a2da4588e08"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_217.bin",
+          "sizeBytes": 93978624,
+          "sha256": "5adaa324e6825114c2b9333f23ead6689d5abaf1b01775286a8d527dcbffd5d2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_218.bin",
+          "sizeBytes": 26910720,
+          "sha256": "30f4e16a60da76caed95f2c33a75da1865c457d5761385aa7de6a7094e93c610"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_219.bin",
+          "sizeBytes": 93978624,
+          "sha256": "bf5e65f2d799eef91865463a73064ed0fa15fe29234b6c84b4f01ef9283c9fb0"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_220.bin",
+          "sizeBytes": 188088320,
+          "sha256": "b9abeeebd738fcf37313cf4e4bf828cc9c9dfe725093b28b446670bc7ba55b2f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_221.bin",
+          "sizeBytes": 23511040,
+          "sha256": "f369201790fc5fadee88b566ca0c991c9873837fc7c9c3e8f71f74d4f37c6190"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_222.bin",
+          "sizeBytes": 33587200,
+          "sha256": "1a63cc401a107c0e0df2112cc4a3a8f8e26137b7fe4ba168bfb5174191c42db9"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_223.bin",
+          "sizeBytes": 26869760,
+          "sha256": "2c03041133cd7b8bd9b0ba612a2697cf63629e34b3840cc76803618ab0c13190"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_224.bin",
+          "sizeBytes": 93978624,
+          "sha256": "9a6bf045a947e6485dfa5434c668ec15f59089ee9e2f1ea1b3d3135d9c8eb182"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_225.bin",
+          "sizeBytes": 31117312,
+          "sha256": "bdbe585d5daa6918267496a3f2c19f2a694c0f336c412ab08c6453494febf60a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_226.bin",
+          "sizeBytes": 188088320,
+          "sha256": "e0cfbf29081000515c742c5bf82477a1e2d2c28f06c4216777d9f20bd9532d6e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_227.bin",
+          "sizeBytes": 23511040,
+          "sha256": "4c8bc8eb194d26657cc508252ab002815b8a933ced9b8aeb0da6c1d17d7e5c0b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_228.bin",
+          "sizeBytes": 33587200,
+          "sha256": "27c9bbc15573ec445c3c0de1aea2fc902ae50ed7178756b95f0436fabb86e34f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_229.bin",
+          "sizeBytes": 26869760,
+          "sha256": "0ecf78c77da6775da7e0fa48ed7f254b83071a866633fc0ad64246171f37d7b8"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_230.bin",
+          "sizeBytes": 188088320,
+          "sha256": "1c0b0666188f10bd41485465431e55ecc731856c3a03d7c26ca201f7de89c35d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_231.bin",
+          "sizeBytes": 23511040,
+          "sha256": "7d7bb74eec86643cde52ad090f18ff0d4222dddadaa414a1b00ee08a8d42e0da"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_232.bin",
+          "sizeBytes": 33587200,
+          "sha256": "401a877df12384b0caa9561a6c97d1d01ab0f112648cff9b2457cedd18d1bcf3"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_233.bin",
+          "sizeBytes": 26869760,
+          "sha256": "6c29ddb8bba6960d1c4ba37ac81be8895139140f8e0ee741d1faccae30a18013"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_234.bin",
+          "sizeBytes": 93978624,
+          "sha256": "c1055aab1e5d3439dcd4f86b6ad223ac858dd57ca84b550b830f746fa66e4648"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_235.bin",
+          "sizeBytes": 26894336,
+          "sha256": "1f1174a887db73c31ada8554ce389b8bc15ef311ea4f8a2c279920649e4ed78e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_236.bin",
+          "sizeBytes": 93978624,
+          "sha256": "7d689ef1aea19161624de281ab4cc15ecb1e022fc0801133f62377c95a958d5b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_237.bin",
+          "sizeBytes": 188088320,
+          "sha256": "906dd92c183814554d7073457383e624aef61f78559860835d32b98108d6122d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_238.bin",
+          "sizeBytes": 23511040,
+          "sha256": "887eb97ae30db3659cfb4a41a393868b1081132843371c33411d2811b479c790"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_239.bin",
+          "sizeBytes": 33587200,
+          "sha256": "91a21b3990b07d564b7a35bbf0a8c8ddcae5d6ac61e00ee01424b937a245028a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_240.bin",
+          "sizeBytes": 26869760,
+          "sha256": "dee6153af001afb069eafeeb577f5953df3b63b1b17dcfa010e3b74e9f0bf2a5"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_241.bin",
+          "sizeBytes": 93978624,
+          "sha256": "ca7ae0f2b22e8e4ef20f5341b865ab61786cddd23e5e26d099147502e658cc64"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_242.bin",
+          "sizeBytes": 31117312,
+          "sha256": "cddc62319762a4102d1c72205b1370d58eeac82dce7e1295d79756711c20debe"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_243.bin",
+          "sizeBytes": 188088320,
+          "sha256": "47627481625f782640fcf50ab1f3fe8f6ba8d27558d2d7b2b75982a7c63685bb"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_244.bin",
+          "sizeBytes": 23511040,
+          "sha256": "fd17468d5817bccfd9044b5b2b0a08ee81873f0c3e976a8f5cd8c8df319851cd"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_245.bin",
+          "sizeBytes": 33587200,
+          "sha256": "fa66af751d7e8dcd8d9400d8259cbaad22b1f0bd73b9b8c274e4b38bcb5735b6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_246.bin",
+          "sizeBytes": 26869760,
+          "sha256": "ad00613d53e50a00f48f6bc60e93ff74c8daef2f94551fa355f5876fdb34ae4c"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_247.bin",
+          "sizeBytes": 33587200,
+          "sha256": "20d683f16e4b7458ce09b62a20a2ae539b9ae72665fb3e6b83a457f99c726287"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_248.bin",
+          "sizeBytes": 26869760,
+          "sha256": "e1531d02afa32116150713265626afbc56b933c4ed8d4978c48188c32a2cbc2a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_249.bin",
+          "sizeBytes": 93978624,
+          "sha256": "ad40481ed7494f5e0d1305df863b3c5e1e565708cd5c795c7d331391a89b5dfd"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_250.bin",
+          "sizeBytes": 26894336,
+          "sha256": "00425866aec3ffc930dca19be81650f0bf3aff32dbb514771e4b38f410e01b05"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_251.bin",
+          "sizeBytes": 188088320,
+          "sha256": "0e71dd5b205fd74debfb529f0eaf9847c24e1b5f0d716b2ce32f8bc249402091"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_252.bin",
+          "sizeBytes": 23511040,
+          "sha256": "3287f8d6c8a4004b54c06ff070df62e062b2bb130b34cc07924aad9d4679d802"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_253.bin",
+          "sizeBytes": 93978624,
+          "sha256": "3fc34da2bb87db24f2b6baca4686e92303daff95775d15eaefd4cae847bc2a1c"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_254.bin",
+          "sizeBytes": 188088320,
+          "sha256": "060f32273e09d93095fbff469585b3017241c3af7a6f7c5c71f5961781816f61"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_255.bin",
+          "sizeBytes": 23511040,
+          "sha256": "43c777d65831c4371d0bf2288fb24b2f0f534609e63a19a519eb21d1f161b301"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_256.bin",
+          "sizeBytes": 33587200,
+          "sha256": "6db372c83458909560008c7c1d43eab26c1409f9927c0b84efce3a097ab271cd"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_257.bin",
+          "sizeBytes": 26869760,
+          "sha256": "98e4c51509ddcbf2691f717d4ba33bb7c016253fa7f9cb65c4e598ab8f96a18f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_258.bin",
+          "sizeBytes": 93978624,
+          "sha256": "a063130df678970bf5d0b98542d61688a196d568aa5766c0367ea678382bd250"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_259.bin",
+          "sizeBytes": 31117312,
+          "sha256": "146bcbcc5f6bf00578704f153181896644db1cbc7bbfac08f592c6dcce8c0841"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_260.bin",
+          "sizeBytes": 188088320,
+          "sha256": "47e50c9c917f4d924f8f3bc4a8c3bb837d81a7deddf23e46bffba38667f8ced6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_261.bin",
+          "sizeBytes": 23511040,
+          "sha256": "5d388fecf844bfaeb8a61302f418c78d96760e5c65df01e45f026d1e56754400"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_262.bin",
+          "sizeBytes": 33587200,
+          "sha256": "2af2d6e00abd1c284452c27e86b28dbee1a973e31411e4c0050b50851e8de5fc"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_263.bin",
+          "sizeBytes": 26869760,
+          "sha256": "6ed52846cd76f6079f1aee78cc3f84cf7211c874de50d9b759e13fc34364c891"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_264.bin",
+          "sizeBytes": 33587200,
+          "sha256": "92e9ff279e734759bbeeca46d837cd440e0832cb37faab810032f1bc9673b99b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_265.bin",
+          "sizeBytes": 93978624,
+          "sha256": "d84b71e5edfe861ca9720ad2bbe98cda048b36b509aadb66d17da7f54536fdad"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_266.bin",
+          "sizeBytes": 23535616,
+          "sha256": "2ce1770f05f787b9c96100c20d337a079ae2b148e056aa6afe7412ff3664b83b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_267.bin",
+          "sizeBytes": 188088320,
+          "sha256": "01d52cbf59558544e07bd85122250139198bb252e893d630712ffc14a0a29749"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_268.bin",
+          "sizeBytes": 23511040,
+          "sha256": "97c14e3ba76b2c59e3dd945a90f111eda8ff38d05bf63c640b09723401d16f18"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_269.bin",
+          "sizeBytes": 26869760,
+          "sha256": "bc629e5f214923ab2bae8790b1bb38df89ad00f0f7621d9bbb8bd80151fd97e1"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_270.bin",
+          "sizeBytes": 93978624,
+          "sha256": "e32c9ddde73f4bf8e6305b8cfef30a67161c4d5a87bc7ed0d992d016889ab1c8"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_271.bin",
+          "sizeBytes": 188088320,
+          "sha256": "b2fdf1434d2dc589f848d7d0c0cc63ccadf4b4165e9b7da99463eb7d67351912"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_272.bin",
+          "sizeBytes": 23511040,
+          "sha256": "636821b7a08fda14806efec460839b59f744c46948b40163541557c50df3c520"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_273.bin",
+          "sizeBytes": 33587200,
+          "sha256": "82b98d6abc153cdc95636e6ba961f3a4c18fa83a65b39d3a788327b932dce1a6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_274.bin",
+          "sizeBytes": 26869760,
+          "sha256": "b4b62a642ac145f9a68c34512bc8fe506f9f5f659ab8ed787d3bca8488836f07"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_275.bin",
+          "sizeBytes": 31100928,
+          "sha256": "6787730e38b596ed8e6d3c581f7f497d6d67666b1e64a21ea7e19e6308a32deb"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_276.bin",
+          "sizeBytes": 93978624,
+          "sha256": "0bcd8fd923e7eb02b5ec3cec7abe1eb86325844fce0dda7f56d783f88aab7b38"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_277.bin",
+          "sizeBytes": 188088320,
+          "sha256": "5169bbd7a3aa2afe08860e31a504f858f1e35e3c42e716199adc954e37df11fa"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_278.bin",
+          "sizeBytes": 23511040,
+          "sha256": "8be174d7dd51c2c3d35c5aac7484bd6363be88115b2567a595702e72e20dd7aa"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_279.bin",
+          "sizeBytes": 33587200,
+          "sha256": "fddbbe34c09636881b096af202f0646482576fb2c9559e950f86e37cba9eb26b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_280.bin",
+          "sizeBytes": 26869760,
+          "sha256": "7df9a55fec7f05aea9f0a543e07055f7a9bd0b164ec81ccbf215e564820db9af"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_281.bin",
+          "sizeBytes": 93978624,
+          "sha256": "3af45face3288edc3f94dbbd3d58538d3b83e761a23b3edd5f844932caad964b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_282.bin",
+          "sizeBytes": 22712320,
+          "sha256": "4a1b7ac824c758175783edac5cfbb9242e1d1385327cf2dbe4fe33c4274fdbd4"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_283.bin",
+          "sizeBytes": 188088320,
+          "sha256": "eaf5ace4bee2339f6ab8c8e75babc4430af32d912974a99d4fba85c319039794"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_284.bin",
+          "sizeBytes": 23511040,
+          "sha256": "ea8549f9fd3602dd16cf6580378f66d80f0398cee294da59b93a4d7eb8bdcf43"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_285.bin",
+          "sizeBytes": 33587200,
+          "sha256": "b0d991003254d0b9ccd103fb5293c056243b6c220c7024a2430e3fef8e670fc8"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_286.bin",
+          "sizeBytes": 26869760,
+          "sha256": "9f63392ef65db3592c55bffefadb5a3a195525c63d32d18c9fee5764683818cb"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_287.bin",
+          "sizeBytes": 93978624,
+          "sha256": "8ae9b500c96690e33b72feb70874a696647cb4b38621bed81481fe777e9a7a81"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_288.bin",
+          "sizeBytes": 188088320,
+          "sha256": "a7caace8ceadf3519fb0797305484e1242e950b631054cc1d3ce847ba43b8960"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_289.bin",
+          "sizeBytes": 23511040,
+          "sha256": "49fbdf959b6ffcfed83ba67d02940183b14c82ac9a04b859f0391f39d29f9f62"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_290.bin",
+          "sizeBytes": 33587200,
+          "sha256": "52f5bffe2373fbac40af801cc85089a5337f79e745224f4e0c0b77ce47ba5e2b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_291.bin",
+          "sizeBytes": 31100928,
+          "sha256": "15b40ac7c3d36870ae5c8624a9dca3ccc904bc7e4950f4a0eb640d726d17705f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_292.bin",
+          "sizeBytes": 31068160,
+          "sha256": "56b9e45b0a26d9e236dd9296d4e395b0261ac041aa32e50292789d4204b46ed0"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_293.bin",
+          "sizeBytes": 188088320,
+          "sha256": "bd69f0b877d7763ed85c3f042a383e9ff1397ba14b8e4b9301ee65f212abe422"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_294.bin",
+          "sizeBytes": 33587200,
+          "sha256": "0c6dfde140dca3d8df786036b31aef9590e125db6cd90c64158ad8c604b2b684"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_295.bin",
+          "sizeBytes": 26869760,
+          "sha256": "77d6a321b851fbe660db540a6a06b72d163049a4ed714c6ce1d21fe7c43e5100"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_296.bin",
+          "sizeBytes": 31068160,
+          "sha256": "fbe49c74ecaa45987a603327a995c6f0ddb150cf41766d16283637afc3082abc"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_297.bin",
+          "sizeBytes": 93978624,
+          "sha256": "258688a8966f84c73587cab902230e1b146dea1ec97e5ed34285c2df82c0f668"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_298.bin",
+          "sizeBytes": 93978624,
+          "sha256": "63d67dcd0bab7bf37147bde40c99e25516e6e14cafc8d469e31082928098790d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_299.bin",
+          "sizeBytes": 188088320,
+          "sha256": "37a161e2b0370bda4b8004827ac3960d1567cfe2921cf16ecac95fcd5025bc14"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_300.bin",
+          "sizeBytes": 23511040,
+          "sha256": "bdc6b4d50520ea7c57c7806db97a88344d7a2bb5981869794346c364d29a8d35"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_301.bin",
+          "sizeBytes": 33587200,
+          "sha256": "6e17d6bc5cafd9abac7cac072c9a93b2c37a81e9179bf9f6242a313a46ec0cb5"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_302.bin",
+          "sizeBytes": 26869760,
+          "sha256": "f9b5061c24dced1ce6f7cdd264e182786a904f8ee55ae0990ec9d9c01ac2187e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_303.bin",
+          "sizeBytes": 31117312,
+          "sha256": "a2ac3dc05f89dd47135ccc9a448426c9e74baa2b98516441f59ccabb5b13a0f9"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_304.bin",
+          "sizeBytes": 93978624,
+          "sha256": "8697221ab426bbd52775f11cfe7e5024fc4a6dee47a90a827235179bc783d465"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_305.bin",
+          "sizeBytes": 188088320,
+          "sha256": "b3571848cf4bfb8e8e3aaed572d6c2aaf44cfd83063632ef62647d281fba6856"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_306.bin",
+          "sizeBytes": 23511040,
+          "sha256": "1bab7c5567c521d9c7a5570734a8d43f2d7e32a0d71968bcf061c0ad06726859"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_307.bin",
+          "sizeBytes": 33587200,
+          "sha256": "a8397e74696efcd7883256a85793b08ebe4bbeb249461d19785f8d370c05db33"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_308.bin",
+          "sizeBytes": 26869760,
+          "sha256": "adbcb177c19a8529c8d8f128f717463a77bbe6c649b2cbb52449c326920b1f5d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_309.bin",
+          "sizeBytes": 188088320,
+          "sha256": "62dd4dcecffc79682a6845f1975f9afd40c10527e0a781e34e248adaf3217832"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_310.bin",
+          "sizeBytes": 23511040,
+          "sha256": "a8019abf7990ad1d4fb25d38ebe4ec68ccbd881632f2e201e78b92d16d829078"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_311.bin",
+          "sizeBytes": 33587200,
+          "sha256": "db9c53ff4d91409ce7fb1c4dc12613f3ac0b529c047914397ec2f6a228157eaf"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_312.bin",
+          "sizeBytes": 26869760,
+          "sha256": "192f995682d1739c0eb2f368bd4743c18f5a475efb80a5684ea7def3571b4171"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_313.bin",
+          "sizeBytes": 93978624,
+          "sha256": "6dcca5bcbaf86995d46d0c9aec0425490caa604516ab193e877a3493f6d7de99"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_314.bin",
+          "sizeBytes": 30269440,
+          "sha256": "8eedc35eb920460fd23bde14685179f20663650b4b3fb0d63d93bb55a4b1a6e6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_315.bin",
+          "sizeBytes": 93978624,
+          "sha256": "03d46e344544a3b7b729fda4014e2ebb35e3dd21142a867a26f87bbfd81c7302"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_316.bin",
+          "sizeBytes": 188088320,
+          "sha256": "216eae736fe7a87898ec8fb0a37fd5e475034981d61947688c4ed43823ae445b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_317.bin",
+          "sizeBytes": 23511040,
+          "sha256": "85b1c63261da55111d9bbea46888cb67542b3ca03e95ee4f3b740154f5c28862"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_318.bin",
+          "sizeBytes": 33587200,
+          "sha256": "5e1c9e4f1573c250bee0647028648ef68fcf6ef2cb9d9a46f296a7e2c37ea21e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_319.bin",
+          "sizeBytes": 26869760,
+          "sha256": "6d69eeaafbbe053e0be36416055f06eac2232317f8347e5245dfa51e4e504c53"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_320.bin",
+          "sizeBytes": 93978624,
+          "sha256": "46e486846fe39d0b28bd2b7135ac16669ca88dabea5a9004d0baf59ce0b35a16"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_321.bin",
+          "sizeBytes": 31117312,
+          "sha256": "e3cd4fd1ab57c2c217d75e41d42f184c74cd4160de55c2174d69eb8121c9ed42"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_322.bin",
+          "sizeBytes": 188088320,
+          "sha256": "54cf5353b3453bb4684278e52209a099a49828043ad9ed46de77511cec757caa"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_323.bin",
+          "sizeBytes": 23511040,
+          "sha256": "6b403b1c0aa35533a1cfd85a1cd2980a76d2330d17816e7a3a179857480fe88d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_324.bin",
+          "sizeBytes": 33587200,
+          "sha256": "f79284ad6d03642f4f156d56ebe3f709d6f40ea509aab46ad5dd219bf2e6fecc"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_325.bin",
+          "sizeBytes": 26869760,
+          "sha256": "85645f6647a3fa3184aefafb6ae9773fef1a82f66ab7c05169553c80677fa09c"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_326.bin",
+          "sizeBytes": 33587200,
+          "sha256": "7e0440b581bf63d59349aa23d05d3bcd6381dda1c59bedec813d6440635d384a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_327.bin",
+          "sizeBytes": 26869760,
+          "sha256": "42fabc8a358f81ebe220d17d2ffce787e245defc4f0dd9a586464d8424afe928"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_328.bin",
+          "sizeBytes": 93978624,
+          "sha256": "8b9db10e6ac366dc19c34c6ef8e3ffee7ab59d0302f7e07668a0bee2206c645b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_329.bin",
+          "sizeBytes": 26894336,
+          "sha256": "9ecebf93bd289674063ff0523d591338b401ee8083b364e83df2a54f476a6a84"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_330.bin",
+          "sizeBytes": 188088320,
+          "sha256": "191c83cab8b1bf674ae9c90c6e090ce6a32bdaf2321c89f267faae87c48cb4f2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_331.bin",
+          "sizeBytes": 23511040,
+          "sha256": "7280032cbcbcd3027b5734728f1f744d970fcf31aa617ad49071b600b751a7ce"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_332.bin",
+          "sizeBytes": 93978624,
+          "sha256": "332a6182dabe89fd8232b1b5dcd68939e020ffe72e3a48d8441e55112514e55c"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_333.bin",
+          "sizeBytes": 188088320,
+          "sha256": "03851df773f5480b0c6bede8ad1973fa0f0eb312143b03263c711376fbe2d786"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_334.bin",
+          "sizeBytes": 23511040,
+          "sha256": "2807a265cb20280c0afeed084e7c66f9c1c11444f5d3fdceb95ff7141a7e136b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_335.bin",
+          "sizeBytes": 33587200,
+          "sha256": "8f2cd07c609905c4cf4604390b1b75a232957cfd86ed54f77b1bcd155a1cfc4f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_336.bin",
+          "sizeBytes": 26869760,
+          "sha256": "18bf7ba5739e04b70333455873b128614996854cfbbe4d164507ccb613f170ff"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_337.bin",
+          "sizeBytes": 93978624,
+          "sha256": "4ebf29775bc6fa4777e2c160d5f1f1542aad4f8519db41660457db266bd653a2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_338.bin",
+          "sizeBytes": 31117312,
+          "sha256": "e5e1853c3ef460bfcb42ea90771b1f87b2bfe3eee713e7150ba55a30c9dd7ba4"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_339.bin",
+          "sizeBytes": 188088320,
+          "sha256": "0764f06a8f37155336767429e9079156562828600dc6ce45552175dad8c799eb"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_340.bin",
+          "sizeBytes": 23511040,
+          "sha256": "4639928916cac830d969e4dba93aaa91418c913a8db26bf86fd9a741057e2338"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_341.bin",
+          "sizeBytes": 33587200,
+          "sha256": "0fe03e6eebc7887d84b07bd401e85e60dbc8f19bceb3e41cd827f9818af92ba8"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_342.bin",
+          "sizeBytes": 26869760,
+          "sha256": "738c4d7f96444c331fe312bb9d348341d7b43bb65444e3bcc4d9ce7f3854c1f9"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_343.bin",
+          "sizeBytes": 33587200,
+          "sha256": "e3c0df03a3125be33ba54636e44c5db770e9600cf82c6e8011ba6167a85a6556"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_344.bin",
+          "sizeBytes": 93978624,
+          "sha256": "3ecf3ff944319fb2fd729cfb9c6a569d0e2c77753de32c27898b361856353e6d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_345.bin",
+          "sizeBytes": 23535616,
+          "sha256": "ae873d407ae5662421184503ef83a13fd5c0ef44229d0ff6a57acd8ac4c23fa1"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_346.bin",
+          "sizeBytes": 188088320,
+          "sha256": "1b2a5bc2f88a41e7b0c19397033ddd58f47acb6e4d56a8b4377eedfdd49fdb05"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_347.bin",
+          "sizeBytes": 23511040,
+          "sha256": "b99edc69644bf12a5ab2e55f37523e47cbb2600727bc830f6980ec7f899ff3d6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_348.bin",
+          "sizeBytes": 26869760,
+          "sha256": "347ecdc64eecf260136110f9cbbbefe3d8341cc5d734ace1f1056efb3c6e3d77"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_349.bin",
+          "sizeBytes": 93978624,
+          "sha256": "947792e0d51af0a46a54f485c70825cdb333dab4351597c3116c04e4fcfa97d0"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_350.bin",
+          "sizeBytes": 188088320,
+          "sha256": "67e7ef0a3dd8967990778f86a715f6527fd753955d104ab56711eb599214e592"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_351.bin",
+          "sizeBytes": 23511040,
+          "sha256": "3eaa6e8f47725191b94576c80a95747c07762d55d2d9634eb86a17990a87d71a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_352.bin",
+          "sizeBytes": 33587200,
+          "sha256": "5dcc62cb1c82455c56bdeb142a7e4c18a3c75e5b71072f01a5f9a47687ffc1df"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_353.bin",
+          "sizeBytes": 26869760,
+          "sha256": "6509c85037fc77313fe82038cb1beea725c973d848ba86276158f008b1f98a52"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_354.bin",
+          "sizeBytes": 31100928,
+          "sha256": "6ce2167a1d4327abbdcf8be96dbf403f6d3eedeef97b443e22c8f5a4f843ef5a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_355.bin",
+          "sizeBytes": 93978624,
+          "sha256": "d5584ad83efcbb8b92be0a5ffaa57ef613430c1b9fc501846ea8a990f6cc60b6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_356.bin",
+          "sizeBytes": 188088320,
+          "sha256": "4d7ef821fda52e1f5c17aee2a1b41a44d3498f096b46eceb37235a955d93903b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_357.bin",
+          "sizeBytes": 23511040,
+          "sha256": "963178767747685d9c4e974c06dceab27b8dcabaccc7a69475ecdd49f892cd74"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_358.bin",
+          "sizeBytes": 33587200,
+          "sha256": "1bae9373e5f0301c62f26bd64c8d5085c24266c92f626ee1dd1c081e4f576c10"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_359.bin",
+          "sizeBytes": 26869760,
+          "sha256": "ff12988cdcb4d913c3662a86cd4a9af8de04604fdbc5f89a80bd013026225e10"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_360.bin",
+          "sizeBytes": 93978624,
+          "sha256": "d75f84938027d5ea1efa84d8715657865453f0013f6a78e924ccffbde2e417a0"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_361.bin",
+          "sizeBytes": 22712320,
+          "sha256": "7893c00e5027c7be884fddf624d5516ebb412e1112c5c0240ab85e93adce091d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_362.bin",
+          "sizeBytes": 188088320,
+          "sha256": "577bbb53223cdb3e08e9a4334f96aa15e86907add24430854c39fe132538d324"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_363.bin",
+          "sizeBytes": 23511040,
+          "sha256": "cd475723df09219ce43d245c5b88e07cba0d4372c5f11a924cf49be9166bf925"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_364.bin",
+          "sizeBytes": 33587200,
+          "sha256": "9860c5e4c4f30ecbc62dab87ad5acf229cde55361d7bf58bbd63dbb43c5f7d3b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_365.bin",
+          "sizeBytes": 26869760,
+          "sha256": "c37290a31489ab7fb01a6a52be1b5a683ddb02b0c9c2bbcdf29950204629af7e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_366.bin",
+          "sizeBytes": 93978624,
+          "sha256": "01e253aa0644e9170392dec2796156eb9f632e6cb9b824fb6e90f178de64ca58"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_367.bin",
+          "sizeBytes": 188088320,
+          "sha256": "86363bb2bbb1421fd52a3edde2731385789408d9247e642795ff475561ecea1a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_368.bin",
+          "sizeBytes": 23511040,
+          "sha256": "324f041b2e93fd9a902a2b5535fb5d16ccf2cedd7034b95a96d5bdb7ff6c1c00"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_369.bin",
+          "sizeBytes": 33587200,
+          "sha256": "2d5fd5a847235fd041348908395f65bbaaefa58bc2725bdfa8da29f5e397d101"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_370.bin",
+          "sizeBytes": 31100928,
+          "sha256": "c8c903ab31e19b84e44275544bb06f17d4eee1ebe8dd8be6ece9ff6588b42d10"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_371.bin",
+          "sizeBytes": 31068160,
+          "sha256": "e7ac6a43b9e16f013b588c37db8f43ba86c9bead48d7f70bccbd1551f2833fbd"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_372.bin",
+          "sizeBytes": 188088320,
+          "sha256": "f112638b5738a63b2bafba124808d6c5b56b8cb80fda37454d8efced98c535bf"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_373.bin",
+          "sizeBytes": 33587200,
+          "sha256": "b6c001b11f162c3f487a4c5f01624d9c5562fc136bc9e29b17390c9e93616029"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_374.bin",
+          "sizeBytes": 26869760,
+          "sha256": "3dc708f8846d3709482e83e9c04cb1f90cce476f01197adc9f1928a18c45133a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_375.bin",
+          "sizeBytes": 31068160,
+          "sha256": "1eda04cfa769eeb251b5e54c42554dccb2944f5797fe1e36938d43adebb5eb67"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_376.bin",
+          "sizeBytes": 93978624,
+          "sha256": "cf9443051bfcbb839ddae47b71f1440dff3ad42ba2bd0ff146390f4c6d41c8e8"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_377.bin",
+          "sizeBytes": 93978624,
+          "sha256": "660e470c35ee77ed154f87c1c51ef28bab90c1da9a7847e89eebbfe5765f3187"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_378.bin",
+          "sizeBytes": 188088320,
+          "sha256": "1ad720c0ce7221e7dc6d781419b2f5784cb510588d66524f74b3eb19e5a3bba9"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_379.bin",
+          "sizeBytes": 23511040,
+          "sha256": "4a753426877c7d27ff5d839f2ee20c75b8aeb78a34255f951c85c138a7987f08"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_380.bin",
+          "sizeBytes": 33587200,
+          "sha256": "83ce63127b69ae52c662f3d08fd14b9faaf90c2cd6266145bbebf61052b4a802"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_381.bin",
+          "sizeBytes": 26869760,
+          "sha256": "d164fbc323ac4b6a6ed24a5a006078992e6096f404ea3b454882491c35da0703"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_382.bin",
+          "sizeBytes": 31117312,
+          "sha256": "0cbb84279e16c331c5be4d80d3e999d7617030e31a9821be47c2288763336758"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_383.bin",
+          "sizeBytes": 93978624,
+          "sha256": "7641461bf5f4d165d56379549ac4d3c9cd03a2da18d4dd45d0c0b533dd976277"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_384.bin",
+          "sizeBytes": 188088320,
+          "sha256": "526c757178d85e063c35708d2ac682ed6b4b9193df1db46de2fc361b41e00f5e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_385.bin",
+          "sizeBytes": 23511040,
+          "sha256": "bde71b311e43fbe2870934e53d40160896c0d2e8cf7b9ed316ac17a4c087bc83"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_386.bin",
+          "sizeBytes": 33587200,
+          "sha256": "bcc97d5418df00a242bdfbebda879e584423c5f954461c0d14a274c3eb79df1e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_387.bin",
+          "sizeBytes": 26869760,
+          "sha256": "a1fb6815e42456918c09f292b936a0aafd75c9d7dddd19666665cbc51083b2e5"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_388.bin",
+          "sizeBytes": 188088320,
+          "sha256": "08a2fd83c3f3047bb466b7d9f307ca6313fb6a4cade0bbd251817ab27e4616b1"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_389.bin",
+          "sizeBytes": 23511040,
+          "sha256": "3df2724e8159a6e3baeac94653dffac7849ec5f0e6fb40b68525228a6e6e5be6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_390.bin",
+          "sizeBytes": 33587200,
+          "sha256": "6294470da0350e3572c0824e6c2f6ec3520022aad64ee284d27cbedce70f2e2b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_391.bin",
+          "sizeBytes": 26869760,
+          "sha256": "c9301f906168b5120aeccb4cdc8619d2692b6a1601212416d820abb027c733be"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_392.bin",
+          "sizeBytes": 93978624,
+          "sha256": "634bcfe3f80f206446bdc45137047dbc0fd45235b58e0ad3742aef96a583ae5c"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_393.bin",
+          "sizeBytes": 30269440,
+          "sha256": "8ca1e93584cb1c22d641bd1c48ca8b92e7c6b3d5a9f8cbded4e954e785f45fb8"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_394.bin",
+          "sizeBytes": 188088320,
+          "sha256": "21322b96701103499f23665e43bc80c179d925ea8e55b61d6bd2354de84d4add"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_395.bin",
+          "sizeBytes": 23511040,
+          "sha256": "b0620da35e0c9847fec1e161e7fc557daca4ea80e82b7cd4d486ea5467a3ae16"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_396.bin",
+          "sizeBytes": 26869760,
+          "sha256": "18a1f6a4b4a9afa8668462cbd251a1e63e255c9ac44f80a9aad90d0f2bbc9e97"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_397.bin",
+          "sizeBytes": 93978624,
+          "sha256": "62fbf1aab778ae8b4de8ee6ab1101433e6692bd067ae9a5d9fa207431c7a5824"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_398.bin",
+          "sizeBytes": 188088320,
+          "sha256": "62b7e07817dddf3637f98577bcff761cf46e8944c9c2a6a66abb1042e9ddb72f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_399.bin",
+          "sizeBytes": 23511040,
+          "sha256": "53a74f397eaa664bd08be68bda47e1543f26a3ce07f796ea1fbb98cdb59e5a14"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_400.bin",
+          "sizeBytes": 33587200,
+          "sha256": "f1fc570fb314fa49c03706600cdda96a380224fa594f41719ff9398725a50dd6"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_401.bin",
+          "sizeBytes": 26869760,
+          "sha256": "80e1c40155cbd74cea11e7a13fcb8dfc36550732db409cc639339ef17b917f3b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_402.bin",
+          "sizeBytes": 31100928,
+          "sha256": "c720d50a44b5a5eb62f253c8cc4bbf1d3f3ff183ae25e736583c6e213a52c17d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_403.bin",
+          "sizeBytes": 93978624,
+          "sha256": "2783b2bca7d81f38f2959bc0d259955a849f2c5ebf9a47b9dd6d609f32918f00"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_404.bin",
+          "sizeBytes": 188088320,
+          "sha256": "31b78021de36cc100c988070adb25b0b2088ad1870245427454a080ce34b062a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_405.bin",
+          "sizeBytes": 23511040,
+          "sha256": "1f28a4eb4bcceb0e38e871fd2c89f32000d30cbfdb3f903a9992b79aa5109d2f"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_406.bin",
+          "sizeBytes": 33587200,
+          "sha256": "74abfd200037df824fd5838e1abe25e26f998d46e2bc5ccf7ccdacc9f30ed5aa"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_407.bin",
+          "sizeBytes": 26869760,
+          "sha256": "94615a0d262d9e83d567217f7d86ad8cb88d8d9a6e01d1aeecdf54844c3d289d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_408.bin",
+          "sizeBytes": 93978624,
+          "sha256": "3dee2bb362ff9a66b4a181f17c02ee9bdfcf99a835c45a2fde4e45145d3f90d1"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_409.bin",
+          "sizeBytes": 22712320,
+          "sha256": "b44852d706b9e41304bab820d81d510d37a3523d2b976f7d122db1f81efca1ca"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_410.bin",
+          "sizeBytes": 93978624,
+          "sha256": "01287e6045326bf01aef0b8b7c2ae401c92ba5a2490b6e44e2af672d4f9f9bcb"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_411.bin",
+          "sizeBytes": 188088320,
+          "sha256": "ed3a868b4229d6bc070ce88611b1db70545f8f9110dc4e69e97fc278562cc2ba"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_412.bin",
+          "sizeBytes": 23511040,
+          "sha256": "ab709bbf92d3f762e331dbd31bb84fa92a3b4ac37da7d8da78e54fc071c9ccba"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_413.bin",
+          "sizeBytes": 33587200,
+          "sha256": "92cc80eb6e13e472c7e842c3e836f565ab671c3c38ff19638594f9cf481d9471"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_414.bin",
+          "sizeBytes": 26869760,
+          "sha256": "1dec2b6e5d991e5c302286846feaecf0504a7907210f8ce2b4713d514980bb71"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_415.bin",
+          "sizeBytes": 93978624,
+          "sha256": "b64a67b2f6f23c13163aeece7f055abacf64f97f7199d5d756f7aa93d715263c"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_416.bin",
+          "sizeBytes": 31117312,
+          "sha256": "775e5953d13e9b77ca06916c1e37d2f6cf139958ecc101b184fc90912f95aa6e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_417.bin",
+          "sizeBytes": 188088320,
+          "sha256": "97afeafa46d7603cd0a45156db5cca75a441f80a8710938254b06ee881323c9a"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_418.bin",
+          "sizeBytes": 23511040,
+          "sha256": "ad59796f8e7465a8573dd18e92b5fa3d354086787984aef563b9b0c9cc0954e7"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_419.bin",
+          "sizeBytes": 33587200,
+          "sha256": "46c4756482780fe9b1e9c27f74d954d5c31b9fa51b4accce1a081bc944a3407b"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_420.bin",
+          "sizeBytes": 26869760,
+          "sha256": "d7b581dd2f2c4a94af5e9d76a4d372113021ad9a545d7d675d389ec8c09cde31"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_421.bin",
+          "sizeBytes": 33587200,
+          "sha256": "c0e5a7e432f7fb2c064d32056a77ef1caaba9ffc81556659ca491441d9cd5e83"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_422.bin",
+          "sizeBytes": 26869760,
+          "sha256": "3f03f749f1797bfbd8e956eb1d43c3f6f9b2f22987d3fa931613e8afb34d8114"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_423.bin",
+          "sizeBytes": 93978624,
+          "sha256": "f4479021349f7a6e74748f67accd3c782116b2e836327d0e180522697abd3904"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_424.bin",
+          "sizeBytes": 26894336,
+          "sha256": "a98a751ad5b6052e19d4d30354dd732355b237db789c4f18feb161de06863adc"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_425.bin",
+          "sizeBytes": 188088320,
+          "sha256": "e159c1f8f68284dac0456a6000393386e0a1f1c41594eb2acc6ceab1f19fa1dc"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_426.bin",
+          "sizeBytes": 23511040,
+          "sha256": "4a6eaf744168c07a77e42164675661c63d0207607de33d1cd821b0f0d15b3076"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_427.bin",
+          "sizeBytes": 93978624,
+          "sha256": "e6e910d191a369aba40322dffcc1c8749594a90ee2954f2f0e555c3481f5a405"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_428.bin",
+          "sizeBytes": 188088320,
+          "sha256": "22aec40a4384ccf7c4a130c620d6797a19bda9d7d6b1f3643802161605692807"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_429.bin",
+          "sizeBytes": 23511040,
+          "sha256": "63c4ba0227539d99688305bdf31c923ddc854da4bc1c6ce6ace5a124849a2762"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_430.bin",
+          "sizeBytes": 33587200,
+          "sha256": "b44d04db1e848abea1bcc4b7f677ac229a0022a2bff096812a393df033af00ee"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_431.bin",
+          "sizeBytes": 26869760,
+          "sha256": "a71c30428dc3b28554885673ae3e13abd795234331137ce7a71e8ab9126fc33d"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_432.bin",
+          "sizeBytes": 93978624,
+          "sha256": "7d7905525be5b239c7038bf6ca0852c834375881c4d4539be4be714678d6ab0e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_433.bin",
+          "sizeBytes": 31117312,
+          "sha256": "41899adc6c8abfaa095ed030af49786469d56c5289ffaca7962492a538e86f7c"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_434.bin",
+          "sizeBytes": 188088320,
+          "sha256": "665452397d0114dc54f4609cc835b8c2cb5c2a31365cc4d250cad26e064eca96"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_435.bin",
+          "sizeBytes": 23511040,
+          "sha256": "67a13ab7626eae3e8595392ceb9582bc3a8eef918fb40dcb4732d7d9c7c835c0"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_436.bin",
+          "sizeBytes": 33587200,
+          "sha256": "9b7b0b29ceea148dc9a47e5fd0e544d70fc3826df7d3f6947065071f352ab483"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_437.bin",
+          "sizeBytes": 26869760,
+          "sha256": "7fbe31784601c27c69be5aad4fd836630f7bfdb0270565529fafa90d289b4fb9"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_438.bin",
+          "sizeBytes": 33587200,
+          "sha256": "625486041ab7ed7496277ed59ae6b170ea32d2a645f05cc73d68d141cbf35ee4"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_439.bin",
+          "sizeBytes": 93978624,
+          "sha256": "ac108ee3191a5912ce0c349773b3395a6b0cc9d435c45615ed9ac35af2b8d2c3"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_440.bin",
+          "sizeBytes": 23535616,
+          "sha256": "e8cf80b9b0915dda7bc4741bde4ed852949901e3ff5ad1c69fa49ff0cfc7839e"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_441.bin",
+          "sizeBytes": 188088320,
+          "sha256": "32814bcddabc49ddb6ab22a4fa7cda56c17605d64021786bca7b3c26dcdc3054"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_442.bin",
+          "sizeBytes": 23511040,
+          "sha256": "8a7da6e3d1d932159bf878fd4529904226a65ab11c19df23b7f599eafb5eb251"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_443.bin",
+          "sizeBytes": 26869760,
+          "sha256": "b52eba7e26bcb47d8ffc871b68a8127098f47553775e83f95035354ff8260f2c"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_444.bin",
+          "sizeBytes": 93978624,
+          "sha256": "e53482d5254f5de9ccd0202d4fb23ce8c3857b44fa8ef5b678604d96c738dd91"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_445.bin",
+          "sizeBytes": 188088320,
+          "sha256": "08fae1a7c97b4a33e5aadeab8ce4a9657723dab0f748ad7c776bccaf04a34cd2"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_446.bin",
+          "sizeBytes": 23511040,
+          "sha256": "7ff7cc01b96f424e31b0d1779e9193fa06fc8df1b88685b7d1ff006c842c332c"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_447.bin",
+          "sizeBytes": 33587200,
+          "sha256": "9250b9f3101269165d60e1b8b9a54c06337a8fa33da7d182b9b24ae8253c121c"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_448.bin",
+          "sizeBytes": 26869760,
+          "sha256": "df955c8707cf481f73e4823751861cd2fd19d30613c1c409f0ba4e2624f908b4"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_449.bin",
+          "sizeBytes": 31100928,
+          "sha256": "1800a961f3d85ad297f0ace22efba635f7422344f06b2e742391d2b039b3c6a3"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_450.bin",
+          "sizeBytes": 93978624,
+          "sha256": "fb3e29184ac3ea665b2e29e7ec7d7fff907fec0ade2afcaa89ea045f48570883"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_451.bin",
+          "sizeBytes": 188088320,
+          "sha256": "53e543e33487484b26e1d7a3bfc957f416b828e5e275fd036ad0182ac2abc990"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_452.bin",
+          "sizeBytes": 23511040,
+          "sha256": "949dcf75e06fb3374c6b560e3906c3a23d75e7812c6b42974264da9ebe2b6b17"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_453.bin",
+          "sizeBytes": 33587200,
+          "sha256": "6a3fd0e700804a0e9596d5f4ef0fd746d1011ead070c5ad1f92b7cc390a76aef"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_454.bin",
+          "sizeBytes": 26869760,
+          "sha256": "97a8d12e44b86cd1be56e44d079ffa45797bb515d23ef162a78e930e01226c93"
+        },
+        {
+          "kind": "weight-shard",
+          "source": "model",
+          "path": "params_shard_455.bin",
+          "sizeBytes": 22712320,
+          "sha256": "03cdbf6579ebec19fb22a80554dc0c7f6f5a25d7b2a926f5d6849b789142dea7"
+        },
+        {
+          "kind": "model-library",
+          "source": "wasm",
+          "path": "web-llm-models/v0_2_87/base/Llama-3_1-70B-Instruct-q3f16_1_cs1k-webgpu.wasm",
+          "sizeBytes": 9541090,
+          "sha256": "db78950bc873f57c08f03298091069e2b0aa0c9c1eb89d1d625c57fe9bea9c31"
+        }
+      ],
+      "artifactSetDigest": "c5b181b8df7e33660d14aba38131081bab344cfd09f6f6616df93b69b0023ff0"
     }
   ]
 }

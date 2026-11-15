@@ -1,0 +1,26 @@
+Llama WebLLM model notice
+
+Built with Llama
+
+Llama 3.1 is licensed under the Llama 3.1 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved.
+
+Sourdaw can download the following pinned MLC-format conversion of Meta Llama 3.1 for browser-local
+inference:
+
+- mlc-ai/Llama-3.1-70B-Instruct-q3f16_1-MLC at 9d30b348cad6c840c8568ae585e1690f19f4338c
+
+The MLC model card attributes the conversion to meta-llama/Meta-Llama-3.1-70B-Instruct. The card
+does not map the conversion to an exact base-checkpoint revision.
+
+The complete Llama 3.1 Community License Agreement is distributed as
+public/legal/Llama-3.1-LICENSE.txt. Use of Llama Materials must follow Meta's Acceptable Use Policy,
+which the agreement incorporates by reference and which is distributed as
+public/legal/Llama-3.1-ACCEPTABLE-USE-POLICY.txt.
+
+Sources:
+
+https://huggingface.co/mlc-ai/Llama-3.1-70B-Instruct-q3f16_1-MLC/tree/9d30b348cad6c840c8568ae585e1690f19f4338c
+https://github.com/meta-llama/llama-models/blob/1f0feb795a4130697ced243fb53051670d591653/models/llama3_1/LICENSE
+https://github.com/meta-llama/llama-models/blob/1f0feb795a4130697ced243fb53051670d591653/models/llama3_1/USE_POLICY.md
+https://www.llama.com/llama3_1/license/
+https://www.llama.com/llama3_1/use-policy/
