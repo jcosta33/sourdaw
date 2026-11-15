@@ -2758,6 +2758,32 @@ describe('comparisons by loudness, brightness, width, dynamics and punch', () =>
             expect(await offeredPolicies(prompt, null)).toEqual(policies);
         });
 
+        it.each([
+            ['a track name that holds a brightness word', 'Make Dark Side thicker', 'Dark Side', offers(MATCH)],
+            [
+                'a closed quotation that holds the only brightness word',
+                'Make Drums thicker, as the note says "bright"',
+                null,
+                offers(MATCH),
+            ],
+        ])('withholds the centroid pair when %s alone names brightness', async (_name, prompt, track, policies) => {
+            expect(await offeredPolicies(prompt, track)).toEqual(policies);
+        });
+
+        it.each([
+            ['an elision that opens no quotation', "Make 'em brighter than Bass", offers(...LEGACY)],
+            [
+                'a later elision after a loudness word',
+                "Make Drums louder, 'cause the mix is dull",
+                offers(...LEGACY, LOUDNESS_HIGHER_LOWER),
+            ],
+        ])(
+            'offers the centroid pair for %s: the unclosed apostrophe masks nothing',
+            async (_name, prompt, policies) => {
+                expect(await offeredPolicies(prompt, null)).toEqual(policies);
+            }
+        );
+
         it('withholds the legacy objective a comparative track name alone would suggest', async () => {
             expect(await offeredPolicies('Make Drums brighter than Louder Than Bombs', 'Louder Than Bombs')).toEqual(
                 offers(CENTROID)
