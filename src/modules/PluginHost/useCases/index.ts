@@ -48,5 +48,7 @@ export { getExternalPluginContractVersionForCommand } from './pluginScan/getExte
 export { getAgentDeviceFactoryManifest } from './getAgentDeviceFactoryManifest';
 
 export { startPluginScan } from './pluginScan/scanning/startPluginScan';
-export { addScanPath } from './pluginScan/scanning/addScanPath';
+export { addPluginFolder } from './pluginScan/scanning/addPluginFolder';
+export { removePluginFolder } from './pluginScan/scanning/removePluginFolder';
+export { refreshPluginFolderGrants } from './pluginScan/scanning/refreshPluginFolderGrants';
 export { removeScanPath } from './pluginScan/scanning/removeScanPath';

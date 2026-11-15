@@ -36,6 +36,7 @@ describe('pluginScanStore', () => {
             errors: [],
             notices: [],
             quarantined: [],
+            grantedFolders: [],
         });
     });
 
@@ -54,6 +55,7 @@ describe('pluginScanStore', () => {
                     quarantined_at_ms: 1_700_000_000_000,
                 },
             ],
+            grantedFolders: [{ path: '/Users/me/Plugins', unavailableReason: null }],
         };
 
         pluginScanStore.set(finished);
@@ -102,6 +104,7 @@ describe('pluginScanStore', () => {
             errors: [],
             notices: [],
             quarantined: [],
+            grantedFolders: [],
         };
 
         pluginScanStore.set(finished);
@@ -118,6 +121,7 @@ describe('pluginScanStore', () => {
             errors: [],
             notices: [],
             quarantined: [],
+            grantedFolders: [],
         };
         pluginScanStore.set(first);
         const refuse = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
@@ -143,6 +147,7 @@ describe('pluginScanStore', () => {
             errors: [],
             notices: [],
             quarantined: [],
+            grantedFolders: [],
         };
         pluginScanStore.set(first);
         const refuse = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
@@ -236,6 +241,27 @@ describe('pluginScanStore hydration', () => {
         // reason about a scan that never produced it this session, and the next
         // scan restates whichever ones still apply.
         expect(restored?.notices).toEqual([]);
+    });
+
+    it('should not restore granted plugin folders, whose authority is the native grant store', async () => {
+        const restored = await launchWithStoredScanState(
+            JSON.stringify({
+                scannedPlugins: [],
+                scanPaths: ['/plugins'],
+                isScanning: false,
+                lastScanTime: null,
+                errors: [],
+                notices: [],
+                quarantined: [],
+                grantedFolders: [{ path: '/Users/me/Plugins', unavailableReason: null }],
+            })
+        );
+
+        // A stored copy could list a folder the native side has since dropped,
+        // and offer to remove a grant that no longer exists. Settings reads
+        // the list fresh from the native side instead.
+        expect(restored?.grantedFolders).toEqual([]);
+        expect(restored?.scanPaths).toEqual(['/plugins']);
     });
 
     it('should restore a quarantine record across a reload, unlike errors and notices', async () => {

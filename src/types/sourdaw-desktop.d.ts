@@ -32,6 +32,11 @@ type SourdawMessageDialogOptions = {
     readonly kind?: 'info' | 'warning' | 'error';
 };
 
+type SourdawPluginFolderAddResult =
+    | { readonly status: 'cancelled' }
+    | { readonly status: 'granted'; readonly path: string }
+    | { readonly status: 'refused'; readonly reason: string };
+
 type SourdawNativeMenuAction =
     | 'project:new'
     | 'project:import-project'
@@ -84,6 +89,10 @@ type SourdawDesktopBridge = {
         readonly open: (options?: SourdawOpenDialogOptions) => Promise<string | string[] | null>;
         readonly save: (options?: SourdawSaveDialogOptions) => Promise<string | null>;
         readonly message: (options: SourdawMessageDialogOptions) => Promise<void>;
+    };
+    /** Pick and grant a plugin scan folder in main; no path crosses from the renderer. */
+    pluginFolders: {
+        readonly add: () => Promise<SourdawPluginFolderAddResult>;
     };
     paths: {
         readonly samplesBase: () => Promise<string>;

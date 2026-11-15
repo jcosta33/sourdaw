@@ -485,7 +485,7 @@ async fn hydrate_plugin_registry(state: &AppState) {
     let plugin_registry = Arc::clone(&state.plugin_registry);
     let registry_store = Arc::clone(&state.plugin_registry_store);
     if let Err(error) = tokio::task::spawn_blocking(move || {
-        registry_store.hydrate_into(&plugin_registry, &PluginScanPolicy::platform_defaults());
+        registry_store.hydrate_into(&plugin_registry, &PluginScanPolicy::production());
     })
     .await
     {
@@ -595,7 +595,7 @@ pub async fn scan_plugins(
     scan_plugins_with_policy(
         paths,
         retry_quarantined,
-        PluginScanPolicy::platform_defaults(),
+        PluginScanPolicy::production(),
         state,
     )
     .await
@@ -604,7 +604,7 @@ pub async fn scan_plugins(
 /// `scan_policy` is a parameter so a test can scan a fixture directory without
 /// touching the platform's real plugin folders. Production reaches this only
 /// through [`scan_plugins`], which always supplies
-/// [`PluginScanPolicy::platform_defaults`].
+/// [`PluginScanPolicy::production`].
 async fn scan_plugins_with_policy(
     paths: Vec<String>,
     retry_quarantined: bool,
@@ -955,10 +955,11 @@ fn authorize_scan_roots(
 /// offer what a scan can honor — the same authority `scan_plugins` enforces,
 /// asked before the path is saved instead of being rejected on every scan
 /// after. Every refusal reason (empty, relative, symlinked, outside the
-/// platform roots) collapses to `false`: the caller needs the verdict, and
-/// the user-facing wording is the renderer's, which names the roots.
+/// platform roots and the granted folders) collapses to `false`: the caller
+/// needs the verdict, and the user-facing wording is the renderer's, which
+/// names the roots.
 pub async fn is_scan_path_authorized(path: String) -> Result<bool, String> {
-    Ok(PluginScanPolicy::platform_defaults()
+    Ok(PluginScanPolicy::production()
         .authorize_scan_root(Path::new(&path))
         .is_ok())
 }
@@ -1804,7 +1805,7 @@ pub async fn load_plugin(
         instance_id,
         windows_host,
         state,
-        PluginScanPolicy::platform_defaults(),
+        PluginScanPolicy::production(),
         rescan_plugin_file,
         create_hosted_runtime,
     )

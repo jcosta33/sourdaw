@@ -1,5 +1,6 @@
 import { type ScannedPlugin } from '../../../models/ScannedPlugin';
 import { getDefaultPluginPaths } from '../../../repositories/pluginBridge/getDefaultPluginPaths';
+import { getPluginFolderGrants } from '../../../repositories/pluginBridge/getPluginFolderGrants';
 import { isScanPathAuthorized } from '../../../repositories/pluginBridge/isScanPathAuthorized';
 import { scanPlugins } from '../../../repositories/pluginBridge/scanPlugins';
 import { type ScanResult } from '../../../repositories/pluginBridge/types';
@@ -89,7 +90,16 @@ export async function startPluginScan(options: StartPluginScanOptions = {}): Pro
         const authorizedScanPaths = authorizations
             .filter((authorization) => authorization.authorized)
             .map((authorization) => authorization.path);
-        const allPaths = [...new Set([...authorizedScanPaths, ...defaultPaths])];
+        // Granted folders join the request only while the native side reports
+        // them available: an unavailable one (a removed drive) would come back
+        // as a scan error every run, and its reason is already listed in
+        // settings beside the folder. A failed query aborts, like the
+        // authorization query above.
+        const grants = await getPluginFolderGrants();
+        const availableGrantPaths = grants
+            .filter((grant) => grant.unavailable_reason === null)
+            .map((grant) => grant.path);
+        const allPaths = [...new Set([...authorizedScanPaths, ...defaultPaths, ...availableGrantPaths])];
 
         if (allPaths.length === 0) {
             pluginScanStore.update((current) => ({

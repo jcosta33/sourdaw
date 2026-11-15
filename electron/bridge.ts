@@ -24,6 +24,7 @@ import {
     EVENT_CHANNEL,
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
+    PLUGIN_FOLDER_ADD_CHANNEL,
     SYSTEM_TOTAL_MEMORY_CHANNEL,
     STREAM_CHANNEL,
     VOICE_DICTATION_ARM_CHANNEL,
@@ -44,6 +45,7 @@ import {
     RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL,
     RENDERER_SESSION_QUIESCED_CHANNEL,
     RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
+    type PluginFolderAddResult,
     type SourdawBridge,
 } from './channels.js';
 import { commandChannel, isExposedCommand } from './commands.js';
@@ -52,6 +54,25 @@ import { commandChannel, isExposedCommand } from './commands.js';
 export type RendererIpc = {
     invoke: (channel: string, ...args: readonly unknown[]) => Promise<unknown>;
     on: (channel: string, listener: (event: unknown, ...args: readonly unknown[]) => void) => void;
+};
+
+/** Narrow main's plugin-folder answer to the three shapes it may take. */
+const toPluginFolderAddResult = (value: unknown): PluginFolderAddResult => {
+    if (typeof value === 'object' && value !== null) {
+        const status: unknown = Reflect.get(value, 'status');
+        const path: unknown = Reflect.get(value, 'path');
+        const reason: unknown = Reflect.get(value, 'reason');
+        if (status === 'cancelled') {
+            return { status };
+        }
+        if (status === 'granted' && typeof path === 'string') {
+            return { status, path };
+        }
+        if (status === 'refused' && typeof reason === 'string') {
+            return { status, reason };
+        }
+    }
+    throw new TypeError('pluginFolders.add returned an unsupported payload');
 };
 
 const rejectUnknownCommand = (command: string): void => {
@@ -366,6 +387,11 @@ export const createSourdawBridge = (
             message: async (options) => {
                 await ipc.invoke(DIALOG_MESSAGE_CHANNEL, options);
             },
+        },
+
+        pluginFolders: {
+            // No arguments cross: main grants only the folder its own picker returns.
+            add: async () => toPluginFolderAddResult(await ipc.invoke(PLUGIN_FOLDER_ADD_CHANNEL)),
         },
 
         paths: {

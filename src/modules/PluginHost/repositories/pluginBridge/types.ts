@@ -179,3 +179,20 @@ export type PluginGuiInfo = {
     width: number;
     height: number;
 };
+
+/**
+ * One folder the user granted as an additional plugin scan root, as
+ * `get_plugin_folder_grants` answers it.
+ *
+ * `unavailable_reason` is `null` when the folder can be scanned now, and
+ * otherwise says why it cannot — a removed drive, a folder deleted since it
+ * was granted. An unavailable grant stays listed so the user can remove it.
+ */
+export type PluginFolderGrant = {
+    path: string;
+    unavailable_reason: string | null;
+};
+
+/** What asking the desktop shell to pick and grant a plugin folder came to. */
+export type PluginFolderAddResult =
+    { status: 'cancelled' } | { status: 'granted'; path: string } | { status: 'refused'; reason: string };

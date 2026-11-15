@@ -145,6 +145,7 @@ test('native transcript stays a draft until explicit submission and confirmation
                 save: () => refuse('dialog.save'),
                 message: () => refuse('dialog.message'),
             },
+            pluginFolders: { add: () => refuse('pluginFolders.add') },
             paths: { samplesBase: () => refuse('paths.samplesBase'), join: () => refuse('paths.join') },
             system: { totalMemoryBytes: async () => 16_000_000_000 },
             voiceDictation: {

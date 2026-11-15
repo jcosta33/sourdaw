@@ -125,6 +125,9 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
                 save: () => Promise.reject(new Error('Unexpected native dialog: save')),
                 message: () => Promise.reject(new Error('Unexpected native dialog: message')),
             },
+            pluginFolders: {
+                add: () => Promise.reject(new Error('Unexpected native plugin-folder call: add')),
+            },
             paths: {
                 samplesBase: () => Promise.reject(new Error('Unexpected native path call: samplesBase')),
                 join: () => Promise.reject(new Error('Unexpected native path call: join')),

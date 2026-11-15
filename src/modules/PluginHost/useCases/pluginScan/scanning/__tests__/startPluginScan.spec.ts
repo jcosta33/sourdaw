@@ -33,6 +33,7 @@ function create_plugin_scan_state(overrides: Partial<PluginScanState> = {}): Plu
         notices: [],
         lastScanTime: null,
         quarantined: [],
+        grantedFolders: [],
         ...overrides,
     };
 }
@@ -74,6 +75,7 @@ const mocks = vi.hoisted(() => {
             notices: [],
             lastScanTime: null,
             quarantined: [],
+            grantedFolders: [],
         },
     };
     return {
@@ -85,6 +87,8 @@ const mocks = vi.hoisted(() => {
             vi.fn<typeof import('../../../../repositories/pluginBridge/getDefaultPluginPaths').getDefaultPluginPaths>(),
         isScanPathAuthorized:
             vi.fn<typeof import('../../../../repositories/pluginBridge/isScanPathAuthorized').isScanPathAuthorized>(),
+        getPluginFolderGrants:
+            vi.fn<typeof import('../../../../repositories/pluginBridge/getPluginFolderGrants').getPluginFolderGrants>(),
     };
 });
 
@@ -110,6 +114,10 @@ vi.mock('../../../../repositories/pluginBridge/isScanPathAuthorized', () => ({
     isScanPathAuthorized: mocks.isScanPathAuthorized,
 }));
 
+vi.mock('../../../../repositories/pluginBridge/getPluginFolderGrants', () => ({
+    getPluginFolderGrants: mocks.getPluginFolderGrants,
+}));
+
 describe('startPluginScan', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -125,6 +133,7 @@ describe('startPluginScan', () => {
         });
         mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
         mocks.isScanPathAuthorized.mockResolvedValue(true);
+        mocks.getPluginFolderGrants.mockResolvedValue([]);
     });
 
     it('sets isScanning and then updates with results', async () => {
@@ -471,6 +480,40 @@ describe('startPluginScan', () => {
                 isScanning: false,
                 errors: ['IPC Failure'],
             })
+        );
+    });
+
+    it('scans the granted folders that are available and skips the unavailable ones', async () => {
+        mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
+        mocks.getPluginFolderGrants.mockResolvedValue([
+            { path: '/Users/me/Plugins', unavailable_reason: null },
+            { path: '/Volumes/USB/Plugins', unavailable_reason: 'The folder is not available' },
+        ]);
+        mocks.scanPlugins.mockResolvedValue({ ran: true, result: create_scan_result() });
+
+        await startPluginScan();
+
+        expect(mocks.scanPlugins).toHaveBeenCalledWith(['/default/path', '/Users/me/Plugins']);
+    });
+
+    it('scans a granted folder even when no default or saved path exists', async () => {
+        mocks.getDefaultPluginPaths.mockResolvedValue([]);
+        mocks.getPluginFolderGrants.mockResolvedValue([{ path: '/Users/me/Plugins', unavailable_reason: null }]);
+        mocks.scanPlugins.mockResolvedValue({ ran: true, result: create_scan_result() });
+
+        await startPluginScan();
+
+        expect(mocks.scanPlugins).toHaveBeenCalledWith(['/Users/me/Plugins']);
+    });
+
+    it('reports a grants query that failed instead of scanning past it', async () => {
+        mocks.getPluginFolderGrants.mockRejectedValue(new Error('grant store unreadable'));
+
+        await startPluginScan();
+
+        expect(mocks.scanPlugins).not.toHaveBeenCalled();
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({ isScanning: false, errors: ['grant store unreadable'] })
         );
     });
 

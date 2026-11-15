@@ -139,6 +139,9 @@ describe('power-save over the routed engine lifecycle', () => {
         grantPath: () => {
             throw new Error('Unexpected grant call');
         },
+        grantPluginFolder: () => {
+            throw new Error('Unexpected grant call');
+        },
         ...methods,
     });
 

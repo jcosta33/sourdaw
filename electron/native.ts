@@ -46,6 +46,17 @@ export type NativeHost = {
      */
     readonly grantPath: (path: string, mode: FileGrantMode, recursive: boolean) => Promise<void>;
     /**
+     * Grant one folder the user picked as an additional plugin scan root,
+     * resolving its canonical path or rejecting with the user-readable reason
+     * the native policy refused it.
+     *
+     * Main-process-only for the reason `grantPath` is: it widens what
+     * `scan_plugins` will load code from, so it is withheld from
+     * `EXPOSED_COMMANDS` and its only caller is the plugin-folder picker in
+     * `appIpc.ts`, which passes the path its own dialog returned.
+     */
+    readonly grantPluginFolder: (path: string) => Promise<string>;
+    /**
      * Begin a renderer session, answering the generation a retrospective arm
      * from that session must still match when it lands.
      *
