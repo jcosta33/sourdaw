@@ -22,7 +22,9 @@ function targetOf(targetId: string) {
     return (): readonly string[] => [targetId];
 }
 
-const noExtraTargets = (): readonly string[] => [];
+function noExtraTargets(): readonly string[] {
+    return [];
+}
 const markersTarget = targetOf(COMMAND_MARKERS_TARGET_ID);
 const sectionsTarget = targetOf(COMMAND_SECTIONS_TARGET_ID);
 const loopTarget = targetOf(COMMAND_LOOP_TARGET_ID);

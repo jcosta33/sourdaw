@@ -3,8 +3,11 @@ import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAct
 type ActionOf<Type extends RuntimeActionType> = Extract<RuntimeAction, { type: Type }>;
 type ClipTargetLookup = { readonly [Type in RuntimeActionType]: (action: ActionOf<Type>) => string[] };
 
-const noClipTargets = (): string[] => [];
-const payloadClipId = (
+function noClipTargets(): string[] {
+    return [];
+}
+
+function payloadClipId(
     action: ActionOf<
         | 'duplicateClip'
         | 'duplicateClipToNextBar'
@@ -36,7 +39,9 @@ const payloadClipId = (
         | 'scaleAllVelocities'
         | 'setAllVelocities'
     >
-): string[] => [action.payload.clipId];
+): string[] {
+    return [action.payload.clipId];
+}
 
 const clipTargetIdsByActionType: ClipTargetLookup = {
     importStemSet: noClipTargets,
