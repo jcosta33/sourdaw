@@ -67,6 +67,31 @@ pub const PENDING_CANCEL_LIMIT: usize = 64;
 /// render to reuse the id. Bounded and oldest-first, like the pending cancels.
 pub const FINISHED_RENDER_LIMIT: usize = 64;
 
+/// The longest render id a render or a cancel accepts, in bytes. Every
+/// pending cancel and finished id is kept as a copy of one, so the bound is
+/// what keeps those records small.
+pub const RENDER_ID_MAX_BYTES: usize = 128;
+
+/// The text every refused render id's error starts with.
+pub const OFFLINE_RENDER_ID_INVALID: &str = "offline-render-id-invalid";
+
+/// Refuse a render id that is empty or longer than [`RENDER_ID_MAX_BYTES`].
+fn check_render_id(render_id: &str) -> Result<(), String> {
+    if render_id.is_empty() {
+        return Err(format!(
+            "{OFFLINE_RENDER_ID_INVALID}: a render id must not be empty"
+        ));
+    }
+    if render_id.len() > RENDER_ID_MAX_BYTES {
+        return Err(format!(
+            "{OFFLINE_RENDER_ID_INVALID}: a render id must be at most {RENDER_ID_MAX_BYTES} \
+             bytes; this one is {}",
+            render_id.len()
+        ));
+    }
+    Ok(())
+}
+
 /// The text every cancelled render's error starts with — a contract the
 /// renderer side matches on.
 pub const OFFLINE_RENDER_CANCELLED: &str = "offline-render-cancelled";
@@ -168,6 +193,7 @@ impl<'a> InFlightRender<'a> {
         let Some(render_id) = render_id else {
             return Ok(Self::uncancellable());
         };
+        check_render_id(&render_id)?;
         let control = state
             .offline_renders
             .lock()
@@ -219,6 +245,7 @@ impl Drop for InFlightRender<'_> {
 /// Cancel the offline render under `render_id`. A cancel before its render
 /// starts still cancels it; one for a finished id does nothing.
 pub fn cancel_graph_offline(render_id: String, state: &AppState) -> Result<(), String> {
+    check_render_id(&render_id)?;
     state
         .offline_renders
         .lock()

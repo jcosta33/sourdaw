@@ -1052,6 +1052,51 @@ fn a_cancel_for_a_finished_id_still_cancels_once_a_render_begins_under_it_again(
 }
 
 #[test]
+fn a_render_id_is_bounded_on_the_render_and_the_cancel_alike() {
+    let fx = InstalledFx::create("render-id-bound");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let seams = fx.seams();
+    let at_the_limit = "r".repeat(RENDER_ID_MAX_BYTES);
+    let one_over = "r".repeat(RENDER_ID_MAX_BYTES + 1);
+    let built_in_only = || batch(impulse_track(json!([])));
+
+    render(built_in_only(), &state, &ui, &seams, Some(&at_the_limit))
+        .expect("an id at the limit renders");
+    cancel_graph_offline(at_the_limit, &state).expect("an id at the limit is cancellable");
+
+    for (id, reason) in [
+        (
+            one_over.as_str(),
+            "must be at most 128 bytes; this one is 129",
+        ),
+        ("", "must not be empty"),
+    ] {
+        let refusal = render(built_in_only(), &state, &ui, &seams, Some(id))
+            .expect_err("the render refuses the id");
+        assert!(
+            refusal.starts_with(OFFLINE_RENDER_ID_INVALID) && refusal.contains(reason),
+            "{refusal}"
+        );
+        let refusal =
+            cancel_graph_offline(id.to_string(), &state).expect_err("the cancel refuses the id");
+        assert!(
+            refusal.starts_with(OFFLINE_RENDER_ID_INVALID) && refusal.contains(reason),
+            "{refusal}"
+        );
+    }
+    assert_eq!(
+        state
+            .offline_renders
+            .lock()
+            .expect("renders")
+            .pending_cancel_count(),
+        0,
+        "a refused cancel is not queued"
+    );
+}
+
+#[test]
 fn a_cancel_mid_render_stops_it_and_releases_its_clap_instance_on_the_ui_thread() {
     a_cancel_mid_render_stops_the_render_of(Format::Clap);
 }
