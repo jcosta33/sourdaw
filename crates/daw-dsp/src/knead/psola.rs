@@ -16,28 +16,27 @@ impl Default for PsolaConfig {
     }
 }
 
-// Rate at which each grain reads its source, relative to output time.
-//
-// `1.0` is textbook TD-PSOLA: the grain is copied unresampled and only
-// its *spacing* changes, so the spectral envelope — the formants — stays
-// where the singer put it while the fundamental moves. That is formant
-// correction ON, and it is the shape every pitch corrector ships as the
-// vocal default (Auto-Tune's Formant Correction, Melodyne's Formants,
-// Logic Flex Pitch's Formant Shift at 0).
-//
-// Setting this to the pitch ratio makes each grain read `ratio` source
-// samples per output sample, which scales the grain's whole spectrum by
-// `ratio` — formants included. Combined with the epoch respacing that
-// already moved the fundamental, the result is the varispeed/"chipmunk"
-// relation between pitch and formants, i.e. formant correction OFF.
-//
-// Level is unaffected either way: the Hann window is still applied in
-// output coordinates at width 2·P_t and hop P_t, so COLA still sums to 1.
-//
-// The rate is a *curve* parallel to the input, not a config field: the RT
-// engine fills it per frame (the ratio tracks the retune glide), and the
-// offline commit renders one rate per position from the glided shift.
-
+/// Rate at which each grain reads its source, relative to output time.
+///
+/// `1.0` is textbook TD-PSOLA: the grain is copied unresampled and only
+/// its *spacing* changes, so the spectral envelope — the formants — stays
+/// where the singer put it while the fundamental moves. That is formant
+/// correction ON, and it is the shape every pitch corrector ships as the
+/// vocal default (Auto-Tune's Formant Correction, Melodyne's Formants,
+/// Logic Flex Pitch's Formant Shift at 0).
+///
+/// Setting this to the pitch ratio makes each grain read `ratio` source
+/// samples per output sample, which scales the grain's whole spectrum by
+/// `ratio` — formants included. Combined with the epoch respacing that
+/// already moved the fundamental, the result is the varispeed/"chipmunk"
+/// relation between pitch and formants, i.e. formant correction OFF.
+///
+/// Level is unaffected either way: the Hann window is still applied in
+/// output coordinates at width 2·P_t and hop P_t, so COLA still sums to 1.
+///
+/// The rate is a *curve* parallel to the input, not a config field: the RT
+/// engine fills it per frame (the ratio tracks the retune glide), and the
+/// offline commit renders one rate per position from the glided shift.
 /// Offline PSOLA processing over a pre-computed array of pitch marks and target f0 curve.
 /// Writes the result into the provided `out` slice.
 ///
