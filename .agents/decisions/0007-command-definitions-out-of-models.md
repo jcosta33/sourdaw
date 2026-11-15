@@ -2,7 +2,7 @@
 type: adr
 id: 0007
 title: Command definitions live in useCases/commands, not models/
-status: accepted
+status: accepted; superseded in part by 0058 (AppAction location)
 date: 2026-07-16
 owner: The Sourdaw team
 sources:

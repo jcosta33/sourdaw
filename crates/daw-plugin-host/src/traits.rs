@@ -37,10 +37,11 @@ pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
 ///
 /// Every variant here is raised from a callback its format marks `[main-thread]`,
 /// and the wake behind them allocates. An ask a plugin may raise from the audio
-/// thread therefore has no variant here at all: `clap_host_params.request_flush`
-/// and `clap_host_gui.request_resize`, which CLAP marks `[thread-safe]`, are
-/// recorded as a flag or a size slot plus a process-wide hint and answered by
-/// the parameter drain, because a channel send on the render thread is a missed
+/// thread therefore has no variant here at all: `clap_host.request_callback`,
+/// `clap_host_params.request_flush` and `clap_host_gui.request_resize`, which
+/// CLAP marks `[thread-safe]`, are recorded as a flag or a size slot plus a
+/// process-wide hint and answered by the request watcher's sweep or the
+/// parameter drain, because a channel send on the render thread is a missed
 /// device period.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginHostRequest {
@@ -51,12 +52,6 @@ pub enum PluginHostRequest {
     /// plugin that no longer exists. Re-enumerating means calling the plugin
     /// back, which the callback's own thread may not do.
     ParametersRescan,
-    /// The plugin asked the host to call `on_main_thread` on it — CLAP's
-    /// `clap_host::request_callback` — so work it deferred to the main thread
-    /// (a worker result, an editor update) can complete. Recorded as a flag and
-    /// coalesced like every other ask here: one drain calls the plugin once,
-    /// which completes whatever it parked on the request.
-    MainThreadCallback,
 }
 
 /// Host-supplied wake fired when a plugin raises a [`PluginHostRequest`].
@@ -87,6 +82,17 @@ pub type EditorWindowResizer = Arc<dyn Fn(u32, u32) + Send + Sync>;
 /// rect is already in the units the host's window seam speaks — and the only
 /// answer that cannot be wrong when nothing has been measured.
 pub const DEFAULT_EDITOR_CONTENT_SCALE: f64 = 1.0;
+
+/// The most note events one process call hands a plugin.
+///
+/// Lockstep restatement of `daw_engine::midi_fx::MIDI_EVENT_BUFFER_CAPACITY`,
+/// the engine's per-block event buffer: this crate has no edge to the engine, so
+/// the figure is restated here and `sourdaw-native`'s `host/native_bridge.rs`
+/// welds the pair with a compile-time equality assert, where both are visible.
+/// Every backend sizes its plugin-facing event list from this one number. A
+/// list sized under it drops the tail of a full block — the latest notes, the
+/// note-offs among them — after the slot has already counted them delivered.
+pub const MAX_MIDI_EVENTS_PER_BLOCK: usize = 128;
 
 /// One host-side parameter write waiting to reach a plugin.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -466,6 +472,9 @@ pub trait HostedPluginRuntime: AudioPlugin {
     );
 
     /// Process a block with MIDI and pending host-side parameter writes.
+    ///
+    /// The caller hands at most [`MAX_MIDI_EVENTS_PER_BLOCK`] note events, and
+    /// every one of them reaches the plugin with this block.
     fn process_with_midi_and_parameters(
         &mut self,
         inputs: &[&[f32]],

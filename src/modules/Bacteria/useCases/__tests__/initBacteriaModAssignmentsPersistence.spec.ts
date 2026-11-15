@@ -14,6 +14,15 @@ const mocks = vi.hoisted(() => ({
 // `executeUserAppAction`; the barrel-mock coverage check needs both named here
 // even though no test calls them.
 vi.mock('#/modules/Command/useCases', () => ({
+    // The persistence init dispatches through its episodes object; route it to the captured door so
+    // these cases observe the committed action. Refusal handling is pinned in the refusal spec.
+    createUserAppActionRefusalEpisodes: () => ({
+        execute: (_key: string, action: unknown, options?: unknown) => mocks.executeAppAction(action, options),
+        end: vi.fn(),
+        endAll: vi.fn(),
+    }),
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     commitUndoEntry: vi.fn(),
     createUndoEntry: vi.fn(),
     getExecutableAppActionEffect: vi.fn(() => null),

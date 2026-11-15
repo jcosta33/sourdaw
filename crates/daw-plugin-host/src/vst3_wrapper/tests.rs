@@ -8,6 +8,7 @@
 //! not the path to it.
 
 use super::*;
+use crate::allocation_counter::allocation_count;
 use crate::runtime::HostedRuntime;
 use crate::traits::{
     take_pending_process_refusal_signal, PluginHostRequest, PROCESS_REFUSAL_HINT_TEST_LOCK,
@@ -151,7 +152,7 @@ impl FakeState {
             .notes
             .lock()
             .expect("notes mutex")
-            .reserve(MAX_MIDI * 4);
+            .reserve(MAX_MIDI_EVENTS_PER_BLOCK * 4);
         state
             .observed_inputs
             .lock()
@@ -2084,6 +2085,45 @@ fn a_notes_frame_offset_reaches_the_plugin_as_its_sample_offset() {
     );
 }
 
+/// The slot hands a wrapper up to one engine block of events per call and then
+/// counts them delivered. Every one of them — the note-offs past the old
+/// 64-event cut included — must be in the `inputEvents` list the plugin reads,
+/// in order, with its sample offset.
+#[test]
+fn every_event_of_a_full_engine_block_reaches_the_plugins_event_list() {
+    let state = FakeState::with_event_input();
+    let mut wrapper = load(&state, COMBINED_CID);
+    render(&mut wrapper, 1.0, 256);
+    let notes: Vec<HostMidiEvent> = (0..MAX_MIDI_EVENTS_PER_BLOCK as u32)
+        .map(|index| host_note(index as u8, 100, 1, index % 2 == 0, index))
+        .collect();
+    assert!(
+        !notes[65].is_note_on,
+        "the block carries a note-off past index 64"
+    );
+
+    wrapper.process_with_midi_and_parameters(
+        &[&[1.0; 256], &[1.0; 256]],
+        &mut [&mut [0.0; 256], &mut [0.0; 256]],
+        256,
+        &notes,
+        &[],
+    );
+
+    let expected: Vec<(i16, i16, bool, int32)> = notes
+        .iter()
+        .map(|note| {
+            (
+                note.channel,
+                i16::from(note.note),
+                note.is_note_on,
+                note.frame_offset as int32,
+            )
+        })
+        .collect();
+    assert_eq!(*state.notes.lock().expect("notes mutex"), expected);
+}
+
 // ── Transport ───────────────────────────────────────────────────────────
 
 /// A null process context is VST3 for "the host has no timeline". Sending a
@@ -3957,52 +3997,3 @@ fn a_render_block_performs_no_heap_allocation() {
         after - before
     );
 }
-
-/// A counting allocator that counts *per thread*.
-///
-/// Per thread rather than per process because `cargo test` runs these tests
-/// concurrently: a global counter would pick up every other test's allocations
-/// and fail this one for reasons that have nothing to do with the render path.
-///
-/// The counter is a `Cell` behind a `const`-initialised thread local, so reading
-/// or incrementing it allocates nothing itself and cannot recurse into the
-/// allocator.
-struct CountingAllocator;
-
-thread_local! {
-    static ALLOCATIONS: Cell<u64> = const { Cell::new(0) };
-}
-
-fn allocation_count() -> u64 {
-    ALLOCATIONS.with(Cell::get)
-}
-
-unsafe impl std::alloc::GlobalAlloc for CountingAllocator {
-    unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
-        count_allocation();
-        std::alloc::System.alloc(layout)
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: std::alloc::Layout) {
-        std::alloc::System.dealloc(pointer, layout)
-    }
-
-    unsafe fn realloc(
-        &self,
-        pointer: *mut u8,
-        layout: std::alloc::Layout,
-        new_size: usize,
-    ) -> *mut u8 {
-        count_allocation();
-        std::alloc::System.realloc(pointer, layout, new_size)
-    }
-}
-
-/// `try_with` rather than `with`: an allocation during thread teardown finds the
-/// thread local already destroyed, and panicking there would abort the process.
-fn count_allocation() {
-    let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
-}
-
-#[global_allocator]
-static COUNTING_ALLOCATOR: CountingAllocator = CountingAllocator;

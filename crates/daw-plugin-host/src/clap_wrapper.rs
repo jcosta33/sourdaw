@@ -17,8 +17,6 @@
 /// clamp `num_samples` to `MAX_BUFFER`, so a larger callback would be
 /// silently truncated to this many frames per block.
 pub const MAX_BUFFER: usize = 4096;
-/// Maximum MIDI events processed per audio block. Events beyond this are silently dropped.
-const MAX_MIDI: usize = 64;
 /// Maximum parameter events processed per audio block. Extra pending values remain host-side.
 const MAX_PARAMETER_EVENTS: usize = 64;
 
@@ -51,7 +49,7 @@ use crate::scanner::{category_from_clap_features, clap_library_path, owned_featu
 use crate::traits::{
     signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostMidiEvent,
     HostParameterUpdate, HostTransport, HostedPluginRuntime, PluginHostRequestNotifier,
-    ProcessingGate,
+    ProcessingGate, MAX_MIDI_EVENTS_PER_BLOCK,
 };
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
@@ -894,7 +892,7 @@ impl ClapWrapper {
             is_instrument,
             accepts_note_events,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
-            midi_scratch: Vec::with_capacity(MAX_MIDI),
+            midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             #[cfg(feature = "engine-owned-command-fixture")]
@@ -941,7 +939,7 @@ impl ClapWrapper {
             is_instrument: false,
             accepts_note_events: true,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
-            midi_scratch: Vec::with_capacity(MAX_MIDI),
+            midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             command_fixture: Some(EngineOwnedCommandFixture {
@@ -1787,8 +1785,8 @@ impl ClapWrapper {
 
     /// Process audio with MIDI note events.
     ///
-    /// RT-safe: reuses `self.midi_scratch` (preallocated in `new`). Events beyond `MAX_MIDI`
-    /// per block are dropped — callers should batch at a reasonable granularity.
+    /// RT-safe: reuses `self.midi_scratch` (preallocated in `new`), which holds
+    /// [`MAX_MIDI_EVENTS_PER_BLOCK`] events — a full engine block.
     pub fn process_with_midi(
         &mut self,
         inputs: &[&[f32]],
@@ -2386,12 +2384,13 @@ fn empty_transport_event() -> clap_event_transport {
 ///
 /// Each event's `frame_offset` becomes the CLAP header's `time`, which is what
 /// makes an instrument sound a note on the sample it was written on rather than
-/// at the head of whichever block carried it. Events past [`MAX_MIDI`] are
-/// dropped: the scratch was reserved once and growing it here would allocate on
-/// the audio thread.
+/// at the head of whichever block carried it. The scratch was reserved once at
+/// [`MAX_MIDI_EVENTS_PER_BLOCK`], the most the seam hands over in one call, so
+/// the `take` never cuts a caller's events: it only stops a caller breaking
+/// that contract from growing the scratch on the audio thread.
 fn fill_note_scratch(scratch: &mut Vec<clap_event_note>, midi_events: &[HostMidiEvent]) {
     scratch.clear();
-    for event in midi_events.iter().take(MAX_MIDI) {
+    for event in midi_events.iter().take(MAX_MIDI_EVENTS_PER_BLOCK) {
         scratch.push(clap_event_note {
             header: clap_event_header {
                 size: mem::size_of::<clap_event_note>() as u32,
@@ -3143,7 +3142,7 @@ mod tests {
     /// sound as a chord at its head.
     #[test]
     fn a_notes_frame_offset_becomes_the_event_headers_time() {
-        let mut scratch = Vec::with_capacity(MAX_MIDI);
+        let mut scratch = Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK);
 
         fill_note_scratch(
             &mut scratch,
@@ -3168,21 +3167,171 @@ mod tests {
         );
     }
 
-    /// The scratch is reserved once and refilled in place, so a block carrying
-    /// more notes than it holds drops the tail rather than growing on the audio
-    /// thread.
+    /// The scratch is reserved once and refilled in place. A caller breaking
+    /// the seam's per-call bound cannot make it grow on the audio thread.
     #[test]
-    fn a_block_past_the_scratch_capacity_keeps_the_prefix_that_fits() {
-        let mut scratch = Vec::with_capacity(MAX_MIDI);
-        let notes: Vec<HostMidiEvent> = (0..MAX_MIDI + 4)
+    fn a_caller_past_the_seams_bound_cannot_grow_the_scratch() {
+        let mut scratch = Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK);
+        let notes: Vec<HostMidiEvent> = (0..MAX_MIDI_EVENTS_PER_BLOCK + 4)
             .map(|index| host_note(60, 100, 0, true, index as u32))
             .collect();
 
         fill_note_scratch(&mut scratch, &notes);
 
-        assert_eq!(scratch.len(), MAX_MIDI);
-        assert_eq!(scratch[MAX_MIDI - 1].header.time, MAX_MIDI as u32 - 1);
-        assert_eq!(scratch.capacity(), MAX_MIDI);
+        assert_eq!(scratch.len(), MAX_MIDI_EVENTS_PER_BLOCK);
+        assert_eq!(scratch.capacity(), MAX_MIDI_EVENTS_PER_BLOCK);
+    }
+
+    // ── Event delivery at the engine's per-block capacity ───────────────
+
+    /// One entry a plugin's `process` read from the host's input event list,
+    /// in list order: the event type, the header's time, and the note key or
+    /// the parameter id it addresses.
+    type ReadEvent = (u16, u32, u32);
+
+    /// What the reading stub saw on its last `process` call. Serialised by the
+    /// lock below because tests run in parallel and this static is shared.
+    static READ_EVENTS: std::sync::Mutex<Vec<ReadEvent>> = std::sync::Mutex::new(Vec::new());
+    static EVENT_READ_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Read the whole input event list through the plugin-facing `size`/`get`
+    /// pair, the way a plugin does. An entry the list will not hand back is
+    /// recorded as type `u16::MAX`, so a short list cannot pass as a full one.
+    unsafe extern "C" fn stub_process_reading_events(
+        _plugin: *const clap_plugin,
+        process: *const clap_process,
+    ) -> i32 {
+        let mut read = read_events();
+        read.clear();
+        // SAFETY: the host hands a live process struct and event list for the
+        // length of this call, and every header `get` returns points at an
+        // event of the type its `type_` names.
+        unsafe {
+            let events = &*(*process).in_events;
+            let (Some(size), Some(get)) = (events.size, events.get) else {
+                return CLAP_PROCESS_CONTINUE;
+            };
+            for index in 0..size(events) {
+                let header = get(events, index);
+                if header.is_null() {
+                    read.push((u16::MAX, 0, 0));
+                    continue;
+                }
+                let addressed = match (*header).type_ {
+                    CLAP_EVENT_NOTE_ON | CLAP_EVENT_NOTE_OFF => {
+                        (*(header as *const clap_event_note)).key as u32
+                    }
+                    CLAP_EVENT_PARAM_VALUE => (*(header as *const clap_event_param_value)).param_id,
+                    _ => u32::MAX,
+                };
+                read.push(((*header).type_, (*header).time, addressed));
+            }
+        }
+        CLAP_PROCESS_CONTINUE
+    }
+
+    /// The read log, recovered from a poisoned lock so one failing case cannot
+    /// turn the next into a poison panic that hides its own result.
+    fn read_events() -> std::sync::MutexGuard<'static, Vec<ReadEvent>> {
+        READ_EVENTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn event_read_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        EVENT_READ_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn event_reading_wrapper() -> ClapWrapper {
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        plugin.process = Some(stub_process_reading_events);
+        stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin)
+    }
+
+    /// A full engine block of notes: alternating on and off, each on its own
+    /// key and frame, so a dropped, reordered or re-stamped event is visible.
+    fn full_block_of_notes() -> Vec<HostMidiEvent> {
+        (0..MAX_MIDI_EVENTS_PER_BLOCK as u32)
+            .map(|index| host_note(index as u8, 100, 0, index % 2 == 0, index))
+            .collect()
+    }
+
+    fn expected_notes(notes: &[HostMidiEvent]) -> Vec<ReadEvent> {
+        notes
+            .iter()
+            .map(|note| {
+                let type_ = if note.is_note_on {
+                    CLAP_EVENT_NOTE_ON
+                } else {
+                    CLAP_EVENT_NOTE_OFF
+                };
+                (type_, note.frame_offset, u32::from(note.note))
+            })
+            .collect()
+    }
+
+    fn process_events(
+        wrapper: &mut ClapWrapper,
+        notes: &[HostMidiEvent],
+        updates: &[HostParameterUpdate],
+    ) {
+        let silence = [0.0f32; 256];
+        let mut out_l = [0.0f32; 256];
+        let mut out_r = [0.0f32; 256];
+        let inputs: [&[f32]; 2] = [&silence, &silence];
+        let mut outputs: [&mut [f32]; 2] = [&mut out_l, &mut out_r];
+        wrapper.process_with_midi_and_parameters(&inputs, &mut outputs, 256, notes, updates);
+    }
+
+    /// The slot hands a wrapper up to one engine block of events per call and
+    /// then counts them delivered. Every one of them — the note-offs past the
+    /// old 64-event cut included — must be in the list the plugin reads, in
+    /// order, with its frame offset.
+    #[test]
+    fn every_event_of_a_full_engine_block_reaches_the_plugins_event_list() {
+        let _guard = event_read_test_guard();
+        let mut wrapper = event_reading_wrapper();
+        let notes = full_block_of_notes();
+        assert!(
+            !notes[65].is_note_on,
+            "the block carries a note-off past index 64"
+        );
+
+        process_events(&mut wrapper, &notes, &[]);
+
+        assert_eq!(*read_events(), expected_notes(&notes));
+    }
+
+    /// Parameter values and notes share one list. A block full of both must
+    /// hand the plugin all of each — parameters first, at the block's head,
+    /// then every note — with neither crowding the other out.
+    #[test]
+    fn a_full_block_of_parameters_and_notes_reaches_the_plugin_whole() {
+        let _guard = event_read_test_guard();
+        let mut wrapper = event_reading_wrapper();
+        let notes = full_block_of_notes();
+        let updates: Vec<HostParameterUpdate> = (0..MAX_PARAMETER_EVENTS as u32)
+            .map(|param_id| HostParameterUpdate {
+                param_id: 1_000 + param_id,
+                value: 0.5,
+            })
+            .collect();
+
+        process_events(&mut wrapper, &notes, &updates);
+
+        let mut expected: Vec<ReadEvent> = updates
+            .iter()
+            .map(|update| (CLAP_EVENT_PARAM_VALUE, 0, update.param_id))
+            .collect();
+        expected.extend(expected_notes(&notes));
+        assert_eq!(*read_events(), expected);
     }
 
     // ── Latency query + change notification (PH-4) ──────────────────────
@@ -3334,7 +3483,7 @@ mod tests {
             is_instrument: unsafe { descriptor_declares_instrument(plugin) },
             accepts_note_events: true,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
-            midi_scratch: Vec::with_capacity(MAX_MIDI),
+            midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             #[cfg(feature = "engine-owned-command-fixture")]
@@ -3477,6 +3626,10 @@ mod tests {
     #[test]
     fn a_request_callback_ask_reaches_on_main_thread_once_per_service() {
         let _guard = MAIN_THREAD_CALLBACK_TEST_LOCK.lock().unwrap();
+        // The callback raises the process-wide hint, which other tests assert.
+        let _signal_guard = crate::clap_host::MAIN_THREAD_CALLBACK_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         MAIN_THREAD_CALLBACKS.store(0, Ordering::Relaxed);
         let mut wrapper = stub_wrapper(main_thread_stub_plugin_ptr());
         pin_host_state(&mut wrapper);

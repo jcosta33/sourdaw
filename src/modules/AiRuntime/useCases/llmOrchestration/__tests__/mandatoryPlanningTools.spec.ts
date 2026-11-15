@@ -21,7 +21,11 @@ import { type ProjectContext } from '../../../models/ProjectContext';
 import { THREAD_CONTEXT_MAX_BYTES, type ThreadContext } from '../../../models/ThreadContext';
 import { type ToolCallResult } from '../../../models/ToolCallResult';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
-import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../../models/WorkflowCapability';
+import {
+    type LocalWorkflowGrounding,
+    WORKFLOW_ACTION_TOOL_NAMES,
+    WORKFLOW_CAPABILITY_TOOL_NAME,
+} from '../../../models/WorkflowCapability';
 import { encodeWireToolName } from '../../../repositories/cloudLlm/cloudInference/encodeWireToolName';
 import { generateAnthropicToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateAnthropicToolCalls';
 import { generateOpenAiCompatibleToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
@@ -394,7 +398,8 @@ describe('mandatory planning tools', () => {
     describe('WebLLM', () => {
         async function advertisedToWebLlm(
             prompt: string,
-            catalog: CreativeInterpretationCatalog = creativeCatalog
+            catalog: CreativeInterpretationCatalog = creativeCatalog,
+            localWorkflowGrounding?: LocalWorkflowGrounding
         ): Promise<string[]> {
             mocks.backendChain.value = ['webllm'];
             mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
@@ -406,7 +411,16 @@ describe('mandatory planning tools', () => {
                     getProjectContext(),
                     undefined,
                     catalog === creativeCatalog ? RETENTION_PROMPT : prompt
-                )
+                ),
+                undefined,
+                prompt,
+                undefined,
+                undefined,
+                undefined,
+                AUTO_TOOL_CHOICE,
+                undefined,
+                prompt,
+                localWorkflowGrounding
             );
             return namesOf((mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[]);
         }
@@ -423,8 +437,12 @@ describe('mandatory planning tools', () => {
             expect(advertised.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
         });
 
+        // The budget is the ceiling a workflow-shaped request reaches: a kept workflow capability
+        // offers every workflow action tool beside the mandatory set.
         it('sizes the budget at the mandatory set plus exactly one prompt-selected slot', async () => {
-            const advertised = await advertisedToWebLlm('add an eq device to the vocals');
+            const advertised = await advertisedToWebLlm('add an eq device to the vocals', creativeCatalog, {
+                keptCapabilityIds: ['drum-routing'],
+            });
             const mandatory = new Set<string>([
                 WORKFLOW_CAPABILITY_TOOL_NAME,
                 ...MANDATORY_PLANNING_TOOL_NAMES,

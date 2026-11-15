@@ -7,27 +7,28 @@
 //! them the host may touch neither the project nor re-enter the plugin, so
 //! the backend records the ask and wakes this watcher.
 //!
-//! The watcher is a dedicated non-RT thread that blocks in `recv()` until a
-//! plugin actually asks, then carries the follow-up out through the
-//! `SharedHostedPlugin` control seam: a recorded state change becomes a
-//! `plugin-state-dirty` event the project's dirty tracking listens for, a
-//! rescan re-enumerates the parameter contract and becomes
-//! `plugin-parameters-rescanned`, and a main-thread callback request becomes
-//! the `on_main_thread` plugin call itself. Same shape as the latency watcher,
-//! and for the same reason — nothing polls, so an idle session does no work at
-//! all.
+//! The watcher is a dedicated non-RT thread that waits on its channel and
+//! carries each follow-up out through the `SharedHostedPlugin` control seam: a
+//! recorded state change becomes a `plugin-state-dirty` event the project's
+//! dirty tracking listens for, and a rescan re-enumerates the parameter
+//! contract and becomes `plugin-parameters-rescanned`. Between channel wakes it
+//! checks the main-thread callback hint on a short interval, and a raised hint
+//! becomes the `on_main_thread` plugin call itself, made for every engine-owned
+//! instance with an ask recorded. Same shape as the latency watcher, and for
+//! the same reason: the hint names no instance, so the sweep asks each one.
 //!
 //! ## What may be routed through this wake
 //!
-//! The wake allocates: it copies the instance id and takes a channel node. So an
-//! ask belongs here only if the thread a plugin may raise it on is one that may
-//! allocate — and CLAP does not supply that wholesale, it is a check each ask
-//! must be made against by its own annotation. `mark_dirty`, `params.rescan`
-//! and `request_callback` are `[main-thread]` and pass it. `params
-//! .request_flush` and `gui.request_resize` are `[thread-safe]`, so a plugin
-//! may raise either from inside `process()`; both fail the check and do not
-//! come here at all, being recorded as a flag or a size slot plus a
-//! process-wide hint and answered by the parameter-event drain — see
+//! The channel wake allocates: it copies the instance id and takes a channel
+//! node. So an ask belongs on it only if the thread a plugin may raise it on is
+//! one that may allocate — and CLAP does not supply that wholesale, it is a
+//! check each ask must be made against by its own annotation. `mark_dirty` and
+//! `params.rescan` are `[main-thread]` and pass it. `request_callback`,
+//! `params.request_flush` and `gui.request_resize` are `[thread-safe]`, so a
+//! plugin may raise any of them from inside `process()`; all three fail the
+//! check and never touch the channel, being recorded as a flag or a size slot
+//! plus a process-wide hint. This watcher's sweep answers `request_callback`'s
+//! hint; the parameter-event drain answers the other two — see
 //! [`crate::host::plugin_parameter_events`] and [`apply_pending_editor_resizes`].
 //! (`request_restart` is `[thread-safe]` the same way; its hint is serviced by
 //! the latency watcher.)
@@ -44,11 +45,12 @@ use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
-    signal_pending_editor_resize, AudioPlugin, HostedPluginRuntime, PluginHostRequest,
+    signal_pending_editor_resize, signal_pending_main_thread_callback,
+    take_pending_main_thread_callback_signal, AudioPlugin, HostedPluginRuntime, PluginHostRequest,
 };
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -72,6 +74,14 @@ const CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
 /// mid-`open_gui` must not hold it. An instance this could not get into raises
 /// the hint again for the next tick instead.
 const DRAIN_CONTROL_TIMEOUT: Duration = Duration::from_millis(50);
+
+/// How long the watcher waits on its channel before checking the main-thread
+/// callback hint. The channel answers instantly whatever this is, so the
+/// interval bounds only how long a plugin's `request_callback` waits for its
+/// `on_main_thread` call. One display frame, the parameter drain's own tick: a
+/// host's main loop is what CLAP has the plugin waiting on, and a plugin parks
+/// editor updates on this ask, so a longer wait is a visibly late editor.
+const MAIN_THREAD_CALLBACK_POLL: Duration = Duration::from_millis(16);
 
 /// Payload of `plugin-state-dirty`. snake_case on the wire, matching the other
 /// plugin DTOs.
@@ -325,22 +335,43 @@ fn cache_parameters(
     }
 }
 
-/// Make the `on_main_thread` call a `request_callback` ask asked for.
+/// Make the `on_main_thread` calls the raised `request_callback` hint stands
+/// for.
 ///
 /// The plugin raised the request precisely so this call would happen — a worker
 /// result or editor update it parked until the host's main thread could run it
 /// — so the follow-up is the call itself rather than an event. CLAP marks
 /// `on_main_thread` `[main-thread]`, and the control path behind this seam is
 /// the host's main-thread service, the same thread convention every other
-/// `[main-thread]` plugin call here follows. The ask is a flag with no payload,
-/// so a visit that finds the plugin mid-block loses nothing by trying again
-/// later: the ask is idempotent and the plugin raises it again if its work
-/// still waits.
-fn carry_main_thread_callback(runtime: &SharedHostedPlugin) -> Result<(), String> {
-    runtime.with_control(CONTROL_TIMEOUT, |plugin| {
-        plugin.service_main_thread_callback();
-        Ok(())
-    })
+/// `[main-thread]` plugin call here follows.
+///
+/// The hint names no instance — `request_callback` is `[thread-safe]` and may
+/// be raised from the audio thread, where copying an id would allocate — so
+/// this visits every engine-owned instance and each backend answers for itself:
+/// [`AudioPlugin::service_main_thread_callback`] takes that instance's own flag
+/// and calls the plugin only when there is one. An instance retired or
+/// unloading since it asked is no longer in the map or refuses the seam, so its
+/// plugin is never called. One the seam could not reach right now keeps its
+/// flag and raises the hint again for the next interval, by the drain's own
+/// retry rule; the visit refuses rather than waits on an instance busy with a
+/// long command, so one editor opening cannot hold every other plugin's call.
+fn service_pending_main_thread_callbacks(engine_plugins: &EnginePlugins) {
+    for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "main-thread callback") {
+        let serviced = runtime.try_with_control(DRAIN_CONTROL_TIMEOUT, |plugin| {
+            plugin.service_main_thread_callback();
+            Ok(())
+        });
+
+        if let Err(error) = &serviced {
+            retry_unreached_instance(
+                &runtime,
+                &instance_id,
+                "main-thread callback",
+                error,
+                signal_pending_main_thread_callback,
+            );
+        }
+    }
 }
 
 /// Take the plugin's state-change flag and emit it, reporting whether the
@@ -371,44 +402,74 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
 
     let spawned = std::thread::Builder::new()
         .name("plugin-host-requests".to_string())
-        .spawn(move || {
-            // Blocks until a plugin asks. The static sender is never dropped, so
-            // this loop lives for the process.
-            while let Ok(queued) = receiver.recv() {
-                let Some(runtime) =
-                    runtime_for_instance(&engine_plugins, &queued.0, "plugin host request")
-                else {
-                    // Unloaded between the plugin's callback and this wake.
-                    continue;
-                };
-
-                let again = serve_queued_request(
-                    queued,
-                    |instance_id, request| match request {
-                        PluginHostRequest::StateDirty => {
-                            report_state_change(&runtime, instance_id, &*events)
-                        }
-                        PluginHostRequest::ParametersRescan => {
-                            rescan_parameters(&runtime, instance_id, &engine_plugins, &*events)
-                        }
-                        PluginHostRequest::MainThreadCallback => {
-                            carry_main_thread_callback(&runtime)
-                        }
-                    },
-                    || runtime.ensure_public_control_allowed().is_ok(),
-                );
-
-                if let Some(queued) = again {
-                    queue_request(queued);
-                }
-            }
-        });
+        .spawn(move || serve_wakes_and_hints(&receiver, &engine_plugins, &*events));
 
     if let Err(error) = spawned {
         eprintln!(
             "[Plugin] failed to start the plugin host request watcher: {}",
             error
         );
+    }
+}
+
+/// The watcher thread's whole loop.
+///
+/// The hint is checked after every pass, not only when the channel is idle: a
+/// plugin marking its state dirty on every edit keeps the channel busy, and a
+/// timeout-only check would starve every `on_main_thread` call behind it. A
+/// disconnect ends the loop only after that pass's check, so an ask standing
+/// when the channel closes is still served. The static sender is never
+/// dropped, so in the process the loop never ends.
+fn serve_wakes_and_hints(
+    receiver: &Receiver<QueuedRequest>,
+    engine_plugins: &EnginePlugins,
+    events: &dyn EventSink,
+) {
+    loop {
+        let disconnected = match receiver.recv_timeout(MAIN_THREAD_CALLBACK_POLL) {
+            Ok(queued) => {
+                serve_channel_wake(queued, engine_plugins, events);
+                false
+            }
+            Err(RecvTimeoutError::Timeout) => false,
+            Err(RecvTimeoutError::Disconnected) => true,
+        };
+
+        if take_pending_main_thread_callback_signal() {
+            service_pending_main_thread_callbacks(engine_plugins);
+        }
+
+        if disconnected {
+            break;
+        }
+    }
+}
+
+/// Carry one channel wake out, and queue it again if it asks for a retry.
+fn serve_channel_wake(
+    queued: QueuedRequest,
+    engine_plugins: &EnginePlugins,
+    events: &dyn EventSink,
+) {
+    let Some(runtime) = runtime_for_instance(engine_plugins, &queued.0, "plugin host request")
+    else {
+        // Unloaded between the plugin's callback and this wake.
+        return;
+    };
+
+    let again = serve_queued_request(
+        queued,
+        |instance_id, request| match request {
+            PluginHostRequest::StateDirty => report_state_change(&runtime, instance_id, events),
+            PluginHostRequest::ParametersRescan => {
+                rescan_parameters(&runtime, instance_id, engine_plugins, events)
+            }
+        },
+        || runtime.ensure_public_control_allowed().is_ok(),
+    );
+
+    if let Some(queued) = again {
+        queue_request(queued);
     }
 }
 
@@ -715,37 +776,152 @@ mod tests {
         assert_eq!(json, r#"{"instance_id":"inst-7"}"#);
     }
 
-    /// #3746's carrying half: a recorded `request_callback` ask must reach the
-    /// plugin as an `on_main_thread` service through the control seam, not die
-    /// on a watcher that has no arm for it. The fixture has no plugin body to
-    /// call, so the observable is the ask itself: the service visit consumes
-    /// it, where a no-op arm would leave it standing for every later visit.
-    #[test]
-    fn a_main_thread_callback_ask_is_carried_to_the_plugin_and_consumed_once() {
-        let mut wrapper =
+    /// The main-thread callback hint is process-wide, so every test here that
+    /// raises it, sweeps on it or asserts it takes this first.
+    static MAIN_THREAD_CALLBACK_HINT_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn main_thread_callback_hint_guard() -> std::sync::MutexGuard<'static, ()> {
+        let guard = MAIN_THREAD_CALLBACK_HINT_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        take_pending_main_thread_callback_signal();
+        guard
+    }
+
+    /// One engine-owned instance in a real map, whose fixture has already
+    /// raised `clap_host.request_callback` exactly as a plugin's own callback
+    /// would: flag recorded, process-wide hint raised.
+    fn main_thread_callback_fixture() -> (EnginePlugins, Arc<SharedHostedPlugin>) {
+        let wrapper =
             ClapWrapper::new_engine_owned_command_fixture("Callback Fixture", vec![], false);
-        // Arm the ask exactly as the plugin's own callback would.
         wrapper
             .engine_owned_command_fixture_host_state()
             .mark_main_thread_callback_requested();
-        let runtime: SharedHostedPlugin = SharedHostedPlugin::new(wrapper.into());
 
-        assert!(
-            carry_main_thread_callback(&runtime).is_ok(),
-            "the carrier reaches the plugin through the control seam"
+        let runtime = Arc::new(SharedHostedPlugin::new(wrapper.into()));
+        let mut map = HashMap::new();
+        map.insert(
+            "inst-1".to_string(),
+            EnginePluginInstanceData {
+                engine_plugin_id: 11,
+                runtime: Arc::clone(&runtime),
+                name: "Callback Fixture".to_string(),
+                parameters: Vec::new(),
+                has_gui: false,
+                chain_kind: DeviceKind::Effect,
+                parameter_events: None,
+            },
         );
 
-        let wrapper = match runtime.into_inner() {
-            daw_plugin_host::HostedRuntime::Clap(wrapper) => wrapper,
+        (Arc::new(Mutex::new(map)), runtime)
+    }
+
+    /// Whether the fixture still holds an unserviced ask, read once every other
+    /// handle to it has gone.
+    fn ask_still_pending(engine_plugins: EnginePlugins, runtime: Arc<SharedHostedPlugin>) -> bool {
+        drop(engine_plugins);
+        let runtime = Arc::try_unwrap(runtime)
+            .unwrap_or_else(|_| panic!("the test holds the last handle to the fixture runtime"));
+        match runtime.into_inner() {
+            daw_plugin_host::HostedRuntime::Clap(wrapper) => wrapper
+                .engine_owned_command_fixture_host_state()
+                .take_main_thread_callback_requested(),
             daw_plugin_host::HostedRuntime::Vst3(_) => {
                 panic!("the VST3 backend has no command fixture")
             }
-        };
+        }
+    }
+
+    /// #3746's carrying half, through #6566's wake: a recorded `request_callback`
+    /// ask must reach the plugin as an `on_main_thread` service through the
+    /// control seam. The ask was raised before any watcher ran, so the hint it
+    /// left is the only thing that can bring the sweep to it. The fixture has
+    /// no plugin body to call, so the observable is the ask itself: the service
+    /// visit consumes it, where a sweep that skipped the instance would leave it
+    /// standing.
+    #[test]
+    fn a_hinted_main_thread_callback_ask_is_serviced_by_the_watcher_loop() {
+        let _guard = main_thread_callback_hint_guard();
+        let (engine_plugins, runtime) = main_thread_callback_fixture();
+        let (sender, receiver) = channel::<QueuedRequest>();
+        let sink = RecordingEventSink::default();
+
+        // Exactly one pass of the real loop: the closed channel reports the
+        // disconnect at once, the pass still services the hint the fixture's
+        // ask raised, and only then does the loop end.
+        drop(sender);
+        serve_wakes_and_hints(&receiver, &engine_plugins, &sink);
+
         assert!(
-            !wrapper
-                .engine_owned_command_fixture_host_state()
-                .take_main_thread_callback_requested(),
-            "the carried ask was consumed by the service, not left pending"
+            !take_pending_main_thread_callback_signal(),
+            "a serviced ask raises no retry"
+        );
+        assert!(
+            !ask_still_pending(engine_plugins, runtime),
+            "the hinted ask was serviced, not left pending"
+        );
+    }
+
+    /// A visit refused because another control operation holds the instance —
+    /// an editor opening, a state load — must keep the ask and raise the hint
+    /// again, or the ask waits until the plugin happens to ask a second time.
+    #[test]
+    fn a_main_thread_callback_ask_behind_a_busy_control_seam_is_kept_and_hinted_again() {
+        let _guard = main_thread_callback_hint_guard();
+        let (engine_plugins, runtime) = main_thread_callback_fixture();
+        take_pending_main_thread_callback_signal();
+
+        let (entered_sender, entered) = channel::<()>();
+        let (release, release_receiver) = channel::<()>();
+        let holder_runtime = Arc::clone(&runtime);
+        let holder = std::thread::spawn(move || {
+            holder_runtime
+                .with_control(CONTROL_TIMEOUT, |_| {
+                    entered_sender.send(()).expect("signal entry");
+                    release_receiver.recv().expect("wait for release");
+                    Ok(())
+                })
+                .expect("the holder reaches the control seam");
+        });
+        entered
+            .recv()
+            .expect("the holder is inside the control seam");
+
+        service_pending_main_thread_callbacks(&engine_plugins);
+        let hinted_again = take_pending_main_thread_callback_signal();
+
+        release.send(()).expect("release the holder");
+        holder.join().expect("holder thread");
+
+        assert!(
+            hinted_again,
+            "a refused visit raises the hint again for the next pass"
+        );
+        assert!(
+            ask_still_pending(engine_plugins, runtime),
+            "the refused visit left the ask standing"
+        );
+    }
+
+    /// An instance retired between its ask and the sweep refuses the control
+    /// seam, so its plugin is never called, and the hint is not raised again for
+    /// an instance that is never coming back.
+    #[test]
+    fn a_main_thread_callback_ask_from_a_retired_instance_is_dropped_without_a_call() {
+        let _guard = main_thread_callback_hint_guard();
+        let (engine_plugins, runtime) = main_thread_callback_fixture();
+        runtime.begin_unload();
+        take_pending_main_thread_callback_signal();
+
+        service_pending_main_thread_callbacks(&engine_plugins);
+
+        assert!(
+            !take_pending_main_thread_callback_signal(),
+            "a retired instance does not re-arm the sweep"
+        );
+        assert!(
+            ask_still_pending(engine_plugins, runtime),
+            "the retired instance's plugin was never reached"
         );
     }
 

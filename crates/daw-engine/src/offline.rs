@@ -13,6 +13,7 @@
 //! and nothing here reads a clock or a device. The same commands over the same
 //! frame count produce bit-identical output.
 
+use crate::float_mode::FlushDenormals;
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::scheduler::{
     graph_progress_channel, meter_channel, transport_position_channel, AudioScheduler,
@@ -131,6 +132,9 @@ impl OfflineRenderer {
     /// this thread is both the command side and the render side, so freeing is
     /// safe and keeps the retirement ring from stalling the graph.
     pub fn render(&mut self, frames: usize) -> (Vec<f32>, Vec<f32>) {
+        // The same float mode the live callback renders under, so a subnormal
+        // tail is flushed identically offline and live.
+        let _flush_denormals = FlushDenormals::engage();
         let mut left = vec![0.0f32; frames];
         let mut right = vec![0.0f32; frames];
 
@@ -303,6 +307,47 @@ mod tests {
             .expect("the loose command fits");
         renderer.render(OFFLINE_BLOCK_FRAMES);
         assert_eq!(renderer.graph_progress().batches_applied, 1);
+    }
+
+    /// Mutation: remove the `FlushDenormals` guard at the top of
+    /// `OfflineRenderer::render` — the reading inside the plugin loses the
+    /// bits.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    #[test]
+    fn an_offline_render_flushes_denormals_and_restores_the_thread_register() {
+        use crate::float_mode::test_support::{
+            clear_flush_bits, control_bits, control_register_probe, read_control, write, FLUSH,
+        };
+
+        let original = clear_flush_bits();
+        let before = read_control();
+        let mut renderer = OfflineRenderer::new(48_000.0, 4);
+        let (probe, readings) = control_register_probe();
+        renderer
+            .push(GraphCommand::AddPlugin(3, Box::new(probe), None))
+            .expect("the batch should fit");
+        renderer
+            .push(GraphCommand::SetTransport(playing_transport()))
+            .expect("the batch should fit");
+
+        renderer.render(OFFLINE_BLOCK_FRAMES * 2);
+
+        assert!(
+            readings.calls() > 0,
+            "the probe must have processed a block"
+        );
+        assert_eq!(
+            control_bits(readings.last_seen()),
+            before | FLUSH,
+            "the plugin must process with only the flush bits added to the prior control value"
+        );
+        assert_eq!(
+            read_control(),
+            before,
+            "the render restores the thread's control register"
+        );
+        drop(renderer);
+        write(original);
     }
 
     #[test]
