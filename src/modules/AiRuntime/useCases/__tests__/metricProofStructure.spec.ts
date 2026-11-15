@@ -125,7 +125,7 @@ describe('metric proof structure', () => {
         const wrong = { ...masterArtifacts, [side]: { ...mixdown, route: 'isolated-subgraph' as const } };
         expect(f.evaluate(makeState(wrong))).toMatchObject({ status: 'blocked', failure: 'incomparable' });
     });
-    it('admits broadcast and pairwise references but rejects a third reference for two targets', () => {
+    it('admits broadcast and pairwise references, and an ordering against every reference, but pairs a match only one-to-one', () => {
         const f = metricGuardFixture();
         const authority = f.state.authorities[0]!;
         const goal = authority.goals[0]!;
@@ -143,19 +143,27 @@ describe('metric proof structure', () => {
                 provenance: { ...provenance, targets: artifacts },
             },
         };
-        function withReferences(referenceTargetIds: string[]) {
+        function withReferences(referenceTargetIds: string[], override: Partial<typeof goal> = {}) {
             return f.bind({
                 ...f.state,
-                authorities: [{ ...authority, goals: [{ ...goal, targetIds: ids.slice(0, 2), referenceTargetIds }] }],
+                authorities: [
+                    {
+                        ...authority,
+                        goals: [{ ...goal, ...override, targetIds: ids.slice(0, 2), referenceTargetIds }],
+                    },
+                ],
                 proofs: [expandedProof],
             });
         }
         expect(f.evaluate(withReferences(ids.slice(2, 3))).status).toBe('verified');
         expect(f.evaluate(withReferences(ids.slice(2, 4))).status).toBe('verified');
-        expect(f.evaluate(withReferences(ids.slice(2, 5)))).toMatchObject({
+        // An ordering holds against every reference figure, however many; a match pairs by index.
+        expect(f.evaluate(withReferences(ids.slice(2, 5))).status).toBe('verified');
+        expect(
+            f.evaluate(withReferences(ids.slice(2, 5), { relation: 'match-current', source: { kind: 'unsupported' } }))
+        ).toMatchObject({
             status: 'blocked',
             failure: 'incomparable',
-            reason: expect.stringContaining('Compatible actual baseline'),
         });
     });
     it.each(['before', 'after'] as const)('rejects a rebound prefix with altered %s', (field) => {
