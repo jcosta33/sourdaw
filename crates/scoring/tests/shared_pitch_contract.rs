@@ -140,11 +140,16 @@ fn mono_poly_calibration_release_and_passthrough_match_frozen_consumers() {
             }
             let actual_left = actual.process(&left, &right, 128);
             let expected_left = expected.process(&left, &right, 128);
-            // SAFETY: each process result owns a fixed buffer containing 128
-            // samples; neither instance is mutated while these slices exist.
-            unsafe {
-                let output = std::slice::from_raw_parts(actual_left, 128);
-                let old_output = std::slice::from_raw_parts(expected_left, 128);
+            {
+                // SAFETY: `actual_left` is `actual`'s `out_left`, which
+                // `ScoringInstance::new` allocates at 1024 samples and nothing
+                // resizes, and `process` just wrote its first 128; `actual` is
+                // not mutated while this slice exists.
+                let output = unsafe { std::slice::from_raw_parts(actual_left, 128) };
+                // SAFETY: `expected_left` is `expected`'s own `out_left`,
+                // sized and written exactly as `actual`'s above, and `expected`
+                // is not mutated while this slice exists.
+                let old_output = unsafe { std::slice::from_raw_parts(expected_left, 128) };
                 assert_eq!(output, old_output);
                 assert_eq!(output, left);
             }

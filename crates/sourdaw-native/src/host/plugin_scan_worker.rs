@@ -1720,6 +1720,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     fn process_is_gone_within(pid: i32, window: Duration) -> bool {
         let deadline = Instant::now() + window;
         loop {
+            // SAFETY: `libc::kill` takes plain integers and touches no memory
+            // of ours; signal 0 only probes whether `pid` exists.
             let probe = unsafe { libc::kill(pid, 0) };
             let gone =
                 probe == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);

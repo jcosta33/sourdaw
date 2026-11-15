@@ -34,22 +34,22 @@ describe('Arrangement scratch pad handlers', () => {
             expect(handleClearScratchPad.undoable).toBe(true);
         });
 
-        it('clears the pad through Arrangement', () => {
+        it('clears the pad through Arrangement', async () => {
             scratchPadStore.set({ sections: [padSection('a', 0)] });
 
-            handleClearScratchPad.execute({ type: 'clearScratchPad' });
+            await handleClearScratchPad.execute({ type: 'clearScratchPad' });
 
             expect(scratchPadStore.value?.sections).toEqual([]);
         });
 
-        it('describe captures the live pad and markers; the guarded restore undoes and redoes it exactly', () => {
+        it('describe captures the live pad and markers; the guarded restore undoes and redoes it exactly', async () => {
             const liveSections = [padSection('a', 0), padSection('b', 1)];
             const liveMarkerSections = [markerSection('m1', 0)];
             scratchPadStore.set({ sections: liveSections });
             markerStore.set({ markers: [], sections: liveMarkerSections });
 
             const described = handleClearScratchPad.describe({ type: 'clearScratchPad' });
-            handleClearScratchPad.execute({ type: 'clearScratchPad' });
+            await handleClearScratchPad.execute({ type: 'clearScratchPad' });
             expect(scratchPadStore.value?.sections).toEqual([]);
 
             expect(described.inverseAction).toEqual({
@@ -102,16 +102,16 @@ describe('Arrangement scratch pad handlers', () => {
             expect(handleCommitScratchPad.undoable).toBe(true);
         });
 
-        it('commits the pad to the arrangement through Arrangement', () => {
+        it('commits the pad to the arrangement through Arrangement', async () => {
             scratchPadStore.set({ sections: [padSection('a', 0)] });
 
-            handleCommitScratchPad.execute({ type: 'commitScratchPad' });
+            await handleCommitScratchPad.execute({ type: 'commitScratchPad' });
 
             expect(markerStore.value?.sections.length).toBe(1);
             expect(markerStore.value?.sections[0]?.name).toBe('Pad a');
         });
 
-        it('inverse carries the pre-commit markers; redo carries the ids the commit actually minted', () => {
+        it('inverse carries the pre-commit markers; redo carries the ids the commit actually minted', async () => {
             const padSections = [padSection('a', 0)];
             const previousMarkerSections = [markerSection('m1', 0)];
             scratchPadStore.set({ sections: padSections });
@@ -119,7 +119,7 @@ describe('Arrangement scratch pad handlers', () => {
 
             const action = { type: 'commitScratchPad' as const };
             const described = handleCommitScratchPad.describe(action);
-            handleCommitScratchPad.execute(action);
+            await handleCommitScratchPad.execute(action);
 
             const mintedSections = markerStore.value?.sections ?? [];
             expect(mintedSections).toHaveLength(1);
@@ -150,7 +150,7 @@ describe('Arrangement scratch pad handlers', () => {
             });
         });
 
-        it('the guarded restore actually undoes and redoes a commit end to end', () => {
+        it('the guarded restore actually undoes and redoes a commit end to end', async () => {
             const padSections = [padSection('a', 0)];
             const previousMarkerSections = [markerSection('m1', 0)];
             scratchPadStore.set({ sections: padSections });
@@ -158,7 +158,7 @@ describe('Arrangement scratch pad handlers', () => {
 
             const action = { type: 'commitScratchPad' as const };
             const described = handleCommitScratchPad.describe(action);
-            handleCommitScratchPad.execute(action);
+            await handleCommitScratchPad.execute(action);
             const mintedSections = markerStore.value?.sections ?? [];
 
             const undoResult = handleRestoreScratchPadState.execute(

@@ -146,7 +146,7 @@ describe('handleAddDevice', () => {
         expect(handleAddDevice.undoable).toBe(true);
     });
 
-    it('defers the compiled runtime delta until the project commit succeeds', () => {
+    it('defers the compiled runtime delta until the project commit succeeds', async () => {
         const action = {
             type: 'addDevice',
             payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'device-1' },
@@ -168,7 +168,7 @@ describe('handleAddDevice', () => {
 
         expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(result.postCommitEffect).toEqual({ kind: 'runtime-graph', remediation: 'repair' });
-        result.afterCommit();
+        await result.afterCommit();
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
             expect.objectContaining({ operation: 'add-device' })
         );

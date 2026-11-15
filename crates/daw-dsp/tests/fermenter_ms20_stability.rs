@@ -88,6 +88,9 @@ fn render(preset: &ShippedPreset, sample_rate: f32, note: u8) -> Measurement {
         // SAFETY: both pointers address the instance's 128-frame output buffers
         // and are consumed before the next process call.
         let left = unsafe { std::slice::from_raw_parts(left_pointer, BLOCK) };
+        // SAFETY: `right_pointer` is the instance's right buffer, 128 floats
+        // (`FERMENTER_BLOCK_FRAMES`) from `new`, never resized; `process` just filled
+        // it, `BLOCK` is 128, and the slice is consumed before the next `process` call.
         let right = unsafe { std::slice::from_raw_parts(right_pointer, BLOCK) };
         for &sample in left.iter().chain(right) {
             peak = peak.max(sample.abs());

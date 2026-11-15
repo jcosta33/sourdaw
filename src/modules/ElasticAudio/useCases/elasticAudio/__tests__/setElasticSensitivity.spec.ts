@@ -127,9 +127,11 @@ describe('setElasticSensitivity', () => {
     });
 
     it('persists the last sensitivity for a fresh preferences store', async () => {
-        setElasticSensitivity(0.82);
+        const setting = setElasticSensitivity(0.82);
 
         expect(preferencesStore.value).toHaveProperty('elasticTransientSensitivity', 0.82);
+        vi.advanceTimersByTime(150);
+        await setting;
 
         vi.resetModules();
         const reloaded = (await import('#/modules/Preferences/stores')).preferencesStore;
@@ -151,23 +153,29 @@ describe('setElasticSensitivity', () => {
         );
     });
 
-    it('updates the canonical preference immediately', () => {
-        setElasticSensitivity(0.75);
+    it('updates the canonical preference immediately', async () => {
+        const setting = setElasticSensitivity(0.75);
         expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0.75);
+        vi.advanceTimersByTime(150);
+        await setting;
     });
 
-    it('clamps sensitivity into [0,1]', () => {
-        setElasticSensitivity(-0.3);
+    it('clamps sensitivity into [0,1]', async () => {
+        const below = setElasticSensitivity(-0.3);
         expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0);
-        setElasticSensitivity(1.7);
+        const above = setElasticSensitivity(1.7);
         expect(preferencesStore.value?.elasticTransientSensitivity).toBe(1);
+        vi.advanceTimersByTime(150);
+        await Promise.all([below, above]);
     });
 
     it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
         'uses the default for nonfinite sensitivity %s',
-        (value) => {
-            setElasticSensitivity(value);
+        async (value) => {
+            const setting = setElasticSensitivity(value);
             expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0.5);
+            vi.advanceTimersByTime(150);
+            await setting;
         }
     );
 

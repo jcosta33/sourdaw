@@ -46,10 +46,10 @@ describe('handleRestoreTrackHeights', () => {
         ]);
     });
 
-    it('leaves a track the payload does not name untouched', () => {
+    it('leaves a track the payload does not name untouched', async () => {
         withTracks([74, 110, 200]);
 
-        restore([{ trackId: 't1', height: 74 }], [{ trackId: 't1', height: 64 }]);
+        await restore([{ trackId: 't1', height: 74 }], [{ trackId: 't1', height: 64 }]);
 
         expect(mocks.setTrackStoreState.mock.calls[0]?.[0]?.tracks[2]).toEqual({
             id: 't3',

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { AppActionAdmissionRefusedError, AppActionConflictError } from '../../errors/AppActionExecutionError';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
@@ -10,14 +11,40 @@ import { isAppActionAdmissionRefusal } from '../isAppActionAdmissionRefusal';
 import { isAppActionConflictError } from '../isAppActionConflictError';
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 
+type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
+
+const repairRequired = {
+    audioGraphValid: false,
+    detectedRevision: 'revision-1',
+    inspectionAvailable: true,
+    projectInvariantsValid: false,
+    rawProjectRetained: true,
+    repairCandidates: [],
+    status: 'repair-required',
+} as const;
+
+/** A handler that changes a gate while it runs: after the preflight admitted it, before the commit re-checks. */
+function registerGateChangingHandler(changeGate: () => void): void {
+    registerHandlerMap({
+        setEditingTool: {
+            undoable: false,
+            describe: () => ({ label: 'Set editing tool' }),
+            execute: async () => {
+                await Promise.resolve();
+                changeGate();
+            },
+        } satisfies ActionHandler<SetEditingToolAction>,
+    });
+}
+
 const action = {
     type: 'setDeviceState',
     payload: { deviceId: 'device-1', state: { version: 1, data: {} } },
 } as const;
 
-async function rejection(): Promise<unknown> {
+async function rejection(dispatched: AppAction = action): Promise<unknown> {
     try {
-        await executeAppAction(action);
+        await executeAppAction(dispatched);
     } catch (error) {
         return error;
     }
@@ -76,6 +103,34 @@ describe('executeAppAction admission refusal', () => {
         productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => false }));
 
         expect(isAppActionAdmissionRefusal(await rejection())).toBe(true);
+    });
+
+    it('refuses with the admission subclass when repair becomes required between preflight and commit', async () => {
+        registerGateChangingHandler(() => agentProjectRepairStateStore.set(repairRequired));
+
+        const error = await rejection({ type: 'setEditingTool', payload: { tool: 'marquee' } });
+
+        expect(error).toBeInstanceOf(AppActionAdmissionRefusedError);
+    });
+
+    it('refuses with the admission subclass when the production brief locks between preflight and commit', async () => {
+        let briefAllows = true;
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => briefAllows }));
+        registerGateChangingHandler(() => {
+            briefAllows = false;
+        });
+
+        const error = await rejection({ type: 'setEditingTool', payload: { tool: 'marquee' } });
+
+        expect(error).toBeInstanceOf(AppActionAdmissionRefusedError);
+    });
+
+    it('commits when neither gate changes while the handler runs', async () => {
+        registerGateChangingHandler(() => undefined);
+
+        await expect(
+            executeAppAction({ type: 'setEditingTool', payload: { tool: 'marquee' } })
+        ).resolves.toBeUndefined();
     });
 
     it('does not take a handler conflict for an admission refusal', () => {

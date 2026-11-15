@@ -20,7 +20,11 @@ export type WorkspaceShellAppAction =
     | { type: 'newProject'; payload?: undefined }
     | { type: 'importAudioFile'; payload?: undefined }
     | { type: 'toggleScratchPad'; payload?: undefined }
-    | { type: 'captureScratchPad'; payload?: undefined };
+    | {
+          type: 'captureScratchPad';
+          /** The ids the captured pad sections take, in pad order; absent means mint them all. */
+          payload?: { sectionIds?: readonly string[] };
+      };
 
 declare module '#/utils/handlerContract' {
     // eslint-disable-next-line @typescript-eslint/consistent-type-definitions -- declaration-merging target: a type alias cannot merge

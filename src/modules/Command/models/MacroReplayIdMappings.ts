@@ -10,4 +10,5 @@ export type MacroReplayIdMappings = {
     markerIds: Map<string, string>;
     sectionIds: Map<string, string>;
     trackAlternativeIds: Map<string, string>;
+    scratchPadSectionIds: Map<string, string>;
 };

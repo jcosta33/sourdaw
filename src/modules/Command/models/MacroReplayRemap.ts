@@ -34,6 +34,15 @@ function remapSection(action: ActionOf<'removeSection' | 'renameSection'>, mappi
     action.payload.sectionId = mappings.sectionIds.get(action.payload.sectionId) ?? action.payload.sectionId;
 }
 
+function remapScratchPadSection(
+    action: ActionOf<
+        'removeScratchPadSection' | 'renameScratchPadSection' | 'reorderScratchPadSection' | 'setScratchPadSectionColor'
+    >,
+    mappings: MacroReplayIdMappings
+): void {
+    action.payload.sectionId = mappings.scratchPadSectionIds.get(action.payload.sectionId) ?? action.payload.sectionId;
+}
+
 function remapTrackAlternative(
     action: ActionOf<'renameTrackAlternative' | 'switchTrackAlternative'>,
     mappings: MacroReplayIdMappings
@@ -441,10 +450,10 @@ export const macroReplayRemapByActionType: {
     captureScratchPad: leaveReferencesUnmapped,
     commitScratchPad: leaveReferencesUnmapped,
     clearScratchPad: leaveReferencesUnmapped,
-    removeScratchPadSection: leaveReferencesUnmapped,
-    renameScratchPadSection: leaveReferencesUnmapped,
-    reorderScratchPadSection: leaveReferencesUnmapped,
-    setScratchPadSectionColor: leaveReferencesUnmapped,
+    removeScratchPadSection: remapScratchPadSection,
+    renameScratchPadSection: remapScratchPadSection,
+    reorderScratchPadSection: remapScratchPadSection,
+    setScratchPadSectionColor: remapScratchPadSection,
     createPatternInstance: leaveReferencesUnmapped,
     detachPatternInstance: leaveReferencesUnmapped,
     restorePatternInstanceLink: leaveReferencesUnmapped,

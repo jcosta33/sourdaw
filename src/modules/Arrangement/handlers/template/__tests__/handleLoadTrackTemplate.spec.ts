@@ -67,7 +67,7 @@ describe('handleLoadTrackTemplate', () => {
         });
     });
 
-    it('emits neither inverse nor redo when a created track could not be snapshotted', () => {
+    it('emits neither inverse nor redo when a created track could not be snapshotted', async () => {
         mocks.getTrackStoreState
             .mockReturnValueOnce({ tracks: [{ id: 'existing' }] })
             .mockReturnValueOnce({ tracks: [{ id: 'existing' }, { id: 'created-1' }] });
@@ -76,7 +76,7 @@ describe('handleLoadTrackTemplate', () => {
         const action = { type: 'loadTrackTemplate' as const, payload: { templateId: 'tmpl-1' } };
 
         const desc = handleLoadTrackTemplate.describe(action);
-        handleLoadTrackTemplate.execute(action);
+        await handleLoadTrackTemplate.execute(action);
 
         expect(desc.inverseAction).toBeNull();
         expect(desc.redoAction).toBeUndefined();

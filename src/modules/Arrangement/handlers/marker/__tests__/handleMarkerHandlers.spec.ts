@@ -28,13 +28,13 @@ beforeEach(() => {
 });
 
 describe('handleAddMarker — execute', () => {
-    it('calls addMarker with beat, name, generated id, and color', () => {
+    it('calls addMarker with beat, name, generated id, and color', async () => {
         mockedAddMarker.mockReturnValue(true);
         const action = {
             type: 'addMarker' as const,
             payload: { beat: 8, name: 'Verse', color: '#ff0000' },
         };
-        handleAddMarker.execute(action);
+        await handleAddMarker.execute(action);
         expect(mockedAddMarker).toHaveBeenCalledTimes(1);
         const [beat, name, id, color] = mockedAddMarker.mock.calls[0]!;
         expect(beat).toBe(8);
@@ -43,9 +43,9 @@ describe('handleAddMarker — execute', () => {
         expect(color).toBe('#ff0000');
     });
 
-    it('uses explicit markerId when provided', () => {
+    it('uses explicit markerId when provided', async () => {
         mockedAddMarker.mockReturnValue(true);
-        handleAddMarker.execute({
+        await handleAddMarker.execute({
             type: 'addMarker',
             payload: { beat: 0, name: 'X', markerId: 'm1' },
         });
@@ -86,13 +86,13 @@ describe('handleAddMarker — isNoop', () => {
 });
 
 describe('handleAddSection — execute', () => {
-    it('calls addSection with startBeat, endBeat, name, generated id, color', () => {
+    it('calls addSection with startBeat, endBeat, name, generated id, color', async () => {
         mockedAddSection.mockReturnValue(true);
         const action = {
             type: 'addSection' as const,
             payload: { startBeat: 0, endBeat: 16, name: 'Verse 1', color: '#00ff00' },
         };
-        handleAddSection.execute(action);
+        await handleAddSection.execute(action);
         expect(mockedAddSection).toHaveBeenCalledTimes(1);
         const args = mockedAddSection.mock.calls[0]!;
         expect(args[0]).toBe(0);
@@ -113,9 +113,9 @@ describe('handleAddSection — execute', () => {
 });
 
 describe('handleAddSection — index', () => {
-    it('forwards the index to addSection', () => {
+    it('forwards the index to addSection', async () => {
         mockedAddSection.mockReturnValue(true);
-        handleAddSection.execute({
+        await handleAddSection.execute({
             type: 'addSection',
             payload: { startBeat: 0, endBeat: 4, name: 'X', sectionId: 's1', index: 2 },
         });
