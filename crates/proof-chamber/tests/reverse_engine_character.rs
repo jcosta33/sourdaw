@@ -23,7 +23,11 @@
 //! Everything runs at `mix = 1.0`, so the measurement is the engine's output
 //! and not the dry signal passing through it.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "tests assert by unwrapping and fail by panicking"
+)]
 
 use proof_chamber::ProofChamberInstance;
 

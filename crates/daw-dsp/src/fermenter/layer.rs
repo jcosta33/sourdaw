@@ -2,6 +2,7 @@
 //! Each layer has its own voice pool, engine selection, filter model,
 //! envelope settings, and modulation amounts. Layers mix to the master output.
 
+use super::envelope::AdsrTimes;
 use super::filter::FilterMode;
 use super::modulation::ModMatrix;
 use super::oscillator::Wavetable;
@@ -369,14 +370,18 @@ impl Layer {
             voice.set_sampler_params(self.sampler_mode, self.sampler_start, self.sampler_end);
             voice.note_on(note, channel, vel, glide_origin, self.sample_rate);
             voice.set_envelopes(
-                self.amp_attack,
-                self.amp_decay,
-                self.amp_sustain,
-                self.amp_release,
-                self.filter_attack,
-                self.filter_decay,
-                self.filter_sustain,
-                self.filter_release,
+                AdsrTimes {
+                    attack: self.amp_attack,
+                    decay: self.amp_decay,
+                    sustain: self.amp_sustain,
+                    release: self.amp_release,
+                },
+                AdsrTimes {
+                    attack: self.filter_attack,
+                    decay: self.filter_decay,
+                    sustain: self.filter_sustain,
+                    release: self.filter_release,
+                },
             );
             // Excite Karplus-Strong at note-on time (after note_on reset)
             if self.engine == 3 {
@@ -548,14 +553,18 @@ impl Layer {
                 continue;
             }
             voice.set_envelopes(
-                self.amp_attack,
-                self.amp_decay,
-                self.amp_sustain,
-                self.amp_release,
-                self.filter_attack,
-                self.filter_decay,
-                self.filter_sustain,
-                self.filter_release,
+                AdsrTimes {
+                    attack: self.amp_attack,
+                    decay: self.amp_decay,
+                    sustain: self.amp_sustain,
+                    release: self.amp_release,
+                },
+                AdsrTimes {
+                    attack: self.filter_attack,
+                    decay: self.filter_decay,
+                    sustain: self.filter_sustain,
+                    release: self.filter_release,
+                },
             );
             voice.set_noise(self.noise_level, self.noise_color);
             voice.set_unison(self.unison_voices, self.unison_detune, self.unison_spread);
