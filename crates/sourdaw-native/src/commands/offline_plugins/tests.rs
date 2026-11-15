@@ -24,9 +24,9 @@ use daw_plugin_host::{ClapWrapper, HostParameterUpdate, Vst3Wrapper};
 use serde_json::{json, Value};
 use sourdaw_harness_fx::state::{decode, RecordedState, MODE_NEVER_SET};
 use sourdaw_harness_fx::{
-    CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_PLUGIN_ID, CLAP_PROCESS_ERROR_PLUGIN_ID, ECHO_FRAMES,
-    FAILING_PROCESS_CALL, GAIN_PARAM_ID, LATENCY_FRAMES, VST3_CLASS_ID,
-    VST3_PROCESS_ERROR_CLASS_ID,
+    CLAP_HARD_REALTIME_PLUGIN_ID, CLAP_PLUGIN_ID, CLAP_PROCESS_ERROR_PLUGIN_ID,
+    CLAP_START_REFUSED_PLUGIN_ID, ECHO_FRAMES, FAILING_PROCESS_CALL, GAIN_PARAM_ID, LATENCY_FRAMES,
+    VST3_CLASS_ID, VST3_PROCESS_ERROR_CLASS_ID, VST3_START_REFUSED_CLASS_ID,
 };
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -355,6 +355,14 @@ fn failing_class(format: Format) -> String {
     match format {
         Format::Clap => CLAP_PROCESS_ERROR_PLUGIN_ID.to_string(),
         Format::Vst3 => format_class_id(&VST3_PROCESS_ERROR_CLASS_ID),
+    }
+}
+
+/// The descriptor id of the class that refuses to start processing.
+fn start_refusing_class(format: Format) -> String {
+    match format {
+        Format::Clap => CLAP_START_REFUSED_PLUGIN_ID.to_string(),
+        Format::Vst3 => format_class_id(&VST3_START_REFUSED_CLASS_ID),
     }
 }
 
@@ -1011,4 +1019,46 @@ fn an_offline_clap_instance_that_fails_a_block_refuses_the_render_by_name() {
 #[test]
 fn an_offline_vst3_instance_that_fails_a_block_refuses_the_render_by_name() {
     an_offline_instance_that_fails_a_block_refuses_the_render_by_name(Format::Vst3);
+}
+
+// ── An offline instance that never processes ───────────────────────────
+
+/// A class that refuses to start processing has every block of the render
+/// passed through untouched by its wrapper — the live path's behaviour, kept —
+/// so the print is refused by name, and the instance is still released.
+fn an_offline_instance_that_refuses_to_start_processing_refuses_the_render(format: Format) {
+    let fx = InstalledFx::create(&format!("start-refused-{format:?}"));
+    let (state, _live) = state_with_live_class(&fx, format, &start_refusing_class(format));
+    let ui = RecordingUiThread::start();
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &fx.seams(),
+        None,
+    )
+    .expect_err("a print a plugin never processed is refused");
+
+    assert!(
+        refusal.contains("'d-fx'")
+            && refusal.contains("'Sourdaw Harness Fx'")
+            && refusal.contains("it refused to start processing"),
+        "{refusal}"
+    );
+    assert_eq!(
+        ui.tasks_run(),
+        2,
+        "the refused render still releases its instance"
+    );
+}
+
+#[test]
+fn an_offline_clap_instance_that_refuses_to_start_processing_refuses_the_render() {
+    an_offline_instance_that_refuses_to_start_processing_refuses_the_render(Format::Clap);
+}
+
+#[test]
+fn an_offline_vst3_instance_that_refuses_to_start_processing_refuses_the_render() {
+    an_offline_instance_that_refuses_to_start_processing_refuses_the_render(Format::Vst3);
 }

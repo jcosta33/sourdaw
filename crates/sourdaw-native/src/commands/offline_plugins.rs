@@ -300,7 +300,9 @@ impl OfflinePluginInstances<'_> {
     /// A block the slot could not serve passed through dry; a block the plugin
     /// was served but answered with a process failure (CLAP's
     /// `CLAP_PROCESS_ERROR`, a VST3 `process` that did not return `kResultOk`)
-    /// was passed through dry or silenced by its wrapper. Either way the print
+    /// was passed through dry or silenced by its wrapper; and a block handed to
+    /// a plugin that refused to start processing (CLAP `start_processing`, VST3
+    /// `setProcessing(true)`) was passed through untouched. Either way the print
     /// has a hole in it and is not the project. Called after the last block,
     /// once the render thread has left every instance's processing state, so
     /// the control-path read of the wrapper's failure latch sees every block.
@@ -316,10 +318,13 @@ impl OfflinePluginInstances<'_> {
                     ),
                 ));
             }
-            let failed = instance
+            let (failed, never_processing) = instance
                 .runtime
                 .with_control(OFFLINE_CONTROL_TIMEOUT, |plugin| {
-                    Ok(plugin.has_failed_a_process_call())
+                    Ok((
+                        plugin.has_failed_a_process_call(),
+                        plugin.has_passed_a_block_unprocessed(),
+                    ))
                 })
                 .map_err(|reason| {
                     refusal(
@@ -332,6 +337,13 @@ impl OfflinePluginInstances<'_> {
                     &instance.bound,
                     "it failed to process a block of the render, which its host passed through \
                      unprocessed",
+                ));
+            }
+            if never_processing {
+                return Err(refusal(
+                    &instance.bound,
+                    "it refused to start processing, so its host passed blocks of the render \
+                     through unprocessed",
                 ));
             }
         }

@@ -2,9 +2,10 @@
 //! controller in one object) over the same DSP, its factory, and the module
 //! entry points each platform's host resolves.
 //!
-//! The factory lists the class twice: the second differs only in answering one
-//! `process` call ([`crate::FAILING_PROCESS_CALL`]) with `kResultFalse`, which
-//! is what a host must not let pass as processed audio.
+//! The factory lists the class three times: the second differs only in
+//! answering one `process` call ([`crate::FAILING_PROCESS_CALL`]) with
+//! `kResultFalse`, and the third only in refusing `setProcessing(true)`: both
+//! are what a host must not let pass as processed audio.
 
 use crate::clap_front::GAIN_PARAM_ID;
 use crate::echo::{Echo, ProcessCalls, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, LATENCY_FRAMES};
@@ -34,6 +35,17 @@ pub const VST3_PROCESS_ERROR_CLASS_ID: TUID =
     uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A3);
 const CLASS_NAME: &str = "Sourdaw Harness Fx";
 const PROCESS_ERROR_CLASS_NAME: &str = "Sourdaw Harness Fx Process Error";
+/// The class id of the class that refuses to start processing.
+pub const VST3_START_REFUSED_CLASS_ID: TUID =
+    uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A4);
+const START_REFUSED_CLASS_NAME: &str = "Sourdaw Harness Fx Start Refused";
+
+/// How one class departs from the plain effect.
+#[derive(Clone, Copy, Default)]
+struct Departures {
+    fails_a_process_call: bool,
+    refuses_to_start_processing: bool,
+}
 
 struct Vst3Echo {
     echo: Echo,
@@ -42,6 +54,7 @@ struct Vst3Echo {
     /// only through `ProcessData` and `setState`, as VST3 separates the two.
     controller_gain: AtomicU64,
     process_calls: ProcessCalls,
+    refuses_to_start_processing: bool,
 }
 
 impl Class for Vst3Echo {
@@ -49,11 +62,12 @@ impl Class for Vst3Echo {
 }
 
 impl Vst3Echo {
-    fn new(fails_a_process_call: bool) -> Self {
+    fn new(departures: Departures) -> Self {
         Self {
             echo: Echo::new(),
             controller_gain: AtomicU64::new(GAIN_DEFAULT.to_bits()),
-            process_calls: ProcessCalls::new(fails_a_process_call),
+            process_calls: ProcessCalls::new(departures.fails_a_process_call),
+            refuses_to_start_processing: departures.refuses_to_start_processing,
         }
     }
 }
@@ -217,7 +231,10 @@ impl IAudioProcessorTrait for Vst3Echo {
         kResultOk
     }
 
-    unsafe fn setProcessing(&self, _state: TBool) -> tresult {
+    unsafe fn setProcessing(&self, state: TBool) -> tresult {
+        if state != 0 && self.refuses_to_start_processing {
+            return kResultFalse;
+        }
         kResultOk
     }
 
@@ -517,13 +534,14 @@ impl IPluginFactoryTrait for Factory {
     }
 
     unsafe fn countClasses(&self) -> int32 {
-        2
+        3
     }
 
     unsafe fn getClassInfo(&self, index: int32, info: *mut PClassInfo) -> tresult {
         let (cid, name) = match index {
             0 => (VST3_CLASS_ID, CLASS_NAME),
             1 => (VST3_PROCESS_ERROR_CLASS_ID, PROCESS_ERROR_CLASS_NAME),
+            2 => (VST3_START_REFUSED_CLASS_ID, START_REFUSED_CLASS_NAME),
             _ => return kInvalidArgument,
         };
         if info.is_null() {
@@ -549,15 +567,22 @@ impl IPluginFactoryTrait for Factory {
         }
         // SAFETY: a class id is sixteen bytes.
         let requested = unsafe { *(cid as *const TUID) };
-        let fails_a_process_call = if requested == VST3_CLASS_ID {
-            false
+        let departures = if requested == VST3_CLASS_ID {
+            Departures::default()
         } else if requested == VST3_PROCESS_ERROR_CLASS_ID {
-            true
+            Departures {
+                fails_a_process_call: true,
+                ..Departures::default()
+            }
+        } else if requested == VST3_START_REFUSED_CLASS_ID {
+            Departures {
+                refuses_to_start_processing: true,
+                ..Departures::default()
+            }
         } else {
             return kInvalidArgument;
         };
-        let Some(instance) =
-            ComWrapper::new(Vst3Echo::new(fails_a_process_call)).to_com_ptr::<FUnknown>()
+        let Some(instance) = ComWrapper::new(Vst3Echo::new(departures)).to_com_ptr::<FUnknown>()
         else {
             return kResultFalse;
         };

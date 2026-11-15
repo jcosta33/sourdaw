@@ -583,6 +583,16 @@ pub trait HostedPluginRuntime: AudioPlugin {
     fn has_failed_a_process_call(&self) -> bool {
         false
     }
+
+    /// Whether a block was passed through untouched because the plugin was not
+    /// in the processing state the host asked it into — it refused to start
+    /// processing. A block after a requested stop does not count. Control path
+    /// only; a realtime host keeps passing such blocks through, and a caller
+    /// that needs every block processed refuses on it. The default is `false`,
+    /// for a backend with no processing state to refuse.
+    fn has_passed_a_block_unprocessed(&self) -> bool {
+        false
+    }
 }
 
 /// Process-wide hint that some plugin latched a process failure.

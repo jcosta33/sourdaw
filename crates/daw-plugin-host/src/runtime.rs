@@ -227,6 +227,10 @@ impl HostedPluginRuntime for HostedRuntime {
     fn has_failed_a_process_call(&self) -> bool {
         delegate!(self, backend => backend.has_failed_a_process_call())
     }
+
+    fn has_passed_a_block_unprocessed(&self) -> bool {
+        delegate!(self, backend => backend.has_passed_a_block_unprocessed())
+    }
 }
 
 impl HostedRuntime {
