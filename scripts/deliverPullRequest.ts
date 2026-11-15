@@ -276,7 +276,8 @@ export type DeliveryReceiptProof = {
 };
 
 export type ShellRunner = {
-    capture: (command: string, args: string[]) => string;
+    /** `trim: false` keeps leading and trailing whitespace, which NUL-separated output depends on. */
+    capture: (command: string, args: string[], options?: { trim?: boolean }) => string;
     run: (command: string, args: string[]) => void;
 };
 
@@ -3314,7 +3315,7 @@ export function deliverPullRequestWithRequiredCi(
     deliverPullRequestWithCiAdmission(number, port, tracker, 'required', markRemoteMutationKnownAbsent);
 }
 
-function capture(command: string, args: string[]): string {
+function capture(command: string, args: string[], options: { trim?: boolean } = {}): string {
     const result = spawnSync(command, args, {
         cwd: process.cwd(),
         encoding: 'utf8',
@@ -3327,7 +3328,7 @@ function capture(command: string, args: string[]): string {
     if (result.status !== 0) {
         throw new Error(result.stderr.trim() || `${command} failed with exit ${result.status ?? 'signal'}`);
     }
-    return result.stdout.trim();
+    return options.trim === false ? result.stdout : result.stdout.trim();
 }
 
 export function run(command: string, args: string[]): void {
@@ -4058,7 +4059,7 @@ export function shellPort(
         },
         lintLedgerCrossing: (headRefOid) =>
             readLintLedgerCrossing(
-                (args) => shell.capture('git', args),
+                (args) => shell.capture('git', args, { trim: false }),
                 `refs/remotes/origin/${REQUIRED_BASE_BRANCH}`,
                 headRefOid
             ),
@@ -4839,13 +4840,14 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
             }),
         deliveryPort: (repository, authentication, primaryRoot, markRemoteMutationAttempt) => {
             const shell: ShellRunner = {
-                capture: (command, args) =>
+                capture: (command, args, options) =>
                     spawnCapture(command, args, {
                         env:
                             command === 'git'
                                 ? trustedDeliveryGitEnv(authentication.session.env)
                                 : authentication.session.env,
                         cwd: primaryRoot,
+                        ...(options?.trim === false ? { trim: false } : {}),
                     }),
                 run: (command, args) =>
                     spawnRun(command, args, {

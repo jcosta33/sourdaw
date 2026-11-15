@@ -472,7 +472,7 @@ function lintLedgerGitRead(command: string, args: string[]): string | undefined 
     if (subcommand === 'merge-base') {
         return 'merge-base';
     }
-    if (subcommand === 'ls-tree' || (subcommand === 'diff' && rest.includes('-z'))) {
+    if (subcommand === 'ls-tree' || subcommand === 'cat-file' || (subcommand === 'diff' && rest.includes('-z'))) {
         return '';
     }
     return undefined;
@@ -10679,6 +10679,30 @@ describe('delivery shell boundary', () => {
             ['rev-parse', '--verify', '--end-of-options', 'head-oid^{commit}'],
             ['merge-base', 'refs/remotes/origin/main', 'head-oid'],
         ]);
+    });
+
+    it('reads lint-ledger git output untrimmed so a leading-space path survives NUL splitting', () => {
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (command, args, options) => {
+                const read = lintLedgerGitRead(command, args);
+                if (read === undefined) {
+                    throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+                }
+                if (args[0] === 'ls-tree') {
+                    return '100644 blob 0123abc\teslint-suppressions.json\0';
+                }
+                if (args[0] === 'cat-file') {
+                    return JSON.stringify({ ' x.ts': {} });
+                }
+                if (args[0] === 'diff') {
+                    return options?.trim === false ? ' x.ts\0' : 'x.ts';
+                }
+                return read;
+            },
+            run: () => undefined,
+        });
+
+        expect(port.lintLedgerCrossing('head-oid').paths).toEqual([' x.ts']);
     });
 
     function rollupPort(pages: Array<RollupPageFixture | string>) {

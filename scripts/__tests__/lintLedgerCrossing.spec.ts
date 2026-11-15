@@ -10,7 +10,19 @@ import {
     lintLedgerCrossingRefusal,
     readLintLedgerCrossing,
     type GitCapture,
+    type LedgerTree,
+    type LedgerTrees,
 } from '../lintLedgerCrossing.ts';
+
+const SUP = 'eslint-suppressions.json';
+const OXC = '.oxlintrc.json';
+const CRAFT = 'oxlint.craft-baseline.mjs';
+const SIZE = 'eslint.size-baseline.mjs';
+const CEIL = 'scripts/lintSizeCeilings.json';
+
+function unchanged(tree: LedgerTree): LedgerTrees {
+    return { base: tree, main: tree, head: tree };
+}
 
 const SUPPRESSIONS = JSON.stringify({ 'src/a.ts': { 'no-void': { count: 2 } } });
 const OXLINT = `{
@@ -25,82 +37,159 @@ describe('lint ledger crossing decision', () => {
         name: string;
         main: string[];
         pullRequest: string[];
-        ledgers: string[];
+        ledgers: LedgerTree;
         crossing: string[];
     }> = [
         {
             name: 'double prune of one suppressed file',
             main: ['eslint-suppressions.json', 'src/a.ts'],
             pullRequest: ['eslint-suppressions.json', 'src/a.ts'],
-            ledgers: [SUPPRESSIONS],
+            ledgers: { [SUP]: SUPPRESSIONS },
             crossing: ['src/a.ts'],
         },
         {
             name: 'prunes of different suppressed files',
             main: ['eslint-suppressions.json', 'src/a.ts'],
             pullRequest: ['eslint-suppressions.json', 'src/b.ts'],
-            ledgers: [JSON.stringify({ 'src/a.ts': {}, 'src/b.ts': {} })],
+            ledgers: { [SUP]: JSON.stringify({ 'src/a.ts': {}, 'src/b.ts': {} }) },
             crossing: [],
         },
         {
             name: 'a file changed on both sides that no ledger binds',
             main: ['src/free.ts'],
             pullRequest: ['src/free.ts'],
-            ledgers: [SUPPRESSIONS, OXLINT, SIZE_BASELINE, CEILINGS],
+            ledgers: { [SUP]: SUPPRESSIONS, [OXC]: OXLINT, [SIZE]: SIZE_BASELINE, [CEIL]: CEILINGS },
             crossing: [],
         },
         {
             name: 'a file bound only by the ledger one side added',
             main: ['src/new.ts'],
             pullRequest: ['src/new.ts', 'eslint-suppressions.json'],
-            ledgers: [SUPPRESSIONS, JSON.stringify({ 'src/new.ts': { 'no-void': { count: 1 } } })],
+            ledgers: { [SUP]: JSON.stringify({ 'src/new.ts': { 'no-void': { count: 1 } } }) },
             crossing: ['src/new.ts'],
         },
         {
             name: 'an oxlint baseline entry written with a ./ prefix',
             main: ['src/c.ts', '.oxlintrc.json'],
             pullRequest: ['src/c.ts'],
-            ledgers: [OXLINT],
+            ledgers: { [OXC]: OXLINT },
             crossing: ['src/c.ts'],
         },
         {
             name: 'a size-baselined file grown on both sides',
             main: ['src/big.ts'],
             pullRequest: ['src/big.ts'],
-            ledgers: [SIZE_BASELINE, CEILINGS],
+            ledgers: { [SIZE]: SIZE_BASELINE, [CEIL]: CEILINGS },
             crossing: ['src/big.ts'],
         },
         {
             name: 'a file named only in the ceilings ledger',
             main: ['src/big.ts'],
             pullRequest: ['src/big.ts'],
-            ledgers: [CEILINGS],
+            ledgers: { [CEIL]: CEILINGS },
             crossing: ['src/big.ts'],
         },
         {
             name: 'ledger files themselves changed on both sides with no common source path',
             main: ['eslint-suppressions.json', '.oxlintrc.json', 'src/a.ts'],
             pullRequest: ['eslint-suppressions.json', '.oxlintrc.json', 'src/c.ts'],
-            ledgers: [SUPPRESSIONS, OXLINT],
+            ledgers: { [SUP]: SUPPRESSIONS, [OXC]: OXLINT },
             crossing: [],
         },
         {
             name: 'a glob entry is not a literal path',
             main: ['src/d.ts'],
             pullRequest: ['src/d.ts'],
-            ledgers: [OXLINT],
+            ledgers: { [OXC]: OXLINT },
             crossing: [],
         },
     ];
 
     it.each(cases)('$name', ({ main, pullRequest, ledgers, crossing }) => {
-        expect(lintLedgerCrossingPaths(main, pullRequest, ledgers)).toEqual(crossing);
+        expect(lintLedgerCrossingPaths(main, pullRequest, unchanged(ledgers))).toEqual(crossing);
+    });
+
+    const CRAFT_WITH = "export const craftBaselineFiles = {\n    'r': [\n        'src/x.ts',\n    ],\n};\n";
+    const CRAFT_WITHOUT = "export const craftBaselineFiles = {\n    'r': [\n    ],\n};\n";
+    const CRAFT_OTHER_RULE = "export const craftBaselineFiles = {\n    's': [\n        'src/x.ts',\n    ],\n};\n";
+    const OXLINT_WITH = '{ "overrides": [{ "files": ["./src/x.ts"], "rules": { "r": "off" } }] }';
+    const OXLINT_WITHOUT = '{ "overrides": [{ "files": [], "rules": { "r": "off" } }] }';
+
+    const ledgerOnlyEdits: Array<{ name: string; base: LedgerTree; edited: LedgerTree }> = [
+        {
+            name: 'a suppression count lowered',
+            base: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-void': { count: 2 } } }) },
+            edited: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-void': { count: 1 } } }) },
+        },
+        {
+            name: 'a size ceiling lowered',
+            base: { [CEIL]: JSON.stringify({ 'src/x.ts': 700 }) },
+            edited: { [CEIL]: JSON.stringify({ 'src/x.ts': 600 }) },
+        },
+        { name: 'an oxlint override entry removed', base: { [OXC]: OXLINT_WITH }, edited: { [OXC]: OXLINT_WITHOUT } },
+        {
+            name: 'a craft baseline entry removed',
+            base: { [CRAFT]: CRAFT_WITH },
+            edited: { [CRAFT]: CRAFT_WITHOUT },
+        },
+        {
+            name: 'a craft baseline entry moved to another rule',
+            base: { [CRAFT]: CRAFT_WITH },
+            edited: { [CRAFT]: CRAFT_OTHER_RULE },
+        },
+        {
+            name: 'a size baseline entry removed',
+            base: { [SIZE]: SIZE_BASELINE.replace('src/big.ts', 'src/x.ts') },
+            edited: { [SIZE]: 'export const sizeBaselineFiles = [\n];\n' },
+        },
+    ];
+
+    it.each(ledgerOnlyEdits)('$name on main crosses a file edit on the pull request, and the mirror', (edit) => {
+        const { base, edited } = edit;
+        expect(lintLedgerCrossingPaths([], ['src/x.ts'], { base, main: edited, head: base })).toEqual(['src/x.ts']);
+        expect(lintLedgerCrossingPaths(['src/x.ts'], [], { base, main: base, head: edited })).toEqual(['src/x.ts']);
+    });
+
+    it.each(ledgerOnlyEdits)('$name on both sides with no file edit crosses', (edit) => {
+        const { base, edited } = edit;
+        expect(lintLedgerCrossingPaths([], [], { base, main: edited, head: edited })).toEqual(['src/x.ts']);
+    });
+
+    it('does not cross when the two sides edit only different paths bindings', () => {
+        const ceilings = (x: number, y: number): LedgerTree => ({
+            [CEIL]: JSON.stringify({ 'src/x.ts': x, 'src/y.ts': y }),
+        });
+        expect(
+            lintLedgerCrossingPaths([], [], {
+                base: ceilings(700, 700),
+                main: ceilings(600, 700),
+                head: ceilings(700, 600),
+            })
+        ).toEqual([]);
+    });
+
+    it('does not cross a ledger edit on one side with no file edit on the other', () => {
+        const base = { [CEIL]: JSON.stringify({ 'src/x.ts': 700 }) };
+        const edited = { [CEIL]: JSON.stringify({ 'src/x.ts': 600 }) };
+        expect(lintLedgerCrossingPaths([], [], { base, main: edited, head: base })).toEqual([]);
+    });
+
+    it.each([SUP, OXC, CEIL])('fails closed when %s does not parse', (name) => {
+        const good = { [name]: '{}' };
+        const bad = { [name]: '{ not json' };
+        expect(() => lintLedgerCrossingPaths([], [], { base: good, main: bad, head: good })).toThrow(
+            `lint ledger ${name} in main is not valid JSON`
+        );
     });
 
     it('sorts and deduplicates the crossing paths', () => {
         const ledger = JSON.stringify({ 'src/z.ts': {}, 'src/a.ts': {} });
         expect(
-            lintLedgerCrossingPaths(['src/z.ts', 'src/a.ts', 'src/z.ts'], ['src/a.ts', 'src/z.ts'], [ledger])
+            lintLedgerCrossingPaths(
+                ['src/z.ts', 'src/a.ts', 'src/z.ts'],
+                ['src/a.ts', 'src/z.ts'],
+                unchanged({ [SUP]: ledger })
+            )
         ).toEqual(['src/a.ts', 'src/z.ts']);
     });
 
@@ -240,6 +329,22 @@ describe('lint ledger crossing over a real repository', () => {
         write('x.ts', 'void three;\n');
         git(['add', '.']);
         git(['commit', '--quiet', '-m', 'main binds x']);
+
+        expect(readLintLedgerCrossing(git, 'main', 'b').paths).toEqual(['x.ts']);
+    });
+
+    it('refuses when main removes an already-compliant file from an oxlint override the pull request measured it under', () => {
+        const { git, write } = scratchRepository();
+        write('.oxlintrc.json', '{ "overrides": [{ "files": ["./x.ts"], "rules": { "r": "off" } }] }\n');
+        write('x.ts', 'one;\n');
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        git(['switch', '--quiet', '-c', 'b']);
+        write('x.ts', 'void violation;\n');
+        git(['commit', '--quiet', '-am', 'b adds a violation while x.ts is listed']);
+        git(['switch', '--quiet', 'main']);
+        write('.oxlintrc.json', '{ "overrides": [{ "files": [], "rules": { "r": "off" } }] }\n');
+        git(['commit', '--quiet', '-am', 'main delists x.ts without editing it']);
 
         expect(readLintLedgerCrossing(git, 'main', 'b').paths).toEqual(['x.ts']);
     });

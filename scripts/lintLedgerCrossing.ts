@@ -40,22 +40,151 @@ function quotedStrings(text: string): string[] {
     return [...text.matchAll(/"([^"\n]*)"|'([^'\n]*)'/gu)].map((match) => match[1] ?? match[2] ?? '');
 }
 
-function ledgerBoundPaths(ledgerTexts: readonly string[]): Set<string> {
-    return new Set(ledgerTexts.flatMap((text) => quotedStrings(text).map(normalizedLedgerPath)));
+/** Ledger file name to its text in one tree; a ledger the tree lacks has no entry. */
+export type LedgerTree = Readonly<Record<string, string>>;
+
+export type LedgerTrees = { base: LedgerTree; main: LedgerTree; head: LedgerTree };
+
+function ledgerBoundPaths(trees: readonly LedgerTree[]): Set<string> {
+    return new Set(
+        trees.flatMap((tree) => Object.values(tree).flatMap((text) => quotedStrings(text).map(normalizedLedgerPath)))
+    );
+}
+
+function canonicalJson(value: unknown): string {
+    if (Array.isArray(value)) {
+        return `[${value.map(canonicalJson).join(',')}]`;
+    }
+    if (typeof value === 'object' && value !== null) {
+        const members = Object.entries(value)
+            .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+            .map(([key, member]) => `${JSON.stringify(key)}:${canonicalJson(member)}`);
+        return `{${members.join(',')}}`;
+    }
+    return JSON.stringify(value) ?? 'undefined';
+}
+
+/** Removes `//` and block comments outside strings so the JSONC `.oxlintrc.json` parses as JSON. */
+function withoutJsonComments(text: string): string {
+    let result = '';
+    let index = 0;
+    while (index < text.length) {
+        const char = text[index] ?? '';
+        const next = text[index + 1];
+        if (char === '"') {
+            let end = index + 1;
+            while (end < text.length && text[end] !== '"') {
+                end += text[end] === '\\' ? 2 : 1;
+            }
+            result += text.slice(index, end + 1);
+            index = end + 1;
+        } else if (char === '/' && next === '/') {
+            const end = text.indexOf('\n', index);
+            index = end === -1 ? text.length : end;
+        } else if (char === '/' && next === '*') {
+            const end = text.indexOf('*/', index + 2);
+            index = end === -1 ? text.length : end + 2;
+        } else {
+            result += char;
+            index += 1;
+        }
+    }
+    return result;
+}
+
+function parseLedgerJson(name: string, side: string, text: string): unknown {
+    try {
+        return JSON.parse(withoutJsonComments(text));
+    } catch {
+        fail(`lint ledger ${name} in ${side} is not valid JSON`);
+    }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+type BindingIndex = Map<string, string[]>;
+
+function addBinding(index: BindingIndex, path: string, binding: string): void {
+    index.set(normalizedLedgerPath(path), [...(index.get(normalizedLedgerPath(path)) ?? []), binding]);
+}
+
+function indexKeyedJson(index: BindingIndex, name: string, side: string, text: string): void {
+    const parsed = parseLedgerJson(name, side, text);
+    if (!isRecord(parsed)) {
+        fail(`lint ledger ${name} in ${side} is not valid JSON`);
+    }
+    for (const [path, value] of Object.entries(parsed)) {
+        addBinding(index, path, `${name}=${canonicalJson(value)}`);
+    }
+}
+
+function indexOxlintOverrides(index: BindingIndex, name: string, side: string, text: string): void {
+    const parsed = parseLedgerJson(name, side, text);
+    const overrides = isRecord(parsed) && Array.isArray(parsed['overrides']) ? parsed['overrides'] : [];
+    for (const override of overrides) {
+        if (!isRecord(override) || !Array.isArray(override['files'])) {
+            continue;
+        }
+        for (const file of override['files']) {
+            if (typeof file === 'string') {
+                addBinding(index, file, `${name}=${canonicalJson(override['rules'])}`);
+            }
+        }
+    }
+}
+
+/** Membership in a `.mjs` list, keyed by the rule group (`'rule': [`) it sits under when it has one. */
+function indexModuleList(index: BindingIndex, name: string, text: string): void {
+    let group = '';
+    for (const line of text.split('\n')) {
+        const strings = quotedStrings(line);
+        const groupKey = /^\s*['"][^'"]+['"]\s*:\s*\[/u.test(line) ? strings.shift() : undefined;
+        group = groupKey ?? group;
+        for (const path of strings) {
+            addBinding(index, path, `${name}@${group}`);
+        }
+    }
+}
+
+function bindingIndex(tree: LedgerTree, side: string): Map<string, string> {
+    const index: BindingIndex = new Map();
+    for (const [name, text] of Object.entries(tree)) {
+        if (name === '.oxlintrc.json') {
+            indexOxlintOverrides(index, name, side, text);
+        } else if (name.endsWith('.json')) {
+            indexKeyedJson(index, name, side, text);
+        } else {
+            indexModuleList(index, name, text);
+        }
+    }
+    return new Map([...index].map(([path, bindings]) => [path, bindings.sort().join('\n')]));
+}
+
+/** Paths whose ledger binding differs between the merge base and one side, with no file edit needed. */
+function rebound(base: Map<string, string>, side: Map<string, string>): string[] {
+    return [...new Set([...base.keys(), ...side.keys()])].filter((path) => base.get(path) !== side.get(path));
 }
 
 /**
- * The paths a squash would combine unmeasured: changed since the merge base on both the `main` side
- * and the pull-request side, and named by a ledger in any of the trees involved.
+ * The paths a squash would combine unmeasured: touched since the merge base on both the `main` side
+ * and the pull-request side, and named by a ledger in any of the trees involved. A side touches a
+ * path by changing the file or by changing what a ledger records for it.
  */
 export function lintLedgerCrossingPaths(
     mainChanged: readonly string[],
     pullRequestChanged: readonly string[],
-    ledgerTexts: readonly string[]
+    trees: LedgerTrees
 ): string[] {
-    const bound = ledgerBoundPaths(ledgerTexts);
-    const pullRequestSide = new Set(pullRequestChanged);
-    return [...new Set(mainChanged)].filter((path) => pullRequestSide.has(path) && bound.has(path)).sort();
+    const bound = ledgerBoundPaths([trees.base, trees.main, trees.head]);
+    const base = bindingIndex(trees.base, 'the merge base');
+    const mainSide = new Set([...mainChanged, ...rebound(base, bindingIndex(trees.main, 'main'))]);
+    const pullRequestSide = new Set([
+        ...pullRequestChanged,
+        ...rebound(base, bindingIndex(trees.head, 'the pull request head')),
+    ]);
+    return [...mainSide].filter((path) => pullRequestSide.has(path) && bound.has(path)).sort();
 }
 
 function nulSeparated(output: string): string[] {
@@ -67,14 +196,18 @@ function changedPaths(git: GitCapture, from: string, to: string): string[] {
 }
 
 /** The ledger blobs present in `revision`; a ledger absent from that tree contributes nothing. */
-function ledgerTexts(git: GitCapture, revision: string): string[] {
-    return nulSeparated(git(['ls-tree', '-z', revision, '--', ...LINT_LEDGER_FILES])).map((entry) => {
-        const objectId = /^\d+ blob ([0-9a-f]+)\t/u.exec(entry)?.[1];
-        if (objectId === undefined) {
-            fail(`lint ledger entry in ${revision} is not a blob: ${entry}`);
-        }
-        return git(['cat-file', 'blob', objectId]);
-    });
+function ledgerTree(git: GitCapture, revision: string): LedgerTree {
+    return Object.fromEntries(
+        nulSeparated(git(['ls-tree', '-z', revision, '--', ...LINT_LEDGER_FILES])).map((entry) => {
+            const match = /^\d+ blob ([0-9a-f]+)\t(.+)$/u.exec(entry);
+            const objectId = match?.[1];
+            const name = match?.[2];
+            if (objectId === undefined || name === undefined) {
+                fail(`lint ledger entry in ${revision} is not a blob: ${entry}`);
+            }
+            return [name, git(['cat-file', 'blob', objectId])];
+        })
+    );
 }
 
 function commitObject(git: GitCapture, revision: string): string {
@@ -94,10 +227,10 @@ export function readLintLedgerCrossing(
     const main = commitObject(git, mainRevision);
     const head = commitObject(git, headRevision);
     const mergeBase = git(['merge-base', main, head]).trim();
-    const texts = [mergeBase, main, head].flatMap((revision) => ledgerTexts(git, revision));
+    const trees = { base: ledgerTree(git, mergeBase), main: ledgerTree(git, main), head: ledgerTree(git, head) };
     return {
         mergeBase,
-        paths: lintLedgerCrossingPaths(changedPaths(git, mergeBase, main), changedPaths(git, mergeBase, head), texts),
+        paths: lintLedgerCrossingPaths(changedPaths(git, mergeBase, main), changedPaths(git, mergeBase, head), trees),
     };
 }
 
