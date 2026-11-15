@@ -63,3 +63,10 @@ findings without a concrete break ("I'd prefer if") are discarded.
    that skips the ESLint leg or removes the configuration's required default-export exception must fail.
    Widening that exception to ordinary or nested modules must fail their default-export probes. Removing
    a typed helper or recursive traversal must fail the affected invalid custom-rule fixtures.
+9. **A rule promotion lands over code merged after it was measured.** #6537 and #6540 promoted oxlint
+   and ESLint warn rules to `error` with baselines measured against their own merge base; #6594 and
+   #6628 merged meanwhile, each green without the promotion, and main's `Lint` job went red (#6676).
+   The ruleset is non-strict, so neither head's `Gate` saw the other. Input: a head that moves a rule to
+   `error` or shrinks a baseline. Before approval, run the full lint gate (`scripts/runLint.ts`
+   targets) on the head merged with current `origin/main`, not only on the reviewed head; any error is
+   the finding. Deliver promptly after that run, and re-run it when `main` moves first.
