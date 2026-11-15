@@ -532,6 +532,7 @@ mod tests {
                     has_gui: false,
                     chain_kind: daw_engine::timeline::DeviceKind::Effect,
                     parameter_events: None,
+                    load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
                 },
             );
     }

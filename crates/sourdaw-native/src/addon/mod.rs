@@ -886,22 +886,39 @@ impl SourdawNative {
     /// Render a command batch deterministically with no audio device: the
     /// D3.b null-test oracle. Returns interleaved stereo f32 little-endian
     /// PCM; a refused batch is an error carrying the batch's refusal reasons.
+    /// `render_id`, when given, is what `cancel_graph_offline` names to stop
+    /// it; a cancelled render's error starts `offline-render-cancelled`.
     #[napi]
     pub async fn render_graph_offline(
         &self,
         batch: Value,
         frames: u32,
         sample_rate: f64,
+        render_id: Option<String>,
     ) -> Result<Buffer> {
+        let windows = self.window_host();
         Ok(Buffer::from(reason(
             commands::graph::render_graph_offline(
                 batch,
                 frames,
                 sample_rate,
+                render_id,
+                windows.as_ref(),
                 &self.singletons.app_state,
             )
             .await,
         )?))
+    }
+
+    /// Cancel the offline render started under `render_id`, between its
+    /// blocks. A cancel that arrives before its render starts still cancels
+    /// it; one for an unknown or finished id does nothing.
+    #[napi]
+    pub fn cancel_graph_offline(&self, render_id: String) -> Result<()> {
+        reason(commands::offline_plugins::cancel_graph_offline(
+            render_id,
+            &self.singletons.app_state,
+        ))
     }
 
     /// Map one graph batch against the graph a prior wire-command sequence

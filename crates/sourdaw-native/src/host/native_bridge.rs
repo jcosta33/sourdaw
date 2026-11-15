@@ -461,6 +461,12 @@ pub struct SharedHostedPlugin<Runtime = HostedRuntime> {
     dropped_note_events: AtomicU64,
     /// How much of `dropped_note_events` the control path has already logged.
     reported_dropped_note_events: AtomicU64,
+    /// Blocks a slot handed this plugin that it was not served — the lifecycle
+    /// closed, the plugin inactive, or the control path holding the seam — and
+    /// so passed through dry. Written by the audio thread, read by the control
+    /// path. Live playback only counts them; an offline render refuses a print
+    /// that holds one (`commands::offline_plugins`).
+    unserved_blocks: AtomicU64,
 }
 
 // SAFETY: access_state enforces exclusive mutable access to wrapper. The audio
@@ -487,7 +493,33 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             editor_parameter_writes: PendingParameterQueue::new(),
             dropped_note_events: AtomicU64::new(0),
             reported_dropped_note_events: AtomicU64::new(0),
+            unserved_blocks: AtomicU64::new(0),
         }
+    }
+
+    /// How many blocks a slot handed this plugin without its being served.
+    pub fn unserved_blocks(&self) -> u64 {
+        self.unserved_blocks.load(Ordering::Acquire)
+    }
+
+    /// One atomic add: the audio thread may not do more.
+    fn record_unserved_block(&self) {
+        self.unserved_blocks.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Leave the processing state on the thread that processed this plugin,
+    /// after its last block.
+    ///
+    /// Both formats bind leaving the processing state to the audio thread
+    /// (CLAP `stop_processing`, VST3 `setProcessing(false)`). A live instance
+    /// gets more blocks after `begin_unload` asks, and leaves there; an offline
+    /// render's instance gets no block after its print, so the render thread —
+    /// its audio thread — leaves it here before the instance is torn down.
+    /// Without it the wrapper's drop performs the stop off the audio thread
+    /// and counts the deviation.
+    pub fn leave_processing_after_last_block(&self) {
+        self.processing.request_stop();
+        self.leave_processing_state_on_audio_thread();
     }
 
     /// How many note events this plugin has lost to a full retention queue.
@@ -1147,7 +1179,9 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
         });
 
         if processed.is_none() {
-            // Non-RT state/editor control owns the plugin. Leave the block as-is.
+            // Non-RT state/editor control owns the plugin, or it is unloading
+            // or inactive: the block passes through as-is, and is counted.
+            self.plugin.record_unserved_block();
         }
     }
 
@@ -1241,6 +1275,7 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
                 // behind it: the staged ones fit, and any the queue cannot
                 // hold are counted as dropped.
                 self.retain_events(midi_events);
+                self.plugin.record_unserved_block();
             }
         }
     }
@@ -3403,6 +3438,50 @@ mod tests {
             vec![(60, 100, 0, false, 0)],
             "the retained note-off is delivered on the first block after release"
         );
+    }
+
+    /// Both process entries count a block they could not hand the plugin, and
+    /// neither counts one they did. Mutation: drop either
+    /// `record_unserved_block` call — its count stays behind.
+    #[test]
+    fn a_block_the_slot_could_not_serve_is_counted_and_a_served_one_is_not() {
+        let (mut slot, shared, _notes) = seam_recording_slot();
+        render_block_with_events(&mut slot, &[]);
+        let mut left = [0.25f32; 64];
+        let mut right = [0.25f32; 64];
+        slot.process_audio(&mut left, &mut right, 64);
+        assert_eq!(shared.unserved_blocks(), 0, "both blocks were served");
+
+        let guard = shared
+            .try_claim_control()
+            .expect("the control path takes a free seam");
+        render_block_with_events(&mut slot, &[]);
+        slot.process_audio(&mut left, &mut right, 64);
+        drop(guard);
+
+        assert_eq!(shared.unserved_blocks(), 2);
+        assert!(
+            left.iter().chain(&right).all(|sample| *sample == 0.25),
+            "an unserved block passes through untouched"
+        );
+    }
+
+    /// The count is an atomic add on the audio thread, never an allocation.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn counting_an_unserved_block_never_allocates() {
+        let (mut slot, shared, _notes) = seam_recording_slot();
+        let guard = shared
+            .try_claim_control()
+            .expect("the control path takes a free seam");
+        let mut left = [0.5f32; 64];
+        let mut right = [0.5f32; 64];
+        assert_no_alloc::assert_no_alloc(|| {
+            slot.process_audio(&mut left, &mut right, 64);
+            slot.process_with_events(&mut left, &mut right, 64, &[], &TransportState::default());
+        });
+        drop(guard);
+        assert_eq!(shared.unserved_blocks(), 2);
     }
 }
 

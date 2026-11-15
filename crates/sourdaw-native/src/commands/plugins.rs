@@ -21,7 +21,9 @@ use daw_plugin_host::scanner::{
     self, PluginFormat, QuarantinedPlugin, ScanResult, ScannedDescriptor, ScannedInstance,
     ScannedPlugin,
 };
-use daw_plugin_host::{AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime, Vst3Wrapper};
+use daw_plugin_host::{
+    AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime, ProcessMode, Vst3Wrapper,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -1012,10 +1014,43 @@ fn plugin_gone_from_last_known_path(entry: &PersistedPluginEntry, reason: &str) 
 /// fingerprint or taken a fresh one, and the load compares it once more
 /// immediately before the plugin's code is opened
 /// ([`construct_runtime_on_ui_thread`]).
+///
+/// A load records the one it opened on the instance it creates
+/// (`EnginePluginInstanceData::load_resolution`), so an offline render that
+/// rebuilds the instance opens the very file the load vetted, re-vetted against
+/// the same fingerprint, rather than resolving the plugin by name again.
 #[derive(Clone, Debug)]
-struct VettedRegistryEntry {
-    entry: PluginRegistryEntry,
-    fingerprint: FileFingerprint,
+pub(crate) struct VettedRegistryEntry {
+    pub(crate) entry: PluginRegistryEntry,
+    pub(crate) fingerprint: FileFingerprint,
+}
+
+#[cfg(test)]
+impl VettedRegistryEntry {
+    /// A resolution for a test record no load produced: a CLAP effect at a path
+    /// nothing exists at, so any construction from it is refused by the vetting.
+    pub(crate) fn fixture() -> Self {
+        Self {
+            entry: PluginRegistryEntry {
+                path: "/nonexistent/Fixture.clap".to_string(),
+                stable_id: "fixture".to_string(),
+                descriptor_id: "com.sourdaw.fixture".to_string(),
+                format: "clap".to_string(),
+                name: "Fixture".to_string(),
+                num_inputs: 2,
+                num_outputs: 2,
+                has_custom_ui: false,
+                capability_metadata_reason: None,
+                chain_kind: DeviceKind::Effect,
+                scanned_fingerprint: None,
+            },
+            fingerprint: FileFingerprint {
+                size_bytes: 0,
+                modified_ms: 0,
+                identity: crate::host::plugin_registry_store::FileIdentity { device: 0, file: 0 },
+            },
+        }
+    }
 }
 
 /// What one pass of registry resolution produced.
@@ -1537,7 +1572,7 @@ async fn resolve_plugin_registry_entry(
 /// stays exhaustive: adding a backend adds an arm the compiler demands be
 /// written, instead of a string somebody remembers to add to a `match`.
 #[derive(Clone, Copy)]
-enum HostBackend {
+pub(crate) enum HostBackend {
     /// `ClapWrapper`.
     Clap,
     /// `Vst3Wrapper`.
@@ -1566,7 +1601,7 @@ impl HostBackend {
 /// they are given for refusing to activate it — see
 /// `.agents/decisions/0031-native-plugin-format-strategy.md`. A name that is not
 /// a format at all is not something that decision covers, so it says only that.
-fn host_backend(format: &str) -> Result<HostBackend, String> {
+pub(crate) fn host_backend(format: &str) -> Result<HostBackend, String> {
     let Some(recognised) = PluginFormat::from_wire_name(format) else {
         return Err(format!("Unknown plugin format: {format}"));
     };
@@ -1654,18 +1689,22 @@ fn native_activation_sample_rate(state: &AppState) -> Result<f64, String> {
 /// Everything after it — the latency query, the notifier, the engine
 /// registration, the instance record — is written against
 /// `HostedRuntime` and does not know which format it is holding.
-fn create_hosted_runtime(
+///
+/// `mode` is how the instance will be driven: a live load is `Realtime`, and an
+/// offline render's own instance is `Offline` (`commands::offline_plugins`).
+pub(crate) fn create_hosted_runtime(
     backend: HostBackend,
     path: &str,
     descriptor_id: &str,
     sample_rate: f64,
+    mode: ProcessMode,
 ) -> Result<HostedRuntime, String> {
     match backend {
-        HostBackend::Clap => {
-            ClapWrapper::new(path, descriptor_id, sample_rate).map(HostedRuntime::from)
-        }
+        HostBackend::Clap => ClapWrapper::new_with_mode(path, descriptor_id, sample_rate, mode)
+            .map(HostedRuntime::from),
         HostBackend::Vst3 => {
-            Vst3Wrapper::new(Path::new(path), descriptor_id, sample_rate).map(HostedRuntime::from)
+            Vst3Wrapper::new_with_mode(Path::new(path), descriptor_id, sample_rate, mode)
+                .map(HostedRuntime::from)
         }
     }
 }
@@ -1697,14 +1736,15 @@ fn editor_support_on_ui_thread<P: AudioPlugin + ?Sized + 'static>(
 /// How a load builds its runtime: [`create_hosted_runtime`] in production, a
 /// fixture in a test. `Send + 'static` because it runs on the shell's UI thread,
 /// not on the worker that took the load.
-trait RuntimeConstructor:
-    FnOnce(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String> + Send + 'static
+pub(crate) trait RuntimeConstructor:
+    FnOnce(HostBackend, &str, &str, f64, ProcessMode) -> Result<HostedRuntime, String> + Send + 'static
 {
 }
 
 impl<Constructor> RuntimeConstructor for Constructor where
-    Constructor:
-        FnOnce(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String> + Send + 'static
+    Constructor: FnOnce(HostBackend, &str, &str, f64, ProcessMode) -> Result<HostedRuntime, String>
+        + Send
+        + 'static
 {
 }
 
@@ -1739,12 +1779,13 @@ impl<Constructor> RuntimeConstructor for Constructor where
 /// own open: CFBundle, `dlopen` and `LoadLibrary` all take a path rather than a
 /// descriptor, so no check this side of them can be made against the very file
 /// they open.
-fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
+pub(crate) fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
     ui: &Ui,
     backend: HostBackend,
     scan_policy: PluginScanPolicy,
     vetted: VettedRegistryEntry,
     sample_rate: f64,
+    mode: ProcessMode,
     create_runtime: impl RuntimeConstructor,
 ) -> Result<HostedRuntime, String> {
     call_on_ui_thread(ui, move || {
@@ -1770,7 +1811,13 @@ fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
                 entry.name, entry.path
             ));
         }
-        create_runtime(backend, &entry.path, &entry.descriptor_id, sample_rate)
+        create_runtime(
+            backend,
+            &entry.path,
+            &entry.descriptor_id,
+            sample_rate,
+            mode,
+        )
     })?
 }
 
@@ -1944,8 +1991,9 @@ async fn load_plugin_under_runtime_gate(
         windows_host,
         backend,
         scan_policy,
-        vetted,
+        vetted.clone(),
         sample_rate,
+        ProcessMode::Realtime,
         create_runtime,
     )?;
     let name = wrapper.get_name().to_string();
@@ -2062,6 +2110,7 @@ async fn load_plugin_under_runtime_gate(
                     parameters: &params,
                     has_gui,
                     chain_kind: entry.chain_kind,
+                    load_resolution: &vetted,
                 },
             ) {
                 Ok(registration) => EngineHandover::Registered(registration),
@@ -2125,6 +2174,7 @@ async fn load_plugin_under_runtime_gate(
                     parameters: params.clone(),
                     has_gui,
                     chain_kind: entry.chain_kind,
+                    load_resolution: vetted,
                 },
             );
             None
@@ -2235,7 +2285,7 @@ const HOST_REQUEST_WAKE_INSTALL_TIMEOUT: Duration = Duration::from_secs(2);
 /// a caller that matched on one of them would miss the other. The format is
 /// behind both: `create_hosted_runtime` was the last step that knew one, so this
 /// names the plugin rather than its backend.
-fn activation_refusal_reason(name: &str) -> String {
+pub(crate) fn activation_refusal_reason(name: &str) -> String {
     format!("plugin '{name}' failed to activate for engine-owned runtime")
 }
 
@@ -2425,6 +2475,7 @@ struct RegisteredPlugin<'a> {
     parameters: &'a [PluginParameter],
     has_gui: bool,
     chain_kind: DeviceKind,
+    load_resolution: &'a VettedRegistryEntry,
 }
 
 /// Hand one runtime to a running engine: reserve its id, record the instance,
@@ -2458,6 +2509,7 @@ fn register_runtime_with_engine(
         parameters,
         has_gui,
         chain_kind,
+        load_resolution,
     } = plugin;
     // The load refuses an unactivated plugin before anything is parked, so
     // reaching this is a runtime that lost its activation after it was built.
@@ -2529,6 +2581,7 @@ fn register_runtime_with_engine(
             has_gui,
             chain_kind,
             parameter_events,
+            load_resolution: load_resolution.clone(),
         },
     ) {
         return Err(RegistrationRefusal::recovered(reason, shared_plugin, state));
@@ -2742,6 +2795,7 @@ fn attach_one_dormant_plugin(
         parameters,
         has_gui,
         chain_kind,
+        load_resolution,
     } = dormant;
 
     let registration = {
@@ -2760,6 +2814,7 @@ fn attach_one_dormant_plugin(
                     parameters: &parameters,
                     has_gui,
                     chain_kind,
+                    load_resolution: &load_resolution,
                 },
             ),
             None => Err(RegistrationRefusal::parked(
@@ -2796,6 +2851,7 @@ fn attach_one_dormant_plugin(
                             parameters,
                             has_gui,
                             chain_kind,
+                            load_resolution,
                         },
                     );
             }
@@ -3243,7 +3299,10 @@ pub async fn get_plugin_parameters(
 /// order (command-owned instances first, then engine-owned runtimes) changing
 /// with it. The instance lookup is the authorization gate: plugin state is keyed
 /// by instance id, not addressed by path, so no filesystem allowlist applies.
-fn read_plugin_state_chunk(instance_id: &str, state: &AppState) -> Result<Vec<u8>, String> {
+pub(crate) fn read_plugin_state_chunk(
+    instance_id: &str,
+    state: &AppState,
+) -> Result<Vec<u8>, String> {
     {
         let plugins = state
             .plugins
@@ -3580,6 +3639,7 @@ mod tests {
                 has_gui: true,
                 chain_kind: DeviceKind::Effect,
                 parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
             },
         );
     }
@@ -3666,6 +3726,7 @@ mod tests {
                 parameters: &[],
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
+                load_resolution: &VettedRegistryEntry::fixture(),
             },
         )
         .err()
@@ -3712,7 +3773,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, sample_rate| {
+            move |_backend, _path, _descriptor_id, sample_rate, _mode| {
                 *observed.lock().expect("observed rate lock is free") = Some(sample_rate);
                 let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
                     "Caller Supplies No Rate",
@@ -3890,6 +3951,7 @@ mod tests {
             has_gui: true,
             chain_kind: DeviceKind::Effect,
             parameter_events: None,
+            load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
         }
     }
 
@@ -4446,6 +4508,7 @@ mod tests {
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
                 parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
             }
         }
 
@@ -4518,6 +4581,7 @@ mod tests {
                 parameters: &[],
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
+                load_resolution: &VettedRegistryEntry::fixture(),
             },
         )
         .err()
@@ -4584,6 +4648,7 @@ mod tests {
                 parameters: &[],
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
+                load_resolution: &VettedRegistryEntry::fixture(),
             },
         );
         let Ok(registration) = registration else {
@@ -4650,7 +4715,7 @@ mod tests {
             {
                 let observed_state = Arc::clone(&state);
                 let engine_free = Arc::clone(&engine_free_at_teardown);
-                move |_backend, _path, _descriptor_id, _sample_rate| {
+                move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                     // The ceiling is crossed here, after the load read it and before
                     // the registration reads it again.
                     for index in 0..HOSTED_PLUGIN_RESERVE {
@@ -4750,7 +4815,7 @@ mod tests {
             {
                 let observed_state = Arc::clone(&state);
                 let engine_free = Arc::clone(&engine_free_at_teardown);
-                move |_backend, _path, _descriptor_id, _sample_rate| {
+                move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                     let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
                         "Editor Ask Unanswered",
                         Vec::new(),
@@ -4842,7 +4907,7 @@ mod tests {
                 let observed_state = Arc::clone(&state);
                 let installs = Arc::clone(&installs);
                 let engine_free = Arc::clone(&engine_free_at_install);
-                move |_backend, _path, _descriptor_id, _sample_rate| {
+                move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                     let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
                         "Wake Loaded",
                         Vec::new(),
@@ -4903,7 +4968,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let wrapper = ClapWrapper::new_engine_owned_command_fixture(
                     "Synth Fixture",
                     Vec::new(),
@@ -4956,6 +5021,7 @@ mod tests {
                     parameters: Vec::new(),
                     has_gui: false,
                     chain_kind: DeviceKind::Generator,
+                    load_resolution: VettedRegistryEntry::fixture(),
                 },
             );
 
@@ -5066,6 +5132,7 @@ mod tests {
                     parameters: Vec::new(),
                     has_gui: false,
                     chain_kind: DeviceKind::Effect,
+                    load_resolution: VettedRegistryEntry::fixture(),
                 },
             );
 
@@ -5193,7 +5260,7 @@ mod tests {
             unexpected_rescan,
             {
                 let lease_held = Arc::clone(&lease_held_at_teardown);
-                move |_backend, _path, _descriptor_id, _sample_rate| {
+                move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                     let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
                         "Never Activated",
                         Vec::new(),
@@ -5286,7 +5353,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let mut wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
@@ -5323,7 +5390,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture B", Vec::new(), false);
                 Ok(HostedRuntime::from(wrapper))
@@ -5371,7 +5438,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let mut wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
@@ -5399,7 +5466,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture C", Vec::new(), false);
                 Ok(HostedRuntime::from(wrapper))
@@ -5467,7 +5534,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let mut wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
@@ -5495,7 +5562,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 let wrapper =
                     ClapWrapper::new_engine_owned_command_fixture("Fixture D", Vec::new(), false);
                 Ok(HostedRuntime::from(wrapper))
@@ -5752,7 +5819,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 slot.lock()
                     .expect("fixture runtime slot")
                     .take()
@@ -5859,7 +5926,7 @@ mod tests {
                 &state,
                 plugins.scan_policy(),
                 unexpected_rescan,
-                move |_backend, _path, _descriptor_id, _sample_rate| {
+                move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                     log.lock()
                         .expect("construction log")
                         .push(std::thread::current().id());
@@ -5900,7 +5967,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| Ok(runtime),
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| Ok(runtime),
         ))
         .expect("the fixture plugin should load");
         let reply = crate::block_on_test(unload_plugin(
@@ -5941,7 +6008,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| Ok(runtime),
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| Ok(runtime),
         ))
         .expect_err("a plugin that never activated must not load");
 
@@ -5971,7 +6038,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| Ok(runtime),
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| Ok(runtime),
         ))
         .expect_err("a plugin that never activated must not load");
 
@@ -6058,7 +6125,7 @@ mod tests {
             &state,
             plugins.scan_policy(),
             unexpected_rescan,
-            move |_backend, _path, _descriptor_id, _sample_rate| {
+            move |_backend, _path, _descriptor_id, _sample_rate, _mode| {
                 slot.lock()
                     .expect("fixture runtime slot")
                     .take()
@@ -6356,7 +6423,11 @@ mod tests {
     /// an activated fixture runtime.
     fn recording_construction(log: &VettingLog) -> impl RuntimeConstructor {
         let log = Arc::clone(log);
-        move |_backend: HostBackend, path: &str, _descriptor_id: &str, _sample_rate: f64| {
+        move |_backend: HostBackend,
+              path: &str,
+              _descriptor_id: &str,
+              _sample_rate: f64,
+              _mode: ProcessMode| {
             log.lock()
                 .expect("vetting log")
                 .push(("construct", path.to_string()));
@@ -9736,6 +9807,7 @@ mod tests {
                 has_gui: true,
                 chain_kind: DeviceKind::Effect,
                 parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
             },
         );
     }

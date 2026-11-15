@@ -64,6 +64,7 @@ export const EXPOSED_COMMANDS = [
     'arm_retrospective_capture',
     'begin_export_file',
     'begin_levain_bank',
+    'cancel_graph_offline',
     'cancel_provider_gateway_request',
     'close_midi_input',
     'close_plugin_gui',

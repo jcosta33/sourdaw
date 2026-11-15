@@ -2579,6 +2579,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "sourdaw-harness-fx",
  "tokio",
  "uuid",
  "whisper-rs",
