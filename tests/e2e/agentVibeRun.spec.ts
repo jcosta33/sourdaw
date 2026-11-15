@@ -175,22 +175,101 @@ async function closeActionHistoryOverlay(page: Page) {
     await expect(close).toBeHidden();
 }
 
-async function auditionProposal(page: Page, batch: number) {
+type StartedSource = { length: number; channels: number; sampleRate: number; rms: number; firstFrames: number[] };
+
+/**
+ * Records what each started Web Audio source actually plays. The comparison status only mirrors the
+ * requested side, so the started buffer is the one observable that proves which signal was heard.
+ */
+async function recordStartedSources(page: Page) {
+    await page.addInitScript(() => {
+        const started: StartedSource[] = [];
+        Object.defineProperty(window, '__startedSources', { value: started });
+        const start = AudioBufferSourceNode.prototype.start;
+        AudioBufferSourceNode.prototype.start = function (...args: Parameters<typeof start>) {
+            const { buffer } = this;
+            if (buffer !== null) {
+                let energy = 0;
+                for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+                    for (const sample of buffer.getChannelData(channel)) {
+                        energy += sample * sample;
+                    }
+                }
+                started.push({
+                    length: buffer.length,
+                    channels: buffer.numberOfChannels,
+                    sampleRate: buffer.sampleRate,
+                    rms: Math.sqrt(energy / (buffer.length * buffer.numberOfChannels)),
+                    firstFrames: Array.from(buffer.getChannelData(0).subarray(0, 8)),
+                });
+            }
+            return start.apply(this, args);
+        };
+    });
+}
+
+async function startedSources(page: Page): Promise<StartedSource[]> {
+    return page.evaluate(() => {
+        const started: StartedSource[] = Reflect.get(window, '__startedSources');
+        return started.slice();
+    });
+}
+
+/** Pairs of a Baseline and a Proposal start whose buffers must differ, because the proposal adds an EQ. */
+async function auditionBothSides(page: Page, batch: number) {
     const card = page.getByRole('region', { name: 'Measured audio comparison' });
     await expect(card).toBeVisible({ timeout: 60_000 });
     const status = card.getByRole('status');
     await expect(status).toHaveText('Stopped');
     await closeActionHistoryOverlay(page);
-    await card.getByRole('button', { name: 'Proposal', exact: true }).click();
-    await expect(status, `batch ${String(batch)} proposal audition`).toHaveText('Playing proposal', {
-        timeout: 30_000,
-    });
-    await card.getByRole('button', { name: 'Stop comparison' }).click();
-    await expect(status).toHaveText('Stopped');
+    const startsBefore = (await startedSources(page)).length;
+    for (const [button, label] of [
+        ['Baseline', 'Playing baseline'],
+        ['Proposal', 'Playing proposal'],
+    ] as const) {
+        await card.getByRole('button', { name: button, exact: true }).click();
+        await expect(status, `batch ${String(batch)} ${button} audition`).toHaveText(label, { timeout: 30_000 });
+        await card.getByRole('button', { name: 'Stop comparison' }).click();
+        await expect(status).toHaveText('Stopped');
+    }
+    await expect
+        .poll(async () => (await startedSources(page)).length - startsBefore, {
+            message: `batch ${String(batch)} audition started one source per side`,
+        })
+        .toBe(2);
+    const [baseline, proposal] = (await startedSources(page)).slice(startsBefore);
+    expect(proposal.rms, `batch ${String(batch)} proposal plays a different buffer than baseline`).not.toBeCloseTo(
+        baseline.rms,
+        3
+    );
+    return { baseline, proposal };
+}
+
+/** The seeded track signal at the track's 0.8 gain, so Baseline is the dry track and not any rendered variant. */
+function expectDryTrackSignal(started: StartedSource) {
+    const dry = (frame: number) => {
+        const time = frame / started.sampleRate;
+        return 0.8 * (0.4 * Math.sin(2 * Math.PI * 100 * time) + 0.2 * Math.sin(2 * Math.PI * 3000 * time));
+    };
+    expect(started.rms, 'baseline energy is the dry track at gain 0.8').toBeCloseTo(0.8 * Math.sqrt(0.1), 3);
+    for (const [frame, sample] of started.firstFrames.entries()) {
+        expect(sample, `baseline frame ${String(frame)} is the dry track`).toBeCloseTo(dry(frame), 4);
+    }
+}
+
+/** A batch's own card, never the brief's list of planned batches. */
+function batchCardParagraph(page: Page, batch: number) {
+    return page.locator('p').filter({ hasText: new RegExp(`^Batch ${String(batch)} of 5: `) });
+}
+
+async function waitForBatchCard(page: Page, batch: number) {
+    await expect(batchCardParagraph(page, batch)).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByRole('button', { name: 'Confirm pending actions' })).toBeVisible();
 }
 
 test('drives a whole-project vibe run through brief, per-batch audition, skip and one-step undo', async ({ page }) => {
     test.setTimeout(420_000);
+    await recordStartedSources(page);
     await setupWorkspace(page);
     await launch_new_project(page);
     await page.evaluate(async (names) => {
@@ -265,35 +344,41 @@ test('drives a whole-project vibe run through brief, per-batch audition, skip an
         ]) {
             await expect(page.getByText(line)).toBeVisible();
         }
+        // The brief lists the batches as text, so no batch card exists yet to satisfy a later wait.
+        for (const batch of [2, 3, 4, 5]) {
+            await expect(batchCardParagraph(page, batch)).toHaveCount(0);
+        }
         expect(await projectTruth(page)).toEqual(before);
         expect(await briefRevision(page)).toBe(revisionBefore);
         await page.getByRole('button', { name: 'Confirm pending actions' }).click();
         await expect.poll(() => briefRevision(page)).toBeGreaterThan(revisionBefore);
 
         // 2. Batch 2 (Drums): audition, then Confirm.
-        await expect(page.getByText(/^Batch 2 of 5: /)).toBeVisible({ timeout: 120_000 });
-        await auditionProposal(page, 2);
+        await waitForBatchCard(page, 2);
+        const drums = await auditionBothSides(page, 2);
+        expectDryTrackSignal(drums.baseline);
         expect(await deviceTypes(page, 'Drums')).toEqual([]);
         await page.getByRole('button', { name: 'Confirm pending actions' }).click();
         await expect.poll(() => deviceTypes(page, 'Drums')).toEqual(['builtin-eq']);
 
         // 3. Batch 3 (Vocal): audition, then Skip; the run goes on and nothing was written.
-        await expect(page.getByText(/^Batch 3 of 5: /)).toBeVisible({ timeout: 120_000 });
-        await auditionProposal(page, 3);
+        await waitForBatchCard(page, 3);
+        await auditionBothSides(page, 3);
         const beforeSkip = await projectTruth(page);
         await page.getByRole('button', { name: 'Skip batch' }).click();
-        await expect(page.getByText(/^Batch 4 of 5: /)).toBeVisible({ timeout: 120_000 });
+        await waitForBatchCard(page, 4);
         expect(await deviceTypes(page, 'Vocal')).toEqual([]);
+        expect(await deviceTypes(page, 'Master')).toEqual([]);
         expect(await projectTruth(page)).toEqual(beforeSkip);
 
         // 4. Batch 4 (Bass): audition, then Confirm.
-        await auditionProposal(page, 4);
+        await auditionBothSides(page, 4);
         await page.getByRole('button', { name: 'Confirm pending actions' }).click();
         await expect.poll(() => deviceTypes(page, 'Bass')).toEqual(['builtin-eq']);
 
         // The project's master gets a fifth batch; it is auditioned and skipped, so only Drums and Bass change.
-        await expect(page.getByText(/^Batch 5 of 5: /)).toBeVisible({ timeout: 120_000 });
-        await auditionProposal(page, 5);
+        await waitForBatchCard(page, 5);
+        await auditionBothSides(page, 5);
         await page.getByRole('button', { name: 'Skip batch' }).click();
 
         // 5. One summary with the applied and skipped wording.
@@ -303,6 +388,8 @@ test('drives a whole-project vibe run through brief, per-batch audition, skip an
         await expect(page.getByText(/^Batch 3 \(warm vocal\): skipped, not applied\.$/)).toBeVisible();
         await expect(page.getByText(/^Batch 5 \(warm master\): skipped, not applied\.$/)).toBeVisible();
         await expect(page.getByRole('button', { name: 'Revert run' })).toBeVisible();
+        expect(await deviceTypes(page, 'Vocal')).toEqual([]);
+        expect(await deviceTypes(page, 'Master')).toEqual([]);
 
         // 6. Each applied batch is one undo step.
         await page.getByTestId('transport-undo').click();
@@ -310,6 +397,8 @@ test('drives a whole-project vibe run through brief, per-batch audition, skip an
         expect(await deviceTypes(page, 'Drums')).toEqual(['builtin-eq']);
         await page.getByTestId('transport-undo').click();
         await expect.poll(() => deviceTypes(page, 'Drums')).toEqual([]);
+        expect(await deviceTypes(page, 'Vocal')).toEqual([]);
+        expect(await deviceTypes(page, 'Master')).toEqual([]);
 
         expect(provider.failures).toEqual([]);
         expect(route.brief).toEqual({ intake: 1, compile: 1, propose: 1 });
