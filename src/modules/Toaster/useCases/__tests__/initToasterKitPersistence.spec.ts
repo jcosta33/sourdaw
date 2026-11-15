@@ -27,9 +27,9 @@ function countDeviceStateWrites(): { count: number } {
         ...handlers,
         setDeviceState: {
             ...handlers.setDeviceState,
-            execute: (...args: Parameters<typeof handlers.setDeviceState.execute>) => {
+            execute: (action, context) => {
                 writes.count += 1;
-                return handlers.setDeviceState.execute(...args);
+                return handlers.setDeviceState.execute(action, context);
             },
         },
     });
