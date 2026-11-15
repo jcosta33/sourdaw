@@ -71,14 +71,6 @@ const HELPER_PARENT_GONE_EXIT_CODE: i32 = 5;
 pub const SCAN_PARENT_PID_ENV: &str = "SOURDAW_PLUGIN_SCAN_PARENT_PID";
 
 const WATCHDOG_POLL_INTERVAL: Duration = Duration::from_millis(50);
-
-/// The refusal for a helper the scan asked for after it was told to stop.
-const SCAN_STOPPING_MESSAGE: &str =
-    "The plugin scan is stopping, so no plugin scan helper was started";
-
-/// The refusal for a helper that ended because the scan was stopped. Never
-/// a process failure: the plugin did not crash or hang, the user quit.
-const SCAN_STOPPED_MESSAGE: &str = "The plugin scan stopped before the plugin scan helper answered";
 /// The largest response a leaf worker may write and the supervisor will read.
 ///
 /// Sized from measurement, and the measurement is enforced rather than trusted:
@@ -1006,6 +998,10 @@ fn is_reparse_point(_metadata: &fs::Metadata) -> bool {
 /// it kills, so no helper starts after a stop and no kill can land on a pid
 /// the OS has already handed to another process: a pid leaves the set before
 /// or as its process is reaped, never after.
+///
+/// Once stopped, no entry point returns to its caller: a thread that asks to
+/// spawn, reap or forget a helper parks for the rest of the process's life
+/// (see [`park_until_process_exit`]).
 struct HelperRegistry {
     state: Mutex<HelperRegistryState>,
 }
@@ -1015,10 +1011,15 @@ struct HelperRegistryState {
     live: BTreeSet<u32>,
 }
 
-/// A helper's exit, observed and reaped under the registry lock.
-struct ReapedHelper {
-    status: ExitStatus,
-    stopping: bool,
+/// Stop exists only for a process about to exit, and a stopped scan has no
+/// truthful answer: any value returned to the walk — a refusal or an exit
+/// status — would let it publish a registry that drops every candidate it
+/// did not reach. So the calling thread never returns, and the process's
+/// exit ends it. The loop absorbs `park`'s spurious wake-ups.
+fn park_until_process_exit() -> ! {
+    loop {
+        std::thread::park();
+    }
 }
 
 impl HelperRegistry {
@@ -1037,11 +1038,19 @@ impl HelperRegistry {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn spawn(&self, command: &mut Command) -> Result<Child, ScanFailure> {
-        let mut state = self.lock();
+    /// The lock, or never: once stopped, the guard is released and the
+    /// calling thread parks.
+    fn lock_unless_stopped(&self) -> MutexGuard<'_, HelperRegistryState> {
+        let state = self.lock();
         if state.stopping {
-            return Err(ScanFailure::Refused(SCAN_STOPPING_MESSAGE.to_string()));
+            drop(state);
+            park_until_process_exit();
         }
+        state
+    }
+
+    fn spawn(&self, command: &mut Command) -> Result<Child, ScanFailure> {
+        let mut state = self.lock_unless_stopped();
         let child = command.spawn().map_err(|error| {
             ScanFailure::Refused(format!("Cannot start plugin scan helper: {error}"))
         })?;
@@ -1049,27 +1058,24 @@ impl HelperRegistry {
         Ok(child)
     }
 
-    fn try_reap(&self, child: &mut Child) -> std::io::Result<Option<ReapedHelper>> {
-        let mut state = self.lock();
+    /// Reap the helper if it has exited, deregistering it under the same lock.
+    fn try_reap(&self, child: &mut Child) -> std::io::Result<Option<ExitStatus>> {
+        let mut state = self.lock_unless_stopped();
         let Some(status) = child.try_wait()? else {
             return Ok(None);
         };
         state.live.remove(&child.id());
-        Ok(Some(ReapedHelper {
-            status,
-            stopping: state.stopping,
-        }))
+        Ok(Some(status))
     }
 
     /// Take a helper out of the set before its spawner reaps it itself.
-    /// Answers whether the scan is stopping.
-    fn forget(&self, child: &Child) -> bool {
-        let mut state = self.lock();
+    fn forget(&self, child: &Child) {
+        let mut state = self.lock_unless_stopped();
         state.live.remove(&child.id());
-        state.stopping
     }
 
-    /// Refuse every later spawn and kill every live helper's tree.
+    /// Kill every live helper's tree and park every later caller, so the
+    /// stopped scan never answers.
     fn stop(&self) {
         let mut state = self.lock();
         state.stopping = true;
@@ -1081,8 +1087,10 @@ impl HelperRegistry {
 
 static HELPER_REGISTRY: HelperRegistry = HelperRegistry::new();
 
-/// Kill every scan helper this process has running and refuse to start any
-/// more. For a process that is about to exit: nothing undoes it.
+/// Kill every scan helper this process has running, and park every scan
+/// thread that next asks the registry for anything, so a stopped scan never
+/// answers and never publishes. For a process that is about to exit: nothing
+/// undoes it, and the exit is what ends the parked threads.
 pub fn stop_plugin_scan_helpers() {
     HELPER_REGISTRY.stop();
 }
@@ -1204,21 +1212,16 @@ fn wait_bounded(
     let deadline = Instant::now() + timeout;
     loop {
         match registry.try_reap(child) {
-            Ok(Some(ReapedHelper { stopping: true, .. })) => return Err(scan_stopped()),
-            Ok(Some(ReapedHelper { status, .. })) => return Ok(status),
+            Ok(Some(status)) => return Ok(status),
             Ok(None) if Instant::now() < deadline => {
                 std::thread::sleep(Duration::from_millis(10));
             }
             Ok(None) => {
-                if terminate_process_tree(registry, child) {
-                    return Err(scan_stopped());
-                }
+                terminate_process_tree(registry, child);
                 return Err(ScanFailure::TimedOut);
             }
             Err(error) => {
-                if terminate_process_tree(registry, child) {
-                    return Err(scan_stopped());
-                }
+                terminate_process_tree(registry, child);
                 return Err(ScanFailure::Refused(format!(
                     "Cannot observe plugin scan helper: {error}"
                 )));
@@ -1227,18 +1230,12 @@ fn wait_bounded(
     }
 }
 
-fn scan_stopped() -> ScanFailure {
-    ScanFailure::Refused(SCAN_STOPPED_MESSAGE.to_string())
-}
-
-/// Kill and reap the helper's tree. Answers whether the scan was stopping,
-/// in which case the helper's end is the stop's, not the plugin's.
-fn terminate_process_tree(registry: &HelperRegistry, child: &mut Child) -> bool {
-    let stopping = registry.forget(child);
+/// Kill and reap the helper's tree.
+fn terminate_process_tree(registry: &HelperRegistry, child: &mut Child) {
+    registry.forget(child);
     kill_helper_tree(child.id());
     let _ = child.kill();
     let _ = child.wait();
-    stopping
 }
 
 /// Every helper leads its own process group, so its pid is the group's id.
@@ -1885,6 +1882,58 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     const ORPHAN_HELPER_MARKER_ENV: &str = "SOURDAW_TEST_ORPHAN_HELPER";
     const ORPHAN_HELPER_PID_FILE_ENV: &str = "SOURDAW_TEST_ORPHAN_HELPER_PID_FILE";
     const DEADLINE_CHILD_MARKER_ENV: &str = "SOURDAW_TEST_DEADLINE_WATCHDOG_CHILD";
+    const PLAIN_SPAWNER_PID_FILE_ENV: &str = "SOURDAW_TEST_PLAIN_SPAWNER_HELPER_PID_FILE";
+
+    /// The stand-in spawner for the Linux kernel tie: runs a plain `sh`
+    /// helper, which arms no watchdog, through the real bounded spawn. The
+    /// test kills this process.
+    #[test]
+    fn plain_helper_spawner_child() {
+        let Some(pid_file) = std::env::var_os(PLAIN_SPAWNER_PID_FILE_ENV) else {
+            return;
+        };
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "echo $$ > \"$0\"; exec sleep 30"])
+            .arg(pid_file);
+        let _ = run_bounded_in(&HelperRegistry::new(), &mut command, WORKER_TIMEOUT);
+    }
+
+    /// Only `PR_SET_PDEATHSIG` can end this helper inside the window: it runs
+    /// no watchdog, and the spawner's own bound dies with the spawner.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_killed_spawner_takes_a_plain_helper_with_it_on_linux() {
+        let pid_file =
+            std::env::temp_dir().join(format!("sourdaw-plain-helper-{}", uuid::Uuid::new_v4()));
+        let mut stragglers = Stragglers::cleaning(vec![pid_file.clone()]);
+        let spawner = Command::new(std::env::current_exe().expect("test executable should exist"))
+            .arg("--exact")
+            .arg("host::plugin_scan_worker::tests::plain_helper_spawner_child")
+            .env(PLAIN_SPAWNER_PID_FILE_ENV, &pid_file)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("the stand-in spawner should start");
+        let spawner_pid = i32::try_from(spawner.id()).expect("a pid fits an i32");
+        stragglers.children.push(spawner);
+
+        let helper = read_pid_within(&pid_file, Duration::from_secs(10))
+            .expect("the plain helper should start and write its pid");
+        stragglers.pids.push(helper);
+
+        // SAFETY: kill takes plain values; the spawner is this test's child.
+        assert_eq!(unsafe { libc::kill(spawner_pid, libc::SIGKILL) }, 0);
+        for child in &mut stragglers.children {
+            let _ = child.wait();
+        }
+
+        assert!(
+            process_has_exited_within(helper, Duration::from_secs(3)),
+            "plain helper {helper} outlived its killed spawner"
+        );
+    }
 
     /// The stand-in spawner: scans the hanging fixture through the real
     /// `scan_worker_with`, so the helper is launched exactly as production
@@ -1938,8 +1987,11 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
 
     /// The defect itself: a spawner killed outright — no stop, no group kill —
     /// must not leave its helper spinning. The window is far below both the
-    /// spawner's bound and the helper's own deadline, so only the parent tie
-    /// can end the helper inside it.
+    /// spawner's bound and the helper's own deadline, so neither of those can
+    /// end the helper inside it. What does is a parent tie: on Linux either
+    /// `PR_SET_PDEATHSIG` or the helper's parent watch, on macOS the parent
+    /// watch alone. The Linux signal is pinned on its own by
+    /// `a_killed_spawner_takes_a_plain_helper_with_it_on_linux`.
     #[cfg(unix)]
     #[test]
     fn a_helper_does_not_outlive_its_killed_spawner() {
@@ -2114,11 +2166,37 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         }
     }
 
-    /// Stopping kills the live helper, reports it as a stop rather than a
-    /// plugin failure, and refuses every later spawn without starting it.
+    /// Whether this process's child `pid` has exited within `window`, reaping
+    /// it here. A child someone else already reaped (`ECHILD`) has exited too.
+    #[cfg(unix)]
+    fn child_has_exited_within(pid: i32, window: Duration) -> bool {
+        let deadline = Instant::now() + window;
+        loop {
+            let mut status = 0;
+            // SAFETY: waitpid with WNOHANG takes plain values and a valid
+            // out-pointer, and never blocks.
+            let reaped = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+            if reaped == pid {
+                return true;
+            }
+            if reaped == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ECHILD)
+            {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Stopping kills the live helper, and neither the scan that was waiting
+    /// on it nor one started afterwards ever answers: both threads park, so
+    /// the walk can never publish a stopped scan. Their parked threads are
+    /// deliberately left for this test process's exit to end.
     #[cfg(unix)]
     #[test]
-    fn stopping_kills_live_helpers_and_refuses_new_ones() {
+    fn a_stopped_scan_kills_its_helpers_and_never_answers() {
         let registry = std::sync::Arc::new(HelperRegistry::new());
         let pid_file =
             std::env::temp_dir().join(format!("sourdaw-stopped-helper-{}", uuid::Uuid::new_v4()));
@@ -2141,30 +2219,37 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
 
         registry.stop();
 
-        let failure = receiver
-            .recv_timeout(Duration::from_secs(5))
-            .expect("a stopped scan must return promptly")
-            .expect_err("a stopped helper must not read as an answer");
-        assert_eq!(
-            failure,
-            ScanFailure::Refused(SCAN_STOPPED_MESSAGE.to_string())
-        );
-        assert!(!failure.is_process_failure(), "{failure}");
         assert!(
-            process_is_gone_within(helper, Duration::from_secs(2)),
+            child_has_exited_within(helper, Duration::from_secs(2)),
             "the stopped helper {helper} is still alive"
         );
-
-        let mut later = Command::new("sh");
-        later.args(["-c", "touch \"$0\""]).arg(&never_spawned);
-        let refusal = run_bounded_in(&registry, &mut later, WORKER_TIMEOUT)
-            .expect_err("a spawn after stop must be refused");
-        assert_eq!(
-            refusal,
-            ScanFailure::Refused(SCAN_STOPPING_MESSAGE.to_string())
+        assert!(
+            matches!(
+                receiver.recv_timeout(Duration::from_millis(500)),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ),
+            "the scan that was waiting on a stopped helper must never answer"
         );
-        assert!(!refusal.is_process_failure(), "{refusal}");
-        assert!(!never_spawned.exists(), "a refused helper must never start");
+
+        let (later_sender, later_receiver) = std::sync::mpsc::channel();
+        let later_registry = std::sync::Arc::clone(&registry);
+        let marker = never_spawned.clone();
+        std::thread::spawn(move || {
+            let mut later = Command::new("sh");
+            later.args(["-c", "touch \"$0\""]).arg(&marker);
+            let _ = later_sender.send(run_bounded_in(&later_registry, &mut later, WORKER_TIMEOUT));
+        });
+        assert!(
+            matches!(
+                later_receiver.recv_timeout(Duration::from_millis(500)),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ),
+            "a scan started after stop must never answer"
+        );
+        assert!(
+            !never_spawned.exists(),
+            "a helper asked for after stop must never start"
+        );
     }
 
     #[test]
