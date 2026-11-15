@@ -42,9 +42,10 @@ export function writeExternalPluginTail(instanceId: string, tailSamples: number)
 }
 
 /**
- * Revise the tail of an instance this process holds. A change for an instance
- * with no entry is dropped: it was unloaded between the host's push and this
- * dispatch, and recording it would describe a plugin that no longer exists.
+ * Revise the tail of an instance whose load already seeded it. A change for an
+ * instance with no entry is dropped: recording it would describe a plugin that
+ * no longer exists. The caller holds a change for an instance still loading
+ * and hands it to the load's seed instead.
  */
 export function reviseExternalPluginTail(instanceId: string, tailSamples: number): void {
     externalPluginTailStore.update((state) => {

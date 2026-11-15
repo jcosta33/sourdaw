@@ -77,6 +77,38 @@ describe('external plugin tail store', () => {
         expect(tailOf('inst-1')).toBe(240_000);
     });
 
+    it('keeps a tail the plugin reported while its load was still returning', async () => {
+        mocks.loadPluginRepo.mockImplementation((_pluginId, instanceId) => {
+            // The host attached the instance and drained its first-block
+            // revision before the load's own, older answer came back.
+            emitTailChange({ instance_id: instanceId, tail_samples: 240_000 });
+            return Promise.resolve(loadedInstance(instanceId, 96_000));
+        });
+
+        await activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+
+        expect(tailOf('inst-1')).toBe(240_000);
+    });
+
+    it('seeds no tail reported during a load the graph rebuild superseded', async () => {
+        let finishLoad: () => void = () => {};
+        mocks.loadPluginRepo.mockImplementation(
+            (_pluginId, instanceId) =>
+                new Promise((resolve) => {
+                    finishLoad = () => resolve(loadedInstance(instanceId, 96_000));
+                })
+        );
+        const activation = activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+        await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1));
+        emitTailChange({ instance_id: 'inst-1', tail_samples: 240_000 });
+
+        clearLoadedExternalPlugins();
+        finishLoad();
+        await activation;
+
+        expect(tailOf('inst-1')).toBeUndefined();
+    });
+
     it('records no tail for an instance the process does not hold', async () => {
         await activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
 

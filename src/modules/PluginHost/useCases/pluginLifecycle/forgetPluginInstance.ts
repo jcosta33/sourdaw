@@ -19,6 +19,7 @@ import { externalPluginActivationOutcomes, externalPluginActivationTasks } from 
 import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { loadedExternalInstances } from './loadedExternalInstances';
+import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
 
 export function forgetPluginInstance(instanceId: string): void {
     externalPluginStateCaptureAuthority.invalidate(instanceId);
@@ -35,6 +36,7 @@ export function forgetPluginInstance(instanceId: string): void {
     dropExternalPluginParameterSnapshot(instanceId);
     // A destroyed instance rings for nothing; an export must not reserve its tail.
     dropExternalPluginTail(instanceId);
+    tailRevisionsDuringLoad.delete(instanceId);
     externalPluginActivationStore.update((state) => {
         const byInstanceId = { ...(state ?? defaultExternalPluginActivationState).byInstanceId };
         delete byInstanceId[instanceId];

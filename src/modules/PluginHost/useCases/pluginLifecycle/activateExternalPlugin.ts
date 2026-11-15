@@ -16,6 +16,7 @@ import {
     type ExternalPluginActivationResult,
 } from './externalPluginActivationTasks';
 import { loadedExternalInstances } from './loadedExternalInstances';
+import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
 import { loadPlugin } from './loadPlugin';
 import { markExternalPluginRestoreFailure } from './markExternalPluginRestoreFailure';
 import { restorePluginState } from './restorePluginState';
@@ -181,8 +182,10 @@ export function activateExternalPlugin({
                 parameters: toExternalPluginParameters(instance.parameters),
             });
             // What an export reserves after the last note for this instance's
-            // decay; later revisions arrive over `plugin-tail-changed`.
-            writeExternalPluginTail(instanceId, instance.tail_samples);
+            // decay; later revisions arrive over `plugin-tail-changed`. One the
+            // plugin reported before this answer arrived is newer than it.
+            writeExternalPluginTail(instanceId, tailRevisionsDuringLoad.get(instanceId) ?? instance.tail_samples);
+            tailRevisionsDuringLoad.delete(instanceId);
             if (instance.engine_plugin_id === null) {
                 // Loaded, but no native engine was running to attach it to, so
                 // it renders nothing yet. The first graph batch starts one and
@@ -208,6 +211,7 @@ export function activateExternalPlugin({
             // and the sink with it — nothing is live to report for.
             loadedExternalInstances.delete(instanceId);
             externalLatencyReporters.delete(instanceId);
+            tailRevisionsDuringLoad.delete(instanceId);
             setActivationStatus(instanceId, 'error', String(error));
             logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
             return { status: 'failed', stage: 'load', reason: String(error) };

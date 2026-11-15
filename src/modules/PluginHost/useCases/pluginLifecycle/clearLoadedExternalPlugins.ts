@@ -17,6 +17,7 @@ import {
 import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { loadedExternalInstances } from './loadedExternalInstances';
+import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
 
 /**
  * Drop every live-instance activation guard. Called when the audio graph is torn
@@ -42,4 +43,5 @@ export function clearLoadedExternalPlugins(): void {
     externalPluginParameterStore.set(defaultExternalPluginParameterState);
     // So do the tails they reported.
     externalPluginTailStore.set(defaultExternalPluginTailState);
+    tailRevisionsDuringLoad.clear();
 }
