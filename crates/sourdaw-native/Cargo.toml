@@ -72,6 +72,16 @@ whisper-rs = { version = "0.16", features = ["metal"] }
 # no-follow cached-model read in commands/verified_cached_model.rs.
 libc = "0.2"
 
+[target.'cfg(windows)'.dependencies]
+# File identity for the plugin registry's fingerprint
+# (host/plugin_registry_store.rs): std's `file_index` and
+# `volume_serial_number` are unstable, so the identity is read from
+# `GetFileInformationByHandle`.
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+] }
+
 [dev-dependencies]
 assert_no_alloc = "1.1"
 daw-engine = { path = "../daw-engine", features = ["command-capture-fixture"] }

@@ -98,6 +98,15 @@ use crate::state::PluginRegistryEntry;
 /// outlive the fix and keep hiding the editor control the runtime host can
 /// operate. Same policy as every earlier bump: the document reads as absent,
 /// and the next scan refills it.
+///
+/// Not bumped when the row gained `file_identity`, and the difference from
+/// every bump above is what a version-6 row without it still knows. Its scanned
+/// answer is not wrong, only unverifiable against the new fingerprint, so the
+/// column defaults to absent, an absent identity never matches a live file,
+/// and the row is kept as the plugin's last known location: the next
+/// activation rescans that one file once and persists a row with the identity.
+/// A bump would instead have discarded every last known location, and every
+/// saved project's plugins would refuse until the user scanned by hand.
 const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 6;
 
 const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
@@ -259,20 +268,49 @@ pub struct PersistedPluginEntry {
     pub bundle_position: u32,
     /// Size, in bytes, of the binary this plugin loads from — which is the file
     /// inside the bundle, not the bundle directory the walk found. See
-    /// [`scanned_binary_location`].
+    /// [`plugin_binary_location`].
     pub file_size_bytes: u64,
     /// Modification time of that same binary when it was scanned, in
     /// milliseconds since the unix epoch.
     ///
-    /// Millisecond resolution is the fingerprint's floor: a replacement written
-    /// within the same millisecond *and* at exactly the same size reads as
-    /// unchanged. Every real plugin update moves one of the two.
+    /// Millisecond resolution is this column's floor, and it is why the
+    /// fingerprint does not stop here: a different file written within the
+    /// same millisecond at exactly the same size, or one whose timestamps were
+    /// set back to the original's, reads as unchanged on size and age alone.
+    /// [`file_identity`](Self::file_identity) closes that case for any file
+    /// put there by replacing the old one.
     pub file_modified_ms: u64,
+    /// Which file the path named when it was scanned: device and inode on
+    /// unix, volume serial and file index on Windows.
+    ///
+    /// Defaulted rather than versioned. A row written before the column existed
+    /// reads as `None`, and `None` never matches a live fingerprint, so such a
+    /// row is neither hydrated nor reused — but it stays the plugin's last
+    /// known location, so its next activation takes the one targeted rescan
+    /// and persists a row carrying the identity. Bumping
+    /// [`SCAN_REGISTRY_SCHEMA_VERSION`] instead would discard every last-known
+    /// location at once and leave every saved project's plugins unresolvable
+    /// until the user scanned by hand.
+    #[serde(default)]
+    pub file_identity: Option<FileIdentity>,
 }
 
 impl PersistedPluginEntry {
+    /// The registry row this persisted row resolves to, carrying the
+    /// fingerprint it was persisted with — which hydration has just compared
+    /// against the file on disk, so it is the file's fingerprint now.
     fn as_registry_entry(&self) -> PluginRegistryEntry {
-        PluginRegistryEntry::from_scanned(&self.plugin)
+        PluginRegistryEntry::from_scanned(&self.plugin, self.recorded_fingerprint())
+    }
+
+    /// The fingerprint this row recorded, or `None` for a row written before
+    /// file identity was recorded — a fingerprint this build could never match.
+    fn recorded_fingerprint(&self) -> Option<FileFingerprint> {
+        Some(FileFingerprint {
+            size_bytes: self.file_size_bytes,
+            modified_ms: self.file_modified_ms,
+            identity: self.file_identity?,
+        })
     }
 
     /// Whether an instance inspection ran for this row and answered.
@@ -430,7 +468,8 @@ impl PluginRegistryStore {
     /// session — is never displaced by the file's older view of it.
     ///
     /// Entries are admitted only if the policy still authorizes their path and
-    /// the file on disk is byte-for-byte the size and age the scan recorded.
+    /// the file on disk is the file the scan recorded, at the size and age it
+    /// recorded.
     /// Anything else is a plugin that has been updated, replaced or removed
     /// since, and resolving it would hand activation a path whose contents no
     /// longer match the descriptor id recorded next to it.
@@ -483,8 +522,8 @@ impl PluginRegistryStore {
 
     /// The rows a fresh scan of `path` would only reproduce, or nothing.
     ///
-    /// `Some` means the file at `path` is byte-for-byte the size and age the
-    /// scan that wrote these rows recorded, the policy still authorizes it, and
+    /// `Some` means the file at `path` is the file the scan that wrote these
+    /// rows recorded, at the size and age it recorded, the policy still authorizes it, and
     /// every row for it came from an instance inspection that ran and answered.
     /// A caller holding that may publish the rows instead of spawning the
     /// helpers again.
@@ -701,7 +740,7 @@ impl PluginRegistryStore {
             return;
         };
 
-        let mut fingerprints: HashMap<&str, Option<(u64, u64)>> = HashMap::new();
+        let mut fingerprints: HashMap<&str, Option<FileFingerprint>> = HashMap::new();
         let mut plugins_seen_per_file: HashMap<&str, u32> = HashMap::new();
         let mut scanned_this_session = BTreeMap::new();
         for row in rows {
@@ -709,15 +748,16 @@ impl PluginRegistryStore {
             let fingerprint = *fingerprints
                 .entry(path)
                 .or_insert_with(|| scanned_file_fingerprint(&row.plugin));
-            let Some((file_size_bytes, file_modified_ms)) = fingerprint else {
+            let Some(fingerprint) = fingerprint else {
                 continue;
             };
             let bundle_position = plugins_seen_per_file.entry(path).or_insert(0);
             let entry = PersistedPluginEntry {
                 plugin: row.plugin.clone(),
                 bundle_position: *bundle_position,
-                file_size_bytes,
-                file_modified_ms,
+                file_size_bytes: fingerprint.size_bytes,
+                file_modified_ms: fingerprint.modified_ms,
+                file_identity: Some(fingerprint.identity),
             };
             *bundle_position += 1;
             for key in &row.keys {
@@ -812,9 +852,34 @@ fn entry_is_still_the_scanned_file(
         return false;
     }
 
-    scanned_file_fingerprint(&entry.plugin).is_some_and(|(size, modified)| {
-        size == entry.file_size_bytes && modified == entry.file_modified_ms
-    })
+    let recorded = entry.recorded_fingerprint();
+    recorded.is_some() && scanned_file_fingerprint(&entry.plugin) == recorded
+}
+
+/// Which file a path names, as opposed to what is written in it.
+///
+/// Device and inode on unix; volume serial number and file index on Windows.
+/// A file renamed over the scanned one carries a new identity even when its
+/// size and timestamps were made to match, which size and age alone cannot see.
+/// An in-place rewrite keeps the identity and is caught by size or age instead.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct FileIdentity {
+    pub device: u64,
+    pub file: u64,
+}
+
+/// What a plugin's file looked like when it was checked: its size, its
+/// modification time and which file it was.
+///
+/// The ctime is deliberately absent. Gatekeeper and Spotlight write extended
+/// attributes onto plugin bundles, and every such write moves the ctime: a
+/// fingerprint carrying it would read an untouched plugin as changed and spend
+/// a scan-worker child process on its next load.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct FileFingerprint {
+    pub size_bytes: u64,
+    pub modified_ms: u64,
+    pub identity: FileIdentity,
 }
 
 /// The fingerprint of the file this plugin is actually loaded from, or nothing.
@@ -828,11 +893,19 @@ fn entry_is_still_the_scanned_file(
 /// both sides — the row is not written with a fingerprint it could never be
 /// checked against, and a row already holding one is neither hydrated nor
 /// reused. Skipping is right in exactly that case, because the plugin is gone.
-pub(crate) fn scanned_file_fingerprint(plugin: &ScannedPlugin) -> Option<(u64, u64)> {
+pub(crate) fn scanned_file_fingerprint(plugin: &ScannedPlugin) -> Option<FileFingerprint> {
     file_fingerprint(&scanned_file_path(plugin)?)
 }
 
-/// The file whose size and modification time stand for this plugin's version.
+/// [`scanned_file_fingerprint`] for a plugin known by its path and format
+/// alone — a registry entry about to be loaded — through the same binary
+/// resolution, so the fingerprint a load compares is taken from the same file
+/// the scan's was.
+pub(crate) fn plugin_file_fingerprint(path: &Path, format: &str) -> Option<FileFingerprint> {
+    file_fingerprint(&plugin_file_path(path, format)?)
+}
+
+/// The file whose fingerprint stands for this plugin's version.
 ///
 /// The resolved binary when there is one, and the scanned path itself when
 /// there is not. The fallback is what keeps a bundle this build cannot resolve
@@ -846,11 +919,17 @@ pub(crate) fn scanned_file_fingerprint(plugin: &ScannedPlugin) -> Option<(u64, u
 /// instead would be worse than weak reuse: the scan would find the plugin,
 /// publish it, persist nothing, and the next launch could not activate it.
 pub(crate) fn scanned_file_path(plugin: &ScannedPlugin) -> Option<PathBuf> {
-    let resolved = scanned_binary_location(plugin).filter(|location| location.is_file());
+    plugin_file_path(Path::new(&plugin.path), &plugin.format)
+}
+
+/// [`scanned_file_path`] for a plugin known by its path and format alone: a
+/// registry entry about to be loaded is fingerprinted and authorized through
+/// the same resolution its scan was.
+pub(crate) fn plugin_file_path(candidate: &Path, format: &str) -> Option<PathBuf> {
+    let resolved = plugin_binary_location(candidate, format).filter(|location| location.is_file());
     if let Some(binary) = resolved {
         return Some(binary);
     }
-    let candidate = Path::new(&plugin.path);
     fs::metadata(candidate)
         .is_ok()
         .then(|| candidate.to_path_buf())
@@ -871,17 +950,23 @@ pub(crate) fn scanned_file_path(plugin: &ScannedPlugin) -> Option<PathBuf> {
 /// question from location: a bundle whose executable is missing still has a
 /// place that executable belongs, which is what a fixture needs to know and
 /// what a fingerprint must not be taken from.
-pub(crate) fn scanned_binary_location(plugin: &ScannedPlugin) -> Option<PathBuf> {
-    let candidate = Path::new(&plugin.path);
+fn plugin_binary_location(candidate: &Path, format: &str) -> Option<PathBuf> {
     if !candidate.is_dir() {
         return Some(candidate.to_path_buf());
     }
-    match PluginFormat::from_wire_name(&plugin.format)? {
+    match PluginFormat::from_wire_name(format)? {
         PluginFormat::Clap => scanner::clap_library_path(candidate).ok(),
         PluginFormat::Vst3 => vst3_bundle_binary_location(candidate),
         PluginFormat::Vst2 | PluginFormat::AudioUnit => None,
     }
     .filter(|location| !location.is_dir())
+}
+
+/// [`plugin_binary_location`] for a scanned plugin, which a fixture reads to
+/// learn where a bundle's module belongs.
+#[cfg(test)]
+pub(crate) fn scanned_binary_location(plugin: &ScannedPlugin) -> Option<PathBuf> {
+    plugin_binary_location(Path::new(&plugin.path), &plugin.format)
 }
 
 /// The VST3 module inside a bundle, by this platform's layout.
@@ -956,7 +1041,11 @@ fn vst3_bundle_binary_location(bundle: &Path) -> Option<PathBuf> {
         .flatten()
 }
 
-fn file_fingerprint(path: &Path) -> Option<(u64, u64)> {
+/// The fingerprint of the file at `path`, or `None` when any part of it —
+/// size, age or identity — cannot be read. A fingerprint missing a part is
+/// one no recorded fingerprint can be compared against, so it is no
+/// fingerprint at all.
+fn file_fingerprint(path: &Path) -> Option<FileFingerprint> {
     let metadata = fs::metadata(path).ok()?;
     let modified = metadata
         .modified()
@@ -964,7 +1053,49 @@ fn file_fingerprint(path: &Path) -> Option<(u64, u64)> {
         .duration_since(UNIX_EPOCH)
         .ok()?
         .as_millis();
-    Some((metadata.len(), u64::try_from(modified).ok()?))
+    Some(FileFingerprint {
+        size_bytes: metadata.len(),
+        modified_ms: u64::try_from(modified).ok()?,
+        identity: file_identity(path, &metadata)?,
+    })
+}
+
+#[cfg(unix)]
+fn file_identity(_path: &Path, metadata: &fs::Metadata) -> Option<FileIdentity> {
+    use std::os::unix::fs::MetadataExt;
+    Some(FileIdentity {
+        device: metadata.dev(),
+        file: metadata.ino(),
+    })
+}
+
+/// Windows keeps a file's identity behind a handle: std's `file_index` and
+/// `volume_serial_number` are unstable, so the file is opened for no access at
+/// all — attributes only, which any reader may do — and asked directly.
+/// `FILE_FLAG_BACKUP_SEMANTICS` lets the same open succeed on a bundle
+/// directory, which is what a bundle with no resolvable module fingerprints.
+#[cfg(windows)]
+fn file_identity(path: &Path, _metadata: &fs::Metadata) -> Option<FileIdentity> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS,
+    };
+
+    let file = fs::OpenOptions::new()
+        .access_mode(0)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0)
+        .open(path)
+        .ok()?;
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: the handle is `file`'s own, open for the whole call, and
+    // `information` is a live, writable struct of the type the call fills.
+    unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut information) }.ok()?;
+    Some(FileIdentity {
+        device: u64::from(information.dwVolumeSerialNumber),
+        file: (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
+    })
 }
 
 /// Counts the bytes taken out of `inner`, so a bounded parse can say afterwards
@@ -1250,7 +1381,7 @@ mod tests {
             .persist(&one_row(&plugin_path, "aaaa1111"));
 
         let mut rescanned =
-            PluginRegistryEntry::from_scanned(&scanned_plugin(&plugin_path, "aaaa1111"));
+            PluginRegistryEntry::from_scanned(&scanned_plugin(&plugin_path, "aaaa1111"), None);
         rescanned.name = "Vendor Reverb 2".to_string();
         let session_registry = Mutex::new(HashMap::from([("aaaa1111".to_string(), rescanned)]));
         test_root
@@ -1709,6 +1840,7 @@ mod tests {
                     bundle_position: 0,
                     file_size_bytes: 10,
                     file_modified_ms: 0,
+                    file_identity: None,
                 },
             );
         }
@@ -2303,6 +2435,10 @@ mod tests {
             bundle_position: 0,
             file_size_bytes: u64::MAX,
             file_modified_ms: u64::MAX,
+            file_identity: Some(FileIdentity {
+                device: u64::MAX,
+                file: u64::MAX,
+            }),
         };
         let row_bytes = serde_json::to_vec(&entry)
             .expect("a persisted row should serialize")
