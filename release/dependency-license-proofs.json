@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "7d3fdded694c14036d3f658381ca01170ec3ecb7481772a6b9ca6a91bd4903e5",
+        "cargoLockSha256": "351943cd5aa4a889c19b2530e97de22fcb9263183f140b392d450a1d42e3c6a2",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -9,7 +9,7 @@
             },
             {
                 "path": "Cargo.toml",
-                "sha256": "ba1c680fd482ea7c355c3fd0d29c4ef369fab43c5e981c73eeb927dc960f65f3"
+                "sha256": "a9770e91b27e3164e045ba7d41a03906d14ea58f7898232edc96222acb3021c3"
             },
             {
                 "path": "crates/daw-collab/Cargo.toml",
@@ -46,10 +46,6 @@
             {
                 "path": "crates/scoring/Cargo.toml",
                 "sha256": "4b69775740f4daa786f72de85294dec6560679847096f2d38f3bc79985823fea"
-            },
-            {
-                "path": "crates/sourdaw-harness-fx/Cargo.toml",
-                "sha256": "0485c546aeed914b7f75cd26b068748587d436d9c4a01aef7451064bdd3c9390"
             },
             {
                 "path": "crates/sourdaw-harness-tone/Cargo.toml",

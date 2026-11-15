@@ -131,8 +131,8 @@ impl IParamValueQueueTrait for HostParamValueQueue {
         if index != 0 || !self.filled.get() || sample_offset.is_null() || value.is_null() {
             return kInvalidArgument;
         }
-        *sample_offset = 0;
-        *value = self.value.get();
+        unsafe { *sample_offset = 0 };
+        unsafe { *value = self.value.get() };
         kResultOk
     }
 
@@ -145,7 +145,7 @@ impl IParamValueQueueTrait for HostParamValueQueue {
         self.value.set(value);
         self.filled.set(true);
         if !index.is_null() {
-            *index = 0;
+            unsafe { *index = 0 };
         }
         kResultOk
     }
@@ -235,11 +235,11 @@ impl IParameterChangesTrait for HostParameterChanges {
         if id.is_null() {
             return ptr::null_mut();
         }
-        let Some(position) = self.queue_index_for(*id) else {
+        let Some(position) = self.queue_index_for(unsafe { *id }) else {
             return ptr::null_mut();
         };
         if !index.is_null() {
-            *index = position as int32;
+            unsafe { *index = position as int32 };
         }
         borrowed_ptr(&self.queues[position])
     }
@@ -315,7 +315,7 @@ impl IEventListTrait for HostEventList {
         if index < 0 || index as usize >= self.count.get() || e.is_null() {
             return kInvalidArgument;
         }
-        *e = (*self.events.as_ptr())[index as usize];
+        unsafe { *e = (*self.events.as_ptr())[index as usize] };
         kResultOk
     }
 
@@ -443,15 +443,15 @@ impl IBStreamTrait for HostStream {
         // and a panic here unwinds into the plugin's frame.
         let Some(remaining) = cursor.bytes.get(cursor.position..) else {
             if !num_bytes_read.is_null() {
-                *num_bytes_read = 0;
+                unsafe { *num_bytes_read = 0 };
             }
             return kResultOk;
         };
         let count = remaining.len().min(num_bytes as usize);
-        ptr::copy_nonoverlapping(remaining.as_ptr(), buffer as *mut u8, count);
+        unsafe { ptr::copy_nonoverlapping(remaining.as_ptr(), buffer as *mut u8, count) };
         cursor.position += count;
         if !num_bytes_read.is_null() {
-            *num_bytes_read = count as int32;
+            unsafe { *num_bytes_read = count as int32 };
         }
         kResultOk
     }
@@ -481,14 +481,16 @@ impl IBStreamTrait for HostStream {
             cursor.bytes.resize(end, 0);
         }
         let start = cursor.position;
-        ptr::copy_nonoverlapping(
-            buffer as *const u8,
-            cursor.bytes[start..].as_mut_ptr(),
-            count,
-        );
+        unsafe {
+            ptr::copy_nonoverlapping(
+                buffer as *const u8,
+                cursor.bytes[start..].as_mut_ptr(),
+                count,
+            )
+        };
         cursor.position = end;
         if !num_bytes_written.is_null() {
-            *num_bytes_written = count as int32;
+            unsafe { *num_bytes_written = count as int32 };
         }
         kResultOk
     }
@@ -513,7 +515,7 @@ impl IBStreamTrait for HostStream {
         let clamped = (target as u64).min(cursor.bytes.len() as u64) as usize;
         cursor.position = clamped;
         if !result.is_null() {
-            *result = clamped as int64;
+            unsafe { *result = clamped as int64 };
         }
         kResultOk
     }
@@ -523,7 +525,7 @@ impl IBStreamTrait for HostStream {
             return kInvalidArgument;
         };
         if !pos.is_null() {
-            *pos = cursor.position as int64;
+            unsafe { *pos = cursor.position as int64 };
         }
         kResultOk
     }
@@ -624,7 +626,7 @@ impl IConnectionPointTrait for Vst3ConnectionProxy {
     }
 
     unsafe fn notify(&self, message: *mut IMessage) -> tresult {
-        let Some(message) = ComRef::from_raw(message) else {
+        let Some(message) = (unsafe { ComRef::from_raw(message) }) else {
             return kInvalidArgument;
         };
         if self.state.defer_message(self.peer, message.to_com_ptr()) {
@@ -2173,10 +2175,10 @@ fn create_controller(
 unsafe fn activate_first_event_bus(component: &ComPtr<IComponent>) {
     let media = MediaTypes_::kEvent as int32;
     let direction = BusDirections_::kInput as int32;
-    if component.getBusCount(media, direction) <= 0 {
+    if unsafe { component.getBusCount(media, direction) } <= 0 {
         return;
     }
-    component.activateBus(media, direction, 0, 1);
+    unsafe { component.activateBus(media, direction, 0, 1) };
 }
 
 /// One zeroed `AudioBusBuffers` per declared bus, allocated at activation so the
