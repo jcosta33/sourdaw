@@ -6964,6 +6964,11 @@ mod tests {
     /// The second load is handed a rescan double of its own, so a second
     /// rescan would show in the log rather than hide. Every wait is bounded
     /// and the held rescan is released on every exit, panics included.
+    ///
+    /// The second load must also finish within [`WAKE_ALLOWANCE`] of the
+    /// release. A waiter nobody wakes still loads — it re-resolves when its
+    /// own wait times out, `RESCAN_WAIT_TIMEOUT` later — so without this bound
+    /// a lost wake-up would pass as a slow test.
     fn load_twice_while_the_first_rescan_runs(
         state: &Arc<AppState>,
         scan_policy: PluginScanPolicy,
@@ -7004,11 +7009,85 @@ mod tests {
             std::thread::yield_now();
         }
         release.release();
+        let released = Instant::now();
+        while !second.is_finished() {
+            assert!(
+                Instant::now() < deadline,
+                "the second load did not finish in time"
+            );
+            std::thread::yield_now();
+        }
+        let waited = released.elapsed();
 
-        (
+        let loads = (
             join_before(first, deadline, "the first load"),
             join_before(second, deadline, "the second load"),
+        );
+        assert!(
+            waited < WAKE_ALLOWANCE,
+            "the waiting load finished {waited:?} after the rescan was released: it was not woken when the rescan settled"
+        );
+        loads
+    }
+
+    /// How soon a waiting load must finish once the rescan it waits on is
+    /// released: far inside `RESCAN_WAIT_TIMEOUT`, which is what a waiter
+    /// nobody woke would take, and loose enough for a loaded CI runner.
+    const WAKE_ALLOWANCE: Duration = Duration::from_secs(3);
+
+    /// Settling a rescan wakes the loads waiting on it, and a woken load
+    /// resolves again at once — so the attempt must not settle until the
+    /// rescanned entry is in the registry. Holding the registry lock pins the
+    /// rescan between its answer and its publish; a waiter must still see the
+    /// rescan in progress there.
+    ///
+    /// Mutation this catches: calling `RescanAttempt::resolved` before the
+    /// entry is inserted, which announces the rescan settled while a waiter
+    /// re-resolving would find no entry and start a rescan of its own.
+    #[test]
+    fn a_rescan_is_not_settled_before_its_entry_is_published() {
+        let plugins = LoadFixtureRoot::create("vetting-settle-after-publish");
+        let state = Arc::new(AppState::default());
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        std::fs::write(
+            &published[0].path,
+            "a longer plugin binary than the one that was scanned",
         )
+        .expect("the plugin should be updated in place");
+        let log = vetting_log();
+        let deadline = Instant::now() + CONCURRENT_LOAD_DEADLINE;
+        let (started_sender, started) = std::sync::mpsc::channel();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel();
+        let release = ReleaseOnDrop(release_sender);
+
+        let load = spawn_load(
+            &state,
+            &plugins.scan_policy(),
+            &log,
+            "settle-after-publish-instance",
+            held_rescan(&log, Ok(()), started_sender, release_receiver),
+        );
+        started
+            .recv_timeout(CONCURRENT_LOAD_DEADLINE)
+            .expect("the load's rescan should start");
+        let registry = state
+            .plugin_registry
+            .lock()
+            .expect("registry lock should be available");
+        release.release();
+        let settled_unpublished = state
+            .plugin_registry_store
+            .wait_for_rescan("aaaa1111", Instant::now() + Duration::from_secs(1));
+        drop(registry);
+        let loaded = join_before(load, deadline, "the load");
+
+        assert!(
+            !settled_unpublished,
+            "the rescan was settled while its entry could not yet be in the registry"
+        );
+        loaded.expect("the rescanned plugin must load once its entry is published");
+        assert_eq!(logged(&log, "rescan"), 1);
     }
 
     /// Two loads of one changed plugin at once — two devices of the same
