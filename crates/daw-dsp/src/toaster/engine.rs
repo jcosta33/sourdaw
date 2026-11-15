@@ -81,9 +81,9 @@ impl PlateReverb {
     pub fn process(&mut self, input: f32) -> (f32, f32) {
         // Read taps
         let mut taps = [0.0f32; 4];
-        for i in 0..4 {
+        for (i, tap) in taps.iter_mut().enumerate() {
             let _len = self.buffers[i].len();
-            taps[i] = self.buffers[i][self.write_pos[i]];
+            *tap = self.buffers[i][self.write_pos[i]];
         }
 
         // Hadamard-like mixing
@@ -96,10 +96,10 @@ impl PlateReverb {
 
         // Damping + feedback + write
         let input_per_line = input * 0.25;
-        for i in 0..4 {
+        for (i, &mix) in mixed.iter().enumerate() {
             // DSP-2: the tank feedback state decays toward zero once input stops.
             let damped = settle_effect_state(flush_denormal(
-                self.feedback[i] + (1.0 - self.damping) * (mixed[i] - self.feedback[i]),
+                self.feedback[i] + (1.0 - self.damping) * (mix - self.feedback[i]),
             ));
             self.feedback[i] = damped;
             let len = self.buffers[i].len();

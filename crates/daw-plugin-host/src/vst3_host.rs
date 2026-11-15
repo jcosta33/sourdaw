@@ -412,19 +412,19 @@ impl Vst3HostState {
     /// a COM object: which flags this host acts on is a hosting decision, not a
     /// property of the vtable.
     pub fn record_restart(&self, flags: int32) {
-        if flags & RestartFlags_::kLatencyChanged as i32 != 0 {
+        if flags & RestartFlags_::kLatencyChanged != 0 {
             self.latency_dirty.store(true, Ordering::Release);
         }
-        if flags & RestartFlags_::kParamValuesChanged as i32 != 0 {
+        if flags & RestartFlags_::kParamValuesChanged != 0 {
             self.parameter_values_dirty.store(true, Ordering::Release);
         }
-        if flags & RestartFlags_::kParamTitlesChanged as i32 != 0 {
+        if flags & RestartFlags_::kParamTitlesChanged != 0 {
             self.parameter_titles_dirty.store(true, Ordering::Release);
         }
 
-        let handled = RestartFlags_::kLatencyChanged as i32
-            | RestartFlags_::kParamValuesChanged as i32
-            | RestartFlags_::kParamTitlesChanged as i32;
+        let handled = RestartFlags_::kLatencyChanged
+            | RestartFlags_::kParamValuesChanged
+            | RestartFlags_::kParamTitlesChanged;
         self.unhandled_restart_flags
             .fetch_or(flags & !handled, Ordering::AcqRel);
 
@@ -436,7 +436,7 @@ impl Vst3HostState {
         // plugin that flags from somewhere else still has its change picked up by
         // the next control-path visit even if the wake is the wrong thing to do
         // there.
-        if flags & RestartFlags_::kLatencyChanged as i32 != 0 {
+        if flags & RestartFlags_::kLatencyChanged != 0 {
             if let Some(notify) = self.latency_notifier.get() {
                 notify();
             }
@@ -1159,7 +1159,7 @@ mod tests {
             counter.fetch_add(1, Ordering::Relaxed);
         })));
 
-        state.record_restart(RestartFlags_::kLatencyChanged as i32);
+        state.record_restart(RestartFlags_::kLatencyChanged);
 
         assert_eq!(wakes.load(Ordering::Relaxed), 1);
         assert!(state.take_latency_dirty());
@@ -1172,12 +1172,10 @@ mod tests {
     #[test]
     fn restart_flags_are_split_into_handled_and_recorded_unhandled() {
         let state = Vst3HostState::default();
-        let unhandled = RestartFlags_::kIoChanged as i32;
+        let unhandled = RestartFlags_::kIoChanged;
 
         state.record_restart(
-            RestartFlags_::kParamValuesChanged as i32
-                | RestartFlags_::kParamTitlesChanged as i32
-                | unhandled,
+            RestartFlags_::kParamValuesChanged | RestartFlags_::kParamTitlesChanged | unhandled,
         );
 
         assert!(state.take_parameter_values_dirty());

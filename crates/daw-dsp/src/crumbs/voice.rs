@@ -974,12 +974,12 @@ fn windowed_sinc(t: f32, samples: &[f32; 8]) -> f32 {
     let mut sum = 0.0;
 
     // For n from -3 to 4
-    for i in 0..8 {
+    for (i, &sample) in samples.iter().enumerate() {
         let n = i as f32 - 3.0;
         let x = t - n;
 
         if x == 0.0 {
-            sum += samples[i];
+            sum += sample;
         } else {
             let pi_x = std::f32::consts::PI * x;
             let sinc = pi_x.sin() / pi_x;
@@ -987,7 +987,7 @@ fn windowed_sinc(t: f32, samples: &[f32; 8]) -> f32 {
             // Hann window over [-4, 4]
             let window = 0.5 * (1.0 + (std::f32::consts::PI * x / 4.0).cos());
 
-            sum += samples[i] * sinc * window;
+            sum += sample * sinc * window;
         }
     }
 
@@ -1080,7 +1080,7 @@ fn bandlimited_stereo_sample(
         sample.frame_count()
     };
 
-    for tap in 0..tap_count {
+    for (tap, &tap_window) in window.iter().enumerate().take(tap_count) {
         let lowpass = if distance.abs() < 1.0e-3 {
             let x = core::f32::consts::PI * distance * cutoff_scale;
             let x2 = x * x;
@@ -1088,7 +1088,7 @@ fn bandlimited_stereo_sample(
         } else {
             sinc_sin / (core::f32::consts::PI * distance)
         };
-        let weight = lowpass * window[tap];
+        let weight = lowpass * tap_window;
         let raw_index = frame as i64 + tap as i64 - tap_count as i64 / 2;
         let mut tap_left = 0.0;
         let mut tap_right = 0.0;

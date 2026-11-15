@@ -1465,7 +1465,7 @@ unsafe fn owned_c_string(value: *const i8) -> String {
 
 /// The bundle's plugin factory, or why it cannot be reached.
 unsafe fn plugin_factory(entry_ref: &clap_plugin_entry) -> Result<&clap_plugin_factory, String> {
-    let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr() as *const i8;
+    let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr();
     let factory_ptr = match entry_ref.get_factory {
         Some(get_factory) => get_factory(factory_id),
         None => return Err("CLAP entry has no factory lookup".to_string()),

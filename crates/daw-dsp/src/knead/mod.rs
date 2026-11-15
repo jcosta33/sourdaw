@@ -224,9 +224,9 @@ mod tests {
         unsafe {
             let in_l = inst.get_input_left_ptr();
             let in_r = inst.get_input_right_ptr();
-            for i in 0..frames {
-                *in_l.add(i) = signal[i];
-                *in_r.add(i) = signal[i];
+            for (i, &s) in signal.iter().enumerate().take(frames) {
+                *in_l.add(i) = s;
+                *in_r.add(i) = s;
             }
         }
         let out_l = inst.process(frames as u32);

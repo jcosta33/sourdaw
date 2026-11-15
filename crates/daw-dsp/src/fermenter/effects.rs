@@ -414,6 +414,12 @@ impl Distortion {
     }
 }
 
+impl Default for Distortion {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Simple feed-forward compressor with auto-makeup gain.
 pub struct Compressor {
     envelope: f32,
@@ -505,6 +511,12 @@ impl Compressor {
     }
 }
 
+impl Default for Compressor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Stereo width processor using Mid/Side encoding.
 pub struct StereoWidth;
 
@@ -577,8 +589,8 @@ impl FdnReverb {
 
         // Read from delay lines
         let mut taps = [0.0f32; 4];
-        for i in 0..4 {
-            taps[i] = self.delays[i][self.write_pos[i]];
+        for (i, tap) in taps.iter_mut().enumerate() {
+            *tap = self.delays[i][self.write_pos[i]];
         }
 
         // Hadamard-like mixing matrix (orthogonal, unitary)
@@ -737,11 +749,17 @@ impl ParametricEq {
     }
 }
 
+impl Default for ParametricEq {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ── Plate Reverb ───────────────────────────────────────────────────────────
 
-/// Simplified Dattorro plate reverb.
-/// Based on Jon Dattorro's "Effect Design Part 1" (JAES, 1997).
-/// Canonical base sample rate: 29761 Hz — all delay lengths scale proportionally.
+// Simplified Dattorro plate reverb.
+// Based on Jon Dattorro's "Effect Design Part 1" (JAES, 1997).
+// Canonical base sample rate: 29761 Hz — all delay lengths scale proportionally.
 
 const BASE_SR: f32 = 29761.0;
 
@@ -1138,12 +1156,8 @@ mod tests {
         // not drift by a sample at any of the wraps.
         let emitted: Vec<f32> = (0..40).map(|step| line.tick(step as f32, delay)).collect();
 
-        for step in delay..40 {
-            assert_eq!(
-                emitted[step],
-                (step - delay) as f32,
-                "delay drifted at step {step}"
-            );
+        for (step, &value) in emitted.iter().enumerate().skip(delay) {
+            assert_eq!(value, (step - delay) as f32, "delay drifted at step {step}");
         }
     }
 

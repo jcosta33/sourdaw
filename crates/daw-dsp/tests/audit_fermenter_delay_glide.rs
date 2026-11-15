@@ -178,7 +178,7 @@ fn a_pulse_written_before_the_change_circulates_at_the_new_length() {
             // Park the train so that even its third-generation ping-pong
             // echo (last pulse + 38 400) stays below the swept region,
             // which begins 9 600 samples before the change.
-            if n % 2_400 == 0 && n <= 14_400 {
+            if n.is_multiple_of(2_400) && n <= 14_400 {
                 left[i] = 0.4;
                 right[i] = 0.4;
             }

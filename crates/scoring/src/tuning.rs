@@ -1,5 +1,5 @@
-/// Tuning system — maps detected frequency to note name and cent deviation.
-/// Supports 12-TET (default), adjustable A4 reference, and cent offset tables.
+//! Tuning system — maps detected frequency to note name and cent deviation.
+//! Supports 12-TET (default), adjustable A4 reference, and cent offset tables.
 
 const NOTE_NAMES: [&str; 12] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
@@ -123,6 +123,12 @@ impl TuningSystem {
             "capo" => self.capo_semitones = (value as i32).clamp(0, 12),
             _ => {}
         }
+    }
+}
+
+impl Default for TuningSystem {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

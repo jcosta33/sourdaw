@@ -574,6 +574,12 @@ impl SamplePlayback {
     }
 }
 
+impl Default for SamplePlayback {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Levain voice
 // ---------------------------------------------------------------------------
@@ -1391,10 +1397,10 @@ impl LevainVoice {
         // velocity-adjacent zone attached by `set_dynamic_layer`, weighted by
         // this block's equal-power layer gains.
         if self.layer_active {
-            for mic in 0..mics {
+            for (mic, mic_sample) in sample.iter_mut().enumerate().take(mics) {
                 if self.layer_attached[mic] {
                     let layer_sample = self.layer_secondary[mic].read_sample(pool);
-                    sample[mic] = sample[mic] * self.layer_gain_primary
+                    *mic_sample = *mic_sample * self.layer_gain_primary
                         + layer_sample * self.layer_gain_secondary;
                 }
             }

@@ -48,16 +48,7 @@ panic = "deny"
 todo = "deny"
 unimplemented = "deny"
 unwrap_used = "deny"
-chunks_exact_to_as_chunks = "warn"
-derivable_impls = "warn"
-empty_line_after_doc_comments = "warn"
-excessive_precision = "warn"
-manual_is_multiple_of = "warn"
-needless_range_loop = "warn"
-neg_cmp_op_on_partial_ord = "warn"
-new_without_default = "warn"
 too_many_arguments = "warn"
-unnecessary_cast = "warn"
 # Rejected: timeline tracks, buses and clips cross the scheduler command ring
 # as boxes, so the audio thread neither reallocates nor copies large structs
 # when one is added or removed.
