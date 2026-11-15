@@ -11,8 +11,9 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import * as commandUseCases from '#/modules/Command/useCases';
@@ -30,7 +31,7 @@ import {
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
-import { parseSemanticProjectQueryInput, querySemanticProject } from '#/modules/Project/useCases';
+import { getProjectHandlers, parseSemanticProjectQueryInput, querySemanticProject } from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore, type TransportState } from '#/modules/Transport/stores';
 import { restoreTransportSnapshot } from '#/modules/Transport/useCases';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
@@ -97,6 +98,7 @@ import {
 import {
     literalMetricIntakeTurn,
     metricGoalProviderPlan,
+    provideMetricGoalWindowBuffers,
     readMetricPublication,
 } from '../useCases/__tests__/metricGoalWorkflowFixture';
 import { GENERATED_BATCH_LOCAL_ID_PREFIXES } from '../useCases/agentReference/batchLocalBindingProducers';
@@ -105,6 +107,7 @@ import { agentRunLifecycle } from '../useCases/agentRunLifecycle';
 import { agentWorkBudget } from '../useCases/agentWorkBudget';
 import { confirmPendingChatActions } from '../useCases/confirmPendingChatActions';
 import { evaluateMetricGoalAdmission } from '../useCases/evaluateMetricGoalAdmission';
+import { getBriefMixIntentCatalog } from '../useCases/getBriefMixIntentCatalog';
 import { getPlannedActionAffectedIds } from '../useCases/getPlannedActionAffectedIds';
 import { getProjectContext } from '../useCases/getProjectContext';
 import { type ObjectiveMetricId } from '../useCases/metricGoalContractTypes';
@@ -114,6 +117,7 @@ import { parsePromptToActions } from '../useCases/parsePromptToActions';
 import { type planPromptActions } from '../useCases/planPromptActions';
 import { readChatThreadContext } from '../useCases/readChatThreadContext';
 import { sendChatMessage } from '../useCases/sendChatMessage';
+import { skipPendingVibeBatch } from '../useCases/skipPendingVibeBatch';
 
 import { completeAcceptanceResults, createAcceptanceFixtureLifetime } from './acceptanceFixtureLifetime';
 import { installProviderHostGuard, readProviderHosts } from './acceptanceProviderHostGuard';
@@ -137,7 +141,68 @@ const runtimeMocks = vi.hoisted(() => ({
     setTrackMute: vi.fn(),
     setTrackPan: vi.fn(),
     setTrackSoloGate: vi.fn(),
+    updateDeviceParam: vi.fn(),
 }));
+
+// A confirmed vibe batch builds a live strip and its devices on this context, whose stubbed params
+// carry no schedulable timeline; the per-parameter write to a live node is stubbed with the renders.
+vi.hoisted(() => {
+    const OriginalAudioContext = globalThis.AudioContext;
+    const createAudioParam = (value: number) => ({
+        value,
+        setValueAtTime: () => undefined,
+        linearRampToValueAtTime: () => undefined,
+        exponentialRampToValueAtTime: () => undefined,
+        setTargetAtTime: () => undefined,
+        cancelScheduledValues: () => undefined,
+    });
+    const createNode = () => ({
+        connect: (destination: unknown) => destination,
+        disconnect: () => undefined,
+    });
+    function AudioContextWithDeviceNodes(options?: AudioContextOptions): AudioContext {
+        return Object.assign(new OriginalAudioContext(options), {
+            currentTime: 0,
+            createStereoPanner: () => ({ ...createNode(), pan: createAudioParam(0) }),
+            createBiquadFilter: () => ({
+                ...createNode(),
+                type: 'lowpass',
+                frequency: createAudioParam(350),
+                Q: createAudioParam(1),
+                gain: createAudioParam(0),
+                detune: createAudioParam(0),
+            }),
+            createDynamicsCompressor: () => ({
+                ...createNode(),
+                threshold: createAudioParam(-24),
+                knee: createAudioParam(30),
+                ratio: createAudioParam(12),
+                attack: createAudioParam(0.003),
+                release: createAudioParam(0.25),
+                reduction: 0,
+            }),
+        });
+    }
+    Object.defineProperty(globalThis, 'AudioContext', {
+        configurable: true,
+        writable: true,
+        value: AudioContextWithDeviceNodes,
+    });
+    const OriginalAudioWorkletNode = globalThis.AudioWorkletNode;
+    class AudioWorkletNodeWithClosablePort extends OriginalAudioWorkletNode {
+        constructor(context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions) {
+            super(context, name, options);
+            if (typeof this.port.close !== 'function') {
+                Object.defineProperty(this.port, 'close', { configurable: true, value: () => undefined });
+            }
+        }
+    }
+    Object.defineProperty(globalThis, 'AudioWorkletNode', {
+        configurable: true,
+        writable: true,
+        value: AudioWorkletNodeWithClosablePort,
+    });
+});
 
 /** What the chat route planned for the request it last sent, read where the route itself reads it. */
 const chatPlanning = vi.hoisted(() => ({ last: null as PlannedChatRequest | null }));
@@ -176,6 +241,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     setTrackMute: runtimeMocks.setTrackMute,
     setTrackPan: runtimeMocks.setTrackPan,
     setTrackSoloGate: runtimeMocks.setTrackSoloGate,
+    updateDeviceParam: runtimeMocks.updateDeviceParam,
 }));
 
 vi.mock('#/modules/AudioRendering/useCases', async (importOriginal) => ({
@@ -215,6 +281,15 @@ const BOUNDARY_OUTCOME_CLASSES: readonly AgentAcceptanceOutcomeClass[] = [
 /** Bounds one test that drives a corpus case through the chat route, a refinement case twice. */
 const CORPUS_RUN_TIMEOUT_MS = 60_000;
 
+/** The prompt class whose requests write a production brief and run one measured batch per role family behind it. */
+const VIBE_PROMPT_CLASS: AgentPromptClass = 'whole-project-vibe-with-constraint';
+
+/**
+ * A vibe run measures the whole arrangement before its brief card and previews every batch before
+ * its card, so one case renders far more than any single-turn case.
+ */
+const VIBE_RUN_TIMEOUT_MS = 300_000;
+
 /** How many cases a sealed scored prompt class must carry before its floors mean anything. */
 const MINIMUM_SEALED_CLASS_CASES = 3;
 
@@ -251,6 +326,9 @@ type CorpusProviderTurn =
     | RecipeExpansionTurn
     | PreviewMeasureTurn
     | ProposeCompiledTurn
+    | BriefIntakeTurn
+    | BriefCompileTurn
+    | ProposeBriefTurn
     | { kind: 'decline'; args: Record<string, unknown> }
     | { kind: 'query' | 'answer'; id: string; args: Record<string, unknown> };
 
@@ -320,6 +398,19 @@ type PreviewMeasureTurn = {
 /** A proposal adopting earlier compilations by call id, scoped to the named fixture tracks. */
 type ProposeCompiledTurn = { kind: 'propose-compiled'; compiledCallIds: string[]; targets: string[] };
 
+/** A whole-project vibe request's intake: the brief branch, recording project intent with no acoustic objective. */
+type BriefIntakeTurn = { kind: 'intake'; intent: 'brief' };
+
+/** One `brief.compile` call: the vision and the mix-intent descriptors the request names, from the published catalogue. */
+type BriefCompileTurn = { kind: 'brief-compile'; vision: string; descriptors: string[] };
+
+/**
+ * The proposal adopting the compiled brief. It targets nothing and protects exactly the fixture
+ * tracks named here: the application reads the request's own protections and refuses a plan that
+ * omits or enlarges them.
+ */
+type ProposeBriefTurn = { kind: 'propose-brief'; protectedTargets: string[] };
+
 /** What a measured question measures: the master output, or the one fixture track of this name. */
 type CorpusMeasuredTarget = { kind: 'master' } | { kind: 'track'; name: string };
 
@@ -383,6 +474,19 @@ type CorpusOracleInvariants = {
  */
 type CorpusMeasuredGoal = { metric: string; band?: string; relation: string; target: string; reference?: string };
 
+/**
+ * One batch a vibe run proposes after its brief: the commands its card carries, and what the musician
+ * decides on it. A skipped batch must write nothing and leave the rest of the run correct.
+ */
+type CorpusVibeBatchOracle = { decision: 'confirm' | 'skip'; actions: CorpusOracleAction[] };
+
+/**
+ * The batches a vibe run proposes after its brief, in order, and the headline of the summary it posts
+ * once they are decided. The lines below the headline restate measured figures, which an oracle
+ * never copies from a run.
+ */
+type CorpusVibeRunOracle = { batches: CorpusVibeBatchOracle[]; summary: string };
+
 type CorpusOracle =
     | CorpusAnswerOracle
     | {
@@ -396,6 +500,11 @@ type CorpusOracle =
           measuredGoals?: CorpusMeasuredGoal[];
           /** A refinement's replacement: the batch must supersede the card the prior turn left pending. */
           replaces?: 'prior-proposal';
+          /**
+           * A whole-project vibe request's run behind its brief: `actions` is the brief card alone, and
+           * these are the batches the run then proposes one card at a time, in order.
+           */
+          vibeRun?: CorpusVibeRunOracle;
       }
     | { kind: 'revert'; group: 'prior-commit' }
     | { kind: 'clarify' }
@@ -821,6 +930,63 @@ function proposeCompiledCall(turn: ProposeCompiledTurn): ProviderCall & { id: st
     };
 }
 
+/** The brief branch of the interpretation selector the provider was actually offered, stating no acoustic objective. */
+const briefIntakeTurn: ScriptedTurn = (userMessage, providerView) => {
+    const catalog = readCreativeInterpretationCatalog(userMessage, providerView);
+    const call = selectCreativeInterpretationCall({ catalog, modeId: 'brief' });
+    return [
+        {
+            ...call,
+            arguments: {
+                ...call.arguments,
+                answer: null,
+                metricIntent: { kind: 'non-acoustic', uncertainty: 'none', objectives: [] },
+            },
+        },
+    ];
+};
+
+function briefCompileCall(turn: BriefCompileTurn): ProviderCall & { id: string } {
+    return {
+        id: 'brief-compile',
+        name: 'brief.compile',
+        arguments: {
+            vision: turn.vision,
+            mixIntent: {
+                catalogId: getBriefMixIntentCatalog().catalogId,
+                requestedDescriptors: turn.descriptors,
+            },
+        },
+    };
+}
+
+function proposeBriefCall(turn: ProposeBriefTurn): ProviderCall & { id: string } {
+    return {
+        id: 'brief-proposal',
+        name: 'command.batch.propose',
+        arguments: {
+            commands: [],
+            compiledCallIds: ['brief-compile'],
+            plan: {
+                semantic: { classification: 'simple', uncertainty: [] },
+                objective: 'Record the project intent the request describes.',
+                constraints: [],
+                scope: {
+                    targetIds: [],
+                    targetRanges: [],
+                    protectedTargetIds: turn.protectedTargets.map(fixtureTrackId),
+                    protectedRanges: [],
+                },
+                capabilityIds: [],
+                assetIds: [],
+                alternatives: [],
+                validationStrategy: ['Compare the brief revision before writing.'],
+                stoppingConditions: ['Stop if the brief changes before Confirm.'],
+            },
+        },
+    };
+}
+
 /**
  * How many offline renders a case's own measurements make: one per target a project measurement
  * names, and two per target a preview names (the live project and the preview). No case may lean on
@@ -903,6 +1069,9 @@ function toScriptedTurn(
             if (turn.intent === 'perceptual' || turn.intent === 'comparative') {
                 return metricIntakeTurn(turn);
             }
+            if (turn.intent === 'brief') {
+                return briefIntakeTurn;
+            }
             throw new TypeError('The corpus intake variant has no configured producer.');
         case 'recipe': {
             const call = recipeDiscoveryCall(turn);
@@ -926,6 +1095,14 @@ function toScriptedTurn(
         }
         case 'propose-compiled': {
             const call = proposeCompiledCall(turn);
+            return () => [call];
+        }
+        case 'brief-compile': {
+            const call = briefCompileCall(turn);
+            return () => [call];
+        }
+        case 'propose-brief': {
+            const call = proposeBriefCall(turn);
             return () => [call];
         }
         case 'metric-answer': {
@@ -1055,6 +1232,9 @@ function measuredResultsThatGaveUp(
 
 /** A case whose plan renders and measures the project, before or after a previewed change. */
 function measuresProject(testCase: CorpusCase): boolean {
+    if (testCase.promptClass === VIBE_PROMPT_CLASS) {
+        return true;
+    }
     return testCase.providerTurns.some((turn) => turn.kind === 'measure' || turn.kind === 'measure-preview');
 }
 
@@ -1416,6 +1596,9 @@ async function runCorpusCase(
 ): Promise<CaseRun> {
     if (testCase.promptClass === 'refinement') {
         return runRefinementCase(testCase, barrel);
+    }
+    if (testCase.promptClass === VIBE_PROMPT_CLASS) {
+        return runVibeRunCase(testCase, barrel, alongside);
     }
     if (!plansAgainstLiveProject(testCase)) {
         return runSingleTurnCase(testCase, barrel, alongside);
@@ -2194,6 +2377,326 @@ async function runRefinementCase(
     }
 }
 
+/** The project's edit timestamp, which every committed edit stamps and which carries no project content. */
+const EDIT_TIMESTAMP_PATH = 'root.projectMeta.updatedAt';
+
+/** The project field a confirmed brief writes: the brief itself, and nothing else in the project. */
+const BRIEF_PATH = 'root.projectMeta.productionBrief';
+
+/** The project field a confirmed vibe batch writes: the tracks, within which only its own may change. */
+const VIBE_BATCH_PATH = 'root.tracks.tracks';
+
+type VibeCard = NonNullable<ReturnType<typeof getPendingActionConfirmation>>;
+
+/**
+ * A vibe run measures audio, and the fixture project records no clips, so every track that is not a
+ * bus holds one take across the arrangement here; the schedule reads its ranges from the fixture's
+ * sections in the marker store, and the brief is written by the project's own handlers.
+ */
+function openVibeRunProject(): void {
+    provideMetricGoalWindowBuffers();
+    openChatProject();
+    registerHandlerMap(getProjectHandlers());
+    const sections = context.sections ?? [];
+    const arrangementEnd = Math.max(...sections.map((section) => section.endBeat));
+    trackStore.set({
+        tracks: (trackStore.value?.tracks ?? []).map((track) => withArrangementTake(track, arrangementEnd)),
+        selectedTrackId: null,
+        ghostClips: [],
+    });
+    markerStore.set({ markers: [], sections: sections.map((section) => ({ ...section, color: '#ffffff' })) });
+    projectStore.set({
+        ...structuredClone(defaultProjectStoreState),
+        projectId: FIXTURE_PROJECT_ID,
+        initialized: true,
+        loading: false,
+    });
+}
+
+function withArrangementTake(track: Track, endBeat: number): Track {
+    if (track.kind !== 'audio' && track.kind !== 'midi') {
+        return track;
+    }
+    const take: Track['clips'][number] = {
+        id: `${track.id}-take`,
+        trackId: track.id,
+        name: 'Take',
+        type: track.kind,
+        startBeat: 0,
+        endBeat,
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#ffffff',
+        locked: false,
+        muted: false,
+    };
+    if (track.kind === 'audio') {
+        take.audioBufferId = `${track.id}-buffer`;
+    }
+    return { ...track, clips: [take] };
+}
+
+/** The one card the run holds for the musician; none or several is a run that went off its schedule. */
+function soleVibeCard(id: string, step: string): VibeCard {
+    const proposed = proposedConfirmationIds();
+    expect(proposed, `Case ${id} holds no single card at ${step}: ${lastAssistantReply()}`).toHaveLength(1);
+    const card = getPendingActionConfirmation(proposed[0] ?? '');
+    if (card === null) {
+        throw new Error(`Case ${id} lost its pending card at ${step}.`);
+    }
+    return card;
+}
+
+/**
+ * Every `doc.slot.field` whose materialized value differs between two project captures, read one level
+ * inside each slot so a write to one field of a shared slot (the brief beside the project name) is told
+ * apart from a write to its neighbours.
+ */
+function changedProjectPaths(before: ProjectTruth, after: ProjectTruth): string[] {
+    const paths: string[] = [];
+    for (const docId of new Set([...Object.keys(before), ...Object.keys(after)])) {
+        const beforeDoc = before[docId] ?? {};
+        const afterDoc = after[docId] ?? {};
+        for (const slot of new Set([...Object.keys(beforeDoc), ...Object.keys(afterDoc)])) {
+            paths.push(...changedFieldPaths(`${docId}.${slot}`, beforeDoc[slot], afterDoc[slot]));
+        }
+    }
+    return paths.toSorted();
+}
+
+function changedFieldPaths(path: string, before: unknown, after: unknown): string[] {
+    if (isDeepStrictEqual(before, after)) {
+        return [];
+    }
+    if (!isProjectMap(before) || !isProjectMap(after)) {
+        return [path];
+    }
+    return Array.from(new Set([...Object.keys(before), ...Object.keys(after)]))
+        .filter((field) => !isDeepStrictEqual(before[field], after[field]))
+        .map((field) => `${path}.${field}`);
+}
+
+function projectTracksById(truth: ProjectTruth): Map<string, unknown> {
+    const slot = truth.root?.tracks;
+    if (!isProjectMap(slot) || !Array.isArray(slot.tracks)) {
+        throw new TypeError('The acceptance project has no materialized track collection.');
+    }
+    return new Map(
+        slot.tracks.map((track): [string, unknown] => {
+            if (!isProjectMap(track) || typeof track.id !== 'string') {
+                throw new TypeError('An acceptance track must be a project map with an id.');
+            }
+            return [track.id, track];
+        })
+    );
+}
+
+/** The tracks outside `admitted` whose materialized state differs between two project captures. */
+function tracksChangedOutside(before: ProjectTruth, after: ProjectTruth, admitted: ReadonlySet<string>): string[] {
+    const beforeTracks = projectTracksById(before);
+    const afterTracks = projectTracksById(after);
+    return Array.from(new Set([...beforeTracks.keys(), ...afterTracks.keys()])).filter(
+        (trackId) => !admitted.has(trackId) && !isDeepStrictEqual(beforeTracks.get(trackId), afterTracks.get(trackId))
+    );
+}
+
+/** The fixture tracks a card's commands act on. */
+function cardTrackIds(card: VibeCard): Set<string> {
+    const fixtureTrackIds = new Set(context.tracks.map((track) => track.id));
+    return new Set(
+        card.actions.flatMap((action) => getPlannedActionAffectedIds(action)).filter((id) => fixtureTrackIds.has(id))
+    );
+}
+
+type VibeDecisionWrites = {
+    status: string;
+    barrelActions: LandedAction[];
+    newGroups: PastEntry[][];
+    projectBefore: ProjectTruth;
+    projectAfter: ProjectTruth;
+};
+
+function applyVibeDecision(card: VibeCard, decision: CorpusVibeBatchOracle['decision']) {
+    if (decision === 'confirm') {
+        return confirmPendingChatActions({ confirmationId: card.id });
+    }
+    return skipPendingVibeBatch({ confirmationId: card.id });
+}
+
+/** Confirms or skips one card, recording every write the decision and the run's next preparation made. */
+async function decideVibeCard(
+    card: VibeCard,
+    decision: CorpusVibeBatchOracle['decision'],
+    barrel: BarrelWriteLog
+): Promise<VibeDecisionWrites> {
+    const projectBefore = captureProjectTruth();
+    const entriesBefore = new Set(pastEntries());
+    const mark = barrel.mark();
+    const outcome = await applyVibeDecision(card, decision);
+    return {
+        status: outcome.status,
+        barrelActions: barrel.actionsSince(mark),
+        newGroups: groupsAddedSince(entriesBefore),
+        projectBefore,
+        projectAfter: captureProjectTruth(),
+    };
+}
+
+/**
+ * A confirmed card commits exactly its own commands as one undo group, outside the public barrel, and
+ * writes only `path` (and the edit timestamp) and, within the tracks, only `admitted`: the preview the run then prepares for
+ * its next card writes nothing. Returns how many writes went beyond that.
+ */
+function assertConfirmedCardWrites(input: {
+    id: string;
+    step: string;
+    card: VibeCard;
+    writes: VibeDecisionWrites;
+    path: string;
+    admitted: ReadonlySet<string>;
+}): number {
+    const { id, step, card, writes } = input;
+    expect(writes.status, `Case ${id} ${step} did not execute: ${lastAssistantReply()}`).toBe('executed');
+    const [group, ...otherGroups] = writes.newGroups;
+    const committed = group === undefined ? null : committedGroupActions(group);
+    expect(committed, `Case ${id} ${step} committed other than its card's commands`).toEqual(card.actions);
+    const changedPaths = changedProjectPaths(writes.projectBefore, writes.projectAfter);
+    expect(changedPaths, `Case ${id} ${step} committed nothing to ${input.path}`).toContain(input.path);
+    const strayPaths = changedPaths.filter((path) => path !== input.path && path !== EDIT_TIMESTAMP_PATH);
+    const strayTracks = tracksChangedOutside(writes.projectBefore, writes.projectAfter, input.admitted);
+    expect(strayPaths, `Case ${id} ${step} wrote outside what its card commits (AC-078)`).toEqual([]);
+    expect(strayTracks, `Case ${id} ${step} changed tracks its card does not name (AC-078)`).toEqual([]);
+    return writes.barrelActions.length + otherGroups.length + strayPaths.length + strayTracks.length;
+}
+
+/** A skipped card executes nothing: no undo entry, no barrel call and no project change. */
+function assertSkippedCardWrites(id: string, step: string, writes: VibeDecisionWrites): number {
+    expect(writes.status, `Case ${id} ${step} was not skipped`).toBe('skipped');
+    const writeCount = Math.max(
+        writes.barrelActions.length,
+        writes.newGroups.length,
+        projectDifferences(writes.projectBefore, writes.projectAfter)
+    );
+    expect(writeCount, `Case ${id} ${step} wrote to the project although it was skipped (AC-078)`).toBe(0);
+    return writeCount;
+}
+
+/**
+ * Runs one whole-project vibe case through the chat route: the request plans a brief card and its
+ * run, then each card is confirmed or skipped as the oracle decides, one at a time, as the musician
+ * would. The planning turn must write nothing, the brief's Confirm only the brief, each batch's
+ * Confirm only its own card, and a skip nothing at all (AC-078).
+ */
+async function runVibeRunCase(
+    testCase: CorpusCase,
+    barrel: BarrelWriteLog,
+    alongside?: () => Promise<void>
+): Promise<CaseRun> {
+    const { oracle } = testCase;
+    if (oracle.kind !== 'proposal' || oracle.vibeRun === undefined || oracle.invariants === undefined) {
+        throw new Error(`Vibe case ${testCase.id} carries no vibe-run proposal oracle with invariants.`);
+    }
+    assertOracleKindFitsClass(testCase);
+    const { invariants, vibeRun } = oracle;
+    const projectBefore = projectStore.value;
+    const markersBefore = markerStore.value;
+    openVibeRunProject();
+    try {
+        const projectBeforeRun = captureProjectTruth();
+        const planning = await sendScriptedChatTurn({
+            id: testCase.id,
+            prompt: testCase.prompt,
+            providerTurns: testCase.providerTurns,
+            priorProposalId: () => undefined,
+            barrel,
+            alongside,
+        });
+        let unintendedMutations = anyWrites(planning);
+        expect(unintendedMutations, `Case ${testCase.id} wrote before its brief Confirm (AC-078)`).toBe(0);
+        const outcome = chatPlanning.last?.planningOutcome;
+        if (outcome === undefined) {
+            throw new Error(`Case ${testCase.id} was never planned: ${lastAssistantReply()}`);
+        }
+        const observed = classifyPlanningOutcome(outcome, chatPlanning.last?.actions.length ?? 0);
+        if (observed === null) {
+            throw new Error(`Case ${testCase.id} observed no scorable outcome class (kind=${outcome.kind})`);
+        }
+        const total = vibeRun.batches.length + 1;
+        const briefCard = soleVibeCard(testCase.id, 'the brief');
+        assertProposalInvariants(testCase.id, briefCard.actions, invariants);
+        const matches = [
+            isDeepStrictEqual(briefCard.approvalSnapshot.batchPosition, { index: 1, total }),
+            landedActionsMatch(testCase.id, briefCard.actions, oracle.actions),
+        ];
+        unintendedMutations += assertConfirmedCardWrites({
+            id: testCase.id,
+            step: 'the brief',
+            card: briefCard,
+            writes: await decideVibeCard(briefCard, 'confirm', barrel),
+            path: BRIEF_PATH,
+            admitted: new Set(),
+        });
+        const leftAlone = new Set(invariants.protectedIds);
+        for (const [index, batch] of vibeRun.batches.entries()) {
+            const step = `batch ${String(index + 2)} of ${String(total)}`;
+            const card = soleVibeCard(testCase.id, step);
+            assertProposalInvariants(testCase.id, card.actions, invariants);
+            matches.push(
+                isDeepStrictEqual(card.approvalSnapshot.batchPosition, { index: index + 2, total }),
+                landedActionsMatch(`${testCase.id} ${step}`, card.actions, batch.actions)
+            );
+            const admitted = cardTrackIds(card);
+            const writes = await decideVibeCard(card, batch.decision, barrel);
+            if (batch.decision === 'skip') {
+                unintendedMutations += assertSkippedCardWrites(testCase.id, step, writes);
+                for (const trackId of admitted) {
+                    leftAlone.add(trackId);
+                }
+                continue;
+            }
+            unintendedMutations += assertConfirmedCardWrites({
+                id: testCase.id,
+                step,
+                card,
+                writes,
+                path: VIBE_BATCH_PATH,
+                admitted,
+            });
+        }
+        expect(proposedConfirmationIds(), `Case ${testCase.id} proposed beyond its last batch`).toEqual([]);
+        const projectAfterRun = captureProjectTruth();
+        const touchedLeftAlone = Array.from(leftAlone).filter(
+            (trackId) =>
+                !isDeepStrictEqual(
+                    projectTracksById(projectBeforeRun).get(trackId),
+                    projectTracksById(projectAfterRun).get(trackId)
+                )
+        );
+        expect(touchedLeftAlone, `Case ${testCase.id} changed a protected or skipped track`).toEqual([]);
+        matches.push(lastAssistantReply().split('\n')[0] === vibeRun.summary);
+        return {
+            result: scoreAgentAcceptanceCase({
+                id: testCase.id,
+                expectedClass: testCase.class,
+                promptClass: testCase.promptClass,
+                oracleKind: testCase.oracle.kind,
+                observed,
+                matchesOracle: matches.every(Boolean),
+            }),
+            unintendedMutations: unintendedMutations + touchedLeftAlone.length,
+        };
+    } finally {
+        // A confirmed batch builds live strips in the engine, which outlive the project's stores.
+        for (const track of context.tracks) {
+            removeTrackStrip(track.id);
+        }
+        projectStore.set(projectBefore);
+        markerStore.set(markersBefore);
+        closeChatProject();
+    }
+}
+
 type ThresholdCells = { development: number; heldOut: number };
 
 function extractCellNumber(cell: string): number {
@@ -2532,6 +3035,7 @@ describe('agent acceptance corpora', () => {
                             turn.kind === 'propose' ||
                             turn.kind === 'propose-commands' ||
                             turn.kind === 'propose-compiled' ||
+                            turn.kind === 'propose-brief' ||
                             turn.kind === 'answer' ||
                             turn.kind === 'metric-answer'
                     );
@@ -2604,7 +3108,7 @@ describe('agent acceptance corpora', () => {
                         ).toBe(0);
                     }
                 },
-                CORPUS_RUN_TIMEOUT_MS
+                testCase.promptClass === VIBE_PROMPT_CLASS ? VIBE_RUN_TIMEOUT_MS : CORPUS_RUN_TIMEOUT_MS
             );
         }
         afterAll(() => {

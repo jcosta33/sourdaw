@@ -149,7 +149,25 @@ relation, target, reference?}`: the agent metric (and band for a band metric), t
   The case matches only when admission returns `verified` and the decoded goals equal the oracle's
   exactly, so a batch the preview does not support, or one claiming a goal the oracle does not, fails
   the case however its actions read.
-- Render count — every case must render exactly as often as its own measurements ask: one render
+- Vibe runs — a `whole-project-vibe-with-constraint` case runs the chat route end to end on the
+  local chain: `intake` with the `brief` intent, `brief-compile` naming the vision and the mix-intent
+  descriptors, and `propose-brief` adopting the compiled brief with exactly the tracks the request
+  protects by name, since the application reads those protections itself and refuses a plan that
+  omits or enlarges them. Every case states a constraint, a hold or an exclusion. Its oracle is a
+  `proposal` whose `actions` are the brief card alone and whose `vibeRun` lists, in order, each later
+  batch's commands and whether the musician confirms or skips it, then the summary's headline; the
+  lines beneath it restate measured figures and are never pinned. The runner holds the card the run
+  proposes at each position to its batch, confirms or skips it, and requires the planning turn to
+  write nothing, the brief's Confirm to write only the brief, each batch's Confirm to commit exactly
+  its card as one undo group and touch no other track, and a skip to write nothing at all (AC-078);
+  a protected or skipped track ends the run as it began. Every batch is held to the oracle's
+  invariants, its command ceiling included (AC-069). The fixture records no clips, so the runner
+  gives each non-bus track one take across the arrangement, without which a run schedules nothing.
+  A run spends its renders from its own budget, measuring the arrangement before the brief card and
+  previewing each batch before its card, so the render count below binds single-turn cases only.
+  A held-out case differs from every development one in its vibe, the target of its constraint, or
+  where it skips.
+- Render count — every single-turn case must render exactly as often as its own measurements ask: one render
   per target a project measurement names and two per target a preview names, the live project and
   the preview. A case leaning on the render double beyond what it measures is a corpus defect, never
   a free measurement.
@@ -159,6 +177,12 @@ relation, target, reference?}`: the agent metric (and band for a band metric), t
   master gain shape it as the law's doc comment states. Every measured figure an oracle pins is
   derived from that law, independently of the spec, never copied from a run, and the law is never
   tuned to make a case pass; a change to it moves the pinned figures, which must be derived again.
+  The law has limits a case must respect. Its spectrum is discrete partials at fixed band points,
+  centred by track position rather than by role, so a figure read between partials (a spectral
+  rolloff, a band's share where an edit moves only its neighbours) can stand still or move against a
+  real recording's. Its sources strike below the default threshold of the glue recipes, so a
+  catalogue-default compressor leaves them untouched. A case whose objective the law cannot move is
+  never sealed: its refusal would measure the law, not the agent.
 - Measured outcomes never give up — a sealed `comparative-by-measurement`, `perceptual-single-target`,
   `perceptual-multi-target` or `whole-project-vibe-with-constraint` result that observes
   `clarify-required`, `abstain-unsupported` or `deny-policy` fails the corpus run (AC-068), whatever

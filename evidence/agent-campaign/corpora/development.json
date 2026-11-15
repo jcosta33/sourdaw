@@ -32,8 +32,7 @@
             "pendingContract": "recipe.discover and recipe.expand"
         },
         "whole-project-vibe-with-constraint": {
-            "sealed": false,
-            "pendingContract": "measured vibe decomposition"
+            "sealed": true
         },
         "refinement": {
             "sealed": true
@@ -4142,6 +4141,1605 @@
                         "target": "Keys"
                     }
                 ]
+            }
+        },
+        {
+            "id": "AC069-DEV-VIBE-1",
+            "promptClass": "whole-project-vibe-with-constraint",
+            "class": "execute-exact",
+            "prompt": "make the whole mix warmer but leave the Bass DI alone",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "brief"
+                },
+                {
+                    "kind": "brief-compile",
+                    "vision": "A warmer mix",
+                    "descriptors": [
+                        "warm"
+                    ]
+                },
+                {
+                    "kind": "propose-brief",
+                    "protectedTargets": [
+                        "Bass DI"
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setProductionBrief",
+                        "payload": {
+                            "expectedRevision": 0,
+                            "brief": {
+                                "revision": 1,
+                                "vision": "A warmer mix",
+                                "hardConstraints": [],
+                                "trackRoles": []
+                            }
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "eq-high-freq",
+                        "eq-high-gain",
+                        "eq-low-freq",
+                        "eq-low-gain",
+                        "track-backing-vocal-left",
+                        "track-backing-vocal-right",
+                        "track-drum-bus",
+                        "track-guitar",
+                        "track-hi-hat",
+                        "track-keys",
+                        "track-kick",
+                        "track-lead-vocal",
+                        "track-overheads",
+                        "track-snare"
+                    ],
+                    "protectedIds": [
+                        "track-bass-di"
+                    ],
+                    "maxCommands": 24
+                },
+                "vibeRun": {
+                    "batches": [
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-kick",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-kick",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-kick",
+                                        "paramId": "eq-high-freq",
+                                        "value": 10000
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-kick",
+                                        "paramId": "eq-high-gain",
+                                        "value": -2
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-snare",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-snare",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-snare",
+                                        "paramId": "eq-high-freq",
+                                        "value": 10000
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-snare",
+                                        "paramId": "eq-high-gain",
+                                        "value": -2
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-hi-hat",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-hi-hat",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-hi-hat",
+                                        "paramId": "eq-high-freq",
+                                        "value": 10000
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-hi-hat",
+                                        "paramId": "eq-high-gain",
+                                        "value": -2
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-overheads",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-overheads",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-overheads",
+                                        "paramId": "eq-high-freq",
+                                        "value": 10000
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-overheads",
+                                        "paramId": "eq-high-gain",
+                                        "value": -2
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-lead-vocal",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-low-freq",
+                                        "value": 160
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-low-gain",
+                                        "value": 2.25
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-high-freq",
+                                        "value": 10500
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-high-gain",
+                                        "value": -1.5
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-backing-vocal-left",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-low-freq",
+                                        "value": 160
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-low-gain",
+                                        "value": 2.25
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-high-freq",
+                                        "value": 10500
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-high-gain",
+                                        "value": -1.5
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-backing-vocal-right",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-low-freq",
+                                        "value": 160
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-low-gain",
+                                        "value": 2.25
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-high-freq",
+                                        "value": 10500
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-high-gain",
+                                        "value": -1.5
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-guitar",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-guitar",
+                                        "paramId": "eq-low-freq",
+                                        "value": 150
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-guitar",
+                                        "paramId": "eq-low-gain",
+                                        "value": 2.75
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-guitar",
+                                        "paramId": "eq-high-gain",
+                                        "value": -2
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-keys",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-keys",
+                                        "paramId": "eq-low-freq",
+                                        "value": 185
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-keys",
+                                        "paramId": "eq-low-gain",
+                                        "value": 2.75
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-keys",
+                                        "paramId": "eq-high-freq",
+                                        "value": 9000
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-keys",
+                                        "paramId": "eq-high-gain",
+                                        "value": -2
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-drum-bus",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-drum-bus",
+                                        "paramId": "eq-low-freq",
+                                        "value": 130
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-drum-bus",
+                                        "paramId": "eq-low-gain",
+                                        "value": 2.25
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-drum-bus",
+                                        "paramId": "eq-high-freq",
+                                        "value": 10000
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-drum-bus",
+                                        "paramId": "eq-high-gain",
+                                        "value": -1.25
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "summary": "The vibe run finished: the brief and 5 of 5 batches were applied."
+                }
+            }
+        },
+        {
+            "id": "AC069-DEV-VIBE-2",
+            "promptClass": "whole-project-vibe-with-constraint",
+            "class": "execute-exact",
+            "prompt": "the mix sounds muddy, but don't make the drums louder",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "brief"
+                },
+                {
+                    "kind": "brief-compile",
+                    "vision": "A clearer mix",
+                    "descriptors": [
+                        "muddy"
+                    ]
+                },
+                {
+                    "kind": "propose-brief",
+                    "protectedTargets": []
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setProductionBrief",
+                        "payload": {
+                            "expectedRevision": 0,
+                            "brief": {
+                                "revision": 1,
+                                "vision": "A clearer mix",
+                                "hardConstraints": [
+                                    {
+                                        "scope": {
+                                            "kind": "track",
+                                            "trackId": "track-kick"
+                                        },
+                                        "statement": "don't make the drums louder"
+                                    },
+                                    {
+                                        "scope": {
+                                            "kind": "track",
+                                            "trackId": "track-snare"
+                                        },
+                                        "statement": "don't make the drums louder"
+                                    },
+                                    {
+                                        "scope": {
+                                            "kind": "track",
+                                            "trackId": "track-hi-hat"
+                                        },
+                                        "statement": "don't make the drums louder"
+                                    },
+                                    {
+                                        "scope": {
+                                            "kind": "track",
+                                            "trackId": "track-overheads"
+                                        },
+                                        "statement": "don't make the drums louder"
+                                    }
+                                ],
+                                "trackRoles": []
+                            }
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "device-bass-di-compressor",
+                        "eq-low-freq",
+                        "eq-low-gain",
+                        "eq-mid-freq",
+                        "eq-mid-gain",
+                        "eq-mid-q",
+                        "track-backing-vocal-left",
+                        "track-backing-vocal-right",
+                        "track-bass-di",
+                        "track-drum-bus",
+                        "track-guitar",
+                        "track-hi-hat",
+                        "track-keys",
+                        "track-kick",
+                        "track-lead-vocal",
+                        "track-overheads",
+                        "track-snare"
+                    ],
+                    "protectedIds": [],
+                    "maxCommands": 24
+                },
+                "vibeRun": {
+                    "batches": [
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-kick",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-kick",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 375
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-kick",
+                                        "paramId": "eq-mid-gain",
+                                        "value": -3.5
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-kick",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.85
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-snare",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-snare",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 375
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-snare",
+                                        "paramId": "eq-mid-gain",
+                                        "value": -3.5
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-snare",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.85
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-hi-hat",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-hi-hat",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 375
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-hi-hat",
+                                        "paramId": "eq-mid-gain",
+                                        "value": -3.5
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-hi-hat",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.85
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-overheads",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-overheads",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 375
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-overheads",
+                                        "paramId": "eq-mid-gain",
+                                        "value": -3.5
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-overheads",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.85
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-lead-vocal",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 325
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-mid-gain",
+                                        "value": -3.5
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.85
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-low-freq",
+                                        "value": 150
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-low-gain",
+                                        "value": -2
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-backing-vocal-left",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 325
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-mid-gain",
+                                        "value": -3.5
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.85
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-low-freq",
+                                        "value": 150
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-low-gain",
+                                        "value": -2
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-backing-vocal-right",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 325
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-mid-gain",
+                                        "value": -3.5
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.85
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-low-freq",
+                                        "value": 150
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-low-gain",
+                                        "value": -2
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "skip",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-bass-di",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-bass-di",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 275
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-bass-di",
+                                        "paramId": "eq-mid-gain",
+                                        "value": -3.5
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-bass-di",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.85
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-guitar",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-guitar",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 325
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-guitar",
+                                        "paramId": "eq-mid-gain",
+                                        "value": -3.5
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-guitar",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.85
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-guitar",
+                                        "paramId": "eq-low-freq",
+                                        "value": 150
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-guitar",
+                                        "paramId": "eq-low-gain",
+                                        "value": -2
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-keys",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-keys",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 350
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-keys",
+                                        "paramId": "eq-mid-gain",
+                                        "value": -3.5
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-keys",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.85
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-drum-bus",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-drum-bus",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 325
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-drum-bus",
+                                        "paramId": "eq-mid-gain",
+                                        "value": -2.75
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-drum-bus",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.85
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "summary": "The vibe run finished: the brief and 5 of 6 batches were applied."
+                }
+            }
+        },
+        {
+            "id": "AC069-DEV-VIBE-3",
+            "promptClass": "whole-project-vibe-with-constraint",
+            "class": "execute-exact",
+            "prompt": "the mix sounds thin, but don't make the Guitar quieter",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "brief"
+                },
+                {
+                    "kind": "brief-compile",
+                    "vision": "A fuller mix",
+                    "descriptors": [
+                        "thin"
+                    ]
+                },
+                {
+                    "kind": "propose-brief",
+                    "protectedTargets": []
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setProductionBrief",
+                        "payload": {
+                            "expectedRevision": 0,
+                            "brief": {
+                                "revision": 1,
+                                "vision": "A fuller mix",
+                                "hardConstraints": [
+                                    {
+                                        "scope": {
+                                            "kind": "track",
+                                            "trackId": "track-guitar"
+                                        },
+                                        "statement": "don't make the Guitar quieter"
+                                    }
+                                ],
+                                "trackRoles": []
+                            }
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [
+                        "device-bass-di-compressor",
+                        "eq-low-freq",
+                        "eq-low-gain",
+                        "eq-mid-freq",
+                        "eq-mid-gain",
+                        "eq-mid-q",
+                        "track-backing-vocal-left",
+                        "track-backing-vocal-right",
+                        "track-bass-di",
+                        "track-drum-bus",
+                        "track-guitar",
+                        "track-hi-hat",
+                        "track-keys",
+                        "track-kick",
+                        "track-lead-vocal",
+                        "track-overheads",
+                        "track-snare"
+                    ],
+                    "protectedIds": [],
+                    "maxCommands": 24
+                },
+                "vibeRun": {
+                    "batches": [
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-kick",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-kick",
+                                        "paramId": "eq-low-freq",
+                                        "value": 80
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-kick",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-kick",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 240
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-kick",
+                                        "paramId": "eq-mid-gain",
+                                        "value": 1.75
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-kick",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.15
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-snare",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-snare",
+                                        "paramId": "eq-low-freq",
+                                        "value": 80
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-snare",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-snare",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 240
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-snare",
+                                        "paramId": "eq-mid-gain",
+                                        "value": 1.75
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-snare",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.15
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-hi-hat",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-hi-hat",
+                                        "paramId": "eq-low-freq",
+                                        "value": 80
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-hi-hat",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-hi-hat",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 240
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-hi-hat",
+                                        "paramId": "eq-mid-gain",
+                                        "value": 1.75
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-hi-hat",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.15
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-overheads",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-overheads",
+                                        "paramId": "eq-low-freq",
+                                        "value": 80
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-overheads",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-overheads",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 240
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-overheads",
+                                        "paramId": "eq-mid-gain",
+                                        "value": 1.75
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-overheads",
+                                        "paramId": "eq-mid-q",
+                                        "value": 1.15
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-lead-vocal",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-low-freq",
+                                        "value": 150
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 550
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-mid-gain",
+                                        "value": 1.75
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-lead-vocal",
+                                        "paramId": "eq-mid-q",
+                                        "value": 0.95
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-backing-vocal-left",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-low-freq",
+                                        "value": 150
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 550
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-mid-gain",
+                                        "value": 1.75
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-left",
+                                        "paramId": "eq-mid-q",
+                                        "value": 0.95
+                                    }
+                                },
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-backing-vocal-right",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-low-freq",
+                                        "value": 150
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 550
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-mid-gain",
+                                        "value": 1.75
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-backing-vocal-right",
+                                        "paramId": "eq-mid-q",
+                                        "value": 0.95
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-bass-di",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-bass-di",
+                                        "paramId": "eq-low-freq",
+                                        "value": 70
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-bass-di",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-bass-di",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 250
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-bass-di",
+                                        "paramId": "eq-mid-gain",
+                                        "value": 1.75
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-bass-di",
+                                        "paramId": "eq-mid-q",
+                                        "value": 0.95
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-guitar",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-guitar",
+                                        "paramId": "eq-low-freq",
+                                        "value": 130
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-guitar",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-guitar",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 400
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-guitar",
+                                        "paramId": "eq-mid-gain",
+                                        "value": 1.75
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-guitar",
+                                        "paramId": "eq-mid-q",
+                                        "value": 0.95
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "skip",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-keys",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-keys",
+                                        "paramId": "eq-low-freq",
+                                        "value": 160
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-keys",
+                                        "paramId": "eq-low-gain",
+                                        "value": 3
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-keys",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 400
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-keys",
+                                        "paramId": "eq-mid-gain",
+                                        "value": 1.75
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-keys",
+                                        "paramId": "eq-mid-q",
+                                        "value": 0.95
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "decision": "confirm",
+                            "actions": [
+                                {
+                                    "type": "addDevice",
+                                    "payload": {
+                                        "trackId": "track-drum-bus",
+                                        "deviceType": "builtin-eq"
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-drum-bus",
+                                        "paramId": "eq-low-freq",
+                                        "value": 110
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-drum-bus",
+                                        "paramId": "eq-low-gain",
+                                        "value": 2.25
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-drum-bus",
+                                        "paramId": "eq-mid-freq",
+                                        "value": 325
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-drum-bus",
+                                        "paramId": "eq-mid-gain",
+                                        "value": 1.25
+                                    }
+                                },
+                                {
+                                    "type": "setDeviceParameter",
+                                    "payload": {
+                                        "expectedTrackId": "track-drum-bus",
+                                        "paramId": "eq-mid-q",
+                                        "value": 0.95
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "summary": "The vibe run finished: the brief and 5 of 6 batches were applied."
+                }
             }
         }
     ]
