@@ -346,12 +346,18 @@ describe('actual scoped scan utility entry', () => {
                 return ['scanned'];
             }
             stopPluginScanHelpers(this: Host) {
-                expect(this).toBeInstanceOf(Host);
-                stop();
+                stopReceivers.push(this);
+                terminateOrder.push('stop');
             }
         }
-        const stop = vi.fn();
+        const stopReceivers: unknown[] = [];
+        const terminateOrder: string[] = [];
+        class ExitRequested extends Error {}
         const terminateListenersBefore = new Set(process.listeners('SIGTERM'));
+        const exit = vi.spyOn(process, 'exit').mockImplementation(() => {
+            terminateOrder.push('exit');
+            throw new ExitRequested();
+        });
         const on = vi.fn();
         const postMessage = vi.fn();
         const originalArgv = process.argv;
@@ -379,8 +385,19 @@ describe('actual scoped scan utility entry', () => {
                 .listeners('SIGTERM')
                 .filter((entry) => !terminateListenersBefore.has(entry));
             expect(terminateListeners).toHaveLength(1);
-            expect(stop).not.toHaveBeenCalled();
+            expect(terminateOrder).toEqual([]);
+
+            const terminate = terminateListeners[0];
+            if (terminate === undefined) {
+                throw new TypeError('utility did not install a SIGTERM listener');
+            }
+            expect(() => terminate('SIGTERM')).toThrow(ExitRequested);
+
+            expect(terminateOrder).toEqual(['stop', 'exit']);
+            expect(stopReceivers).toHaveLength(1);
+            expect(stopReceivers[0]).toBeInstanceOf(Host);
         } finally {
+            exit.mockRestore();
             for (const entry of process.listeners('SIGTERM')) {
                 if (!terminateListenersBefore.has(entry)) {
                     process.removeListener('SIGTERM', entry);
