@@ -2,13 +2,16 @@ import { bytesToBase64 } from '#/utils/base64';
 
 import { getPluginState } from '../../repositories/pluginBridge/getPluginState';
 
+import { currentCarryGeneration } from './carriedExternalPluginStates';
 import { externalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { loadedExternalInstancePluginIds } from './loadedExternalInstances';
 import { preservationReason } from './readExternalPluginStateForCapture';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
-// The native read waits up to 2 s for the plugin's control lock before it
-// answers; a teardown must never wait indefinitely on a hung plugin.
+// The native read bounds only its wait on the plugin's real-time seam (2 s);
+// its wait on the plugin's control gate is unbounded while another control
+// operation holds it, so a hung plugin can leave the read pending forever. A
+// teardown must never wait on that, so the read is bounded here.
 const TEARDOWN_STATE_READ_TIMEOUT_MS = 5000;
 
 type TeardownStateRead =
@@ -46,12 +49,23 @@ function withinTeardownBudget(instanceId: string, read: Promise<TeardownStateRea
     return Promise.race([read, deadline]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * A scheduled read is bounded inside its lifecycle turn as well, so the turn is
+ * released at the deadline: a hung read must not wedge every later operation
+ * on the instance, nor a rebuild waiting for them.
+ */
 function readForOrdering(instanceId: string, ordering: 'inside-lifecycle' | 'scheduled'): Promise<TeardownStateRead> {
     if (ordering === 'inside-lifecycle') {
         return readLiveState(instanceId);
     }
-    return serializePluginLifecycle(instanceId, () => readLiveState(instanceId));
+    return serializePluginLifecycle(instanceId, () => withinTeardownBudget(instanceId, readLiveState(instanceId)));
 }
+
+export type TeardownStateReads = Readonly<{
+    /** The carry generation the batch started in. */
+    generation: number;
+    byInstanceId: ReadonlyMap<string, TeardownStateRead>;
+}>;
 
 /**
  * Read the live state of instances an app-initiated teardown is about to
@@ -60,15 +74,17 @@ function readForOrdering(instanceId: string, ordering: 'inside-lifecycle' | 'sch
  *
  * `inside-lifecycle` reads directly, for a caller already holding the
  * instance's lifecycle turn or a rebuild fence — scheduling there would wait
- * on itself. `scheduled` takes each instance's own lifecycle turn.
+ * on itself. `scheduled` takes each instance's own lifecycle turn; the wait for that
+ * turn is bounded too.
  */
 export async function readLiveStatesForTeardown(
     instanceIds: readonly string[],
     ordering: 'inside-lifecycle' | 'scheduled'
-): Promise<ReadonlyMap<string, TeardownStateRead>> {
+): Promise<TeardownStateReads> {
+    const generation = currentCarryGeneration();
     const reads = instanceIds.map(async (instanceId) => {
         const read = readForOrdering(instanceId, ordering);
         return [instanceId, await withinTeardownBudget(instanceId, read)] as const;
     });
-    return new Map(await Promise.all(reads));
+    return { generation, byInstanceId: new Map(await Promise.all(reads)) };
 }

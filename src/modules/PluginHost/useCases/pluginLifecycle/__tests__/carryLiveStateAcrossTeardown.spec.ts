@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { type PluginInstance } from '../../../repositories/pluginBridge/types';
 import {
@@ -13,6 +13,7 @@ import { forgetRetiredPluginInstances } from '../forgetRetiredPluginInstances';
 import { loadedExternalInstances } from '../loadedExternalInstances';
 import { readExternalPluginStatesBeforeEngineRetire } from '../readExternalPluginStatesBeforeEngineRetire';
 import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
+import { restorePluginState } from '../restorePluginState';
 import { unloadPlugin, unloadPluginCarryingLiveState } from '../unloadPlugin';
 
 import type { unloadPlugin as unloadPluginRepoSignature } from '../../../repositories/pluginBridge/unloadPlugin';
@@ -45,10 +46,13 @@ const PLUGIN_ID = 'synth';
 const SAVED_CHUNK = 'c2F2ZWQ=';
 const SAVED_BYTES = new Uint8Array([115, 97, 118, 101, 100]);
 const LIVE_BYTES = new Uint8Array([108, 105, 118, 101]);
+const OTHER_INSTANCE_ID = 'inst-2';
+// "live-2": the second instance's own live state, distinct from the first's.
+const OTHER_LIVE_BYTES = new Uint8Array([108, 105, 118, 101, 45, 50]);
 
-function pluginInstance(): PluginInstance {
+function pluginInstance(instanceId = INSTANCE_ID): PluginInstance {
     return {
-        instance_id: INSTANCE_ID,
+        instance_id: instanceId,
         plugin_id: PLUGIN_ID,
         name: PLUGIN_ID,
         parameters: [],
@@ -60,8 +64,25 @@ function pluginInstance(): PluginInstance {
     };
 }
 
-function activate(stateChunk: string | undefined, pluginId = PLUGIN_ID) {
-    return activateExternalPlugin({ pluginId, instanceId: INSTANCE_ID, stateChunk });
+function activate(stateChunk: string | undefined, pluginId = PLUGIN_ID, instanceId = INSTANCE_ID) {
+    return activateExternalPlugin({ pluginId, instanceId, stateChunk });
+}
+
+/** Load both instances with the project chunk; each reports its own live state. */
+async function activateBothAndEdit(): Promise<void> {
+    mocks.getPluginState.mockImplementation((instanceId) =>
+        Promise.resolve(instanceId === INSTANCE_ID ? LIVE_BYTES : OTHER_LIVE_BYTES)
+    );
+    await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
+    await expect(activate(SAVED_CHUNK, PLUGIN_ID, OTHER_INSTANCE_ID)).resolves.toEqual({ status: 'active' });
+    mocks.setPluginState.mockClear();
+}
+
+/** Reactivate both instances and report what each was restored with. */
+async function reactivateBoth(): Promise<unknown[]> {
+    await activate(SAVED_CHUNK);
+    await activate(SAVED_CHUNK, PLUGIN_ID, OTHER_INSTANCE_ID);
+    return mocks.setPluginState.mock.calls;
 }
 
 /** Load once with the project chunk, then forget that restore so only the reactivation's is observed. */
@@ -80,7 +101,7 @@ describe('live plugin state across an app-initiated teardown', () => {
         clearLoadedExternalPlugins();
         carriedExternalPluginStates.clear();
         externalPluginActivationStore.set(defaultExternalPluginActivationState);
-        mocks.loadPlugin.mockResolvedValue(pluginInstance());
+        mocks.loadPlugin.mockImplementation((_pluginId, instanceId) => Promise.resolve(pluginInstance(instanceId)));
         mocks.getPluginState.mockResolvedValue(LIVE_BYTES);
         mocks.setPluginState.mockResolvedValue(undefined);
         mocks.unloadPlugin.mockImplementation((instanceId) =>
@@ -175,6 +196,34 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(carriedExternalPluginStates.size).toBe(0);
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
         });
+
+        it('reads nothing for an instance whose activation is still pending', async () => {
+            const load = Promise.withResolvers<PluginInstance>();
+            mocks.loadPlugin.mockReturnValueOnce(load.promise);
+            const activation = activate(SAVED_CHUNK);
+
+            const teardown = unloadPluginCarryingLiveState(INSTANCE_ID);
+            load.resolve(pluginInstance());
+            await teardown;
+            await activation;
+
+            expect(mocks.getPluginState).not.toHaveBeenCalled();
+            expect(carriedExternalPluginStates.size).toBe(0);
+            expect(warnings()).toEqual([]);
+        });
+
+        it('drops the carry when the whole runtime unloads for a project replacement', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            await unloadPluginCarryingLiveState(INSTANCE_ID);
+
+            // Discard changes, Open, New and template load all replace the
+            // project through the unkeyed unload; the reloaded device keeps its
+            // persisted instance id.
+            await unloadPlugin();
+            await activate(SAVED_CHUNK);
+
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
     });
 
     describe('graph repair', () => {
@@ -235,6 +284,25 @@ describe('live plugin state across an app-initiated teardown', () => {
 
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
         });
+
+        it('carries only the instances the unload destroyed when another fails', async () => {
+            await activateBothAndEdit();
+            mocks.unloadPlugin.mockResolvedValueOnce({
+                unloadedInstanceIds: [INSTANCE_ID],
+                errors: [`${OTHER_INSTANCE_ID} busy`],
+                reports: [],
+            });
+
+            await expect(resetExternalPluginRuntimeForGraphRebuild()).rejects.toThrow('busy');
+            expect(loadedExternalInstances.has(OTHER_INSTANCE_ID)).toBe(true);
+            // The survivor is destroyed later by a non-carrying teardown.
+            await unloadPlugin(OTHER_INSTANCE_ID);
+
+            expect(await reactivateBoth()).toEqual([
+                [INSTANCE_ID, LIVE_BYTES],
+                [OTHER_INSTANCE_ID, SAVED_BYTES],
+            ]);
+        });
     });
 
     describe('engine retire', () => {
@@ -273,12 +341,94 @@ describe('live plugin state across an app-initiated teardown', () => {
             vi.useRealTimers();
             reading.commit([INSTANCE_ID]);
             forgetRetiredPluginInstances([INSTANCE_ID]);
-            // The read holds the instance's lifecycle turn until it answers; its
-            // answer, arriving after the deadline, must carry nothing.
+            // The read's answer, arriving after the deadline, must carry nothing.
             lateRead.resolve(LIVE_BYTES);
             await activate(SAVED_CHUNK);
 
             expect(warnings()).toEqual([expect.stringContaining(PLUGIN_ID)]);
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+
+        it('releases the lifecycle turn at the deadline so a later rebuild can proceed', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            const hungRead = Promise.withResolvers<Uint8Array>();
+            mocks.getPluginState.mockReturnValueOnce(hungRead.promise);
+            // Answer at last once the case is over, so a wedged turn cannot leak into later cases.
+            onTestFinished(() => hungRead.resolve(LIVE_BYTES));
+
+            const pendingReading = readExternalPluginStatesBeforeEngineRetire();
+            await vi.advanceTimersByTimeAsync(5_000);
+            await pendingReading;
+            let repaired = false;
+            void resetExternalPluginRuntimeForGraphRebuild().then(() => {
+                repaired = true;
+            });
+            await vi.advanceTimersByTimeAsync(5_000);
+
+            expect(repaired).toBe(true);
+        });
+
+        it("reads only after the instance's current lifecycle turn settles", async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            const heldRestore = Promise.withResolvers<void>();
+            mocks.setPluginState.mockReturnValueOnce(heldRestore.promise);
+            // Release the held turn however the case ends, so it cannot leak into later cases.
+            onTestFinished(() => heldRestore.resolve());
+            const restore = restorePluginState(INSTANCE_ID, SAVED_CHUNK);
+            await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledOnce());
+
+            const pendingReading = readExternalPluginStatesBeforeEngineRetire();
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            expect(mocks.getPluginState).not.toHaveBeenCalled();
+
+            heldRestore.resolve();
+            await restore;
+            await pendingReading;
+            expect(mocks.getPluginState).toHaveBeenCalledOnce();
+        });
+
+        it('reads nothing for an instance whose activation is still pending', async () => {
+            const load = Promise.withResolvers<PluginInstance>();
+            mocks.loadPlugin.mockReturnValueOnce(load.promise);
+            const activation = activate(SAVED_CHUNK);
+
+            const pendingReading = readExternalPluginStatesBeforeEngineRetire();
+            load.resolve(pluginInstance());
+            const reading = await pendingReading;
+            reading.commit([INSTANCE_ID]);
+            await activation;
+
+            expect(mocks.getPluginState).not.toHaveBeenCalled();
+            expect(carriedExternalPluginStates.size).toBe(0);
+            expect(warnings()).toEqual([]);
+        });
+
+        it('carries only the instances the retire reports destroyed', async () => {
+            await activateBothAndEdit();
+
+            const reading = await readExternalPluginStatesBeforeEngineRetire();
+            reading.commit([INSTANCE_ID]);
+            forgetRetiredPluginInstances([INSTANCE_ID]);
+            // The survivor is destroyed later by a non-carrying teardown.
+            await unloadPlugin(OTHER_INSTANCE_ID);
+
+            expect(await reactivateBoth()).toEqual([
+                [INSTANCE_ID, LIVE_BYTES],
+                [OTHER_INSTANCE_ID, SAVED_BYTES],
+            ]);
+        });
+
+        it('discards a commit that lands after a project replacement dropped the carries', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+
+            const reading = await readExternalPluginStatesBeforeEngineRetire();
+            await unloadPlugin();
+            reading.commit([INSTANCE_ID]);
+
+            expect(carriedExternalPluginStates.size).toBe(0);
+            await activate(SAVED_CHUNK);
+            expect(warnings()).toEqual([]);
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
         });
     });

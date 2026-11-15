@@ -66,6 +66,7 @@ import {
     markExternalPluginParameterSnapshotsAttached,
 } from '../../stores/externalPluginParameterStore';
 
+import { dropCarriedExternalPluginStates } from './carriedExternalPluginStates';
 import { commitCarriedLiveStates } from './commitCarriedLiveStates';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { forgetPluginInstance } from './forgetPluginInstance';
@@ -144,12 +145,27 @@ function scheduleKeyedUnload(instanceId: string, unloadLoaded: () => Promise<voi
     });
 }
 
+/**
+ * Unload every instance and keep the carries, for a graph repair that commits
+ * its own pre-teardown reads after the unload. Other whole-runtime unloads use
+ * `unloadPlugin()`.
+ */
+export function unloadEveryPluginKeepingCarries(): Promise<void> {
+    externalPluginStateCaptureAuthority.invalidateAll();
+    return unloadWithRetractedMirror();
+}
+
+/**
+ * Without an instance id this is the whole-runtime unload a project
+ * replacement or session retirement runs: the outgoing project's carries go
+ * with it, even when the unload fails, and the drop also fences any read batch
+ * still in flight from committing into the incoming project.
+ */
 export function unloadPlugin(instanceId?: string): Promise<void> {
-    if (instanceId === undefined) {
-        externalPluginStateCaptureAuthority.invalidateAll();
-        return unloadWithRetractedMirror();
+    if (instanceId !== undefined) {
+        return scheduleKeyedUnload(instanceId, () => unloadWithRetractedMirror(instanceId));
     }
-    return scheduleKeyedUnload(instanceId, () => unloadWithRetractedMirror(instanceId));
+    return unloadEveryPluginKeepingCarries().finally(dropCarriedExternalPluginStates);
 }
 
 /**

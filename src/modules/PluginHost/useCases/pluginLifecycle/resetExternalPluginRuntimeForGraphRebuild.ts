@@ -5,7 +5,7 @@ import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptur
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { readLiveStatesForTeardown } from './readLiveStatesForTeardown';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
-import { unloadPlugin } from './unloadPlugin';
+import { unloadEveryPluginKeepingCarries } from './unloadPlugin';
 
 let activeReset: Promise<void> | null = null;
 
@@ -27,7 +27,7 @@ export function resetExternalPluginRuntimeForGraphRebuild(): Promise<void> {
             const loadedBeforeUnload = [...loadedExternalInstances];
             const reads = await readLiveStatesForTeardown(loadedBeforeUnload, 'inside-lifecycle');
             try {
-                await unloadPlugin();
+                await unloadEveryPluginKeepingCarries();
             } finally {
                 commitCarriedLiveStates(
                     reads,

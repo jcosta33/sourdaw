@@ -1,4 +1,3 @@
-import { carriedExternalPluginStates } from './carriedExternalPluginStates';
 import { clearLoadedExternalPlugins } from './clearLoadedExternalPlugins';
 import { externalPluginActivationEpoch, externalPluginActivationTasks } from './externalPluginActivationTasks';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
@@ -19,12 +18,8 @@ export async function beginProjectSessionPluginRetirement(): Promise<{
         retire: async (): Promise<void> => {
             await Promise.allSettled(admittedActivations);
             await rebuild.waitForExistingOperations();
-            try {
-                await unloadPlugin();
-            } finally {
-                // Carried live state belongs to the outgoing project.
-                carriedExternalPluginStates.clear();
-            }
+            // The unkeyed unload drops the outgoing project's carried live state.
+            await unloadPlugin();
             clearLoadedExternalPlugins();
         },
         reopen: (): void => {
