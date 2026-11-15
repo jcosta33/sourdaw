@@ -1,23 +1,156 @@
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
+import { COMMAND_APPLICATION_ID_RULES } from '../models/CommandApplicationIdRule';
 import {
-    commandApplicationIdMaterializers,
     type CommandApplicationDefaults,
     type MaterializedCommandApplicationIds,
-} from './commandApplicationIdMaterializers';
+} from '../models/MaterializedCommandApplicationIds';
+import { type CommandApplicationAssignedId } from '../models/VersionedCommandEnvelope';
 
-const {
-    busCreation: materializeBusCreationIds,
-    byIdRule: materializeByIdRule,
-    importedStems: materializeImportedStemIds,
-    midiInputOwner: materializeMidiInputOwnerId,
-    nestedNotes: materializeNestedNoteIds,
-    trackCreation: materializeTrackCreationIds,
-} = commandApplicationIdMaterializers;
+import { commandTrackDefaultsPort } from './commandTrackDefaultsPort';
+import { materializeTrackCreationIds } from './materializeTrackCreationIds';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
 const RESERVE_APPLICATION_DEFAULTS: CommandApplicationDefaults = { reserveApplicationDefaults: true };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function materializeNestedNoteIds(action: Extract<AppAction, { type: 'addNotes' }>): MaterializedCommandApplicationIds {
+    const cloned = structuredClone(action);
+    const applicationAssignedIds: CommandApplicationAssignedId[] = [];
+    let changed = false;
+    for (const [index, note] of cloned.payload.notes.entries()) {
+        if (typeof note.id === 'string' && note.id !== '') {
+            applicationAssignedIds.push({ argument: `notes[${String(index)}].id`, value: note.id });
+            continue;
+        }
+        const value = `note-command-${crypto.randomUUID()}`;
+        note.id = value;
+        changed = true;
+        applicationAssignedIds.push({ argument: `notes[${String(index)}].id`, value });
+    }
+    return { action: changed ? cloned : action, applicationAssignedIds };
+}
+
+function materializeMidiInputOwnerId(
+    action: Extract<AppAction, { type: 'armTrack' }>
+): MaterializedCommandApplicationIds {
+    if (action.payload.midiInputOwnerId !== undefined) {
+        return {
+            action,
+            applicationAssignedIds:
+                typeof action.payload.midiInputOwnerId === 'string'
+                    ? [{ argument: 'midiInputOwnerId', value: action.payload.midiInputOwnerId }]
+                    : [],
+        };
+    }
+    const cloned = structuredClone(action);
+    const value = `arm-command-${crypto.randomUUID()}`;
+    cloned.payload.midiInputOwnerId = value;
+    return {
+        action: cloned,
+        applicationAssignedIds: [{ argument: 'midiInputOwnerId', value }],
+    };
+}
+
+function materializeImportedStemIds(
+    action: Extract<AppAction, { type: 'importStemSet' }>
+): MaterializedCommandApplicationIds {
+    const applicationAssignedIds: CommandApplicationAssignedId[] = [
+        { argument: 'folderId', value: action.payload.folderId },
+    ];
+    if (action.payload.folderAlternativeId) {
+        applicationAssignedIds.push({
+            argument: 'folderAlternativeId',
+            value: action.payload.folderAlternativeId,
+        });
+    }
+    for (const [index, stem] of action.payload.stems.entries()) {
+        applicationAssignedIds.push(
+            { argument: `stems[${String(index)}].trackId`, value: stem.trackId },
+            { argument: `stems[${String(index)}].clipId`, value: stem.clipId }
+        );
+        if (stem.trackAlternativeId) {
+            applicationAssignedIds.push({
+                argument: `stems[${String(index)}].trackAlternativeId`,
+                value: stem.trackAlternativeId,
+            });
+        }
+    }
+    return { action, applicationAssignedIds };
+}
+
+function materializeBusCreationIds(
+    action: Extract<AppAction, { type: 'createBus' }>,
+    defaults: CommandApplicationDefaults
+): MaterializedCommandApplicationIds {
+    const cloned = structuredClone(action);
+    const applicationAssignedIds: CommandApplicationAssignedId[] = [];
+    let changed = false;
+    if (!cloned.payload.busId) {
+        cloned.payload.busId = `bus-command-${crypto.randomUUID()}`;
+        changed = true;
+        applicationAssignedIds.push({ argument: 'busId', value: cloned.payload.busId });
+    }
+    if (cloned.payload.busId && !applicationAssignedIds.some((entry) => entry.argument === 'busId')) {
+        applicationAssignedIds.push({ argument: 'busId', value: cloned.payload.busId });
+    }
+    if (!cloned.payload.initialAlternativeId) {
+        cloned.payload.initialAlternativeId = `alternative-command-${crypto.randomUUID()}`;
+        changed = true;
+        applicationAssignedIds.push({
+            argument: 'initialAlternativeId',
+            value: cloned.payload.initialAlternativeId,
+        });
+    }
+    if (
+        cloned.payload.initialAlternativeId &&
+        !applicationAssignedIds.some((entry) => entry.argument === 'initialAlternativeId')
+    ) {
+        applicationAssignedIds.push({
+            argument: 'initialAlternativeId',
+            value: cloned.payload.initialAlternativeId,
+        });
+    }
+    if (cloned.payload.color === undefined && defaults.reserveApplicationDefaults) {
+        const color = commandTrackDefaultsPort.reserveTrackColor();
+        if (color !== undefined) {
+            cloned.payload.color = color;
+            changed = true;
+        }
+    }
+    return { action: changed ? cloned : action, applicationAssignedIds };
+}
+
+function materializeByIdRule(action: AppAction): MaterializedCommandApplicationIds {
+    const rule = COMMAND_APPLICATION_ID_RULES[action.type];
+    const payload: unknown = 'payload' in action ? action.payload : undefined;
+    if (!rule || !isRecord(payload)) {
+        return { action, applicationAssignedIds: [] };
+    }
+    const existingValue = payload[rule.argument];
+    if (typeof existingValue === 'string' && existingValue !== '') {
+        return {
+            action,
+            applicationAssignedIds: [{ argument: rule.argument, value: existingValue }],
+        };
+    }
+
+    const cloned = structuredClone(action);
+    const clonedPayload: unknown = 'payload' in cloned ? cloned.payload : undefined;
+    if (!isRecord(clonedPayload)) {
+        return { action, applicationAssignedIds: [] };
+    }
+    const value = `${rule.prefix}${crypto.randomUUID()}`;
+    clonedPayload[rule.argument] = value;
+    return {
+        action: cloned,
+        applicationAssignedIds: [{ argument: rule.argument, value }],
+    };
+}
 
 const applicationIdMaterializerByActionType: {
     readonly [Type in AppActionType]: (
