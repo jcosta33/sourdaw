@@ -219,7 +219,7 @@ struct QuarantineColumn {
 pub struct PersistedQuarantineEntry {
     pub path: String,
     /// The process-level failure that triggered quarantine, verbatim from the
-    /// scan helper — see `plugin_scan_worker::is_process_failure`.
+    /// scan helper — see `ScanFailure::is_process_failure`.
     pub reason: String,
     pub quarantined_at_ms: u64,
 }
@@ -550,7 +550,7 @@ impl PluginRegistryStore {
     /// any earlier record for it.
     ///
     /// Called only for a crash or a timeout — see
-    /// `plugin_scan_worker::is_process_failure` — never for a data-level
+    /// `ScanFailure::is_process_failure` — never for a data-level
     /// refusal, so a candidate that merely failed to parse is retried on every
     /// ordinary scan rather than blacklisted from one bad read.
     pub fn quarantine_failure(&self, path: &Path, reason: String, quarantined_at_ms: u64) {
