@@ -282,6 +282,11 @@ pub async fn grant_path(path: String, mode: String, recursive: bool) -> Result<(
     let mode = parse_grant_mode(&mode)?;
     let requested = normalize_absolute_path(Path::new(path.trim()))?;
     let canonical = grant_registry::resolve_grant_target(&requested)?;
+    grant_registry::refuse_write_grant_in_plugin_folder(
+        &canonical,
+        mode,
+        &crate::host::plugin_folder_grants::plugin_code_roots(),
+    )?;
     grant_registry::grant(FileGrant {
         canonical,
         mode,

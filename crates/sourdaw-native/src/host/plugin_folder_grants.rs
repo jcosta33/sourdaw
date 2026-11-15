@@ -234,6 +234,23 @@ pub(crate) fn production_store_location() -> Option<PathBuf> {
     None
 }
 
+/// Every folder the plugin scan loads code from: the platform's plugin folders,
+/// resolved the way picks are, and every stored plugin folder grant.
+///
+/// A renderer write into any of them plants native code the next scan runs.
+/// A stored grant counts even while it is unavailable: once its folder is back
+/// it is authority again, with whatever was written there in the meantime.
+pub(crate) fn plugin_code_roots() -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = default_plugin_scan_roots()
+        .iter()
+        .map(|root| resolve_forbidden_root(root))
+        .collect();
+    if let Some(location) = production_store_location() {
+        roots.extend(read_grants(&location));
+    }
+    roots
+}
+
 /// Validate a folder the user picked, answering with its canonical path.
 ///
 /// The checks every grant re-runs on every use; [`grant_at`] adds the ones
@@ -905,6 +922,29 @@ mod tests {
             .expect("document should serialize"),
         );
 
+        assert!(valid_grants_at(&tree.store(), &forbidden).is_empty());
+    }
+
+    #[test]
+    fn a_stored_grant_that_resolves_to_another_path_grants_nothing() {
+        let tree = TempTree::create("resolves-elsewhere");
+        let forbidden = forbidden_in(&tree);
+        let folder = tree.dir("Plugins/Vendor");
+        let spelled_elsewhere = folder.join("..").join("Vendor");
+        save_grants(&tree.store(), std::slice::from_ref(&spelled_elsewhere))
+            .expect("store should be written");
+
+        let statuses = list_at(&tree.store(), &forbidden);
+        assert!(
+            matches!(
+                statuses.as_slice(),
+                [GrantStatus {
+                    unavailable: Some(PluginFolderRefusal::ResolvesElsewhere { now, .. }),
+                    ..
+                }] if *now == folder
+            ),
+            "unexpected statuses {statuses:?}"
+        );
         assert!(valid_grants_at(&tree.store(), &forbidden).is_empty());
     }
 }
