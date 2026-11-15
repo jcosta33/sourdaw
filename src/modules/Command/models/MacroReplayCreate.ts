@@ -11,10 +11,11 @@ export type MacroReplayReads = {
 
 /**
  * A replayed create whose recorded id was taken off the payload so the kernel mints a fresh one.
- * `remember` maps the recorded id onto the minted one once both exist.
+ * `remember` maps the recorded id onto the minted one once both exist. A create that mints a list
+ * records the list, and each recorded id maps onto the minted id at its position.
  */
 export type MacroReplayCreate = {
-    recordedId: string | undefined;
+    recordedId: string | readonly string[] | undefined;
     remember: (recordedId: string, generatedId: string, reads: MacroReplayReads) => void;
 };
 
@@ -152,6 +153,25 @@ function beginTrackAlternativeCreate(
         recordedId,
         remember: (recorded, generated) => {
             mappings.trackAlternativeIds.set(recorded, generated);
+        },
+    };
+}
+
+function isStringList(value: unknown): value is readonly string[] {
+    return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function beginScratchPadCapture(
+    action: ActionOf<'captureScratchPad'>,
+    mappings: MacroReplayIdMappings
+): MacroReplayCreate {
+    const recorded: unknown = action.payload?.sectionIds;
+    delete action.payload?.sectionIds;
+    return {
+        // A stored macro is persisted data: a recorded value that is not a list of ids maps nothing.
+        recordedId: isStringList(recorded) ? recorded : undefined,
+        remember: (recorded, generated) => {
+            mappings.scratchPadSectionIds.set(recorded, generated);
         },
     };
 }
@@ -470,7 +490,7 @@ export const macroReplayCreateByActionType: {
     removeMidiMapping: notAGeneratedCreate,
     restoreMidiLearnMappings: notAGeneratedCreate,
     toggleScratchPad: notAGeneratedCreate,
-    captureScratchPad: notAGeneratedCreate,
+    captureScratchPad: beginScratchPadCapture,
     commitScratchPad: notAGeneratedCreate,
     clearScratchPad: notAGeneratedCreate,
     removeScratchPadSection: notAGeneratedCreate,

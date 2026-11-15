@@ -467,11 +467,35 @@ pub struct SharedHostedPlugin<Runtime = HostedRuntime> {
     /// path. Live playback only counts them; an offline render refuses a print
     /// that holds one (`commands::offline_plugins`).
     unserved_blocks: AtomicU64,
+    /// Records the thread the wrapper is torn down on. Declared last so it
+    /// drops after `wrapper`, on the same thread.
+    #[cfg(test)]
+    teardown_witness: OnceLock<TeardownWitness>,
+}
+
+/// Pushes the thread it drops on into a test's record.
+#[cfg(test)]
+pub(crate) struct TeardownWitness(Arc<Mutex<Vec<thread::ThreadId>>>);
+
+#[cfg(test)]
+impl Drop for TeardownWitness {
+    fn drop(&mut self) {
+        if let Ok(mut threads) = self.0.lock() {
+            threads.push(thread::current().id());
+        }
+    }
 }
 
 // SAFETY: access_state enforces exclusive mutable access to wrapper. The audio
 // path never waits; if non-RT control owns the wrapper, processing bypasses it.
 unsafe impl<Runtime: HostedPluginRuntime> Send for SharedHostedPlugin<Runtime> {}
+// SAFETY: every field but `wrapper` is `Sync` on its own (atomics, `Mutex`,
+// `Arc<ProcessingGate>`, `String`, `bool`). `wrapper` is reached only as
+// `&mut` while holding the `access_state` claim, taken by an `Acquire`
+// compare-exchange from idle and released by `PluginAccessGuard`'s `Release`
+// store, so at most one thread touches it at a time and each holder sees the
+// previous holder's writes; `Runtime: Send` (via `AudioPlugin`) lets that
+// holder be any thread.
 unsafe impl<Runtime: HostedPluginRuntime> Sync for SharedHostedPlugin<Runtime> {}
 
 impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
@@ -494,7 +518,15 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             dropped_note_events: AtomicU64::new(0),
             reported_dropped_note_events: AtomicU64::new(0),
             unserved_blocks: AtomicU64::new(0),
+            #[cfg(test)]
+            teardown_witness: OnceLock::new(),
         }
+    }
+
+    /// Record into `threads` the thread this plugin's wrapper is torn down on.
+    #[cfg(test)]
+    pub(crate) fn witness_teardown(&self, threads: Arc<Mutex<Vec<thread::ThreadId>>>) {
+        let _ = self.teardown_witness.set(TeardownWitness(threads));
     }
 
     /// How many blocks a slot handed this plugin without its being served.
@@ -929,6 +961,9 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         // park the worker for the whole plugin call.
         without_stalling_async_worker(|| {
             if let Some(_guard) = self.try_claim_control() {
+                // SAFETY: `_guard` holds the control side of the access seam
+                // until this return, so neither the audio thread nor another
+                // control visit can be inside the wrapper.
                 return operation(unsafe { &mut *self.wrapper.get() });
             }
 
@@ -973,6 +1008,9 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
 
         loop {
             if let Some(_guard) = self.try_claim_control() {
+                // SAFETY: `_guard` holds the control side of the access seam
+                // until this return, so neither the audio thread nor another
+                // control visit can be inside the wrapper.
                 return operation(unsafe { &mut *self.wrapper.get() });
             }
 
@@ -1021,6 +1059,9 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             access_state: &self.access_state,
         };
         Some(operation(
+            // SAFETY: the compare-exchange above moved the seam from idle to
+            // processing and `_guard` releases it only after `operation`
+            // returns, so no control visit can be inside the wrapper.
             unsafe { &mut *self.wrapper.get() },
             &self.pending_parameters,
         ))
@@ -1052,6 +1093,9 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         let _guard = PluginAccessGuard {
             access_state: &self.access_state,
         };
+        // SAFETY: the compare-exchange above moved the seam from idle to
+        // processing and `_guard` releases it only at the end of this scope,
+        // so no control visit can be inside the wrapper.
         unsafe { &mut *self.wrapper.get() }.sync_processing_state();
     }
 }

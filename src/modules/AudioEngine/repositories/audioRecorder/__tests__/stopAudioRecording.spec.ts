@@ -146,9 +146,10 @@ describe('stopAudioRecording', () => {
         vi.stubGlobal('URL', class {});
     });
 
-    afterEach(() => {
-        stopAudioRecording();
+    afterEach(async () => {
+        const stopped = stopAudioRecording();
         vi.advanceTimersByTime(5_000);
+        await stopped;
         vi.useRealTimers();
         vi.unstubAllGlobals();
     });
@@ -197,7 +198,8 @@ describe('stopAudioRecording', () => {
         const { worker, worklet } = await startAndArm('track-stop');
         expect(audioRecordingStore.value?.isRecording).toBe(true);
 
-        stopAudioRecording();
+        // Left in flight: the worker never delivers here, so the afterEach flush timeout settles the stop.
+        void stopAudioRecording();
 
         expect(worklet.port.postMessage).toHaveBeenCalledWith({ type: 'stop' });
         expect(worker.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'stop' }));
@@ -376,9 +378,10 @@ describe('stopAudioRecording', () => {
         const onTerminal = vi.fn();
         const { worker, worklet } = await startAndArm('track-stall', onTerminal);
 
-        stopAudioRecording();
+        const stopped = stopAudioRecording();
         expect(worker.terminate).not.toHaveBeenCalled();
         vi.advanceTimersByTime(5_000);
+        await stopped;
 
         expect(worker.terminate).toHaveBeenCalledTimes(1);
         expect(worklet.disconnect).toHaveBeenCalledOnce();
@@ -394,7 +397,7 @@ describe('stopAudioRecording', () => {
     it('keeps the original flush deadline after ACK and sends the final worker stop only once', async () => {
         const { worker, worklet } = await startAndArm('track-ok');
 
-        stopAudioRecording();
+        const stopped = stopAudioRecording();
         vi.advanceTimersByTime(4_000);
         worklet.emit({ type: 'stopped', publishedSampleCount: 128 });
         worklet.emit({ type: 'stopped', publishedSampleCount: 256 });
@@ -405,12 +408,13 @@ describe('stopAudioRecording', () => {
         expect(worker.terminate).not.toHaveBeenCalled();
         vi.advanceTimersByTime(1);
         expect(worker.terminate).toHaveBeenCalledOnce();
+        await stopped;
     });
 
     it('does not force-terminate when the worker flushes within the acknowledgment deadline', async () => {
         const { worker, worklet } = await startAndArm('track-flush-ok');
 
-        stopAudioRecording();
+        const stopped = stopAudioRecording();
         worklet.emit({ type: 'stopped', publishedSampleCount: 0 });
         worker.emit({ type: 'wav', buffer: new ArrayBuffer(44) });
         await Promise.resolve();
@@ -418,6 +422,7 @@ describe('stopAudioRecording', () => {
         const calls_after_flush = worker.terminate.mock.calls.length;
         vi.advanceTimersByTime(5_000);
         expect(worker.terminate.mock.calls.length).toBe(calls_after_flush);
+        await stopped;
     });
 
     it.each([
@@ -529,7 +534,7 @@ describe('stopAudioRecording', () => {
         if (!originalSession) {
             throw new Error('Expected original recording session');
         }
-        stopAudioRecording();
+        const stopped = stopAudioRecording();
         const queuedOriginalAck = original.worklet.port.onmessage;
         const originalMessageCount = original.worker.postMessage.mock.calls.length;
         vi.advanceTimersByTime(5_000);
@@ -544,6 +549,7 @@ describe('stopAudioRecording', () => {
         expect(replacement.worklet.disconnect).not.toHaveBeenCalled();
         expect(activeSessions.get('track-stale-ack')).not.toBe(originalSession);
         expect(audioRecordingStore.value?.isRecording).toBe(true);
+        await stopped;
     });
 
     it('keeps a same-track successor when an obsolete decode settles after the original session fails', async () => {
@@ -605,7 +611,8 @@ describe('stopAudioRecording', () => {
 
     it('does not let a stale captured timeout tear down a same-track successor', async () => {
         await startAndArm('track-stale-timer');
-        stopAudioRecording();
+        // Left in flight: the original session is replaced below, so this stop settles only with the successor.
+        void stopAudioRecording();
         const originalSession = activeSessions.get('track-stale-timer');
         if (!originalSession) {
             throw new Error('Expected original recording session');
@@ -653,7 +660,8 @@ describe('stopAudioRecording', () => {
 
         expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
 
-        stopAudioRecording();
+        // Left in flight: the workers never deliver here, so the afterEach flush timeout settles the stop.
+        void stopAudioRecording();
         firstWorklet.emit({ type: 'stopped', publishedSampleCount: 0 });
         secondWorklet.emit({ type: 'stopped', publishedSampleCount: 0 });
 

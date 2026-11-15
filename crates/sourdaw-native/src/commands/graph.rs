@@ -156,7 +156,8 @@ use crate::commands::crumbs::{self, CrumbsState};
 use crate::commands::graph_refusals::{EngineNotRendering, MappingFault, QueueCapacityRefusal};
 use crate::commands::levain::LevainBankStore;
 use crate::commands::offline_plugins::{
-    build_offline_instances, InFlightRender, OfflinePluginInstances, OfflinePluginSeams,
+    build_offline_instances, leaves_processing_on_drop, InFlightRender, OfflinePluginInstances,
+    OfflinePluginSeams,
 };
 use crate::host::ui_thread::UiThread;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
@@ -244,6 +245,11 @@ const FIRST_GRAPH_EFFECT_ID: usize = 2_000_000;
 /// material it accepts, so an unbounded payload is an unbounded allocation
 /// twice over.
 const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
+
+/// The sample rates an offline render accepts, in Hz. A plugin is activated at
+/// the export rate, so a rate no plugin supports is refused before any state is
+/// read or any instance is built, rather than handed to the plugin.
+pub(crate) const OFFLINE_RENDER_SAMPLE_RATES: std::ops::RangeInclusive<f64> = 8_000.0..=384_000.0;
 
 /// Create-*-strip plus set-track-output, then the per-strip send, device, and
 /// clip slots a maximal topology batch fills.
@@ -6194,12 +6200,12 @@ fn render_offline_ops(
         renderer.push(op)?;
     }
 
+    // This thread processes every block, so it is every instance's audio
+    // thread, and the one that leaves their processing state — taken before
+    // the first block so no way out of the loop can skip it.
+    let leaving_processing = leaves_processing_on_drop(plugins);
     let rendered = renderer.render_controlled(frames, render.control());
-    // This thread processed every block, so it is every instance's audio
-    // thread, and the one that leaves their processing state.
-    if let Some(plugins) = plugins {
-        plugins.leave_processing();
-    }
+    drop(leaving_processing);
     let Ok(rendered) = rendered else {
         return Err(render.cancelled());
     };
@@ -6310,8 +6316,13 @@ pub(crate) async fn render_graph_offline_with(
     seams: &OfflinePluginSeams,
 ) -> Result<Vec<u8>, String> {
     let batch = parse_batch(batch)?;
-    if !(sample_rate.is_finite() && sample_rate > 0.0) {
-        return Err("Sample rate must be a positive, finite number".to_string());
+    if !OFFLINE_RENDER_SAMPLE_RATES.contains(&sample_rate) {
+        return Err(format!(
+            "Sample rate {sample_rate} Hz is outside the offline render's supported range of \
+             {} to {} Hz",
+            OFFLINE_RENDER_SAMPLE_RATES.start(),
+            OFFLINE_RENDER_SAMPLE_RATES.end()
+        ));
     }
     let frames = frames as usize;
     if frames == 0 {

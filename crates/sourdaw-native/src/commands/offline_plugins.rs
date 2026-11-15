@@ -7,16 +7,21 @@
 //! instead, built here for that render alone and released when it ends.
 //!
 //! The live instance is touched exactly once, by the state read that captures
-//! what the user set on it (`plugins::read_plugin_state_chunk`, which drains
-//! the parameter writes still pending first). It is never reactivated,
-//! re-rated, re-moded or spliced into the render.
+//! what the user set on it (`plugins::read_plugin_state_chunk`). That read
+//! does not drain parameter writes still waiting for the live engine to
+//! process them: it refuses while any are pending, and so does the render,
+//! naming that reason, since a state read past them would print settings the
+//! user has already moved. It is never reactivated, re-rated, re-moded or
+//! spliced into the render.
 //!
 //! Each offline instance is built the way a load builds one: on the shell's UI
 //! thread, from the very file the live instance's load vetted, re-vetted
 //! against the same fingerprint, under `PLUGIN_RUNTIME_GATE` in read mode
-//! (`plugins::construct_runtime_on_ui_thread`). It is activated at the export
+//! (`plugins::construct_runtime_on_ui_thread`). The gate is held for that vet
+//! and construction alone, one instance at a time, so an unload waits on one
+//! construction rather than on a whole export's. It is activated at the export
 //! rate in [`ProcessMode::Offline`], and the captured state is restored on the
-//! control path before the render. Every failure refuses the render by device
+//! control path, with the gate free, before the render. Every failure refuses the render by device
 //! and plugin name: nothing renders dry silently.
 //!
 //! The render thread is each instance's audio thread. It processes every
@@ -62,16 +67,47 @@ const OFFLINE_CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
 /// render that never came was for nothing.
 pub const PENDING_CANCEL_LIMIT: usize = 64;
 
+/// How many finished render ids are remembered, so a cancel that arrives
+/// after its render ended is recognised as late rather than kept for the next
+/// render to reuse the id. Bounded and oldest-first, like the pending cancels.
+pub const FINISHED_RENDER_LIMIT: usize = 64;
+
+/// The longest render id a render or a cancel accepts, in bytes. Every
+/// pending cancel and finished id is kept as a copy of one, so the bound is
+/// what keeps those records small.
+pub const RENDER_ID_MAX_BYTES: usize = 128;
+
+/// The text every refused render id's error starts with.
+pub const OFFLINE_RENDER_ID_INVALID: &str = "offline-render-id-invalid";
+
+/// Refuse a render id that is empty or longer than [`RENDER_ID_MAX_BYTES`].
+fn check_render_id(render_id: &str) -> Result<(), String> {
+    if render_id.is_empty() {
+        return Err(format!(
+            "{OFFLINE_RENDER_ID_INVALID}: a render id must not be empty"
+        ));
+    }
+    if render_id.len() > RENDER_ID_MAX_BYTES {
+        return Err(format!(
+            "{OFFLINE_RENDER_ID_INVALID}: a render id must be at most {RENDER_ID_MAX_BYTES} \
+             bytes; this one is {}",
+            render_id.len()
+        ));
+    }
+    Ok(())
+}
+
 /// The text every cancelled render's error starts with — a contract the
 /// renderer side matches on.
 pub const OFFLINE_RENDER_CANCELLED: &str = "offline-render-cancelled";
 
-/// The offline renders in flight, by the id their caller named, and the
-/// cancels that arrived before their render did.
+/// The offline renders in flight, by the id their caller named, the cancels
+/// that arrived before their render did, and the ids that recently finished.
 #[derive(Debug, Default)]
 pub struct OfflineRenders {
     in_flight: HashMap<String, Arc<OfflineRenderControl>>,
     pending_cancels: VecDeque<String>,
+    recently_finished: VecDeque<String>,
 }
 
 impl OfflineRenders {
@@ -84,6 +120,8 @@ impl OfflineRenders {
                 "offline-render-id-in-use: a render under id '{render_id}' is already in flight"
             ));
         }
+        self.recently_finished
+            .retain(|finished| finished != render_id);
         let control = Arc::new(OfflineRenderControl::default());
         if let Some(position) = self
             .pending_cancels
@@ -100,10 +138,18 @@ impl OfflineRenders {
 
     /// Cancel the render under `render_id`, or remember the cancel for a
     /// render that has not started. Never an error: a render that already
-    /// finished has nothing left to stop.
+    /// finished has nothing left to stop, so its late cancel is dropped rather
+    /// than kept to cancel the next render that reuses the id.
     fn cancel(&mut self, render_id: &str) {
         if let Some(control) = self.in_flight.get(render_id) {
             control.cancel();
+            return;
+        }
+        if self
+            .recently_finished
+            .iter()
+            .any(|finished| finished == render_id)
+        {
             return;
         }
         if self
@@ -121,6 +167,10 @@ impl OfflineRenders {
 
     fn finish(&mut self, render_id: &str) {
         self.in_flight.remove(render_id);
+        if self.recently_finished.len() == FINISHED_RENDER_LIMIT {
+            self.recently_finished.pop_front();
+        }
+        self.recently_finished.push_back(render_id.to_string());
     }
 
     #[cfg(test)]
@@ -148,6 +198,7 @@ impl<'a> InFlightRender<'a> {
         let Some(render_id) = render_id else {
             return Ok(Self::uncancellable());
         };
+        check_render_id(&render_id)?;
         let control = state
             .offline_renders
             .lock()
@@ -197,8 +248,9 @@ impl Drop for InFlightRender<'_> {
 }
 
 /// Cancel the offline render under `render_id`. A cancel before its render
-/// starts still cancels it; one for an unknown or finished id does nothing.
+/// starts still cancels it; one for a finished id does nothing.
 pub fn cancel_graph_offline(render_id: String, state: &AppState) -> Result<(), String> {
+    check_render_id(&render_id)?;
     state
         .offline_renders
         .lock()
@@ -209,6 +261,10 @@ pub fn cancel_graph_offline(render_id: String, state: &AppState) -> Result<(), S
 
 /// How an offline render reads a live instance's state.
 pub(crate) type CaptureState = fn(&str, &AppState) -> Result<Vec<u8>, String>;
+
+/// A test's look at every built instance just before the render.
+#[cfg(test)]
+pub(crate) type AfterBuild = Box<dyn Fn(&[Arc<SharedHostedPlugin>]) + Send + Sync>;
 
 /// How an offline render builds a runtime once its file is vetted.
 pub(crate) type ConstructRuntime =
@@ -224,7 +280,11 @@ pub(crate) struct OfflinePluginSeams {
     /// Run over every built instance just before the render, so a test can
     /// put one in a state no real plugin can be made to reach on cue.
     #[cfg(test)]
-    pub(crate) after_build: Option<fn(&[Arc<SharedHostedPlugin>])>,
+    pub(crate) after_build: Option<AfterBuild>,
+    /// Run for each instance once it is constructed and the runtime gate is
+    /// free again, just before its live state is restored into it.
+    #[cfg(test)]
+    pub(crate) before_restore: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl OfflinePluginSeams {
@@ -235,6 +295,8 @@ impl OfflinePluginSeams {
             construct: create_hosted_runtime,
             #[cfg(test)]
             after_build: None,
+            #[cfg(test)]
+            before_restore: None,
         }
     }
 }
@@ -288,8 +350,9 @@ impl OfflinePluginInstances<'_> {
     }
 
     /// Leave every instance's processing state. Called by the render thread
-    /// after the render's last block, cancelled or not.
-    pub(crate) fn leave_processing(&self) {
+    /// after the render's last block, cancelled or not — through
+    /// [`leaves_processing_on_drop`], so no way out of the block loop skips it.
+    fn leave_processing(&self) {
         for instance in &self.instances {
             instance.runtime.leave_processing_after_last_block();
         }
@@ -300,7 +363,9 @@ impl OfflinePluginInstances<'_> {
     /// A block the slot could not serve passed through dry; a block the plugin
     /// was served but answered with a process failure (CLAP's
     /// `CLAP_PROCESS_ERROR`, a VST3 `process` that did not return `kResultOk`)
-    /// was passed through dry or silenced by its wrapper. Either way the print
+    /// was passed through dry or silenced by its wrapper; and a block handed to
+    /// a plugin that refused to start processing (CLAP `start_processing`, VST3
+    /// `setProcessing(true)`) was passed through untouched. Either way the print
     /// has a hole in it and is not the project. Called after the last block,
     /// once the render thread has left every instance's processing state, so
     /// the control-path read of the wrapper's failure latch sees every block.
@@ -316,10 +381,13 @@ impl OfflinePluginInstances<'_> {
                     ),
                 ));
             }
-            let failed = instance
+            let (failed, never_processing) = instance
                 .runtime
                 .with_control(OFFLINE_CONTROL_TIMEOUT, |plugin| {
-                    Ok(plugin.has_failed_a_process_call())
+                    Ok((
+                        plugin.has_failed_a_process_call(),
+                        plugin.has_passed_a_block_unprocessed(),
+                    ))
                 })
                 .map_err(|reason| {
                     refusal(
@@ -332,6 +400,13 @@ impl OfflinePluginInstances<'_> {
                     &instance.bound,
                     "it failed to process a block of the render, which its host passed through \
                      unprocessed",
+                ));
+            }
+            if never_processing {
+                return Err(refusal(
+                    &instance.bound,
+                    "it refused to start processing, so its host passed blocks of the render \
+                     through unprocessed",
                 ));
             }
         }
@@ -358,6 +433,43 @@ impl Drop for OfflinePluginInstances<'_> {
                 );
                 self.state.retain_retired_engine_plugin(runtime);
             }
+        }
+    }
+}
+
+/// Whether the live engine instance under `instance_id` holds parameter
+/// writes its process path has not applied yet. Its state read refuses rather
+/// than drain them, so the render names that refusal itself.
+fn has_pending_parameter_writes(instance_id: &str, state: &AppState) -> Result<bool, String> {
+    let engine_plugins = state
+        .engine_plugins
+        .lock()
+        .map_err(|error| format!("Failed to lock engine plugins: {error}"))?;
+    Ok(engine_plugins
+        .get(instance_id)
+        .is_some_and(|record| record.runtime.has_pending_parameter_writes()))
+}
+
+/// Leaves every offline instance's processing state when dropped; see
+/// [`leaves_processing_on_drop`]. A drop runs once, so
+/// the state is left exactly once.
+pub(crate) struct LeavesProcessing<'plugins, 'state>(
+    Option<&'plugins OfflinePluginInstances<'state>>,
+);
+
+/// Taken by the render thread before the first block: its drop leaves every
+/// instance's processing state on that thread, however the render ends — the
+/// last block, a cancel, a `?` or a panic unwinding through it.
+pub(crate) fn leaves_processing_on_drop<'plugins, 'state>(
+    plugins: Option<&'plugins OfflinePluginInstances<'state>>,
+) -> LeavesProcessing<'plugins, 'state> {
+    LeavesProcessing(plugins)
+}
+
+impl Drop for LeavesProcessing<'_, '_> {
+    fn drop(&mut self) {
+        if let Some(plugins) = self.0 {
+            plugins.leave_processing();
         }
     }
 }
@@ -404,6 +516,13 @@ pub(crate) async fn build_offline_instances<'a>(
 
     let mut captured = Vec::with_capacity(bound.len());
     for instance in bound {
+        if has_pending_parameter_writes(&instance.instance_id, state)? {
+            return Err(refusal(
+                instance,
+                "its live state could not be read: the plugin has parameter writes pending that \
+                 the live engine has not processed yet",
+            ));
+        }
         let chunk = (seams.capture_state)(&instance.instance_id, state).map_err(|reason| {
             refusal(
                 instance,
@@ -434,21 +553,24 @@ pub(crate) async fn build_offline_instances<'a>(
             .collect::<Result<Vec<_>, String>>()?
     };
 
-    // Declared after `built`, so a refusal releases the gate before the
-    // instances already built are torn down — the order a load's refusal keeps.
-    let _runtime_gate = hold_plugin_runtime_gate().await;
     for ((instance, chunk), vetted) in bound.iter().zip(captured).zip(load_resolutions) {
         let backend =
             host_backend(&vetted.entry.format).map_err(|reason| refusal(instance, &reason))?;
-        let runtime = construct_runtime_on_ui_thread(
-            ui,
-            backend,
-            seams.scan_policy.clone(),
-            vetted,
-            sample_rate,
-            ProcessMode::Offline,
-            seams.construct,
-        )
+        // The gate spans this instance's vet and construction only: released
+        // here, before the state restore and before any refusal tears down the
+        // instances already built — the order a load's refusal keeps.
+        let runtime = {
+            let _runtime_gate = hold_plugin_runtime_gate().await;
+            construct_runtime_on_ui_thread(
+                ui,
+                backend,
+                seams.scan_policy.clone(),
+                vetted,
+                sample_rate,
+                ProcessMode::Offline,
+                seams.construct,
+            )
+        }
         .map_err(|reason| refusal(instance, &reason))?;
         let activated = runtime.is_activated();
         let shared = Arc::new(SharedHostedPlugin::new(runtime));
@@ -463,6 +585,10 @@ pub(crate) async fn build_offline_instances<'a>(
                 &activation_refusal_reason(&instance.plugin_name),
             ));
         }
+        #[cfg(test)]
+        if let Some(before_restore) = &seams.before_restore {
+            before_restore();
+        }
         let latency_frames = shared
             .with_control(OFFLINE_CONTROL_TIMEOUT, |plugin| {
                 AudioPlugin::set_state(plugin, &chunk)
@@ -475,7 +601,7 @@ pub(crate) async fn build_offline_instances<'a>(
         }
     }
     #[cfg(test)]
-    if let Some(after_build) = seams.after_build {
+    if let Some(after_build) = &seams.after_build {
         after_build(&built.runtimes());
     }
     Ok(built)

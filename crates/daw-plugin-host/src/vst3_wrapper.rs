@@ -1030,6 +1030,13 @@ pub struct Vst3Wrapper {
     /// thread, which may not allocate or take the I/O lock, and read by the
     /// control path, which is the only thread that may report it.
     process_refused: bool,
+    /// Whether a block passed through untouched because the plugin was not in
+    /// the processing state while the host wanted it there — its start was
+    /// refused. A requested stop is not this. Raised by the audio thread, read
+    /// by the control path, like the process-failure latch above. The block is
+    /// still passed through: only a caller that needs every block processed
+    /// (an offline print) refuses on it.
+    processing_start_refused: bool,
     /// Whether that refusal has already been reported. A plugin that refuses
     /// every block would otherwise print once per control visit for the rest of
     /// the session.
@@ -1115,6 +1122,7 @@ impl Vst3Wrapper {
             output_bus_buffers: Vec::new(),
             processing_start_refusals: 0,
             process_refused: false,
+            processing_start_refused: false,
             process_refusal_reported: false,
             reported_restart_flags: 0,
         };
@@ -1517,6 +1525,9 @@ impl Vst3Wrapper {
         self.sync_processing_state();
 
         if !self.processing.is_processing() {
+            if self.processing.wants_processing() {
+                self.processing_start_refused = true;
+            }
             Self::pass_through(inputs, outputs, num_samples);
             return;
         }
@@ -2017,6 +2028,10 @@ impl HostedPluginRuntime for Vst3Wrapper {
 
     fn has_failed_a_process_call(&self) -> bool {
         self.process_refused
+    }
+
+    fn has_passed_a_block_unprocessed(&self) -> bool {
+        self.processing_start_refused
     }
 }
 
