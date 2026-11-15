@@ -6556,6 +6556,161 @@ mod tests {
         );
     }
 
+    /// A bundle whose own path holds no symlink can still hold a module that
+    /// is one, and the module is the file a loader opens. Re-authorizing only
+    /// the bundle path would load code from outside the native-owned roots.
+    ///
+    /// Mutation this catches: dropping the module's authorization from
+    /// `authorize_plugin_file`. The module's target then fingerprints as a
+    /// changed file and the rescan double is asked to read it.
+    #[cfg(unix)]
+    #[test]
+    fn a_bundle_whose_module_is_a_symlink_outside_the_policy_is_refused() {
+        let plugins = LoadFixtureRoot::create("vetting-bundle-module-symlink");
+        let outside = LoadFixtureRoot::create("vetting-bundle-module-outside");
+        let state = AppState::default();
+        let bundle = plugins.root.join("Bundled.vst3");
+        // The bundle is a directory before its module is asked for: a path
+        // that is not one is its own module, and the symlink would then be
+        // the bundle path itself — refused by the first check, never the
+        // module's.
+        std::fs::create_dir_all(bundle.join("Contents")).expect("the bundle directory is created");
+        let module = scanned_binary_location(&vst3_bundle_row(&bundle))
+            .expect("this platform names where a VST3 bundle's module belongs");
+        std::fs::create_dir_all(module.parent().expect("the module sits inside the bundle"))
+            .expect("the bundle's module directory is created");
+        let target = outside.plugin_file("/plugins/Elsewhere.module");
+        std::os::unix::fs::symlink(&target, &module).expect("the module symlink is created");
+        assert!(
+            module.starts_with(&bundle) && module != bundle && bundle.is_dir(),
+            "the module must sit inside a real bundle directory, or this test never reaches the \
+             module check: {}",
+            module.display()
+        );
+        assert_eq!(
+            plugin_file_path(&bundle, "vst3"),
+            Some(module.clone()),
+            "the bundle must resolve to its module, or this test never reaches the module check"
+        );
+        let bundle_path = bundle.display().to_string();
+        state
+            .plugin_registry
+            .lock()
+            .expect("plugin registry lock should be available")
+            .insert(
+                "aaaa1111".to_string(),
+                PluginRegistryEntry {
+                    path: bundle_path.clone(),
+                    stable_id: "aaaa1111".to_string(),
+                    descriptor_id: "0123456789ABCDEF0123456789ABCDEF".to_string(),
+                    format: "vst3".to_string(),
+                    name: "Bundled".to_string(),
+                    num_inputs: 2,
+                    num_outputs: 2,
+                    has_custom_ui: false,
+                    capability_metadata_reason: None,
+                    chain_kind: DeviceKind::Effect,
+                    scanned_fingerprint: plugin_file_fingerprint(&bundle, "vst3"),
+                },
+            );
+        let log = vetting_log();
+
+        let error = load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect_err("a bundle whose module is symlinked outside the policy must not load");
+
+        assert!(
+            error.starts_with(&format!(
+                "Plugin 'Bundled' will not be loaded from {bundle_path}:"
+            )),
+            "the refusal must name the plugin and the bundle, got: {error}"
+        );
+        assert!(
+            log.lock().expect("vetting log").is_empty(),
+            "nothing may be rescanned or constructed from a refused bundle"
+        );
+    }
+
+    /// A file replaced while its targeted rescan read it: the descriptor the
+    /// rescan returned came from one file and the fingerprint would come from
+    /// another, and every later load would vet the second against the first's
+    /// answer. Refused, and recorded like any other rescan refusal.
+    ///
+    /// Mutation this catches: accepting any pair of fingerprints around the
+    /// rescan in `rescan_holding_still`, which publishes the replacement's
+    /// fingerprint beside the read file's descriptor and constructs it.
+    #[test]
+    fn a_plugin_file_changed_during_its_rescan_is_refused_and_recorded() {
+        let plugins = LoadFixtureRoot::create("vetting-changed-during-rescan");
+        let state = AppState {
+            plugin_registry_store: Arc::new(PluginRegistryStore::at(
+                plugins.root.join("plugin-registry.json"),
+            )),
+            ..AppState::default()
+        };
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        state.plugin_registry_store.persist(&key_scanned_plugins(
+            &published,
+            &fixture_fingerprints(&published),
+        ));
+        let path = PathBuf::from(&published[0].path);
+        std::fs::write(&path, "an update the next load has to rescan")
+            .expect("the plugin should be updated in place");
+        let log = vetting_log();
+        let replacing_rescan = |log: &VettingLog| {
+            let read = recording_rescan(log, Ok(()));
+            move |format: &str, rescanned: &Path, plugin_id: &str, descriptor_id: &str| {
+                let row = read(format, rescanned, plugin_id, descriptor_id);
+                let replacement = rescanned.with_extension("replacement");
+                std::fs::write(&replacement, "a file the rescan never read")
+                    .expect("the replacement is written");
+                std::fs::rename(&replacement, rescanned).expect("the replacement is renamed over");
+                row
+            }
+        };
+
+        let first = load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            replacing_rescan(&log),
+        )
+        .expect_err("a file replaced during its rescan must not load");
+        let second = load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            replacing_rescan(&log),
+        )
+        .expect_err("the recorded refusal must still refuse");
+
+        assert!(
+            first.contains(&format!(
+                "the file at {} changed while it was being checked",
+                path.display()
+            )),
+            "the refusal must say the file changed during the check, got: {first}"
+        );
+        assert_eq!(
+            logged(&log, "construct"),
+            0,
+            "nothing refused is constructed"
+        );
+        assert_eq!(logged(&log, "rescan"), 1, "the refusal is recorded once");
+        assert_eq!(
+            second, first,
+            "the second load answers with the recorded refusal"
+        );
+    }
+
     /// AC-001: a candidate already quarantined must not be handed to a scan
     /// helper on an ordinary scan — proven here by the absence of any error
     /// naming it, since a spawned helper reading this garbage file would
