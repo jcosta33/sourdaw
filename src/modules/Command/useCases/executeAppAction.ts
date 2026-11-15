@@ -420,13 +420,18 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 }
                 throw withAbortFailures(error, abortFailures);
             }
-            storage_transaction.validateCommit(getProjectMutationAdmissionFailure);
-            let production_brief_commit_denied = false;
+            // A gate that started refusing while the handler ran is the same admission
+            // refusal the preflight reports, so callers handle both the same way.
+            const admission_commit: { failure: string | null } = { failure: null };
             storage_transaction.validateCommit(() => {
-                production_brief_commit_denied = !production_brief_admission.allowsCurrent();
-                return production_brief_commit_denied
-                    ? `Action conflicts with current project state: ${action.type}`
-                    : null;
+                admission_commit.failure = getProjectMutationAdmissionFailure();
+                return admission_commit.failure;
+            });
+            storage_transaction.validateCommit(() => {
+                admission_commit.failure = production_brief_admission.allowsCurrent()
+                    ? null
+                    : 'The production brief locks what this action changes';
+                return admission_commit.failure;
             });
             let caller_commit_denied = false;
             if (options?.shouldCommit) {
@@ -558,10 +563,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 }
                 if (
                     !hasAbortFailure(abortFailures) &&
-                    production_brief_commit_denied &&
+                    admission_commit.failure !== null &&
                     error instanceof AutomergeStorageTransactionValidationError
                 ) {
-                    throw new AppActionConflictError(action.type);
+                    throw new AppActionAdmissionRefusedError(action.type, admission_commit.failure);
                 }
                 if (!hasAbortFailure(abortFailures) && error instanceof AutomergeStorageWriteConflictError) {
                     throw new AppActionConflictError(action.type);
