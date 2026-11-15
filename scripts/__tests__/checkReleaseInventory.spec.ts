@@ -2720,12 +2720,11 @@ describe('release inventory', () => {
                 expect(before.paths).not.toContain('src/modules/AudioEngine/worklets/**');
                 expect(before.productSurfaces).toEqual(['Grand Boule source, browser WASM, and desktop runtime']);
                 expect(before.digests).toHaveLength(GRAND_BOULE_RELEASE_REGISTRY.boundaries.length);
-                expect(
-                    GRAND_BOULE_RELEASE_REGISTRY.boundaries
-                        .filter(({ pinsAdmittedBytes }) => pinsAdmittedBytes === true)
-                        .map(({ digestLabel }) => digestLabel)
-                        .sort()
-                ).toEqual([...CONTENT_PINNED_GRAND_BOULE_LABELS].sort());
+                const contentPinnedBoundaries = GRAND_BOULE_RELEASE_REGISTRY.boundaries.filter(
+                    ({ pinsAdmittedBytes }) => pinsAdmittedBytes === true
+                );
+                const contentPinnedLabels = contentPinnedBoundaries.map(({ digestLabel }) => digestLabel);
+                expect(contentPinnedLabels.sort()).toEqual([...CONTENT_PINNED_GRAND_BOULE_LABELS].sort());
                 expect(before.digests).toEqual(independentGrandBouleEntries(root));
                 // Independent path list: a pathspec change that adds or drops a pinned file fails here.
                 expect(registryTrackedFilesByLabel(root, 'grand-boule-project-state')).toEqual(
