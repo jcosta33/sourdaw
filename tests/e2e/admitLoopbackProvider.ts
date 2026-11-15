@@ -7,7 +7,7 @@ import { type LoopbackOpenAiProvider } from './loopbackOpenAiProvider';
  * URL has no type of its own, so the calls are stated against the shapes the
  * modules export rather than made through an untyped value.
  */
-type ConfigureCloudProviderModule = {
+interface ConfigureCloudProviderModule {
     configureCloudProvider: (configuration: {
         provider: 'openai-compatible';
         model: string;
@@ -15,11 +15,11 @@ type ConfigureCloudProviderModule = {
         authentication: 'none';
         apiKey: string;
     }) => Promise<void>;
-};
+}
 
-type SetAiBackendPreferenceModule = {
+interface SetAiBackendPreferenceModule {
     setAiBackendPreference: (preference: 'cloud') => void;
-};
+}
 
 /**
  * Points the running app at the loopback endpoint through its own product use

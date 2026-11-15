@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
-export type ScriptedToolRequest = {
+export interface ScriptedToolRequest {
     model: string;
     stream: false;
     tools: Array<{
@@ -12,9 +12,13 @@ export type ScriptedToolRequest = {
         };
     }>;
     messages: Array<{ role: string; content: string | null; tool_call_id?: string }>;
-};
+}
 
-export type ScriptedToolCall = { id: string; name: string; arguments: Record<string, unknown> };
+export interface ScriptedToolCall {
+    id: string;
+    name: string;
+    arguments: Record<string, unknown>;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);

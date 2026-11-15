@@ -3,15 +3,19 @@ import { type Page } from '@playwright/test';
 import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-type VoiceTerminalPayload = { session_id: string; text: string; duration_ms: number };
-type VoiceBoundaryProbe = {
+interface VoiceTerminalPayload {
+    session_id: string;
+    text: string;
+    duration_ms: number;
+}
+interface VoiceBoundaryProbe {
     starts: string[];
     stops: string[];
     cancels: string[];
     unexpected: string[];
     queueTerminal: (sessionId: string, payload: VoiceTerminalPayload) => string;
     deliverQueued: (queueId: string) => number;
-};
+}
 
 declare global {
     // oxlint-disable-next-line typescript/consistent-type-definitions -- Window must merge with the DOM global.

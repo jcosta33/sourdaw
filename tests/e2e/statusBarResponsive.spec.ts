@@ -10,20 +10,27 @@ const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
 const METRIC_LABELS = ['UI CPU', 'JS MEM', 'AI Model', 'Rate', 'Latency', 'Out'] as const;
 const DEFERRED_METRIC_LABELS = ['UI CPU', 'JS MEM', 'AI Model', 'Out'] as const;
 
-type Rect = { left: number; top: number; right: number; bottom: number; width: number; height: number };
-type LabelGeometry = {
+interface Rect {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+    width: number;
+    height: number;
+}
+interface LabelGeometry {
     label: string;
     labelRects: Rect[];
     group: Rect | null;
-};
-type StatusGeometry = {
+}
+interface StatusGeometry {
     root: Rect | null;
     header: Rect | null;
     footer: Rect | null;
     strip: Rect | null;
     labels: LabelGeometry[];
     controls: Array<{ name: string; rect: Rect }>;
-};
+}
 
 function requireValue<Value>(value: Value | null | undefined, label: string): Value {
     if (value === null || value === undefined) {

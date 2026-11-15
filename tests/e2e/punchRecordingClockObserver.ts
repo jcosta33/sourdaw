@@ -2,26 +2,26 @@ import type { Page } from '@playwright/test';
 
 export const RECORDING_RENDER_QUANTUM_FRAMES = 128;
 
-type RecordingFrame = {
+interface RecordingFrame {
     contextFrame: number;
     sampleRate: number;
     sampleZeroContextFrame: number | null;
     publishedFrames: number;
-};
+}
 
-type OutputPosition = {
+interface OutputPosition {
     gestureBeat: number;
     playheadBeat: number;
     wrapCount: number;
     isRecording: boolean;
-};
+}
 
 type ReadAttempt = { kind: 'frame'; frame: RecordingFrame } | { kind: 'unbound' } | { kind: 'unstable' };
 
-type ClockObservation = {
+interface ClockObservation {
     recording: RecordingFrame | null;
     output: OutputPosition | null;
-};
+}
 
 type ClockEvent = ClockObservation & {
     kind: string;
@@ -31,20 +31,20 @@ type ClockEvent = ClockObservation & {
     wavBytes?: number;
 };
 
-type UnstableClockRead = {
+interface UnstableClockRead {
     contextFrameBefore: number;
     contextFrameAfter: number | null;
     sequenceBefore: number;
     sequenceAfter: number | null;
-};
+}
 
-type ClockReadDiagnostics = {
+interface ClockReadDiagnostics {
     unstableAttempts: number;
     exhaustedReads: number;
     recentUnstableAttempts: UnstableClockRead[];
-};
+}
 
-type RuntimeWitness = {
+interface RuntimeWitness {
     admission: PunchRecordingClockWitness['admission'] | null;
     firstFrame: ClockObservation | null;
     samples: ClockObservation[];
@@ -55,14 +55,14 @@ type RuntimeWitness = {
     readOutput: (() => OutputPosition) | null;
     stopSent: boolean;
     readDiagnostics: ClockReadDiagnostics;
-};
+}
 
 export type DiagnosticWindow = Window & {
     __punchRecordingClockWitness?: RuntimeWitness;
     __readPunchRecordingClock?: () => ClockObservation;
 };
 
-export type PunchRecordingClockWitness = {
+export interface PunchRecordingClockWitness {
     admission: {
         baseLatencySeconds: number;
         outputLatencySeconds: number;
@@ -72,13 +72,13 @@ export type PunchRecordingClockWitness = {
     samples: ClockObservation[];
     events: ClockEvent[];
     readDiagnostics: ClockReadDiagnostics;
-};
+}
 
 export type LivePunchRecordingClock = ClockObservation & {
     admission: PunchRecordingClockWitness['admission'];
 };
 
-export type PunchClockReference = {
+export interface PunchClockReference {
     gestureBeat: number;
     gestureContextFrame: number;
     sampleZeroContextFrame: number;
@@ -86,7 +86,7 @@ export type PunchClockReference = {
     sampleRate: number;
     frozenLatencySeconds: number;
     tempo: number;
-};
+}
 
 /** The independent 120 BPM fixture clock: source samples stop at their last captured frame. */
 export function compensatedCaptureFrontierBeat(input: PunchClockReference): number {

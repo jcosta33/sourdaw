@@ -53,11 +53,11 @@ async function configureNotificationCapture(page: Page): Promise<void> {
             import('/src/infra/events/createEventBus.ts'),
             import('/src/utils/Notification/notificationEventBus.ts'),
         ]);
-        type NotificationEvents = {
+        interface NotificationEvents {
             'ui.notify': NotifyPayload;
             'ui.confirm': ConfirmPayload;
             'ui.prompt': PromptPayload;
-        };
+        }
         const eventBus = createEventBus<NotificationEvents>();
         const notifications: NotificationEvents['ui.notify'][] = [];
         eventBus.on('ui.notify', (payload) => {

@@ -22,13 +22,13 @@ const ARP_DEFAULTS = {
     latch: 0,
 };
 
-type YeastSlot = {
+interface YeastSlot {
     schemaVersion: number;
     racks: Record<
         string,
         { processors: Record<string, { deleted: boolean; value: { params: Record<string, number> } }> }
     >;
-};
+}
 
 async function readState(page: Page, trackId: string, deviceId: string) {
     return page.evaluate(

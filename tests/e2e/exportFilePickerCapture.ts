@@ -11,11 +11,11 @@ const ABORT_BINDING = '__sourdawCapturePickerAbort';
 const WRITABLE_BINDING = '__sourdawCapturePickerWritable';
 const PRIOR_PICKER_KEY = '__sourdawCapturePickerPrior';
 
-type Deferred<TValue> = {
+interface Deferred<TValue> {
     promise: Promise<TValue>;
     resolve: (value: TValue) => void;
     reject: (error: unknown) => void;
-};
+}
 
 function createDeferred<TValue>(): Deferred<TValue> {
     let resolve!: (value: TValue) => void;
@@ -28,9 +28,11 @@ function createDeferred<TValue>(): Deferred<TValue> {
     return { promise, resolve, reject };
 }
 
-type BindingRegistration = { dispose: () => Promise<void> | void };
+interface BindingRegistration {
+    dispose: () => Promise<void> | void;
+}
 
-export type FilePickerCapture = {
+export interface FilePickerCapture {
     path: string;
     pickerFilename: Promise<string>;
     waitForClose: () => Promise<void>;
@@ -44,7 +46,7 @@ export type FilePickerCapture = {
     assertHealthy: () => void;
     retire: () => Promise<void>;
     dispose: () => Promise<void>;
-};
+}
 
 type CaptureFrame = Pick<Frame, 'evaluate'>;
 
@@ -53,7 +55,7 @@ type CapturePage = Pick<Page, 'addInitScript' | 'exposeBinding'> & {
     mainFrame: () => CaptureFrame;
 };
 
-type PickerNames = {
+interface PickerNames {
     priorPickerKey: string;
     owner: string;
     pickerRequestBinding: string;
@@ -61,9 +63,12 @@ type PickerNames = {
     writeBinding: string;
     closeBinding: string;
     abortBinding: string;
-};
+}
 
-type PriorPicker = { descriptor: PropertyDescriptor | null; owner: string };
+interface PriorPicker {
+    descriptor: PropertyDescriptor | null;
+    owner: string;
+}
 
 function installPicker({
     priorPickerKey,

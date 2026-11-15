@@ -16,13 +16,13 @@ const HYDRATION_ENTRY = isBuiltE2eShardRun(env)
 type HydrationEntry = typeof import('./persistedHydrationEntry');
 type Track = NonNullable<HydrationEntry['arrangement']['trackStore']['value']>['tracks'][number];
 type Clip = Track['clips'][number];
-type SampleState = {
+interface SampleState {
     audioTrackId: string;
     raw: Clip[];
     projected: Clip[];
     undoPast: Array<{ kind: 'action'; actionType: string } | { kind: 'callback'; label: string }>;
     undoFuture: Array<{ kind: 'action'; actionType: string } | { kind: 'callback'; label: string }>;
-};
+}
 
 async function sampleState(page: Page): Promise<SampleState> {
     return page.evaluate(
@@ -73,12 +73,12 @@ async function prepareImportedSample(page: Page): Promise<void> {
     await expect(browserPanel.getByText(SAMPLE_NAME, { exact: true })).toBeVisible();
 }
 
-type AddFocusCapture = {
+interface AddFocusCapture {
     image: Buffer;
     rect: NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
     clip: { x: number; y: number; width: number; height: number };
     boxShadow: string;
-};
+}
 
 async function captureAddFocusBorder(add: Locator): Promise<AddFocusCapture> {
     const box = await add.boundingBox();

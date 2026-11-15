@@ -37,20 +37,38 @@ const TOOLBAR_CONTROLS = [
     'Piano roll zoom',
 ] as const;
 
-type Rect = { x: number; y: number; width: number; height: number };
-type Note = { id: string; pitch: number; startBeat: number; duration: number };
-type ProjectSnapshot = { midi: { notesByClipId: Record<string, Note[]> } };
-type ElementDiagnostic = {
+interface Rect {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+interface Note {
+    id: string;
+    pitch: number;
+    startBeat: number;
+    duration: number;
+}
+interface ProjectSnapshot {
+    midi: { notesByClipId: Record<string, Note[]> };
+}
+interface ElementDiagnostic {
     tagName: string;
     id: string;
     className: string;
     rect: Rect;
     styles: Record<string, string>;
     scroll: { left: number; top: number; width: number; height: number; clientWidth: number; clientHeight: number };
-};
-type CanvasDiagnostic = { canvas: ElementDiagnostic; ancestors: ElementDiagnostic[] };
-type ToolbarControl = { name: string; rect: Rect };
-type ToolbarState = {
+}
+interface CanvasDiagnostic {
+    canvas: ElementDiagnostic;
+    ancestors: ElementDiagnostic[];
+}
+interface ToolbarControl {
+    name: string;
+    rect: Rect;
+}
+interface ToolbarState {
     activeName: string | null;
     controls: ToolbarControl[];
     gridScrollLeft: number;
@@ -59,15 +77,19 @@ type ToolbarState = {
     toolbarScrollWidth: number;
     toolbarClientWidth: number;
     visibleViewport: Rect;
-};
-type AutomationTrayState = { selector: Rect; tray: Rect; visibleTray: Rect };
-type NativeSelectKeyObservation = {
+}
+interface AutomationTrayState {
+    selector: Rect;
+    tray: Rect;
+    visibleTray: Rect;
+}
+interface NativeSelectKeyObservation {
     key: string;
     defaultPrevented: boolean;
     selectRetainedFocus: boolean;
-};
+}
 const CLOSED_NATIVE_SELECT_KEYS = ['Home', 'End', 'Space', 'ArrowDown', 'Enter'] as const;
-type PianoRollGeometry = {
+interface PianoRollGeometry {
     canvas: Rect;
     dockRequestedHeight: string;
     dockRenderedHeight: number;
@@ -83,7 +105,7 @@ type PianoRollGeometry = {
         pageScroll: { x: number; y: number; documentLeft: number; documentTop: number };
         viewport: { width: number; height: number };
     };
-};
+}
 
 function requireValue<Value>(value: Value | null | undefined, label: string): Value {
     if (value === null || value === undefined) {

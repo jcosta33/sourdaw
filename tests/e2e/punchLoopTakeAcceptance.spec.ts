@@ -35,7 +35,7 @@ const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
 const COMP_RELEASE_INSET_PX = 1.2;
 const CAPTURE_FRONTIER_BOUND_BEATS = (2 * RECORDING_RENDER_QUANTUM_FRAMES * TEMPO) / (MIC_SAMPLE_RATE * 60);
 
-type CapturedTake = {
+interface CapturedTake {
     id: string;
     name: string;
     clipId: string;
@@ -44,9 +44,9 @@ type CapturedTake = {
     selected: boolean;
     passDepthSeconds?: number;
     passSourceEndSeconds?: number;
-};
+}
 
-type RecordingSnapshot = {
+interface RecordingSnapshot {
     clipId: string;
     bufferId: string;
     clipStartBeat: number;
@@ -54,9 +54,13 @@ type RecordingSnapshot = {
     takes: CapturedTake[];
     regions: { startBeat: number; endBeat: number; takeId: string }[];
     durationSeconds: number;
-};
+}
 
-type BrowserSourceStart = { offsetSeconds: number; durationSeconds: number | null; recordedBuffer: boolean };
+interface BrowserSourceStart {
+    offsetSeconds: number;
+    durationSeconds: number | null;
+    recordedBuffer: boolean;
+}
 
 function markerAmplitude(index: number): number {
     let value = Math.imul(index + 1, 0x9e37_79b1) >>> 0;
@@ -965,7 +969,10 @@ async function waitForCapturedThirdPassFrontier(page: Page): Promise<void> {
 }
 
 /** A gesture beat and the audio-clock frame it was read at, taken from one rolling-clock observation. */
-type ClockGesture = { beat: number; contextFrame: number };
+interface ClockGesture {
+    beat: number;
+    contextFrame: number;
+}
 
 function capturedThirdPassFrontier(
     witness: PunchRecordingClockWitness,

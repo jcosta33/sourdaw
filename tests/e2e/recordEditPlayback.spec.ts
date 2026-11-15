@@ -12,7 +12,12 @@ async function openEditorDock(page: Page): Promise<void> {
     await page.getByRole('tab', { name: 'Editor' }).click();
 }
 
-type Box = { height: number; width: number; x: number; y: number };
+interface Box {
+    height: number;
+    width: number;
+    x: number;
+    y: number;
+}
 
 async function getBox(locator: Locator): Promise<Box> {
     const box = await locator.boundingBox();
@@ -49,7 +54,7 @@ async function expectUsableTimelineRow(canvas: Locator): Promise<void> {
     expect(await getVisibleHeight(canvas)).toBeGreaterThanOrEqual(80);
 }
 
-type CenterColumnMetrics = {
+interface CenterColumnMetrics {
     clientHeight: number;
     scrollHeight: number;
     scrollTop: number;
@@ -57,7 +62,7 @@ type CenterColumnMetrics = {
     chromeHeight: number;
     /** Sum of the minimum heights its children keep: the arrangement floor, the docks and their handles. */
     minimumContentHeight: number;
-};
+}
 
 // The center column is the nearest overflow-y:auto ancestor of the keyboard dock.
 async function readCenterColumn(keyboard: Locator): Promise<CenterColumnMetrics> {

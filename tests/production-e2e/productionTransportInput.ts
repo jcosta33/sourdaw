@@ -1,14 +1,21 @@
 import { expect, type FrameLocator, type Locator, type Page } from '@playwright/test';
 
-type PublicState = { status: string; play: string; active: string };
-type Point = { x: number; y: number };
+interface PublicState {
+    status: string;
+    play: string;
+    active: string;
+}
+interface Point {
+    x: number;
+    y: number;
+}
 type Rectangle = Point & { width: number; height: number };
-type Geometry = {
+interface Geometry {
     rect: Rectangle;
     frame: Point & { scaleX: number; scaleY: number };
     viewport: Point & { width: number; height: number };
-};
-type TransportEvent = {
+}
+interface TransportEvent {
     at: number;
     kind: 'state' | 'input';
     state: PublicState;
@@ -23,8 +30,10 @@ type TransportEvent = {
     hit?: boolean;
     point?: boolean;
     raw?: string;
-};
-type AttemptBoundary = { observedEventCount: number };
+}
+interface AttemptBoundary {
+    observedEventCount: number;
+}
 
 export function assertTransportAdmission(count: number, visible: boolean, enabled: boolean): void {
     if (count !== 1 || !visible || !enabled) {

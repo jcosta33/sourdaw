@@ -3,7 +3,7 @@ import { expect } from '../e2eTest';
 import type { AppAction } from '../../../src/utils/handlerContract';
 import type { Frame } from '@playwright/test';
 
-type Clip = {
+interface Clip {
     id: string;
     trackId: string;
     name: string;
@@ -12,17 +12,26 @@ type Clip = {
     endBeat: number;
     audioBufferId?: string;
     loopOriginBeat?: number;
-};
-type Track = { id: string; name: string; clips: Clip[] };
-type MirroredEntry = {
+}
+interface Track {
+    id: string;
+    name: string;
+    clips: Clip[];
+}
+interface MirroredEntry {
     kind: string;
     groupId?: string;
     action?: AppAction;
     inverseAction?: AppAction;
     redoAction?: AppAction;
-};
-type Mirror = { projectId?: string; witness?: string; past: MirroredEntry[]; future: MirroredEntry[] };
-type Snapshot = {
+}
+interface Mirror {
+    projectId?: string;
+    witness?: string;
+    past: MirroredEntry[];
+    future: MirroredEntry[];
+}
+interface Snapshot {
     projectId: string;
     witness: string;
     tracks: Track[];
@@ -30,7 +39,7 @@ type Snapshot = {
     exact: unknown;
     inspection: { projectInvariantsValid: boolean; audioGraphValid: boolean };
     counts: { notes: number; controllers: number; takes: number; compRegions: number; automationPoints: number };
-};
+}
 
 export async function readStartupSnapshot(page: Frame): Promise<Snapshot> {
     const serializedSnapshot = await page.evaluate(async () => {

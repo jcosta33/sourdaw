@@ -31,7 +31,7 @@ const STEP_TIMEOUT = 30_000;
 
 test.use({ actionTimeout: STEP_TIMEOUT, navigationTimeout: STEP_TIMEOUT });
 
-type SourceClip = {
+interface SourceClip {
     id: string;
     trackId: string;
     type: string;
@@ -45,18 +45,32 @@ type SourceClip = {
     stretchRatio?: number;
     hasSourceSeconds: boolean;
     loopOriginBeat?: number;
-};
-type TempoEvent = { id: string; beat: number; tempo: number; curve: string };
-type CompRegion = { startBeat: number; endBeat: number; takeId: string; audioSource?: unknown };
-type TakeLane = {
+}
+interface TempoEvent {
+    id: string;
+    beat: number;
+    tempo: number;
+    curve: string;
+}
+interface CompRegion {
+    startBeat: number;
+    endBeat: number;
+    takeId: string;
+    audioSource?: unknown;
+}
+interface TakeLane {
     id: string;
     trackId: string;
     takes: { id: string; clipId: string; name: string }[];
     activeCompRegions: CompRegion[];
     baseGapAudioSources?: unknown[];
-};
-type OwnerState = { clips: SourceClip[]; tempo: TempoEvent[]; lane: TakeLane | null };
-type Mirror = {
+}
+interface OwnerState {
+    clips: SourceClip[];
+    tempo: TempoEvent[];
+    lane: TakeLane | null;
+}
+interface Mirror {
     projectId?: string;
     witness?: string;
     past: {
@@ -66,8 +80,8 @@ type Mirror = {
         redoAction?: { type: string };
     }[];
     future: { kind: string; action?: { type: string } }[];
-};
-type Snapshot = {
+}
+interface Snapshot {
     projectId: string;
     witness: string;
     trackId: string;
@@ -82,19 +96,19 @@ type Snapshot = {
         finalPositive: number;
         firstNegative: number;
     };
-};
-type WaveformObservation = {
+}
+interface WaveformObservation {
     rectangle: { startBeat: number; endBeat: number };
     programme: { startBeat: number; endBeat: number; audioOffsetSeconds?: number }[] | null;
     occurrences: { startSample: number; endSample: number; audibleStartBeat: number; audibleTimelineBeats: number }[];
     allClipRanges: { startBeat: number; endBeat: number }[];
-};
-type BrowserStart = {
+}
+interface BrowserStart {
     offsetSeconds: number;
     durationSeconds: number | null;
     importedBuffer: boolean;
     playbackRate: number;
-};
+}
 
 // Independent fixture and clock oracle: no production source-time projector participates in these numbers.
 function sourceWav(): Buffer {

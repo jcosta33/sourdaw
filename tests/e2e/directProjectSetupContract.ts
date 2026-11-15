@@ -3,17 +3,19 @@
  * from the runtime entry so test helpers and Node-side build tooling can type
  * the loaded module without pulling in the app module graph.
  */
-export type DirectProjectSetupModule = {
+export interface DirectProjectSetupModule {
     newProject: () => Promise<boolean>;
-};
+}
 
 export type ProjectInspectionValue =
     null | undefined | boolean | number | string | ProjectInspectionValue[] | { [key: string]: ProjectInspectionValue };
 
-export type ProjectInspectionRecord = { [key: string]: ProjectInspectionValue };
+export interface ProjectInspectionRecord {
+    [key: string]: ProjectInspectionValue;
+}
 
 /** Data-only snapshots retain every field; unsupported callback history fails capture. */
-export type ProjectInspectionModule = {
+export interface ProjectInspectionModule {
     inspectProject: () => {
         project: ProjectInspectionRecord | null;
         revision: string;
@@ -23,4 +25,4 @@ export type ProjectInspectionModule = {
             undoTree: ProjectInspectionValue;
         };
     };
-};
+}

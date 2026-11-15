@@ -13,12 +13,12 @@ import {
     type ExecutedSources,
 } from '../../scripts/e2eCoverageRecord';
 
-type CoverageRun = {
+interface CoverageRun {
     /** Every page target the browser created or held while the test ran. */
     pageTargets: Set<string>;
     /** Set once the fixture page's coverage is collected. */
     measured: ({ targetId: string } & ExecutedSources) | null;
-};
+}
 
 function specPathOf(testInfo: TestInfo): string {
     const { configFile } = testInfo.config;

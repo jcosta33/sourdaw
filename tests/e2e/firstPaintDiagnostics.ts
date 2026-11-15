@@ -25,16 +25,16 @@ export const WASM_BOOTED_MARKER = 'initSync(';
 /** bootstrap's boot-time probe: the launch path's boot work is done. */
 export const CAPABILITIES_MARKER = '[capabilities]';
 
-export type FirstPaintConsoleEvent = {
+export interface FirstPaintConsoleEvent {
     /** Milliseconds since the timeline began (attachment ≈ navigation start). */
     atMs: number;
     text: string;
-};
+}
 
-export type FirstPaintTimeline = {
+export interface FirstPaintTimeline {
     startedAtMs: number;
     events: FirstPaintConsoleEvent[];
-};
+}
 
 const timelines = new WeakMap<Page, FirstPaintTimeline>();
 
@@ -58,12 +58,12 @@ export function attach_first_paint_console(page: Page): FirstPaintTimeline {
     return timeline;
 }
 
-export type FirstPaintBootProgress = {
+export interface FirstPaintBootProgress {
     viteConnectedAtMs: number | null;
     reactFirstRenderAtMs: number | null;
     wasmBootedAtMs: number | null;
     capabilitiesLoggedAtMs: number | null;
-};
+}
 
 function firstMarkerAtMs(timeline: FirstPaintTimeline, marker: string): number | null {
     const event = timeline.events.find((candidate) => candidate.text.includes(marker));
@@ -127,11 +127,11 @@ function formatConsoleTail(timeline: FirstPaintTimeline): string {
         : 'The page logged no console messages.';
 }
 
-export type FirstPaintFailureDiagnosisInput = {
+export interface FirstPaintFailureDiagnosisInput {
     timeline: FirstPaintTimeline;
     elapsedMs: number;
     underlyingMessage: string;
-};
+}
 
 /** Evidence for a warmup failure that does not claim every failure was a timeout. */
 export function format_first_paint_failure_diagnosis({
@@ -147,12 +147,12 @@ export function format_first_paint_failure_diagnosis({
     ].join('\n');
 }
 
-export type FirstPaintTimeoutDiagnosisInput = {
+export interface FirstPaintTimeoutDiagnosisInput {
     timeline: FirstPaintTimeline;
     timeoutMs: number;
     waitedMs: number;
     underlyingMessage: string;
-};
+}
 
 /**
  * The message a timed-out first-paint wait fails with. It carries the boot

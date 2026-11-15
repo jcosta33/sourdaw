@@ -10,7 +10,7 @@ import { launch_new_project_via_ui, setupWorkspace } from './e2eUtils';
 
 const CAPABILITY_STORAGE_KEY = 'sourdaw-browser-ai-capability';
 
-type DdspRenderProbe = {
+interface DdspRenderProbe {
     prepare: () => Promise<{ artifactCount: number; ready: boolean }>;
     renderOffline: () => Promise<{
         admissionWithheld: boolean;
@@ -19,7 +19,7 @@ type DdspRenderProbe = {
         peak: number;
         pcmLength: number;
     }>;
-};
+}
 
 /**
  * The reasons the product is allowed to give for refusing WebGPU. A refusal
@@ -38,13 +38,13 @@ type WebGpuUnavailableReason = (typeof WEB_GPU_UNAVAILABLE_REASONS)[number];
 
 type BrowserAiWebGpuResult = { status: 'supported' } | { reason: WebGpuUnavailableReason; status: 'unavailable' };
 
-type BrowserAiCapabilityReport = {
+interface BrowserAiCapabilityReport {
     capability: 'supported' | 'unsupported-browser';
     crossOriginIsolated: boolean;
     opfsAvailable: boolean;
     webGpu: BrowserAiWebGpuResult;
     workerAvailable: boolean;
-};
+}
 
 declare global {
     // oxlint-disable-next-line typescript/consistent-type-definitions -- Window must merge with the DOM global.

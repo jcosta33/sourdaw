@@ -73,14 +73,14 @@ async function blockExternalRequests(page: Page): Promise<() => Promise<void>> {
     };
 }
 
-type AudioContextTestControl = {
+interface AudioContextTestControl {
     graphState: () => Promise<string>;
     suspend: () => Promise<string | undefined>;
     count: () => Promise<number>;
     lead: () => Promise<number>;
     reset: () => Promise<void>;
     hasContextMismatch: () => Promise<boolean>;
-};
+}
 
 async function observeAudioContext(page: Page): Promise<AudioContextTestControl> {
     await page.addInitScript(() => {

@@ -20,7 +20,7 @@ const STEP_TIMEOUT = 30_000;
 
 test.use({ actionTimeout: STEP_TIMEOUT, navigationTimeout: STEP_TIMEOUT });
 
-type Clip = {
+interface Clip {
     id: string;
     trackId: string;
     name: string;
@@ -29,17 +29,26 @@ type Clip = {
     endBeat: number;
     audioBufferId?: string;
     loopOriginBeat?: number;
-};
-type Track = { id: string; name: string; clips: Clip[] };
-type MirroredEntry = {
+}
+interface Track {
+    id: string;
+    name: string;
+    clips: Clip[];
+}
+interface MirroredEntry {
     kind: string;
     groupId?: string;
     action?: AppAction;
     inverseAction?: AppAction;
     redoAction?: AppAction;
-};
-type Mirror = { projectId?: string; witness?: string; past: MirroredEntry[]; future: MirroredEntry[] };
-type Snapshot = {
+}
+interface Mirror {
+    projectId?: string;
+    witness?: string;
+    past: MirroredEntry[];
+    future: MirroredEntry[];
+}
+interface Snapshot {
     projectId: string;
     witness: string;
     tracks: Track[];
@@ -47,7 +56,7 @@ type Snapshot = {
     exact: unknown;
     inspection: { projectInvariantsValid: boolean; audioGraphValid: boolean };
     counts: { notes: number; controllers: number; takes: number; compRegions: number; automationPoints: number };
-};
+}
 
 function sineWav(): Buffer {
     const samples = SAMPLE_RATE * 4;

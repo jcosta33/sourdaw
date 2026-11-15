@@ -27,7 +27,7 @@ const artifacts = [
 ] as const;
 
 type Artifact = (typeof artifacts)[number];
-type Snapshot = {
+interface Snapshot {
     queue: {
         entries: { phraseId: string; requestId: string; pipeline: string; status: string; queuedAt: number }[];
         cachedPhraseIds: string[];
@@ -35,8 +35,8 @@ type Snapshot = {
         phraseRequestIds: Record<string, string>;
     };
     progress: { activeRenders: Record<string, unknown> };
-};
-type AudioProof = {
+}
+interface AudioProof {
     sampleRate: number;
     length: number;
     finite: boolean;
@@ -47,8 +47,8 @@ type AudioProof = {
     last: number;
     sha256: string;
     provenance: { modelId: string; voiceId: string; renderQuality: string; tier: string; renderedAt: number };
-};
-type KokoroProbe = {
+}
+interface KokoroProbe {
     prepare: () => Promise<{
         admitted: boolean;
         verified: boolean;
@@ -63,7 +63,7 @@ type KokoroProbe = {
     state: () => Snapshot;
     cacheWitness: (text: string) => Promise<{ cacheKey: string; length: number | null; sha256: string | null }>;
     cleanup: () => void;
-};
+}
 
 async function fetchBounded(artifact: Artifact): Promise<Uint8Array> {
     const response = await fetch(artifact.url, { signal: AbortSignal.timeout(60_000), credentials: 'omit' });
