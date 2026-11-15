@@ -291,14 +291,14 @@ function connectProgrammeBuffer(driven: DrivenEngine, left: number, right: numbe
     source.start();
 }
 
-function executeToggle(action: 'toggleControlRoomMono' | 'toggleControlRoomDim'): void {
+async function executeToggle(action: 'toggleControlRoomMono' | 'toggleControlRoomDim'): Promise<void> {
     const handlers = getControlRoomHandlers();
     // Each action dispatches through its own real handler with its own typed
     // action; a union-keyed lookup would collapse `execute`'s parameter to never.
     if (action === 'toggleControlRoomMono') {
-        handlers.toggleControlRoomMono.execute({ type: 'toggleControlRoomMono' });
+        await handlers.toggleControlRoomMono.execute({ type: 'toggleControlRoomMono' });
     } else {
-        handlers.toggleControlRoomDim.execute({ type: 'toggleControlRoomDim' });
+        await handlers.toggleControlRoomDim.execute({ type: 'toggleControlRoomDim' });
     }
 }
 
@@ -326,7 +326,7 @@ describe('control room monitoring on the listening path', () => {
     });
 
     it('mono folds a hard-left programme to equal channels on the listening output', async () => {
-        executeToggle('toggleControlRoomMono');
+        await executeToggle('toggleControlRoomMono');
         expect(controlRoomStore.value?.monoActive).toBe(true);
 
         connectProgrammeBuffer(driven, 0.5, 0);
@@ -339,7 +339,7 @@ describe('control room monitoring on the listening path', () => {
     });
 
     it('dim attenuates the listening feed by the store dim level and nothing else', async () => {
-        executeToggle('toggleControlRoomDim');
+        await executeToggle('toggleControlRoomDim');
 
         connectProgrammeBuffer(driven, 0.5, 0.25);
 
@@ -352,8 +352,8 @@ describe('control room monitoring on the listening path', () => {
     });
 
     it('mono and dim compose on the listening output', async () => {
-        executeToggle('toggleControlRoomMono');
-        executeToggle('toggleControlRoomDim');
+        await executeToggle('toggleControlRoomMono');
+        await executeToggle('toggleControlRoomDim');
 
         connectProgrammeBuffer(driven, 0.5, 0);
 
@@ -370,8 +370,8 @@ describe('control room monitoring on the listening path', () => {
         const analyser = driven.engine.masterAnalyser as unknown as FixtureAnalyserNode;
         const before = analyser.stitchedCapture();
 
-        executeToggle('toggleControlRoomMono');
-        executeToggle('toggleControlRoomDim');
+        await executeToggle('toggleControlRoomMono');
+        await executeToggle('toggleControlRoomDim');
         await driven.context.startRendering();
         const after = analyser.stitchedCapture();
 
@@ -386,7 +386,7 @@ describe('control room monitoring on the listening path', () => {
     });
 
     it('follows a dim level the store changes after the subscription exists', async () => {
-        executeToggle('toggleControlRoomDim');
+        await executeToggle('toggleControlRoomDim');
         controlRoomStore.update((state) => (state ? { ...state, dimLevel: -40 } : state));
 
         connectProgrammeBuffer(driven, 0.5, 0);
@@ -398,7 +398,7 @@ describe('control room monitoring on the listening path', () => {
 
     it('stops following the store once unsubscribed', async () => {
         driven.unsubscribe();
-        executeToggle('toggleControlRoomMono');
+        await executeToggle('toggleControlRoomMono');
 
         connectProgrammeBuffer(driven, 0.5, 0);
 
@@ -488,8 +488,8 @@ describe('control room monitoring on the listening path', () => {
     it('restores current mono, dim and master settings rather than an acquisition snapshot', async () => {
         connectProgrammeBuffer(driven, 0.5, 0.25);
         const intent = driven.engine.beginExclusiveAudioPreviewIntent();
-        executeToggle('toggleControlRoomMono');
-        executeToggle('toggleControlRoomDim');
+        await executeToggle('toggleControlRoomMono');
+        await executeToggle('toggleControlRoomDim');
         driven.engine.setMasterGain(0.5);
         intent.release();
         driven.engine.setAudioPreviewProgrammeSuppressed(false);
