@@ -36,12 +36,12 @@ beforeEach(() => {
 });
 
 describe('handleAddAutomationPoint — execute', () => {
-    it('calls addAutomationPoint with generated pointId and defaults', () => {
+    it('calls addAutomationPoint with generated pointId and defaults', async () => {
         const action = {
             type: 'addAutomationPoint' as const,
             payload: { laneId: 'lane1', beat: 4, value: 0.5 },
         };
-        handleAddAutomationPoint.execute(action);
+        await handleAddAutomationPoint.execute(action);
         expect(mockedAddPoint).toHaveBeenCalledTimes(1);
         const [laneId, point] = mockedAddPoint.mock.calls[0]!;
         expect(laneId).toBe('lane1');
@@ -50,8 +50,8 @@ describe('handleAddAutomationPoint — execute', () => {
         expect(point.tension).toBe(0);
     });
 
-    it('preserves explicit pointId when provided', () => {
-        handleAddAutomationPoint.execute({
+    it('preserves explicit pointId when provided', async () => {
+        await handleAddAutomationPoint.execute({
             type: 'addAutomationPoint',
             payload: { laneId: 'lane1', beat: 0, value: 1, pointId: 'my-id' },
         });
@@ -63,8 +63,8 @@ describe('handleAddAutomationPoint — execute', () => {
         expect(point.id).toBe('my-id');
     });
 
-    it('passes through cp1/cp2/stairSteps', () => {
-        handleAddAutomationPoint.execute({
+    it('passes through cp1/cp2/stairSteps', async () => {
+        await handleAddAutomationPoint.execute({
             type: 'addAutomationPoint',
             payload: { laneId: 'lane1', beat: 0, value: 0.5, cp1: { x: 0.1, y: 0.2 }, stairSteps: 4 },
         });

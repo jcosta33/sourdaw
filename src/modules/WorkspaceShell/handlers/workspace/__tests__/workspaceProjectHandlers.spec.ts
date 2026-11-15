@@ -198,7 +198,7 @@ describe('Workspace Project Handlers', () => {
             })
         );
 
-        handleImportAudioFile.execute({ type: 'importAudioFile' });
+        const importing = handleImportAudioFile.execute({ type: 'importAudioFile' });
         projectEpoch.advance();
         expect(projectEpoch.latest()?.isCurrent()).toBe(false);
         expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
@@ -206,6 +206,7 @@ describe('Workspace Project Handlers', () => {
 
         await vi.waitFor(() => expect(pickFiles).toHaveBeenCalledTimes(1));
         await Promise.resolve();
+        await importing;
         expect(importAudioFile).not.toHaveBeenCalled();
 
         const successorFile = new File([], 'successor.wav');
@@ -228,8 +229,7 @@ describe('Workspace Project Handlers', () => {
 
     it('handleImportAudioFile notifies on error when the dialog rejects', async () => {
         vi.mocked(pickFiles).mockRejectedValueOnce(new Error('dialog closed'));
-        // execute() does not await the promise chain — flush microtasks.
-        handleImportAudioFile.execute({ type: 'importAudioFile' });
+        await handleImportAudioFile.execute({ type: 'importAudioFile' });
         await vi.waitFor(() => {
             expect(notifyUser).toHaveBeenCalledWith('Failed to open file dialog', 'error');
         });
@@ -243,13 +243,14 @@ describe('Workspace Project Handlers', () => {
         });
         vi.mocked(pickFiles).mockReturnValueOnce(picker);
 
-        handleImportAudioFile.execute({ type: 'importAudioFile' });
+        const importing = handleImportAudioFile.execute({ type: 'importAudioFile' });
         projectEpoch.advance();
         expect(projectEpoch.latest()?.isCurrent()).toBe(false);
         expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
         rejectFiles(new Error('dialog closed'));
         await picker.catch(() => undefined);
         await Promise.resolve();
+        await importing;
 
         expect(notifyUser).not.toHaveBeenCalled();
         expect(importAudioFile).not.toHaveBeenCalled();
@@ -269,7 +270,7 @@ describe('Workspace Project Handlers', () => {
             })
         );
 
-        handleImportMidiFile.execute({ type: 'importMidiFile' });
+        const importing = handleImportMidiFile.execute({ type: 'importMidiFile' });
         projectEpoch.advance();
         expect(projectEpoch.latest()?.isCurrent()).toBe(false);
         expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
@@ -277,6 +278,7 @@ describe('Workspace Project Handlers', () => {
 
         await vi.waitFor(() => expect(pickFiles).toHaveBeenCalledTimes(1));
         await Promise.resolve();
+        await importing;
         expect(importMidiFile).not.toHaveBeenCalled();
 
         const successorFile = new File([], 'successor.mid');
@@ -299,7 +301,7 @@ describe('Workspace Project Handlers', () => {
 
     it('handleImportMidiFile notifies on error when the dialog rejects', async () => {
         vi.mocked(pickFiles).mockRejectedValueOnce(new Error('dialog closed'));
-        handleImportMidiFile.execute({ type: 'importMidiFile' });
+        await handleImportMidiFile.execute({ type: 'importMidiFile' });
         await vi.waitFor(() => {
             expect(notifyUser).toHaveBeenCalledWith('Failed to open file dialog', 'error');
         });
@@ -313,13 +315,14 @@ describe('Workspace Project Handlers', () => {
         });
         vi.mocked(pickFiles).mockReturnValueOnce(picker);
 
-        handleImportMidiFile.execute({ type: 'importMidiFile' });
+        const importing = handleImportMidiFile.execute({ type: 'importMidiFile' });
         projectEpoch.advance();
         expect(projectEpoch.latest()?.isCurrent()).toBe(false);
         expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
         rejectFiles(new Error('dialog closed'));
         await picker.catch(() => undefined);
         await Promise.resolve();
+        await importing;
 
         expect(notifyUser).not.toHaveBeenCalled();
         expect(importMidiFile).not.toHaveBeenCalled();
