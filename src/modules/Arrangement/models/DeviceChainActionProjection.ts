@@ -4,18 +4,8 @@ import { projectCapturedDevicePatch } from './CapturedDevicePatchProjection';
 import { clampDeviceParameterValue } from './DeviceParameterLaw';
 import { type PluginDescriptor } from './DeviceParameterTypes';
 import { projectDeviceSnapshots } from './DeviceSnapshotProjection';
+import { projectsDeviceChainByActionType } from './ProjectsDeviceChainByActionType';
 import { type Device } from './Track';
-
-const DEVICE_ACTIONS = new Set<AppAction['type']>([
-    'addDevice',
-    'removeDevice',
-    'reorderDevices',
-    'restorePresetDeviceChain',
-    'restoreDevice',
-    'setDeviceParameter',
-    'setDeviceState',
-    'setFermenterPatch',
-]);
 
 function projectAddedDevice(
     chain: Device[],
@@ -67,7 +57,7 @@ export function projectDeviceChainAction(
     action: AppAction,
     plugins: readonly PluginDescriptor[]
 ): Device[] | null {
-    if (!DEVICE_ACTIONS.has(action.type)) {
+    if (!Object.hasOwn(projectsDeviceChainByActionType, action.type) || !projectsDeviceChainByActionType[action.type]) {
         return null;
     }
     if (action.payload && 'trackId' in action.payload && action.payload.trackId !== trackId) {
