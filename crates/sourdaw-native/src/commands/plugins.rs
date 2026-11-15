@@ -6711,6 +6711,160 @@ mod tests {
         );
     }
 
+    /// Load by an explicit registry key, for a test that addresses one plugin
+    /// under more than one of its keys.
+    fn load_vetted_by_key(
+        plugins: &LoadFixtureRoot,
+        state: &AppState,
+        plugin_id: &str,
+        log: &VettingLog,
+        rescan: impl PluginRescan,
+    ) -> Result<PluginInstance, String> {
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId(plugin_id.to_string()),
+            PluginInstanceId(format!("vetted-instance-{}", logged(log, "construct"))),
+            &NoWindowHost,
+            state,
+            plugins.scan_policy(),
+            rescan,
+            recording_construction(log),
+        ))
+    }
+
+    /// The entry a changed hit's rescan publishes carries the fingerprint the
+    /// rescan took, so the next load of the same id vets it as unchanged.
+    ///
+    /// Mutation this catches: publishing the rescanned entry with no
+    /// fingerprint, which sends every later load back through a rescan.
+    #[test]
+    fn a_rescanned_hit_loads_again_without_another_rescan() {
+        let plugins = LoadFixtureRoot::create("vetting-rescanned-hit-keeps-fingerprint");
+        let state = AppState::default();
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        std::fs::write(&published[0].path, "an update the next load has to rescan")
+            .expect("the plugin should be updated in place");
+        let log = vetting_log();
+
+        for _ in 0..2 {
+            load_vetted(
+                &plugins,
+                &state,
+                &NoWindowHost,
+                &log,
+                recording_rescan(&log, Ok(())),
+            )
+            .expect("a changed plugin that rescans cleanly must load");
+        }
+
+        assert_eq!(
+            logged(&log, "rescan"),
+            1,
+            "the second load vets the rescanned entry"
+        );
+        assert_eq!(logged(&log, "construct"), 2, "both loads construct");
+    }
+
+    /// An entry nobody fingerprinted is a mismatch, never a pass: it gets the
+    /// one rescan before anything is constructed from it.
+    ///
+    /// Mutation this catches: letting a missing recorded fingerprint match any
+    /// live one, which constructs the file unchecked.
+    #[test]
+    fn an_entry_with_no_recorded_fingerprint_is_rescanned_before_it_is_opened() {
+        let plugins = LoadFixtureRoot::create("vetting-unfingerprinted-entry");
+        let state = AppState::default();
+        let path = plugins.insert_entry(
+            &state,
+            "aaaa1111",
+            PluginRegistryEntry {
+                path: "/plugins/Unfingerprinted.clap".to_string(),
+                stable_id: "aaaa1111".to_string(),
+                descriptor_id: "com.vendor.reverb".to_string(),
+                format: "clap".to_string(),
+                name: "Unfingerprinted".to_string(),
+                num_inputs: 2,
+                num_outputs: 2,
+                has_custom_ui: false,
+                capability_metadata_reason: None,
+                chain_kind: DeviceKind::Effect,
+                scanned_fingerprint: None,
+            },
+        );
+        state
+            .plugin_registry
+            .lock()
+            .expect("registry lock")
+            .get_mut("aaaa1111")
+            .expect("the entry was inserted")
+            .scanned_fingerprint = None;
+        let log = vetting_log();
+
+        load_vetted(
+            &plugins,
+            &state,
+            &NoWindowHost,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect("an entry that rescans cleanly must load");
+
+        assert_eq!(
+            *log.lock().expect("vetting log"),
+            [("rescan", path.clone()), ("construct", path)],
+            "the unfingerprinted entry is rescanned once, and only then constructed"
+        );
+    }
+
+    /// A refused changed-hit rescan takes every row that pointed at the stale
+    /// file out of the registry, not only the key that was asked for: the
+    /// plugin's other key would otherwise reach the file again through a
+    /// claim of its own and spawn a second rescan of a file already refused.
+    ///
+    /// Mutation this catches: leaving the stale rows in the registry on
+    /// refusal.
+    #[test]
+    fn a_refused_hit_rescan_removes_the_stale_rows_under_every_key() {
+        let plugins = LoadFixtureRoot::create("vetting-refusal-removes-every-key");
+        let state = AppState::default();
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        std::fs::write(
+            &published[0].path,
+            "a plugin that no longer declares itself",
+        )
+        .expect("the plugin should be updated in place");
+        let log = vetting_log();
+
+        load_vetted_by_key(
+            &plugins,
+            &state,
+            "aaaa1111",
+            &log,
+            recording_rescan(&log, Err("no plugin declared".to_string())),
+        )
+        .expect_err("a changed plugin whose rescan refuses must not load");
+        load_vetted_by_key(
+            &plugins,
+            &state,
+            "com.vendor.reverb",
+            &log,
+            recording_rescan(&log, Err("no plugin declared".to_string())),
+        )
+        .expect_err("the same plugin by its other key must still refuse");
+
+        assert_eq!(
+            logged(&log, "rescan"),
+            1,
+            "the other key makes no second rescan"
+        );
+        assert_eq!(
+            logged(&log, "construct"),
+            0,
+            "nothing refused is constructed"
+        );
+    }
+
     /// AC-001: a candidate already quarantined must not be handed to a scan
     /// helper on an ordinary scan — proven here by the absence of any error
     /// naming it, since a spawned helper reading this garbage file would
@@ -9831,6 +9985,51 @@ mod tests {
             rescans.get(),
             0,
             "nothing outside the policy may be rescanned"
+        );
+    }
+
+    /// The entry a miss's rescan publishes carries the fingerprint the rescan
+    /// took, so the next activation of the same id hits and vets it with no
+    /// second rescan.
+    ///
+    /// Mutation this catches: publishing the rescanned entry with no
+    /// fingerprint, which sends the next activation back through a rescan.
+    #[test]
+    fn a_rescanned_miss_resolves_again_without_another_rescan() {
+        let fixture = PersistedRegistryFixture::create("activation-rescanned-miss");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        std::fs::write(&plugin_path, b"clap-bytes-version-2")
+            .expect("the plugin should be updated in place");
+
+        let store = fixture.store();
+        let registry = Mutex::new(HashMap::new());
+        let rescans = std::cell::Cell::new(0);
+        let rescan = |format: &str, path: &Path, plugin_id: &str, descriptor_id: &str| {
+            rescans.set(rescans.get() + 1);
+            Ok::<ScannedPlugin, String>(ScannedPlugin {
+                format: format.to_string(),
+                path: path.display().to_string(),
+                descriptor_id: descriptor_id.to_string(),
+                ..scanned(plugin_id, descriptor_id, format)
+            })
+        };
+
+        for _ in 0..2 {
+            resolve_registry_entry(
+                &registry,
+                &store,
+                &fixture.scan_policy(),
+                "aaaa1111",
+                rescan,
+            )
+            .expect("a plugin still at its last known path must resolve");
+        }
+
+        assert_eq!(
+            rescans.get(),
+            1,
+            "the second activation vets the rescanned entry"
         );
     }
 

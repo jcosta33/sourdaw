@@ -1508,6 +1508,53 @@ mod tests {
         );
     }
 
+    /// The third part of the same invalidation: a different file renamed over
+    /// the scanned one, with its size and modification time made to match.
+    /// Size and age alone read it as the scanned file; its identity does not.
+    ///
+    /// Mutation this catches: comparing only size and modification time in
+    /// `entry_is_still_the_scanned_file`.
+    #[test]
+    fn a_different_file_with_the_scanned_size_and_age_does_not_hydrate() {
+        let test_root = TestRegistryRoot::create("registry-stale-identity");
+        let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
+        let original = fs::metadata(&plugin_path).expect("the scanned file is there");
+        let original_modified = original.modified().expect("its mtime is readable");
+
+        let replacement = plugin_path.with_extension("replacement");
+        fs::write(&replacement, vec![b'x'; original.len() as usize])
+            .expect("the replacement is written");
+        File::options()
+            .write(true)
+            .open(&replacement)
+            .expect("the replacement opens for a time update")
+            .set_times(FileTimes::new().set_modified(original_modified))
+            .expect("the replacement's mtime is settable");
+        fs::rename(&replacement, &plugin_path).expect("the replacement is renamed over");
+        let replaced = fs::metadata(&plugin_path).expect("the replacement is there");
+        assert_eq!(
+            (replaced.len(), replaced.modified().expect("mtime")),
+            (original.len(), original_modified),
+            "the replacement must match on size and age, or this test proves nothing"
+        );
+
+        let next_launch_registry = Mutex::new(HashMap::new());
+        test_root
+            .store()
+            .hydrate_into(&next_launch_registry, &test_root.scan_policy());
+
+        assert!(
+            next_launch_registry
+                .lock()
+                .expect("registry lock")
+                .is_empty(),
+            "a different file under the scanned name must not resolve from the stale entry"
+        );
+    }
+
     /// A row hydration refused is still where the plugin was last seen, and an
     /// activation miss has nothing else to name.
     #[test]
