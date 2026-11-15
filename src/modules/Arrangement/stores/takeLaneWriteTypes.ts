@@ -1,9 +1,9 @@
-import {
-    type CompAudioSourcePromotionSnapshot,
-    type CompAudioSourceFieldPresenceSnapshot,
-    type TempoAudioSourcePresenceSnapshot,
-} from '#/utils/handlerContract';
+import { type TempoAudioSourcePresenceSnapshot } from '#/utils/handlerContract';
 
+import {
+    type CompAudioSourceFieldPresenceSnapshot,
+    type CompAudioSourcePromotionSnapshot,
+} from '../events/arrangementTakeAppActions';
 import { type CompRegion, type MidiTakeSource, type Take, type TakeLane } from '../models/TakeLane';
 
 import { type OptionalAudioSourceTiles } from './baseGapAudioSourceDelta';
