@@ -1307,7 +1307,9 @@ struct TargetedRescan<'a> {
 /// and dropping it would send the next launch back through this rescan.
 ///
 /// On refusal a changed hit's stale rows leave the registry, so the next load
-/// of any of them reaches the recorded refusal rather than the file.
+/// of any of them reaches the recorded refusal rather than the file. Either
+/// way the attempt is settled last, once what it decided is visible: settling
+/// is what wakes the loads waiting on this key.
 fn rescan_and_publish(
     plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
     registry_store: &PluginRegistryStore,
@@ -1330,7 +1332,6 @@ fn rescan_and_publish(
             return Err(refusal);
         }
     };
-    attempt.resolved();
 
     let entry = PluginRegistryEntry::from_scanned(&rescanned, Some(fingerprint));
     let mut keys = vec![target.plugin_id.to_string()];
@@ -1355,6 +1356,11 @@ fn rescan_and_publish(
             }
         }
     }
+    // Settled only once the entry is in the registry and its lock released:
+    // settling wakes every load waiting on this key, and each one resolves
+    // again straight away, so a waiter woken before the insert would find no
+    // entry and start a rescan of its own.
+    attempt.resolved();
     registry_store.persist(&[ScanRow {
         keys,
         plugin: rescanned,
