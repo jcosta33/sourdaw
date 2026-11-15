@@ -269,6 +269,7 @@ describe('handleRestoreScratchPadState', () => {
 
     it('isNoop is false when only a marker section field differs from live state', () => {
         const liveMarker = markerSection('m1', 0);
+        const renamedMarker: ArrangementSection = { ...liveMarker, name: 'Renamed' };
         scratchPadStore.set({ sections: [] });
         markerStore.set({ markers: [], sections: [liveMarker] });
 
@@ -279,7 +280,7 @@ describe('handleRestoreScratchPadState', () => {
                     expectedSections: [],
                     replacementSections: [],
                     expectedMarkerSections: [liveMarker],
-                    replacementMarkerSections: [{ ...liveMarker, name: 'Renamed' }],
+                    replacementMarkerSections: [renamedMarker],
                 },
             })
         ).toBe(false);
