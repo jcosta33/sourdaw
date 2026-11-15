@@ -4,6 +4,7 @@ import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
+import { resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { fromBacteriaModAssignmentsState } from '../../models/BacteriaModAssignmentsState';
@@ -88,6 +89,19 @@ describe('initBacteriaModAssignmentsPersistence on a refused project', () => {
         setBacteriaModAssignments(DEVICE_ID, [row({ amount: 0.25 })]);
 
         await vi.waitFor(() => expect(notifyUser).toHaveBeenCalledTimes(2));
+    });
+
+    it('does not write a refused table into the project that replaced the one it was refused in', async () => {
+        setBacteriaModAssignments(DEVICE_ID, [row()]);
+        await vi.waitFor(() => expect(notifyUser).toHaveBeenCalledTimes(1));
+
+        // A load installs the new root, then clears the repair state; the new project holds the same device id.
+        resetCrdtProjectAuthority('Replacement');
+        trackStore.set({ ...defaultTrackState, tracks: makeBacteriaTracks() });
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+        expect(agentProjectRepairStateStore.value).toBeNull();
+        expect(documentRows()).toBeNull();
     });
 
     it('writes nothing on unlock when the table was edited back to what the document holds', async () => {

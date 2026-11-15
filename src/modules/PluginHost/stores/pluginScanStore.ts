@@ -7,6 +7,13 @@ import { createPlainJsonLocalStorage } from '#/infra/store/storage/createPlainJs
 
 import { type QuarantinedPlugin, type ScannedPlugin, type ScannedPluginParameter } from '../models/ScannedPlugin';
 
+/** A folder the user granted as an additional plugin scan root. */
+export type GrantedPluginFolder = {
+    path: string;
+    /** Why the folder cannot be scanned right now, or `null` when it can. */
+    unavailableReason: string | null;
+};
+
 export type PluginScanState = {
     scannedPlugins: ScannedPlugin[];
     scanPaths: string[];
@@ -34,6 +41,16 @@ export type PluginScanState = {
      * just have the next scan restate it.
      */
     quarantined: QuarantinedPlugin[];
+    /**
+     * Plugin folders the user granted (#6574), as the native grant store last
+     * reported them.
+     *
+     * A mirror, never a source: the native side validates, persists and
+     * enforces grants, so this list is refreshed from it and is not restored
+     * from storage — a stored copy could show a folder the native side has
+     * since dropped, or offer to remove one that no longer exists.
+     */
+    grantedFolders: GrantedPluginFolder[];
 };
 
 export const defaultPluginScanState: PluginScanState = {
@@ -44,6 +61,7 @@ export const defaultPluginScanState: PluginScanState = {
     errors: [],
     notices: [],
     quarantined: [],
+    grantedFolders: [],
 };
 
 const PLUGIN_SCAN_KEY = 'sourdaw:plugin-scan';
@@ -186,6 +204,8 @@ function readQuarantinedPlugin(value: unknown): QuarantinedPlugin | null {
  * both described the run that is gone, and the next scan is what restates
  * whichever of them still applies. `quarantined` is restored, not dropped: it
  * describes durable native registry state, not the finished run.
+ * `grantedFolders` is dropped too, for a different reason: the native grant
+ * store is its authority, and the settings view refreshes it from there.
  */
 function readPluginScanState(value: unknown): PluginScanState | null {
     if (!isRecord(value)) {
@@ -207,6 +227,7 @@ function readPluginScanState(value: unknown): PluginScanState | null {
         errors: [],
         notices: [],
         quarantined,
+        grantedFolders: [],
     };
 }
 

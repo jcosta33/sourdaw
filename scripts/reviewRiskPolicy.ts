@@ -186,6 +186,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/resourceGuard.ts',
     'scripts/resourceGuardDisk.ts',
     'scripts/resourceGuardLsofDiagnostics.ts',
+    'scripts/resourceGuardProcessTree.ts',
     'scripts/resourceGuardProofReasons.ts',
     'scripts/resourceGuardStorage.ts',
     'scripts/retirePullRequest.ts',

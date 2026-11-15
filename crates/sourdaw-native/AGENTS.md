@@ -78,11 +78,14 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   MTS-ESP host support is absent; add no registration or publication until its ownership and
   distribution contracts are settled.
 - Plugin scanning is policy-gated (`host/plugin_scan_policy.rs`): absolute paths only, symlinks
-  rejected. Every read that touches a plugin's own code — its descriptor, its parameter contract, its
-  capability extensions — runs only in the bounded `plugin_scan_worker` child-process mode; the
-  application process may enumerate authorized candidates but must never load their entry points
-  during discovery. A new question for a plugin goes to the instance that worker already has, never
-  to another process.
+  rejected. A folder beyond the platform defaults needs a grant from a native folder pick made in
+  the main process (`host/plugin_folder_grants.rs`); the grant command is never renderer-callable,
+  every policy re-validates the stored grants from disk, and `PluginScanPolicy::production` is the
+  only production constructor that widens past the defaults. Every read that touches a plugin's
+  own code — its descriptor, its parameter contract, its capability extensions — runs only in the
+  bounded `plugin_scan_worker` child-process mode; the application process may enumerate
+  authorized candidates but must never load their entry points during discovery. A new question
+  for a plugin goes to the instance that worker already has, never to another process.
 - A scanned capability the worker did not query is published as a default carrying
   `capability_metadata_reason`. Never drop that reason while keeping the value: a default without it
   reads downstream as a measurement.

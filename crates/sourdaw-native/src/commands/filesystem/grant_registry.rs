@@ -276,7 +276,15 @@ fn restore_grants() -> GrantRegistry {
         return GrantRegistry::empty();
     };
 
-    let grants = document
+    GrantRegistry {
+        grants: resolve_persisted_grants(document),
+    }
+}
+
+/// Re-resolve every persisted grant against the filesystem as it is now,
+/// dropping the ones that are relative or no longer resolve.
+fn resolve_persisted_grants(document: PersistedGrants) -> Vec<FileGrant> {
+    document
         .grants
         .into_iter()
         .filter_map(|persisted| {
@@ -290,9 +298,39 @@ fn restore_grants() -> GrantRegistry {
                 recursive: persisted.recursive,
             })
         })
-        .collect();
+        .collect()
+}
 
-    GrantRegistry { grants }
+/// The canonical paths the renderer can write through, read fresh from the
+/// persisted grant document.
+///
+/// Read from disk rather than from the live registry because the plugin scan
+/// runs in a utility process whose addon instance holds its own registry, which
+/// never sees the main process's picks.
+#[cfg(not(test))]
+pub(crate) fn persisted_read_write_paths() -> Vec<PathBuf> {
+    grant_file_location()
+        .map(|location| read_write_paths_at(&location))
+        .unwrap_or_default()
+}
+
+/// Tests never read the developer's own grant file; they supply the set
+/// through the plugin folder validator's forbidden roots instead.
+#[cfg(test)]
+pub(crate) fn persisted_read_write_paths() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+/// The canonical paths of the read-write grants in the document at
+/// `location`, resolved the way [`restore_grants`] resolves them.
+fn read_write_paths_at(location: &Path) -> Vec<PathBuf> {
+    read_grant_document(location)
+        .map(resolve_persisted_grants)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|grant| grant.mode == GrantMode::ReadWrite)
+        .map(|grant| grant.canonical)
+        .collect()
 }
 
 /// Read and validate the grant document at `location`, or nothing.
@@ -483,6 +521,37 @@ mod tests {
         let location = dir.write(&document_bytes(GRANT_SCHEMA_VERSION, MAX_GRANTS + 1));
 
         assert!(read_grant_document(&location).is_none());
+    }
+
+    #[test]
+    fn read_write_paths_keep_only_resolvable_read_write_grants() {
+        let dir = TempGrantDir::create("read-write-paths");
+        let writable = dir.root.join("Project");
+        let readable = dir.root.join("Samples");
+        fs::create_dir_all(&writable).expect("writable folder should be created");
+        fs::create_dir_all(&readable).expect("readable folder should be created");
+        let grant = |path: &Path, mode| PersistedGrant {
+            path: path.to_string_lossy().into_owned(),
+            mode,
+            recursive: true,
+        };
+        let document = PersistedGrants {
+            schema_version: GRANT_SCHEMA_VERSION,
+            grants: vec![
+                grant(&writable, GrantMode::ReadWrite),
+                grant(&readable, GrantMode::Read),
+                grant(&dir.root.join("Gone"), GrantMode::ReadWrite),
+            ],
+        };
+        let location = dir
+            .write(&serde_json::to_vec(&document).expect("test grant document should serialize"));
+
+        assert_eq!(
+            read_write_paths_at(&location),
+            vec![writable
+                .canonicalize()
+                .expect("writable folder should resolve")]
+        );
     }
 
     #[test]

@@ -69,7 +69,8 @@ describe('adjustmentLayerHandlers — describe creates inverse via store snapsho
 
         await adjustmentLayerHandlers.createAdjustmentLayer.execute(action);
 
-        expect(commitAdjustmentLayerMutation).toHaveBeenCalledWith(expect.objectContaining({ inverseAction }));
+        const committed = vi.mocked(commitAdjustmentLayerMutation).mock.calls[0]?.[0];
+        expect(committed?.inverseAction).toBe(inverseAction);
     });
 });
 

@@ -542,16 +542,13 @@ fn detect_format_on(
         // refused by name rather than passed over in silence.
         //
         // Windows VST2 ships as a bare `.dll`, and that extension is
-        // deliberately not recognised here. There is no way to reach a VST2
-        // folder: `PluginScanPolicy::platform_defaults` is production's only
-        // policy constructor and `authorize_scan_root` admits only descendants
-        // of its fixed roots, so a custom VST2 path cannot be granted. What a
-        // `.dll` arm would actually match is the vendor support and runtime
-        // libraries sitting inside the authorized Windows VST3 and CLAP roots,
-        // which the walk recurses into — and telling a user that a vendor's
-        // runtime DLL is a VST2 plugin Sourdaw will never load is a fabricated
-        // claim about a file that is not a plugin at all. Restore this arm only
-        // together with a production path that can authorize a VST2 root.
+        // deliberately not recognised here. A bare `.dll` says nothing about
+        // what it is without loading it, and the walk meets far more of them
+        // that are not plugins: the vendor support and runtime libraries inside
+        // the Windows VST3 and CLAP default roots, and whatever a folder the
+        // user granted in plugin settings happens to hold. Telling a user that
+        // a vendor's runtime DLL is a VST2 plugin Sourdaw will never load is a
+        // fabricated claim about a file that is not a plugin at all.
         ("vst", true) => Some(PluginFormat::Vst2),
         _ => None,
     }
@@ -1161,13 +1158,11 @@ mod tests {
     }
 
     /// A bare `.dll` is not claimed as a VST2 plugin, and the reason is where
-    /// the walk actually meets one. No production path can authorize a VST2
-    /// folder — `platform_defaults` is the only policy constructor and it
-    /// authorizes the VST3, CLAP and Components roots — while the walk does
-    /// recurse into vendor subfolders of the Windows VST3 and CLAP roots, which
-    /// are full of support and runtime DLLs. Claiming those are VST2 plugins
-    /// Sourdaw will never load is a fabricated statement about a file that is
-    /// not a plugin.
+    /// the walk actually meets one: in vendor subfolders of the Windows VST3
+    /// and CLAP roots, which are full of support and runtime DLLs, and in
+    /// whatever folder the user granted. Nothing short of loading a DLL tells a
+    /// VST2 plugin from those, so claiming they are VST2 plugins Sourdaw will
+    /// never load is a fabricated statement about a file that is not a plugin.
     #[test]
     fn a_bare_dll_is_not_claimed_to_be_a_vst2_plugin() {
         assert_eq!(detect_format(Path::new("/plugins/Vendor.dll"), false), None);
