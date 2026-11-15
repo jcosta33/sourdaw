@@ -242,6 +242,8 @@ describe('LlmStatusBadge', () => {
         describe('the Llama 3.1 Community License duties', () => {
             const builtWithLlama = /Built with Llama/;
             const licenceName = /Llama 3\.1 Community License/;
+            const attribution =
+                'Llama 3.1 is licensed under the Llama 3.1 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved.';
             const consent = 'Downloads and verifies this model for private use in this browser.';
 
             it('shows the notice on the Large card and in the consent line once Large is selected', async () => {
@@ -250,11 +252,13 @@ describe('LlmStatusBadge', () => {
                 const card = screen.getByRole('button', { name: large });
                 expect(card).toHaveTextContent(builtWithLlama);
                 expect(card).toHaveTextContent(licenceName);
+                expect(card).toHaveTextContent(attribution);
 
                 fireEvent.click(card);
                 const consentLine = screen.getByText(new RegExp(`^${consent.replace('.', '\\.')}`));
                 expect(consentLine).toHaveTextContent(builtWithLlama);
                 expect(consentLine).toHaveTextContent(licenceName);
+                expect(consentLine).toHaveTextContent(attribution);
             });
 
             it('keeps the notice off the Qwen cards and their consent line', async () => {
@@ -350,6 +354,9 @@ describe('LlmStatusBadge', () => {
             const consentLine = screen.getByText(/^Downloads and verifies this model for private use/);
             expect(consentLine).toHaveTextContent(/Built with Llama/);
             expect(consentLine).toHaveTextContent(/Llama 3\.1 Community License/);
+            expect(consentLine).toHaveTextContent(
+                'Llama 3.1 is licensed under the Llama 3.1 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved.'
+            );
             expect(screen.getByRole('alert')).toHaveTextContent('The model download failed.');
 
             fireEvent.click(screen.getByRole('button', { name: 'Download & Load Large' }));

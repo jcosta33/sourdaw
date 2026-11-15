@@ -92,6 +92,7 @@ describe('generateWebLlmCompletion', () => {
         { modelId: 'Llama-3.1-70B-Instruct-q3f16_1-MLC', sendsThinkingSwitch: false },
         { modelId: 'Qwen3-8B-q4f16_1-MLC', sendsThinkingSwitch: true },
         { modelId: 'Qwen3-1.7B-q4f16_1-MLC', sendsThinkingSwitch: true },
+        { modelId: 'Qwen3-4B-q4f16_1-MLC', sendsThinkingSwitch: true },
     ])(
         'sends the thinking switch only to a model that has a thinking block: $modelId',
         async ({ modelId, sendsThinkingSwitch }) => {

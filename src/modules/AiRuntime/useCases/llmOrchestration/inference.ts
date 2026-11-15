@@ -20,6 +20,7 @@ import {
     LOCAL_PLANNER_REQUIRED_FAILURE_CODE,
     LOCAL_PLANNING_REPLY_RESERVE_TOKENS,
 } from '../../models/LocalPlanningBudget';
+import { type MachineMemoryReading } from '../../models/MachineMemoryReading';
 import { WEBLLM_CONTEXT_WINDOW_TOKENS, WEBLLM_MODELS, WEBLLM_PLANNING_MODEL_IDS } from '../../models/ModelInfo';
 import {
     estimateCompiledProviderRequestTokenCeiling,
@@ -472,9 +473,14 @@ async function generateLocalToolPlanningOutcome(input: {
     }
 }
 
+/** A missing reading is an unread one, as in the picker. */
+function readMachineMemoryOrUnread(): MachineMemoryReading {
+    return machineMemoryStore.value ?? { state: 'unread' };
+}
+
 /** The planning-capable local models the picker offers this machine, so a refusal never names a hidden one. */
 function readOfferedLocalPlanners(): typeof WEBLLM_MODELS {
-    return offeredLocalModels(WEBLLM_MODELS, machineMemoryStore.value).filter((model) =>
+    return offeredLocalModels(WEBLLM_MODELS, readMachineMemoryOrUnread()).filter((model) =>
         WEBLLM_PLANNING_MODEL_IDS.has(model.id)
     );
 }

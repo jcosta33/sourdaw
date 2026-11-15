@@ -16,17 +16,24 @@ type ModelInfoProjection = {
     licenceNotice?: string;
 };
 
-export const WEBLLM_MODELS: ModelInfoProjection[] = model_webllm_models.map((model_info) => ({
-    id: model_info.id,
-    displayName: model_info.displayName,
-    description: model_info.description,
-    downloadSize: model_info.downloadSize,
-    ramUsage: model_info.ramUsage,
-    memoryGb: model_info.memoryGb,
-    tier: model_info.tier,
-    parameterCount: model_info.parameterCount,
-    ...(model_info.licenceNotice === undefined ? {} : { licenceNotice: model_info.licenceNotice }),
-}));
+function projectModelInfo(model_info: (typeof model_webllm_models)[number]): ModelInfoProjection {
+    const projection: ModelInfoProjection = {
+        id: model_info.id,
+        displayName: model_info.displayName,
+        description: model_info.description,
+        downloadSize: model_info.downloadSize,
+        ramUsage: model_info.ramUsage,
+        memoryGb: model_info.memoryGb,
+        tier: model_info.tier,
+        parameterCount: model_info.parameterCount,
+    };
+    if (model_info.licenceNotice !== undefined) {
+        projection.licenceNotice = model_info.licenceNotice;
+    }
+    return projection;
+}
+
+export const WEBLLM_MODELS: ModelInfoProjection[] = model_webllm_models.map(projectModelInfo);
 
 const defaultModel = WEBLLM_MODELS.find((model) => model.id === DEFAULT_WEBLLM_MODEL_ID);
 if (defaultModel === undefined) {
