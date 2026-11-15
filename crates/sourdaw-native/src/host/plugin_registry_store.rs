@@ -490,7 +490,10 @@ impl PluginRegistryStore {
     ///
     /// Entries are admitted only if the policy still authorizes their path and
     /// the file on disk is the file the scan recorded, at the size and age it
-    /// recorded.
+    /// recorded, and its path is not quarantined: a quarantined row stays the
+    /// last-known location but is never a registry hit, so a load misses and
+    /// takes the targeted rescan that runs the helper instead of loading a
+    /// plugin whose helper just crashed.
     /// Anything else is a plugin that has been updated, replaced or removed
     /// since, and resolving it would hand activation a path whose contents no
     /// longer match the descriptor id recorded next to it.
@@ -517,6 +520,7 @@ impl PluginRegistryStore {
         let unchanged_entries: Vec<(String, PluginRegistryEntry)> = stored
             .entries
             .iter()
+            .filter(|(_, entry)| !stored.quarantine.contains_key(&entry.plugin.path))
             .filter(|(_, entry)| entry_is_still_the_scanned_file(entry, scan_policy))
             .map(|(key, entry)| (key.clone(), entry.as_registry_entry()))
             .collect();
@@ -1531,6 +1535,25 @@ mod tests {
             .last_known_entry("aaaa1111")
             .expect("the republished row is kept");
         assert_eq!(row.plugin.version, "2.0.0");
+    }
+
+    /// A kept quarantined row must not become a registry hit on the next
+    /// launch: that would load in process a plugin whose helper just crashed.
+    #[test]
+    fn hydration_keeps_a_quarantined_row_as_last_known_but_not_loadable() {
+        let test_root = TestRegistryRoot::create("registry-hydrate-quarantined");
+        let plugin_path = test_root.write_plugin_file("Hostile.clap", b"clap-bytes");
+        let store = test_root.store();
+        store.persist(&one_row(&plugin_path, "aaaa1111"));
+        store.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
+        store.persist(&[]);
+
+        let next_launch = test_root.store();
+        let registry = Mutex::new(HashMap::new());
+        next_launch.hydrate_into(&registry, &test_root.scan_policy());
+
+        assert!(registry.lock().expect("registry lock").is_empty());
+        assert!(next_launch.last_known_entry("aaaa1111").is_some());
     }
 
     /// The defect: nothing survived the process, so a saved project reopened
