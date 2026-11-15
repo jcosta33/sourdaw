@@ -6,6 +6,9 @@ import { hasUnsettledCrumbsPairedReconcile } from '../stores/sampleLoadGate';
 import { commitCrumbsDeviceState } from './commitCrumbsDeviceState';
 import { liveCrumbsMirrorPass } from './crumbsDeviceStateMirror';
 
+/** A baseline no `playbackKey` can equal, so the next unheld pass for the device commits. */
+const UNCOMMITTED_BASELINE = '';
+
 /** The two fields the chunk carries, flattened to one comparable key. */
 function playbackKey(state: CrumbsState): string {
     return `${state.mode} ${state.activeSample?.filePath ?? ''} ${state.activeSample?.sampleId ?? ''}`;
@@ -32,7 +35,18 @@ function playbackKey(state: CrumbsState): string {
  */
 export function initCrumbsDeviceStatePersistence(): () => void {
     const committed = new Map<string, string>();
-    const episodes = createUserAppActionRefusalEpisodes();
+    const episodes = createUserAppActionRefusalEpisodes({
+        onAdmitted: (deviceId) => {
+            if (hasUnsettledCrumbsPairedReconcile(deviceId)) {
+                // #4764: the store's sample is still the stale local one. Forget the committed
+                // baseline instead of writing: no playback key equals it, so the pair's release
+                // replay of `mirrorPass` sees a change and commits the settled state.
+                committed.set(deviceId, UNCOMMITTED_BASELINE);
+                return;
+            }
+            commitCrumbsDeviceState(deviceId, episodes);
+        },
+    });
 
     const mirrorPass = (deviceId: string, state: CrumbsState): void => {
         const previous = committed.get(deviceId);
