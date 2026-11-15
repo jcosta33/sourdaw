@@ -403,7 +403,7 @@ function readSettledTimeline(issue: number, gh: Gh): TimelineEntry[] {
         }
         previous = current;
     }
-    fail(
+    return fail(
         `issue #${issue} timeline changed between every two consecutive reads of ${TIMELINE_READ_LIMIT}; ` +
             `no board was moved${RELEASE_HINT}`
     );
