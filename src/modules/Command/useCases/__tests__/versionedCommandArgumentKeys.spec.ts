@@ -38,6 +38,13 @@ describe('versioned linked pattern replay arguments', () => {
             expect(validateVersionedCommandArguments('relinkClipAudioSources', { targets: [invalid] })).toBe(false);
         }
     });
+    it('admits captured scratch pad section ids and rejects a non-array capture', () => {
+        expect(validateVersionedCommandArguments('captureScratchPad', { sectionIds: ['pad-one', 'pad-two'] })).toBe(
+            true
+        );
+        expect(validateVersionedCommandArguments('captureScratchPad', { sectionIds: 7 })).toBe(false);
+    });
+
     it('admits the canonical creation identity and rejects a non-string identity', () => {
         const payload = {
             sourceClipId: 'source',
