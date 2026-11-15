@@ -37,10 +37,11 @@ pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
 ///
 /// Every variant here is raised from a callback its format marks `[main-thread]`,
 /// and the wake behind them allocates. An ask a plugin may raise from the audio
-/// thread therefore has no variant here at all: `clap_host_params.request_flush`
-/// and `clap_host_gui.request_resize`, which CLAP marks `[thread-safe]`, are
-/// recorded as a flag or a size slot plus a process-wide hint and answered by
-/// the parameter drain, because a channel send on the render thread is a missed
+/// thread therefore has no variant here at all: `clap_host.request_callback`,
+/// `clap_host_params.request_flush` and `clap_host_gui.request_resize`, which
+/// CLAP marks `[thread-safe]`, are recorded as a flag or a size slot plus a
+/// process-wide hint and answered by the request watcher's sweep or the
+/// parameter drain, because a channel send on the render thread is a missed
 /// device period.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginHostRequest {
@@ -51,12 +52,6 @@ pub enum PluginHostRequest {
     /// plugin that no longer exists. Re-enumerating means calling the plugin
     /// back, which the callback's own thread may not do.
     ParametersRescan,
-    /// The plugin asked the host to call `on_main_thread` on it — CLAP's
-    /// `clap_host::request_callback` — so work it deferred to the main thread
-    /// (a worker result, an editor update) can complete. Recorded as a flag and
-    /// coalesced like every other ask here: one drain calls the plugin once,
-    /// which completes whatever it parked on the request.
-    MainThreadCallback,
 }
 
 /// Host-supplied wake fired when a plugin raises a [`PluginHostRequest`].

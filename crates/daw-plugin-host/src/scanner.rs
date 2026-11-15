@@ -506,9 +506,29 @@ pub fn unsupported_format_refusal(format: &str) -> Option<&'static str> {
 /// walk can say *why* it passed a file over. A user whose plugin folder is full
 /// of VST3 bundles and who sees an empty plugin list has been told nothing.
 fn detect_format(path: &Path, is_dir: bool) -> Option<PluginFormat> {
+    detect_format_on(path, is_dir, SINGLE_FILE_VST3_IS_A_MODULE)
+}
+
+/// Whether a regular file named `X.vst3` is a VST3 module on this platform.
+///
+/// Windows only. Before VST 3.6.10 a Windows plug-in was a single DLL named
+/// `X.vst3`; the format has deprecated that shape in favour of the bundle, but
+/// the SDK's own Windows host module still loads it ("old definition without
+/// package") and vendors still install it. A `.vst3` was never a single file on
+/// macOS or Linux, so there a regular file of that name is not a plugin.
+const SINGLE_FILE_VST3_IS_A_MODULE: bool = cfg!(target_os = "windows");
+
+/// [`detect_format`] with the platform's single-file rule passed in, so the
+/// rule for every platform is exercised wherever the tests run.
+fn detect_format_on(
+    path: &Path,
+    is_dir: bool,
+    single_file_vst3_is_a_module: bool,
+) -> Option<PluginFormat> {
     let ext = path.extension()?.to_str()?;
     match (ext, is_dir) {
         ("vst3", true) => Some(PluginFormat::Vst3),
+        ("vst3", false) if single_file_vst3_is_a_module => Some(PluginFormat::Vst3),
         ("clap", false) | ("clap", true) => Some(PluginFormat::Clap),
         ("component", true) => Some(PluginFormat::AudioUnit),
         // A `.vst` *directory*: the bundle shape VST2 ships in on macOS and
@@ -935,6 +955,48 @@ mod tests {
         assert!(errors.is_empty(), "{errors:?}");
     }
 
+    /// The walk applies the platform's single-file rule, and a bundle is one
+    /// candidate however its module file is named: the Windows module inside
+    /// `X.vst3/Contents/x86_64-win/` is itself a regular file named `X.vst3`,
+    /// and collecting it beside its bundle would list one plugin twice.
+    #[test]
+    fn scan_directory_collects_a_single_file_vst3_only_where_the_platform_ships_one() {
+        let temp_root = std::env::current_dir()
+            .expect("current directory should resolve")
+            .join("target")
+            .join(
+                unique_temp_scan_root("scanner-single-file-vst3")
+                    .file_name()
+                    .expect("temp path should have a final component"),
+            );
+        let single_file = temp_root.join("Legacy.vst3");
+        let bundle = temp_root.join("Bundled.vst3");
+        let bundled_module_folder = bundle.join("Contents").join("x86_64-win");
+        std::fs::create_dir_all(&bundled_module_folder).expect("bundle should be created");
+        std::fs::write(bundled_module_folder.join("Bundled.vst3"), b"")
+            .expect("bundled module should be written");
+        std::fs::write(&single_file, b"").expect("single-file module should be written");
+
+        let mut plugins = Vec::new();
+        let mut errors = Vec::new();
+        let mut notices = Vec::new();
+        scan_directory(&temp_root, &mut plugins, &mut errors, &mut notices);
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        let mut collected = plugins
+            .iter()
+            .map(|candidate| candidate.path.clone())
+            .collect::<Vec<_>>();
+        collected.sort();
+        let expected = if cfg!(target_os = "windows") {
+            vec![bundle, single_file]
+        } else {
+            vec![bundle]
+        };
+        assert_eq!(collected, expected);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
     /// One line per format, not one per plugin. A user with a folder of VST2
     /// bundles gets the reason once; this list is shown to them verbatim, and
     /// repeating it two hundred times buries everything else in it.
@@ -1110,6 +1172,51 @@ mod tests {
         assert_eq!(
             detect_format(Path::new("/plugins/Vendor Support.dll"), false),
             None
+        );
+    }
+
+    /// A Windows plug-in installed in the pre-3.6.10 single-file shape is a
+    /// DLL named `X.vst3`, and the walk has to find it.
+    #[test]
+    fn a_single_file_vst3_is_a_vst3_module_where_the_platform_ships_one() {
+        assert_eq!(
+            detect_format_on(Path::new("/plugins/Vendor.vst3"), false, true),
+            Some(PluginFormat::Vst3)
+        );
+    }
+
+    /// Where `.vst3` has only ever been a bundle, a regular file of that name
+    /// is not a plugin, and the bundle is recognised either way.
+    #[test]
+    fn a_single_file_vst3_is_refused_where_the_format_is_only_a_bundle() {
+        assert_eq!(
+            detect_format_on(Path::new("/plugins/Vendor.vst3"), false, false),
+            None
+        );
+        for single_file_vst3_is_a_module in [false, true] {
+            assert_eq!(
+                detect_format_on(
+                    Path::new("/plugins/Vendor.vst3"),
+                    true,
+                    single_file_vst3_is_a_module
+                ),
+                Some(PluginFormat::Vst3)
+            );
+        }
+    }
+
+    /// The platform binding: Windows takes the single-file shape and macOS and
+    /// Linux keep refusing it.
+    #[test]
+    fn this_platform_applies_its_own_single_file_vst3_rule() {
+        let expected = if cfg!(target_os = "windows") {
+            Some(PluginFormat::Vst3)
+        } else {
+            None
+        };
+        assert_eq!(
+            detect_format(Path::new("/plugins/Vendor.vst3"), false),
+            expected
         );
     }
 

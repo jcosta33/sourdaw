@@ -1778,7 +1778,7 @@ struct OwnedDeviceStreams {
 
 impl Drop for OwnedDeviceStreams {
     fn drop(&mut self) {
-        drop(self.capture.take());
+        self.capture = None;
         if let Some(pending) = &self.pending_capture {
             pending.active.store(false, Ordering::Release);
             pending.observation.closed();

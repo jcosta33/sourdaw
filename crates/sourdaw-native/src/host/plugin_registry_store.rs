@@ -43,8 +43,8 @@ use std::fs::{self, File};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
-use std::time::UNIX_EPOCH;
+use std::sync::{Condvar, Mutex};
+use std::time::{Instant, UNIX_EPOCH};
 
 use daw_plugin_host::scanner::{self, PluginFormat, ScannedPlugin};
 use daw_plugin_host::vst3_module;
@@ -98,6 +98,15 @@ use crate::state::PluginRegistryEntry;
 /// outlive the fix and keep hiding the editor control the runtime host can
 /// operate. Same policy as every earlier bump: the document reads as absent,
 /// and the next scan refills it.
+///
+/// Not bumped when the row gained `file_identity`, and the difference from
+/// every bump above is what a version-6 row without it still knows. Its scanned
+/// answer is not wrong, only unverifiable against the new fingerprint, so the
+/// column defaults to absent, an absent identity never matches a live file,
+/// and the row is kept as the plugin's last known location: the next
+/// activation rescans that one file once and persists a row with the identity.
+/// A bump would instead have discarded every last known location, and every
+/// saved project's plugins would refuse until the user scanned by hand.
 const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 6;
 
 const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
@@ -219,22 +228,33 @@ struct QuarantineColumn {
 pub struct PersistedQuarantineEntry {
     pub path: String,
     /// The process-level failure that triggered quarantine, verbatim from the
-    /// scan helper — see `plugin_scan_worker::is_process_failure`.
+    /// scan helper — see `ScanFailure::is_process_failure`.
     pub reason: String,
     pub quarantined_at_ms: u64,
 }
 
-/// One scanned plugin and every registry key it answers to, which is what
-/// [`PluginRegistryStore::persist`] turns into rows.
+/// One scanned plugin, every registry key it answers to, and the fingerprint
+/// of the file it was read from, which is what [`PluginRegistryStore::persist`]
+/// turns into rows.
 ///
 /// The keys travel with the row rather than being derived here, because the
 /// caller knows things this store does not: a scan publishes a plugin under its
 /// path hash and its descriptor id, and an activation rescan additionally
 /// publishes it under the stale key the saved project actually recorded.
+///
+/// The fingerprint travels with it for the same reason. Only the caller saw
+/// the file while its helper read it: a scan fingerprints each candidate
+/// before its descriptor helper runs and again after its last inspection, and
+/// a targeted rescan around its one read. A fingerprint taken later — when the
+/// rows are written, after the whole walk — would describe whatever sits at the
+/// path by then, and record a file no helper ever read as the one that was
+/// scanned. `None` is a file that could not be fingerprinted, and its row is
+/// not written.
 #[derive(Debug, Clone)]
 pub struct ScanRow {
     pub keys: Vec<String>,
     pub plugin: ScannedPlugin,
+    pub(crate) fingerprint: Option<FileFingerprint>,
 }
 
 /// One persisted registry row: what the scan learned, plus the fingerprint of
@@ -259,20 +279,49 @@ pub struct PersistedPluginEntry {
     pub bundle_position: u32,
     /// Size, in bytes, of the binary this plugin loads from — which is the file
     /// inside the bundle, not the bundle directory the walk found. See
-    /// [`scanned_binary_location`].
+    /// [`plugin_binary_location`].
     pub file_size_bytes: u64,
     /// Modification time of that same binary when it was scanned, in
     /// milliseconds since the unix epoch.
     ///
-    /// Millisecond resolution is the fingerprint's floor: a replacement written
-    /// within the same millisecond *and* at exactly the same size reads as
-    /// unchanged. Every real plugin update moves one of the two.
+    /// Millisecond resolution is this column's floor, and it is why the
+    /// fingerprint does not stop here: a different file written within the
+    /// same millisecond at exactly the same size, or one whose timestamps were
+    /// set back to the original's, reads as unchanged on size and age alone.
+    /// [`file_identity`](Self::file_identity) closes that case for any file
+    /// put there by replacing the old one.
     pub file_modified_ms: u64,
+    /// Which file the path named when it was scanned: device and inode on
+    /// unix, volume serial and file index on Windows.
+    ///
+    /// Defaulted rather than versioned. A row written before the column existed
+    /// reads as `None`, and `None` never matches a live fingerprint, so such a
+    /// row is neither hydrated nor reused — but it stays the plugin's last
+    /// known location, so its next activation takes the one targeted rescan
+    /// and persists a row carrying the identity. Bumping
+    /// [`SCAN_REGISTRY_SCHEMA_VERSION`] instead would discard every last-known
+    /// location at once and leave every saved project's plugins unresolvable
+    /// until the user scanned by hand.
+    #[serde(default)]
+    pub file_identity: Option<FileIdentity>,
 }
 
 impl PersistedPluginEntry {
+    /// The registry row this persisted row resolves to, carrying the
+    /// fingerprint it was persisted with — which hydration has just compared
+    /// against the file on disk, so it is the file's fingerprint now.
     fn as_registry_entry(&self) -> PluginRegistryEntry {
-        PluginRegistryEntry::from_scanned(&self.plugin)
+        PluginRegistryEntry::from_scanned(&self.plugin, self.recorded_fingerprint())
+    }
+
+    /// The fingerprint this row recorded, or `None` for a row written before
+    /// file identity was recorded — a fingerprint this build could never match.
+    fn recorded_fingerprint(&self) -> Option<FileFingerprint> {
+        Some(FileFingerprint {
+            size_bytes: self.file_size_bytes,
+            modified_ms: self.file_modified_ms,
+            identity: self.file_identity?,
+        })
     }
 
     /// Whether an instance inspection ran for this row and answered.
@@ -318,6 +367,9 @@ struct StoredRegistry {
     /// resolve. Bounds the targeted rescan to once per key per process; see
     /// [`PluginRegistryStore::claim_rescan`].
     resolutions: HashMap<String, ResolutionOutcome>,
+    /// How many callers are parked in [`PluginRegistryStore::wait_for_rescan`]
+    /// on each key right now.
+    rescan_waiters: HashMap<String, usize>,
     /// Binaries currently quarantined, keyed by path. Loaded from the file on
     /// hydration and mutated by [`PluginRegistryStore::quarantine_failure`],
     /// [`PluginRegistryStore::clear_quarantine`], and
@@ -374,6 +426,7 @@ impl RescanAttempt<'_> {
             .lock_stored()
             .resolutions
             .insert(self.plugin_id.clone(), ResolutionOutcome::Refused(reason));
+        self.store.rescan_settled.notify_all();
     }
 
     /// The rescan found the plugin. Nothing is recorded: the entry is in the
@@ -381,6 +434,7 @@ impl RescanAttempt<'_> {
     pub fn resolved(mut self) {
         self.settled = true;
         self.store.lock_stored().resolutions.remove(&self.plugin_id);
+        self.store.rescan_settled.notify_all();
     }
 }
 
@@ -390,6 +444,7 @@ impl Drop for RescanAttempt<'_> {
             return;
         }
         self.store.lock_stored().resolutions.remove(&self.plugin_id);
+        self.store.rescan_settled.notify_all();
     }
 }
 
@@ -399,6 +454,9 @@ pub struct PluginRegistryStore {
     /// no-op and the registry lives and dies with the process.
     location: Option<PathBuf>,
     stored: Mutex<StoredRegistry>,
+    /// Signalled whenever a [`RescanAttempt`] settles or is dropped, under
+    /// `stored`'s lock: what [`PluginRegistryStore::wait_for_rescan`] parks on.
+    rescan_settled: Condvar,
 }
 
 impl PluginRegistryStore {
@@ -421,6 +479,7 @@ impl PluginRegistryStore {
         Self {
             location,
             stored: Mutex::new(StoredRegistry::default()),
+            rescan_settled: Condvar::new(),
         }
     }
 
@@ -430,7 +489,8 @@ impl PluginRegistryStore {
     /// session — is never displaced by the file's older view of it.
     ///
     /// Entries are admitted only if the policy still authorizes their path and
-    /// the file on disk is byte-for-byte the size and age the scan recorded.
+    /// the file on disk is the file the scan recorded, at the size and age it
+    /// recorded.
     /// Anything else is a plugin that has been updated, replaced or removed
     /// since, and resolving it would hand activation a path whose contents no
     /// longer match the descriptor id recorded next to it.
@@ -483,11 +543,13 @@ impl PluginRegistryStore {
 
     /// The rows a fresh scan of `path` would only reproduce, or nothing.
     ///
-    /// `Some` means the file at `path` is byte-for-byte the size and age the
-    /// scan that wrote these rows recorded, the policy still authorizes it, and
-    /// every row for it came from an instance inspection that ran and answered.
-    /// A caller holding that may publish the rows instead of spawning the
-    /// helpers again.
+    /// `Some` means the file at `path` is the file the scan that wrote these
+    /// rows recorded, at the size and age it recorded, the policy still
+    /// authorizes it, and every row for it came from an instance inspection
+    /// that ran and answered. A caller holding that may publish the rows, with
+    /// the fingerprint returned beside them, instead of spawning the helpers
+    /// again: the fingerprint is the one the rows recorded, which this check
+    /// has just found the file still carries.
     ///
     /// The inspection condition is what makes the reuse converge rather than
     /// freeze. A row whose inspection was refused, or never ran at all, records
@@ -502,7 +564,7 @@ impl PluginRegistryStore {
         &self,
         path: &Path,
         scan_policy: &PluginScanPolicy,
-    ) -> Option<Vec<ScannedPlugin>> {
+    ) -> Option<(Vec<ScannedPlugin>, FileFingerprint)> {
         let path_as_scanned = path.display().to_string();
         let stored = self.lock_stored();
         let mut rows: Vec<&PersistedPluginEntry> = stored
@@ -527,15 +589,17 @@ impl PluginRegistryStore {
         }
 
         rows.sort_by_key(|entry| entry.bundle_position);
+        let fingerprint = rows[0].recorded_fingerprint()?;
         // One plugin holds a row under each key it answers to, and the scan
         // result carries it once.
         let mut published = BTreeSet::new();
-        Some(
+        Some((
             rows.into_iter()
                 .filter(|entry| published.insert(entry.plugin.id.clone()))
                 .map(|entry| entry.plugin.clone())
                 .collect(),
-        )
+            fingerprint,
+        ))
     }
 
     /// Whether `path` is currently quarantined, and why.
@@ -550,7 +614,7 @@ impl PluginRegistryStore {
     /// any earlier record for it.
     ///
     /// Called only for a crash or a timeout — see
-    /// `plugin_scan_worker::is_process_failure` — never for a data-level
+    /// `ScanFailure::is_process_failure` — never for a data-level
     /// refusal, so a candidate that merely failed to parse is retried on every
     /// ordinary scan rather than blacklisted from one bad read.
     pub fn quarantine_failure(&self, path: &Path, reason: String, quarantined_at_ms: u64) {
@@ -619,11 +683,12 @@ impl PluginRegistryStore {
     /// and `load_plugin` is holding a fair `RwLock` in read mode the whole time
     /// — one queued writer behind them stalls every later reader.
     ///
-    /// Concurrent callers for the same key do not queue. The second one is told
-    /// [`RescanClaim::InProgress`] and refuses immediately, because the
-    /// alternative is parking a blocking-pool thread for the length of a child
-    /// process to arrive at an answer the first caller is about to publish to
-    /// the registry anyway.
+    /// A concurrent caller for the same key is told [`RescanClaim::InProgress`]
+    /// and does not start a second rescan. It waits for the first one through
+    /// [`Self::wait_for_rescan`] and then reads the answer that caller
+    /// published: the same project activating the same plugin twice at once —
+    /// two devices of one plugin, a strip rebuilt while an activation is in
+    /// flight — must load both, not fail one because the other got there first.
     pub fn claim_rescan(&self, plugin_id: &str) -> RescanClaim<'_> {
         let mut stored = self.lock_stored();
         match stored.resolutions.get(plugin_id) {
@@ -682,13 +747,19 @@ impl PluginRegistryStore {
     /// [`apply_completed_scan_removals`](Self::apply_completed_scan_removals)
     /// applied, so a merge cannot resurrect a row a scan removed this session.
     ///
-    /// A row whose file cannot be fingerprinted at all is dropped, not kept:
-    /// the scan publisher applies its removals before calling this, so the
-    /// union source no longer holds a previous row for that key either. That is
-    /// the intended outcome for the only case that reaches it — the scanned
-    /// path is not on disk — and it is why [`scanned_file_path`] falls back to
-    /// the scanned path rather than reporting nothing whenever a *binary*
-    /// inside it cannot be resolved.
+    /// Each row is written with the fingerprint it carries, and this function
+    /// never stats the file itself: the caller fingerprinted the file while its
+    /// helper read it, which is the only moment the fingerprint describes the
+    /// file the row's answer came from (see [`ScanRow`]). It is the same value
+    /// the caller published to the in-memory registry, so the two never
+    /// disagree about which file a row describes.
+    ///
+    /// A row carrying no fingerprint is dropped, not kept: the scan publisher
+    /// applies its removals before calling this, so the union source no longer
+    /// holds a previous row for that key either. That is the intended outcome
+    /// for the case that reaches it — the scanned path is not on disk — and it
+    /// is why [`scanned_file_path`] falls back to the scanned path rather than
+    /// reporting nothing whenever a *binary* inside it cannot be resolved.
     ///
     /// `rows` is ordered, and the order is what records each plugin's position
     /// in the file it came from — see [`PersistedPluginEntry::bundle_position`].
@@ -701,23 +772,20 @@ impl PluginRegistryStore {
             return;
         };
 
-        let mut fingerprints: HashMap<&str, Option<(u64, u64)>> = HashMap::new();
         let mut plugins_seen_per_file: HashMap<&str, u32> = HashMap::new();
         let mut scanned_this_session = BTreeMap::new();
         for row in rows {
             let path = row.plugin.path.as_str();
-            let fingerprint = *fingerprints
-                .entry(path)
-                .or_insert_with(|| scanned_file_fingerprint(&row.plugin));
-            let Some((file_size_bytes, file_modified_ms)) = fingerprint else {
+            let Some(fingerprint) = row.fingerprint else {
                 continue;
             };
             let bundle_position = plugins_seen_per_file.entry(path).or_insert(0);
             let entry = PersistedPluginEntry {
                 plugin: row.plugin.clone(),
                 bundle_position: *bundle_position,
-                file_size_bytes,
-                file_modified_ms,
+                file_size_bytes: fingerprint.size_bytes,
+                file_modified_ms: fingerprint.modified_ms,
+                file_identity: Some(fingerprint.identity),
             };
             *bundle_position += 1;
             for key in &row.keys {
@@ -768,6 +836,53 @@ impl PluginRegistryStore {
         }
     }
 
+    /// Block until no rescan of `plugin_id` is in progress, or until `deadline`.
+    ///
+    /// Answers whether the key settled: `true` when the in-progress marker is
+    /// gone — the rescan was refused, resolved, or dropped — and `false` when
+    /// the deadline passed with it still in place. A caller that gets `true`
+    /// resolves the key again and finds the first caller's answer.
+    pub fn wait_for_rescan(&self, plugin_id: &str, deadline: Instant) -> bool {
+        let mut stored = self.lock_stored();
+        *stored
+            .rescan_waiters
+            .entry(plugin_id.to_string())
+            .or_default() += 1;
+        let settled = loop {
+            if !matches!(
+                stored.resolutions.get(plugin_id),
+                Some(ResolutionOutcome::InProgress)
+            ) {
+                break true;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break false;
+            }
+            stored = match self.rescan_settled.wait_timeout(stored, remaining) {
+                Ok((stored, _)) => stored,
+                Err(poisoned) => poisoned.into_inner().0,
+            };
+        };
+        if let Some(waiters) = stored.rescan_waiters.get_mut(plugin_id) {
+            *waiters -= 1;
+            if *waiters == 0 {
+                stored.rescan_waiters.remove(plugin_id);
+            }
+        }
+        settled
+    }
+
+    /// How many callers are waiting on `plugin_id`'s rescan right now.
+    #[cfg(test)]
+    pub(crate) fn rescan_waiters(&self, plugin_id: &str) -> usize {
+        self.lock_stored()
+            .rescan_waiters
+            .get(plugin_id)
+            .copied()
+            .unwrap_or(0)
+    }
+
     fn lock_stored(&self) -> std::sync::MutexGuard<'_, StoredRegistry> {
         self.stored
             .lock()
@@ -812,9 +927,37 @@ fn entry_is_still_the_scanned_file(
         return false;
     }
 
-    scanned_file_fingerprint(&entry.plugin).is_some_and(|(size, modified)| {
-        size == entry.file_size_bytes && modified == entry.file_modified_ms
-    })
+    let recorded = entry.recorded_fingerprint();
+    recorded.is_some() && scanned_file_fingerprint(&entry.plugin) == recorded
+}
+
+/// Which file a path names, as opposed to what is written in it.
+///
+/// Device and inode on unix; volume serial number and file index on Windows.
+/// A file renamed over the scanned one carries a new identity even when its
+/// size and timestamps were made to match, which size and age alone cannot see.
+/// An in-place rewrite keeps the identity and is caught by size or age instead.
+/// On a volume whose file index is not unique or not reported — ReFS with its
+/// 128-bit ids, FAT, some network shares — the identity adds less, and size and
+/// age remain the fingerprint's whole check.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct FileIdentity {
+    pub device: u64,
+    pub file: u64,
+}
+
+/// What a plugin's file looked like when it was checked: its size, its
+/// modification time and which file it was.
+///
+/// The ctime is deliberately absent. Gatekeeper and Spotlight write extended
+/// attributes onto plugin bundles, and every such write moves the ctime: a
+/// fingerprint carrying it would read an untouched plugin as changed and spend
+/// a scan-worker child process on its next load.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FileFingerprint {
+    pub size_bytes: u64,
+    pub modified_ms: u64,
+    pub identity: FileIdentity,
 }
 
 /// The fingerprint of the file this plugin is actually loaded from, or nothing.
@@ -828,11 +971,19 @@ fn entry_is_still_the_scanned_file(
 /// both sides — the row is not written with a fingerprint it could never be
 /// checked against, and a row already holding one is neither hydrated nor
 /// reused. Skipping is right in exactly that case, because the plugin is gone.
-pub(crate) fn scanned_file_fingerprint(plugin: &ScannedPlugin) -> Option<(u64, u64)> {
+pub(crate) fn scanned_file_fingerprint(plugin: &ScannedPlugin) -> Option<FileFingerprint> {
     file_fingerprint(&scanned_file_path(plugin)?)
 }
 
-/// The file whose size and modification time stand for this plugin's version.
+/// [`scanned_file_fingerprint`] for a plugin known by its path and format
+/// alone — a registry entry about to be loaded — through the same binary
+/// resolution, so the fingerprint a load compares is taken from the same file
+/// the scan's was.
+pub(crate) fn plugin_file_fingerprint(path: &Path, format: &str) -> Option<FileFingerprint> {
+    file_fingerprint(&plugin_file_path(path, format)?)
+}
+
+/// The file whose fingerprint stands for this plugin's version.
 ///
 /// The resolved binary when there is one, and the scanned path itself when
 /// there is not. The fallback is what keeps a bundle this build cannot resolve
@@ -846,11 +997,17 @@ pub(crate) fn scanned_file_fingerprint(plugin: &ScannedPlugin) -> Option<(u64, u
 /// instead would be worse than weak reuse: the scan would find the plugin,
 /// publish it, persist nothing, and the next launch could not activate it.
 pub(crate) fn scanned_file_path(plugin: &ScannedPlugin) -> Option<PathBuf> {
-    let resolved = scanned_binary_location(plugin).filter(|location| location.is_file());
+    plugin_file_path(Path::new(&plugin.path), &plugin.format)
+}
+
+/// [`scanned_file_path`] for a plugin known by its path and format alone: a
+/// registry entry about to be loaded is fingerprinted and authorized through
+/// the same resolution its scan was.
+pub(crate) fn plugin_file_path(candidate: &Path, format: &str) -> Option<PathBuf> {
+    let resolved = plugin_binary_location(candidate, format).filter(|location| location.is_file());
     if let Some(binary) = resolved {
         return Some(binary);
     }
-    let candidate = Path::new(&plugin.path);
     fs::metadata(candidate)
         .is_ok()
         .then(|| candidate.to_path_buf())
@@ -871,17 +1028,23 @@ pub(crate) fn scanned_file_path(plugin: &ScannedPlugin) -> Option<PathBuf> {
 /// question from location: a bundle whose executable is missing still has a
 /// place that executable belongs, which is what a fixture needs to know and
 /// what a fingerprint must not be taken from.
-pub(crate) fn scanned_binary_location(plugin: &ScannedPlugin) -> Option<PathBuf> {
-    let candidate = Path::new(&plugin.path);
+fn plugin_binary_location(candidate: &Path, format: &str) -> Option<PathBuf> {
     if !candidate.is_dir() {
         return Some(candidate.to_path_buf());
     }
-    match PluginFormat::from_wire_name(&plugin.format)? {
+    match PluginFormat::from_wire_name(format)? {
         PluginFormat::Clap => scanner::clap_library_path(candidate).ok(),
         PluginFormat::Vst3 => vst3_bundle_binary_location(candidate),
         PluginFormat::Vst2 | PluginFormat::AudioUnit => None,
     }
     .filter(|location| !location.is_dir())
+}
+
+/// [`plugin_binary_location`] for a scanned plugin, which a fixture reads to
+/// learn where a bundle's module belongs.
+#[cfg(test)]
+pub(crate) fn scanned_binary_location(plugin: &ScannedPlugin) -> Option<PathBuf> {
+    plugin_binary_location(Path::new(&plugin.path), &plugin.format)
 }
 
 /// The VST3 module inside a bundle, by this platform's layout.
@@ -956,15 +1119,75 @@ fn vst3_bundle_binary_location(bundle: &Path) -> Option<PathBuf> {
         .flatten()
 }
 
-fn file_fingerprint(path: &Path) -> Option<(u64, u64)> {
+/// The fingerprint of the file at `path`, or `None` when any part of it —
+/// size, age or identity — cannot be read. A fingerprint missing a part is
+/// one no recorded fingerprint can be compared against, so it is no
+/// fingerprint at all.
+///
+/// Every part comes from one lookup of the file, so the three describe the
+/// same file: two lookups by path could each find a different one if the
+/// path were replaced between them. On unix that lookup is the one `stat`.
+#[cfg(unix)]
+fn file_fingerprint(path: &Path) -> Option<FileFingerprint> {
+    use std::os::unix::fs::MetadataExt;
+
     let metadata = fs::metadata(path).ok()?;
+    Some(FileFingerprint {
+        size_bytes: metadata.len(),
+        modified_ms: modified_ms(&metadata)?,
+        identity: FileIdentity {
+            device: metadata.dev(),
+            file: metadata.ino(),
+        },
+    })
+}
+
+/// [`file_fingerprint`] on Windows, where the identity lives behind a handle:
+/// std's `file_index` and `volume_serial_number` are unstable. So the file is
+/// opened once, for no access — attributes only, the same open std's own
+/// `fs::metadata` makes — and the size, the age and the identity are all read
+/// from that one handle. `FILE_FLAG_BACKUP_SEMANTICS` lets the open succeed on
+/// a bundle directory, which is what a bundle with no resolvable module
+/// fingerprints.
+#[cfg(windows)]
+fn file_fingerprint(path: &Path) -> Option<FileFingerprint> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS,
+    };
+
+    let file = fs::OpenOptions::new()
+        .access_mode(0)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0)
+        .open(path)
+        .ok()?;
+    let metadata = file.metadata().ok()?;
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: the handle is `file`'s own, open for the whole call, and
+    // `information` is a live, writable struct of the type the call fills.
+    unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut information) }.ok()?;
+    Some(FileFingerprint {
+        size_bytes: metadata.len(),
+        modified_ms: modified_ms(&metadata)?,
+        identity: FileIdentity {
+            device: u64::from(information.dwVolumeSerialNumber),
+            file: (u64::from(information.nFileIndexHigh) << 32)
+                | u64::from(information.nFileIndexLow),
+        },
+    })
+}
+
+/// A file's modification time in milliseconds since the unix epoch.
+fn modified_ms(metadata: &fs::Metadata) -> Option<u64> {
     let modified = metadata
         .modified()
         .ok()?
         .duration_since(UNIX_EPOCH)
         .ok()?
         .as_millis();
-    Some((metadata.len(), u64::try_from(modified).ok()?))
+    u64::try_from(modified).ok()
 }
 
 /// Counts the bytes taken out of `inner`, so a bounded parse can say afterwards
@@ -1202,6 +1425,7 @@ mod tests {
             .into_iter()
             .map(|(key, plugin)| ScanRow {
                 keys: vec![key.to_string()],
+                fingerprint: scanned_file_fingerprint(&plugin),
                 plugin,
             })
             .collect()
@@ -1250,7 +1474,7 @@ mod tests {
             .persist(&one_row(&plugin_path, "aaaa1111"));
 
         let mut rescanned =
-            PluginRegistryEntry::from_scanned(&scanned_plugin(&plugin_path, "aaaa1111"));
+            PluginRegistryEntry::from_scanned(&scanned_plugin(&plugin_path, "aaaa1111"), None);
         rescanned.name = "Vendor Reverb 2".to_string();
         let session_registry = Mutex::new(HashMap::from([("aaaa1111".to_string(), rescanned)]));
         test_root
@@ -1339,6 +1563,53 @@ mod tests {
                 .expect("registry lock")
                 .is_empty(),
             "a plugin file modified since the scan must not resolve from the stale entry"
+        );
+    }
+
+    /// The third part of the same invalidation: a different file renamed over
+    /// the scanned one, with its size and modification time made to match.
+    /// Size and age alone read it as the scanned file; its identity does not.
+    ///
+    /// Mutation this catches: comparing only size and modification time in
+    /// `entry_is_still_the_scanned_file`.
+    #[test]
+    fn a_different_file_with_the_scanned_size_and_age_does_not_hydrate() {
+        let test_root = TestRegistryRoot::create("registry-stale-identity");
+        let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
+        let original = fs::metadata(&plugin_path).expect("the scanned file is there");
+        let original_modified = original.modified().expect("its mtime is readable");
+
+        let replacement = plugin_path.with_extension("replacement");
+        fs::write(&replacement, vec![b'x'; original.len() as usize])
+            .expect("the replacement is written");
+        File::options()
+            .write(true)
+            .open(&replacement)
+            .expect("the replacement opens for a time update")
+            .set_times(FileTimes::new().set_modified(original_modified))
+            .expect("the replacement's mtime is settable");
+        fs::rename(&replacement, &plugin_path).expect("the replacement is renamed over");
+        let replaced = fs::metadata(&plugin_path).expect("the replacement is there");
+        assert_eq!(
+            (replaced.len(), replaced.modified().expect("mtime")),
+            (original.len(), original_modified),
+            "the replacement must match on size and age, or this test proves nothing"
+        );
+
+        let next_launch_registry = Mutex::new(HashMap::new());
+        test_root
+            .store()
+            .hydrate_into(&next_launch_registry, &test_root.scan_policy());
+
+        assert!(
+            next_launch_registry
+                .lock()
+                .expect("registry lock")
+                .is_empty(),
+            "a different file under the scanned name must not resolve from the stale entry"
         );
     }
 
@@ -1709,6 +1980,7 @@ mod tests {
                     bundle_position: 0,
                     file_size_bytes: 10,
                     file_modified_ms: 0,
+                    file_identity: None,
                 },
             );
         }
@@ -2303,6 +2575,10 @@ mod tests {
             bundle_position: 0,
             file_size_bytes: u64::MAX,
             file_modified_ms: u64::MAX,
+            file_identity: Some(FileIdentity {
+                device: u64::MAX,
+                file: u64::MAX,
+            }),
         };
         let row_bytes = serde_json::to_vec(&entry)
             .expect("a persisted row should serialize")

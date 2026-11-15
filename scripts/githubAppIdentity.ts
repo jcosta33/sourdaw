@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { fail, TRUSTED_GH_PATH_ENV, TRUSTED_GIT_PATH_ENV } from './prContract.ts';
+import { assertRunsInLiveIsolatedGitDirectory } from './tokenBearingChildPlacement.ts';
 
 export const AUTHOR_BOT_NODE_ID = 'BOT_kgDOEv71mA';
 export const REVIEWER_BOT_NODE_ID = 'BOT_kgDOEv74EA';
@@ -772,22 +773,6 @@ function isTokenBearingGitChild(args: readonly string[], env: NodeJS.ProcessEnv)
 }
 
 /**
- * A credential reaches git only through a helper, and a lane can write the config and attributes of
- * every lane and of the primary checkout. A child that installs a helper therefore must name its git
- * directory with `--git-dir`: `withIsolatedGitTransport` points it at a directory whose config only
- * the script writes, so no lane-chosen transport, remote helper, URL rewrite or `http.*` setting
- * applies beside the token.
- */
-function assertCredentialHelperChildIsIsolated(args: readonly string[]): void {
-    if (!installsCredentialHelper(args)) {
-        return;
-    }
-    if (!gitGlobalOptions(args).some((option) => option.startsWith('--git-dir='))) {
-        throw new Error('refusing a token-bearing git child outside an isolated git directory');
-    }
-}
-
-/**
  * Config-defined hooks (`hook.<name>.event` with `hook.<name>.command`) run whatever
  * `core.hooksPath` says, and `<name>` is the lane's choice, so no fixed-name override disarms them.
  * A token-bearing git child therefore refuses to start while the config it reads defines any
@@ -831,7 +816,9 @@ function assertTokenBearingGitChildIsHookFree(
     if (basename(childCommand) !== 'git' || !isTokenBearingGitChild(args, env)) {
         return;
     }
-    assertCredentialHelperChildIsIsolated(args);
+    if (installsCredentialHelper(args)) {
+        assertRunsInLiveIsolatedGitDirectory(gitGlobalOptions(args), env);
+    }
     assertNoConfigDefinedHooks(childCommand, args, cwd, env);
 }
 

@@ -114,6 +114,7 @@ import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
 import { AgentWorkspace } from './AgentWorkspace';
 import { LaunchScreen } from './LaunchScreen';
+import { ConnectedLlmStatusBadge } from './Prompt/ConnectedLlmStatusBadge';
 import { ShortcutHelp } from './ShortcutHelp';
 import { StatusBar } from './StatusBar';
 import { TransportBar } from './TransportBar';
@@ -626,7 +627,12 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const inspectorNode = (
         <InspectorPanel style={shellSlotStyle(displayedInspectorWidth, inspectorWidth, INSPECTOR_WIDTH_BOUNDS.min)} />
     );
-    const chatNode = <ChatPanel style={shellSlotStyle(displayedChatWidth, chatWidth, 200)} />;
+    const chatNode = (
+        <ChatPanel
+            style={shellSlotStyle(displayedChatWidth, chatWidth, 200)}
+            routeBadge={<ConnectedLlmStatusBadge />}
+        />
+    );
     const aiNode = (side: 'left' | 'right'): ReactNode => (
         <div
             className={`flex flex-col ${

@@ -403,7 +403,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/setAiBackendPreference.spec.ts",
-                    "digest": "a068fd94c1704aadbdd359e6ae40d8c11bf16d48714fb7aa3486a635907e4baa"
+                    "digest": "c492b50626a8b32f78d46a0c22381d400b4cf61f968c119f71eb1a06e754c2f4"
                 },
                 {
                     "path": "src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx",
@@ -620,7 +620,7 @@
             "fixtures": [
                 {
                     "path": "crates/daw-engine/src",
-                    "digest": "c13f6a54d8a911e2dfd0a5da140d2b60f2ccdcfd4904ebc980c15cbeb86da1b3"
+                    "digest": "c6cc1f2844e518da28186c5fb5277c269866cd2db30740dd199986f55433b5f9"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
@@ -745,7 +745,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "02f48d6c71d9818d9e805b07d9ee7174fea432b8654f7141f5839c672567fd52"
+                    "digest": "67579169f9bfa8ae0054ed4cf49c98cf42c648f833f78fb3de83290ed69c29b8"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",
@@ -883,7 +883,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandExecutionOutcome.spec.ts",
-                    "digest": "423ac1a776322891c3c782f2d120bf9cf8819937e8f4931d5df098d8103b13af"
+                    "digest": "c481da2e6b08cadda774e15868adb6a9e6cc72237a7f3c7a678fb389df97bbf3"
                 }
             ]
         },

@@ -2425,15 +2425,31 @@ describe('a bulk request confirmed one batch at a time', () => {
         );
     });
 
-    it('refuses a request that spans several batches from the prompt bar', async () => {
+    it('hands a request that spans several batches from the prompt bar to the chat, ending with its first card pending', async () => {
         await seedLayerTracks();
-        scriptMuteLayersProposal();
+        const planningTurns = [
+            literalMetricIntakeTurn,
+            () => [MUTE_SEARCH_CALL],
+            discoverSearchedCalls(['muteTrack']),
+            proposeDiscoveredCalls([muteLayersItem()], ['muteTrack']),
+        ];
+        // The Prompt Bar plans once, then the chat plans the same request again in its thread.
+        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [...planningTurns, ...planningTurns]);
         flushAutomergeStorageWrites();
 
         const submitted = await submitAdmittedPromptRequest({ prompt: MUTE_LAYERS_PROMPT, source: 'prompt-bar' });
 
-        expect(submitted.status).toBe('rejected');
-        expect(proposedConfirmations()).toEqual([]);
+        expect(submitted.status).toBe('handed-off');
+        await vi.waitFor(() => {
+            expect(chatStore.value?.isGenerating).toBe(false);
+            requireOnlyProposedConfirmation();
+        });
+        const first = requireOnlyProposedConfirmation();
+        expect(first.runId).not.toBe(submitted.runId);
+        expect(first.approvalSnapshot.batchPosition).toEqual({ index: 1, total: 2 });
+        expect(first.actions).toHaveLength(MAX_LLM_ACTIONS_PER_BATCH);
+        expect(chatStore.value?.messages.find((message) => message.role === 'user')?.content).toBe(MUTE_LAYERS_PROMPT);
+        expect(agentRunLifecycle.get(submitted.runId)).toMatchObject({ phase: 'completed', batches: [] });
         expect(mutedTrackIds()).toEqual([]);
     });
 });
