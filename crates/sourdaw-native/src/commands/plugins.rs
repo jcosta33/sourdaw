@@ -1020,13 +1020,19 @@ struct VettedRegistryEntry {
 
 /// What one pass of registry resolution produced.
 enum Resolution<Rescan> {
-    Settled(Result<VettedRegistryEntry, String>),
+    Settled(Box<Result<VettedRegistryEntry, String>>),
     /// Another caller holds this key's rescan. The rescan comes back unused,
     /// with the refusal to give if waiting for that caller does not settle it.
     RescanInProgress {
         rescan: Rescan,
         busy: String,
     },
+}
+
+impl<Rescan> Resolution<Rescan> {
+    fn settled(result: Result<VettedRegistryEntry, String>) -> Self {
+        Self::Settled(Box::new(result))
+    }
 }
 
 /// Resolve the id a saved project recorded to the registry entry that activates
@@ -1094,7 +1100,7 @@ where
         plugin_id,
         rescan,
     ) {
-        Resolution::Settled(result) => return result,
+        Resolution::Settled(result) => return *result,
         Resolution::RescanInProgress { rescan, busy } => (rescan, busy),
     };
     if !registry_store.wait_for_rescan(plugin_id, Instant::now() + RESCAN_WAIT_TIMEOUT) {
@@ -1107,7 +1113,7 @@ where
         plugin_id,
         rescan,
     ) {
-        Resolution::Settled(result) => result,
+        Resolution::Settled(result) => *result,
         Resolution::RescanInProgress { busy, .. } => Err(busy),
     }
 }
@@ -1136,14 +1142,14 @@ where
     }
 
     let Some(last_known) = registry_store.last_known_entry(plugin_id) else {
-        return Resolution::Settled(Err(format!(
+        return Resolution::settled(Err(format!(
             "Plugin {plugin_id} is not in the plugin registry and no scanned location is recorded for it. Scan the folder it is installed in to add it."
         )));
     };
 
     let attempt = match registry_store.claim_rescan(plugin_id) {
         RescanClaim::Granted(attempt) => attempt,
-        RescanClaim::Refused(reason) => return Resolution::Settled(Err(reason)),
+        RescanClaim::Refused(reason) => return Resolution::settled(Err(reason)),
         RescanClaim::InProgress => {
             return Resolution::RescanInProgress {
                 rescan,
@@ -1158,7 +1164,7 @@ where
     // The rescan carries the persisted descriptor id: a requested key that no
     // longer matches a row — the path re-spelled, the vendor renamed a plugin —
     // still names a plugin to the persisted row, and that is the one to load.
-    Resolution::Settled(rescan_and_publish(
+    Resolution::settled(rescan_and_publish(
         plugin_registry,
         registry_store,
         scan_policy,
@@ -1205,7 +1211,7 @@ where
     {
         Ok(authorized) => authorized,
         Err(reason) => {
-            return Resolution::Settled(Err(format!(
+            return Resolution::settled(Err(format!(
                 "Plugin '{}' will not be loaded from {}: {reason}",
                 entry.name, entry.path
             )));
@@ -1214,7 +1220,7 @@ where
 
     let live = plugin_file_fingerprint(&authorized, &entry.format);
     if let Some(fingerprint) = live.filter(|live| Some(*live) == entry.scanned_fingerprint) {
-        return Resolution::Settled(Ok(VettedRegistryEntry {
+        return Resolution::settled(Ok(VettedRegistryEntry {
             entry: PluginRegistryEntry {
                 path: authorized.display().to_string(),
                 ..entry
@@ -1225,7 +1231,7 @@ where
 
     let attempt = match registry_store.claim_rescan(plugin_id) {
         RescanClaim::Granted(attempt) => attempt,
-        RescanClaim::Refused(reason) => return Resolution::Settled(Err(reason)),
+        RescanClaim::Refused(reason) => return Resolution::settled(Err(reason)),
         RescanClaim::InProgress => {
             return Resolution::RescanInProgress {
                 rescan,
@@ -1237,7 +1243,7 @@ where
         }
     };
 
-    Resolution::Settled(rescan_and_publish(
+    Resolution::settled(rescan_and_publish(
         plugin_registry,
         registry_store,
         scan_policy,
@@ -2051,15 +2057,17 @@ async fn load_plugin_under_runtime_gate(
                 state,
                 &instance_id.0,
                 wrapper,
-                &name,
-                &params,
-                has_gui,
-                entry.chain_kind,
+                RegisteredPlugin {
+                    name: &name,
+                    parameters: &params,
+                    has_gui,
+                    chain_kind: entry.chain_kind,
+                },
             ) {
                 Ok(registration) => EngineHandover::Registered(registration),
                 Err(refusal) => EngineHandover::Refused(refusal),
             },
-            None => EngineHandover::NoEngine(wrapper),
+            None => EngineHandover::NoEngine(Box::new(wrapper)),
         }
     };
 
@@ -2087,6 +2095,7 @@ async fn load_plugin_under_runtime_gate(
             ));
         }
         EngineHandover::NoEngine(wrapper) => {
+            let wrapper = *wrapper;
             eprintln!("[Plugin] Warning: native engine not running, plugin won't process audio");
             // Dormant, not lost: `attach_dormant_plugins` registers this
             // instance on the engine's first graph batch, from the very
@@ -2348,7 +2357,7 @@ struct EngineRegistration {
 enum EngineHandover {
     Registered(EngineRegistration),
     Refused(Box<RegistrationRefusal>),
-    NoEngine(HostedRuntime),
+    NoEngine(Box<HostedRuntime>),
 }
 
 /// A registration the engine would not take.
@@ -2410,6 +2419,14 @@ impl RegistrationRefusal {
     }
 }
 
+/// What the record written for a registered instance says about its plugin.
+struct RegisteredPlugin<'a> {
+    name: &'a str,
+    parameters: &'a [PluginParameter],
+    has_gui: bool,
+    chain_kind: DeviceKind,
+}
+
 /// Hand one runtime to a running engine: reserve its id, record the instance,
 /// and register the slot.
 ///
@@ -2434,11 +2451,14 @@ fn register_runtime_with_engine(
     state: &AppState,
     instance_id: &str,
     runtime: HostedRuntime,
-    name: &str,
-    parameters: &[PluginParameter],
-    has_gui: bool,
-    chain_kind: DeviceKind,
+    plugin: RegisteredPlugin<'_>,
 ) -> Result<EngineRegistration, Box<RegistrationRefusal>> {
+    let RegisteredPlugin {
+        name,
+        parameters,
+        has_gui,
+        chain_kind,
+    } = plugin;
     // The load refuses an unactivated plugin before anything is parked, so
     // reaching this is a runtime that lost its activation after it was built.
     // Kept as a guard because handing one to the engine is unrecoverable: it
@@ -2735,10 +2755,12 @@ fn attach_one_dormant_plugin(
                 state,
                 instance_id,
                 plugin,
-                &name,
-                &parameters,
-                has_gui,
-                chain_kind,
+                RegisteredPlugin {
+                    name: &name,
+                    parameters: &parameters,
+                    has_gui,
+                    chain_kind,
+                },
             ),
             None => Err(RegistrationRefusal::parked(
                 "no native engine is running".to_string(),
@@ -3639,10 +3661,12 @@ mod tests {
             &state,
             "mistuned-instance",
             runtime,
-            "Mistuned Fixture",
-            &[],
-            false,
-            DeviceKind::Effect,
+            RegisteredPlugin {
+                name: "Mistuned Fixture",
+                parameters: &[],
+                has_gui: false,
+                chain_kind: DeviceKind::Effect,
+            },
         )
         .err()
         .expect("a runtime activated on another clock must be refused");
@@ -3785,8 +3809,7 @@ mod tests {
         // changed and the host wrote nothing.
         runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)]);
-                Ok(())
+                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
             })
             .expect("fixture control access should succeed");
 
@@ -4024,8 +4047,7 @@ mod tests {
         let runtime = engine_fixture_runtime(&state, "instance-swapped-restore");
         runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)]);
-                Ok(())
+                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
             })
             .expect("fixture control access should succeed");
 
@@ -4102,8 +4124,7 @@ mod tests {
         let runtime = engine_fixture_runtime(&state, "instance-swapped-poll");
         runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)]);
-                Ok(())
+                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
             })
             .expect("fixture control access should succeed");
 
@@ -4192,8 +4213,7 @@ mod tests {
         let runtime = engine_fixture_runtime(&state, "instance-late-write");
         runtime
             .with_control(Duration::from_secs(2), |plugin| {
-                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)]);
-                Ok(())
+                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)])
             })
             .expect("fixture control access should succeed");
 
@@ -4493,10 +4513,12 @@ mod tests {
             &state,
             "recovered-instance",
             runtime,
-            "Recovered Fixture",
-            &[],
-            false,
-            DeviceKind::Effect,
+            RegisteredPlugin {
+                name: "Recovered Fixture",
+                parameters: &[],
+                has_gui: false,
+                chain_kind: DeviceKind::Effect,
+            },
         )
         .err()
         .expect("a session at its ceiling must refuse the record insert");
@@ -4557,10 +4579,12 @@ mod tests {
             &state,
             "latent-instance",
             runtime,
-            "Latent Fixture",
-            &[],
-            false,
-            DeviceKind::Effect,
+            RegisteredPlugin {
+                name: "Latent Fixture",
+                parameters: &[],
+                has_gui: false,
+                chain_kind: DeviceKind::Effect,
+            },
         );
         let Ok(registration) = registration else {
             panic!("a fresh session registers the instance");

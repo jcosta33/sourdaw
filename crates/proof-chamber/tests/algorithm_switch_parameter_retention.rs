@@ -47,7 +47,11 @@
 //!   selects before writing anything, so its replay would otherwise be live
 //!   code no test can see.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "tests assert by unwrapping and fail by panicking"
+)]
 
 use proof_chamber::{ProofChamberInstance, UnexposedEngine};
 

@@ -2925,16 +2925,30 @@ struct MappedDevice {
     scoring_telemetry: Option<Arc<ScoringTelemetry>>,
 }
 
+/// What mapping a device reads from the batch around it and what it extends:
+/// the stream's rate, the ids the engine already owns, the Crumbs and Levain
+/// banks the batch attaches, and the ops the batch is building.
+struct MapEnv<'a> {
+    sample_rate: f32,
+    engine_owned_devices: &'a HashMap<String, EngineOwnedDevice>,
+    attached_crumbs: &'a mut AttachedCrumbs,
+    levain_banks: &'a mut LevainBankStore,
+    ops: &'a mut Vec<GraphCommand>,
+}
+
 fn map_device(
     device: &DevicePayload,
     registry: &mut GraphRegistry,
     contributes_audio: bool,
-    sample_rate: f32,
-    engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
-    attached_crumbs: &mut AttachedCrumbs,
-    levain_banks: &mut LevainBankStore,
-    ops: &mut Vec<GraphCommand>,
+    env: MapEnv<'_>,
 ) -> Result<Option<MappedDevice>, String> {
+    let MapEnv {
+        sample_rate,
+        engine_owned_devices,
+        attached_crumbs,
+        levain_banks,
+        ops,
+    } = env;
     if registry.devices.contains_key(&device.id) {
         return Err(format!("device id '{}' is already in a chain", device.id));
     }
@@ -3612,12 +3626,14 @@ fn map_batch(
             registry,
             samples,
             batch.timeline_lease.as_deref(),
-            sample_rate,
-            engine_owned_devices,
-            &mut *attached_crumbs,
-            levain_banks,
+            MapEnv {
+                sample_rate,
+                engine_owned_devices,
+                attached_crumbs: &mut *attached_crumbs,
+                levain_banks: &mut *levain_banks,
+                ops: &mut ops,
+            },
             &mut budgets,
-            &mut ops,
             &mut touched,
         ) {
             refusals.push(format!("commands[{index}]: {reason}"));
@@ -3679,14 +3695,17 @@ fn map_command(
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     timeline_lease: Option<&str>,
-    sample_rate: f32,
-    engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
-    attached_crumbs: &mut AttachedCrumbs,
-    levain_banks: &mut LevainBankStore,
+    env: MapEnv<'_>,
     budgets: &mut QueueBudgets,
-    ops: &mut Vec<GraphCommand>,
     touched: &mut Vec<String>,
 ) -> Result<(), String> {
+    let MapEnv {
+        sample_rate,
+        engine_owned_devices,
+        attached_crumbs,
+        levain_banks,
+        ops,
+    } = env;
     match command {
         GraphCommandPayload::CreateTrackStrip {
             track_id,
@@ -3743,11 +3762,13 @@ fn map_command(
                     device,
                     registry,
                     *contributes_audio,
-                    sample_rate,
-                    engine_owned_devices,
-                    &mut *attached_crumbs,
-                    levain_banks,
-                    ops,
+                    MapEnv {
+                        sample_rate,
+                        engine_owned_devices,
+                        attached_crumbs: &mut *attached_crumbs,
+                        levain_banks: &mut *levain_banks,
+                        ops: &mut *ops,
+                    },
                 )?
                 else {
                     continue;
@@ -3852,11 +3873,13 @@ fn map_command(
                     device,
                     registry,
                     *contributes_audio,
-                    sample_rate,
-                    engine_owned_devices,
-                    &mut *attached_crumbs,
-                    levain_banks,
-                    ops,
+                    MapEnv {
+                        sample_rate,
+                        engine_owned_devices,
+                        attached_crumbs: &mut *attached_crumbs,
+                        levain_banks: &mut *levain_banks,
+                        ops: &mut *ops,
+                    },
                 )?
                 else {
                     continue;
@@ -4060,11 +4083,13 @@ fn map_command(
                 device,
                 registry,
                 strip.contributes_audio,
-                sample_rate,
-                engine_owned_devices,
-                &mut *attached_crumbs,
-                levain_banks,
-                ops,
+                MapEnv {
+                    sample_rate,
+                    engine_owned_devices,
+                    attached_crumbs: &mut *attached_crumbs,
+                    levain_banks: &mut *levain_banks,
+                    ops: &mut *ops,
+                },
             )?
             else {
                 return Ok(());
@@ -4296,12 +4321,14 @@ fn map_command(
                 registry,
                 samples,
                 timeline_lease,
-                sample_rate,
-                engine_owned_devices,
-                attached_crumbs,
-                levain_banks,
+                MapEnv {
+                    sample_rate,
+                    engine_owned_devices,
+                    attached_crumbs: &mut *attached_crumbs,
+                    levain_banks: &mut *levain_banks,
+                    ops: &mut *ops,
+                },
                 budgets,
-                ops,
                 touched,
             )?;
             let request = next_native_nam_request()?;
@@ -16383,11 +16410,13 @@ mod tests {
             &device,
             &mut GraphRegistry::default(),
             true,
-            48_000.0,
-            &HashMap::new(),
-            &mut AttachedCrumbs::default(),
-            &mut LevainBankStore::default(),
-            &mut ops,
+            MapEnv {
+                sample_rate: 48_000.0,
+                engine_owned_devices: &HashMap::new(),
+                attached_crumbs: &mut AttachedCrumbs::default(),
+                levain_banks: &mut LevainBankStore::default(),
+                ops: &mut ops,
+            },
         )
         .expect_err("a non-finite mod-assignment amount must refuse");
 

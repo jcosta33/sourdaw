@@ -17,7 +17,11 @@
 //! `grinderAudioParamContract.json` — the host is the side that ships it, and a
 //! copy here would be a fourth place to forget.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "tests assert by unwrapping and fail by panicking"
+)]
 
 use daw_dsp::crust::oversample::normalize_factor;
 use daw_dsp::gluten::oversample::ConfigurableOversample;

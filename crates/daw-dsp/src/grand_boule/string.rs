@@ -244,32 +244,6 @@ impl ModalString {
     /// horizontal polarization picks up energy at the resonant frequency
     /// with the same efficiency as the vertical, but releases it far more
     /// slowly for the project aftersound voicing.
-    /// Compatibility wrapper for existing Rust callers of the aftersound
-    /// scalar API. Grand Boule's own voice path uses
-    /// [`Self::configure_aftersound_from_string_parameters`].
-    pub fn configure_aftersound(
-        &mut self,
-        fundamental_hz: f32,
-        key: u32,
-        hammer_strike_ratio: f32,
-        sample_rate: f32,
-        base_bandwidth_hz: f32,
-        c0_bandwidth_hz: f32,
-        decay_bandwidth_hz: f32,
-    ) {
-        self.configure_aftersound_from_string_parameters(
-            StringModalParameters::new(
-                fundamental_hz,
-                key,
-                hammer_strike_ratio,
-                sample_rate,
-                base_bandwidth_hz,
-            ),
-            c0_bandwidth_hz,
-            decay_bandwidth_hz,
-        );
-    }
-
     pub(crate) fn configure_aftersound_from_string_parameters(
         &mut self,
         parameters: StringModalParameters,
