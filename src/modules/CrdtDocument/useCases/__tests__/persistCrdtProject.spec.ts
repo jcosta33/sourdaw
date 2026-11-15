@@ -15,13 +15,13 @@ import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
 import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
-import * as prospectiveWorker from '../../repositories/prospectiveMutationWorkerClient';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
 import {
     EMPTY_PERSISTENCE_AUTHORITY,
     PERSISTENCE_AUTHORITY_KEY,
 } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
 import { saveAllToIdb } from '../../repositories/crdtPersistence/saveAllToIdb';
+import * as prospectiveWorker from '../../repositories/prospectiveMutationWorkerClient';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 import { beginPersistenceReplacement } from '../beginPersistenceReplacement';
 import { compactProject } from '../compactProject';
