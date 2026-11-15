@@ -61,6 +61,9 @@ fn native_render() -> StereoRender {
         // SAFETY: process returns two instance-owned blocks of this size. Copy
         // both before the next process call can overwrite their buffers.
         let left_block = unsafe { std::slice::from_raw_parts(left_ptr, FERMENTER_BLOCK_FRAMES) };
+        // SAFETY: `right_ptr` is the instance's right buffer, allocated at
+        // `FERMENTER_BLOCK_FRAMES` floats in `new` and never resized; `process` just filled
+        // it, and the slice is consumed before the next `process` call.
         let right_block = unsafe { std::slice::from_raw_parts(right_ptr, FERMENTER_BLOCK_FRAMES) };
         left.extend(left_block.iter().map(|&sample| f64::from(sample)));
         right.extend(right_block.iter().map(|&sample| f64::from(sample)));

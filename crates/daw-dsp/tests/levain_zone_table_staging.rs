@@ -35,15 +35,23 @@ thread_local! {
     static DEALLOCATED_BYTES: Cell<usize> = const { Cell::new(0) };
 }
 
+// SAFETY: every request is forwarded unchanged to `System`, which upholds the `GlobalAlloc`
+// contract; the only extra work is bumping const-initialised thread-local `Cell<usize>`
+// counters, which neither allocate nor unwind.
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         ALLOCATIONS.with(|count| count.set(count.get() + 1));
+        // SAFETY: `layout` is the caller's, who must satisfy `GlobalAlloc::alloc`'s contract
+        // (non-zero size); it is passed to `System` untouched.
         unsafe { System.alloc(layout) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         DEALLOCATIONS.with(|count| count.set(count.get() + 1));
         DEALLOCATED_BYTES.with(|bytes| bytes.set(bytes.get() + layout.size()));
+        // SAFETY: `GlobalAlloc::dealloc`'s contract makes `ptr` a block this allocator returned
+        // from `alloc` with this same `layout`, and `alloc` forwards to `System`, so `System`
+        // allocated it.
         unsafe { System.dealloc(ptr, layout) }
     }
 }

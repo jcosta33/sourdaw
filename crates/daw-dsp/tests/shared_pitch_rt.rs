@@ -35,32 +35,48 @@ fn shared_overlap_analysis_runs_in_active_128_frame_instance_without_allocation(
                 }
                 let mut expected_left = [0.0; 128];
                 let mut expected_right = [0.0; 128];
-                // SAFETY: the instance's fixed input and output buffers each
-                // contain at least 128 samples; no borrow spans process().
-                unsafe {
-                    let left = instance.get_input_left_ptr();
-                    let right = instance.get_input_right_ptr();
-                    for i in 0..128 {
-                        let t = (block * 128 + i) as f32 / sample_rate;
-                        let value = (t * 220.0 * std::f32::consts::TAU).sin() * 0.5;
-                        *left.add(i) = value;
-                        *right.add(i) = value * -0.75;
-                        expected_left[i] = value;
-                        expected_right[i] = value * -0.75;
-                    }
-                    expected.process_block(&mut expected_left, &mut expected_right);
-                    let output = instance.process(128);
-                    let output_right = instance.get_right_ptr();
-                    for i in 0..128 {
-                        assert!((*output.add(i)).is_finite());
-                        assert!((*output_right.add(i)).is_finite());
-                        assert_eq!((*output.add(i)).to_bits(), expected_left[i].to_bits());
-                        assert_eq!(
-                            (*output_right.add(i)).to_bits(),
-                            expected_right[i].to_bits()
-                        );
-                        peak = peak.max((*output.add(i)).abs());
-                    }
+                let left = instance.get_input_left_ptr();
+                let right = instance.get_input_right_ptr();
+                for i in 0..128 {
+                    let t = (block * 128 + i) as f32 / sample_rate;
+                    let value = (t * 220.0 * std::f32::consts::TAU).sin() * 0.5;
+                    // SAFETY: `left` is the instance's input-left buffer, which `KneadInstance::new`
+                    // allocates at 4096 samples and nothing resizes; `i < 128`, so the offset stays
+                    // inside it.
+                    let left_slot = unsafe { left.add(i) };
+                    // SAFETY: `left_slot` is in bounds of that initialised buffer, and no borrow
+                    // of the instance is live while the slot is written.
+                    unsafe { *left_slot = value };
+                    // SAFETY: `right` is the input-right buffer, also 4096 samples from `new`, and
+                    // `i < 128`, so the offset stays inside it.
+                    let right_slot = unsafe { right.add(i) };
+                    // SAFETY: `right_slot` is in bounds of that initialised buffer, and no borrow
+                    // of the instance is live while the slot is written.
+                    unsafe { *right_slot = value * -0.75 };
+                    expected_left[i] = value;
+                    expected_right[i] = value * -0.75;
+                }
+                expected.process_block(&mut expected_left, &mut expected_right);
+                let output = instance.process(128);
+                let output_right = instance.get_right_ptr();
+                for i in 0..128 {
+                    // SAFETY: `output` is the left buffer `process` returned, 4096 samples from
+                    // `new` and never resized; `i < 128`, so the offset stays inside it.
+                    let output_left_slot = unsafe { output.add(i) };
+                    // SAFETY: `output_left_slot` is in bounds of that buffer, whose first 128
+                    // samples `process(128)` just wrote; nothing has touched the instance since.
+                    let output_left_sample = unsafe { *output_left_slot };
+                    // SAFETY: `output_right` is the right buffer from `get_right_ptr`, 4096 samples
+                    // from `new`; `i < 128`, so the offset stays inside it.
+                    let output_right_slot = unsafe { output_right.add(i) };
+                    // SAFETY: `output_right_slot` is in bounds of that buffer, written by the same
+                    // `process(128)` call; nothing has touched the instance since.
+                    let output_right_sample = unsafe { *output_right_slot };
+                    assert!(output_left_sample.is_finite());
+                    assert!(output_right_sample.is_finite());
+                    assert_eq!(output_left_sample.to_bits(), expected_left[i].to_bits());
+                    assert_eq!(output_right_sample.to_bits(), expected_right[i].to_bits());
+                    peak = peak.max(output_left_sample.abs());
                 }
                 assert_eq!(
                     instance.get_f0().to_bits(),

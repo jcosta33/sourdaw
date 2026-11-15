@@ -42,16 +42,34 @@ fn render(configure: impl Fn(&mut GlutenInstance)) -> Vec<f32> {
         let right_ptr = instance.get_input_right_ptr();
         for n in 0..BLOCK {
             let (left, right) = stimulus(base + n);
-            unsafe {
-                *left_ptr.add(n) = left;
-                *right_ptr.add(n) = right;
-            }
+            // SAFETY: `left_ptr` is the instance's input-left buffer, which `GlutenInstance::new`
+            // allocates at 4096 samples and nothing resizes; `n < BLOCK = 128`, so the offset stays inside it.
+            let left_slot = unsafe { left_ptr.add(n) };
+            // SAFETY: `left_slot` is in bounds of that initialised buffer, and `instance` is not
+            // borrowed or called while the slot is written.
+            unsafe { *left_slot = left };
+            // SAFETY: `right_ptr` is the input-right buffer, also 4096 samples from `new`, and
+            // `n < BLOCK = 128`, so the offset stays inside it.
+            let right_slot = unsafe { right_ptr.add(n) };
+            // SAFETY: `right_slot` is in bounds of that initialised buffer, and nothing else
+            // accesses the instance while the slot is written.
+            unsafe { *right_slot = right };
         }
         let out_left = instance.process(BLOCK as u32);
         let out_right = instance.get_right_ptr();
         for n in 0..BLOCK {
-            captured.push(unsafe { *out_left.add(n) });
-            captured.push(unsafe { *out_right.add(n) });
+            // SAFETY: `out_left` is the output-left buffer returned by `process`, 4096 samples
+            // from `new` and never resized; `n < BLOCK = 128`, so the offset stays inside it.
+            let left_slot = unsafe { out_left.add(n) };
+            // SAFETY: `left_slot` is in bounds of that buffer, whose first `BLOCK` samples
+            // `process` just wrote; nothing has touched the instance since.
+            captured.push(unsafe { *left_slot });
+            // SAFETY: `out_right` is the output-right buffer from `get_right_ptr`, 4096 samples
+            // from `new`; `n < BLOCK = 128`, so the offset stays inside it.
+            let right_slot = unsafe { out_right.add(n) };
+            // SAFETY: `right_slot` is in bounds of that buffer, written by the same `process`
+            // call; nothing has touched the instance since.
+            captured.push(unsafe { *right_slot });
         }
     }
     captured

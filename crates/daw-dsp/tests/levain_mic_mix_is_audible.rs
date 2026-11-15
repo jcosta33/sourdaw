@@ -209,6 +209,10 @@ fn render_block(instance: &mut LevainInstance, frames: usize, out: &mut Stereo) 
     let right_ptr = instance.get_right_ptr();
     // SAFETY: `process` guarantees `frames` valid f32s in each channel buffer.
     let left = unsafe { std::slice::from_raw_parts(left_ptr, frames) };
+    // SAFETY: `right_ptr` is the instance's right buffer, allocated at `LEVAIN_BLOCK_FRAMES`
+    // (4096) floats in `LevainInstance::new` and never resized; `process` just filled its first
+    // `frames` (at most `BLOCK` = 128, the only caller's `remaining.min(BLOCK)`), and the slice
+    // is consumed before the next `process` call.
     let right = unsafe { std::slice::from_raw_parts(right_ptr, frames) };
     out.left.extend_from_slice(left);
     out.right.extend_from_slice(right);

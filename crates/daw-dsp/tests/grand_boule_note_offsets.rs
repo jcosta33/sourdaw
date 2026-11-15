@@ -23,7 +23,14 @@ const VELOCITY: f32 = 0.8;
 unsafe fn read_channel(ptr: *const f32, frames: usize) -> Vec<f32> {
     assert!(!ptr.is_null(), "process returned a null buffer");
     (0..frames)
-        .map(|index| unsafe { *ptr.add(index) })
+        .map(|index| {
+            // SAFETY: this function's `# Safety` contract makes `ptr` valid for `frames` reads,
+            // and `index < frames`, so the offset stays inside that buffer.
+            let slot = unsafe { ptr.add(index) };
+            // SAFETY: `slot` is in bounds of that readable, initialised buffer per the same
+            // contract, and nothing writes it during the read.
+            unsafe { *slot }
+        })
         .collect()
 }
 
@@ -31,16 +38,15 @@ unsafe fn read_channel(ptr: *const f32, frames: usize) -> Vec<f32> {
 fn render(instance: &mut GrandBouleInstance, frames: usize) -> (Vec<f32>, Vec<f32>) {
     let left_ptr = instance.process(frames as u32);
     let right_ptr = instance.get_right_ptr();
-    // SAFETY: both pointers were derived after the render and name the
-    // instance's own channel buffers, which are `GRAND_BOULE_BLOCK_FRAMES`
-    // long and never resized; `frames` here is well inside that, and nothing
-    // mutates the instance between the render and these reads.
-    unsafe {
-        (
-            read_channel(left_ptr, frames),
-            read_channel(right_ptr, frames),
-        )
-    }
+    // SAFETY: `left_ptr` was derived by the render and names the instance's own left channel
+    // buffer, which is `GRAND_BOULE_BLOCK_FRAMES` (4096) long and never resized; `frames` here is
+    // well inside that, and nothing mutates the instance between the render and this read.
+    let left = unsafe { read_channel(left_ptr, frames) };
+    // SAFETY: `right_ptr` names the instance's own right channel buffer, also
+    // `GRAND_BOULE_BLOCK_FRAMES` long and never resized; `frames` is well inside that, and
+    // nothing mutates the instance between the render and this read.
+    let right = unsafe { read_channel(right_ptr, frames) };
+    (left, right)
 }
 
 fn rms(samples: &[f32]) -> f32 {

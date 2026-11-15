@@ -95,10 +95,18 @@ fn render(configure: impl Fn(&mut GlutenInstance), left_amp: f32, right_amp: f32
             // distinguishable, and neither is a multiple of the other.
             let left = left_amp * (std::f32::consts::TAU * 220.0 * t).sin();
             let right = right_amp * (std::f32::consts::TAU * 990.0 * t).sin();
-            unsafe {
-                *left_ptr.add(n) = left;
-                *right_ptr.add(n) = right;
-            }
+            // SAFETY: `left_ptr` is the instance's input-left buffer, which `GlutenInstance::new`
+            // allocates at 4096 samples and nothing resizes; `n < BLOCK = 512`, so the offset stays inside it.
+            let left_slot = unsafe { left_ptr.add(n) };
+            // SAFETY: `left_slot` is in bounds of that initialised buffer, and `instance` is not
+            // used while the slot is written.
+            unsafe { *left_slot = left };
+            // SAFETY: `right_ptr` is the input-right buffer, also 4096 samples from `new`, and
+            // `n < BLOCK = 512`, so the offset stays inside it.
+            let right_slot = unsafe { right_ptr.add(n) };
+            // SAFETY: `right_slot` is in bounds of that initialised buffer, and `instance` is not
+            // used while the slot is written.
+            unsafe { *right_slot = right };
         }
 
         let out_left = instance.process(BLOCK as u32);
@@ -107,8 +115,18 @@ fn render(configure: impl Fn(&mut GlutenInstance), left_amp: f32, right_amp: f32
             continue;
         }
         for n in 0..BLOCK {
-            let l = unsafe { *out_left.add(n) };
-            let r = unsafe { *out_right.add(n) };
+            // SAFETY: `out_left` is the output-left buffer returned by `process`, 4096 samples
+            // from `new` and never resized; `n < BLOCK = 512`, so the offset stays inside it.
+            let left_slot = unsafe { out_left.add(n) };
+            // SAFETY: `left_slot` is in bounds of that buffer, whose first `BLOCK` samples
+            // `process` just wrote; nothing has touched the instance since.
+            let l = unsafe { *left_slot };
+            // SAFETY: `out_right` is the output-right buffer from `get_right_ptr`, 4096 samples
+            // from `new`; `n < BLOCK = 512`, so the offset stays inside it.
+            let right_slot = unsafe { out_right.add(n) };
+            // SAFETY: `right_slot` is in bounds of that buffer, written by the same `process`
+            // call; nothing has touched the instance since.
+            let r = unsafe { *right_slot };
             left_sq += f64::from(l) * f64::from(l);
             right_sq += f64::from(r) * f64::from(r);
             counted += 1;

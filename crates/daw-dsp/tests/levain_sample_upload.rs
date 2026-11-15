@@ -35,9 +35,14 @@ thread_local! {
     static BUDGET_SAMPLE_FREES: Cell<usize> = const { Cell::new(0) };
 }
 
+// SAFETY: every request is forwarded unchanged to `System`, which upholds the `GlobalAlloc`
+// contract; the only extra work is bumping const-initialised thread-local `Cell<usize>`
+// counters, which neither allocate nor unwind.
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         ALLOCATIONS.with(|count| count.set(count.get() + 1));
+        // SAFETY: `layout` is the caller's, who must satisfy `GlobalAlloc::alloc`'s contract
+        // (non-zero size); it is passed to `System` untouched.
         unsafe { System.alloc(layout) }
     }
 
@@ -47,6 +52,9 @@ unsafe impl GlobalAlloc for CountingAllocator {
         if layout.size() == BUDGET_SAMPLE_BYTES {
             BUDGET_SAMPLE_FREES.with(|count| count.set(count.get() + 1));
         }
+        // SAFETY: `GlobalAlloc::dealloc`'s contract makes `ptr` a block this allocator returned
+        // from `alloc` with this same `layout`, and `alloc` forwards to `System`, so `System`
+        // allocated it.
         unsafe { System.dealloc(ptr, layout) }
     }
 }
@@ -95,13 +103,13 @@ fn write_chunk(instance: &mut LevainInstance, sample_id: u32, chunk: &[f32]) -> 
     );
     let target = instance.sample_write_ptr(sample_id);
     assert!(!target.is_null(), "the open sample has a write pointer");
-    // SAFETY: `target` addresses `window` floats of reserved storage and the
-    // chunk fits it; the source is a distinct slice. The floats are written
-    // before the commit that counts them.
-    unsafe {
-        std::ptr::copy_nonoverlapping(chunk.as_ptr(), target, chunk.len());
-        instance.commit_sample_frames(sample_id, chunk.len() as u32)
-    }
+    // SAFETY: `target` is non-null (asserted) and addresses `window` floats of the open
+    // sample's reserved storage, `chunk.len() <= window` (asserted), and the source is a
+    // distinct slice borrowed from the caller, so the ranges cannot overlap.
+    unsafe { std::ptr::copy_nonoverlapping(chunk.as_ptr(), target, chunk.len()) };
+    // SAFETY: `commit_sample_frames` requires that `chunk.len()` floats were written at the
+    // address `sample_write_ptr` returned; the copy just above wrote exactly that many there.
+    unsafe { instance.commit_sample_frames(sample_id, chunk.len() as u32) }
 }
 
 /// A commit the engine must refuse, so it counts no float and the promise to
@@ -149,14 +157,13 @@ fn render_bank(
     for _ in 0..blocks {
         let left = instance.process(BLOCK);
         let right = instance.get_right_ptr();
-        // SAFETY: `process` filled `BLOCK` frames behind both pointers, which
-        // stay valid until the next call.
-        let (left, right) = unsafe {
-            (
-                std::slice::from_raw_parts(left, BLOCK as usize),
-                std::slice::from_raw_parts(right, BLOCK as usize),
-            )
-        };
+        // SAFETY: `left` is the instance's left buffer, allocated at `LEVAIN_BLOCK_FRAMES`
+        // (4096) floats in `LevainInstance::new` and never resized; `process` just filled
+        // `BLOCK` (4096) frames of it, and it stays valid until the next call.
+        let left = unsafe { std::slice::from_raw_parts(left, BLOCK as usize) };
+        // SAFETY: `right` is the instance's right buffer, likewise 4096 floats from `new`;
+        // `process` just filled `BLOCK` frames of it, and it stays valid until the next call.
+        let right = unsafe { std::slice::from_raw_parts(right, BLOCK as usize) };
         bits.extend(left.iter().chain(right).map(|value| value.to_bits()));
     }
     bits

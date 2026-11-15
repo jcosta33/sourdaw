@@ -290,6 +290,10 @@ fn render(probe: Probe) -> Stereo {
         // buffer. `BLOCK` is 128, and neither pointer is held across a further
         // call.
         let left = unsafe { std::slice::from_raw_parts(left_pointer, BLOCK) };
+        // SAFETY: `right_pointer` is the instance's right buffer, allocated at
+        // `FERMENTER_BLOCK_FRAMES` (128) floats in `FermenterInstance::new` and
+        // never resized; `process` just filled it, `BLOCK` is 128, and the slice
+        // is consumed before the next `process` call.
         let right = unsafe { std::slice::from_raw_parts(right_pointer, BLOCK) };
         stereo.left.extend_from_slice(left);
         stereo.right.extend_from_slice(right);

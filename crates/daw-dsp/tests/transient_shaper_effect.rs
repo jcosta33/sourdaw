@@ -59,6 +59,9 @@ fn transient_shaper_preserves_toaster_transient_lock_write_restore() {
         let mut audio = Vec::new();
         for _ in 0..blocks {
             let pointer = instance.process(128);
+            // SAFETY: `pointer` is the start of the instance's `output_buf`, which `new` sizes at
+            // `(2 + 16 * 2) * MAX_BLOCK_SIZE` floats; `process(128)` just filled the first 128
+            // of the left channel, and the slice is copied out before the next `process`.
             audio.extend_from_slice(unsafe { std::slice::from_raw_parts(pointer, 128) });
         }
         audio

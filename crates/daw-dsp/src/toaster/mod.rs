@@ -220,8 +220,13 @@ mod tests {
         let mut by_name_out = Vec::new();
         for _ in 0..4 {
             let ptr = by_id.process(128);
+            // SAFETY: `ptr` is the start of `by_id`'s `output_buf`, whose first
+            // `MAX_BLOCK_SIZE` (4096) initialised samples are the left channel
+            // and which nothing resizes; 128 is inside that, and the slice is
+            // copied out before `by_id` is touched again.
             by_id_out.extend_from_slice(unsafe { std::slice::from_raw_parts(ptr, 128) });
             let ptr = by_name.process(128);
+            // SAFETY: as above, for `by_name`'s own `output_buf`.
             by_name_out.extend_from_slice(unsafe { std::slice::from_raw_parts(ptr, 128) });
         }
         assert_eq!(
@@ -235,6 +240,10 @@ mod tests {
         let mut out = Vec::new();
         for _ in 0..blocks {
             let ptr = instance.process(128);
+            // SAFETY: `ptr` is the start of the instance's `output_buf`, whose
+            // first `MAX_BLOCK_SIZE` (4096) initialised samples are the left
+            // channel and which nothing resizes; 128 is inside that, and the
+            // slice is copied out before the instance is touched again.
             out.extend_from_slice(unsafe { std::slice::from_raw_parts(ptr, 128) });
         }
         out

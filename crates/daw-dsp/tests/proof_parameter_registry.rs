@@ -246,16 +246,28 @@ fn render(trim: f32, refused: bool) -> Vec<f32> {
     }
     let mut result = Vec::new();
     for _ in 0..8 {
-        unsafe {
-            for frame in 0..128 {
-                *instance.get_input_left_ptr().add(frame) = 0.1;
-                *instance.get_input_right_ptr().add(frame) = 0.07;
-            }
+        for frame in 0..128 {
+            let left_ptr = instance.get_input_left_ptr();
+            // SAFETY: `left_ptr` is the instance's input-left buffer, which `ProofInstance::new`
+            // allocates at 4096 samples and nothing resizes; `frame < 128`, so the offset stays
+            // inside it.
+            let left_slot = unsafe { left_ptr.add(frame) };
+            // SAFETY: `left_slot` is in bounds of that initialised buffer, and no borrow of the
+            // instance is live while the slot is written.
+            unsafe { *left_slot = 0.1 };
+            let right_ptr = instance.get_input_right_ptr();
+            // SAFETY: `right_ptr` is the input-right buffer, also 4096 samples from `new`, and
+            // `frame < 128`, so the offset stays inside it.
+            let right_slot = unsafe { right_ptr.add(frame) };
+            // SAFETY: `right_slot` is in bounds of that initialised buffer, and no borrow of the
+            // instance is live while the slot is written.
+            unsafe { *right_slot = 0.07 };
         }
         let pointer = instance.process(128);
-        unsafe {
-            result.extend_from_slice(std::slice::from_raw_parts(pointer, 128));
-        }
+        // SAFETY: `pointer` is the instance's output-left buffer, 4096 samples from `new` and
+        // never resized; `process(128)` just filled the first 128, and the slice is copied out
+        // before the next `process` call.
+        result.extend_from_slice(unsafe { std::slice::from_raw_parts(pointer, 128) });
     }
     result
 }

@@ -69,20 +69,40 @@ fn render_stereo(instance: &mut BacteriaInstance, right_gain: f32) -> (Vec<f32>,
     let mut left_out = Vec::with_capacity(BLOCKS * BLOCK);
     let mut right_out = Vec::with_capacity(BLOCKS * BLOCK);
     for block in 0..BLOCKS {
-        unsafe {
-            let left = instance.get_input_left_ptr();
-            let right = instance.get_input_right_ptr();
-            for i in 0..BLOCK {
-                let sample = stimulus(block * BLOCK + i);
-                *left.add(i) = sample;
-                *right.add(i) = sample * right_gain;
-            }
+        let left = instance.get_input_left_ptr();
+        let right = instance.get_input_right_ptr();
+        for i in 0..BLOCK {
+            let sample = stimulus(block * BLOCK + i);
+            // SAFETY: `left` is the start of `input_left`, which `BacteriaInstance::new`
+            // allocates at 4096 samples and nothing resizes, and `i < BLOCK` (128), so the
+            // offset stays inside that allocation.
+            let left_slot = unsafe { left.add(i) };
+            // SAFETY: `left_slot` is in bounds of the initialised `input_left` buffer (see
+            // above), `f32` is aligned there, and no reference to the buffer is live.
+            unsafe { *left_slot = sample };
+            // SAFETY: `right` is the start of `input_right`, allocated at 4096 samples in
+            // `BacteriaInstance::new` and never resized, and `i < BLOCK` (128).
+            let right_slot = unsafe { right.add(i) };
+            // SAFETY: `right_slot` is in bounds of the initialised `input_right` buffer and
+            // no reference to the buffer is live.
+            unsafe { *right_slot = sample * right_gain };
         }
         let left_ptr = instance.process(BLOCK as u32);
         let right_ptr = instance.get_right_ptr();
         for i in 0..BLOCK {
-            left_out.push(unsafe { *left_ptr.add(i) });
-            right_out.push(unsafe { *right_ptr.add(i) });
+            // SAFETY: `left_ptr` is the start of `output_left`, allocated at 4096 samples in
+            // `BacteriaInstance::new` and never resized; `process` wrote the first
+            // `min(BLOCK, 4096)` = 128 samples, and `i < BLOCK`, so the offset is in bounds.
+            let left_slot = unsafe { left_ptr.add(i) };
+            // SAFETY: `left_slot` is inside the initialised `output_left` buffer and
+            // nothing has written the instance since `process` returned.
+            left_out.push(unsafe { *left_slot });
+            // SAFETY: `right_ptr` is the start of `output_right`, allocated at 4096 samples
+            // in `BacteriaInstance::new` and never resized, and `i < BLOCK` (128).
+            let right_slot = unsafe { right_ptr.add(i) };
+            // SAFETY: `right_slot` is inside the initialised `output_right` buffer, filled
+            // by `process` for the first 128 samples and not written since.
+            right_out.push(unsafe { *right_slot });
         }
     }
     (left_out, right_out)
@@ -103,18 +123,31 @@ fn render_signal(
     let mut rendered = Vec::with_capacity(total);
     let blocks = total.div_ceil(BLOCK);
     for block in 0..blocks {
-        unsafe {
-            let left = instance.get_input_left_ptr();
-            let right = instance.get_input_right_ptr();
-            for i in 0..BLOCK {
-                let value = signal(block * BLOCK + i);
-                *left.add(i) = value;
-                *right.add(i) = value;
-            }
+        let left = instance.get_input_left_ptr();
+        let right = instance.get_input_right_ptr();
+        for i in 0..BLOCK {
+            let value = signal(block * BLOCK + i);
+            // SAFETY: `left` is the start of `input_left`, allocated at 4096 samples in
+            // `BacteriaInstance::new` and never resized, and `i < BLOCK` (128).
+            let left_slot = unsafe { left.add(i) };
+            // SAFETY: `left_slot` is in bounds of the initialised `input_left` buffer and no
+            // reference to it is live.
+            unsafe { *left_slot = value };
+            // SAFETY: `right` is the start of `input_right`, allocated at 4096 samples in
+            // `BacteriaInstance::new` and never resized, and `i < BLOCK` (128).
+            let right_slot = unsafe { right.add(i) };
+            // SAFETY: `right_slot` is in bounds of the initialised `input_right` buffer and
+            // no reference to it is live.
+            unsafe { *right_slot = value };
         }
         let out = instance.process(BLOCK as u32);
         for i in 0..BLOCK {
-            rendered.push(unsafe { *out.add(i) });
+            // SAFETY: `out` is the start of `output_left`, allocated at 4096 samples in
+            // `BacteriaInstance::new` and never resized, and `i < BLOCK` (128).
+            let out_slot = unsafe { out.add(i) };
+            // SAFETY: `out_slot` is inside the initialised `output_left` buffer, whose first
+            // 128 samples `process` just wrote, and nothing has written the instance since.
+            rendered.push(unsafe { *out_slot });
         }
     }
     rendered
@@ -353,22 +386,35 @@ fn the_device_delivers_the_smudge_latency_it_reports() {
 
     let mut rendered = Vec::with_capacity(total_blocks * BLOCK);
     for block in 0..total_blocks {
-        unsafe {
-            let left = instance.get_input_left_ptr();
-            let right = instance.get_input_right_ptr();
-            for i in 0..BLOCK {
-                let value = if block * BLOCK + i == impulse_at {
-                    1.0
-                } else {
-                    0.0
-                };
-                *left.add(i) = value;
-                *right.add(i) = value;
-            }
+        let left = instance.get_input_left_ptr();
+        let right = instance.get_input_right_ptr();
+        for i in 0..BLOCK {
+            let value = if block * BLOCK + i == impulse_at {
+                1.0
+            } else {
+                0.0
+            };
+            // SAFETY: `left` is the start of `input_left`, allocated at 4096 samples in
+            // `BacteriaInstance::new` and never resized, and `i < BLOCK` (128).
+            let left_slot = unsafe { left.add(i) };
+            // SAFETY: `left_slot` is in bounds of the initialised `input_left` buffer and no
+            // reference to it is live.
+            unsafe { *left_slot = value };
+            // SAFETY: `right` is the start of `input_right`, allocated at 4096 samples in
+            // `BacteriaInstance::new` and never resized, and `i < BLOCK` (128).
+            let right_slot = unsafe { right.add(i) };
+            // SAFETY: `right_slot` is in bounds of the initialised `input_right` buffer and
+            // no reference to it is live.
+            unsafe { *right_slot = value };
         }
         let out = instance.process(BLOCK as u32);
         for i in 0..BLOCK {
-            rendered.push(unsafe { *out.add(i) });
+            // SAFETY: `out` is the start of `output_left`, allocated at 4096 samples in
+            // `BacteriaInstance::new` and never resized, and `i < BLOCK` (128).
+            let out_slot = unsafe { out.add(i) };
+            // SAFETY: `out_slot` is inside the initialised `output_left` buffer, whose first
+            // 128 samples `process` just wrote, and nothing has written the instance since.
+            rendered.push(unsafe { *out_slot });
         }
     }
 
