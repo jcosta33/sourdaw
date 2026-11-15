@@ -85,7 +85,8 @@ function refusal(
  * A tail shorter than one millisecond is never rated by the producer, so its
  * samples point one past the last rate. They are admitted only as a contiguous
  * run at the end of the row that directly follows a sample of the last closed
- * segment; returns the run's first sample index, or undefined when there is none.
+ * segment, in a row whose indices never decrease; returns the run's first
+ * sample index, or undefined when there is none.
  */
 function unratedTailStart(input: QuantumMeasurementCalibrationInput): number | undefined {
     const unratedIndex = input.segmentRates.length;
@@ -97,7 +98,14 @@ function unratedTailStart(input: QuantumMeasurementCalibrationInput): number | u
     if (start === segmentIndex.length || start === 0 || unratedIndex === 0) {
         return undefined;
     }
-    return segmentIndex[start - 1] === unratedIndex - 1 ? start : undefined;
+    if (segmentIndex[start - 1] !== unratedIndex - 1 || !isNonDecreasing(segmentIndex)) {
+        return undefined;
+    }
+    return start;
+}
+
+function isNonDecreasing(values: readonly number[]): boolean {
+    return values.every((value, index) => index === 0 || value >= values[index - 1]!);
 }
 
 function resolveRateIndex(

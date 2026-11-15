@@ -604,6 +604,21 @@ describe('quantum measurement calibration', () => {
         });
     });
 
+    it('rates a short tail after a closed segment from that segment (#6508)', () => {
+        expect(
+            calibrateQuantumMeasurementRows([
+                input({
+                    samplesTicks: [20_000, 40_000, 90_000],
+                    segmentIndex: [0, 1, 2],
+                    segmentRates: [100_000, 300_000],
+                }),
+            ])
+        ).toEqual({
+            status: 'calibrated',
+            rows: [{ deviceId: 'grand_boule', samplesMs: [0.2, 40_000 / 300_000, 0.3] }],
+        });
+    });
+
     it('calibrates the unrated tail through the producer payload boundary (#6508)', () => {
         expect(
             calibrateQuantumMeasurementPayload({
@@ -628,6 +643,9 @@ describe('quantum measurement calibration', () => {
         ['an unrated index with no rates at all', [0], [], 0],
         ['a row made entirely of tail samples', [2, 2], [100_000, 200_000], 0],
         ['a tail after a gap in segment indices', [0, 0, 2], [100_000, 200_000], 2],
+        ['a tail in a row that decreases before it', [1, 0, 1, 2], [100_000, 200_000], 3],
+        ['a tail in a row that decreases mid-way', [0, 2, 1, 2], [100_000, 200_000], 1],
+        ['a lone index equal to the rate count', [3], [100_000, 200_000, 300_000], 0],
     ] as const)('keeps refusing %s', (_label, segmentIndex, segmentRates, sampleIndex) => {
         const failure = expectRefusal({
             samplesTicks: segmentIndex.map(() => 20_000),
