@@ -577,6 +577,28 @@ describe('re-targeting a last commit onto same-named tracks', () => {
         });
     });
 
+    const LONGER_NAME_TRACKS: ReadonlyArray<NamedTrack> = [...TWO_LEADS, ['slt', 'Second Lead Track']];
+
+    it.each<readonly [prompt: string, tracks: ReadonlyArray<NamedTrack>, ids: readonly string[]]>([
+        ['the second Lead track', LONGER_NAME_TRACKS, ['slt']],
+        ['second Lead Vox', [...THREE_LEADS, ['slv', 'Second Lead Vox']], ['slv']],
+    ])('reads "%s" as the longer track name it cuts into, never as an order reference', (prompt, tracks, ids): void => {
+        setProjectTracks(tracks);
+
+        expect(readNamedTracks(prompt, getProjectContext())).toEqual({ status: 'named', ids });
+    });
+
+    it('re-targets the track a longer name reads, not an order reference inside it', async () => {
+        setProjectTracks(LONGER_NAME_TRACKS);
+        scriptProvider([[VOCALS_DOWN_3_DB]]);
+        await commitVocalsDown3Db();
+
+        await sendChatMessage('the second Lead track too');
+        await confirmIfProposed();
+
+        expect(newestCommittedTrackIds()).toEqual(['slt']);
+    });
+
     it('leaves a collision phrase with a tail of its own to ordinary planning, not the rename ask', async () => {
         setProjectTracks([
             ['track-vocals', 'Vocals'],

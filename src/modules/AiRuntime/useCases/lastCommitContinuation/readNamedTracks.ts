@@ -74,6 +74,9 @@ function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): Ordina
     const names = [...new Set(tracks.map((track) => track.name.toLowerCase()))].toSorted(
         (left, right) => right.length - left.length
     );
+    const otherNameRanges = getBestAgentReferenceNameRanges(text, tracks, 'with-number-forms');
+    const isOf = (range: NamedRange, name: string): boolean =>
+        sameName(tracks.find((track) => track.id === range.id)?.name ?? '', name);
     const ranges: NamedRange[] = [];
     const taken = (start: number, end: number): boolean =>
         ranges.some((range) => range.start < end && range.end > start);
@@ -89,7 +92,14 @@ function readOrdinalRanges(text: string, tracks: readonly ListedTrack[]): Ordina
                 continue;
             }
             const sharing = tracks.filter((track) => sameName(track.name, name));
-            if (readsAsAnotherTrack(match[0], name, tracks)) {
+            const crossing = otherNameRanges.filter(
+                (range) => range.start < end && range.end > start && !isOf(range, name)
+            );
+            // A longer name the phrase cuts into is that track's to read, as without ordinals.
+            if (crossing.some((range) => range.start < start || range.end > end)) {
+                continue;
+            }
+            if (crossing.length > 0) {
                 if (sharing.length >= 2) {
                     return { status: 'collision', text: match[0], name: sharing[0]!.name, start, end };
                 }
