@@ -427,7 +427,9 @@ function expectMarkedRecovery(
         expect(fresh.result.output).not.toContain('guard storage retained:');
     } else if (fresh.result.reason === undefined) {
         // A transient lost census proof warns instead of failing; the storage stays for a later start.
-        expect(diagnostics).toHaveLength(1);
+        // The guard prints file-use diagnostics only for a leak, so the reason rides the record.
+        expect(diagnostics).toEqual([]);
+        expect(areTransientProofReasons(fresh.result.retainedStorage?.reason.split('; ') ?? [])).toBe(true);
         expect(fresh.result.retainedStorage?.path).toBe(dirname(fresh.tempDirectory));
         expect(freshRetained).toBe(true);
     } else {
@@ -441,9 +443,8 @@ function expectMarkedRecovery(
     }
     if (originalStillLive) {
         expect(retained.direct).toContain(prior[0]?.token);
-    } else if (diagnostics.length === 0) {
+    } else if (diagnostics.length === 0 && fresh.result.retainedStorage === undefined) {
         expect(fresh.result.reason).toBeUndefined();
-        expect(fresh.result.retainedStorage).toBeUndefined();
         expect(retained.direct).toEqual([]);
         expect(retained.claims).toEqual([]);
     }
