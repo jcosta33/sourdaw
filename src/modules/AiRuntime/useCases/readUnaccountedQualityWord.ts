@@ -86,6 +86,23 @@ function blankCommandPhrase(clause: string, phrases: readonly string[]): string 
     return clause;
 }
 
+// "punch in/out" and "punch mode" name the transport's punch recording. The registry spells only some forms
+// ("set punch in", "enable punch mode"), so "Punch in at beat 20" or "Turn punch in on" would otherwise reach the
+// dynamics word "punch". Bare "punch" ("more punch in the chorus") is not a transport term and stays a quality.
+const PUNCH_POINT = String.raw`punch[\s-]+(?:in|out)(?:\s*/\s*(?:in|out))?`;
+const PUNCH_TRANSPORT_TERMS = [
+    new RegExp(String.raw`\b(?:enable|disable|turn|set|move|toggle)\s+${DETERMINER}${PUNCH_POINT}\b`, 'giu'),
+    new RegExp(String.raw`\b${PUNCH_POINT}(?=\s+(?:at|on|off|point|region|range)\b|\s*$)`, 'giu'),
+    /\bpunch[\s-]+(?:mode|recording)\b/giu,
+];
+
+function blankPunchTransportTerms(clause: string): string {
+    return PUNCH_TRANSPORT_TERMS.reduce(
+        (text, pattern) => text.replaceAll(pattern, (span) => ' '.repeat(span.length)),
+        clause
+    );
+}
+
 /**
  * The first quality word a request states that no figure of its own accounts for, or null when it states
  * none. A track name or quotation never counts, a clause the constraint reader consumed is a constraint
@@ -102,7 +119,7 @@ export function readUnaccountedQualityWord(prompt: string, context: ProjectConte
     const named = scanPromptQuotedText(prompt).complete ? maskTrackReferences(prompt, context, ' ') : prompt;
     const masked = blankConstraintClauses(named, prompt, context);
     for (const clause of masked.split(CLAUSE_SEPARATOR)) {
-        const stated = blankCommandPhrase(blankFigureQualifiers(clause), phrases);
+        const stated = blankPunchTransportTerms(blankCommandPhrase(blankFigureQualifiers(clause), phrases));
         const term = readFirstPerceptualTerm(stated, context, catalog);
         if (term !== null) {
             return term.term;

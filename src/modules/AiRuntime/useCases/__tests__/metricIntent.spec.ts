@@ -171,6 +171,8 @@ describe('positive whole-request metric intent', () => {
         ['Increase the loudness of the vocal', 'loudness'],
         ['Make the vocal loudness bigger', 'loudness'],
         ['Make the vocal brighter by 8 kHz', 'brighter'],
+        ['Add more punch in the chorus', 'more punch'],
+        ['Give the drums more punch', 'more punch'],
     ])('refuses the literal label on a request that names a perceptual quality: %s', (prompt, word) => {
         const value = fixture(prompt);
         const admitted = admitPlanningInterpretation({
@@ -194,6 +196,10 @@ describe('positive whole-request metric intent', () => {
         'Set punch in at beat 20',
         'Set the punch in at beat 20',
         'Move the punch in to beat 20',
+        'Punch in at beat 20',
+        'Enable punch in',
+        'Turn punch in on',
+        'Disable punch out',
         'Set the volume of the three vocal tracks to -4 dB.',
         'Set the volume of Bass to -6 dB',
         'Set the level of the Bass to -3 dB',
