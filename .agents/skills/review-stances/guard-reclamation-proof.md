@@ -127,33 +127,20 @@ evidence out of the child output unless it explains retention`, where startup, s
     missing/malformed/extra positional ports, occupied origins, wrong checkout or absent/stale token, failed proof
     and failed cleanup refused. Do not infer a missing recorded port from the current environment.
 
-13. **A historical PID is not its current occupant's authority.** Historical-PID traversal originated in
-    `0e20269791` (`fix(tooling): guard scoped validation`, with no associated pull request); #2449 extracted
-    `isSameProcess` while preserving its permission-error short circuit. The missing probe crossed positive
-    start-identity replacement with descendant discovery, signal authority and exit proof; historical reviewer
-    prompts are unestablished. Run `scripts/__tests__/resourceGuard.spec.ts`'s `process identity ownership`
-    cases: an old tracked PID with a positively different current start must neither enlist its foreign children
-    and grandchildren nor signal them. A reused root must authorize neither negative-PGID signals nor Windows
-    `taskkill`, and its replacement group must not keep the original group alive. Keep token-owned and matching
-    tracked descendants authoritative. A leader that exited without a positive replacement must leave its live
-    original group authoritative. POSIX [Process ID Reuse][posix-pid-reuse] reserves an ID while the group with
-    that ID exists; only positive root replacement proves that original group ended. Inject EPERM and EACCES
-    with different, matching and unreadable starts: positive difference rejects the old identity, while matching
-    or unreadable identity remains live. Token-owned rows and owned descendants whose start cannot be read must
-    also retain the run without gaining individual signal authority. An unavailable census remains unknown. Restoring historical-PID seeds,
-    unconditional root-group authority, or the permission short circuit must fail their respective cases.
-    Change an identity during its first lookup while leaving the first census's parent edge stale: replacement
-    readmission requires one fresh census for the batch and checked current parent/token authority afterwards.
-    Keep a freshly owned replacement admitted. Change its parent identity during validation; make the fresh census
-    or start read unavailable, then probe again unreadably. The command-owned runtime record must retain the old
-    identity's retirement and pending ownership without restoring signal authority. Restore operational lease facts
-    only against their bound PID/start pair; a fresh command and a legacy record infer no retirement. Multiple
-    candidates share one fresh census. A retired original child never regains lease liveness from an unreadable
-    later probe; pending or unknown RSS keeps the owner's reservation, while proved zero/dead state can release it.
-    These ordered OS observations do not claim atomic signaling.
-    Cleanup-failure output must retain the actual blocking predicate, census availability, group-probe errno,
-    stored/current identity and bounded metadata without process commands or environment text. A discovered
-    source risk does not establish any past leak's cause without its blocking-predicate evidence.
+13. **PID/start identity grants process authority.** The seed-traversal escape originated in `0e20269791`;
+    #2449 retained the permission-error short circuit. In `scripts/__tests__/resourceGuard.spec.ts`'s
+    `process identity ownership` group, drive omitted/replaced ancestors, stale census edges, parent replacement,
+    EPERM/EACCES, unreadable probe sequences and partial lease records. Require fresh independent ownership before
+    rebinding a replacement, persistent identity-scoped retirement, conservative uncertainty and bounded census work.
+    A missing leader preserves its original group; only positive root replacement retires its group authority
+    ([POSIX Process ID Reuse][posix-pid-reuse]). Retain saved child identities across missing/empty lists, prefer
+    newer bound identities, and never turn unknown RSS into lease release or an unbound legacy root into a false identity.
+    Mutation pointers: restore unchecked historical seeds or stale-edge readmission in `sampleProcessRows`, erase
+    the saved tuple in `reservationProcessTree`, or restore the retired-child/zero-for-unknown shortcut in
+    `reservationIsLive`; the named group must fail. It also rejects unconditional Unix-group/Windows-tree authority.
+    In `scripts/__tests__/resourceGuardStorage.spec.ts`'s `unproved guard storage` group, the survivor cases require
+    bounded cleanup predicates, stored/current identities, errnos and available/unavailable metadata without
+    command, environment or raw error text. These ordered observations claim neither atomic signaling nor a past leak's cause.
 
 [xnu-sig]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c
 [xnu-exit]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_exit.c

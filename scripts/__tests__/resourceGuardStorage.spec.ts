@@ -5405,7 +5405,8 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                 const { code, lines, result } = await runCli(root, {
                     args: [
                         '-e',
-                        `const c=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});c.unref();require('node:fs').writeFileSync(${JSON.stringify(pidPath)},String(c.pid))`,
+                        `const c=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});c.unref();require('node:fs').writeFileSync(process.argv[1],String(c.pid))`,
+                        pidPath,
                     ],
                     processSnapshot: () =>
                         snapshotStatus === 'available' ? metadataSnapshot : { status: 'unavailable' },

@@ -815,6 +815,91 @@ describe('process identity ownership', () => {
         expect(reservationRssBytes(legacyOwner, host)).toBe(6);
     });
 
+    function partialLeaseOwner() {
+        return {
+            token: 'fixture',
+            pid: 900,
+            cwd: 'fixture',
+            command: 'fixture',
+            startedAt: originalStart,
+            processStartedAt: originalStart,
+            reservedRssBytes: 1024,
+            processToken: 'session',
+            childPid: 200,
+            childStartedAt: originalStart,
+            orphanUntil: 0,
+        };
+    }
+
+    it.each([
+        { name: 'missing', trackedProcesses: undefined },
+        { name: 'empty', trackedProcesses: [] },
+        { name: 'unrelated', trackedProcesses: [{ pid: 300, startedAt: originalStart }] },
+    ])('rejects a reused recorded child from a $name lease identity list', ({ trackedProcesses }) => {
+        const { host } = fixture([row(200, 1, 200, 30)], [[200, replacementStart]]);
+        const owner = { ...partialLeaseOwner(), trackedProcesses };
+        const observed = { rss: reservationRssBytes(owner, host), live: reservationIsLive(owner, host) };
+
+        expect(observed).toEqual({ rss: 0, live: false });
+    });
+
+    it.each([
+        { name: 'matching', startedAt: originalStart },
+        { name: 'unreadable', startedAt: undefined },
+    ])('retains a recorded child that remains $name in a partial lease', ({ startedAt }) => {
+        const { host } = fixture([row(200, 1, 200, 30)], startedAt === undefined ? [] : [[200, startedAt]]);
+        const owner = { ...partialLeaseOwner(), trackedProcesses: [] };
+
+        expect({ rss: reservationRssBytes(owner, host), live: reservationIsLive(owner, host) }).toEqual({
+            rss: 30,
+            live: true,
+        });
+    });
+
+    it('uses the known tracked child identity when the legacy child start is missing', () => {
+        const { host } = fixture([row(200, 1, 200, 30)], [[200, replacementStart]]);
+        const owner = {
+            ...partialLeaseOwner(),
+            childStartedAt: undefined,
+            trackedProcesses: [{ pid: 200, startedAt: originalStart }],
+        };
+
+        expect({ rss: reservationRssBytes(owner, host), live: reservationIsLive(owner, host) }).toEqual({
+            rss: 0,
+            live: false,
+        });
+    });
+
+    it('does not revive a retired tracked child identity through a missing legacy start', () => {
+        const { host } = fixture([row(200, 1, 200, 30)], []);
+        const owner = {
+            ...partialLeaseOwner(),
+            childStartedAt: undefined,
+            trackedProcesses: [{ pid: 200, startedAt: originalStart }],
+            invalidatedProcesses: [{ pid: 200, startedAt: originalStart }],
+        };
+
+        expect({ rss: reservationRssBytes(owner, host), live: reservationIsLive(owner, host) }).toEqual({
+            rss: 0,
+            live: false,
+        });
+    });
+
+    it('keeps a fresh tracked child binding ahead of the immutable legacy tuple', () => {
+        const { host } = fixture([row(200, 1, 200, 30)], [[200, replacementStart]]);
+        const owner = {
+            ...partialLeaseOwner(),
+            trackedProcesses: [{ pid: 200, startedAt: replacementStart }],
+            invalidatedProcesses: [{ pid: 200, startedAt: originalStart }],
+        };
+
+        expect({ rss: reservationRssBytes(owner, host), live: reservationIsLive(owner, host) }).toEqual({
+            rss: 30,
+            live: true,
+        });
+        expect(reservationProcessTree(owner).identities.get(200)).toBe(replacementStart);
+    });
+
     it('retains an owner-dead reservation with unreadable pending ownership and releases a proved empty one', () => {
         const { host } = fixture([row(200, 1, 200, 2)], []);
         const owner = {
@@ -887,7 +972,7 @@ describe('process identity ownership', () => {
                 trackedProcesses: [],
                 orphanUntil: 0,
             };
-            const tree = reservationProcessTree(owner, host);
+            const tree = reservationProcessTree(owner);
             expect(tree.identities.has(200)).toBe(false);
             expect(sampleProcessTree(200, tree, 'session', host)).toBe(6);
             expect(tree.invalidated.size).toBe(0);
@@ -1185,7 +1270,8 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                     command: process.execPath,
                     args: [
                         '-e',
-                        `const { spawn } = require('node:child_process'); const { writeFileSync } = require('node:fs'); const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { detached: true, stdio: 'ignore' }); writeFileSync(${JSON.stringify(pidPath)}, String(child.pid)); setInterval(() => {}, 1000);`,
+                        `const { spawn } = require('node:child_process'); const { writeFileSync } = require('node:fs'); const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { detached: true, stdio: 'ignore' }); writeFileSync(process.argv[1], String(child.pid)); setInterval(() => {}, 1000);`,
+                        pidPath,
                     ],
                     profile: 'focused',
                     timeoutMs: 100,
@@ -1223,7 +1309,8 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                     command: process.execPath,
                     args: [
                         '-e',
-                        `const { spawn } = require('node:child_process'); const { writeFileSync } = require('node:fs'); const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' }); child.unref(); writeFileSync(${JSON.stringify(pidPath)}, String(child.pid));`,
+                        `const { spawn } = require('node:child_process'); const { writeFileSync } = require('node:fs'); const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' }); child.unref(); writeFileSync(process.argv[1], String(child.pid));`,
+                        pidPath,
                     ],
                     profile: 'focused',
                     availableMemoryBytes: abundantMemoryBytes,

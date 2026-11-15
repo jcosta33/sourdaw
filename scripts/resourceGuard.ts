@@ -686,17 +686,12 @@ function reservationWithState(path: string): ReservationRecord {
     return { ...readReservation(path), ...readReservationState(path) };
 }
 
-export function reservationProcessTree(owner: ReservationRecord, host: ProcessTreeHost): ProcessTreeState {
+export function reservationProcessTree(owner: ReservationRecord): ProcessTreeState {
     const tracked = new Map<number, string>();
     for (const processIdentity of owner.trackedProcesses ?? []) {
         tracked.set(processIdentity.pid, processIdentity.startedAt);
     }
-    if (
-        owner.childPid !== undefined &&
-        owner.childStartedAt !== undefined &&
-        !tracked.has(owner.childPid) &&
-        isSameProcess(owner.childPid, owner.childStartedAt, host)
-    ) {
+    if (owner.childPid !== undefined && owner.childStartedAt !== undefined && !tracked.has(owner.childPid)) {
         tracked.set(owner.childPid, owner.childStartedAt);
     }
     return createProcessTreeState(tracked, owner);
@@ -720,19 +715,23 @@ export function reservationRssBytes(
     owner: ReservationRecord,
     host: ProcessTreeHost = processTreeHost
 ): number | undefined {
-    return reservationTreeRssBytes(owner, reservationProcessTree(owner, host), host);
+    return reservationTreeRssBytes(owner, reservationProcessTree(owner), host);
 }
 
 export function reservationIsLive(owner: ReservationRecord, host: ProcessTreeHost = processTreeHost): boolean {
     if (isSameProcess(owner.pid, owner.processStartedAt, host)) {
         return true;
     }
-    const tree = reservationProcessTree(owner, host);
+    const tree = reservationProcessTree(owner);
+    const childStartedAt =
+        owner.childPid === undefined
+            ? owner.childStartedAt
+            : (tree.identities.get(owner.childPid) ?? owner.childStartedAt);
     const childRetired =
         owner.childPid !== undefined &&
-        owner.childStartedAt !== undefined &&
-        tree.invalidated.get(owner.childPid)?.has(owner.childStartedAt) === true;
-    if (owner.childPid !== undefined && !childRetired && isSameProcess(owner.childPid, owner.childStartedAt, host)) {
+        childStartedAt !== undefined &&
+        tree.invalidated.get(owner.childPid)?.has(childStartedAt) === true;
+    if (owner.childPid !== undefined && !childRetired && isSameProcess(owner.childPid, childStartedAt, host)) {
         return true;
     }
     const rssBytes = reservationTreeRssBytes(owner, tree, host);
