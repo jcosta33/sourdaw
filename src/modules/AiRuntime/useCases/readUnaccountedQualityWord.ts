@@ -19,6 +19,8 @@ const FIGURE = String.raw`-?\d+(?:\.\d+)?`;
 const NOT_FREQUENCY = String.raw`(?!\s*k?hz\b)`;
 // "volume" and "level" name a fader control, so outside a comparison they state no quality.
 const CONTROL_NOUN = /\b(?:volume|level)\b/giu;
+const LOUDNESS_NOUN = /\bloudness\b/giu;
+const DECIBEL_FIGURE = new RegExp(String.raw`${FIGURE}\s*${DECIBEL_UNIT}\b`, 'iu');
 const COMPARISON = /\bthan\b/iu;
 const DETERMINER = String.raw`(?:(?:the|a|an|this|that|my)\s+)?`;
 /** A figure qualifies a quality only in its own phrase: "3 dB louder", "louder by 3 dB", "gain-level to -6". */
@@ -45,7 +47,13 @@ function blankFigureQualifiers(clause: string): string {
         (text, pattern) => text.replaceAll(pattern, (span) => ' '.repeat(span.length)),
         clause
     );
-    return qualified.replaceAll(CONTROL_NOUN, (span) => ' '.repeat(span.length));
+    const withoutControls = qualified.replaceAll(CONTROL_NOUN, (span) => ' '.repeat(span.length));
+    return blankLoudnessNounOfDecibelFigure(clause, withoutControls);
+}
+
+// A decibel figure states an amount of the loudness control ("loudness down 3 dB"), so the noun is not a claim.
+function blankLoudnessNounOfDecibelFigure(clause: string, stated: string): string {
+    return DECIBEL_FIGURE.test(clause) ? stated.replaceAll(LOUDNESS_NOUN, (span) => ' '.repeat(span.length)) : stated;
 }
 
 /** A clause the perceptual-constraint reader consumed becomes a constraint goal, so it states no literal claim. */
