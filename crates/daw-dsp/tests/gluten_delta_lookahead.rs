@@ -23,16 +23,37 @@ fn run_simulation(
         let right_ptr = instance.get_input_right_ptr();
         for n in 0..block_size {
             let (l, r) = stimulus(base + n);
-            unsafe {
-                *left_ptr.add(n) = l;
-                *right_ptr.add(n) = r;
-            }
+            // SAFETY: `left_ptr` is the instance's input-left buffer, which `GlutenInstance::new`
+            // allocates at 4096 samples and nothing resizes; `n < block_size`, and every caller
+            // passes a `block_size` of at most 512, so the offset stays inside it.
+            let left_slot = unsafe { left_ptr.add(n) };
+            // SAFETY: `left_slot` is in bounds of that initialised buffer, and `instance` is not
+            // used while the slot is written.
+            unsafe { *left_slot = l };
+            // SAFETY: `right_ptr` is the input-right buffer, also 4096 samples from `new`, and
+            // `n < block_size <= 512`, so the offset stays inside it.
+            let right_slot = unsafe { right_ptr.add(n) };
+            // SAFETY: `right_slot` is in bounds of that initialised buffer, and `instance` is not
+            // used while the slot is written.
+            unsafe { *right_slot = r };
         }
 
         let out_left = instance.process(block_size as u32);
         let out_right = instance.get_right_ptr();
         for n in 0..block_size {
-            output.push(unsafe { (*out_left.add(n), *out_right.add(n)) });
+            // SAFETY: `out_left` is the output-left buffer returned by `process`, 4096 samples
+            // from `new` and never resized; `n < block_size <= 512`, so the offset stays inside it.
+            let left_slot = unsafe { out_left.add(n) };
+            // SAFETY: `left_slot` is in bounds of that buffer, whose first `block_size` samples
+            // `process` just wrote; nothing has touched the instance since.
+            let left_sample = unsafe { *left_slot };
+            // SAFETY: `out_right` is the output-right buffer from `get_right_ptr`, 4096 samples
+            // from `new`; `n < block_size <= 512`, so the offset stays inside it.
+            let right_slot = unsafe { out_right.add(n) };
+            // SAFETY: `right_slot` is in bounds of that buffer, written by the same `process`
+            // call; nothing has touched the instance since.
+            let right_sample = unsafe { *right_slot };
+            output.push((left_sample, right_sample));
         }
     }
     output

@@ -79,11 +79,21 @@ fn render_shimmer(amount: f32, decay: f32) -> RenderMetrics {
             if sample_frame >= SAMPLE_RATE * RENDER_SECONDS {
                 break;
             }
-            let sample_peak = unsafe {
-                (*left_ptr.add(offset))
-                    .abs()
-                    .max((*right_ptr.add(offset)).abs())
-            };
+            // SAFETY: `left_ptr` is the instance's `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `offset < BLOCK`, which is inside that
+            // capacity.
+            let left_slot = unsafe { left_ptr.add(offset) };
+            // SAFETY: `left_slot` is in bounds of that initialised buffer, and
+            // nothing writes the instance between `process` and this read.
+            let left_sample = unsafe { *left_slot };
+            // SAFETY: `right_ptr` is the instance's `out_right`, sized and
+            // bounded exactly as `out_left` above.
+            let right_slot = unsafe { right_ptr.add(offset) };
+            // SAFETY: `right_slot` is in bounds of that initialised buffer,
+            // which nothing writes before this read.
+            let right_sample = unsafe { *right_slot };
+            let sample_peak = left_sample.abs().max(right_sample.abs());
             assert!(
                 sample_peak.is_finite(),
                 "non-finite output at frame {sample_frame}"
@@ -92,7 +102,12 @@ fn render_shimmer(amount: f32, decay: f32) -> RenderMetrics {
             let second = sample_frame / SAMPLE_RATE;
             peak_by_second[second] = peak_by_second[second].max(sample_peak);
             if (TAIL_START_SECOND..TAIL_END_SECOND).contains(&second) {
-                tail.push(unsafe { *left_ptr.add(offset) });
+                // SAFETY: `offset < BLOCK` inside `out_left`'s
+                // `PROOF_CHAMBER_BLOCK_FRAMES`-sample capacity, as above.
+                let tail_slot = unsafe { left_ptr.add(offset) };
+                // SAFETY: `tail_slot` is in bounds of that initialised buffer,
+                // and nothing has written the instance since `process`.
+                tail.push(unsafe { *tail_slot });
             }
         }
         frame += BLOCK;

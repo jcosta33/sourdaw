@@ -30,8 +30,14 @@ fn render_peak(instance: &mut LevainInstance) -> f32 {
     for _ in 0..BLOCKS {
         let left_ptr = instance.process(BLOCK as u32);
         let right_ptr = instance.get_right_ptr();
-        // SAFETY: `process` guarantees BLOCK valid f32s in each channel buffer.
+        // SAFETY: `left_ptr` is the instance's left buffer, allocated at
+        // `LEVAIN_BLOCK_FRAMES` (4096) floats in `LevainInstance::new` and never resized;
+        // `process` just filled it, `BLOCK` is 128, and the slice is dropped before the
+        // next `process` call.
         let left = unsafe { std::slice::from_raw_parts(left_ptr, BLOCK) };
+        // SAFETY: `right_ptr` is the instance's right buffer, likewise 4096 floats from `new`
+        // and never resized; `process` just filled it, `BLOCK` is 128, and the slice is
+        // dropped before the next `process` call.
         let right = unsafe { std::slice::from_raw_parts(right_ptr, BLOCK) };
         for sample in left.iter().chain(right.iter()) {
             peak = peak.max(sample.abs());
