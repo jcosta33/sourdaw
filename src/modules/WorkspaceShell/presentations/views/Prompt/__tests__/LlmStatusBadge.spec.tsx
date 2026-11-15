@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { aiBackendPreferenceStore, hostedLlmProviderStatusStore, machineMemoryStore } from '#/modules/AiRuntime/stores';
@@ -58,7 +58,8 @@ function renderBadge(): void {
 describe('LlmStatusBadge', () => {
     beforeEach(() => {
         capabilityStore.set({ phase: 'idle' });
-        machineMemoryStore.set({ state: 'unread' });
+        // Settled, so the badge's mount-time read is a no-op for cases that are not about the reading.
+        machineMemoryStore.set({ state: 'unavailable' });
     });
 
     it('reports that availability is still being checked while detection is pending', () => {
@@ -160,6 +161,10 @@ describe('LlmStatusBadge', () => {
             await act(async () => {
                 render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={onLoad} />);
             });
+            if (reading.state === 'unread') {
+                // The mount-time read must really run and settle, not be assumed.
+                await waitFor(() => expect(machineMemoryStore.value).toEqual({ state: 'unavailable' }));
+            }
             fireEvent.click(screen.getByRole('button', { name: 'Load AI' }));
         }
 
