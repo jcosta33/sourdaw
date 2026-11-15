@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 
+import { BRIEF_COMPILE_TOOL_NAME } from '../../../models/AgentToolCatalogNames';
 import { createCreativeInterpretationToolSchema } from '../../../models/CreativeInterpretation';
 import {
     LOCAL_PLANNING_PROMPT_HEADROOM_FLOOR_TOKENS,
@@ -34,7 +35,7 @@ vi.mock('../../../repositories/webLlm/generateWebLlmCompletion', () => ({
 vi.mock('../../../repositories/webLlm/toolCalling', () => ({ generateWebLlmToolCalls: mocks.toolCalls }));
 
 describe('direct level context window', () => {
-    it('fits actual VCA and metronome context with a full thread, leaving the headroom floor', async () => {
+    it('fits actual VCA and metronome context with a full thread and the brief compiler offered, leaving the headroom floor', async () => {
         const prompt = 'make the chorus wider and tame the harshness on the lead vocal';
         const base = createPlanningProject(getProjectContext(), 5);
         const groupId = `vca-${fixtureUuid('direct-level-window')}`;
@@ -45,7 +46,10 @@ describe('direct level context window', () => {
         };
         const catalog = prepareCreativeInterpretationCatalog({ prompt, context, projectRevision: 'revision-1' });
         const advertised = projectPlanningProviderToolSchemas(
-            [...getPlanningProviderToolSchemas(), createCreativeInterpretationToolSchema(catalog)],
+            [
+                ...getPlanningProviderToolSchemas(undefined, { offersBrief: true }),
+                createCreativeInterpretationToolSchema(catalog),
+            ],
             'planning'
         );
         const system = buildPlanningSystemPrompt(undefined, 'planning');
@@ -72,7 +76,7 @@ describe('direct level context window', () => {
         const answer = prepareAnswerInterpretationCatalog({ prompt, context, projectRevision: 'revision-1' });
         const tools = projectPlanningProviderToolSchemas(
             [
-                ...getPlanningProviderToolSchemas(),
+                ...getPlanningProviderToolSchemas(undefined, { offersBrief: true }),
                 createPlanningInterpretationToolSchema({ creative: catalog, answer, binding: built.planningBinding }),
             ],
             'planning'
@@ -97,10 +101,14 @@ describe('direct level context window', () => {
             { keptCapabilityIds: built.localWorkflowCapabilityIds }
         );
         expect(outcome).toMatchObject({ status: 'complete' });
-        // No workflow capability grounds this request, so the offer is the selector (stem import
-        // only), the mandatory planning tools, command-index search, catalog discovery, the joint
-        // interpretation tool and the one prompt-selected slot: no workflow action tool.
-        expect(mocks.toolCalls.mock.calls[0]?.[2]).toHaveLength(14);
+        // A local chat request offers the brief compiler. No workflow capability grounds this
+        // request, so the offer is the selector (stem import only), the mandatory planning tools,
+        // command-index search, catalog discovery, the joint interpretation tool, the brief compiler
+        // and the one prompt-selected slot: no workflow action tool.
+        expect(mocks.toolCalls.mock.calls[0]?.[2]).toHaveLength(15);
+        expect(mocks.toolCalls.mock.calls[0]?.[2]?.map((tool) => tool.function.name)).toContain(
+            BRIEF_COMPILE_TOOL_NAME
+        );
         expect(mocks.toolCalls.mock.calls[0]?.[2]?.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
         const [systemText, userText] = mocks.completion.mock.calls[0] ?? [];
         if (typeof systemText !== 'string' || typeof userText !== 'string') {
