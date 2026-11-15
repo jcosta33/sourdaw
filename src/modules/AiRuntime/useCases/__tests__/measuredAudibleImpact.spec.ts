@@ -32,6 +32,7 @@ import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
 import { type MetricGoal, type MetricGoalState } from '../metricGoalContractTypes';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import { readPerceptualConstraintGoals } from '../perceptualConstraints/readPerceptualConstraintGoals';
 
 import {
     configuredLiteralMetricState,
@@ -1744,6 +1745,46 @@ describe('the plan’s predicted audible claim', () => {
             persistAgentRunState(readAgentRunState());
             expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(claim);
         });
+    });
+
+    it('keeps a measured constraint hold and an unsupported clause across a reload', () => {
+        const goals = readPerceptualConstraintGoals(
+            {
+                constraints: [
+                    {
+                        constraintId: 'loudness-held-v1',
+                        clause: 'keep the loudness',
+                        scope: { kind: 'tracks', trackIds: ['vocal'] },
+                        protection: { kind: 'measured' },
+                    },
+                ],
+                unsupported: [
+                    {
+                        constraintId: 'unsupported',
+                        clause: 'keep the vocal intimate',
+                        reason: 'No measurement verifies it.',
+                    },
+                ],
+            },
+            getProjectContext()
+        );
+        expect(goals.map((goal) => goal.source)).toEqual([
+            { kind: 'constraint', constraintId: 'loudness-held-v1', clause: 'keep the loudness' },
+            { kind: 'constraint', constraintId: 'unsupported', clause: 'keep the vocal intimate' },
+        ]);
+        proposeCard({ gain: 0.7, goals: { kind: 'perceptual', goals } });
+        const claim = predicted();
+        expect(claim.predictions.map((prediction) => prediction.source)).toEqual(goals.map((goal) => goal.source));
+        persistAgentRunState(readAgentRunState());
+        expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(claim);
+    });
+
+    it('keeps a policy-sourced comparative goal across a reload', () => {
+        proposeCard({ gain: 0.7, goals: { kind: 'comparative', goals: [loudnessOrderingGoal] } });
+        const claim = predicted();
+        expect(claim.predictions[0]?.source).toEqual({ kind: 'policy', policyId: 'integrated-loudness-comparison-v1' });
+        persistAgentRunState(readAgentRunState());
+        expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(claim);
     });
 
     describe('through the store', () => {
