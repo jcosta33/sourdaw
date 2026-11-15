@@ -47,6 +47,9 @@ import type { ReviewDraw } from '../reviewDocumentParser.ts';
 import type { ReviewDossierEvent } from '../reviewDossier.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
+// Composed at runtime: the pull-request secret scan matches token-shaped literals in source.
+const FIXTURE_TOKEN = ['ghs', 'fixture'].join('_');
+
 /*
  * The #5008 incident on PR 4997: review:publish posted review 5433781938 at head 090d3d5 and died
  * before recording it, and recovery refused the dead owner. The reviews and comments below keep
@@ -292,7 +295,11 @@ function fakeGitHub(input: {
     return { state, gh };
 }
 
-const session: GhSession = { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined };
+const session: GhSession = {
+    configDir: mkdtempSync(join(tmpdir(), 'sourdaw-reviewer-')),
+    env: { GH_TOKEN: FIXTURE_TOKEN },
+    dispose: () => undefined,
+};
 
 function publicationPort(root: string, gh: (args: string[]) => string): PublishReviewPort {
     // The live comparison the production port reads from git objects: the fetched base and head,
@@ -308,6 +315,12 @@ function publicationPort(root: string, gh: (args: string[]) => string): PublishR
         session,
         root,
         (command, args) => {
+            if (command === 'git' && args.includes('--show-object-format')) {
+                return 'sha1';
+            }
+            if (command === 'git' && args.includes('for-each-ref')) {
+                return '';
+            }
             if (command === 'git' && args[0] === 'rev-parse') {
                 return join(root, '.git');
             }

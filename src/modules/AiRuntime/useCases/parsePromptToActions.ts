@@ -1465,7 +1465,13 @@ const planPromptIntent = inject({ logger })(
                                     ? { messageDataCategories: REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES }
                                     : {}),
                             },
-                            planningContext.localMessage
+                            planningContext.localMessage,
+                            {
+                                keptCapabilityIds: planningContext.localWorkflowCapabilityIds,
+                                ...(admittedWorkflow === undefined
+                                    ? {}
+                                    : { admittedCapabilityId: admittedWorkflow.capabilityId }),
+                            }
                         );
                         // Admit the complete turn before the loop can dispatch even its first safe read.
                         if (turn.status === 'complete' && (readonly || phase !== 'planning')) {

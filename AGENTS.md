@@ -383,7 +383,8 @@ otherwise use `<type>/<slug>`. Lanes opened before types existed keep their `age
 or `agent/<slug>` branches, which every script still recognizes; no new lane is created under
 `agent/`. PRs close their issue by default; campaign slices use `lane:publish --relates` to keep the umbrella open. Touch only
 your lane. Claim the work when you open the lane: `pnpm issue:claim <issue>` swaps the issue onto
-`status:active` and moves its board items to In progress; `lane:open` prints the command. The
+`status:active`, posts a claim comment that decides concurrent claims so exactly one wins, and
+moves its board items to In progress; `lane:open` prints the command. The
 issue-bound and issueless procedures are in [delivery-orchestration]. Lane worktrees carry the
 author App's git commit identity (stamped at `lane:open`, restamped by `pnpm lane:identity`), and
 `lane:publish` refuses lane-owned commits whose author or committer is not that stamped identity —
@@ -519,7 +520,7 @@ the route label. Generic Task, Audit, Research, and Inventory forms remain neutr
 Selecting Bugs or Refactors removes the Features route, and Bug or Change plan forms cannot target
 Features.
 No sanctioned script edits existing issues beyond the claim and reconciliation — `pnpm issue:claim
-<issue>` swaps the status labels and moves the boards, and `pnpm issue:reconcile` applies
+<issue>` swaps the status labels, posts its claim comment and moves the boards, and `pnpm issue:reconcile` applies
 digest-guarded body edits and closures at delivery; later corrections require manual `gh`, as does
 backfilling a pull request's own labels, milestone, or project membership when it predates
 `lane:publish`'s metadata assertion. Read live metadata

@@ -2,13 +2,12 @@ import {
     GITHUB_HTTPS_REMOTE,
     REQUIRED_REPOSITORY,
     REQUIRED_BASE_BRANCH,
-    trustedChildExecutable,
     parseJson,
-    posixSingleQuote,
     type GhSession,
     type spawnCapture,
     spawnCaptureBytes,
 } from './githubAppIdentity.ts';
+import { type GitRunner, withIsolatedGitTransport } from './isolatedGitTransport.ts';
 import { fail, PR_STATE } from './prContract.ts';
 import { readReviewBundleContext, reviewBundlePath, type ReviewBundleContext } from './prepareReview.ts';
 import {
@@ -65,18 +64,17 @@ function liveCommands(primaryRoot: string, session: GhSession, capture: typeof s
     const gh = (args: string[]) => capture('gh', args, { cwd: primaryRoot, env: session.env });
     const git = (args: string[]) => capture('git', args, { cwd: primaryRoot, env: session.env });
     const gitUntrimmed = (args: string[]) => capture('git', args, { cwd: primaryRoot, env: session.env, trim: false });
-    const ghExecutable = posixSingleQuote(trustedChildExecutable('gh', session.env));
+    const repository: GitRunner = {
+        capture: git,
+        run: (args) => {
+            git(args);
+        },
+    };
+    const credential = { token: session.env.GH_TOKEN ?? '', helperDir: session.configDir };
     const fetch = (shas: string[]) =>
-        git([
-            '-c',
-            'credential.helper=',
-            '-c',
-            `credential.helper=!${ghExecutable} auth git-credential`,
-            'fetch',
-            '--no-write-fetch-head',
-            GITHUB_HTTPS_REMOTE,
-            ...shas,
-        ]);
+        withIsolatedGitTransport(repository, credential, (transport) => {
+            transport.run(['fetch', '--no-write-fetch-head', GITHUB_HTTPS_REMOTE, ...shas]);
+        });
     return { gh, git, gitUntrimmed, fetch };
 }
 

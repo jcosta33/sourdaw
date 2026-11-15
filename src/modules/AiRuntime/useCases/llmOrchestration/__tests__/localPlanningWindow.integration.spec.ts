@@ -17,6 +17,7 @@ import {
     LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS,
 } from '../../../models/LocalPlanningBudget';
 import { DEFAULT_WEBLLM_MODEL_ID } from '../../../models/ModelInfo';
+import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
 import { aiBackendPreferenceStore } from '../../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../../stores/llmStatusStore';
 import { budgetLocalPlanningRequest } from '../../../transformers/budgetLocalPlanningRequest';
@@ -427,7 +428,8 @@ it('fits a discovered 64-onset receipt with live authority, resume and a full bo
     );
     expect(readBuffer).toHaveBeenCalledWith(bufferId);
     const selected = toolsFrom(attempts[3]!).map((tool) => tool.function.name);
-    expect(selected).toHaveLength(WEBLLM_TOOL_BUDGET);
+    // This project grounds no workflow, so the offer stops short of the budget by the workflow action tools.
+    expect(selected).toHaveLength(WEBLLM_TOOL_BUDGET - WORKFLOW_ACTION_TOOL_NAMES.size);
     expect(selected).toContain('analysis.detectTransients');
     expect(selected).toContain('selectCreativeInterpretation');
     expect(selected).toContain('command.batch.propose');
@@ -585,4 +587,11 @@ it('carries real workflow capability data for ordinary whole-project local plann
         },
     });
     expect(toolsFrom(attempts[1]!).map((tool) => tool.function.name)).toContain('selectWorkflowCapability');
+    // The kept capability makes its workflow selectable and its action tool offered locally; a
+    // workflow the message carries no capability for is not selectable.
+    const selector = toolsFrom(attempts[1]!).find((tool) => tool.function.name === 'selectWorkflowCapability');
+    const choices = JSON.stringify(selector?.function.parameters);
+    expect(choices).toContain('"const":"midi-overlap-shortening"');
+    expect(choices).not.toContain('"const":"drum-preview-branches"');
+    expect(toolsFrom(attempts[1]!).map((tool) => tool.function.name)).toContain('removeShortMidiOverlaps');
 });

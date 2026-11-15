@@ -58,7 +58,14 @@ describe('marker action handlers', () => {
         expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', expect.stringMatching(/^marker-/), undefined);
         expect(mocks.removeMarker).toHaveBeenCalledWith('marker1');
         expect(mocks.setMarkerColor).toHaveBeenCalledWith('marker1', '#fff');
-        expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', expect.stringMatching(/^section-/), undefined);
+        expect(mocks.addSection).toHaveBeenCalledWith(
+            0,
+            8,
+            'Verse',
+            expect.stringMatching(/^section-/),
+            undefined,
+            undefined
+        );
         expect(mocks.removeSection).toHaveBeenCalledWith('section1');
         expect(mocks.renameSection).toHaveBeenCalledWith('section1', 'Chorus');
     });
@@ -144,7 +151,7 @@ describe('marker action handlers', () => {
             throw new Error('expected a removeSection inverse');
         }
         expect(inverse.payload.sectionId).toMatch(/^section-/);
-        expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', inverse.payload.sectionId, undefined);
+        expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', inverse.payload.sectionId, undefined, undefined);
     });
 
     it('handleAddSection suppresses only an identity-bearing replay whose exact id exists', () => {
@@ -214,7 +221,7 @@ describe('marker action handlers', () => {
         expect(desc.label).toBe('Remove section "Chorus" from beat 8 to beat 16 (s1)');
         expect(desc.inverseAction).toEqual({
             type: 'addSection',
-            payload: { startBeat: 8, endBeat: 16, name: 'Chorus', sectionId: 's1', color: '#def' },
+            payload: { startBeat: 8, endBeat: 16, name: 'Chorus', sectionId: 's1', color: '#def', index: 0 },
         });
         if (desc.inverseAction?.type !== 'addSection') {
             throw new Error('expected an addSection inverse');
@@ -222,7 +229,7 @@ describe('marker action handlers', () => {
 
         await handleAddSection.execute(desc.inverseAction);
 
-        expect(mocks.addSection).toHaveBeenCalledWith(8, 16, 'Chorus', 's1', '#def');
+        expect(mocks.addSection).toHaveBeenCalledWith(8, 16, 'Chorus', 's1', '#def', 0);
     });
 
     it('handleRenameSection describes an inverse restoring the previous name', () => {
