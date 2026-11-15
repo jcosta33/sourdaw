@@ -22,16 +22,13 @@
             "sealed": true
         },
         "comparative-by-measurement": {
-            "sealed": false,
-            "pendingContract": "analysis.measure on project and preview"
+            "sealed": true
         },
         "perceptual-single-target": {
-            "sealed": false,
-            "pendingContract": "recipe.discover and recipe.expand"
+            "sealed": true
         },
         "perceptual-multi-target": {
-            "sealed": false,
-            "pendingContract": "recipe.discover and recipe.expand"
+            "sealed": true
         },
         "whole-project-vibe-with-constraint": {
             "sealed": false,
@@ -3561,6 +3558,517 @@
                     "rangeName": "Verse",
                     "metrics": { "truePeak": -27.95, "rms": -30.97 }
                 }
+            }
+        },
+        {
+            "id": "AC067-DEV-PERCEPTUAL-1",
+            "promptClass": "perceptual-single-target",
+            "class": "execute-exact",
+            "prompt": "warm up the guitar in the chorus",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Guitar"],
+                    "objectives": [
+                        {
+                            "recipeId": "guitar-warm",
+                            "targetName": "Guitar",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["warm"],
+                    "targetName": "Guitar",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "guitar-warm",
+                    "targetName": "Guitar",
+                    "role": "guitar"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Guitar"],
+                    "rangeName": "Chorus",
+                    "metrics": ["frequencyBandEnergy", "spectralCentroid"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Guitar"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
+            }
+        },
+        {
+            "id": "AC067-DEV-COMPARE-1",
+            "promptClass": "comparative-by-measurement",
+            "class": "execute-exact",
+            "prompt": "make the guitar louder than the keys in the verse",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "comparative",
+                    "targets": ["Guitar"],
+                    "objectives": [
+                        {
+                            "policyId": "integrated-loudness-comparison-v1",
+                            "relation": "greater-than-current",
+                            "targetName": "Guitar",
+                            "referenceName": "Keys",
+                            "rangeName": "Verse"
+                        }
+                    ]
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Guitar", "Keys"],
+                    "rangeName": "Verse",
+                    "metrics": ["integratedLoudness"],
+                    "items": [
+                        {
+                            "id": "raise",
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "gainDb": 6
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Guitar"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Guitar"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
+            }
+        },
+        {
+            "id": "AC067-DEV-COMPARE-2",
+            "promptClass": "comparative-by-measurement",
+            "class": "execute-exact",
+            "prompt": "make the guitar wider than the hi-hat in the chorus",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "comparative",
+                    "targets": ["Guitar"],
+                    "objectives": [
+                        {
+                            "policyId": "side-energy-fraction-comparison-v1",
+                            "relation": "greater-than-current",
+                            "targetName": "Guitar",
+                            "referenceName": "Hi-Hat",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Guitar", "Hi-Hat"],
+                    "rangeName": "Chorus",
+                    "metrics": ["sideEnergyFraction"],
+                    "items": [
+                        {
+                            "id": "insert",
+                            "name": "addDevice",
+                            "arguments": {
+                                "deviceType": "builtin-stereo-widener",
+                                "binding": "insert"
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Guitar"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        },
+                        {
+                            "id": "set-0",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "width-amount",
+                                "value": 1.3
+                            },
+                            "dependsOn": ["insert"]
+                        }
+                    ]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Guitar"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
+            }
+        },
+        {
+            "id": "AC067-DEV-COMPARE-3",
+            "promptClass": "comparative-by-measurement",
+            "class": "execute-exact",
+            "prompt": "make the guitar brighter than the hi-hat in the intro",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "comparative",
+                    "targets": ["Guitar"],
+                    "objectives": [
+                        {
+                            "policyId": "spectral-centroid-comparison-v1",
+                            "relation": "greater-than-current",
+                            "targetName": "Guitar",
+                            "referenceName": "Hi-Hat",
+                            "rangeName": "Intro"
+                        }
+                    ]
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Guitar", "Hi-Hat"],
+                    "rangeName": "Intro",
+                    "metrics": ["spectralCentroid"],
+                    "items": [
+                        {
+                            "id": "insert",
+                            "name": "addDevice",
+                            "arguments": {
+                                "deviceType": "builtin-eq",
+                                "binding": "insert"
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Guitar"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        },
+                        {
+                            "id": "set-0",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "eq-high-gain",
+                                "value": 3
+                            },
+                            "dependsOn": ["insert"]
+                        }
+                    ]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Guitar"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
+            }
+        },
+        {
+            "id": "AC067-DEV-MULTI-1",
+            "promptClass": "perceptual-multi-target",
+            "class": "execute-exact",
+            "prompt": "the chorus sounds harsh",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Hi-Hat"],
+                    "objectives": [
+                        {
+                            "recipeId": "drums-dark",
+                            "targetName": "Hi-Hat",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["dark"],
+                    "targetName": "Hi-Hat",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "drums-dark",
+                    "targetName": "Hi-Hat",
+                    "role": "drums"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Hi-Hat"],
+                    "rangeName": "Chorus",
+                    "metrics": ["frequencyBandEnergy", "spectralCentroid"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Hi-Hat"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
+            }
+        },
+        {
+            "id": "AC067-DEV-MULTI-2",
+            "promptClass": "perceptual-multi-target",
+            "class": "execute-exact",
+            "prompt": "the verse sounds boxy",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Guitar"],
+                    "objectives": [
+                        {
+                            "recipeId": "guitar-muddy",
+                            "targetName": "Guitar",
+                            "rangeName": "Verse"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["muddy"],
+                    "targetName": "Guitar",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "guitar-muddy",
+                    "targetName": "Guitar",
+                    "role": "guitar"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Guitar"],
+                    "rangeName": "Verse",
+                    "metrics": ["frequencyBandEnergy", "rms"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Guitar"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
+            }
+        },
+        {
+            "id": "AC067-DEV-MULTI-3",
+            "promptClass": "perceptual-multi-target",
+            "class": "execute-exact",
+            "prompt": "the intro feels thin",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Keys"],
+                    "objectives": [
+                        {
+                            "recipeId": "keys-thin",
+                            "targetName": "Keys",
+                            "rangeName": "Intro"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["thin"],
+                    "targetName": "Keys",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "keys-thin",
+                    "targetName": "Keys",
+                    "role": "keys"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Keys"],
+                    "rangeName": "Intro",
+                    "metrics": ["frequencyBandEnergy", "spectralCentroid"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Keys"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
+            }
+        },
+        {
+            "id": "AC067-DEV-PERCEPTUAL-2",
+            "promptClass": "perceptual-single-target",
+            "class": "execute-exact",
+            "prompt": "the lead vocal sounds muddy in the verse",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Lead Vocal"],
+                    "objectives": [
+                        {
+                            "recipeId": "vocal-muddy",
+                            "targetName": "Lead Vocal",
+                            "rangeName": "Verse"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["muddy"],
+                    "targetName": "Lead Vocal",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "vocal-muddy",
+                    "targetName": "Lead Vocal",
+                    "role": "vocal"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Lead Vocal"],
+                    "rangeName": "Verse",
+                    "metrics": ["frequencyBandEnergy"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Lead Vocal"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
+            }
+        },
+        {
+            "id": "AC067-DEV-PERCEPTUAL-3",
+            "promptClass": "perceptual-single-target",
+            "class": "execute-exact",
+            "prompt": "make the keys brighter in the intro",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Keys"],
+                    "objectives": [
+                        {
+                            "recipeId": "keys-bright",
+                            "targetName": "Keys",
+                            "rangeName": "Intro"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["bright"],
+                    "targetName": "Keys",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "keys-bright",
+                    "targetName": "Keys",
+                    "role": "keys"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Keys"],
+                    "rangeName": "Intro",
+                    "metrics": ["frequencyBandEnergy", "spectralCentroid"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Keys"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
             }
         }
     ]

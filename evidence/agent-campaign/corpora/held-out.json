@@ -22,16 +22,13 @@
             "sealed": true
         },
         "comparative-by-measurement": {
-            "sealed": false,
-            "pendingContract": "analysis.measure on project and preview"
+            "sealed": true
         },
         "perceptual-single-target": {
-            "sealed": false,
-            "pendingContract": "recipe.discover and recipe.expand"
+            "sealed": true
         },
         "perceptual-multi-target": {
-            "sealed": false,
-            "pendingContract": "recipe.discover and recipe.expand"
+            "sealed": true
         },
         "whole-project-vibe-with-constraint": {
             "sealed": false,
@@ -422,9 +419,51 @@
             "promptClass": "perceptual-multi-target",
             "class": "execute-exact",
             "prompt": "make the chorus hit harder",
-            "providerTurns": [],
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Kick"],
+                    "objectives": [
+                        {
+                            "recipeId": "drums-punchy",
+                            "targetName": "Kick",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["punchy"],
+                    "targetName": "Kick",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "drums-punchy",
+                    "targetName": "Kick",
+                    "role": "drums"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Kick"],
+                    "rangeName": "Chorus",
+                    "metrics": ["crestFactor", "transientDensity"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Kick"]
+                }
+            ],
             "oracle": {
-                "kind": "pending"
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
             }
         },
         {
@@ -432,9 +471,51 @@
             "promptClass": "perceptual-multi-target",
             "class": "execute-exact",
             "prompt": "polish the low end",
-            "providerTurns": [],
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Bass DI"],
+                    "objectives": [
+                        {
+                            "recipeId": "bass-muddy",
+                            "targetName": "Bass DI",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["muddy"],
+                    "targetName": "Bass DI",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "bass-muddy",
+                    "targetName": "Bass DI",
+                    "role": "bass"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Bass DI"],
+                    "rangeName": "Chorus",
+                    "metrics": ["frequencyBandEnergy", "rms"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Bass DI"]
+                }
+            ],
             "oracle": {
-                "kind": "pending"
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
             }
         },
         {
@@ -442,9 +523,51 @@
             "promptClass": "perceptual-multi-target",
             "class": "execute-exact",
             "prompt": "tighten up the drums",
-            "providerTurns": [],
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Drum Bus"],
+                    "objectives": [
+                        {
+                            "recipeId": "bus-tight",
+                            "targetName": "Drum Bus",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["tight"],
+                    "targetName": "Drum Bus",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "bus-tight",
+                    "targetName": "Drum Bus",
+                    "role": "bus"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Drum Bus"],
+                    "rangeName": "Chorus",
+                    "metrics": ["crestFactor", "truePeak"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Drum Bus"]
+                }
+            ],
             "oracle": {
-                "kind": "pending"
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
             }
         },
         {
@@ -3511,6 +3634,326 @@
                     "rangeName": "Verse",
                     "metrics": { "crestFactor": 3.01, "truePeak": -10.45 }
                 }
+            }
+        },
+        {
+            "id": "AC067-HO-COMPARE-1",
+            "promptClass": "comparative-by-measurement",
+            "class": "execute-exact",
+            "prompt": "make the kick punchier than the snare in the chorus",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "comparative",
+                    "targets": ["Kick"],
+                    "objectives": [
+                        {
+                            "policyId": "crest-factor-comparison-v1",
+                            "relation": "greater-than-current",
+                            "targetName": "Kick",
+                            "referenceName": "Snare",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "drums-punchy",
+                    "targetName": "Kick",
+                    "role": "drums"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Kick", "Snare"],
+                    "rangeName": "Chorus",
+                    "metrics": ["crestFactor"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Kick"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
+            }
+        },
+        {
+            "id": "AC067-HO-COMPARE-2",
+            "promptClass": "comparative-by-measurement",
+            "class": "execute-exact",
+            "prompt": "make the bass more dynamic than the guitar in the verse",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "comparative",
+                    "targets": ["Bass DI"],
+                    "objectives": [
+                        {
+                            "policyId": "crest-factor-comparison-v1",
+                            "relation": "greater-than-current",
+                            "targetName": "Bass DI",
+                            "referenceName": "Guitar",
+                            "rangeName": "Verse"
+                        }
+                    ]
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Bass DI", "Guitar"],
+                    "rangeName": "Verse",
+                    "metrics": ["crestFactor"],
+                    "items": [
+                        {
+                            "id": "ease",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "paramId": "comp-ratio",
+                                "value": 1.5
+                            },
+                            "selector": {
+                                "targetArgument": "deviceId",
+                                "entity": "device",
+                                "where": { "name": "Compressor" },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Bass DI"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
+            }
+        },
+        {
+            "id": "AC067-HO-COMPARE-3",
+            "promptClass": "comparative-by-measurement",
+            "class": "execute-exact",
+            "prompt": "make the snare louder than the overheads in the intro",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "comparative",
+                    "targets": ["Snare"],
+                    "objectives": [
+                        {
+                            "policyId": "integrated-loudness-comparison-v1",
+                            "relation": "greater-than-current",
+                            "targetName": "Snare",
+                            "referenceName": "Overheads",
+                            "rangeName": "Intro"
+                        }
+                    ]
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Snare", "Overheads"],
+                    "rangeName": "Intro",
+                    "metrics": ["integratedLoudness"],
+                    "items": [
+                        {
+                            "id": "raise",
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "gainDb": 6
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Snare"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Snare"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
+            }
+        },
+        {
+            "id": "AC067-HO-PERCEPTUAL-1",
+            "promptClass": "perceptual-single-target",
+            "class": "execute-exact",
+            "prompt": "the bass is too muddy in the chorus",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Bass DI"],
+                    "objectives": [
+                        {
+                            "recipeId": "bass-muddy",
+                            "targetName": "Bass DI",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["muddy"],
+                    "targetName": "Bass DI",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "bass-muddy",
+                    "targetName": "Bass DI",
+                    "role": "bass"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Bass DI"],
+                    "rangeName": "Chorus",
+                    "metrics": ["frequencyBandEnergy", "rms"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Bass DI"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
+            }
+        },
+        {
+            "id": "AC067-HO-PERCEPTUAL-2",
+            "promptClass": "perceptual-single-target",
+            "class": "execute-exact",
+            "prompt": "make the snare darker in the verse",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Snare"],
+                    "objectives": [
+                        {
+                            "recipeId": "drums-dark",
+                            "targetName": "Snare",
+                            "rangeName": "Verse"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["dark"],
+                    "targetName": "Snare",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "drums-dark",
+                    "targetName": "Snare",
+                    "role": "drums"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Snare"],
+                    "rangeName": "Verse",
+                    "metrics": ["frequencyBandEnergy", "spectralCentroid"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Snare"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
+            }
+        },
+        {
+            "id": "AC067-HO-PERCEPTUAL-3",
+            "promptClass": "perceptual-single-target",
+            "class": "execute-exact",
+            "prompt": "give the overheads more air in the intro",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Overheads"],
+                    "objectives": [
+                        {
+                            "recipeId": "drums-airy",
+                            "targetName": "Overheads",
+                            "rangeName": "Intro"
+                        }
+                    ]
+                },
+                {
+                    "kind": "recipe",
+                    "id": "discovery",
+                    "descriptors": ["airy"],
+                    "targetName": "Overheads",
+                    "limit": 2
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion",
+                    "recipeId": "drums-airy",
+                    "targetName": "Overheads",
+                    "role": "drums"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Overheads"],
+                    "rangeName": "Intro",
+                    "metrics": ["frequencyBandEnergy", "spectralRolloff"],
+                    "recipeCallId": "expansion"
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Overheads"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [],
+                "measuredGoals": []
             }
         }
     ]

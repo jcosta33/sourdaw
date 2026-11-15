@@ -7,14 +7,12 @@ import { change, clone, Counter, toJS } from '@automerge/automerge';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
-import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
-import { type renderAgentMeasurementScope } from '#/modules/AudioRendering/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import * as commandUseCases from '#/modules/Command/useCases';
@@ -76,7 +74,11 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from '../useCases/__tests__/aiWorkflowCommandPreflightFixture';
-import { advertisedAnswerCandidateId, advertisedAnswerIntake } from '../useCases/__tests__/answerWireFixture';
+import {
+    advertisedAnswerCandidateId,
+    advertisedAnswerIntake,
+    advertisedAnswerSchema,
+} from '../useCases/__tests__/answerWireFixture';
 import {
     assertDiscoveredCommandSchemas,
     declineCall,
@@ -84,16 +86,28 @@ import {
     isRecord,
     proposeCall,
     proposeDiscoveredCalls,
+    readCreativeInterpretationCatalog,
     scriptProviderTurns,
     searchCalls,
+    selectCreativeInterpretationCall,
     type ProviderCall,
+    type ScriptedCreativeCatalog,
     type ScriptedTurn,
 } from '../useCases/__tests__/highLevelIntentWorkflowFixture';
-import { literalMetricIntakeTurn } from '../useCases/__tests__/metricGoalWorkflowFixture';
+import {
+    literalMetricIntakeTurn,
+    metricGoalProviderPlan,
+    readMetricPublication,
+} from '../useCases/__tests__/metricGoalWorkflowFixture';
 import { GENERATED_BATCH_LOCAL_ID_PREFIXES } from '../useCases/agentReference/batchLocalBindingProducers';
+import { materializePromptCommandPlan } from '../useCases/agentRequestOrchestration/materializePromptCommandPlan';
+import { agentRunLifecycle } from '../useCases/agentRunLifecycle';
+import { agentWorkBudget } from '../useCases/agentWorkBudget';
 import { confirmPendingChatActions } from '../useCases/confirmPendingChatActions';
+import { evaluateMetricGoalAdmission } from '../useCases/evaluateMetricGoalAdmission';
 import { getPlannedActionAffectedIds } from '../useCases/getPlannedActionAffectedIds';
 import { getProjectContext } from '../useCases/getProjectContext';
+import { metricGoalStateCodec } from '../useCases/metricGoalStateCodec';
 import { type ObjectiveMetricId } from '../useCases/metricGoalContractTypes';
 import { OBJECTIVE_METRIC_LABELS, objectiveMetricProjection } from '../useCases/objectiveMetricProjection';
 import { parsePromptToActions } from '../useCases/parsePromptToActions';
@@ -102,6 +116,7 @@ import { readChatThreadContext } from '../useCases/readChatThreadContext';
 import { sendChatMessage } from '../useCases/sendChatMessage';
 
 import { completeAcceptanceResults, createAcceptanceFixtureLifetime } from './acceptanceFixtureLifetime';
+import { createAcceptanceRenderLaw } from './acceptanceRenderLaw';
 
 registerDeviceEnginePorts();
 
@@ -110,8 +125,9 @@ type PlannedChatRequest = Awaited<ReturnType<typeof planPromptActions>>['result'
 const runtimeMocks = vi.hoisted(() => ({
     generateWebLlmCompletion: vi.fn(),
     getAllSidechainRoutes: vi.fn(() => []),
-    renderAgentMeasurementScope:
-        vi.fn<typeof import('#/modules/AudioRendering/useCases').renderAgentMeasurementScope>(),
+    renderOffline: vi.fn<typeof import('#/modules/AudioEngine/useCases').renderOffline>(),
+    renderOfflineInput: vi.fn<typeof import('#/modules/AudioEngine/useCases').renderOfflineInput>(),
+    renderTrackSubgraphOffline: vi.fn<typeof import('#/modules/AudioEngine/useCases').renderTrackSubgraphOffline>(),
     resolveToasterPadBinding: vi.fn(() => null),
     retainAgentMeasurementRenders: vi.fn<
         typeof import('#/modules/AudioRendering/useCases').retainAgentMeasurementRenders
@@ -148,8 +164,12 @@ vi.mock('../repositories/webLlm/generateWebLlmCompletion', () => ({
 }));
 vi.mock('../repositories/webLlm/isWebLlmLoaded', () => ({ isWebLlmLoaded: () => true }));
 
+// The offline render is the one measurement step node cannot run; everything around it stays real.
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    renderOffline: runtimeMocks.renderOffline,
+    renderOfflineInput: runtimeMocks.renderOfflineInput,
+    renderTrackSubgraphOffline: runtimeMocks.renderTrackSubgraphOffline,
     resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
     setTrackGain: runtimeMocks.setTrackGain,
     setTrackMute: runtimeMocks.setTrackMute,
@@ -157,10 +177,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     setTrackSoloGate: runtimeMocks.setTrackSoloGate,
 }));
 
-// The offline render is the one measurement step node cannot run; everything around it stays real.
 vi.mock('#/modules/AudioRendering/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioRendering/useCases')>()),
-    renderAgentMeasurementScope: runtimeMocks.renderAgentMeasurementScope,
     retainAgentMeasurementRenders: runtimeMocks.retainAgentMeasurementRenders,
 }));
 
@@ -228,6 +246,10 @@ type CorpusProviderTurn =
     | { kind: 'discover'; names: string[] }
     | { kind: 'propose'; items: Record<string, unknown>[]; plan?: AgentPlanProposal }
     | ProposeCommandsTurn
+    | MetricIntakeTurn
+    | RecipeExpansionTurn
+    | PreviewMeasureTurn
+    | ProposeCompiledTurn
     | { kind: 'decline'; args: Record<string, unknown> }
     | { kind: 'query' | 'answer'; id: string; args: Record<string, unknown> };
 
@@ -247,6 +269,55 @@ type RecipeDiscoveryTurn = {
     role?: string;
     limit: number;
 };
+
+/**
+ * One metric objective a perceptual or comparative intake selects from the publication the provider
+ * was offered: an authored recipe's (perceptual) or a comparison policy's at one relation
+ * (comparative), scoped to the named fixture track, compared against the named reference track, and
+ * ranged over the named fixture section.
+ */
+type CorpusObjectiveSelection = {
+    recipeId?: string;
+    policyId?: string;
+    relation?: string;
+    targetName: string;
+    referenceName?: string;
+    rangeName: string;
+};
+
+/**
+ * A perceptual or comparative request's intake: an edit of the processing of the named tracks, with
+ * room for a device on each, and the metric objectives the request states.
+ */
+type MetricIntakeTurn = {
+    kind: 'intake';
+    intent: 'perceptual' | 'comparative';
+    targets: string[];
+    objectives: CorpusObjectiveSelection[];
+};
+
+/**
+ * One `recipe.expand` call: the recipe on the named fixture track, at the catalogue's values, with
+ * the recipe role the discovery receipt reported, since the fixture authors no canonical roles.
+ */
+type RecipeExpansionTurn = { kind: 'expand'; id: string; recipeId: string; targetName: string; role: string };
+
+/**
+ * One `analysis.measure` of a preview over the named fixture section: of an earlier recipe expansion,
+ * or of a list of plain commands. Every named target renders in the live project and in the preview.
+ */
+type PreviewMeasureTurn = {
+    kind: 'measure-preview';
+    id: string;
+    targets: string[];
+    rangeName: string;
+    metrics: string[];
+    recipeCallId?: string;
+    items?: Record<string, unknown>[];
+};
+
+/** A proposal adopting earlier compilations by call id, scoped to the named fixture tracks. */
+type ProposeCompiledTurn = { kind: 'propose-compiled'; compiledCallIds: string[]; targets: string[] };
 
 /** What a measured question measures: the master output, or the one fixture track of this name. */
 type CorpusMeasuredTarget = { kind: 'master' } | { kind: 'track'; name: string };
@@ -305,12 +376,23 @@ type CorpusOracleInvariants = {
     maxCommands: number;
 };
 
+/**
+ * One goal the measured preview a proposal rests on must hold: the metric (and band) moved on the
+ * named target, in the stated relation, against the named reference target for a comparison.
+ */
+type CorpusMeasuredGoal = { metric: string; band?: string; relation: string; target: string; reference?: string };
+
 type CorpusOracle =
     | CorpusAnswerOracle
     | {
           kind: 'proposal';
           actions: CorpusOracleAction[];
           invariants?: CorpusOracleInvariants;
+          /**
+           * A perceptual or comparative proposal's goals: the planned batch must carry a measured
+           * preview bound to it in which every one of exactly these goals is admitted.
+           */
+          measuredGoals?: CorpusMeasuredGoal[];
           /** A refinement's replacement: the batch must supersede the card the prior turn left pending. */
           replaces?: 'prior-proposal';
       }
@@ -605,65 +687,185 @@ function metricAnswerCall(turn: MetricAnswerTurn): ProviderCall & { id: string }
     };
 }
 
-/** Each measured target's own sine level, so two targets never measure alike and a wrong target cannot match. */
-function fixtureMeasurementAmplitude(targetId: string): number {
-    if (targetId === 'master') {
-        return 0.3;
-    }
-    const index = context.tracks.findIndex((track) => track.id === targetId);
-    if (index < 0) {
-        throw new Error(`The fixture project holds no measurement target ${targetId}`);
-    }
-    return 0.02 * (index + 1);
+/** The device creation slots the published catalog hangs under each named track, so the edit may insert one there. */
+function deviceSlotIds(catalog: ScriptedCreativeCatalog, trackIds: readonly string[]): string[] {
+    return catalog.creationSlots
+        .filter(
+            (slot) =>
+                slot.objectType === 'device' &&
+                catalog.targets.some(
+                    (target) =>
+                        target.candidateId === slot.parentCandidateId &&
+                        target.objectIds.length === 1 &&
+                        trackIds.includes(target.objectIds[0] ?? '')
+                )
+        )
+        .map((slot) => slot.candidateId);
 }
 
-/** Four seconds of a 1 kHz stereo sine at the target's own level, as the measured-answer specs render. */
-function fixtureMeasurementBuffer(amplitude: number): AudioBuffer {
-    const frames = 192_000;
-    const channel = Float32Array.from(
-        { length: frames },
-        (_, index) => amplitude * Math.sin((2 * Math.PI * 1000 * index) / 48_000)
-    );
-    const buffer = MockAudioBuffer.create(2, frames, 48_000);
-    buffer.copyToChannel(channel, 0);
-    buffer.copyToChannel(channel, 1);
-    return buffer;
+/** The one published objective a selection names; none or several is a corpus defect, never a guess. */
+function publishedObjectiveId(
+    publication: ReturnType<typeof readMetricPublication>,
+    selection: CorpusObjectiveSelection
+): string {
+    const matches = publication.filter((objective) => {
+        if (selection.recipeId !== undefined) {
+            return objective.recipeId === selection.recipeId;
+        }
+        return objective.goals.some(
+            (goal) => goal.policyId === selection.policyId && goal.relation === selection.relation
+        );
+    });
+    const [objective] = matches;
+    if (matches.length !== 1 || objective?.id === undefined) {
+        throw new Error(
+            `The intake publishes ${String(matches.length)} objectives for ${JSON.stringify(selection)}`
+        );
+    }
+    return objective.id;
 }
 
 /**
- * The offline render node cannot run, answered deterministically per target. Only the render is
- * doubled: the reduction, the receipt and the answer composed from it stay the production route's.
+ * A perceptual or comparative request's intake, every id read from the catalog and the metric
+ * publication the provider was actually offered, so the corpus names tracks, sections, recipes and
+ * policies and never a candidate id.
  */
-const renderFixtureMeasurementScope: typeof renderAgentMeasurementScope = async ({ scope }) => ({
-    status: 'rendered',
-    soloActive: false,
-    warnings: [],
-    targets: (scope.kind === 'master' ? ['master'] : scope.ids).map((targetId) => ({
-        targetId,
-        targetKind: measuredTargetKind(scope.kind),
-        route: scope.kind === 'master' ? 'mixdown' : 'isolated-subgraph',
-        liveAudibility: 'audible',
-        buffer: fixtureMeasurementBuffer(fixtureMeasurementAmplitude(targetId)),
-        artifact: {
-            contentAddress: `sha256:${targetId}`,
-            sampleRate: 48_000,
-            frameCount: 192_000,
-            channelCount: 2,
-            durationSeconds: 4,
-        },
-    })),
-});
-
-function measuredTargetKind(
-    scopeKind: Parameters<typeof renderAgentMeasurementScope>[0]['scope']['kind']
-): 'master' | 'track' | 'bus' {
-    if (scopeKind === 'master') {
-        return 'master';
-    }
-    return scopeKind === 'tracks' ? 'track' : 'bus';
+function metricIntakeTurn(turn: MetricIntakeTurn): ScriptedTurn {
+    const trackIds = turn.targets.map(fixtureTrackId);
+    return (userMessage, providerView) => {
+        const catalog = readCreativeInterpretationCatalog(userMessage, providerView);
+        const base = selectCreativeInterpretationCall({
+            catalog,
+            modeId: 'edit',
+            targetObjectIds: trackIds,
+            dimensions: ['processing'],
+        });
+        const schema = advertisedAnswerSchema(providerView);
+        const publication = readMetricPublication({
+            function: { description: schema.description, parameters: schema.parameters },
+        });
+        const wire = [providerView, userMessage];
+        const objectives = turn.objectives.map((selection) => ({
+            objectiveId: publishedObjectiveId(publication, selection),
+            scopeCandidateId: advertisedAnswerCandidateId(wire, fixtureTrackId(selection.targetName)),
+            referenceScopeCandidateId:
+                selection.referenceName === undefined
+                    ? null
+                    : advertisedAnswerCandidateId(wire, fixtureTrackId(selection.referenceName)),
+            rangeCandidateId: advertisedAnswerCandidateId(wire, selection.rangeName, 'ranges'),
+        }));
+        return [
+            {
+                ...base,
+                id: 'intake',
+                arguments: {
+                    ...base.arguments,
+                    creationSlotIds: deviceSlotIds(catalog, trackIds),
+                    answer: null,
+                    metricIntent: { kind: turn.intent, uncertainty: 'none', objectives },
+                },
+            },
+        ];
+    };
 }
 
-runtimeMocks.renderAgentMeasurementScope.mockImplementation(renderFixtureMeasurementScope);
+/** The `analysis.measure` scope naming fixture tracks or fixture buses by name; a mix of both is a corpus defect. */
+function namedTrackScope(names: readonly string[]): Record<string, unknown> {
+    const tracks = names.map((name) => context.tracks.find((track) => track.id === fixtureTrackId(name)));
+    const buses = tracks.filter((track) => track?.kind === 'bus');
+    if (buses.length !== 0 && buses.length !== tracks.length) {
+        throw new Error(`A measured scope mixes tracks and buses: ${names.join(', ')}`);
+    }
+    return { kind: buses.length === 0 ? 'tracks' : 'buses', ids: names.map(fixtureTrackId) };
+}
+
+function previewMeasureCall(turn: PreviewMeasureTurn): ProviderCall & { id: string } {
+    const { startBeat, endBeat } = fixtureSection(turn.rangeName);
+    const source =
+        turn.recipeCallId === undefined
+            ? { proposal: { schemaVersion: 1, items: turn.items ?? [] } }
+            : { recipeCallId: turn.recipeCallId };
+    return {
+        id: turn.id,
+        name: 'analysis.measure',
+        arguments: {
+            subject: 'preview',
+            scope: namedTrackScope(turn.targets),
+            range: { startBeat, endBeat },
+            metrics: turn.metrics,
+            ...source,
+        },
+    };
+}
+
+function proposeCompiledCall(turn: ProposeCompiledTurn): ProviderCall & { id: string } {
+    return {
+        id: 'proposal',
+        name: 'command.batch.propose',
+        arguments: {
+            commands: [],
+            compiledCallIds: turn.compiledCallIds,
+            plan: metricGoalProviderPlan('Apply the measured change the request asks for.', turn.targets.map(fixtureTrackId)),
+        },
+    };
+}
+
+/**
+ * How many offline renders a case's own measurements make: one per target a project measurement
+ * names, and two per target a preview names (the live project and the preview). No case may lean on
+ * the render double beyond what it measures.
+ */
+function expectedRenderCount(testCase: CorpusCase): number {
+    return testCase.providerTurns.reduce((total, turn) => {
+        if (turn.kind === 'measure') {
+            return total + 1;
+        }
+        if (turn.kind === 'measure-preview') {
+            return total + 2 * turn.targets.length;
+        }
+        return total;
+    }, 0);
+}
+
+function renderCount(): number {
+    return (
+        runtimeMocks.renderTrackSubgraphOffline.mock.calls.length +
+        runtimeMocks.renderOffline.mock.calls.length +
+        runtimeMocks.renderOfflineInput.mock.calls.length
+    );
+}
+
+/** A case whose route reads the open project: a question, and a proposal its preview measures. */
+function plansAgainstLiveProject(testCase: CorpusCase): boolean {
+    return testCase.oracle.kind === 'answer' || testCase.providerTurns.some((turn) => turn.kind === 'measure-preview');
+}
+
+/** A fixture track's position in the fixture project, which alone fixes the source the render law sounds. */
+function fixtureTrackPosition(trackId: string): number {
+    const index = context.tracks.findIndex((track) => track.id === trackId);
+    if (index < 0) {
+        throw new Error(`The fixture project holds no track ${trackId}`);
+    }
+    return index;
+}
+
+const renderLaw = createAcceptanceRenderLaw({
+    trackPosition: fixtureTrackPosition,
+    tempo: () => transportStore.value?.tempo ?? context.tempo,
+    liveTracks: () => trackStore.value?.tracks ?? [],
+    masterGain: () => (transportStore.value?.masterGain ?? context.masterGain * 100) / 100,
+});
+
+/** Arms the one render law on every offline render a measurement reaches. */
+function armRenderLaw(): void {
+    runtimeMocks.renderTrackSubgraphOffline.mockImplementation(async (input) => renderLaw.renderTrack(input));
+    runtimeMocks.renderOffline.mockImplementation(async (input) => renderLaw.renderMixdown(input));
+    runtimeMocks.renderOfflineInput.mockImplementation(async () => {
+        throw new Error('No acceptance case measures the master of an isolated preview.');
+    });
+}
+
+armRenderLaw();
 
 /**
  * Maps one corpus-declared provider turn to the same scripted-turn builders the workflow fixture
@@ -687,6 +889,9 @@ function toScriptedTurn(
             if (turn.intent === 'answer-measured') {
                 return measuredAnswerIntakeTurn(turn);
             }
+            if (turn.intent === 'perceptual' || turn.intent === 'comparative') {
+                return metricIntakeTurn(turn);
+            }
             throw new TypeError('The corpus intake variant has no configured producer.');
         case 'recipe': {
             const call = recipeDiscoveryCall(turn);
@@ -694,6 +899,22 @@ function toScriptedTurn(
         }
         case 'measure': {
             const call = measureCall(turn);
+            return () => [call];
+        }
+        case 'expand': {
+            const call = {
+                id: turn.id,
+                name: 'recipe.expand',
+                arguments: { recipeId: turn.recipeId, targetId: fixtureTrackId(turn.targetName), role: turn.role },
+            };
+            return () => [call];
+        }
+        case 'measure-preview': {
+            const call = previewMeasureCall(turn);
+            return () => [call];
+        }
+        case 'propose-compiled': {
+            const call = proposeCompiledCall(turn);
             return () => [call];
         }
         case 'metric-answer': {
@@ -1151,11 +1372,12 @@ async function runCorpusCase(
     if (testCase.promptClass === 'refinement') {
         return runRefinementCase(testCase, barrel);
     }
-    if (testCase.oracle.kind !== 'answer') {
+    if (!plansAgainstLiveProject(testCase)) {
         return runSingleTurnCase(testCase, barrel, alongside);
     }
-    // `project.query` reads the open project, so a question is asked of the fixture project loaded
-    // into the real stores and document, under a canonical identity a semantic query can answer for.
+    // `project.query` reads the open project and a preview grounds against it, so a question or a
+    // measured proposal is planned against the fixture project loaded into the real stores and
+    // document, under a canonical identity a semantic query can answer for.
     const projectBefore = projectStore.value;
     openChatProject();
     projectStore.set({
@@ -1220,18 +1442,45 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
             testCase.providerTurns.map((turn) => toScriptedTurn(turn))
         );
     }
-    const projectRevision = testCase.oracle.kind === 'answer' ? captureSettledRevision() : `revision-${testCase.id}`;
-    const rendersBefore = runtimeMocks.renderAgentMeasurementScope.mock.calls.length;
+    const projectRevision = plansAgainstLiveProject(testCase) ? captureSettledRevision() : `revision-${testCase.id}`;
+    const rendersBefore = renderCount();
+    const runId = `acceptance-${testCase.id}`;
+    const measuresPreview = testCase.providerTurns.some((turn) => turn.kind === 'measure-preview');
+    if (measuresPreview) {
+        expect(
+            agentRunLifecycle.create({ runId, request: testCase.prompt, mode: 'apply', createdRevision: projectRevision })
+        ).toEqual({ status: 'created' });
+        agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
+    }
+    try {
+        return await scorePlannedCorpusCase(testCase, { projectRevision, rendersBefore, runId, measuresPreview });
+    } finally {
+        if (measuresPreview) {
+            agentRunLifecycle.clear();
+        }
+    }
+}
+
+async function scorePlannedCorpusCase(
+    testCase: CorpusCase,
+    run: { projectRevision: string; rendersBefore: number; runId: string; measuresPreview: boolean }
+): Promise<AgentAcceptanceCaseResult> {
+    const { projectRevision, runId } = run;
     const result = await parsePromptToActions({
         prompt: testCase.prompt,
         context,
         projectRevision,
+        ...(run.measuresPreview
+            ? {
+                  streamIdentity: { runId, requestId: runId, cancellationGeneration: 0 },
+                  onMeasurementAttempt: agentWorkBudget.admitMeasurement(runId),
+              }
+            : {}),
     });
-    // Only a measured question reaches the render boundary, once; no other case may lean on its double.
     expect(
-        runtimeMocks.renderAgentMeasurementScope.mock.calls.length - rendersBefore,
-        `Case ${testCase.id} rendered a measurement scope a different number of times than its kind allows`
-    ).toBe(testCase.questionKind === 'measured' ? 1 : 0);
+        renderCount() - run.rendersBefore,
+        `Case ${testCase.id} rendered a different number of times than its own measurements ask for`
+    ).toBe(expectedRenderCount(testCase));
 
     if (testCase.providerTurns.length > 0) {
         expect(
@@ -1279,6 +1528,16 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
         if (testCase.oracle.invariants !== undefined) {
             assertProposalInvariants(testCase.id, result.actions, testCase.oracle.invariants);
         }
+        if (testCase.oracle.measuredGoals !== undefined) {
+            const goalsHold = await measuredGoalsHold({
+                testCase,
+                goals: testCase.oracle.measuredGoals,
+                planned: result,
+                runId,
+                projectRevision,
+            });
+            matchesOracle = matchesOracle && goalsHold;
+        }
     }
     return scoreAgentAcceptanceCase({
         id: testCase.id,
@@ -1288,6 +1547,70 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
         observed,
         matchesOracle,
     });
+}
+
+/** A goal as the corpus names it, its target and reference read as fixture track ids. */
+function expectedGoal(goal: CorpusMeasuredGoal) {
+    return {
+        metric: goal.metric,
+        band: goal.band ?? null,
+        relation: goal.relation,
+        targetIds: [fixtureTrackId(goal.target)],
+        referenceTargetIds: goal.reference === undefined ? [] : [fixtureTrackId(goal.reference)],
+    };
+}
+
+/**
+ * The measurement a perceptual or comparative card rests on (AC-021): the planned batch carries a
+ * measured preview, its goals are exactly the oracle's, and the batch the card would hold admits
+ * every one of them against that preview — so Confirm would be admitted, not refused as unverified.
+ */
+async function measuredGoalsHold(input: {
+    testCase: CorpusCase;
+    goals: readonly CorpusMeasuredGoal[];
+    planned: Awaited<ReturnType<typeof parsePromptToActions>>;
+    runId: string;
+    projectRevision: string;
+}): Promise<boolean> {
+    const { planned, runId, projectRevision } = input;
+    if (planned.measuredPreview === undefined) {
+        return false;
+    }
+    const materialized = materializePromptCommandPlan({
+        userText: input.testCase.prompt,
+        runId,
+        assistantMessageId: `${runId}-assistant`,
+        interactionMode: 'apply',
+        trustCeiling: undefined,
+        resume: undefined,
+        onResumedPlanAccepted: undefined,
+        projectRevision,
+        context,
+        result: { ...planned, planningOutcome: { kind: 'proposal' } },
+        actionLabels: planned.actions.map((action) => action.type),
+        protectedTargetIds: [],
+    });
+    if (materialized.status !== 'prepared') {
+        await materialized.completion;
+        return false;
+    }
+    const compiled = materialized.compiledActionExecution;
+    const state = metricGoalStateCodec(compiled.metricGoalState);
+    const observedGoals = (state?.authorities ?? []).flatMap((authority) =>
+        authority.goals.map((goal) => ({
+            metric: goal.metricId,
+            band: goal.band,
+            relation: goal.relation,
+            targetIds: [...goal.targetIds],
+            referenceTargetIds: [...goal.referenceTargetIds],
+        }))
+    );
+    const evaluation = evaluateMetricGoalAdmission({
+        state,
+        commandBatch: compiled.commandBatch,
+        currentRevision: projectRevision,
+    });
+    return evaluation.status === 'verified' && isDeepStrictEqual(observedGoals, input.goals.map(expectedGoal));
 }
 
 function readStoreTrackKind(kind: string): Track['kind'] {
@@ -2162,6 +2485,7 @@ describe('agent acceptance corpora', () => {
                         (turn) =>
                             turn.kind === 'propose' ||
                             turn.kind === 'propose-commands' ||
+                            turn.kind === 'propose-compiled' ||
                             turn.kind === 'answer' ||
                             turn.kind === 'metric-answer'
                     );
