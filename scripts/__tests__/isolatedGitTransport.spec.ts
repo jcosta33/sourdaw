@@ -400,6 +400,34 @@ describe('isolated git transport', () => {
         });
     });
 
+    it('refuses a -C value spelled as a live git-dir option, which leaves git in the directory it names', () => {
+        withFixture((f) => {
+            withIsolatedGitTransport(
+                runner(f.lane, f.env),
+                { token: SENTINEL, helperDir: f.helperDir },
+                (transport) => {
+                    const gitDir = transport.capture(['rev-parse', '--git-dir']);
+                    // A repository planted at the relative path `--git-dir=<live directory>` under the lane.
+                    const planted = join(f.lane, `--git-dir=${gitDir}`);
+                    mkdirSync(planted, { recursive: true });
+                    fixtureGit(planted, ['init', '-q']);
+
+                    expect(() =>
+                        spawnCapture(
+                            'git',
+                            [
+                                '-C',
+                                `--git-dir=${gitDir}`,
+                                ...gitAuthenticatedArgs(SENTINEL, f.helperDir, ['ls-remote', f.remoteUrl]),
+                            ],
+                            { cwd: f.lane, env: f.env }
+                        )
+                    ).toThrow('refusing a token-bearing git child outside an isolated git directory');
+                }
+            );
+        });
+    });
+
     it('refuses a transport git directory whose environment moves its common directory to the shared repository', () => {
         withFixture((f) => {
             withIsolatedGitTransport(

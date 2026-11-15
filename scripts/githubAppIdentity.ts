@@ -771,6 +771,20 @@ function isTokenBearingGitChild(args: readonly string[], env: NodeJS.ProcessEnv)
     return env.GH_TOKEN !== undefined || installsCredentialHelper(args);
 }
 
+/** The `--git-dir=` values among global options; a `-C` or `-c` value is data, never an option. */
+function gitDirOptions(options: readonly string[]): string[] {
+    const gitDirs: string[] = [];
+    for (let index = 0; index < options.length; index += 1) {
+        const option = options[index] ?? '';
+        if (option === '-C' || option === '-c') {
+            index += 1;
+        } else if (option.startsWith('--git-dir=')) {
+            gitDirs.push(option.slice('--git-dir='.length));
+        }
+    }
+    return gitDirs;
+}
+
 /** The git directories `createIsolatedGitDirectory` made that have not been released yet. */
 const liveIsolatedGitDirectories = new Set<string>();
 
@@ -804,9 +818,7 @@ function assertCredentialHelperChildIsIsolated(args: readonly string[], env: Nod
     if (!installsCredentialHelper(args)) {
         return;
     }
-    const gitDirs = gitGlobalOptions(args)
-        .filter((option) => option.startsWith('--git-dir='))
-        .map((option) => option.slice('--git-dir='.length));
+    const gitDirs = gitDirOptions(gitGlobalOptions(args));
     const redirectsCommonDir = Object.keys(env).some((key) => key.toUpperCase() === 'GIT_COMMON_DIR');
     if (
         redirectsCommonDir ||
