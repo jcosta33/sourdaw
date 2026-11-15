@@ -150,7 +150,13 @@ fn render_instance(instance: &mut ProofChamberInstance) -> Vec<f32> {
         let ptr = instance.process(&left, &right, BLOCK as u32);
         assert!(!ptr.is_null(), "process returned a null buffer");
         for i in 0..BLOCK {
-            output.push(unsafe { *ptr.add(i) });
+            // SAFETY: `ptr` is the instance's `out_left`, allocated at
+            // `PROOF_CHAMBER_BLOCK_FRAMES` samples by `ProofChamberInstance::new`
+            // and never resized, and `i < BLOCK`, which is inside that capacity.
+            let slot = unsafe { ptr.add(i) };
+            // SAFETY: `slot` is in bounds of that initialised buffer, and
+            // nothing writes the instance between `process` and this read.
+            output.push(unsafe { *slot });
         }
         index += BLOCK;
     }

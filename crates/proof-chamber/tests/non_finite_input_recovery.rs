@@ -127,9 +127,13 @@ fn channel_peak(samples: &[f32]) -> f32 {
 fn stereo_output_peak(instance: &mut ProofChamberInstance) -> (f32, f32) {
     let left_ptr = instance.get_left_ptr();
     let right_ptr = instance.get_right_ptr();
-    // SAFETY: the pointers address the instance's fixed output arrays, FRAMES
-    // is in bounds, and the slices do not outlive this exclusive borrow.
+    // SAFETY: `left_ptr` addresses the instance's `out_left`, a
+    // `PROOF_CHAMBER_BLOCK_FRAMES`-sample initialised buffer that nothing
+    // resizes; `FRAMES` is inside it, and the slice does not outlive this
+    // exclusive borrow, so nothing writes it while it lives.
     let left = unsafe { std::slice::from_raw_parts(left_ptr, FRAMES) };
+    // SAFETY: `right_ptr` addresses the separate `out_right`, sized and
+    // borrowed exactly as `out_left` above.
     let right = unsafe { std::slice::from_raw_parts(right_ptr, FRAMES) };
     (channel_peak(left), channel_peak(right))
 }

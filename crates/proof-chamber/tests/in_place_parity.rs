@@ -6,25 +6,32 @@ const FRAMES: usize = 128;
 const SAMPLE_RATE: f32 = 48_000.0;
 
 fn write_inputs(instance: &mut ProofChamberInstance, left: &[f32], right: &[f32]) {
-    // SAFETY: both pointers address the instance's fixed 1024-sample channel
-    // arrays, and FRAMES is 128 for the lifetime of this exclusive borrow.
-    unsafe {
-        std::slice::from_raw_parts_mut(instance.get_left_ptr(), FRAMES).copy_from_slice(left);
-        std::slice::from_raw_parts_mut(instance.get_right_ptr(), FRAMES).copy_from_slice(right);
-    }
+    // SAFETY: `get_left_ptr` addresses the instance's `out_left`, a
+    // `PROOF_CHAMBER_BLOCK_FRAMES`-sample (1024) initialised buffer that
+    // `ProofChamberInstance::new` allocates and nothing resizes; `FRAMES` (128)
+    // is inside it, and the temporary slice is the only access to the buffer
+    // while this statement holds the exclusive instance borrow.
+    unsafe { std::slice::from_raw_parts_mut(instance.get_left_ptr(), FRAMES) }
+        .copy_from_slice(left);
+    // SAFETY: `get_right_ptr` addresses the separate `out_right`, sized and
+    // borrowed exactly as `out_left` above.
+    unsafe { std::slice::from_raw_parts_mut(instance.get_right_ptr(), FRAMES) }
+        .copy_from_slice(right);
 }
 
 fn output(instance: &mut ProofChamberInstance) -> (&[f32], &[f32]) {
     let left_ptr = instance.get_left_ptr();
     let right_ptr = instance.get_right_ptr();
-    // SAFETY: both pointers address fixed instance-owned arrays, FRAMES is in
-    // bounds, and the returned slices cannot outlive the exclusive instance borrow.
-    unsafe {
-        (
-            std::slice::from_raw_parts(left_ptr, FRAMES),
-            std::slice::from_raw_parts(right_ptr, FRAMES),
-        )
-    }
+    (
+        // SAFETY: `left_ptr` addresses the instance's `out_left`, a
+        // `PROOF_CHAMBER_BLOCK_FRAMES`-sample initialised buffer that nothing
+        // resizes; `FRAMES` is inside it, and the returned slice is tied to the
+        // exclusive instance borrow, so nothing writes it while it lives.
+        unsafe { std::slice::from_raw_parts(left_ptr, FRAMES) },
+        // SAFETY: `right_ptr` addresses the separate `out_right`, sized and
+        // borrowed exactly as `out_left` above.
+        unsafe { std::slice::from_raw_parts(right_ptr, FRAMES) },
+    )
 }
 
 #[test]
