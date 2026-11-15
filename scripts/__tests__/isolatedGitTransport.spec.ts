@@ -710,6 +710,14 @@ describe('credential-holding git children read config only from the sterile envi
             { SOURDAW_FIXTURE_HELPER: '!true' },
         ],
         ['config parameters', [], { GIT_CONFIG_PARAMETERS: "'credential.helper'='!true'" }],
+        ['an other-case key in config parameters', [], { GIT_CONFIG_PARAMETERS: "'Credential.Helper'='!true'" }],
+        // A Windows child reads environment variables whatever their case.
+        ['lower-case config parameters', [], { git_config_parameters: "'credential.helper'='!true'" }],
+        [
+            'a lower-case environment config entry',
+            [],
+            { git_config_count: '1', git_config_key_0: 'credential.helper', git_config_value_0: '!true' },
+        ],
         [
             'an environment config entry',
             [],
