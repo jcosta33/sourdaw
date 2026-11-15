@@ -2,7 +2,8 @@
 //!
 //! Flow: dlopen → clap_entry.init() → factory.create_plugin(host, id) → plugin.activate() → plugin.process()
 //!
-//! RT-safety: `process_audio_internal` and `process_with_midi` are called on the audio thread.
+//! RT-safety: `process_audio_internal` and `process_with_midi` are called on the audio thread,
+//! or on an offline instance's render thread — CLAP's `[audio-thread]` either way.
 //! All scratch buffers are preallocated in `new` — no heap allocation occurs
 //! on the RT path.
 
@@ -663,6 +664,13 @@ unsafe extern "C" fn ostream_write(
     buffer: *const c_void,
     size: u64,
 ) -> i64 {
+    // `from_raw_parts` needs a non-null pointer even for an empty slice.
+    if size == 0 {
+        return 0;
+    }
+    if buffer.is_null() {
+        return -1;
+    }
     // SAFETY: the plugin calls `write` only on the stream `get_state` handed to
     // `save`, a live stack `clap_ostream` for the duration of that call.
     let ctx = unsafe { (*stream).ctx } as *mut Vec<u8>;
@@ -680,6 +688,13 @@ unsafe extern "C" fn istream_read(
     buffer: *mut c_void,
     size: u64,
 ) -> i64 {
+    // `copy_nonoverlapping` needs a non-null destination even for zero bytes.
+    if size == 0 {
+        return 0;
+    }
+    if buffer.is_null() {
+        return -1;
+    }
     // SAFETY: the plugin calls `read` only on the stream `set_state` handed to
     // `load`, a live stack `clap_istream` for the duration of that call.
     let ctx = unsafe { (*stream).ctx } as *mut StreamCursor;
@@ -910,11 +925,9 @@ impl ClapWrapper {
             // once on the freshly created instance as CLAP requires before any other call.
             let ok = unsafe { init_fn(plugin) };
             if !ok {
-                if let Some(destroy) = plugin_ref.destroy {
-                    // SAFETY: `destroy` is the instance's own callback, matched as
-                    // `Some`; the instance is not used again after this call.
-                    unsafe { destroy(plugin) };
-                }
+                // SAFETY: the live, never-activated instance created above, on the
+                // loading (main) thread; this error path does not use it again.
+                unsafe { destroy_abandoned_instance(plugin) };
                 return Err("plugin.init() returned false".to_string());
             }
         }
@@ -958,7 +971,16 @@ impl ClapWrapper {
             unsafe { Self::query_extension::<clap_plugin_tail>(plugin_ref, CLAP_EXT_TAIL) };
         // SAFETY: the instance is live, initialised and not yet activated (activation
         // is step 9 below), and this is the loading (main) thread.
-        let audio = unsafe { Self::read_audio_bus_layout(plugin_ref) }?;
+        let audio = match unsafe { Self::read_audio_bus_layout(plugin_ref) } {
+            Ok(audio) => audio,
+            Err(error) => {
+                // SAFETY: the live, initialised, never-activated instance created
+                // above, on the loading (main) thread; this error path does not use
+                // it again.
+                unsafe { destroy_abandoned_instance(plugin) };
+                return Err(error);
+            }
+        };
         // SAFETY: `plugin` is the live, initialised, non-null instance created above.
         let is_instrument = unsafe { descriptor_declares_instrument(plugin) };
         // SAFETY: `plugin_ref` is the live initialised instance, on the main thread.
@@ -981,12 +1003,9 @@ impl ClapWrapper {
         // not yet active (activation is step 9 below), on the loading (main) thread.
         let render_mode = unsafe { Self::enter_render_mode(plugin_ref, &name, mode) };
         if let Err(error) = render_mode {
-            if let Some(destroy) = plugin_ref.destroy {
-                // SAFETY: the instance's own `destroy`, matched as `Some`, on the
-                // initialised, never-activated instance; it is called once and the
-                // instance is not used again on this error path.
-                unsafe { destroy(plugin) };
-            }
+            // SAFETY: the live, initialised, never-activated instance created above,
+            // on the loading (main) thread; this error path does not use it again.
+            unsafe { destroy_abandoned_instance(plugin) };
             return Err(error);
         }
 
@@ -2306,7 +2325,8 @@ impl ClapWrapper {
             return;
         }
 
-        // This is the audio thread, which is the only thread CLAP allows to
+        // This is the audio thread, or an offline instance's render thread —
+        // CLAP's [audio-thread] either way — which is the only thread CLAP allows to
         // enter or leave the processing state — so this is where the control
         // thread's intent is carried out.
         self.sync_processing_state();
@@ -2662,6 +2682,21 @@ unsafe fn deinit_entry(entry_ptr: *const clap_plugin_entry) {
         // SAFETY: the entry's own `deinit`, matched as `Some`, run once after every
         // instance is destroyed and before the library unloads (this fn's contract).
         unsafe { deinit() };
+    }
+}
+
+/// Destroy an instance a load is abandoning before the wrapper takes ownership
+/// of it, so the entry's later `deinit` never runs with a live instance.
+///
+/// # Safety
+/// `plugin` must be a live `clap_plugin` returned by `create_plugin`, never
+/// activated, called on its main thread and not used again after this call.
+unsafe fn destroy_abandoned_instance(plugin: *const clap_plugin) {
+    // SAFETY: `plugin` is a live instance (this fn's contract).
+    if let Some(destroy) = unsafe { (*plugin).destroy } {
+        // SAFETY: the instance's own `destroy`, matched as `Some`, called once on the
+        // never-activated instance, which is not used again (this fn's contract).
+        unsafe { destroy(plugin) };
     }
 }
 
@@ -4440,6 +4475,146 @@ mod tests {
             ["plugin_destroy", "entry_deinit"],
             "the deepest early return still destroys the half-built instance and deinits"
         );
+    }
+
+    unsafe extern "C" fn one_audio_port_count(_plugin: *const clap_plugin, _is_input: bool) -> u32 {
+        1
+    }
+
+    unsafe extern "C" fn failing_audio_port_get(
+        _plugin: *const clap_plugin,
+        _index: u32,
+        _is_input: bool,
+        _info: *mut clap_audio_port_info,
+    ) -> bool {
+        false
+    }
+
+    static UNREADABLE_AUDIO_PORTS: clap_plugin_audio_ports = clap_plugin_audio_ports {
+        count: Some(one_audio_port_count),
+        get: Some(failing_audio_port_get),
+    };
+
+    unsafe extern "C" fn unreadable_ports_get_extension(
+        _plugin: *const clap_plugin,
+        id: *const i8,
+    ) -> *const c_void {
+        // SAFETY: the host only queries with a NUL-terminated `CLAP_EXT_*` id.
+        if unsafe { CStr::from_ptr(id) } == CLAP_EXT_AUDIO_PORTS {
+            return &raw const UNREADABLE_AUDIO_PORTS as *const c_void;
+        }
+        ptr::null()
+    }
+
+    /// A recording plugin that initialises but whose port list cannot be read.
+    unsafe extern "C" fn unreadable_ports_create_plugin(
+        _factory: *const clap_plugin_factory,
+        _host: *const clap_host,
+        _plugin_id: *const i8,
+    ) -> *const clap_plugin {
+        Box::into_raw(Box::new(clap_plugin {
+            desc: ptr::null(),
+            plugin_data: ptr::null_mut(),
+            init: Some(recording_plugin_init),
+            destroy: Some(recording_plugin_destroy),
+            activate: Some(recording_plugin_activate),
+            deactivate: Some(recording_plugin_deactivate),
+            start_processing: None,
+            stop_processing: None,
+            reset: None,
+            process: None,
+            get_extension: Some(unreadable_ports_get_extension),
+            on_main_thread: None,
+        }))
+    }
+
+    static UNREADABLE_PORTS_FACTORY: clap_plugin_factory = clap_plugin_factory {
+        get_plugin_count: None,
+        get_plugin_descriptor: None,
+        create_plugin: Some(unreadable_ports_create_plugin),
+    };
+
+    unsafe extern "C" fn unreadable_ports_get_factory(_factory_id: *const i8) -> *const c_void {
+        &raw const UNREADABLE_PORTS_FACTORY as *const c_void
+    }
+
+    static UNREADABLE_PORTS_ENTRY: clap_plugin_entry = clap_plugin_entry {
+        clap_version: CLAP_VERSION,
+        init: None,
+        deinit: Some(recording_entry_deinit),
+        get_factory: Some(unreadable_ports_get_factory),
+    };
+
+    #[test]
+    fn defect_6764_an_unreadable_port_layout_destroys_the_instance_before_deinit() {
+        let _guard = ENTRY_LIFECYCLE_LOCK.lock().unwrap();
+        clear_entry_lifecycle();
+
+        // SAFETY: a static fake entry with no `init` to have run, live for the process.
+        let error = unsafe {
+            ClapWrapper::load_initialized_entry(
+                &raw const UNREADABLE_PORTS_ENTRY,
+                LIFECYCLE_PLUGIN_ID,
+                48_000.0,
+                ProcessMode::Realtime,
+            )
+        }
+        .err()
+        .expect("a plugin whose port list cannot be read must not load");
+
+        assert_eq!(error, "CLAP input audio port 0 returned no port info");
+        assert_eq!(
+            entry_lifecycle(),
+            ["plugin_init", "plugin_destroy", "entry_deinit"],
+            "the initialised instance is destroyed once, before the entry deinits"
+        );
+    }
+
+    #[test]
+    fn defect_6764_a_null_stream_write_forms_no_slice_and_refuses_a_nonzero_size() {
+        let mut written: Vec<u8> = Vec::new();
+        let ostream = clap_ostream {
+            ctx: &mut written as *mut Vec<u8> as *mut c_void,
+            write: Some(ostream_write),
+        };
+
+        // SAFETY: `ostream` is a live stream whose `ctx` is `written`; a null buffer is
+        // exactly the plugin input under test.
+        let empty = unsafe { ostream_write(&ostream, ptr::null(), 0) };
+        // SAFETY: as above.
+        let refused = unsafe { ostream_write(&ostream, ptr::null(), 3) };
+
+        assert_eq!(
+            (empty, refused),
+            (0, -1),
+            "zero bytes write nothing; a null buffer claiming bytes is an error"
+        );
+        assert!(written.is_empty(), "no byte may be read from a null buffer");
+    }
+
+    #[test]
+    fn defect_6764_a_null_stream_read_forms_no_slice_and_refuses_a_nonzero_size() {
+        let mut cursor = StreamCursor {
+            data: vec![1, 2, 3],
+            pos: 0,
+        };
+        let istream = clap_istream {
+            ctx: &mut cursor as *mut StreamCursor as *mut c_void,
+            read: Some(istream_read),
+        };
+
+        // SAFETY: `istream` is a live stream whose `ctx` is `cursor`; a null buffer is
+        // exactly the plugin input under test.
+        let empty = unsafe { istream_read(&istream, ptr::null_mut(), 0) };
+        // SAFETY: as above.
+        let refused = unsafe { istream_read(&istream, ptr::null_mut(), 3) };
+
+        assert_eq!(
+            (empty, refused),
+            (0, -1),
+            "zero bytes read nothing; a null destination claiming room is an error"
+        );
+        assert_eq!(cursor.pos, 0, "a refused read consumes no state bytes");
     }
 
     #[test]

@@ -105,6 +105,14 @@ pub fn run_plugin_scan_worker_from_process_args() -> Option<i32> {
     host::plugin_scan_worker::run_from_process_args()
 }
 
+/// Kill every plugin-scan helper this process has running, so a scan process
+/// that is told to quit leaves no helper behind it. The stopped scan never
+/// answers: its threads park until the process exits, so quitting mid-scan
+/// neither publishes a partial registry nor quarantines a plugin.
+pub fn stop_plugin_scan_helpers() {
+    host::plugin_scan_worker::stop_plugin_scan_helpers();
+}
+
 /// Drive one `async` command body to completion from a synchronous test.
 ///
 /// The bodies are `async` because their shells call them that way; a
