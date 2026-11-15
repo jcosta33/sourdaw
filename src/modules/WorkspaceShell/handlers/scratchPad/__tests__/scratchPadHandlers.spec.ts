@@ -136,6 +136,59 @@ describe('Workspace Scratch Pad Handlers', () => {
         });
     });
 
+    describe('handleCaptureScratchPad materialized section ids', () => {
+        function materialized(payload: { sectionIds?: string[] } | undefined): readonly string[] {
+            const action: Extract<AppAction, { type: 'captureScratchPad' }> = { type: 'captureScratchPad', payload };
+            handleCaptureScratchPad.materializeCommandArguments?.(action);
+            return action.payload?.sectionIds ?? [];
+        }
+
+        it('fills an empty list to the marker count with distinct fresh ids', () => {
+            const ids = materialized({ sectionIds: [] });
+            expect(ids).toHaveLength(markerSections.length);
+            expect(ids.every((id) => id.startsWith('scratch-'))).toBe(true);
+            expect(new Set(ids).size).toBe(markerSections.length);
+        });
+
+        it('keeps a short list ids first and extends it to the marker count', () => {
+            const ids = materialized({ sectionIds: ['pad-a'] });
+            expect(ids).toHaveLength(markerSections.length);
+            expect(ids[0]).toBe('pad-a');
+            expect(ids[1]).toMatch(/^scratch-/);
+        });
+
+        it('leaves a list covering every marker or longer unchanged', () => {
+            expect(materialized({ sectionIds: ['pad-a', 'pad-b'] })).toEqual(['pad-a', 'pad-b']);
+            expect(materialized({ sectionIds: ['pad-a', 'pad-b', 'pad-c'] })).toEqual(['pad-a', 'pad-b', 'pad-c']);
+        });
+
+        it('writes exactly the filled ids and undoes to the prior pad', () => {
+            scratchPadStore.set({ sections: previousPad });
+            const action: Extract<AppAction, { type: 'captureScratchPad' }> = {
+                type: 'captureScratchPad',
+                payload: { sectionIds: ['pad-a'] },
+            };
+            handleCaptureScratchPad.materializeCommandArguments?.(action);
+            const description = handleCaptureScratchPad.describe?.(action);
+            void handleCaptureScratchPad.execute(action);
+
+            expect(padIdsByOrder()).toEqual(action.payload?.sectionIds);
+            expect(description?.inverseAction).toEqual(
+                expect.objectContaining({
+                    payload: expect.objectContaining({
+                        expectedSections: scratchPadStore.value?.sections,
+                        replacementSections: previousPad,
+                    }),
+                })
+            );
+        });
+
+        function padIdsByOrder(): string[] {
+            const sections = scratchPadStore.value?.sections ?? [];
+            return sections.toSorted((left, right) => left.order - right.order).map((section) => section.id);
+        }
+    });
+
     describe('handleCaptureScratchPad supplied section ids', () => {
         // Payloads from outside the app are shaped by nothing but their senders.
         function captureOf(payload: unknown): Extract<AppAction, { type: 'captureScratchPad' }> {
