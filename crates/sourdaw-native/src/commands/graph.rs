@@ -723,7 +723,7 @@ pub struct StripStatePayload {
 /// backend and ignored. A device naming an `externalInstanceId` the engine
 /// already owns is spliced onto the strip by that instance's own effect id
 /// ([`map_device`]); one naming a plugin the engine does not hold has no
-/// native body and follows the degradation law in [`no_native_body`].
+/// native body and follows the degradation law in [`native_body`].
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevicePayload {
@@ -2555,8 +2555,8 @@ fn push_automation(
     Ok(())
 }
 
-/// Why this device has no body the scheduler can build, or `None` when it has
-/// one.
+/// The built-in body the scheduler can build for this device, or why it has
+/// none.
 ///
 /// Both answers are the same fact — nothing native to install — and they are
 /// stated together so they reach the one degradation law that governs it. An
@@ -2573,20 +2573,19 @@ fn push_automation(
 /// reaches here either, for the same shape of reason: the sampler is an
 /// engine-owned instance the mapper splices rather than a body it builds, so
 /// [`map_device`] answers it ahead of this.
-fn no_native_body(device: &DevicePayload) -> Option<String> {
+fn native_body(device: &DevicePayload) -> Result<BuiltinEffectType, String> {
     if device.external_instance_id.is_some() || device.external_plugin_id.is_some() {
-        return Some(format!(
+        return Err(format!(
             "device '{}' is an externally hosted plugin with no engine-owned instance to bind",
             device.id
         ));
     }
-    if builtin_device_type(&device.device_type).is_none() {
-        return Some(format!(
+    builtin_device_type(&device.device_type).ok_or_else(|| {
+        format!(
             "device '{}' of type '{}' has no native realisation",
             device.id, device.device_type
-        ));
-    }
-    None
+        )
+    })
 }
 
 /// The built-in body a project device type names, or `None` when the scheduler
@@ -2714,11 +2713,16 @@ fn proof_parameter_writes(
                     ));
                 }
                 if parameter.route == ParameterRoute::Order {
-                    let slot = key
+                    let Some(slot) = key
                         .strip_prefix("chain_order_")
                         .and_then(|slot| slot.parse::<usize>().ok())
-                        .expect("canonical order slot");
-                    order[slot] = Some(value as u8);
+                        .and_then(|slot| order.get_mut(slot))
+                    else {
+                        return Err(format!(
+                            "device '{device_id}' refuses Proof parameter '{key}' or its value"
+                        ));
+                    };
+                    *slot = Some(value as u8);
                 }
                 resolved.push((builtin_named_parameter(key, device_id)?, value));
             }
@@ -2732,8 +2736,8 @@ fn proof_parameter_writes(
     }
     if order.iter().all(Option::is_some) {
         let mut seen = [false; 5];
-        for slot in order {
-            let module = slot.expect("complete order") as usize;
+        for &module in order.iter().flatten() {
+            let module = module as usize;
             if seen[module] {
                 return Err(format!(
                     "device '{device_id}' carries a duplicate Proof module order"
@@ -3075,19 +3079,15 @@ fn map_device(
         }));
     }
 
-    if let Some(reason) = no_native_body(device) {
-        if contributes_audio {
-            return Err(reason);
-        }
+    let builtin = match native_body(device) {
+        Ok(builtin) => builtin,
+        Err(reason) if contributes_audio => return Err(reason),
         // A strip built only to keep the routing graph faithful contributes
         // silence by construction, so a device it cannot build degrades:
         // omitted from the chain, and therefore absent from the strip report —
         // the observation the contract says a caller must read.
-        return Ok(None);
-    }
-
-    let builtin = builtin_device_type(&device.device_type)
-        .expect("no_native_body refused every type with no built-in body");
+        Err(_) => return Ok(None),
+    };
 
     // Only a plain built-in bacteria device reaches here still carrying a
     // modulation-assignment table: every other device type already refused at
@@ -3257,11 +3257,11 @@ fn map_device(
             builtin_parameter(builtin, key, &device.id)?;
             builtin_named_parameter(key, &device.id)
         })
-        .map(|patch| {
-            (
-                PluginCore::transient_shaper_with_patch(sample_rate, &patch),
+        .and_then(|patch| {
+            Ok((
+                PluginCore::transient_shaper_with_patch(sample_rate, &patch)?,
                 Vec::new(),
-            )
+            ))
         }),
         BuiltinEffectType::Scoring => {
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
@@ -3312,7 +3312,7 @@ fn map_device(
         },
         BuiltinEffectType::Knead => {
             resolved_param_writes(device, |key| builtin_parameter(builtin, key, &device.id))
-                .map(|writes| (PluginCore::builtin(builtin, sample_rate), writes))
+                .and_then(|writes| Ok((PluginCore::builtin(builtin, sample_rate)?, writes)))
         }
     };
     let Some((core, param_writes)) = refuse_or_degrade(resolved, contributes_audio)? else {
@@ -3381,7 +3381,7 @@ fn map_device(
 }
 
 /// A device the mapper could not resolve, answered under the one law
-/// [`no_native_body`] already sets: refused by name where the strip
+/// [`native_body`] already sets: refused by name where the strip
 /// contributes audio, and omitted where it contributes silence by
 /// construction.
 ///
@@ -3529,22 +3529,22 @@ fn touch(touched: &mut Vec<String>, strip_id: &str) {
 pub(crate) fn strip_reports(
     registry: &GraphRegistry,
     strip_ids: &[String],
-) -> Vec<StripReportPayload> {
+) -> Result<Vec<StripReportPayload>, String> {
     strip_ids
         .iter()
         .map(|strip_id| {
             let entry = registry
                 .strips
                 .get(strip_id)
-                .expect("a touched strip exists in the registry");
-            StripReportPayload {
+                .ok_or_else(|| format!("strip report: unknown strip '{strip_id}'"))?;
+            Ok(StripReportPayload {
                 kind: match entry.kind {
                     StripKind::Track => "track",
                     StripKind::Bus => "bus",
                 },
                 id: strip_id.clone(),
                 device_ids: entry.device_ids.clone(),
-            }
+            })
         })
         .collect()
 }
@@ -3656,7 +3656,7 @@ fn map_batch(
     // The reports are a final pass over the post-batch registry: what each
     // touched strip's chain really holds after everything applied, never an
     // echo of any one command's request.
-    let reports = strip_reports(registry, &touched);
+    let reports = strip_reports(registry, &touched)?;
     Ok(MappedBatch { ops, reports })
 }
 
@@ -3949,7 +3949,7 @@ fn map_command(
             registry
                 .strips
                 .get_mut(track_id)
-                .expect("strip fetched above")
+                .ok_or_else(|| format!("set-track-output: unknown strip '{track_id}'"))?
                 .output = output;
             Ok(())
         }
@@ -4021,7 +4021,7 @@ fn map_command(
             registry
                 .strips
                 .get_mut(track_id)
-                .expect("strip fetched above")
+                .ok_or_else(|| format!("add-send: unknown strip '{track_id}'"))?
                 .send_bus_ids
                 .push(bus_id.clone());
             Ok(())
@@ -4054,7 +4054,7 @@ fn map_command(
             let source = registry
                 .strips
                 .get_mut(track_id)
-                .expect("strip fetched above");
+                .ok_or_else(|| format!("remove-send: unknown strip '{track_id}'"))?;
             source.send_bus_ids.retain(|id| id != bus_id);
             Ok(())
         }
@@ -4116,7 +4116,7 @@ fn map_command(
             registry
                 .strips
                 .get_mut(track_id)
-                .expect("strip fetched above")
+                .ok_or_else(|| format!("insert-device: unknown strip '{track_id}'"))?
                 .device_ids
                 .insert(insert_at, device.id.clone());
             Ok(())
@@ -4165,7 +4165,7 @@ fn map_command(
             registry
                 .strips
                 .get_mut(track_id)
-                .expect("strip fetched above")
+                .ok_or_else(|| format!("remove-device: unknown strip '{track_id}'"))?
                 .device_ids
                 .retain(|id| id != device_id);
             Ok(())
@@ -4726,33 +4726,33 @@ fn map_parameter_write(
         }
     };
 
-    match target {
-        StripParameterTargetPayload::TrackMuteGate { track_id } => {
-            let strip = strip_for(track_id)?;
-            let closed = gate_step("track-mute-gate")?;
-            match strip.kind {
-                StripKind::Track => ops.push(GraphCommand::SetTrackMute(strip.native_id, closed)),
-                StripKind::Bus => ops.push(GraphCommand::SetBusMute(strip.native_id, closed)),
-            }
-            return Ok(());
-        }
-        StripParameterTargetPayload::TrackSoloGate { track_id } => {
-            let strip = strip_for(track_id)?;
-            let closed = gate_step("track-solo-gate")?;
-            match strip.kind {
-                StripKind::Track => {
-                    ops.push(GraphCommand::SetTrackSoloGate(strip.native_id, closed))
-                }
-                StripKind::Bus => ops.push(GraphCommand::SetBusSoloGate(strip.native_id, closed)),
-            }
-            return Ok(());
-        }
-        _ => {}
-    }
-
     type ValueLaw = fn(f64, &StripEntry) -> Result<f32, String>;
     let (strip, automation_target, value_law): (&StripEntry, AutomationTarget, ValueLaw) =
         match target {
+            StripParameterTargetPayload::TrackMuteGate { track_id } => {
+                let strip = strip_for(track_id)?;
+                let closed = gate_step("track-mute-gate")?;
+                match strip.kind {
+                    StripKind::Track => {
+                        ops.push(GraphCommand::SetTrackMute(strip.native_id, closed))
+                    }
+                    StripKind::Bus => ops.push(GraphCommand::SetBusMute(strip.native_id, closed)),
+                }
+                return Ok(());
+            }
+            StripParameterTargetPayload::TrackSoloGate { track_id } => {
+                let strip = strip_for(track_id)?;
+                let closed = gate_step("track-solo-gate")?;
+                match strip.kind {
+                    StripKind::Track => {
+                        ops.push(GraphCommand::SetTrackSoloGate(strip.native_id, closed))
+                    }
+                    StripKind::Bus => {
+                        ops.push(GraphCommand::SetBusSoloGate(strip.native_id, closed))
+                    }
+                }
+                return Ok(());
+            }
             StripParameterTargetPayload::TrackFader { track_id } => {
                 let strip = strip_for(track_id)?;
                 let target = match strip.kind {
@@ -4794,8 +4794,6 @@ fn map_parameter_write(
                 };
                 (strip, target, |value, _| send_level(value))
             }
-            StripParameterTargetPayload::TrackMuteGate { .. }
-            | StripParameterTargetPayload::TrackSoloGate { .. } => unreachable!("handled above"),
         };
 
     let automation_write = match write {
@@ -4982,7 +4980,7 @@ fn map_schedule_clip(
     registry
         .strips
         .get_mut(&playback.track_id)
-        .expect("strip fetched above")
+        .ok_or_else(|| format!("schedule-clip: unknown strip '{}'", playback.track_id))?
         .clip_count += 1;
     Ok(())
 }
@@ -6245,7 +6243,7 @@ mod tests {
         for change in ["retired-incoming", "released-incoming", "retired-unrelated"] {
             let state = Arc::new(AppState::default());
             let (engine, mut commands_rx, _adoption) =
-                daw_engine::engine_handle_for_command_capture(128);
+                daw_engine::engine_handle_for_command_capture(128).unwrap();
             let engine_id = engine.instance_id();
             *state.engine.lock().unwrap() = Some(engine);
             let standing =
@@ -7325,7 +7323,7 @@ mod tests {
         assert_eq!(scheduled, 8);
         // The pool's own handle plus one per scheduled clip. A copy would leave
         // the pool holding its material alone.
-        let material = &samples["source-a"];
+        let material = samples.get("source-a").unwrap();
         assert_eq!(Arc::strong_count(&material.left), 9);
         assert_eq!(Arc::strong_count(&material.right), 9);
     }
@@ -9066,7 +9064,7 @@ mod tests {
     fn an_applied_batch_reports_the_fence_it_published() {
         let state = AppState::default();
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         // Filling the slot first is what makes this a capture engine: the
         // lazy bootstrap in `apply_graph_commands` starts one only into an
         // empty slot, so it reuses this handle rather than opening a device.
@@ -9132,7 +9130,7 @@ mod tests {
         const FRAMES: usize = 4096;
         let state = AppState::default();
         let (engine, mut command_rx, _adoption) =
-            daw_engine::engine_handle_for_command_capture(128);
+            daw_engine::engine_handle_for_command_capture(128).unwrap();
         let engine_id = engine.instance_id();
         *state.engine.lock().unwrap() = Some(engine);
         let material: Vec<f32> = (0..FRAMES)
@@ -9307,7 +9305,7 @@ mod tests {
     fn a_batch_for_a_stalled_engine_is_refused_before_anything_is_pushed() {
         let state = AppState::default();
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         engine.mark_render_stalled(Some(
             daw_engine::engine_events::StreamErrorKind::DeviceChanged,
         ));
@@ -9391,7 +9389,7 @@ mod tests {
         // as the lazy bootstrap's own tests do: the batch reuses this handle
         // rather than opening a device.
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let result = block_on_test(apply_graph_commands(
@@ -9441,7 +9439,7 @@ mod tests {
         // as the lazy bootstrap's own tests do: the batch reuses this handle
         // rather than opening a device.
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let result = block_on_test(apply_graph_commands(
@@ -9549,7 +9547,7 @@ mod tests {
         park_dormant_plugin(&state, "attached-on-first-play");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let result = block_on_test(apply_graph_commands(
@@ -9603,7 +9601,7 @@ mod tests {
         park_dormant_plugin(&state, "bound-on-the-second-batch");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         // A silent strip, so the unbound first batch degrades the device rather
@@ -9668,7 +9666,7 @@ mod tests {
         park_dormant_plugin(&state, "refused-on-first-play");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let result = block_on_test(apply_graph_commands(
@@ -9710,7 +9708,7 @@ mod tests {
         park_dormant_plugin(&state, "attached-after-a-refused-batch");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         // Refused by the mapping, with the engine already running: the batch
@@ -9786,7 +9784,7 @@ mod tests {
         // Smaller than the batch below, so that batch is the one that sizes the
         // ring it then fills.
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
+            daw_engine::engine_handle_for_command_capture(8).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let commands: Vec<Value> = (0..64)
@@ -9834,7 +9832,7 @@ mod tests {
     fn a_batch_with_nothing_parked_publishes_onto_the_ring_it_was_given() {
         let state = AppState::default();
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let commands: Vec<Value> = (0..8)
@@ -9889,7 +9887,7 @@ mod tests {
         park_unactivated_dormant_plugin(&state, "reparked-on-first-play");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let result = block_on_test(apply_graph_commands(
@@ -13910,7 +13908,7 @@ mod tests {
         .expect("a create before the engine runs holds a dormant instance");
 
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(256);
+            daw_engine::engine_handle_for_command_capture(256).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let result = block_on_test(apply_graph_commands(
@@ -13973,7 +13971,7 @@ mod tests {
         .expect("a create before the engine runs holds a dormant instance");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(256);
+            daw_engine::engine_handle_for_command_capture(256).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         // Refused by the mapping, which runs after the attach: the batch names
@@ -14022,7 +14020,7 @@ mod tests {
         .expect("a create before the engine runs holds a dormant instance");
 
         let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(256);
+            daw_engine::engine_handle_for_command_capture(256).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let attaching = block_on_test(apply_graph_commands(
@@ -14082,7 +14080,7 @@ mod tests {
         .expect("a create before the engine runs holds a dormant instance");
 
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(256);
+            daw_engine::engine_handle_for_command_capture(256).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let attaching = block_on_test(apply_graph_commands(
