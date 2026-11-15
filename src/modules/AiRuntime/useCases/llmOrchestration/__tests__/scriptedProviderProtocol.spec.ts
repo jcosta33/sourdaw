@@ -168,26 +168,6 @@ function openAiResponse(call: ProviderCall, turn: number): Record<string, unknow
     };
 }
 
-function installResponses(
-    transport: 'anthropic' | 'openai-compatible',
-    responses: readonly Record<string, unknown>[]
-): Record<string, unknown>[] {
-    const requests: Record<string, unknown>[] = [];
-    const transportMock = transport === 'anthropic' ? transportMocks.anthropic : transportMocks.openAiCompatible;
-    let responseIndex = 0;
-    transportMock.mockImplementation(async (input: MockTransportInput | MockOpenAiTransportInput) => {
-        requests.push(JSON.parse(input.body) as Record<string, unknown>);
-        const response = responses[responseIndex];
-        responseIndex += 1;
-        if (response === undefined) {
-            throw new Error('Scripted provider response fixture was exhausted.');
-        }
-        input.onBodyChunk(new TextEncoder().encode(JSON.stringify(response)));
-        return { status: 200, contentType: 'application/json' };
-    });
-    return requests;
-}
-
 async function runScriptedLoop(input: { transport: 'anthropic' | 'openai-compatible' }) {
     const controller = new AbortController();
     return runApplicationOwnedToolLoop({
@@ -265,7 +245,7 @@ describe('scripted provider protocol through the application-owned planning loop
     it.each(['anthropic', 'openai-compatible'] as const)(
         '%s replays native call and receipt IDs before a normal proposal',
         async (transport) => {
-            const requests = installResponses(
+            const { requests, refusals } = installStrictResponses(
                 transport,
                 PROVIDER_CALLS.map((call, index) =>
                     transport === 'anthropic' ? anthropicResponse(call, index + 1) : openAiResponse(call, index + 1)
@@ -296,13 +276,14 @@ describe('scripted provider protocol through the application-owned planning loop
                 expectOpenAiContinuation(requests[1]!, ['scripted-search']);
                 expectOpenAiContinuation(requests[2]!, ['scripted-search', 'scripted-discovery']);
             }
+            expect(refusals).toEqual([]);
         }
     );
 
     it.each(['anthropic', 'openai-compatible'] as const)(
         '%s refuses a proposal when command discovery is skipped after a real search',
         async (transport) => {
-            const requests = installResponses(
+            const { requests, refusals } = installStrictResponses(
                 transport,
                 OMIT_DISCOVERY_CALLS.map((call, index) =>
                     transport === 'anthropic' ? anthropicResponse(call, index + 1) : openAiResponse(call, index + 1)
@@ -323,6 +304,7 @@ describe('scripted provider protocol through the application-owned planning loop
             } else {
                 expectOpenAiContinuation(requests[1]!, ['scripted-search']);
             }
+            expect(refusals).toEqual([]);
         }
     );
 });
@@ -367,7 +349,7 @@ function findAnthropicToolResultIdProblem(messages: readonly Record<string, unkn
         if (callIds.length > 0) {
             const answers = readIds(readBlocks(messages[index + 1], 'tool_result'), 'tool_use_id');
             if (!sameIdsExactlyOnce(callIds, answers)) {
-                return `tool_use ids ${callIds.join(',')} are not answered by the next message exactly once`;
+                return `tool_use ids ${callIds.join(',')} are answered by tool_result ids ${answers.join(',')}, not exactly once each`;
             }
         }
         if (resultIds.length > 0) {
@@ -447,15 +429,16 @@ function withMismatchedToolResultIds(transport: Transport, request: Record<strin
 type StrictDoubleOptions = { mismatchToolResultIds?: boolean };
 
 /**
- * Like installResponses, but strict like the real APIs: a request whose tool results do not answer the
+ * A scripted provider double that is strict like the real APIs: a request whose tool results do not answer the
  * preceding assistant turn's tool calls is refused with a 400, and it is recorded either way.
  */
 function installStrictResponses(
     transport: Transport,
     responses: readonly Record<string, unknown>[],
     options: StrictDoubleOptions = {}
-): Record<string, unknown>[] {
+): { requests: Record<string, unknown>[]; refusals: string[] } {
     const requests: Record<string, unknown>[] = [];
+    const refusals: string[] = [];
     const transportMock = transport === 'anthropic' ? transportMocks.anthropic : transportMocks.openAiCompatible;
     let responseIndex = 0;
     transportMock.mockImplementation(async (input: MockTransportInput | MockOpenAiTransportInput) => {
@@ -465,6 +448,7 @@ function installStrictResponses(
         requests.push(request);
         const problem = findToolResultIdProblem(transport, request);
         if (problem !== null) {
+            refusals.push(problem);
             input.onBodyChunk(new TextEncoder().encode(JSON.stringify({ error: { message: problem } })));
             return { status: 400, contentType: 'application/json' };
         }
@@ -476,7 +460,7 @@ function installStrictResponses(
         input.onBodyChunk(new TextEncoder().encode(JSON.stringify(response)));
         return { status: 200, contentType: 'application/json' };
     });
-    return requests;
+    return { requests, refusals };
 }
 
 function scriptedReply(transport: Transport, call: ProviderCall, turn: number): Record<string, unknown> {
@@ -628,7 +612,7 @@ describe('scripted value choice follows the provider protocols', () => {
         '%s receives the value request with its baselines and yields the chosen in-window values',
         async (transport) => {
             valueChoiceRoute.transport.value = transport;
-            const requests = installStrictResponses(transport, [
+            const { requests } = installStrictResponses(transport, [
                 scriptedReply(transport, chooseCall('scripted-values', VALUE_PAIRS, inWindowGain), 1),
             ]);
 
@@ -661,7 +645,7 @@ describe('scripted value choice follows the provider protocols', () => {
         async (transport) => {
             valueChoiceRoute.transport.value = transport;
             const answeredPairs = VALUE_PAIRS.slice(0, 1);
-            const requests = installStrictResponses(transport, [
+            const { requests } = installStrictResponses(transport, [
                 scriptedReply(transport, chooseCall('scripted-skip-1', answeredPairs, inWindowGain), 1),
                 scriptedReply(transport, chooseCall('scripted-skip-2', answeredPairs, inWindowGain), 2),
             ]);
@@ -688,7 +672,7 @@ describe('scripted value choice follows the provider protocols', () => {
     it.each(['anthropic', 'openai-compatible'] as const)(
         '%s ends the planning loop non-complete when a tool result carries a mismatched id',
         async (transport) => {
-            const requests = installStrictResponses(
+            const { requests, refusals } = installStrictResponses(
                 transport,
                 PROVIDER_CALLS.map((call, index) => scriptedReply(transport, call, index + 1)),
                 { mismatchToolResultIds: true }
@@ -702,7 +686,9 @@ describe('scripted value choice follows the provider protocols', () => {
             expect(outcome).not.toBe('complete');
             expect(requests).toHaveLength(2);
             expect(findToolResultIdProblem(transport, requests[0] ?? {})).toBeNull();
-            expect(findToolResultIdProblem(transport, requests[1] ?? {})).not.toBeNull();
+            // The refusal is the injected id's, not a dropped or reordered tool result.
+            expect(refusals).toHaveLength(1);
+            expect(refusals[0]).toContain('scripted-search-mismatch');
         }
     );
 
@@ -710,7 +696,7 @@ describe('scripted value choice follows the provider protocols', () => {
     it.each(['anthropic', 'openai-compatible'] as const)(
         '%s continuation assertions fail on a mismatched tool-result id',
         async (transport) => {
-            const requests = installStrictResponses(
+            const { requests } = installStrictResponses(
                 transport,
                 PROVIDER_CALLS.map((call, index) => scriptedReply(transport, call, index + 1))
             );

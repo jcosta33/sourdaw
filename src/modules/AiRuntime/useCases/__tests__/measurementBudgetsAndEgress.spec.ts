@@ -1,7 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
@@ -9,6 +5,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { generateMidiVariations, getAiMidiHandlers, handleGenerateMidiPrompt } from '#/modules/AiGeneration/useCases';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
     createTrack,
@@ -38,9 +35,11 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
+import { discoverHostedBodyCensus } from '../../__tests__/hostedBodyCensus';
 import { containsSampleData, MAX_BAND_VALUES, parseEncodedJson } from '../../__tests__/hostedSampleDataDetector';
 import {
     AGENT_DATA_CATEGORIES,
@@ -63,7 +62,6 @@ import { generateOpenAiCompatibleToolCalls } from '../../repositories/cloudLlm/c
 import { generateOpenAiResponsesToolCalls } from '../../repositories/cloudLlm/cloudInference/generateOpenAiResponsesToolCalls';
 import { AUTO_TOOL_CHOICE } from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { requestAnthropicStream } from '../../repositories/cloudLlm/cloudInference/requestAnthropicStream';
-import { streamCloudChatCompletion } from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { streamOpenAiCompatibleChatCompletion } from '../../repositories/cloudLlm/cloudInference/streamOpenAiCompatibleChatCompletion';
 import { streamOpenAiResponses } from '../../repositories/cloudLlm/cloudInference/streamOpenAiResponses';
 import {
@@ -71,6 +69,7 @@ import {
     type OpenAiCloudRuntime,
     type OpenAiCompatibleCloudRuntime,
 } from '../../repositories/cloudLlm/cloudSession';
+import { probeProviderGatewaySession } from '../../repositories/probeProviderGatewaySession';
 import {
     compileProviderAdapterInstallation,
     OPENAI_RESPONSES_ADAPTER_ID,
@@ -80,21 +79,25 @@ import { chatStore } from '../../stores/chatStore';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { admitCreativeInterpretation } from '../admitCreativeInterpretation';
+import { streamExplainChatResponse } from '../agentRequestOrchestration/streamExplainChatResponse';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentWorkBudget } from '../agentWorkBudget';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
-import { buildAgentContext } from '../buildAgentContext';
 import { configureAgentResourceLimits } from '../configureAgentResourceLimits';
 import { executeAnalysisMeasure } from '../executeAnalysisMeasure';
-import { getPlanningProviderToolSchemas } from '../getPlanningProviderToolSchemas';
+import { explainMixHealthReport } from '../explainMixHealthReport';
 import { getProjectContext } from '../getProjectContext';
 import { getProviderRouteView } from '../getProviderRouteView';
 import { generateToolPlanningOutcome, type ProviderAttemptAdmission } from '../llmOrchestration/inference';
+import { mixHealthAnalysis } from '../mixHealthAnalysis';
+import { parsePromptToActions } from '../parsePromptToActions';
 import { planPromptActions } from '../planPromptActions';
 import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
-import { streamHostedModelText } from '../streamHostedModelText';
+import { sendChatMessage } from '../sendChatMessage';
 import { buildVibeBatchCorrectionMessage } from '../vibeRun/buildVibeBatchCorrectionMessage';
 import { VIBE_BATCH_VALUE_TOOLS, type VibeBatchValueRequest } from '../vibeRun/buildVibeBatchValueRequest';
+import { chooseVibeBatchValues } from '../vibeRun/chooseVibeBatchValues';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -195,6 +198,24 @@ vi.mock('../../repositories/cloudLlm/getCloudProviderRuntime', async (importOrig
     const original = await importOriginal<typeof import('../../repositories/cloudLlm/getCloudProviderRuntime')>();
     return { getCloudProviderRuntime: () => hostedRuntime.current ?? original.getCloudProviderRuntime() };
 });
+
+// The gateway is what the capability probe reaches; the dialect transports are doubled above it.
+const gatewayRequests = vi.hoisted(() => [] as { operation: string; body: unknown }[]);
+vi.mock('../../repositories/providerGateway', () => ({
+    runProviderGatewayRequest: (request: {
+        operation: string;
+        body: unknown;
+        onResponseStart: (response: { status: number }) => void;
+    }) => {
+        gatewayRequests.push({ operation: request.operation, body: request.body });
+        request.onResponseStart({ status: 200 });
+        return Promise.resolve();
+    },
+}));
+
+vi.mock('../../repositories/cloudLlm/isCloudAvailable', () => ({
+    isCloudAvailable: () => hostedRuntime.current !== null,
+}));
 
 const requestAnthropic = vi.hoisted(() => vi.fn());
 const requestOpenAiResponses = vi.hoisted(() => vi.fn());
@@ -499,6 +520,7 @@ afterEach(() => {
     removeCrdtDoc('root');
     vi.unstubAllGlobals();
     hostedRuntime.current = null;
+    gatewayRequests.length = 0;
 });
 
 describe('a planner measurement draws on the run budgets', () => {
@@ -1621,6 +1643,36 @@ describe('no sample data reaches a hosted provider through a vibe batch value re
 
         expect(bodies.map((body) => containsSampleData(body[dialect]))).toEqual([true, true]);
     });
+
+    // Red when chooseVibeBatchValues starts sending samples beside the figures, or stops sending the figures.
+    it.each(DIALECTS)('sends the %s request chooseVibeBatchValues makes holding figures only', async (dialect) => {
+        await selectHostedDialect(dialect);
+        createRun();
+
+        const bodies = await recordHostedBodies(() =>
+            chooseVibeBatchValues({ runId: RUN_ID, request: valueRequest(0.42) })
+        );
+
+        expect(bodies.length).toBeGreaterThan(0);
+        expect(JSON.stringify(bodies)).toContain('frequencyBandEnergy');
+        expect(bodies.map(containsSampleData)).toEqual(bodies.map(() => false));
+    });
+
+    // Red when the detector stops flagging the request chooseVibeBatchValues sends for a baseline carrying a series.
+    it.each(DIALECTS)(
+        'flags the %s request chooseVibeBatchValues makes for a 1024-sample baseline',
+        async (dialect) => {
+            await selectHostedDialect(dialect);
+            createRun();
+
+            const bodies = await recordHostedBodies(() =>
+                chooseVibeBatchValues({ runId: RUN_ID, request: valueRequest(SAMPLE_SERIES) })
+            );
+
+            expect(bodies.length).toBeGreaterThan(0);
+            expect(bodies.some(containsSampleData)).toBe(true);
+        }
+    );
 });
 
 type StreamBodies = { anthropic: unknown; openAiResponses: unknown; openAiCompatible: unknown };
@@ -1689,7 +1741,7 @@ describe('no sample data reaches a hosted provider through a streaming chat requ
     });
 });
 
-const EXPLAIN_DIALECTS = {
+const HOSTED_DIALECTS = {
     anthropic: {
         runtime: anthropicRuntime,
         info: {
@@ -1719,7 +1771,8 @@ const EXPLAIN_DIALECTS = {
     },
 } as const;
 
-type ExplainDialect = keyof typeof EXPLAIN_DIALECTS;
+type HostedDialect = keyof typeof HOSTED_DIALECTS;
+const ALL_HOSTED_DIALECTS = ['anthropic', 'openAiResponses', 'openAiCompatible'] as const;
 
 /** Every body a hosted request puts on the wire while `action` runs, whichever transport carries it. */
 async function recordHostedBodies(action: () => Promise<unknown>): Promise<unknown[]> {
@@ -1747,294 +1800,545 @@ async function recordHostedBodies(action: () => Promise<unknown>): Promise<unkno
     return sent.map((body) => JSON.parse(body) as unknown);
 }
 
-function selectHostedDialect(dialect: ExplainDialect): void {
-    hostedRuntime.current = EXPLAIN_DIALECTS[dialect].runtime;
+/** Routes the real hosted chain to one dialect: only the transports below the adapters are doubled. */
+async function selectHostedDialect(dialect: HostedDialect): Promise<void> {
+    hostedRuntime.current = HOSTED_DIALECTS[dialect].runtime;
     backend.chain.value = ['cloud'];
-    backend.getCloudProviderInfo.mockReturnValue(EXPLAIN_DIALECTS[dialect].info);
-}
-
-/** The request Explain's read-only intake sends: its own tool profile, replaying the receipt it measured. */
-async function buildExplainIntakeBodies(dialect: ExplainDialect, receipt: ApplicationToolReceipt): Promise<unknown[]> {
-    selectHostedDialect(dialect);
-    // The real dispatcher and dialect adapters answer; only the transports are doubled.
+    backend.getCloudProviderInfo.mockReturnValue(HOSTED_DIALECTS[dialect].info);
     const actual = await vi.importActual<
         typeof import('../../repositories/cloudLlm/cloudInference/generateCloudToolCalls')
     >('../../repositories/cloudLlm/cloudInference/generateCloudToolCalls');
     backend.generateCloudToolCalls.mockImplementation(actual.generateCloudToolCalls);
-    createRun();
-    return recordHostedBodies(() =>
-        generateToolPlanningOutcome(
-            'system',
-            'how loud is the mix',
-            getPlanningProviderToolSchemas('readonly-answer'),
-            undefined,
-            'how loud is the mix',
-            undefined,
-            { runId: RUN_ID, requestId: 'explain-intake', cancellationGeneration: 0 },
-            () => ({ status: 'admitted' }),
-            AUTO_TOOL_CHOICE,
-            {
-                firstUserMessage: 'how loud is the mix',
-                history: historyOf(receipt),
-                budgetNote: 'Budget remaining.',
-                messageDataCategories: ['measurement'],
+}
+
+const SAMPLE_SERIES = Array.from({ length: 1_024 }, (_unused, index) => Math.sin(index));
+
+/** What a case builds a hosted request from: a clean value of its own, or the 1024-sample series. */
+type Injection = { kind: 'clean' } | { kind: 'samples'; json: string };
+
+type ComposedBodyBuilder = {
+    /** Runs the production module's exported entry on the hosted route and returns the bodies the transport received. */
+    build: (dialect: HostedDialect, injection: Injection) => Promise<unknown[]>;
+    /** Text the clean body must carry, proving the module's own composition reached the wire. */
+    carries: string;
+    /** False when the module takes no input a sample series could ride in on. */
+    injectable?: boolean;
+};
+
+function textFor(injection: Injection, clean: string): string {
+    return injection.kind === 'clean' ? clean : injection.json;
+}
+
+/**
+ * One clean case and one paired red case per builder and dialect: the clean case runs the module and
+ * asserts the body the transport received; the red case feeds a 1024-sample series through the same
+ * entry and expects the detector to flag the body.
+ */
+function describeNoSampleData(title: string, builders: Readonly<Record<string, ComposedBodyBuilder>>): void {
+    describe(title, () => {
+        const named = Object.entries(builders);
+        const injectable = named.filter(([, builder]) => builder.injectable !== false);
+
+        // Red when the module's body starts carrying samples, a typed array or a blob to the wire.
+        it.each(
+            named.flatMap(([name, builder]) => ALL_HOSTED_DIALECTS.map((dialect) => [name, dialect, builder] as const))
+        )(
+            'sends %s on the %s dialect holding its own composition and figures only',
+            async (_name, dialect, builder) => {
+                createRun();
+                const bodies = await builder.build(dialect, { kind: 'clean' });
+
+                expect(bodies.length).toBeGreaterThan(0);
+                expect(JSON.stringify(bodies)).toContain(builder.carries);
+                expect(bodies.map(containsSampleData)).toEqual(bodies.map(() => false));
             }
-        )
-    );
+        );
+
+        // Red when the detector stops flagging the body of this entry once a 1024-sample series rides in on it.
+        it.each(
+            injectable.flatMap(([name, builder]) =>
+                ALL_HOSTED_DIALECTS.map((dialect) => [name, dialect, builder] as const)
+            )
+        )(
+            'flags %s on the %s dialect once a 1024-sample array rides in on its input',
+            async (_name, dialect, builder) => {
+                createRun();
+                const bodies = await builder.build(dialect, { kind: 'samples', json: JSON.stringify(SAMPLE_SERIES) });
+
+                expect(bodies.length).toBeGreaterThan(0);
+                expect(bodies.some(containsSampleData)).toBe(true);
+            }
+        );
+    });
 }
 
-/** The messages Explain's answer stream sends: the agent context holding the receipt, then the question. */
-function explainStreamMessages(receipt: ApplicationToolReceipt, question: string) {
-    const context = buildAgentContext({
-        fixedPolicy: 'Answer from the measurements.',
-        prompt: question,
-        context: getProjectContext(),
-        projectRevision: captureProjectRevision(),
-        receipts: [{ id: receipt.callId, summary: receipt.summary }],
+const EXPLAIN_QUESTION = 'how loud is the mix';
+
+function provideEarlierConversation(): void {
+    chatStore.set({
+        messages: [
+            { id: 'earlier-user', role: 'user', content: 'earlier question about the low end', timestamp: 1 },
+            { id: 'earlier-assistant', role: 'assistant', content: 'earlier answer about the low end', timestamp: 2 },
+        ],
+        isGenerating: false,
+        enableReasoning: true,
+        chatMode: 'explain',
     });
-    return [
-        { role: 'system', content: context.message },
-        { role: 'user', content: question },
-    ];
 }
 
-async function buildExplainStreamBodies(dialect: ExplainDialect, question: string, receipt: ApplicationToolReceipt) {
-    selectHostedDialect(dialect);
-    const bodies = await recordHostedBodies(() =>
-        streamCloudChatCompletion(explainStreamMessages(receipt, question), () => undefined, {
-            signal: new AbortController().signal,
-        })
-    );
-    return bodies;
+async function claimProviderLease() {
+    const claimed = agentRunWorkLease.claim({
+        runId: RUN_ID,
+        workId: 'provider-explain',
+        ownerKind: 'provider',
+        cleanupOwner: 'provider-adapter',
+        idempotencyKey: 'provider:explain',
+        receiptIdentity: 'provider:explain',
+        idempotent: false,
+        retriable: true,
+    });
+    if (claimed.status !== 'claimed') {
+        throw new Error(`Expected the provider lease to be claimed: ${claimed.status}`);
+    }
+    return claimed.lease;
 }
 
-describe('no sample data reaches a hosted provider through an Explain request', () => {
-    const DIALECTS = ['anthropic', 'openAiResponses', 'openAiCompatible'] as const;
+const EXPLAIN_CASE = 'no sample data reaches a hosted provider through an Explain request';
+const MIX_HEALTH_CASE = 'no sample data reaches a hosted provider through Mix Health';
+const AI_GENERATION_CASE = 'no sample data reaches a hosted provider through AI MIDI generation';
+const GATEWAY_CASE = 'no sample data reaches a hosted provider through the provider gateway';
 
-    // Red when Explain's intake request starts carrying samples, a buffer or a blob beside its measurement receipt.
-    it.each(DIALECTS)(
-        'sends the %s Explain intake holding the measurement receipt as figures only',
-        async (dialect) => {
-            const receipt = await measurementReceipt('project', 'measure-1');
-
-            const bodies = await buildExplainIntakeBodies(dialect, receipt);
-
-            expect(bodies).toHaveLength(1);
-            expect(receiptsOn(bodies[0]).map((onWire) => onWire.callId)).toEqual(['measure-1']);
-            expect(containsSampleData(bodies[0])).toBe(false);
-        }
-    );
-
-    // Red when the detector stops flagging an Explain intake whose receipt carries a 1024-sample array.
-    it.each(DIALECTS)('flags the %s Explain intake whose receipt carries a 1024-sample array', async (dialect) => {
-        const receipt = await measurementReceipt('project', 'measure-1');
-        const samples = Array.from({ length: 1_024 }, (_unused, index) => Math.sin(index));
-
-        const bodies = await buildExplainIntakeBodies(dialect, withTargetField(receipt, { levels: samples }));
-
-        expect(bodies).toHaveLength(1);
-        expect(containsSampleData(bodies[0])).toBe(true);
-    });
-
-    // Red when Explain's answer stream starts carrying samples beside the receipt its context cites.
-    it.each(DIALECTS)(
-        'sends the %s Explain answer stream holding the context and receipt summary only',
-        async (dialect) => {
-            const receipt = await measurementReceipt('project', 'measure-1');
-
-            const bodies = await buildExplainStreamBodies(dialect, 'how loud is it', receipt);
-
-            expect(bodies).toHaveLength(1);
-            expect(JSON.stringify(bodies[0])).toContain('measure-1');
-            expect(containsSampleData(bodies[0])).toBe(false);
-        }
-    );
-
-    // Red when the detector stops flagging an Explain answer stream whose question carries a sample series.
-    it.each(DIALECTS)('flags the %s Explain answer stream whose turn carries a 1024-sample array', async (dialect) => {
-        const receipt = await measurementReceipt('project', 'measure-1');
-        const samples = Array.from({ length: 1_024 }, (_unused, index) => Math.sin(index));
-
-        const bodies = await buildExplainStreamBodies(dialect, JSON.stringify({ levels: samples }), receipt);
-
-        expect(bodies).toHaveLength(1);
-        expect(containsSampleData(bodies[0])).toBe(true);
-    });
+describeNoSampleData(EXPLAIN_CASE, {
+    'the read-only intake planned by parsePromptToActions': {
+        carries: EXPLAIN_QUESTION,
+        build: async (dialect, injection) => {
+            await selectHostedDialect(dialect);
+            return recordHostedBodies(() =>
+                parsePromptToActions({
+                    prompt: textFor(injection, EXPLAIN_QUESTION),
+                    context: getProjectContext(),
+                    projectRevision: 'revision',
+                    profile: 'readonly-answer',
+                })
+            );
+        },
+    },
+    'the chat request sent through sendChatMessage': {
+        carries: EXPLAIN_QUESTION,
+        build: async (dialect, injection) => {
+            await selectHostedDialect(dialect);
+            chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'explain' });
+            return recordHostedBodies(() => sendChatMessage(textFor(injection, EXPLAIN_QUESTION), { mode: 'explain' }));
+        },
+    },
+    'the answer stream run by streamExplainChatResponse': {
+        carries: 'earlier question about the low end',
+        build: async (dialect, injection) => {
+            await selectHostedDialect(dialect);
+            provideEarlierConversation();
+            const providerLease = await claimProviderLease();
+            return recordHostedBodies(() =>
+                streamExplainChatResponse({
+                    userText: textFor(injection, EXPLAIN_QUESTION),
+                    runId: RUN_ID,
+                    backend: 'cloud',
+                    providerLease,
+                    providerReceiptIdentity: 'provider:explain',
+                    providerWorkId: 'provider-explain',
+                })
+            );
+        },
+    },
 });
 
-async function buildHostedTextBodies(dialect: ExplainDialect, userContent: string): Promise<unknown[]> {
-    selectHostedDialect(dialect);
-    return recordHostedBodies(() =>
-        streamHostedModelText({
-            correlationId: `hosted-text-${dialect}`,
-            messages: [
-                { role: 'system', content: 'system' },
-                { role: 'user', content: userContent },
-            ],
-            maxOutputTokens: 1_024,
-            onToken: () => undefined,
-            signal: new AbortController().signal,
-        })
-    );
+describeNoSampleData(MIX_HEALTH_CASE, {
+    'the analysis envelope built by mixHealthAnalysis': {
+        carries: 'Drums',
+        build: async (dialect, injection) => {
+            await selectHostedDialect(dialect);
+            if (injection.kind === 'samples') {
+                trackStore.set({
+                    tracks: [
+                        { ...createTrack({ id: 'drums', name: injection.json, kind: 'audio' }) },
+                        createTrack({ id: 'master', name: 'Master', kind: 'master' }),
+                    ],
+                    selectedTrackId: null,
+                    ghostClips: [],
+                });
+            }
+            return recordHostedBodies(() => mixHealthAnalysis({ onToken: () => undefined }));
+        },
+    },
+    'the beginner restatement built by explainMixHealthReport': {
+        carries: 'patient music teacher',
+        build: async (dialect, injection) => {
+            await selectHostedDialect(dialect);
+            return recordHostedBodies(() =>
+                explainMixHealthReport({
+                    report: textFor(injection, 'Low end is heavy.'),
+                    onToken: () => undefined,
+                })
+            );
+        },
+    },
+});
+
+type MidiFixtureNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
+
+/** A MIDI clip holding two notes, so the generation callers have a source to describe. */
+function installMidiClip(clipId: string): void {
+    trackStore.set({
+        tracks: [
+            createTrack({ id: 'master', name: 'Master', kind: 'master' }),
+            {
+                ...createTrack({ id: 'keys', name: 'Keys', kind: 'midi' }),
+                clips: [
+                    {
+                        id: clipId,
+                        trackId: 'keys',
+                        name: 'Verse',
+                        startBeat: 0,
+                        endBeat: 8,
+                        type: 'midi',
+                        fadeInBeats: 0,
+                        fadeOutBeats: 0,
+                        gain: 1,
+                        color: '',
+                        locked: false,
+                        muted: false,
+                    },
+                ],
+            },
+        ],
+        selectedTrackId: null,
+        ghostClips: [],
+    });
+    const notes: MidiFixtureNote[] = [
+        { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 },
+        { id: 'note-2', pitch: 64, startBeat: 1, duration: 1, velocity: 80 },
+    ];
+    midiStore.set({
+        probabilitySeed: 1,
+        notesByClipId: { [clipId]: notes },
+        ccByClipId: {},
+        pitchBendByClipId: {},
+    });
 }
 
-describe('no sample data reaches a hosted provider through a hosted text stream', () => {
-    const DIALECTS = ['anthropic', 'openAiResponses', 'openAiCompatible'] as const;
+describeNoSampleData(AI_GENERATION_CASE, {
+    'the prompt generation run by handleGenerateMidiPrompt': {
+        carries: 'warm pad',
+        build: async (dialect, injection) => {
+            await selectHostedDialect(dialect);
+            return recordHostedBodies(() => handleGenerateMidiPrompt(textFor(injection, 'warm pad in A minor')));
+        },
+    },
+    'the variations request built by generateMidiVariations': {
+        carries: 'pitch=60',
+        injectable: false,
+        build: async (dialect) => {
+            await selectHostedDialect(dialect);
+            installMidiClip('clip-1');
+            return recordHostedBodies(() => generateMidiVariations('clip-1'));
+        },
+    },
+    'the variation handler': {
+        carries: 'Create a variation',
+        build: async (dialect, injection) => {
+            await selectHostedDialect(dialect);
+            const clipId = textFor(injection, 'clip-1');
+            installMidiClip(clipId);
+            return recordHostedBodies(() =>
+                getAiMidiHandlers().variationMidi.execute({ type: 'variationMidi', payload: { clipId } })
+            );
+        },
+    },
+    'the completion handler': {
+        carries: 'Continue this melody',
+        build: async (dialect, injection) => {
+            await selectHostedDialect(dialect);
+            const clipId = textFor(injection, 'clip-1');
+            installMidiClip(clipId);
+            return recordHostedBodies(() =>
+                getAiMidiHandlers().completeMidi.execute({
+                    type: 'completeMidi',
+                    payload: { clipId, bars: 2, direction: 'forward' },
+                })
+            );
+        },
+    },
+    'the bassline handler': {
+        carries: 'Existing notes in clip',
+        build: async (dialect, injection) => {
+            await selectHostedDialect(dialect);
+            const clipId = textFor(injection, 'clip-1');
+            installMidiClip(clipId);
+            return recordHostedBodies(() =>
+                getAiMidiHandlers().generateBassline.execute({ type: 'generateBassline', payload: { clipId } })
+            );
+        },
+    },
+});
 
-    // Red when the shared hosted text stream (mix health, chat text) starts carrying samples with a measured turn.
-    it.each(DIALECTS)('sends the %s hosted text stream holding text and figures only', async (dialect) => {
-        const receipt = await measurementReceipt('project', 'measure-1');
+describe(GATEWAY_CASE, () => {
+    // Red when the capability probe starts sending a body, which would carry whatever it was given.
+    it('sends the capability probe with no body at all', async () => {
+        await probeProviderGatewaySession('probe-session', new AbortController().signal);
 
-        const bodies = await buildHostedTextBodies(dialect, JSON.stringify({ question: 'how loud', receipt }));
-
-        expect(bodies).toHaveLength(1);
-        expect(containsSampleData(bodies[0])).toBe(false);
-    });
-
-    // Red when the detector stops flagging a hosted text stream whose turn carries a sample series.
-    it.each(DIALECTS)('flags the %s hosted text stream whose turn carries a 1024-sample array', async (dialect) => {
-        const samples = Array.from({ length: 1_024 }, (_unused, index) => Math.sin(index));
-
-        const bodies = await buildHostedTextBodies(dialect, JSON.stringify({ levels: samples }));
-
-        expect(bodies).toHaveLength(1);
-        expect(containsSampleData(bodies[0])).toBe(true);
+        expect(gatewayRequests).toHaveLength(1);
+        expect(gatewayRequests[0]?.operation).toBe('probe');
+        expect(gatewayRequests[0]?.body).toBeNull();
+        expect(containsSampleData(gatewayRequests[0]?.body)).toBe(false);
     });
 });
 
 const TOOL_CALL_CASE = 'no sample data reaches a hosted provider';
 const VALUE_CASE = 'no sample data reaches a hosted provider through a vibe batch value request';
 const STREAM_CASE = 'no sample data reaches a hosted provider through a streaming chat request';
-const EXPLAIN_CASE = 'no sample data reaches a hosted provider through an Explain request';
-const TEXT_CASE = 'no sample data reaches a hosted provider through a hosted text stream';
 
 /**
- * Every module that builds or sends a hosted request body, and the describe whose cases put that
- * builder's real body through the detector. The module set is derived from the source tree below
- * (see the census rule); a row here is the claim about which case covers it.
+ * `composes`: the module puts content of its own into a hosted body, and each named case runs that
+ * module's exported entry and inspects the body the transport received. `forwards`: the module adds no
+ * body content of its own; each named module is the composer whose case covers what it passes on (a
+ * transport carries what the named builders hand it; a caller reaches the named composers).
  */
-const HOSTED_BODY_COVERAGE: Readonly<Record<string, readonly string[]>> = {
-    'repositories/cloudLlm/cloudInference/requestAnthropicProvider.ts': [TOOL_CALL_CASE, STREAM_CASE, EXPLAIN_CASE],
-    'repositories/cloudLlm/cloudInference/requestOpenAiProvider.ts': [TOOL_CALL_CASE, STREAM_CASE, EXPLAIN_CASE],
-    'repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts': [TOOL_CALL_CASE, VALUE_CASE, EXPLAIN_CASE],
-    'repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts': [
-        TOOL_CALL_CASE,
-        VALUE_CASE,
-        EXPLAIN_CASE,
-    ],
-    'repositories/cloudLlm/cloudInference/generateOpenAiResponsesToolCalls.ts': [
-        TOOL_CALL_CASE,
-        VALUE_CASE,
-        EXPLAIN_CASE,
-    ],
-    'repositories/cloudLlm/cloudInference/generateCloudToolCalls.ts': [EXPLAIN_CASE],
-    'repositories/cloudLlm/cloudInference/requestAnthropicStream.ts': [STREAM_CASE, EXPLAIN_CASE, TEXT_CASE],
-    'repositories/cloudLlm/cloudInference/streamOpenAiResponses.ts': [STREAM_CASE, EXPLAIN_CASE, TEXT_CASE],
-    'repositories/cloudLlm/cloudInference/streamOpenAiCompatibleChatCompletion.ts': [
-        STREAM_CASE,
-        EXPLAIN_CASE,
-        TEXT_CASE,
-    ],
-    'repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts': [EXPLAIN_CASE, TEXT_CASE],
-    'useCases/llmOrchestration/inference.ts': [EXPLAIN_CASE],
-    'useCases/llmOrchestration/generateToolCalls.ts': [EXPLAIN_CASE],
-    'useCases/parsePromptToActions.ts': [EXPLAIN_CASE],
-    'useCases/planPromptActions.ts': [EXPLAIN_CASE],
-    'useCases/vibeRun/chooseVibeBatchValues.ts': [VALUE_CASE],
-    'useCases/agentRequestOrchestration/streamExplainChatResponse.ts': [EXPLAIN_CASE],
-    'useCases/streamHostedModelText.ts': [TEXT_CASE],
-    'useCases/aiRuntimeQueries/streamCloudChatCompletion.ts': [TEXT_CASE],
-    'useCases/runMixHealthModelText.ts': [TEXT_CASE],
+type CoverageRow = { kind: 'composes'; cases: readonly string[] } | { kind: 'forwards'; via: readonly string[] };
+
+const AI = 'modules/AiRuntime';
+const INFERENCE = `${AI}/repositories/cloudLlm/cloudInference`;
+const USE_CASES = `${AI}/useCases`;
+const AI_GENERATION = 'modules/AiGeneration';
+
+const HOSTED_BODY_COVERAGE: Readonly<Record<string, CoverageRow>> = {
+    // Transports and their gateway: they carry the bodies the adapters hand them.
+    [`${INFERENCE}/requestAnthropicProvider.ts`]: {
+        kind: 'forwards',
+        via: [`${INFERENCE}/generateAnthropicToolCalls.ts`],
+    },
+    [`${INFERENCE}/requestOpenAiProvider.ts`]: {
+        kind: 'forwards',
+        via: [`${INFERENCE}/generateOpenAiResponsesToolCalls.ts`, `${INFERENCE}/generateOpenAiCompatibleToolCalls.ts`],
+    },
+    [`${AI}/repositories/providerGateway.ts`]: {
+        kind: 'forwards',
+        via: [`${INFERENCE}/generateAnthropicToolCalls.ts`, `${AI}/repositories/probeProviderGatewaySession.ts`],
+    },
+    [`${AI}/repositories/probeProviderGatewaySession.ts`]: { kind: 'composes', cases: [GATEWAY_CASE] },
+    [`${AI}/repositories/ensureAdapterCapabilities.ts`]: {
+        kind: 'forwards',
+        via: [`${AI}/repositories/probeProviderGatewaySession.ts`],
+    },
+    [`${AI}/repositories/cloudLlm/setCloudProviderConfig.ts`]: {
+        kind: 'forwards',
+        via: [`${AI}/repositories/probeProviderGatewaySession.ts`],
+    },
+    [`${USE_CASES}/cloudApiManagement/configureCloudProvider.ts`]: {
+        kind: 'forwards',
+        via: [`${AI}/repositories/probeProviderGatewaySession.ts`],
+    },
+    // Dialect adapters and stream builders compose their own wire bodies.
+    [`${INFERENCE}/generateAnthropicToolCalls.ts`]: { kind: 'composes', cases: [TOOL_CALL_CASE, EXPLAIN_CASE] },
+    [`${INFERENCE}/generateOpenAiCompatibleToolCalls.ts`]: { kind: 'composes', cases: [TOOL_CALL_CASE, EXPLAIN_CASE] },
+    [`${INFERENCE}/generateOpenAiResponsesToolCalls.ts`]: { kind: 'composes', cases: [TOOL_CALL_CASE, EXPLAIN_CASE] },
+    [`${INFERENCE}/generateCloudToolCalls.ts`]: { kind: 'composes', cases: [EXPLAIN_CASE, VALUE_CASE] },
+    [`${INFERENCE}/requestAnthropicStream.ts`]: { kind: 'composes', cases: [STREAM_CASE] },
+    [`${INFERENCE}/streamOpenAiResponses.ts`]: { kind: 'composes', cases: [STREAM_CASE] },
+    [`${INFERENCE}/streamOpenAiCompatibleChatCompletion.ts`]: { kind: 'composes', cases: [STREAM_CASE] },
+    [`${INFERENCE}/streamCloudChatCompletion.ts`]: { kind: 'composes', cases: [EXPLAIN_CASE, MIX_HEALTH_CASE] },
+    // Planning and chat.
+    [`${USE_CASES}/llmOrchestration/inference.ts`]: { kind: 'composes', cases: [EXPLAIN_CASE, VALUE_CASE] },
+    [`${USE_CASES}/llmOrchestration/generateToolCalls.ts`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/llmOrchestration/inference.ts`],
+    },
+    [`${USE_CASES}/parsePromptToActions.ts`]: { kind: 'composes', cases: [EXPLAIN_CASE] },
+    [`${USE_CASES}/planPromptActions.ts`]: { kind: 'forwards', via: [`${USE_CASES}/parsePromptToActions.ts`] },
+    [`${USE_CASES}/submitAdmittedPromptRequest.ts`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/parsePromptToActions.ts`],
+    },
+    [`${USE_CASES}/streamHostedModelText.ts`]: { kind: 'composes', cases: [MIX_HEALTH_CASE, AI_GENERATION_CASE] },
+    [`${USE_CASES}/aiRuntimeQueries/streamCloudChatCompletion.ts`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/streamHostedModelText.ts`],
+    },
+    [`${USE_CASES}/agentRequestOrchestration/streamExplainChatResponse.ts`]: {
+        kind: 'composes',
+        cases: [EXPLAIN_CASE],
+    },
+    [`${USE_CASES}/agentRequestOrchestration/orchestratePromptChatRequest.ts`]: {
+        kind: 'composes',
+        cases: [EXPLAIN_CASE],
+    },
+    [`${USE_CASES}/sendChatMessage.ts`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/agentRequestOrchestration/orchestratePromptChatRequest.ts`],
+    },
+    [`${USE_CASES}/handPromptRequestToChat.ts`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/agentRequestOrchestration/orchestratePromptChatRequest.ts`],
+    },
+    [`${USE_CASES}/resumeAgentRunDecision.ts`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/agentRequestOrchestration/orchestratePromptChatRequest.ts`],
+    },
+    [`${USE_CASES}/getAgentRunControlProjection.ts`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/agentRequestOrchestration/orchestratePromptChatRequest.ts`],
+    },
+    [`${USE_CASES}/aiPanelActions/proposeAnswerSuggestion.ts`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/agentRequestOrchestration/orchestratePromptChatRequest.ts`],
+    },
+    [`${USE_CASES}/agentRequestOrchestration/proposeNextScheduledBatch.ts`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/vibeRun/chooseVibeBatchValues.ts`],
+    },
+    [`${USE_CASES}/confirmPendingChatActions.ts`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/vibeRun/chooseVibeBatchValues.ts`],
+    },
+    [`${USE_CASES}/skipPendingVibeBatch.ts`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/vibeRun/chooseVibeBatchValues.ts`],
+    },
+    [`${USE_CASES}/vibeRun/chooseVibeBatchValues.ts`]: { kind: 'composes', cases: [VALUE_CASE] },
+    // Mix Health.
+    [`${USE_CASES}/mixHealthAnalysis.ts`]: { kind: 'composes', cases: [MIX_HEALTH_CASE] },
+    [`${USE_CASES}/explainMixHealthReport.ts`]: { kind: 'composes', cases: [MIX_HEALTH_CASE] },
+    [`${USE_CASES}/runMixHealthModelText.ts`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/mixHealthAnalysis.ts`, `${USE_CASES}/explainMixHealthReport.ts`],
+    },
+    // AI MIDI generation.
+    [`${AI_GENERATION}/useCases/llmMidiGeneration.ts`]: { kind: 'composes', cases: [AI_GENERATION_CASE] },
+    [`${AI_GENERATION}/useCases/generateMidiVariations.ts`]: { kind: 'composes', cases: [AI_GENERATION_CASE] },
+    [`${AI_GENERATION}/handlers/aiMidi/handleVariationMidi.ts`]: { kind: 'composes', cases: [AI_GENERATION_CASE] },
+    [`${AI_GENERATION}/handlers/aiMidi/handleCompleteMidi.ts`]: { kind: 'composes', cases: [AI_GENERATION_CASE] },
+    [`${AI_GENERATION}/handlers/aiMidi/handleGenerateBassline.ts`]: { kind: 'composes', cases: [AI_GENERATION_CASE] },
+    [`${AI_GENERATION}/useCases/actions/handleGenerateMidiPrompt.ts`]: {
+        kind: 'forwards',
+        via: [`${AI_GENERATION}/useCases/llmMidiGeneration.ts`],
+    },
+    [`${AI_GENERATION}/useCases/getAiMidiHandlers.ts`]: {
+        kind: 'forwards',
+        via: [`${AI_GENERATION}/handlers/aiMidi/handleVariationMidi.ts`],
+    },
+    'app/getProductionCommandHandlerMaps.ts': {
+        kind: 'forwards',
+        via: [`${AI_GENERATION}/handlers/aiMidi/handleVariationMidi.ts`],
+    },
+    // Presentation: reached and terminal, each reaching the composers named.
+    [`${AI}/presentations/views/ChatPanel.tsx`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/agentRequestOrchestration/orchestratePromptChatRequest.ts`],
+    },
+    [`${AI}/presentations/views/AgentRunDecisionPanel.tsx`]: {
+        kind: 'forwards',
+        via: [`${USE_CASES}/agentRequestOrchestration/orchestratePromptChatRequest.ts`],
+    },
+    [`${AI}/presentations/views/GenerativeAiPanel.tsx`]: {
+        kind: 'forwards',
+        via: [`${AI_GENERATION}/useCases/llmMidiGeneration.ts`],
+    },
+    'modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx': {
+        kind: 'forwards',
+        via: [`${USE_CASES}/mixHealthAnalysis.ts`, `${USE_CASES}/explainMixHealthReport.ts`],
+    },
+    'modules/Preferences/presentations/views/preferences/AiSection.tsx': {
+        kind: 'forwards',
+        via: [`${AI}/repositories/probeProviderGatewaySession.ts`],
+    },
+    'modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx': {
+        kind: 'forwards',
+        via: [`${AI_GENERATION}/useCases/generateMidiVariations.ts`],
+    },
+    'modules/WorkspaceShell/presentations/hooks/useAgentWorkspaceRunSelection.ts': {
+        kind: 'forwards',
+        via: [`${USE_CASES}/agentRequestOrchestration/orchestratePromptChatRequest.ts`],
+    },
+    'modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts': {
+        kind: 'forwards',
+        via: [`${USE_CASES}/parsePromptToActions.ts`],
+    },
+    'modules/WorkspaceShell/presentations/views/AgentWorkspace.tsx': {
+        kind: 'forwards',
+        via: [`${USE_CASES}/agentRequestOrchestration/orchestratePromptChatRequest.ts`],
+    },
 };
 
-const AI_RUNTIME_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const CLOUD_INFERENCE_DIR = join(AI_RUNTIME_ROOT, 'repositories/cloudLlm/cloudInference');
-
-function listSourceFiles(directory: string): string[] {
-    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-        const path = join(directory, entry.name);
-        if (entry.isDirectory()) {
-            return entry.name === '__tests__' ? [] : listSourceFiles(path);
-        }
-        const isSource =
-            entry.name.endsWith('.ts') && !entry.name.endsWith('.spec.ts') && !entry.name.endsWith('.d.ts');
-        return isSource ? [path] : [];
-    });
-}
-
-/** The AiRuntime source files each file imports, resolved from relative and `#/modules/AiRuntime/` specifiers. */
-function readImports(sources: ReadonlyMap<string, string>, file: string): string[] {
-    const text = sources.get(file) ?? '';
-    return [...text.matchAll(/(?:from|import\()\s*'([^']+)'/gu)].flatMap((match) => {
-        const specifier = match[1] ?? '';
-        let base: string;
-        if (specifier.startsWith('.')) {
-            base = resolve(dirname(file), specifier);
-        } else if (specifier.startsWith('#/modules/AiRuntime/')) {
-            base = join(AI_RUNTIME_ROOT, specifier.slice('#/modules/AiRuntime/'.length));
-        } else {
-            return [];
-        }
-        return [`${base}.ts`, join(base, 'index.ts')].filter((candidate) => sources.has(candidate)).slice(0, 1);
-    });
-}
-
-/**
- * Census rule: a transport is a cloudInference module that calls `runProviderGatewayRequest(` or
- * `fetch(`, so it reaches a hosted provider. A body builder is a cloudInference module that imports a
- * transport or another builder, to a fixpoint. A request site is a module outside cloudInference that
- * imports a builder, and a caller is a non-barrel module that imports a request site.
- */
-function discoverHostedBodyModules(): string[] {
-    const files = listSourceFiles(AI_RUNTIME_ROOT);
-    const sources = new Map(files.map((file) => [file, readFileSync(file, 'utf8')]));
-    const insideCloudInference = (file: string) => file.startsWith(`${CLOUD_INFERENCE_DIR}/`);
-    const transports = files.filter(
-        (file) => insideCloudInference(file) && /\b(?:runProviderGatewayRequest|fetch)\(/u.test(sources.get(file) ?? '')
-    );
-    const builders = new Set(transports);
-    for (let grew = true; grew;) {
-        grew = false;
-        for (const file of files) {
-            if (
-                insideCloudInference(file) &&
-                !builders.has(file) &&
-                readImports(sources, file).some((imported) => builders.has(imported))
-            ) {
-                builders.add(file);
-                grew = true;
+/** The titles of every describe vitest registered for this file, read from the collected suite tree. */
+function readRegisteredSuiteTitles(file: {
+    tasks: readonly { type: string; name: string; tasks?: unknown }[];
+}): string[] {
+    const titles: string[] = [];
+    const visit = (tasks: readonly { type: string; name: string; tasks?: unknown }[]): void => {
+        for (const task of tasks) {
+            if (task.type === 'suite') {
+                titles.push(task.name);
+                if (Array.isArray(task.tasks)) {
+                    visit(task.tasks as { type: string; name: string; tasks?: unknown }[]);
+                }
             }
         }
-    }
-    const outside = files.filter((file) => !insideCloudInference(file));
-    const sites = outside.filter((file) => readImports(sources, file).some((imported) => builders.has(imported)));
-    const callers = outside.filter(
-        (file) =>
-            !sites.includes(file) &&
-            !file.endsWith('/index.ts') &&
-            readImports(sources, file).some((imported) => sites.includes(imported))
-    );
-    return [...builders, ...sites, ...callers].map((file) => relative(AI_RUNTIME_ROOT, file)).sort();
+    };
+    visit(file.tasks);
+    return titles;
 }
 
 describe('every hosted request builder is covered by a no-sample-data case', () => {
-    // Red when the source tree holds a hosted request builder the coverage table does not name, or the
-    // table names one the tree no longer holds (add a transport or builder file, or drop a table row).
-    it('names exactly the hosted request builders the source tree holds', () => {
-        expect(Object.keys(HOSTED_BODY_COVERAGE).sort()).toEqual(discoverHostedBodyModules());
+    const census = discoverHostedBodyCensus();
+
+    // Red when the source tree holds a module a hosted body passes through that the table does not name,
+    // or the table names one the tree no longer holds (add a transport or caller file, or drop a row).
+    it('names exactly the modules a hosted request body is built or passed through', () => {
+        expect(Object.keys(HOSTED_BODY_COVERAGE).sort()).toEqual([...census.modules]);
     });
 
-    // Red when a table row names a case that is not a describe of this spec, or names none.
-    it('points every builder at a describe this spec holds', () => {
-        const specSource = readFileSync(fileURLToPath(import.meta.url), 'utf8');
-        for (const [module, cases] of Object.entries(HOSTED_BODY_COVERAGE)) {
-            expect({ module, cases: cases.length > 0 }).toEqual({ module, cases: true });
-            for (const title of cases) {
-                expect({ module, title, held: specSource.includes(`describe('${title}'`) }).toEqual({
+    // Red when a transport is not among the modules the census reached.
+    it('reaches every transport the call shape finds', () => {
+        expect(census.transports.length).toBeGreaterThan(0);
+        for (const transport of census.transports) {
+            expect(Object.keys(HOSTED_BODY_COVERAGE)).toContain(transport);
+        }
+    });
+
+    // Red when a row names a case no registered describe carries, so a commented-out describe fails here.
+    it('points every composing module at a describe vitest registered', ({ task }) => {
+        const registered = readRegisteredSuiteTitles(task.file);
+        for (const [module, row] of Object.entries(HOSTED_BODY_COVERAGE)) {
+            if (row.kind !== 'composes') {
+                continue;
+            }
+            expect({ module, cases: row.cases.length > 0 }).toEqual({ module, cases: true });
+            for (const title of row.cases) {
+                expect({ module, title, registered: registered.includes(title) }).toEqual({
                     module,
                     title,
-                    held: true,
+                    registered: true,
                 });
+            }
+        }
+    });
+
+    // Red when a forwarding row names a module that is not a composing row, or one it has no import path to or from.
+    it('ties every forwarding module to composers it actually connects to', () => {
+        for (const [module, row] of Object.entries(HOSTED_BODY_COVERAGE)) {
+            if (row.kind !== 'forwards') {
+                continue;
+            }
+            expect({ module, via: row.via.length > 0 }).toEqual({ module, via: true });
+            for (const composer of row.via) {
+                expect({ module, composer, composes: HOSTED_BODY_COVERAGE[composer]?.kind }).toEqual({
+                    module,
+                    composer,
+                    composes: 'composes',
+                });
+                expect({
+                    module,
+                    composer,
+                    connected: census.reaches(module, composer) || census.reaches(composer, module),
+                }).toEqual({ module, composer, connected: true });
             }
         }
     });
