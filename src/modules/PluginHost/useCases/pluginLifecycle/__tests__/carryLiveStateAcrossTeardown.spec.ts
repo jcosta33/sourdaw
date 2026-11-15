@@ -224,6 +224,36 @@ describe('live plugin state across an app-initiated teardown', () => {
 
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
         });
+
+        it.each([
+            ['rejects', () => Promise.reject(new Error('bridge down'))],
+            ['reports an error', () => Promise.resolve({ unloadedInstanceIds: [], errors: ['busy'], reports: [] })],
+        ])('drops the carry when the whole-runtime unload %s', async (_label, failedUnload) => {
+            await activateAndEdit(SAVED_CHUNK);
+            await unloadPluginCarryingLiveState(INSTANCE_ID);
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(true);
+            mocks.unloadPlugin.mockImplementationOnce(failedUnload);
+
+            await expect(unloadPlugin()).rejects.toThrow();
+            expect(carriedExternalPluginStates.size).toBe(0);
+            await activate(SAVED_CHUNK);
+
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+
+        it('discards a read batch started before a failed whole-runtime unload', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            const reading = await readExternalPluginStatesBeforeEngineRetire();
+            mocks.unloadPlugin.mockRejectedValueOnce(new Error('bridge down'));
+
+            await expect(unloadPlugin()).rejects.toThrow('bridge down');
+            reading.commit([INSTANCE_ID]);
+
+            expect(carriedExternalPluginStates.size).toBe(0);
+            await unloadPlugin(INSTANCE_ID);
+            await activate(SAVED_CHUNK);
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
     });
 
     describe('graph repair', () => {
@@ -281,6 +311,32 @@ describe('live plugin state across an app-initiated teardown', () => {
             await expect(superseded).resolves.toMatchObject({ status: 'failed' });
             await repair;
             await activate(SAVED_CHUNK);
+
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
+        });
+
+        it('keeps the carry for the next activation when a rebuild lands while the carried restore is pending', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            await unloadPluginCarryingLiveState(INSTANCE_ID);
+            const heldRestore = Promise.withResolvers<void>();
+            mocks.setPluginState.mockReturnValueOnce(heldRestore.promise);
+            // Release the held restore however the case ends, so it cannot leak into later cases.
+            onTestFinished(() => heldRestore.resolve());
+
+            const superseded = activate(SAVED_CHUNK);
+            await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledOnce());
+            // The epoch bump lands now; the repair waits for the admitted activation.
+            const repair = resetExternalPluginRuntimeForGraphRebuild();
+            heldRestore.resolve();
+
+            await expect(superseded).resolves.toMatchObject({
+                status: 'failed',
+                stage: 'restore',
+                reason: expect.stringContaining('superseded'),
+            });
+            await repair;
+            mocks.setPluginState.mockClear();
+            await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
 
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
         });

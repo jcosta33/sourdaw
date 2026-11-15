@@ -50,9 +50,11 @@ function withinTeardownBudget(instanceId: string, read: Promise<TeardownStateRea
 }
 
 /**
- * A scheduled read is bounded inside its lifecycle turn as well, so the turn is
- * released at the deadline: a hung read must not wedge every later operation
- * on the instance, nor a rebuild waiting for them.
+ * A scheduled read is bounded inside its lifecycle turn as well, so the deadline
+ * releases the read and its turn: later TypeScript lifecycle operations on the
+ * instance, and a rebuild queued behind them, proceed. A plugin hung inside its
+ * own native call still holds the native control gate, so a later native unload
+ * or retire of that same instance can still block.
  */
 function readForOrdering(instanceId: string, ordering: 'inside-lifecycle' | 'scheduled'): Promise<TeardownStateRead> {
     if (ordering === 'inside-lifecycle') {
