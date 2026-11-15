@@ -27,7 +27,7 @@ export function commitCarriedLiveStates(
         return;
     }
     notifyUser(
-        `Unsaved edits in ${[...lostPlugins].join(', ')} could not be read before unloading — the last saved state will be restored.`,
+        `Unsaved edits in ${[...lostPlugins].join(', ')} could not be read before unloading — the plugin comes back without them.`,
         'warning'
     );
 }
