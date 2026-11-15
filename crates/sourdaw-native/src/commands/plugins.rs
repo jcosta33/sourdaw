@@ -1711,23 +1711,43 @@ impl<Constructor> RuntimeConstructor for Constructor where
 /// not hold here. The hop's own deadline only bounds the wait for the UI thread
 /// to *start*; a module that takes seconds to open is waited out.
 ///
-/// The file is fingerprinted once more inside the hop, immediately before the
-/// plugin's code is opened, and refused unless it is still the file the
-/// registry resolution vetted. Resolution can wait on a rescan and the hop on
-/// the UI thread, and a file replaced in either wait would otherwise be opened
-/// on the strength of a check made against its predecessor. What remains is
-/// the window between this stat and the loader's own open: CFBundle, `dlopen`
-/// and `LoadLibrary` all take a path rather than a descriptor, so no check this
-/// side of them can be made against the very file they open.
+/// Inside the hop, immediately before the plugin's code is opened, the path is
+/// authorized through the scan policy once more and the file fingerprinted
+/// once more, and the load is refused unless the path still authorizes to the
+/// very path resolution vetted and the file is still the one it vetted.
+/// Resolution can wait on a rescan and the hop on the UI thread, and a file
+/// replaced in either wait — by a rewrite, or by a symlink to a file outside
+/// the policy's roots, which a fingerprint alone follows without noticing —
+/// would otherwise be opened on the strength of a check made against its
+/// predecessor. What remains is the window between this stat and the loader's
+/// own open: CFBundle, `dlopen` and `LoadLibrary` all take a path rather than a
+/// descriptor, so no check this side of them can be made against the very file
+/// they open.
 fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
     ui: &Ui,
     backend: HostBackend,
+    scan_policy: PluginScanPolicy,
     vetted: VettedRegistryEntry,
     sample_rate: f64,
     create_runtime: impl RuntimeConstructor,
 ) -> Result<HostedRuntime, String> {
     call_on_ui_thread(ui, move || {
         let VettedRegistryEntry { entry, fingerprint } = vetted;
+        let authorized = authorize_plugin_file(&scan_policy, Path::new(&entry.path), &entry.format)
+            .map_err(|reason| {
+                format!(
+                    "Plugin '{}' will not be loaded from {}: {reason}",
+                    entry.name, entry.path
+                )
+            })?;
+        if authorized != Path::new(&entry.path) {
+            return Err(format!(
+                "Plugin '{}' will not be loaded from {}: it now resolves to {}, not the location that was checked.",
+                entry.name,
+                entry.path,
+                authorized.display()
+            ));
+        }
         if plugin_file_fingerprint(Path::new(&entry.path), &entry.format) != Some(fingerprint) {
             return Err(format!(
                 "Plugin '{}' at {} changed after it was checked and before it was opened. Load it again to check it afresh.",
@@ -1859,7 +1879,8 @@ async fn load_plugin_under_runtime_gate(
     // is a fair `RwLock`, so one queued writer (`unload_all_plugin_runtimes`,
     // which the quit path runs) blocks behind the rescan and every later reader
     // blocks behind the writer.
-    let vetted = resolve_plugin_registry_entry(&plugin_id.0, state, scan_policy, rescan).await?;
+    let vetted =
+        resolve_plugin_registry_entry(&plugin_id.0, state, scan_policy.clone(), rescan).await?;
     let entry = vetted.entry.clone();
     let _runtime_guard = observe_gate_release(PLUGIN_RUNTIME_GATE.read().await);
     let _lifecycle_guard = lock_plugin_lifecycle(&instance_id.0).await;
@@ -1903,8 +1924,14 @@ async fn load_plugin_under_runtime_gate(
     }
 
     // Constructed on the shell's UI thread: see `construct_runtime_on_ui_thread`.
-    let mut wrapper =
-        construct_runtime_on_ui_thread(windows_host, backend, vetted, sample_rate, create_runtime)?;
+    let mut wrapper = construct_runtime_on_ui_thread(
+        windows_host,
+        backend,
+        scan_policy,
+        vetted,
+        sample_rate,
+        create_runtime,
+    )?;
     let name = wrapper.get_name().to_string();
     // A wrapper is built even when the plugin's own `activate` says no, so this
     // is where a load learns it. Refused whether or not an engine is running,
@@ -6552,11 +6579,11 @@ mod tests {
         );
     }
 
-    /// A shell whose UI thread replaces the plugin file the moment the
+    /// A shell whose UI thread changes the plugin file the moment the
     /// construction hop lands — after every check resolution made, and before
     /// the plugin's code is opened.
     struct FileChangingUiWindowHost {
-        path: PathBuf,
+        change: Box<dyn Fn() + Send + Sync>,
     }
 
     impl UiThread for FileChangingUiWindowHost {
@@ -6565,8 +6592,7 @@ mod tests {
         }
 
         fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> Result<(), String> {
-            std::fs::write(&self.path, "a plugin rewritten while the load waited")
-                .expect("the plugin should be rewritten");
+            (self.change)();
             task.run();
             Ok(())
         }
@@ -6607,8 +6633,12 @@ mod tests {
         let published =
             plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
         let path = published[0].path.clone();
+        let rewritten = path.clone();
         let windows = FileChangingUiWindowHost {
-            path: PathBuf::from(&path),
+            change: Box::new(move || {
+                std::fs::write(&rewritten, "a plugin rewritten while the load waited")
+                    .expect("the plugin should be rewritten");
+            }),
         };
         let log = vetting_log();
 
@@ -6630,6 +6660,63 @@ mod tests {
         assert!(
             log.lock().expect("vetting log").is_empty(),
             "the unchanged file vetted with no rescan, and the changed one is never constructed"
+        );
+    }
+
+    /// The last authorization before the open: a plugin moved outside the
+    /// policy's roots while the load waited for the UI thread, and symlinked
+    /// back at the path that was vetted, is refused. Its fingerprint cannot see
+    /// this — a rename keeps the file's identity, size and age, and the stat
+    /// follows the link to the very same file.
+    ///
+    /// Mutation this catches: dropping the scan-policy authorization from
+    /// `construct_runtime_on_ui_thread`'s hop, which constructs the plugin
+    /// through the symlink from outside every root.
+    #[cfg(unix)]
+    #[test]
+    fn a_plugin_swapped_for_a_symlink_after_vetting_is_refused_before_it_is_opened() {
+        let plugins = LoadFixtureRoot::create("vetting-pre-open-symlink");
+        let outside = created_temp_scan_root("vetting-pre-open-symlink-outside");
+        let state = AppState::default();
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let path = published[0].path.clone();
+        let vetted = PathBuf::from(&path);
+        let moved = outside.join(vetted.file_name().expect("the plugin file has a name"));
+        let windows = FileChangingUiWindowHost {
+            change: Box::new(move || {
+                std::fs::rename(&vetted, &moved).expect("the plugin should move outside the root");
+                std::os::unix::fs::symlink(&moved, &vetted)
+                    .expect("the moved plugin should be linked back at its vetted path");
+            }),
+        };
+        let log = vetting_log();
+
+        let error = load_vetted(
+            &plugins,
+            &state,
+            &windows,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect_err("a plugin reached through a symlink out of the roots must not be opened");
+
+        assert!(
+            std::fs::symlink_metadata(&path)
+                .expect("the vetted path should still exist")
+                .file_type()
+                .is_symlink(),
+            "the hop must have landed on the swapped-in symlink"
+        );
+        assert!(
+            error.starts_with(&format!(
+                "Plugin 'Plugin aaaa1111' will not be loaded from {path}: "
+            )),
+            "the refusal names the plugin and the path it was refused at: {error}"
+        );
+        assert!(
+            log.lock().expect("vetting log").is_empty(),
+            "the unchanged file vetted with no rescan, and the swapped one is never constructed"
         );
     }
 
