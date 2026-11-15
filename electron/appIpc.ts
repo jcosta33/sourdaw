@@ -1,7 +1,7 @@
 /**
  * The channels that are not addon commands (REQ-004, REQ-007).
  *
- * Three native dialogs, two path helpers, the frameless window's own controls,
+ * Three native dialogs, two path helpers, the machine's total memory, the frameless window's own controls,
  * and the one command whose backend is a separate process rather than the
  * addon in this one. They share the command router's origin guard, because a
  * save dialog opened by something that is not the app is the same failure as a
@@ -21,6 +21,7 @@ import {
     DIALOG_SAVE_CHANNEL,
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
+    SYSTEM_TOTAL_MEMORY_CHANNEL,
     WINDOW_CLOSE_CHANNEL,
     WINDOW_IS_MAXIMIZED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
@@ -292,6 +293,24 @@ export const registerDialogChannels = ({
             });
             return undefined;
         })
+    );
+};
+
+export type RegisterSystemChannelsInput = {
+    readonly ipcMain: IpcMainLike;
+    readonly isTrustedFrameUrl: TrustGuard;
+    /** `os.totalmem`. Injected so the specs do not depend on the host machine. */
+    readonly totalMemoryBytes: () => number;
+};
+
+export const registerSystemChannels = ({
+    ipcMain,
+    isTrustedFrameUrl,
+    totalMemoryBytes,
+}: RegisterSystemChannelsInput): void => {
+    ipcMain.handle(
+        SYSTEM_TOTAL_MEMORY_CHANNEL,
+        withTrustedSender('system.totalMemoryBytes', isTrustedFrameUrl, () => totalMemoryBytes())
     );
 };
 

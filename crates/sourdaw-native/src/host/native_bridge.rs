@@ -1375,10 +1375,10 @@ mod tests {
         }
     }
 
-    fn editor_recording_plugin() -> (
-        SharedHostedPlugin<EditorRecordingPlugin>,
-        Arc<Mutex<Vec<(u32, f64)>>>,
-    ) {
+    /// The `(parameter id, value)` writes a recording plugin has received.
+    type ParameterWrites = Arc<Mutex<Vec<(u32, f64)>>>;
+
+    fn editor_recording_plugin() -> (SharedHostedPlugin<EditorRecordingPlugin>, ParameterWrites) {
         let editor_writes = Arc::new(Mutex::new(Vec::new()));
         let shared = SharedHostedPlugin::new(EditorRecordingPlugin {
             name: "fixture".to_string(),
@@ -1438,13 +1438,16 @@ mod tests {
         );
     }
 
+    /// The parameter updates each process call was handed, one entry per call.
+    type ProcessedBlocks = Arc<Mutex<Vec<Vec<(u32, f64)>>>>;
+
     /// A backend that records the parameter updates every process call is
     /// handed — the only place a queued write becomes observable to the plugin.
     /// One entry per call, so a write that arrives on the wrong block or not at
     /// all is visible rather than merely absent from a total.
     struct ProcessRecordingPlugin {
         processing: Arc<ProcessingGate>,
-        processed: Arc<Mutex<Vec<Vec<(u32, f64)>>>>,
+        processed: ProcessedBlocks,
     }
 
     impl ProcessRecordingPlugin {
@@ -1543,7 +1546,7 @@ mod tests {
     fn process_recording_slot() -> (
         HostedPluginSlot<ProcessRecordingPlugin>,
         Arc<SharedHostedPlugin<ProcessRecordingPlugin>>,
-        Arc<Mutex<Vec<Vec<(u32, f64)>>>>,
+        ProcessedBlocks,
     ) {
         let processed = Arc::new(Mutex::new(Vec::new()));
         let shared = Arc::new(SharedHostedPlugin::new(ProcessRecordingPlugin {
@@ -2845,6 +2848,8 @@ mod tests {
     /// here rather than a note that still arrives.
     type RecordedNote = (u8, u8, i16, bool, u32);
 
+    type RecordedNotes = Arc<Mutex<Vec<RecordedNote>>>;
+
     impl AudioPlugin for MidiRecordingPlugin {
         fn process(
             &mut self,
@@ -3210,7 +3215,7 @@ mod tests {
     fn seam_recording_slot() -> (
         HostedPluginSlot<MidiRecordingPlugin>,
         Arc<SharedHostedPlugin<MidiRecordingPlugin>>,
-        Arc<Mutex<Vec<RecordedNote>>>,
+        RecordedNotes,
     ) {
         let notes = Arc::new(Mutex::new(Vec::new()));
         let shared = Arc::new(SharedHostedPlugin::new(MidiRecordingPlugin {
@@ -3585,16 +3590,31 @@ pub enum NativeCrumbsCommand {
     StopTake { take_id: u64 },
 }
 
+/// The Crumbs command ring had no free slot, so the command was not queued.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CrumbsCommandQueueFull;
+
+impl std::fmt::Display for CrumbsCommandQueueFull {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Command queue full")
+    }
+}
+
+impl std::error::Error for CrumbsCommandQueueFull {}
+
 /// Keeps ordinary writes unchanged while the same FIFO carries take identity.
 pub struct CrumbsCommandSender(pub rtrb::Producer<NativeCrumbsCommand>);
 impl CrumbsCommandSender {
-    pub fn push(&mut self, command: CrumbsCommand) -> Result<(), ()> {
+    pub fn push(&mut self, command: CrumbsCommand) -> Result<(), CrumbsCommandQueueFull> {
         self.0
             .push(NativeCrumbsCommand::Engine(command))
-            .map_err(|_| ())
+            .map_err(|_| CrumbsCommandQueueFull)
     }
-    pub fn push_native(&mut self, command: NativeCrumbsCommand) -> Result<(), ()> {
-        self.0.push(command).map_err(|_| ())
+    pub fn push_native(
+        &mut self,
+        command: NativeCrumbsCommand,
+    ) -> Result<(), CrumbsCommandQueueFull> {
+        self.0.push(command).map_err(|_| CrumbsCommandQueueFull)
     }
     pub fn slots(&self) -> usize {
         self.0.slots()

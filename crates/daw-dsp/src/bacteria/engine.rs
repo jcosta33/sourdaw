@@ -892,7 +892,7 @@ impl BandChain {
         }
 
         // Apply band gain — `offsets.gain` (linear) arrives from the modulation matrix
-        let g = (self.gain.next() + offsets.gain).max(0.0);
+        let g = (self.gain.next_value() + offsets.gain).max(0.0);
         l *= g;
         r *= g;
 
@@ -1681,7 +1681,7 @@ impl BacteriaEngine {
 
         for i in 0..len {
             // Input gain
-            let ig = self.input_gain.next();
+            let ig = self.input_gain.next_value();
             let dry_l = left[i];
             let dry_r = right[i];
             let in_l = dry_l * ig;
@@ -1696,10 +1696,10 @@ impl BacteriaEngine {
             }
 
             // Advance modulation sources
-            self.mod_values[0] = self.lfo1.next();
-            self.mod_values[1] = self.lfo2.next();
+            self.mod_values[0] = self.lfo1.next_value();
+            self.mod_values[1] = self.lfo2.next_value();
             self.mod_values[2] = self.env_follower.process((in_l + in_r) * 0.5);
-            let (lx, lz) = self.lorenz.next();
+            let (lx, lz) = self.lorenz.next_value();
             self.mod_values[3] = lx;
             self.mod_values[4] = lz;
             self.mod_values[5] = self.step_seq.next();
@@ -1803,13 +1803,13 @@ impl BacteriaEngine {
             }
 
             // Apply output gain
-            let og = self.output_gain.next();
+            let og = self.output_gain.next_value();
             sum_l *= og;
             sum_r *= og;
 
             // Wet/dry mix (Param ID 0 is conventionally assigned to mix in this mapping)
             let mix_offset = self.param_offsets[0];
-            let m = (self.mix.next() + mix_offset).clamp(0.0, 1.0);
+            let m = (self.mix.next_value() + mix_offset).clamp(0.0, 1.0);
             // The dry tap waits for the bands rather than racing ahead of
             // them. `in_l`/`in_r` fed the crossover undelayed — only this
             // blend tap is held back.

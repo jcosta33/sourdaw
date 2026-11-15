@@ -2449,8 +2449,8 @@ mod absolute_gate_conjunct_tests {
         // trebles.
         const QUIET_LUFS: f64 = -72.0;
         let mut blocks = vec![energy(QUIET_LUFS); 100];
-        blocks.extend(core::iter::repeat(energy(-60.0)).take(100));
-        blocks.extend(core::iter::repeat(energy(-52.0)).take(100));
+        blocks.extend(core::iter::repeat_n(energy(-60.0), 100));
+        blocks.extend(core::iter::repeat_n(energy(-52.0), 100));
         assert_relative_gate_falls_below_the_absolute_gate(&blocks, 20.0, QUIET_LUFS);
 
         let mut scratch = Vec::with_capacity(blocks.len());
@@ -3565,7 +3565,7 @@ mod extreme_loudness_tests {
     /// blocks, so the store is past capacity and the quantile path is in use.
     fn with_spike(spike_lufs: f64) -> Vec<f64> {
         let mut blocks = vec![energy(-20.0); 38_000];
-        blocks.extend(core::iter::repeat(energy(spike_lufs)).take(2_000));
+        blocks.extend(core::iter::repeat_n(energy(spike_lufs), 2_000));
         blocks
     }
 
@@ -3577,7 +3577,7 @@ mod extreme_loudness_tests {
             // A quiet body so the loud passage stays above the relative gate
             // rather than dragging the mean up past it.
             let mut blocks = vec![energy(level - 25.0); 38_000];
-            blocks.extend(core::iter::repeat(energy(level)).take(2_000));
+            blocks.extend(core::iter::repeat_n(energy(level), 2_000));
             assert!(blocks.len() > MAX_LOUDNESS_BLOCKS);
 
             let expected = reference_lra(&blocks);

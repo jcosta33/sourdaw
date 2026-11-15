@@ -17,7 +17,13 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
-    executeAppAction: mocks.commit,
+    // The morph commit dispatches through the shared episodes object; route it to the captured door so
+    // these cases observe the committed action. Refusal handling is pinned in commitToasterMorphKitChange.spec.ts.
+    createUserAppActionRefusalEpisodes: () => ({
+        execute: (_key: string, action: unknown, options?: unknown) => mocks.commit(action, options),
+        end: vi.fn(),
+        endAll: vi.fn(),
+    }),
 }));
 
 import { createDefaultKit } from '../../models/ToasterKit';

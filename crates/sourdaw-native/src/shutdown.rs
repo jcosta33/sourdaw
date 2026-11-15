@@ -134,8 +134,10 @@ fn shutdown_with_wait(
     // runs here, on the only thread there is.
     let editor_thread = windows.unwrap_or(&NoWindowHost);
 
-    let mut report = ShutdownReport::default();
-    report.closed_midi_input = closed_midi_input;
+    let mut report = ShutdownReport {
+        closed_midi_input,
+        ..ShutdownReport::default()
+    };
     match close_every_plugin_gui(windows, app_state) {
         Ok(gui_report) => {
             report.closed_editors = gui_report.closed_instance_ids;

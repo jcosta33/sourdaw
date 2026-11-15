@@ -1033,8 +1033,8 @@ mod tests {
             2,
             "the release tail and the retrigger must both be active"
         );
-        assert_eq!(before[0].0, false, "the first voice is releasing, not held");
-        assert_eq!(before[1].0, true, "the retrigger is held");
+        assert!(!before[0].0, "the first voice is releasing, not held");
+        assert!(before[1].0, "the retrigger is held");
 
         layer.note_expression(60, 0, 12.0, 0.0, 0.0);
 

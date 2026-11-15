@@ -14,6 +14,9 @@ export { toggleAiHistoryPanel } from './toggleAiHistoryPanel';
 export { recordAiActionGroup } from './recordAiActionGroup';
 
 export { DEFAULT_WEBLLM_MODEL, WEBLLM_MODELS } from './aiRuntimeQueries/modelInfo';
+export { chooseLocalModel } from './aiRuntimeQueries/chooseLocalModel';
+export { listOfferedLocalModels } from './aiRuntimeQueries/listOfferedLocalModels';
+export { readMachineMemory } from './aiRuntimeQueries/readMachineMemory';
 export { HOSTED_REASONING_EFFORTS } from './aiRuntimeQueries/hostedReasoningEfforts';
 export { HOSTED_ANTHROPIC_THINKING_MIN_BUDGET_TOKENS } from './aiRuntimeQueries/hostedAnthropicThinking';
 export { listHostedAnthropicModels } from './aiRuntimeQueries/listHostedAnthropicModels';

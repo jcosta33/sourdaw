@@ -29,6 +29,11 @@ const elasticRootMocks = vi.hoisted(() => ({
     install: vi.fn<typeof import('#/modules/ElasticAudio/useCases').setElasticRootIdentityProvider>(),
 }));
 
+const briefAdmissionWiring = vi.hoisted(() => ({
+    setSubscription: vi.fn<(subscription: (listener: () => void) => () => void) => void>(),
+    subscribeToProductionBriefChanges: vi.fn<(listener: () => void) => () => void>(),
+}));
+
 // bootstrap.ts is the app's composition root: it imports ~40 module barrels
 // and, at import time (not inside a callable function), wires their runtime
 // dependencies and hands every module's `get<Module>Handlers()` result to the
@@ -525,6 +530,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     productionBriefAdmissionPort: {
         capture: () => ({ allowsCurrent: () => true }),
         setGuard: noop,
+        setSubscription: briefAdmissionWiring.setSubscription,
     },
     setActionHistoryMetadataPort: noop,
     commandProjectRevisionPort: commandProjectRevisionPortMock,
@@ -676,6 +682,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     agentCapabilityDiscoveryPort: { setProvider: noop },
     getProjectProtocolContracts: noop,
     productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
+    subscribeToProductionBriefChanges: briefAdmissionWiring.subscribeToProductionBriefChanges,
     getProjectHandlers: sentinelHandlers('Project'),
     initGrooveTemplateDirtyTracking: noop,
     projectOriginalMediaPort: { configure: noop },
@@ -1109,6 +1116,12 @@ describe('bootstrap', () => {
 
         await expect(provider.getDisposition(proof)).resolves.toBe('committed');
         expect(getVersionedCommandBatchCommitDispositionMock).toHaveBeenCalledExactlyOnceWith(proof);
+    });
+
+    it('hands the production brief change subscription to the admission port', () => {
+        expect(briefAdmissionWiring.setSubscription).toHaveBeenCalledExactlyOnceWith(
+            briefAdmissionWiring.subscribeToProductionBriefChanges
+        );
     });
 
     it('wires project runtime validation and event buses in the composition root', () => {
