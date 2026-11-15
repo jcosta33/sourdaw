@@ -20,7 +20,7 @@ use crate::host::ui_thread::UiThreadTask;
 use crate::state::{EnginePluginInstanceData, PluginRegistryEntry, TimelineSample};
 use daw_engine::timeline::DeviceKind;
 use daw_plugin_host::vst3_wrapper::{decode_state as decode_vst3_container, format_class_id};
-use daw_plugin_host::{ClapWrapper, HostParameterUpdate, Vst3Wrapper};
+use daw_plugin_host::{ClapWrapper, HostParameterUpdate, ProcessingGate, Vst3Wrapper};
 use serde_json::{json, Value};
 use sourdaw_harness_fx::state::{decode, RecordedState, MODE_NEVER_SET};
 use sourdaw_harness_fx::{
@@ -31,7 +31,7 @@ use sourdaw_harness_fx::{
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc;
+use std::sync::{mpsc, Mutex};
 use std::thread::{self, ThreadId};
 
 const LIVE_RATE: f64 = 48_000.0;
@@ -497,6 +497,47 @@ thread_local! {
     static OFFLINE_STATE: RefCell<Vec<(Vec<u8>, f64)>> = const { RefCell::new(Vec::new()) };
 }
 
+/// What a test watches on every offline instance its render builds.
+#[derive(Clone, Default)]
+struct OfflineInstanceWatch {
+    gates: Arc<Mutex<Vec<Arc<ProcessingGate>>>>,
+}
+
+impl OfflineInstanceWatch {
+    /// The `after_build` seam that watches every built instance, then runs
+    /// `then` over them.
+    fn after_build(&self, then: Option<fn(&[Arc<SharedHostedPlugin>])>) -> AfterBuild {
+        let gates = Arc::clone(&self.gates);
+        Box::new(move |runtimes: &[Arc<SharedHostedPlugin>]| {
+            gates
+                .lock()
+                .expect("gates")
+                .extend(runtimes.iter().map(|runtime| runtime.processing_gate()));
+            if let Some(then) = then {
+                then(runtimes);
+            }
+        })
+    }
+
+    /// Every watched instance left its processing state on the render thread,
+    /// after its last block — not forced out of it by its own teardown.
+    fn assert_every_instance_left_processing(&self) {
+        let gates = self.gates.lock().expect("gates");
+        assert!(!gates.is_empty(), "the render built an offline instance");
+        for gate in gates.iter() {
+            assert!(
+                gate.has_stopped(),
+                "the offline instance stopped processing"
+            );
+            assert_eq!(
+                gate.off_audio_thread_stops(),
+                0,
+                "the render thread left processing; teardown did not have to force it"
+            );
+        }
+    }
+}
+
 fn record_offline_state(runtimes: &[Arc<SharedHostedPlugin>]) {
     for runtime in runtimes {
         let chunk = runtime
@@ -518,7 +559,8 @@ fn the_print_is_the_dry_render_through_the_live_instances_settings(format: Forma
     let (state, live) = state_with_live_fx(&fx, format);
     let ui = RecordingUiThread::start();
     let mut seams = fx.seams();
-    seams.after_build = Some(record_offline_state);
+    let watch = OfflineInstanceWatch::default();
+    seams.after_build = Some(watch.after_build(Some(record_offline_state)));
     OFFLINE_STATE.with(|states| states.borrow_mut().clear());
 
     let dry = render(batch(impulse_track(json!([]))), &state, &ui, &seams, None)
@@ -573,6 +615,7 @@ fn the_print_is_the_dry_render_through_the_live_instances_settings(format: Forma
         })
         .expect("the live instance answers");
     assert_eq!(live_rate, LIVE_RATE, "the live instance was never re-rated");
+    watch.assert_every_instance_left_processing();
     assert_eq!(
         ui.tasks_run(),
         2,
@@ -808,7 +851,9 @@ fn a_cancel_mid_render_stops_the_render_of(format: Format) {
     let fx = InstalledFx::create(&format!("cancel-{format:?}"));
     let (state, _live) = state_with_live_fx(&fx, format);
     let ui = RecordingUiThread::start();
-    let seams = fx.seams();
+    let mut seams = fx.seams();
+    let watch = OfflineInstanceWatch::default();
+    seams.after_build = Some(watch.after_build(None));
     let long_render = |state: &AppState| {
         block_on_test(render_graph_offline_with(
             batch(impulse_track(json!([fx_device()]))),
@@ -846,6 +891,7 @@ fn a_cancel_mid_render_stops_the_render_of(format: Format) {
 
     let refusal = outcome.expect_err("a cancelled render returns no print");
     assert!(refusal.starts_with(OFFLINE_RENDER_CANCELLED), "{refusal}");
+    watch.assert_every_instance_left_processing();
     assert_eq!(
         ui.tasks_run(),
         2,
@@ -944,7 +990,9 @@ fn an_offline_instance_that_misses_a_block_refuses_the_render_by_name() {
     let mut seams = fx.seams();
     // Closing the lifecycle is what an unload does; the slot then passes
     // every block through dry.
-    seams.after_build = Some(|runtimes| runtimes.iter().for_each(|runtime| runtime.begin_unload()));
+    seams.after_build = Some(Box::new(|runtimes: &[Arc<SharedHostedPlugin>]| {
+        runtimes.iter().for_each(|runtime| runtime.begin_unload())
+    }));
 
     let refusal = render(
         batch(impulse_track(json!([fx_device()]))),
@@ -977,6 +1025,9 @@ fn an_offline_instance_that_fails_a_block_refuses_the_render_by_name(format: For
     let fx = InstalledFx::create(&format!("process-error-{format:?}"));
     let (state, _live) = state_with_live_class(&fx, format, &failing_class(format));
     let ui = RecordingUiThread::start();
+    let mut seams = fx.seams();
+    let watch = OfflineInstanceWatch::default();
+    seams.after_build = Some(watch.after_build(None));
     let frames_before_the_failure =
         (FAILING_PROCESS_CALL as usize + 1) * daw_engine::offline::OFFLINE_BLOCK_FRAMES;
     assert!(
@@ -988,7 +1039,7 @@ fn an_offline_instance_that_fails_a_block_refuses_the_render_by_name(format: For
         batch(impulse_track(json!([fx_device()]))),
         &state,
         &ui,
-        &fx.seams(),
+        &seams,
         None,
     )
     .expect_err("a print a plugin failed to process is refused");
@@ -999,6 +1050,7 @@ fn an_offline_instance_that_fails_a_block_refuses_the_render_by_name(format: For
             && refusal.contains("it failed to process a block of the render"),
         "{refusal}"
     );
+    watch.assert_every_instance_left_processing();
     assert_eq!(
         ui.tasks_run(),
         2,

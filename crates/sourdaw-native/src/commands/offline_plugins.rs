@@ -210,6 +210,10 @@ pub fn cancel_graph_offline(render_id: String, state: &AppState) -> Result<(), S
 /// How an offline render reads a live instance's state.
 pub(crate) type CaptureState = fn(&str, &AppState) -> Result<Vec<u8>, String>;
 
+/// A test's look at every built instance just before the render.
+#[cfg(test)]
+pub(crate) type AfterBuild = Box<dyn Fn(&[Arc<SharedHostedPlugin>]) + Send + Sync>;
+
 /// How an offline render builds a runtime once its file is vetted.
 pub(crate) type ConstructRuntime =
     fn(HostBackend, &str, &str, f64, ProcessMode) -> Result<HostedRuntime, String>;
@@ -224,7 +228,7 @@ pub(crate) struct OfflinePluginSeams {
     /// Run over every built instance just before the render, so a test can
     /// put one in a state no real plugin can be made to reach on cue.
     #[cfg(test)]
-    pub(crate) after_build: Option<fn(&[Arc<SharedHostedPlugin>])>,
+    pub(crate) after_build: Option<AfterBuild>,
 }
 
 impl OfflinePluginSeams {
@@ -288,8 +292,9 @@ impl OfflinePluginInstances<'_> {
     }
 
     /// Leave every instance's processing state. Called by the render thread
-    /// after the render's last block, cancelled or not.
-    pub(crate) fn leave_processing(&self) {
+    /// after the render's last block, cancelled or not — through
+    /// [`leaves_processing_on_drop`], so no way out of the block loop skips it.
+    fn leave_processing(&self) {
         for instance in &self.instances {
             instance.runtime.leave_processing_after_last_block();
         }
@@ -370,6 +375,30 @@ impl Drop for OfflinePluginInstances<'_> {
                 );
                 self.state.retain_retired_engine_plugin(runtime);
             }
+        }
+    }
+}
+
+/// Leaves every offline instance's processing state when dropped; see
+/// [`leaves_processing_on_drop`]. A drop runs once, so
+/// the state is left exactly once.
+pub(crate) struct LeavesProcessing<'plugins, 'state>(
+    Option<&'plugins OfflinePluginInstances<'state>>,
+);
+
+/// Taken by the render thread before the first block: its drop leaves every
+/// instance's processing state on that thread, however the render ends — the
+/// last block, a cancel, a `?` or a panic unwinding through it.
+pub(crate) fn leaves_processing_on_drop<'plugins, 'state>(
+    plugins: Option<&'plugins OfflinePluginInstances<'state>>,
+) -> LeavesProcessing<'plugins, 'state> {
+    LeavesProcessing(plugins)
+}
+
+impl Drop for LeavesProcessing<'_, '_> {
+    fn drop(&mut self) {
+        if let Some(plugins) = self.0 {
+            plugins.leave_processing();
         }
     }
 }
@@ -487,7 +516,7 @@ pub(crate) async fn build_offline_instances<'a>(
         }
     }
     #[cfg(test)]
-    if let Some(after_build) = seams.after_build {
+    if let Some(after_build) = &seams.after_build {
         after_build(&built.runtimes());
     }
     Ok(built)

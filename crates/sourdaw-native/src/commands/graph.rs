@@ -156,7 +156,8 @@ use crate::commands::crumbs::{self, CrumbsState};
 use crate::commands::graph_refusals::{EngineNotRendering, MappingFault, QueueCapacityRefusal};
 use crate::commands::levain::LevainBankStore;
 use crate::commands::offline_plugins::{
-    build_offline_instances, InFlightRender, OfflinePluginInstances, OfflinePluginSeams,
+    build_offline_instances, leaves_processing_on_drop, InFlightRender, OfflinePluginInstances,
+    OfflinePluginSeams,
 };
 use crate::host::ui_thread::UiThread;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
@@ -6194,12 +6195,12 @@ fn render_offline_ops(
         renderer.push(op)?;
     }
 
+    // This thread processes every block, so it is every instance's audio
+    // thread, and the one that leaves their processing state — taken before
+    // the first block so no way out of the loop can skip it.
+    let leaving_processing = leaves_processing_on_drop(plugins);
     let rendered = renderer.render_controlled(frames, render.control());
-    // This thread processed every block, so it is every instance's audio
-    // thread, and the one that leaves their processing state.
-    if let Some(plugins) = plugins {
-        plugins.leave_processing();
-    }
+    drop(leaving_processing);
     let Ok(rendered) = rendered else {
         return Err(render.cancelled());
     };
