@@ -537,7 +537,8 @@ function withAudibleClaim(
     plan: AgentRunPlan,
     claim: AgentRunPlan['expectedImpact']['audible'] | undefined
 ): AgentRunPlan {
-    if (claim === undefined && plan.expectedImpact.audible.status === 'not-claimed') {
+    const audible = plan.expectedImpact.audible;
+    if (claim === undefined && audible.status === 'not-claimed' && audible.reason === NO_AUDIBLE_CLAIM_REASON) {
         return plan;
     }
     return {

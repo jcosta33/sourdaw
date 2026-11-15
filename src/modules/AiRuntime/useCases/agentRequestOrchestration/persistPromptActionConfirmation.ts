@@ -13,7 +13,7 @@ import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
-import { deriveMeasuredAudibleImpact } from '../deriveMeasuredAudibleImpact';
+import { deriveMeasuredAudibleImpact, NO_AUDIBLE_CLAIM_REASON } from '../deriveMeasuredAudibleImpact';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 
@@ -112,7 +112,13 @@ function recordConfirmationMetricGoalPlan(
         snapshotPreview: measuredPreview,
         proofPreviews: metricGoalStateCodec(metricGoalState)?.proofs.map((proof) => proof.preview) ?? [],
     });
-    if (metricGoalState === undefined && claim === null && run.plan.expectedImpact.audible.status === 'not-claimed') {
+    const audible = run.plan.expectedImpact.audible;
+    if (
+        metricGoalState === undefined &&
+        claim === null &&
+        audible.status === 'not-claimed' &&
+        audible.reason === NO_AUDIBLE_CLAIM_REASON
+    ) {
         return;
     }
     agentRunLifecycle.recordPlan({

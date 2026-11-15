@@ -20,7 +20,7 @@ import { getPendingActionConfirmation } from '../../stores/pendingActionConfirma
 import { persistPromptActionConfirmation } from '../agentRequestOrchestration/persistPromptActionConfirmation';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
-import { AUDIBLE_CLAIM_TOO_LARGE_REASON } from '../deriveMeasuredAudibleImpact';
+import { AUDIBLE_CLAIM_TOO_LARGE_REASON, NO_AUDIBLE_CLAIM_REASON } from '../deriveMeasuredAudibleImpact';
 import { digestCommandBatchContent } from '../digestCommandBatchContent';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
@@ -755,6 +755,13 @@ describe('the plan’s audible claim', () => {
             expect(claim.metrics).toHaveLength(MAX_AUDIBLE_CLAIM_METRICS);
             persistAgentRunState(readAgentRunState());
             expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(claim);
+        });
+
+        it('replaces the too-large reason with the plain no-claim reason on a later unmeasured card', () => {
+            proposeCard({ gain: 0.7, preview: previewOf(manyTargets(MAX_AUDIBLE_CLAIM_METRICS + 1)) });
+            expect(audible()).toEqual({ status: 'not-claimed', reason: AUDIBLE_CLAIM_TOO_LARGE_REASON });
+            proposeCard({ gain: 0.6 });
+            expect(audible()).toEqual({ status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON });
         });
 
         it('claims nothing past the limit, says why, and keeps the run across a write and reload', () => {
