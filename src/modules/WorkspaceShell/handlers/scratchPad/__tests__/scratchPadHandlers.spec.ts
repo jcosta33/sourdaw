@@ -157,11 +157,11 @@ describe('Workspace Scratch Pad Handlers', () => {
         ] as const;
 
         it.each(refused)('validate refuses %s', (_label, payload) => {
-            expect(handleCaptureScratchPad.validate(captureOf(payload), validationContext)).toBe(false);
+            expect(handleCaptureScratchPad.validate?.(captureOf(payload), validationContext)).toBe(false);
         });
 
         it.each(accepted)('validate accepts %s', (_label, payload) => {
-            expect(handleCaptureScratchPad.validate(captureOf(payload), validationContext)).toBe(true);
+            expect(handleCaptureScratchPad.validate?.(captureOf(payload), validationContext)).toBe(true);
         });
 
         it.each(refused)('execute refuses %s before writing the pad or opening it', (_label, payload) => {
