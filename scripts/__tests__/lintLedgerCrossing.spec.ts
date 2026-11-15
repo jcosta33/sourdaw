@@ -97,6 +97,13 @@ describe('lint ledger crossing decision', () => {
             crossing: [],
         },
         {
+            name: 'an oxlint baseline entry after a block comment',
+            main: ['src/c.ts', '.oxlintrc.json'],
+            pullRequest: ['src/c.ts'],
+            ledgers: { [OXC]: `{ /* "quoted" note */ ${OXLINT.slice(1)}` },
+            crossing: ['src/c.ts'],
+        },
+        {
             name: 'a glob entry is not a literal path',
             main: ['src/d.ts'],
             pullRequest: ['src/d.ts'],
@@ -120,6 +127,11 @@ describe('lint ledger crossing decision', () => {
             name: 'a suppression count lowered',
             base: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-void': { count: 2 } } }) },
             edited: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-void': { count: 1 } } }) },
+        },
+        {
+            name: 'one of two rules suppressed at the same figure removed',
+            base: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-void': { count: 1 }, 'no-var': { count: 1 } } }) },
+            edited: { [SUP]: JSON.stringify({ 'src/x.ts': { 'no-var': { count: 1 } } }) },
         },
         {
             name: 'a size ceiling lowered',
@@ -201,6 +213,13 @@ describe('lint ledger crossing decision', () => {
             base: { [OXC]: '{ "overrides": [{ "files": ["./src/y.ts"], "rules": { "r": "off" } }] }' },
             added: {
                 [OXC]: '{ "overrides": [{ "files": ["./src/y.ts"], "rules": { "r": "off" } }, { "files": ["./src/x.ts"], "rules": { "s": "off" } }] }',
+            },
+        },
+        {
+            name: 'the path added to an override disabled with severity 0',
+            base: { [OXC]: '{ "overrides": [{ "files": ["./src/y.ts"], "rules": { "r": "off" } }] }' },
+            added: {
+                [OXC]: '{ "overrides": [{ "files": ["./src/y.ts"], "rules": { "r": "off" } }, { "files": ["./src/x.ts"], "rules": { "s": 0 } }] }',
             },
         },
         {
