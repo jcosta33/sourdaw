@@ -166,15 +166,15 @@ export function tokenFreeGitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     return Object.fromEntries(Object.entries(env).filter(([key]) => !isGitHubCliKey(key)));
 }
 
+function isGhChild(command: string, env: NodeJS.ProcessEnv): boolean {
+    return executableName(command) === 'gh' || command === env[TRUSTED_GH_PATH_ENV];
+}
+
 /**
  * A child is git by the command the caller named, never by the file name of the path it starts: the
  * launcher's trusted path is the real path of the `git` it found, which is `git.exe` on Windows and
  * may carry another name entirely. A caller that passes that trusted path itself names git too.
  */
-function isGhChild(command: string, env: NodeJS.ProcessEnv): boolean {
-    return executableName(command) === 'gh' || command === env[TRUSTED_GH_PATH_ENV];
-}
-
 export function isGitChild(command: string, env: NodeJS.ProcessEnv): boolean {
     return executableName(command) === 'git' || command === env[TRUSTED_GIT_PATH_ENV];
 }
