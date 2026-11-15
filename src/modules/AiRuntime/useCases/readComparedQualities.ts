@@ -4,46 +4,60 @@ import { maskTrackReferences } from './maskTrackReferences';
 
 export type ComparedQuality = 'loudness' | 'brightness' | 'width' | 'dynamics';
 
-const THAN = String.raw`\bthan\b`;
-const LESS_OR_MORE = String.raw`(?:more|less)`;
+/**
+ * Every word that names a quality in any form. Punch is judged as dynamics: the authored `*-punchy` recipes
+ * move `crestFactor` up, while `transientDensity` is only held in them and counts transients rather than how
+ * hard they land, so crest factor is the metric that follows how hard a hit lands.
+ */
+const QUALITY_WORDS: Record<ComparedQuality, readonly string[]> = {
+    loudness: ['loud', 'louder', 'loudness', 'quiet', 'quieter', 'soft', 'softer', 'volume', 'level'],
+    brightness: ['bright', 'brighter', 'brightness', 'dark', 'darker', 'dull', 'duller'],
+    width: ['wide', 'wider', 'width', 'narrow', 'narrower'],
+    dynamics: ['dynamic', 'dynamics', 'punch', 'punchy', 'punchier', 'compressed'],
+};
 
-/** "as loud as possible" or "as wide as you can" names no second subject, so it is no comparison. */
+/** "as loud as possible" or "as wide as you can" names no second subject, so it is no marker. */
 const SUPERLATIVE_TAIL = String.raw`(?!\s+(?:possible|(?:you|i|we|they|it|one)\s+(?:can|could|gets?|may)\b))`;
 
-function asAs(adjectives: string): RegExp {
-    return new RegExp(String.raw`\bas\s+(?:${adjectives})\s+as\b${SUPERLATIVE_TAIL}`);
+/** What puts two subjects side by side in one sentence. */
+const COMPARISON_MARKERS: readonly RegExp[] = [
+    /\bthan\b/,
+    new RegExp(String.raw`\bas\s+\w+\s+as\b${SUPERLATIVE_TAIL}`),
+    /\bcompared\s+(?:to|with)\b/,
+    /\brelative\s+to\b/,
+    /\b(?:versus|vs)\b/,
+    /\bmatch\b/,
+    /\bsame\b.*\bas\b/,
+];
+
+const SENTENCE_BREAK = /[.;!?\n]+/;
+
+function namesQuality(sentence: string, words: readonly string[]): boolean {
+    return new RegExp(String.raw`\b(?:${words.join('|')})\b`).test(sentence);
 }
 
 /**
- * Punch is judged as dynamics: the authored `*-punchy` recipes move `crestFactor` up, while `transientDensity`
- * only counts transients and is held in them, so crest factor is the metric that follows how hard a hit lands.
- */
-const COMPARISON_FORMS: ReadonlyArray<readonly [ComparedQuality, RegExp]> = [
-    ['loudness', new RegExp(String.raw`\b(?:louder|quieter|softer)\s+${THAN}`)],
-    ['loudness', new RegExp(String.raw`\b${LESS_OR_MORE}\s+(?:loud|quiet)\s+${THAN}`)],
-    ['loudness', asAs('loud|quiet|soft')],
-    ['loudness', /\bmatch\b[^.;!?]*\b(?:loudness|volume|level)\b/],
-    ['loudness', /\bsame\s+(?:loudness|volume|level)\b/],
-    ['brightness', new RegExp(String.raw`\b(?:brighter|darker|duller)\s+${THAN}`)],
-    ['brightness', new RegExp(String.raw`\b${LESS_OR_MORE}\s+(?:bright|dark|dull)\s+${THAN}`)],
-    ['brightness', asAs('bright|dark|dull')],
-    ['width', new RegExp(String.raw`\b(?:wider|narrower)\s+${THAN}`)],
-    ['width', new RegExp(String.raw`\b${LESS_OR_MORE}\s+(?:wide|narrow)\s+${THAN}`)],
-    ['width', asAs('wide|narrow')],
-    ['dynamics', new RegExp(String.raw`\bpunchier\s+${THAN}`)],
-    ['dynamics', new RegExp(String.raw`\b${LESS_OR_MORE}\s+(?:punch|punchy|dynamic|dynamics|compressed)\s+${THAN}`)],
-    ['dynamics', asAs('punchy|dynamic|compressed')],
-];
-
-/**
- * The qualities a request states as a comparison between two subjects, read from its own words: a
- * comparative with "than", "as ... as", or "match ... loudness". A bare "louder" is no comparison, and
- * a word inside a quotation or a track name is never read. Direction and subjects stay the provider's.
+ * The qualities a request states as a comparison between two subjects, read from its own words: a quality
+ * word and a comparison marker in one sentence. A bare "louder" is no comparison, and a word inside a
+ * quotation or a track name is never read. Recall outweighs precision: a false offer only adds planner text
+ * and admission still needs a distinct reference subject, while a miss leaves the plan unverified. Direction
+ * and subjects stay the provider's.
  */
 export function readComparedQualities(
     prompt: string,
     context: AnswerInterpretationCatalog['context']
 ): ReadonlySet<ComparedQuality> {
-    const text = maskTrackReferences(prompt, context, ' ').toLowerCase();
-    return new Set(COMPARISON_FORMS.filter(([, form]) => form.test(text)).map(([quality]) => quality));
+    const sentences = maskTrackReferences(prompt, context, ' ').toLowerCase().split(SENTENCE_BREAK);
+    const compared = new Set<ComparedQuality>();
+    for (const sentence of sentences) {
+        if (!COMPARISON_MARKERS.some((marker) => marker.test(sentence))) {
+            continue;
+        }
+        for (const [quality, words] of Object.entries(QUALITY_WORDS) as Array<[ComparedQuality, readonly string[]]>) {
+            if (namesQuality(sentence, words)) {
+                compared.add(quality);
+            }
+        }
+    }
+    return compared;
 }

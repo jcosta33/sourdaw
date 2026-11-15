@@ -2713,6 +2713,14 @@ describe('comparisons by loudness, brightness, width, dynamics and punch', () =>
             ['the same volume', 'Make Drums the same volume as Bass', LOUDNESS_POLICIES],
             ['as loud as a subject', 'Make Drums as loud as Bass', LOUDNESS_POLICIES],
             ['as wide as a subject', 'Make Drums as wide as the keys', ['side-energy-fraction-comparison-v1']],
+            [
+                'compared to',
+                'The guitar is too bright compared to the bass, turn it down',
+                ['spectral-centroid-comparison-v1'],
+            ],
+            ['relative to', 'Make Drums louder relative to Bass', LOUDNESS_POLICIES],
+            ['versus', 'Drums vs Bass: make Drums wider', ['side-energy-fraction-comparison-v1']],
+            ['compared with', 'Make Drums punchy compared with the snare', ['crest-factor-comparison-v1']],
         ])('offers its quality for %s', async (_name, prompt, policies) => {
             expect(await offeredPolicies(prompt, null)).toEqual(policies);
         });
