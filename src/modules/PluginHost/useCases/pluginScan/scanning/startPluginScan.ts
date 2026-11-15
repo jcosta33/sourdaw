@@ -1,11 +1,12 @@
 import { type ScannedPlugin } from '../../../models/ScannedPlugin';
 import { getDefaultPluginPaths } from '../../../repositories/pluginBridge/getDefaultPluginPaths';
+import { getPluginFolderGrants } from '../../../repositories/pluginBridge/getPluginFolderGrants';
 import { isScanPathAuthorized } from '../../../repositories/pluginBridge/isScanPathAuthorized';
 import { scanPlugins } from '../../../repositories/pluginBridge/scanPlugins';
 import { type ScanResult } from '../../../repositories/pluginBridge/types';
 import { pluginScanStore } from '../../../stores/pluginScanStore';
 
-import { getState } from './helpers';
+import { getState, isWithinFolder } from './helpers';
 
 /** A plugin's format-scoped identity, the key the native list is unique on. */
 function pluginIdentity(plugin: ScannedPlugin): string {
@@ -89,7 +90,22 @@ export async function startPluginScan(options: StartPluginScanOptions = {}): Pro
         const authorizedScanPaths = authorizations
             .filter((authorization) => authorization.authorized)
             .map((authorization) => authorization.path);
-        const allPaths = [...new Set([...authorizedScanPaths, ...defaultPaths])];
+        // Granted folders join the request only while the native side reports
+        // them available: an unavailable one (a removed drive) would come back
+        // as a scan error every run, and its reason is already listed in
+        // settings beside the folder. A failed query aborts, like the
+        // authorization query above.
+        const grants = await getPluginFolderGrants();
+        const availableGrantPaths = grants
+            .filter((grant) => grant.unavailable_reason === null)
+            .map((grant) => grant.path);
+        // The store mirrors this answer so that, when the result lands, a
+        // folder missing from it was removed while the scan ran.
+        pluginScanStore.update((current) => ({
+            ...(current ?? getState()),
+            grantedFolders: grants.map((grant) => ({ path: grant.path, unavailableReason: grant.unavailable_reason })),
+        }));
+        const allPaths = [...new Set([...authorizedScanPaths, ...defaultPaths, ...availableGrantPaths])];
 
         if (allPaths.length === 0) {
             pluginScanStore.update((current) => ({
@@ -135,6 +151,8 @@ export async function startPluginScan(options: StartPluginScanOptions = {}): Pro
             const scanPaths = [...new Set([...currentState.scanPaths, ...defaultPaths])].filter(
                 (scan_path) => !removedScanPaths.has(scan_path)
             );
+            const stillGranted = new Set(currentState.grantedFolders.map((folder) => folder.path));
+            const removedFolders = availableGrantPaths.filter((folder) => !stillGranted.has(folder));
 
             return {
                 ...currentState,
@@ -157,7 +175,12 @@ export async function startPluginScan(options: StartPluginScanOptions = {}): Pro
                 // A scan that did not run or threw leaves the list alone, above
                 // and below. `lastScanTime` dates the list the store holds, so
                 // it advances with this write.
-                scannedPlugins: mergeScanResultIntoList(currentState.scannedPlugins, result),
+                // A folder removed while the scan ran already dropped its
+                // rows, and the loader no longer accepts them; this result
+                // must not put them back.
+                scannedPlugins: mergeScanResultIntoList(currentState.scannedPlugins, result).filter(
+                    (plugin) => !removedFolders.some((folder) => isWithinFolder(plugin.path, folder))
+                ),
                 lastScanTime: Date.now(),
             };
         });

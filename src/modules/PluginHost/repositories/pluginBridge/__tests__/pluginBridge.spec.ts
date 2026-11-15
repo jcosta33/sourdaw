@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { isDesktopRuntime, desktopInvoke, desktopListen } from '#/utils/desktopBridge';
+import { isDesktopRuntime, desktopAddPluginFolder, desktopInvoke, desktopListen } from '#/utils/desktopBridge';
 
+import { addPluginFolder } from '../addPluginFolder';
+import { getPluginFolderGrants } from '../getPluginFolderGrants';
 import { isScanPathAuthorized } from '../isScanPathAuthorized';
 import { loadPlugin } from '../loadPlugin';
 import { onPluginLatencyChanged } from '../onPluginLatencyChanged';
+import { revokePluginFolderGrant } from '../revokePluginFolderGrant';
 import { scanPlugins } from '../scanPlugins';
 import { setPluginBypass } from '../setPluginBypass';
 import { setPluginParameter } from '../setPluginParameter';
@@ -15,6 +18,7 @@ import type { PluginLatencyChange } from '../types';
 vi.mock('#/utils/desktopBridge', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/utils/desktopBridge')>()),
     isDesktopRuntime: vi.fn(),
+    desktopAddPluginFolder: vi.fn(),
     desktopInvoke: vi.fn(),
     desktopListen: vi.fn(),
 }));
@@ -175,6 +179,54 @@ describe('pluginBridge repository', () => {
 
             expect(await isScanPathAuthorized('/root/child')).toBe(true);
             expect(desktopInvoke).toHaveBeenCalledWith('is_scan_path_authorized', { path: '/root/child' });
+        });
+    });
+
+    describe('plugin folder grants', () => {
+        it('refuses an add outside the desktop app without reaching for a bridge', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(false);
+
+            expect(await addPluginFolder()).toEqual({
+                status: 'refused',
+                reason: 'Plugin folders can be added only in the desktop app.',
+            });
+            expect(desktopAddPluginFolder).not.toHaveBeenCalled();
+        });
+
+        it('asks the shell to pick and grant, sending no path', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(desktopAddPluginFolder).mockResolvedValue({ status: 'granted', path: '/Users/me/Plugins' });
+
+            expect(await addPluginFolder()).toEqual({ status: 'granted', path: '/Users/me/Plugins' });
+            expect(vi.mocked(desktopAddPluginFolder).mock.calls).toEqual([[]]);
+            expect(desktopInvoke).not.toHaveBeenCalled();
+        });
+
+        it('lists no grants outside the desktop app', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(false);
+
+            expect(await getPluginFolderGrants()).toEqual([]);
+            expect(desktopInvoke).not.toHaveBeenCalled();
+        });
+
+        it('reads the grants from the native side', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            const grants = [{ path: '/Users/me/Plugins', unavailable_reason: null }];
+            vi.mocked(desktopInvoke).mockResolvedValue(grants);
+
+            expect(await getPluginFolderGrants()).toEqual(grants);
+            expect(desktopInvoke).toHaveBeenCalledWith('get_plugin_folder_grants');
+        });
+
+        it('revokes one grant by path, and nothing outside the desktop app', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(false);
+            await revokePluginFolderGrant('/Users/me/Plugins');
+            expect(desktopInvoke).not.toHaveBeenCalled();
+
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(desktopInvoke).mockResolvedValue(undefined);
+            await revokePluginFolderGrant('/Users/me/Plugins');
+            expect(desktopInvoke).toHaveBeenCalledWith('revoke_plugin_folder_grant', { path: '/Users/me/Plugins' });
         });
     });
 
