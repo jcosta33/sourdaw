@@ -34,6 +34,7 @@ import {
     ANALYSIS_MEASURE_TOOL_NAME,
     BRIEF_COMPILE_TOOL_NAME,
     getAgentToolCatalogSchemas,
+    MANDATORY_PLANNING_TOOL_NAMES,
     PROJECT_DISCOVERY_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
@@ -2084,8 +2085,10 @@ describe('generateToolPlanningOutcome', () => {
 
             // These tools are mandatory (#4371), so they ride every prompt, and the budget still leaves
             // the one prompt-selected slot, which keeps project.discover for these prompts. No workflow
-            // capability grounds these requests, so no workflow action tool is offered.
-            expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET - WORKFLOW_ACTION_TOOL_NAMES.size);
+            // capability grounds these requests, so no workflow action tool is offered and the brief is not
+            // offered: the selector, the nine planning tools, command-index search, catalog discovery and the
+            // interpretation tool, plus the one slot.
+            expect(advertisedNames).toHaveLength(MANDATORY_PLANNING_TOOL_NAMES.length + 5);
             for (const workflowActionToolName of WORKFLOW_ACTION_TOOL_NAMES) {
                 expect(advertisedNames).not.toContain(workflowActionToolName);
             }

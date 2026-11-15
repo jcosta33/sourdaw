@@ -466,7 +466,9 @@ describe('mandatory planning tools', () => {
                 ...WORKFLOW_ACTION_TOOL_NAMES,
             ]);
 
-            expect(WEBLLM_TOOL_BUDGET).toBe(mandatory.size + 1);
+            // This request is not offered the brief; the budget is sized for the largest mandatory set,
+            // which also holds the brief compiler.
+            expect(WEBLLM_TOOL_BUDGET).toBe(new Set([...mandatory, BRIEF_COMPILE_TOOL_NAME]).size + 1);
             expect(advertised.filter((name) => !mandatory.has(name))).toHaveLength(1);
             expect(advertised).toHaveLength(mandatory.size + 1);
         });
@@ -510,6 +512,27 @@ describe('mandatory planning tools', () => {
             expect(advertised.filter((name) => !mandatory.has(name))).toHaveLength(1);
             expect(advertised).toHaveLength(mandatory.size + 1);
             expect(advertised.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
+
+            const notOfferedCatalog = prepareCreativeInterpretationCatalog({
+                prompt,
+                context: getProjectContext(),
+                projectRevision: 'revision-1',
+            });
+            await generateToolPlanningOutcome(
+                'system',
+                prompt,
+                productionToolSchemas(notOfferedCatalog, getProjectContext(), undefined, prompt),
+                undefined,
+                prompt,
+                undefined,
+                undefined,
+                undefined,
+                AUTO_TOOL_CHOICE,
+                undefined,
+                prompt
+            );
+            const notOffered = namesOf((mocks.generateWebLlmToolCalls.mock.calls[1]?.[2] ?? []) as ToolSchema[]);
+            expect(notOffered).not.toContain(BRIEF_COMPILE_TOOL_NAME);
         });
 
         // Red when an offered brief compiler is cut, or a mandatory tool is cut for it, beside every workflow
@@ -549,8 +572,46 @@ describe('mandatory planning tools', () => {
                 ...WORKFLOW_ACTION_TOOL_NAMES,
             ]);
 
-            expect(new Set(advertised)).toEqual(mandatory);
+            expect(advertised).toEqual(expect.arrayContaining([...mandatory]));
+            expect(advertised.filter((name) => !mandatory.has(name))).toHaveLength(1);
+            expect(advertised).toHaveLength(mandatory.size + 1);
             expect(advertised).toHaveLength(WEBLLM_TOOL_BUDGET);
+        });
+
+        // Red when the offered brief compiler, beside every workflow action tool, leaves no free slot, so a
+        // discovered analysis.detectTransients is dropped after discovery and a call to it is refused.
+        it('keeps a discovered transient read beside the brief compiler and every workflow action tool', async () => {
+            const prompt = 'tighten the drums for this whole project';
+            const catalog = prepareCreativeInterpretationCatalog({
+                prompt,
+                context: getProjectContext(),
+                projectRevision: 'revision-1',
+                offersBrief: true,
+            });
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+            await generateToolPlanningOutcome(
+                'system',
+                prompt,
+                productionToolSchemas(catalog, getProjectContext(), undefined, prompt, true),
+                undefined,
+                prompt,
+                undefined,
+                undefined,
+                undefined,
+                AUTO_TOOL_CHOICE,
+                { firstUserMessage: prompt, history: [], budgetNote: '', transientOnsetsDiscovered: true },
+                prompt,
+                { keptCapabilityIds: ['drum-routing'] }
+            );
+            const advertised = namesOf((mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[]);
+
+            expect(advertised).toContain('analysis.detectTransients');
+            expect(advertised).toContain(BRIEF_COMPILE_TOOL_NAME);
+            for (const name of WORKFLOW_ACTION_TOOL_NAMES) {
+                expect(advertised).toContain(name);
+            }
+            expect(advertised.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
         });
 
         it('does not advertise analysis.compareReference with a reference loaded, even ahead of the free slot', async () => {

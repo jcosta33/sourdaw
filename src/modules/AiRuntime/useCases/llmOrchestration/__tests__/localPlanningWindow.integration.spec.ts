@@ -34,10 +34,11 @@ import { createPlanningProject, fixtureUuid } from '../../__tests__/planningProj
 import { decodeReceiptContext, readReceiptSummary } from '../../__tests__/receiptContextFixture';
 import { createFullThreadContext, threadRequest } from '../../__tests__/threadContextFixture';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
+import { MANDATORY_PLANNING_TOOL_NAMES } from '../../agentToolCatalog';
 import { getProjectContext } from '../../getProjectContext';
 import { parsePromptToActions } from '../../parsePromptToActions';
 import { getBackendChain } from '../backendResolution/getBackendChain';
-import { type ProviderAttemptAdmission, WEBLLM_TOOL_BUDGET } from '../inference';
+import { type ProviderAttemptAdmission } from '../inference';
 
 registerDeviceEnginePorts();
 
@@ -143,7 +144,12 @@ function toolsFrom(attempt: ProviderAttemptAdmission) {
     return (attempt.request.tools ?? []).map((tool) => ({ type: 'function' as const, function: tool }));
 }
 
-function assertSentWindow(attempts: ProviderAttemptAdmission[], label: string): void {
+/** Only a general planning turn (named by index) is offered the brief compiler; intake, answer, Explain, resume and rejected sends never are. */
+function assertSentWindow(
+    attempts: ProviderAttemptAdmission[],
+    label: string,
+    { briefAttempts = [] }: { briefAttempts?: readonly number[] } = {}
+): void {
     expect(attempts.length).toBeGreaterThan(0);
     expect(completion).toHaveBeenCalledTimes(attempts.length);
     for (const [index, attempt] of attempts.entries()) {
@@ -185,6 +191,14 @@ function assertSentWindow(attempts: ProviderAttemptAdmission[], label: string): 
             })
         );
         expect(needed).toBeLessThanOrEqual(32768);
+        if (briefAttempts.includes(index)) {
+            expect(tools.map((tool) => tool.function.name)).toContain('brief.compile');
+        } else {
+            expect(
+                tools.map((tool) => tool.function.name),
+                label
+            ).not.toContain('brief.compile');
+        }
     }
 }
 
@@ -427,8 +441,9 @@ it('fits a discovered 64-onset receipt with live authority, resume and a full bo
     );
     expect(readBuffer).toHaveBeenCalledWith(bufferId);
     const selected = toolsFrom(attempts[3]!).map((tool) => tool.function.name);
-    // This project grounds no workflow, so the offer stops short of the budget by the workflow action tools.
-    expect(selected).toHaveLength(WEBLLM_TOOL_BUDGET - WORKFLOW_ACTION_TOOL_NAMES.size);
+    // This project grounds no workflow and is offered no brief: the selector, the nine planning tools,
+    // command-index search, catalog discovery and the interpretation tool, plus the one discovered tool.
+    expect(selected).toHaveLength(MANDATORY_PLANNING_TOOL_NAMES.length + 5);
     expect(selected).toContain('analysis.detectTransients');
     expect(selected).toContain('selectCreativeInterpretation');
     expect(selected).toContain('command.batch.propose');
@@ -485,7 +500,7 @@ it.each([false, true])('fits answer entry, intake and answer projections: Explai
     expect(result.actions).toEqual([]);
     expect(result.requiresConfirmation).toBe(false);
     expect(attempts).toHaveLength(explain ? 2 : 3);
-    assertSentWindow(attempts, explain ? 'Explain' : 'answer-intake');
+    assertSentWindow(attempts, explain ? 'Explain' : 'answer-intake', { briefAttempts: explain ? [] : [0] });
     const names = attempts.map((attempt) => toolsFrom(attempt).map((tool) => tool.function.name));
     if (!explain) {
         expect(names[0]).toContain('selectCreativeInterpretation');
@@ -576,7 +591,7 @@ it('carries real workflow capability data for ordinary whole-project local plann
     });
     expect(result.rejectionReason, JSON.stringify(result)).toBeUndefined();
     expect(attempts).toHaveLength(2);
-    assertSentWindow(attempts, 'whole-project-workflow');
+    assertSentWindow(attempts, 'whole-project-workflow', { briefAttempts: [0, 1] });
     const message = completion.mock.calls[1]![1];
     const capabilities = JSON.parse(message.split('capability_schemas:\n')[1].split('\n\n')[0]);
     expect(JSON.parse(capabilities.availableCapabilities)).toMatchObject({
@@ -587,6 +602,10 @@ it('carries real workflow capability data for ordinary whole-project local plann
     });
     expect(toolsFrom(attempts[1]!).map((tool) => tool.function.name)).toContain('selectWorkflowCapability');
     expect(toolsFrom(attempts[1]!).map((tool) => tool.function.name)).toContain('brief.compile');
+    // The largest local send: the brief compiler beside every workflow action tool.
+    for (const name of WORKFLOW_ACTION_TOOL_NAMES) {
+        expect(toolsFrom(attempts[1]!).map((tool) => tool.function.name)).toContain(name);
+    }
     // The kept capability makes its workflow selectable and its action tool offered locally; a
     // workflow the message carries no capability for is not selectable.
     const selector = toolsFrom(attempts[1]!).find((tool) => tool.function.name === 'selectWorkflowCapability');
