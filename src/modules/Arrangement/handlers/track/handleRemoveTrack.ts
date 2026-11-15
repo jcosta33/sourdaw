@@ -13,6 +13,8 @@ import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
 
+import { recordDiscardedPluginStates } from './discardedPluginStateCarry';
+
 type RemoveTrackAction = Extract<AppAction, { type: 'removeTrack' }>;
 
 function currentStateMatches(action: RemoveTrackAction): boolean {
@@ -83,9 +85,15 @@ function currentStateMatches(action: RemoveTrackAction): boolean {
 
 export const handleRemoveTrack = createHandler<'removeTrack'>({
     validate: (action) => currentStateMatches(action),
-    execute: (action) => {
+    execute: (action, context) => {
         if (!currentStateMatches(action)) {
             return { status: 'conflict' };
+        }
+        // A redo replays this removal under the entry's id with the first run's restore
+        // snapshot; a save since the undo moved the plugin state past it.
+        const removedTrack = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId);
+        if (removedTrack && context?.undoEntryId !== undefined) {
+            recordDiscardedPluginStates(context.undoEntryId, [removedTrack]);
         }
         const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
         const result = removeTrack(action.payload.trackId, {
