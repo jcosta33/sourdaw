@@ -206,14 +206,27 @@ fn comparable_components(path: &Path) -> Vec<String> {
 /// Unicode normalization of a name as the same name.
 #[cfg(target_os = "windows")]
 fn comparable_name(name: &str) -> String {
-    name.trim_end_matches(['.', ' ']).to_lowercase()
+    fold_case(name.trim_end_matches(['.', ' ']))
 }
 
 #[cfg(target_os = "macos")]
 fn comparable_name(name: &str) -> String {
     icu_normalizer::DecomposingNormalizerBorrowed::new_nfd()
-        .normalize(&name.to_lowercase())
+        .normalize(&fold_case(name))
         .into_owned()
+}
+
+/// Every spelling a case-insensitive volume treats as one name maps to one
+/// string. `str::to_lowercase` is not enough: it keeps letters that are
+/// already lowercase, such as final sigma or long s, apart from the letters
+/// the volume folds them into. Each character goes up and back down on its
+/// own, so `ς` and `σ` both become `σ` and `ß` becomes `ss`.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn fold_case(name: &str) -> String {
+    name.chars()
+        .flat_map(char::to_uppercase)
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -792,6 +805,33 @@ mod tests {
             plugin_folder_containing(Path::new("/Users/u/Plugins/Cafe/Evil.clap"), &folders)
                 .is_none(),
             "a name without the accent is another folder"
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn a_plugin_folder_name_matches_every_spelling_the_volume_folds_together() {
+        let folders = vec![
+            PathBuf::from("/Users/u/Plugins/\u{391}\u{3a3}"),
+            PathBuf::from("/Users/u/Plugins/Stra\u{df}e"),
+            PathBuf::from("/Users/u/Plugins/Long\u{17f}"),
+        ];
+
+        for inside in [
+            "/Users/u/Plugins/\u{3b1}\u{3c3}/Evil.clap",
+            "/Users/u/Plugins/\u{3b1}\u{3c2}/Evil.clap",
+            "/Users/u/Plugins/STRASSE/Evil.clap",
+            "/Users/u/Plugins/LONGS/Evil.clap",
+        ] {
+            assert!(
+                plugin_folder_containing(Path::new(inside), &folders).is_some(),
+                "{inside:?} is inside a plugin folder"
+            );
+        }
+        assert!(
+            plugin_folder_containing(Path::new("/Users/u/Plugins/\u{3b1}/Evil.clap"), &folders)
+                .is_none(),
+            "a shorter name is another folder"
         );
     }
 
