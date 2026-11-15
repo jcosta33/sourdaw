@@ -36,7 +36,11 @@ import { hydrateBacteriaModAssignmentsFromProject } from './hydrateBacteriaModAs
  */
 export function initBacteriaModAssignmentsPersistence(): () => void {
     const committedTables = new Map<string, BacteriaModAssignment[]>();
-    const episodes = createUserAppActionRefusalEpisodes();
+    const episodes = createUserAppActionRefusalEpisodes({
+        onAdmitted: (deviceId) => {
+            commitBacteriaModAssignments(deviceId, episodes);
+        },
+    });
 
     return bacteriaStore.subscribe((instances) => {
         if (!instances) {

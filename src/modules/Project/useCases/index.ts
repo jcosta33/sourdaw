@@ -33,6 +33,7 @@ export {
     doesProductionBriefAllowActionBatch,
     productionBriefActionBatchAdmission,
 } from './doesProductionBriefAllowActionBatch';
+export { subscribeToProductionBriefChanges } from './subscribeToProductionBriefChanges';
 export { collectProtectedScopes } from './collectProtectedScopes';
 export { isProjectWideScope } from './isProjectWideScope';
 export { getProjectScopedBriefLock } from './getProjectScopedBriefLock';

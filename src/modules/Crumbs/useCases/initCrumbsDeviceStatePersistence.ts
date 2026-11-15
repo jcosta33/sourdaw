@@ -32,7 +32,11 @@ function playbackKey(state: CrumbsState): string {
  */
 export function initCrumbsDeviceStatePersistence(): () => void {
     const committed = new Map<string, string>();
-    const episodes = createUserAppActionRefusalEpisodes();
+    const episodes = createUserAppActionRefusalEpisodes({
+        onAdmitted: (deviceId) => {
+            commitCrumbsDeviceState(deviceId, episodes);
+        },
+    });
 
     const mirrorPass = (deviceId: string, state: CrumbsState): void => {
         const previous = committed.get(deviceId);

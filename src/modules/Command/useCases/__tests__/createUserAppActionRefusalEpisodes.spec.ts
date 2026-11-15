@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AppActionAdmissionRefusedError, AppActionConflictError } from '../../errors/AppActionExecutionError';
 import { createUserAppActionRefusalEpisodes } from '../createUserAppActionRefusalEpisodes';
 import { executeAppAction } from '../executeAppAction';
+import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 
 vi.mock('../executeAppAction', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../executeAppAction')>()),
@@ -111,5 +113,151 @@ describe('createUserAppActionRefusalEpisodes', () => {
 
         await expect(episodes.execute('device-1', action)).rejects.toBe(failure);
         expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    describe('when the project becomes changeable', () => {
+        const lock = () =>
+            agentProjectRepairStateStore.set({
+                audioGraphValid: false,
+                detectedRevision: 'revision-1',
+                inspectionAvailable: true,
+                projectInvariantsValid: false,
+                rawProjectRetained: true,
+                repairCandidates: [],
+                status: 'repair-required',
+            });
+        const unlock = () => agentProjectRepairStateStore.set(null);
+
+        afterEach(() => {
+            agentProjectRepairStateStore.set(null);
+            productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
+            productionBriefAdmissionPort.setSubscription(() => () => undefined);
+        });
+
+        it('closes the episode and reports the key once when the repair gate clears', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+
+            unlock();
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
+
+            lock();
+            unlock();
+            expect(onAdmitted).toHaveBeenCalledTimes(1);
+        });
+
+        it('warns again for a refusal after the project was unlocked and relocked', async () => {
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted: vi.fn() });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+            unlock();
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+
+            expect(notifyUser).toHaveBeenCalledTimes(2);
+        });
+
+        it('stays open and silent while an admission signal leaves the key refused', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+
+            // A different gate state change that still refuses the action.
+            agentProjectRepairStateStore.set({
+                ...agentProjectRepairStateStore.value!,
+                detectedRevision: 'revision-2',
+            });
+            refuse();
+            await episodes.execute('A', action);
+
+            expect(onAdmitted).not.toHaveBeenCalled();
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+
+        it('ends only the keys whose last action is admitted now', async () => {
+            const onAdmitted = vi.fn();
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            const other = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
+            let briefLocksRemoval = true;
+            productionBriefAdmissionPort.setGuard((actions) => ({
+                allowsCurrent: () =>
+                    !(briefLocksRemoval && actions.some((candidate) => candidate.type === 'removeTrack')),
+            }));
+            let signalBrief = () => {};
+            productionBriefAdmissionPort.setSubscription((listener) => {
+                signalBrief = listener;
+                return () => undefined;
+            });
+            lock();
+            vi.mocked(executeAppAction).mockRejectedValueOnce(new AppActionAdmissionRefusedError('addTrack'));
+            await episodes.execute('A', action);
+            vi.mocked(executeAppAction).mockRejectedValueOnce(new AppActionAdmissionRefusedError('removeTrack'));
+            await episodes.execute('B', other);
+
+            unlock();
+            expect(onAdmitted.mock.calls).toEqual([['A']]);
+
+            briefLocksRemoval = false;
+            signalBrief();
+            expect(onAdmitted.mock.calls).toEqual([['A'], ['B']]);
+        });
+
+        it('reports a key when the production brief starts admitting its action', async () => {
+            const onAdmitted = vi.fn();
+            let allowed = false;
+            productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => allowed }));
+            let signalBrief = () => {};
+            productionBriefAdmissionPort.setSubscription((listener) => {
+                signalBrief = listener;
+                return () => undefined;
+            });
+            const episodes = createUserAppActionRefusalEpisodes({ onAdmitted });
+            refuse();
+            await episodes.execute('A', action);
+
+            signalBrief();
+            expect(onAdmitted).not.toHaveBeenCalled();
+            allowed = true;
+            signalBrief();
+            expect(onAdmitted).toHaveBeenCalledExactlyOnceWith('A');
+        });
+
+        it('holds the brief subscription only while an episode is open', async () => {
+            const unsubscribe = vi.fn();
+            const subscribe = vi.fn(() => unsubscribe);
+            productionBriefAdmissionPort.setSubscription(subscribe);
+            const episodes = createUserAppActionRefusalEpisodes();
+            expect(subscribe).not.toHaveBeenCalled();
+
+            lock();
+            refuse();
+            await episodes.execute('A', action);
+            refuse();
+            await episodes.execute('B', action);
+            expect(subscribe).toHaveBeenCalledTimes(1);
+
+            await episodes.execute('A', action);
+            expect(unsubscribe).not.toHaveBeenCalled();
+            episodes.end('B');
+            expect(unsubscribe).toHaveBeenCalledTimes(1);
+
+            refuse();
+            await episodes.execute('C', action);
+            expect(subscribe).toHaveBeenCalledTimes(2);
+            episodes.endAll();
+            expect(unsubscribe).toHaveBeenCalledTimes(2);
+
+            refuse();
+            await episodes.execute('D', action);
+            unlock();
+            expect(unsubscribe).toHaveBeenCalledTimes(3);
+        });
     });
 });

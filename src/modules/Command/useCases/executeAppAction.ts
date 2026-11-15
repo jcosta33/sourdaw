@@ -42,10 +42,10 @@ import { createUndoEntry } from './createUndoEntry';
 import { getCommandHandler } from './getCommandHandler';
 import { getProjectMutationAdmissionFailure } from './getProjectMutationAdmissionFailure';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
+import { captureAppActionAdmission } from './isAppActionAdmitted';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
-import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 import { registerHandlerCommitValidation } from './registerHandlerCommitValidation';
 import { rollbackAbortedActions } from './rollbackAbortedActions';
 import { traceAppAction } from './traceAppAction';
@@ -311,14 +311,12 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
             // The repair action itself is the one admitted route through this
             // gate while it holds; everything else is still refused.
-            if (getProjectMutationAdmissionFailure(action)) {
+            const admission = captureAppActionAdmission(action);
+            if (!admission.admitsNow()) {
                 throw new AppActionAdmissionRefusedError(action.type);
             }
-
-            const production_brief_admission = productionBriefAdmissionPort.capture([action]);
-            if (!production_brief_admission.allowsCurrent()) {
-                throw new AppActionAdmissionRefusedError(action.type);
-            }
+            // The commit re-asks the footprint captured at this preflight.
+            const production_brief_admission = { allowsCurrent: admission.briefAllowsCurrent };
 
             options?.observeMaterializedAction?.(structuredClone(action));
             if (handler.isNoop?.(action)) {
