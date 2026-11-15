@@ -1699,6 +1699,8 @@ describe('pull-request delivery', () => {
             'PR #42 and main both changed lint-ledger-bound file since merge base merge-base: src/a.ts; ' +
                 'merge current main into the lane and publish so a fresh Gate measures the combination'
         );
+        // The final read runs after the delivery receipt is posted, so the refusal leaves that receipt.
+        expect(calls.some((call) => call.startsWith('add-receipt:'))).toBe(true);
         expect(calls.some((call) => call.startsWith('merge:'))).toBe(false);
     });
 

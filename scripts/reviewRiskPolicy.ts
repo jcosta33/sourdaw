@@ -163,6 +163,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/isolatedGitTransport.ts',
     'scripts/laneActivity.ts',
     'scripts/laneStackForkMarkers.ts',
+    'scripts/lintLedgerCrossing.ts',
     'scripts/measurementRevisionHolders.ts',
     'scripts/pnpmModulesPreflight.ts',
     'scripts/prContract.ts',

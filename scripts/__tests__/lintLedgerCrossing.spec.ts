@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -181,6 +181,67 @@ describe('lint ledger crossing over a real repository', () => {
             mergeBase: git(['rev-parse', 'main']).trim(),
             paths: [],
         });
+    });
+
+    it.each([
+        { ledger: '.oxlintrc.json', content: OXLINT.replace('./src/c.ts', './x.ts') },
+        {
+            ledger: 'oxlint.craft-baseline.mjs',
+            content: "export const craftBaselineFiles = {\n    'r': [\n        'x.ts',\n    ],\n};\n",
+        },
+        { ledger: 'eslint.size-baseline.mjs', content: "export const sizeBaselineFiles = [\n    'x.ts',\n];\n" },
+        { ledger: 'scripts/lintSizeCeilings.json', content: JSON.stringify({ 'x.ts': 700 }) },
+    ])('reads $ledger from the repository and reports a file only it binds', ({ ledger, content }) => {
+        const { git, write } = scratchRepository();
+        mkdirSync(join(directory ?? '', 'scripts'), { recursive: true });
+        write(ledger, content);
+        write('x.ts', 'one;\n');
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        git(['switch', '--quiet', '-c', 'b']);
+        write('x.ts', 'two;\n');
+        git(['commit', '--quiet', '-am', 'b']);
+        git(['switch', '--quiet', 'main']);
+        write('x.ts', 'three;\n');
+        git(['commit', '--quiet', '-am', 'main']);
+
+        expect(readLintLedgerCrossing(git, 'main', 'b').paths).toEqual(['x.ts']);
+    });
+
+    it('reads a binding that only the merge base holds', () => {
+        const { git, write } = scratchRepository();
+        write('eslint-suppressions.json', JSON.stringify({ 'x.ts': { 'no-void': { count: 1 } } }));
+        write('x.ts', 'void one;\n');
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        git(['switch', '--quiet', '-c', 'b']);
+        write('eslint-suppressions.json', '{}');
+        write('x.ts', 'one;\n');
+        git(['commit', '--quiet', '-am', 'b removes the entry']);
+        git(['switch', '--quiet', 'main']);
+        write('eslint-suppressions.json', '{}');
+        write('x.ts', 'void one;\nkeep;\n');
+        git(['commit', '--quiet', '-am', 'main']);
+
+        expect(readLintLedgerCrossing(git, 'main', 'b').paths).toEqual(['x.ts']);
+    });
+
+    it('reads a binding that only main adds', () => {
+        const { git, write } = scratchRepository();
+        write('x.ts', 'one;\n');
+        write('other.ts', 'a;\n');
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        git(['switch', '--quiet', '-c', 'b']);
+        write('x.ts', 'two;\n');
+        git(['commit', '--quiet', '-am', 'b']);
+        git(['switch', '--quiet', 'main']);
+        write('eslint-suppressions.json', JSON.stringify({ 'x.ts': { 'no-void': { count: 1 } } }));
+        write('x.ts', 'void three;\n');
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'main binds x']);
+
+        expect(readLintLedgerCrossing(git, 'main', 'b').paths).toEqual(['x.ts']);
     });
 
     it('tolerates a ledger absent from every tree', () => {
