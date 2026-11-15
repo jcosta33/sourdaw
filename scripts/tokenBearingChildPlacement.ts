@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 
-import { TRUSTED_GIT_PATH_ENV } from './prContract.ts';
+import { TRUSTED_GH_PATH_ENV, TRUSTED_GIT_PATH_ENV } from './prContract.ts';
 
 /** The git directories `createIsolatedGitDirectory` made that have not been released yet. */
 const liveIsolatedGitDirectories = new Set<string>();
@@ -127,6 +127,9 @@ function repositoryFreeEnv(env: NodeJS.ProcessEnv, directory: string): NodeJS.Pr
  * needs no checkout. The exception is the exact checkout repository query, which reads remote names
  * from the caller's repository; it runs `git remote -v` and `git config --get-regexp` there, which
  * read config but start no config-selected program.
+ *
+ * A child is gh when its command is named gh or is exactly the launcher's trusted gh path, which is
+ * a resolved real path and so may carry another file name.
  */
 export function withGhChildLocation<Result>(
     childCommand: string,
@@ -136,7 +139,7 @@ export function withGhChildLocation<Result>(
     body: (location: { cwd: string; env: NodeJS.ProcessEnv | undefined }) => Result
 ): Result {
     if (
-        executableName(childCommand) !== 'gh' ||
+        !isGhChild(childCommand, env ?? process.env) ||
         !carriesGithubToken(env ?? process.env) ||
         isCheckoutRepositoryQuery(args)
     ) {
@@ -168,6 +171,10 @@ export function tokenFreeGitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  * launcher's trusted path is the real path of the `git` it found, which is `git.exe` on Windows and
  * may carry another name entirely. A caller that passes that trusted path itself names git too.
  */
+function isGhChild(command: string, env: NodeJS.ProcessEnv): boolean {
+    return executableName(command) === 'gh' || command === env[TRUSTED_GH_PATH_ENV];
+}
+
 export function isGitChild(command: string, env: NodeJS.ProcessEnv): boolean {
     return executableName(command) === 'git' || command === env[TRUSTED_GIT_PATH_ENV];
 }
