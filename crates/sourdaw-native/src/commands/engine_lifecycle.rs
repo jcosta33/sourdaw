@@ -187,7 +187,7 @@ pub async fn retire_native_engine(
 /// released, or the outcome that made the retire a no-op.
 enum DrainedEngine {
     Drained {
-        handle: EngineHandle,
+        handle: Box<EngineHandle>,
         engine_owned_plugins: Vec<(String, EnginePluginInstanceData)>,
         crumbs_work: Vec<crumbs::DrainedCrumbsWork>,
     },
@@ -227,7 +227,7 @@ async fn drain_the_lost_engine(state: &AppState, crumbs: &CrumbsState) -> Draine
     registry.reset_for_engine_restart();
 
     DrainedEngine::Drained {
-        handle,
+        handle: Box::new(handle),
         engine_owned_plugins,
         crumbs_work,
     }

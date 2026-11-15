@@ -1146,7 +1146,7 @@ impl GraphCommand {
 /// one nor free it (ADR 0020): it installs the instance into the effect
 /// table, or hands it back over the retirement channel, and nothing else.
 pub enum PluginCore {
-    Knead(KneadEngine),
+    Knead(Box<KneadEngine>),
     Fermenter(Box<FermenterBody>),
     GrandBoule(Box<GrandBouleBody>),
     Gluten(Box<GlutenBody>),
@@ -1172,7 +1172,7 @@ impl PluginCore {
     /// sample rate.
     pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Result<Self, String> {
         Ok(match plugin_type {
-            BuiltinEffectType::Knead => Self::Knead(KneadEngine::new(sample_rate)),
+            BuiltinEffectType::Knead => Self::Knead(Box::new(KneadEngine::new(sample_rate))),
             BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
             BuiltinEffectType::GrandBoule => Self::grand_boule_with_patch(sample_rate, &[]),
             BuiltinEffectType::Gluten => Self::gluten_with_patch(sample_rate, &[]),

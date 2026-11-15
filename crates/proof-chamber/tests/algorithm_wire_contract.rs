@@ -24,7 +24,11 @@
 //!    here instead of engaging an engine that renders its dry input and calls
 //!    it reverb.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "tests assert by unwrapping and fail by panicking"
+)]
 
 use proof_chamber::{ProofChamberInstance, UnexposedEngine};
 
