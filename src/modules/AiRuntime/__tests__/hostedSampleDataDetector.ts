@@ -76,7 +76,7 @@ export function containsSampleData(value: unknown): boolean {
         if (decoded !== value) {
             return containsSampleData(decoded);
         }
-        const unwrapped = value.replace(BASE64_LINE_WRAP, '');
+        const unwrapped = value.replaceAll(BASE64_LINE_WRAP, '');
         return (
             BASE64_BLOB.test(unwrapped) ||
             EMBEDDED_NUMBER_SERIES.test(value) ||

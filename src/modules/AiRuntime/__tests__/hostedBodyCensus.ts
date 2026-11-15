@@ -89,11 +89,16 @@ function isTransportSource(text: string): boolean {
     return GATEWAY_DEFINITION.test(text) || importsGatewayFunction(text) || BASE_URL_FETCH.test(text);
 }
 
+/** The given sources, keyed by path relative to `src/`, or else every source file read from `src/`. */
+function readSources(inMemorySources: Readonly<Record<string, string>> | undefined): Map<string, string> {
+    if (inMemorySources !== undefined) {
+        return new Map(Object.entries(inMemorySources).map(([file, text]) => [join(SRC_ROOT, file), text]));
+    }
+    return new Map(listSourceFiles(SRC_ROOT).map((file) => [file, readFileSync(file, 'utf8')]));
+}
+
 export function discoverHostedBodyCensus(inMemorySources?: Readonly<Record<string, string>>): HostedBodyCensus {
-    const sources =
-        inMemorySources === undefined
-            ? new Map(listSourceFiles(SRC_ROOT).map((file) => [file, readFileSync(file, 'utf8')]))
-            : new Map(Object.entries(inMemorySources).map(([file, text]) => [join(SRC_ROOT, file), text]));
+    const sources = readSources(inMemorySources);
     const files = Array.from(sources.keys());
 
     function resolveSpecifier(from: string, specifier: string): string | null {
