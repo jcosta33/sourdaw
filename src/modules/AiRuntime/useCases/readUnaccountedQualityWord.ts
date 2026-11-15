@@ -6,6 +6,7 @@ import { scanPromptQuotedText } from '../transformers/promptParser/promptQuotedT
 
 import { readFirstPerceptualTerm } from './admitPerceptualGoalDecline';
 import { escapeRegExp } from './agentReference/groundingStrategies/escapeRegExp';
+import { maskProjectObjectNames } from './maskProjectObjectNames';
 import { maskTrackReferences } from './maskTrackReferences';
 import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
 import { readComparedQualityWords } from './readComparedQualities';
@@ -117,7 +118,8 @@ function blankSuppliedName(clause: string): string {
 
 /**
  * The first quality word a request states that no figure of its own accounts for, or null when it states
- * none. A track name or quotation never counts, a clause the constraint reader consumed is a constraint
+ * none. A track name, the name of another object the project or its catalog holds, a device parameter
+ * beside the device that has it, or a quotation never counts, a clause the constraint reader consumed is a constraint
  * goal elsewhere, a registered command phrase opening a clause names a command, and "3 dB louder" is a
  * stated amount, not a perceptual claim. A figure accounts only for the word it qualifies, never a
  * neighbouring clause's quality.
@@ -128,7 +130,8 @@ export function readUnaccountedQualityWord(prompt: string, context: ProjectConte
         .flatMap((entry) => entry.intentPhrases)
         .toSorted((left, right) => right.length - left.length);
     // An unclosed apostrophe leaves the quoting unknown, so then every word is the request's own.
-    const named = scanPromptQuotedText(prompt).complete ? maskTrackReferences(prompt, context, ' ') : prompt;
+    const tracked = scanPromptQuotedText(prompt).complete ? maskTrackReferences(prompt, context, ' ') : prompt;
+    const named = maskProjectObjectNames(tracked, context, CLAUSE_SEPARATOR);
     const masked = blankConstraintClauses(named, prompt, context);
     for (const clause of masked.split(CLAUSE_SEPARATOR)) {
         const stated = blankCommandPhrase(

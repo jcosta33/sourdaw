@@ -175,6 +175,8 @@ describe('positive whole-request metric intent', () => {
         ['Give the drums more punch', 'more punch'],
         ['Rename Drums to Bass and make it warmer', 'warmer'],
         ['make the snare punch out', 'punch'],
+        ['Increase the width of the vocal', 'width'],
+        ['Make the vocal wider', 'wider'],
     ])('refuses the literal label on a request that names a perceptual quality: %s', (prompt, word) => {
         const value = fixture(prompt);
         const admitted = admitPlanningInterpretation({
@@ -217,6 +219,11 @@ describe('positive whole-request metric intent', () => {
         'Set the level of the Bass to 60%',
         'Turn the Bass loudness down 3 dB',
         'Reduce the loudness of the Bass by 3 dB',
+        'Set the width of the Stereo Widener to 2',
+        'Set the Stereo Widener width to 2',
+        'On the Stereo Widener set width to 2',
+        'Load the Bright Strings preset on Pad',
+        'Set the Bass Reverb size to 0.5',
     ])('still admits the literal label on a request with no unaccounted quality: %s', (prompt) => {
         const value = fixture(prompt);
         const admitted = admitPlanningInterpretation({
