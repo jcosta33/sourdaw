@@ -4,9 +4,10 @@ import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
+import { resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { fromCrumbsDeviceState } from '../../models/CrumbsDeviceState';
+import { fromCrumbsDeviceState, toCrumbsDeviceState } from '../../models/CrumbsDeviceState';
 import { crumbsStore, ensureInstance, setActiveSample, setMode } from '../../stores/crumbsStore';
 import { beginCrumbsPairedReconcile, endCrumbsPairedReconcile } from '../../stores/sampleLoadGate';
 import { replayCrumbsDeviceStateCommit } from '../crumbsDeviceStateMirror';
@@ -18,19 +19,31 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 
 const DEVICE_ID = 'crumbs-1';
 
-function makeCrumbsTracks() {
+function makeCrumbsTracks(deviceState?: ReturnType<typeof toCrumbsDeviceState>) {
     return sanitizeTrackSnapshot({
         tracks: [
             {
                 id: 'track-1',
                 name: 'Sampler',
                 kind: 'midi',
-                devices: [{ id: DEVICE_ID, name: 'Crumbs', type: 'crumbs', bypassed: false, parameterValues: {} }],
+                devices: [
+                    {
+                        id: DEVICE_ID,
+                        name: 'Crumbs',
+                        type: 'crumbs',
+                        bypassed: false,
+                        parameterValues: {},
+                        deviceState,
+                    },
+                ],
             },
         ],
         selectedTrackId: null,
     }).tracks;
 }
+
+/** Resolves once every microtask queued so far has run. */
+const afterMicrotasks = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 const lock = () =>
     agentProjectRepairStateStore.set({
@@ -98,6 +111,40 @@ describe('initCrumbsDeviceStatePersistence on a refused project', () => {
         setMode(DEVICE_ID, 'warp');
 
         await vi.waitFor(() => expect(notifyUser).toHaveBeenCalledTimes(2));
+    });
+
+    it('writes nothing on unlock when the document already holds the session state', async () => {
+        setMode(DEVICE_ID, 'slice');
+        await vi.waitFor(() => expect(notifyUser).toHaveBeenCalledTimes(1));
+        // A peer's identical chunk reaches the document while the project is still locked.
+        const session = crumbsStore.value?.[DEVICE_ID];
+        if (!session) {
+            throw new Error('Crumbs fixture is absent');
+        }
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: makeCrumbsTracks(toCrumbsDeviceState({ mode: session.mode, activeSample: session.activeSample })),
+        });
+        const dispatched = vi.spyOn(trackStore, 'set');
+
+        unlock();
+        await afterMicrotasks();
+
+        expect(dispatched).not.toHaveBeenCalled();
+        expect(documentMode()).toBe('slice');
+    });
+
+    it('does not write a refused edit into the project that replaced the one it was refused in', async () => {
+        setMode(DEVICE_ID, 'slice');
+        await vi.waitFor(() => expect(notifyUser).toHaveBeenCalledTimes(1));
+
+        // A load installs the new root, then clears the repair state; the new project holds the same device id.
+        resetCrdtProjectAuthority('Replacement');
+        trackStore.set({ ...defaultTrackState, tracks: makeCrumbsTracks() });
+        await afterMicrotasks();
+
+        expect(agentProjectRepairStateStore.value).toBeNull();
+        expect(documentMode()).toBeUndefined();
     });
 
     it('holds the admitted write while a paired reconcile is unsettled and writes the settled state on release', async () => {

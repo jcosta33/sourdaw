@@ -3,7 +3,6 @@ import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
 import { type AgentRunBudgets } from '../../models/AgentRun';
-import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { type IntentResult } from '../../models/IntentResult';
 import { type MeasurementAdmitter } from '../../models/MeasurementBudget';
@@ -39,9 +38,9 @@ import { describeVibeRunObjective } from './describeVibeRunObjective';
 import { formatVibeFigure } from './formatVibeFigure';
 import { readVibeBatchRecipeGoals } from './readVibeBatchRecipeGoals';
 import { readVibeMetricLabel } from './readVibeMetricLabel';
+import { readVibeRunCandidates } from './readVibeRunCandidates';
 import { readVibeRunFitRefusals } from './readVibeRunFitRefusals';
 import { readVibeRunValueChoiceScheduleFit } from './readVibeRunValueChoiceScheduleFit';
-import { withBriefTrackRoles } from './withBriefTrackRoles';
 
 type VibeRunSchedule = Extract<NonNullable<IntentResult['batchSchedule']>, { kind: 'vibe-run' }>;
 
@@ -145,18 +144,6 @@ type ScheduleInput = {
 };
 type Catalog = ReturnType<typeof getMixRecipeCatalog>;
 type Collected = Extract<Awaited<ReturnType<typeof collectVibeRunInitialBaselines>>, { status: 'collected' }>;
-
-function readCandidates(input: ScheduleInput, catalog: Catalog, protectedTargetIds: readonly string[]) {
-    const tracks = withBriefTrackRoles(input.context.tracks, input.brief);
-    const plannerInput = {
-        context: { tracks, sections: input.context.sections, productionBrief: input.brief },
-        descriptors: input.mixIntent.requestedDescriptors,
-        recipes: catalog.recipes.filter((recipe) => recipe.origin === undefined),
-        maxTargetsPerBatch: ANALYSIS_MEASURE_MAX_TARGETS,
-        protectedTargetIds,
-    };
-    return { tracks, plannerInput, plan: planWholeProjectVibeRun({ ...plannerInput, measurements: [] }) };
-}
 
 function validSections(context: ProjectContext): boolean {
     const sections = context.sections ?? [];
@@ -297,7 +284,7 @@ function readMeasuredSilences(
 
 function buildMeasuredPlan(input: {
     source: ScheduleInput;
-    candidate: ReturnType<typeof readCandidates>;
+    candidate: ReturnType<typeof readVibeRunCandidates>;
     catalog: Catalog;
     batches: readonly ScheduledVibeRunBatch[];
     arrangementRange: VibeRunVerificationRange;
@@ -385,7 +372,7 @@ function buildSchedule(plan: MeasuredScheduledVibeRunPlan, reading: PerceptualCo
 
 function completeMeasuredSchedule(input: {
     source: ScheduleInput;
-    candidate: ReturnType<typeof readCandidates>;
+    candidate: ReturnType<typeof readVibeRunCandidates>;
     catalog: Catalog;
     ranges: readonly VibeRunVerificationRange[];
     arrangementRange: VibeRunVerificationRange;
@@ -522,7 +509,11 @@ async function planSchedule(input: ScheduleInput): Promise<PlannedVibeRunSchedul
             ],
         };
     }
-    const candidate = readCandidates(input, catalog, protections.protectedTrackIds);
+    const candidate = readVibeRunCandidates(
+        { context: input.context, brief: input.brief, descriptors: input.mixIntent.requestedDescriptors },
+        catalog,
+        protections.protectedTrackIds
+    );
     if (candidate.plan.batches.length === 0) {
         return { status: 'none' };
     }
