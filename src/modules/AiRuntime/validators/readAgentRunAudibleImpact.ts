@@ -50,15 +50,18 @@ function readMetric(value: unknown): AgentRunMeasuredAudibleMetric | null {
     const baseline = readFigure(value.baseline);
     const preview = readFigure(value.preview);
     const delta = readFigure(value.delta);
-    return targetId === null ||
+    if (
+        targetId === null ||
         targetKind === null ||
         range === null ||
         metricId === null ||
         baseline === null ||
         preview === null ||
         delta === null
-        ? null
-        : { targetId, targetKind, range, metricId, baseline, preview, delta };
+    ) {
+        return null;
+    }
+    return { targetId, targetKind, range, metricId, baseline, preview, delta };
 }
 
 function readMetrics(value: unknown): AgentRunMeasuredAudibleMetric[] | null {
@@ -88,7 +91,8 @@ export function readAgentRunAudibleImpact(value: Record<string, unknown>): Agent
     const revision = readText(value.revision);
     const batchContentHash = readText(value.batchContentHash);
     const metrics = readMetrics(value.metrics);
-    return revision === null || batchContentHash === null || metrics === null
-        ? null
-        : { status: 'measured', revision, batchContentHash, metrics };
+    if (revision === null || batchContentHash === null || metrics === null) {
+        return null;
+    }
+    return { status: 'measured', revision, batchContentHash, metrics };
 }
