@@ -1,5 +1,4 @@
 import { resolveEligibleClipWriteTarget, trackStore } from '#/modules/Arrangement/stores';
-import { duplicateTrack } from '#/modules/Arrangement/useCases';
 import { isAppActionCommittedError } from '#/modules/Command/useCases';
 import { arrangementStore } from '#/modules/Project/stores';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
@@ -53,8 +52,8 @@ export const trackCommands: CallableCommandEntry[] = [
         shortcut: '⌘⇧D',
         action: (onCommitted?: () => void) => {
             const id = getSelectedTrackId();
-            if (id && duplicateTrack(id)) {
-                onCommitted?.();
+            if (id) {
+                void executeCommandAction(onCommitted, { type: 'duplicateTrack', payload: { trackId: id } });
             }
         },
     },

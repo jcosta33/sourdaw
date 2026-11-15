@@ -113,8 +113,8 @@ import { getCompiledTransformTargetIds } from './getCompiledTransformTargetIds';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
 import { type ProjectContext } from './getProjectContext';
 import { groundCompiledCommandBatch } from './groundCompiledCommandBatch';
+import { isBriefWritingRequest } from './isBriefWritingRequest';
 import { type ContinuedFigure } from './lastCommitContinuation/lastCommitOutcome';
-import { getBackendChain } from './llmOrchestration/backendResolution/getBackendChain';
 import {
     generateToolPlanningOutcome,
     type ProviderAttemptAdmission,
@@ -2396,27 +2396,6 @@ async function planBriefVibeRun(input: {
         plannedRunLines: planned.lines,
         applicationToolReceipts: [...input.priorReceipts, ...planned.receipts],
     };
-}
-
-/**
- * A chat request (or Prompt Bar hand-off) whose chain is all hosted or all local may write the production
- * brief; Explain and a decision resume may not. Automatic stays local, so it never reaches a hosted provider.
- */
-function isBriefWritingRequest(input: {
-    thread: ThreadContext | null | undefined;
-    runId: string | undefined;
-    projectRevision: string | undefined;
-    chatHandOff: boolean;
-}): boolean {
-    const { thread, runId, projectRevision, chatHandOff } = input;
-    if ((thread === undefined && !chatHandOff) || projectRevision === undefined || projectRevision === '') {
-        return false;
-    }
-    if (runId !== undefined && (agentRunLifecycle.get(runId)?.resume ?? null) !== null) {
-        return false;
-    }
-    const chain = getBackendChain();
-    return chain.length > 0 && chain.every((backend) => backend === chain[0]);
 }
 
 /** A request the Prompt Bar runs in the agent chat instead; it carries no batch. */
