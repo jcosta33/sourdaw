@@ -92,7 +92,7 @@ function blankCommandPhrase(clause: string, phrases: readonly string[]): string 
 const PUNCH_POINT = String.raw`punch[\s-]+(?:in|out)(?:\s*/\s*(?:in|out))?`;
 const PUNCH_TRANSPORT_TERMS = [
     new RegExp(String.raw`\b(?:enable|disable|turn|set|move|toggle)\s+${DETERMINER}${PUNCH_POINT}\b`, 'giu'),
-    new RegExp(String.raw`\b${PUNCH_POINT}(?=\s+(?:at|on|off|point|region|range)\b|\s*$)`, 'giu'),
+    new RegExp(String.raw`\b${PUNCH_POINT}(?=\s+(?:at|on|off|point|region|range)\b)`, 'giu'),
     /\bpunch[\s-]+(?:mode|recording)\b/giu,
 ];
 
@@ -101,6 +101,18 @@ function blankPunchTransportTerms(clause: string): string {
         (text, pattern) => text.replaceAll(pattern, (span) => ' '.repeat(span.length)),
         clause
     );
+}
+
+const SUPPLIED_NAME = new RegExp(String.raw`(?:\b(?:named|called)|${COMMAND_CARRIER}rename\b.*?\bto)\s+(.+)$`, 'iu');
+
+// A name the request gives for a new or renamed item ("named Dark Room", "rename Drums to Bright Keys") is a label,
+// not a claim about sound, but unlike an existing project name it cannot be looked up to mask.
+function blankSuppliedName(clause: string): string {
+    const match = SUPPLIED_NAME.exec(clause);
+    const name = match?.[1];
+    return match === null || name === undefined
+        ? clause
+        : blank(clause, match.index + match[0].length - name.length, clause.length);
 }
 
 /**
@@ -119,7 +131,10 @@ export function readUnaccountedQualityWord(prompt: string, context: ProjectConte
     const named = scanPromptQuotedText(prompt).complete ? maskTrackReferences(prompt, context, ' ') : prompt;
     const masked = blankConstraintClauses(named, prompt, context);
     for (const clause of masked.split(CLAUSE_SEPARATOR)) {
-        const stated = blankPunchTransportTerms(blankCommandPhrase(blankFigureQualifiers(clause), phrases));
+        const stated = blankCommandPhrase(
+            blankPunchTransportTerms(blankFigureQualifiers(blankSuppliedName(clause))),
+            phrases
+        );
         const term = readFirstPerceptualTerm(stated, context, catalog);
         if (term !== null) {
             return term.term;
