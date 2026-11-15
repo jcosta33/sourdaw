@@ -22,6 +22,8 @@ function ensureMarkerId(action: AddMarkerAction): string {
 const MALFORMED_SLOT_REASON = 'Marker slot must be a non-negative integer index with string neighbour ids.';
 
 export const handleAddMarker = createHandler<'addMarker'>({
+    // Singleton keeps addMarker out of multi-action batches, as it was before it gained a validator.
+    batchExecution: 'singleton',
     validate: (action) => isValidListRestoreSlot(action.payload),
     execute: (action) => {
         // executeAppAction (undo/redo replay included) never calls validate, so execute enforces the same rule.

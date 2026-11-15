@@ -10,6 +10,7 @@ import { clearHandlerRegistry } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppAction,
+    executeAppActionBatch,
     redo,
     registerProductionCommandHandlers,
     resetActionReplayAuthority,
@@ -208,6 +209,33 @@ describe('removeMarker undo restores marker order', () => {
             await undo({ stepOverConflicts: false });
 
             expect(markerIds()).toEqual([M1.id, M3.id, M4.id]);
+        });
+    });
+
+    it('refuses a multi-action addMarker batch as a singleton batch without writing', async () => {
+        const result = await executeAppActionBatch([
+            { type: 'addMarker', payload: { beat: 0, name: 'M1', markerId: M1.id } },
+            { type: 'addMarker', payload: { beat: 8, name: 'M2', markerId: M2.id } },
+        ]);
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Action must execute as a singleton batch: addMarker',
+        });
+        expect(markerIds()).toEqual([]);
+    });
+
+    describe('after-predecessor branch', () => {
+        it('restores after the old predecessor when the old successor is gone and the index lands elsewhere', async () => {
+            await addMarkers([M1, M2, M3, M4]);
+            await executeAppAction({ type: 'removeMarker', payload: { markerId: M3.id } });
+            // Peer removes M4 (the old successor) and moves M2 (the old predecessor) to the front.
+            setPeerMarkers([M2, M1]);
+
+            await undo({ stepOverConflicts: false });
+
+            // Recorded index 2 would append ([M2,M1,M3]); only the predecessor anchor gives this.
+            expect(markerIds()).toEqual([M2.id, M3.id, M1.id]);
         });
     });
 
