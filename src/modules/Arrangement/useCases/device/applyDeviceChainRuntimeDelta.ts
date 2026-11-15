@@ -8,12 +8,13 @@ import {
     mirrorDeviceChainDelta,
 } from '#/modules/AudioEngine/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
-import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { getAllTracks } from '../../repositories/track/getAllTracks';
 import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 import { runtimeGraphTopology } from '../runtimeGraphTopology';
 
+import { getDeviceChainMutationTrackId } from './getDeviceChainMutationTrackId';
 import { hasLiveProjectHostTrack } from './hasLiveProjectHostTrack';
 
 import type { Track } from '../../stores/trackStore';
@@ -60,28 +61,6 @@ function mirrorNativeDeviceChain(before: Track, after: Track): void {
     void mirrorDeviceChainDelta({ before, after }).catch((error: unknown) => {
         logger.warn(`[Arrangement] the native device-chain mirror for track ${after.id} failed: ${String(error)}`);
     });
-}
-
-function getDeviceChainMutationTrackId(action: AppAction, currentStep: Track): string | undefined {
-    switch (action.type) {
-        case 'addDevice':
-        case 'restoreDevice':
-        case 'reorderDevices':
-        case 'loadPreset':
-        case 'restorePresetDeviceChain':
-            return action.payload.trackId;
-        case 'removeDevice':
-            return (
-                action.payload.expectedTrackId ??
-                (currentStep.devices.some((device) => device.id === action.payload.deviceId)
-                    ? currentStep.id
-                    : undefined)
-            );
-        case 'loadExternalPlugin':
-            return action.payload.trackId;
-        default:
-            return undefined;
-    }
 }
 
 function hasLaterSameTrackDeviceChainMutation(

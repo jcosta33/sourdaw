@@ -1194,7 +1194,10 @@ impl ExportFileRegistry {
         {
             Ok(file) => {
                 let identity = export_file_identity(&file)?;
-                let transaction = self.transactions.get_mut(&key).expect("inserted export");
+                let transaction = self
+                    .transactions
+                    .get_mut(&key)
+                    .ok_or("Unknown export transaction")?;
                 transaction.record.identity = Some(identity);
                 transaction.file = Some(file);
                 self.persist()?;

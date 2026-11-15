@@ -15,8 +15,8 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser
 describe('PunchRecording Handlers', () => {
     beforeEach(() => vi.clearAllMocks());
 
-    it('handleTogglePunchRecording delegates to use case and notifies the user', () => {
-        handleTogglePunchRecording.execute({ type: 'togglePunchRecording', payload: undefined });
+    it('handleTogglePunchRecording delegates to use case and notifies the user', async () => {
+        await handleTogglePunchRecording.execute({ type: 'togglePunchRecording', payload: undefined });
         expect(mocks.togglePunchRecording).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Punch recording toggled');
     });

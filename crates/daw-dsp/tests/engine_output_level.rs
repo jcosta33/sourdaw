@@ -113,20 +113,41 @@ fn measure(samples: &[f32]) -> Level {
 }
 
 /// # Safety
-/// `left` and `right` must each point to at least `frames` writable `f32`s.
+/// `left` and `right` must each point to at least `frames` writable `f32`s, in
+/// two distinct allocations, with no reference to either live during the call.
 unsafe fn fill_input(left: *mut f32, right: *mut f32, frames: usize, offset: usize) {
     for i in 0..frames {
         let (l, r) = excitation(offset + i);
-        unsafe { *left.add(i) = l };
-        unsafe { *right.add(i) = r };
+        // SAFETY: `i < frames` and the caller guarantees `left` addresses at least `frames`
+        // writable `f32`s (`# Safety`), so the offset stays inside that allocation.
+        let left_slot = unsafe { left.add(i) };
+        // SAFETY: `left_slot` is inside the writable region the caller vouched for, and no
+        // reference to it is live.
+        unsafe { *left_slot = l };
+        // SAFETY: `i < frames` and the caller guarantees `right` addresses at least `frames`
+        // writable `f32`s (`# Safety`), so the offset stays inside that allocation.
+        let right_slot = unsafe { right.add(i) };
+        // SAFETY: `right_slot` is inside the writable region the caller vouched for, and no
+        // reference to it is live.
+        unsafe { *right_slot = r };
     }
 }
 
 /// # Safety
-/// `ptr` must point to at least `frames` readable `f32`s.
+/// `ptr` must point to at least `frames` readable, initialised `f32`s that are
+/// not written during the call.
 unsafe fn read_output(ptr: *const f32, frames: usize) -> Vec<f32> {
     assert!(!ptr.is_null(), "render export returned a null buffer");
-    (0..frames).map(|i| unsafe { *ptr.add(i) }).collect()
+    (0..frames)
+        .map(|i| {
+            // SAFETY: `i < frames` and the caller guarantees `ptr` addresses at least
+            // `frames` readable `f32`s (`# Safety`); `ptr` was just asserted non-null.
+            let slot = unsafe { ptr.add(i) };
+            // SAFETY: `slot` is inside the initialised region the caller vouched for, which
+            // is not written during this call.
+            unsafe { *slot }
+        })
+        .collect()
 }
 
 fn ratio_to_db(numerator: f32, denominator: f32) -> f32 {
@@ -184,6 +205,9 @@ fn grinder_level(amp_model: f32) -> Level {
     instance.set_param("fat", 0.0);
 
     for block in 0..WARMUP_BLOCKS {
+        // SAFETY: `GrinderInstance::new` allocates `input_left` and `input_right` as two
+        // separate `MAX_GRINDER_BLOCK_SIZE` (2048) sample vectors that nothing resizes, and
+        // `BLOCK` (128) <= 2048; no reference to either is live.
         unsafe {
             fill_input(
                 instance.get_input_left_ptr(),
@@ -197,6 +221,9 @@ fn grinder_level(amp_model: f32) -> Level {
 
     let mut rendered = Vec::with_capacity(MEASURED_BLOCKS * BLOCK);
     for block in WARMUP_BLOCKS..(WARMUP_BLOCKS + MEASURED_BLOCKS) {
+        // SAFETY: `GrinderInstance::new` allocates `input_left` and `input_right` as two
+        // separate `MAX_GRINDER_BLOCK_SIZE` (2048) sample vectors that nothing resizes, and
+        // `BLOCK` (128) <= 2048; no reference to either is live.
         unsafe {
             fill_input(
                 instance.get_input_left_ptr(),
@@ -205,6 +232,9 @@ fn grinder_level(amp_model: f32) -> Level {
                 block * BLOCK,
             );
         }
+        // SAFETY: `process` returns null (rejected by `read_output`'s assert) only above
+        // 2048 frames; for `BLOCK` (128) it returns the start of `output_left`, a 2048-sample
+        // vector that nothing resizes, whose first 128 samples this call just wrote.
         let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
         rendered.extend_from_slice(&out);
     }
@@ -231,11 +261,25 @@ fn grinder_sine_level(amp_model: f32, fat: bool, frequency_hz: f32, amplitude: f
             let sample_index = block * BLOCK + frame;
             let phase = sample_index as f32 * frequency_hz * std::f32::consts::TAU / SAMPLE_RATE;
             let sample = phase.sin() * amplitude;
-            unsafe {
-                *instance.get_input_left_ptr().add(frame) = sample;
-                *instance.get_input_right_ptr().add(frame) = sample;
-            }
+            let left = instance.get_input_left_ptr();
+            // SAFETY: `left` is the start of `input_left`, a `MAX_GRINDER_BLOCK_SIZE` (2048)
+            // sample vector that `GrinderInstance::new` allocates and nothing resizes, and
+            // `frame < BLOCK` (128).
+            let left_slot = unsafe { left.add(frame) };
+            // SAFETY: `left_slot` is inside the initialised `input_left` buffer and no
+            // reference to it is live.
+            unsafe { *left_slot = sample };
+            let right = instance.get_input_right_ptr();
+            // SAFETY: `right` is the start of `input_right`, a 2048-sample vector allocated in
+            // `GrinderInstance::new` and never resized, and `frame < BLOCK` (128).
+            let right_slot = unsafe { right.add(frame) };
+            // SAFETY: `right_slot` is inside the initialised `input_right` buffer and no
+            // reference to it is live.
+            unsafe { *right_slot = sample };
         }
+        // SAFETY: `process` returns null (rejected by `read_output`'s assert) only above
+        // 2048 frames; for `BLOCK` (128) it returns the start of `output_left`, a 2048-sample
+        // vector that nothing resizes, whose first 128 samples this call just wrote.
         let output = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
         if block >= WARMUP_BLOCKS {
             rendered.extend_from_slice(&output);
@@ -260,11 +304,25 @@ fn grinder_rig_capture_level(engine_mode: f32, fat: bool) -> Level {
             let sample_index = block * BLOCK + frame;
             let phase = sample_index as f32 * 110.0 * std::f32::consts::TAU / SAMPLE_RATE;
             let sample = phase.sin() * 0.12;
-            unsafe {
-                *instance.get_input_left_ptr().add(frame) = sample;
-                *instance.get_input_right_ptr().add(frame) = sample;
-            }
+            let left = instance.get_input_left_ptr();
+            // SAFETY: `left` is the start of `input_left`, a `MAX_GRINDER_BLOCK_SIZE` (2048)
+            // sample vector that `GrinderInstance::new` allocates and nothing resizes, and
+            // `frame < BLOCK` (128).
+            let left_slot = unsafe { left.add(frame) };
+            // SAFETY: `left_slot` is inside the initialised `input_left` buffer and no
+            // reference to it is live.
+            unsafe { *left_slot = sample };
+            let right = instance.get_input_right_ptr();
+            // SAFETY: `right` is the start of `input_right`, a 2048-sample vector allocated in
+            // `GrinderInstance::new` and never resized, and `frame < BLOCK` (128).
+            let right_slot = unsafe { right.add(frame) };
+            // SAFETY: `right_slot` is inside the initialised `input_right` buffer and no
+            // reference to it is live.
+            unsafe { *right_slot = sample };
         }
+        // SAFETY: `process` returns null (rejected by `read_output`'s assert) only above
+        // 2048 frames; for `BLOCK` (128) it returns the start of `output_left`, a 2048-sample
+        // vector that nothing resizes, whose first 128 samples this call just wrote.
         let output = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
         if block >= WARMUP_BLOCKS {
             rendered.extend_from_slice(&output);
@@ -418,6 +476,10 @@ fn effect_level(fill: &mut dyn FnMut(usize), process: &mut dyn FnMut() -> *const
     let mut rendered = Vec::with_capacity(MEASURED_BLOCKS * BLOCK);
     for block in WARMUP_BLOCKS..(WARMUP_BLOCKS + MEASURED_BLOCKS) {
         fill(block * BLOCK);
+        // SAFETY: every caller's `process` closure returns the left output buffer of a device
+        // instance (not null, else `read_output` asserts) that holds at least `BLOCK` (128)
+        // samples (4096 for these effect engines) and nothing resizes; that call just wrote
+        // the first `BLOCK` samples.
         let out = unsafe { read_output(process(), BLOCK) };
         rendered.extend_from_slice(&out);
     }
@@ -430,6 +492,10 @@ fn effect_level(fill: &mut dyn FnMut(usize), process: &mut dyn FnMut() -> *const
 fn instrument_level(process: &mut dyn FnMut() -> *const f32, blocks: usize) -> Level {
     let mut rendered = Vec::with_capacity(blocks * BLOCK);
     for _ in 0..blocks {
+        // SAFETY: every caller's `process` closure returns the left output buffer of an
+        // instrument instance (not null, else `read_output` asserts): Fermenter holds
+        // `FERMENTER_BLOCK_FRAMES` (128 == `BLOCK`) samples, Grand Boule, Toaster and Levain
+        // 4096; nothing resizes them, and that call just wrote the first `BLOCK` samples.
         let out = unsafe { read_output(process(), BLOCK) };
         rendered.extend_from_slice(&out);
     }
@@ -445,6 +511,9 @@ fn bacteria_level() -> Level {
     i.set_param("mix", 1.0);
     let (lp, rp) = (i.get_input_left_ptr(), i.get_input_right_ptr());
     effect_level(
+        // SAFETY: `lp` and `rp` are the starts of `input_left` and `input_right`, two
+        // separate 4096-sample vectors that `BacteriaInstance::new` allocates and nothing
+        // resizes, `BLOCK` (128) <= 4096, and no reference to either is live while `fill` runs.
         &mut |o| unsafe { fill_input(lp, rp, BLOCK, o) },
         &mut || i.process(BLOCK as u32),
     )
@@ -460,6 +529,9 @@ fn gluten_level() -> Level {
     i.set_param("makeup", 3.0);
     let (lp, rp) = (i.get_input_left_ptr(), i.get_input_right_ptr());
     effect_level(
+        // SAFETY: `lp` and `rp` are the starts of `input_left` and `input_right`, two
+        // separate 4096-sample vectors that `GlutenInstance::new` allocates and nothing
+        // resizes, `BLOCK` (128) <= 4096, and no reference to either is live while `fill` runs.
         &mut |o| unsafe { fill_input(lp, rp, BLOCK, o) },
         &mut || i.process(BLOCK as u32),
     )
@@ -474,6 +546,9 @@ fn crust_level() -> Level {
     i.set_param("true_peak", 1.0);
     let (lp, rp) = (i.get_input_left_ptr(), i.get_input_right_ptr());
     effect_level(
+        // SAFETY: `lp` and `rp` are the starts of `input_left` and `input_right`, two
+        // separate 4096-sample vectors that `CrustInstance::new` allocates and nothing
+        // resizes, `BLOCK` (128) <= 4096, and no reference to either is live while `fill` runs.
         &mut |o| unsafe { fill_input(lp, rp, BLOCK, o) },
         &mut || i.process(BLOCK as u32),
     )
@@ -485,6 +560,9 @@ fn proof_level() -> Level {
     i.set_param("lim_ceiling", -1.0);
     let (lp, rp) = (i.get_input_left_ptr(), i.get_input_right_ptr());
     effect_level(
+        // SAFETY: `lp` and `rp` are the starts of `input_left` and `input_right`, two
+        // separate 4096-sample vectors that `ProofInstance::new` allocates and nothing
+        // resizes, `BLOCK` (128) <= 4096, and no reference to either is live while `fill` runs.
         &mut |o| unsafe { fill_input(lp, rp, BLOCK, o) },
         &mut || i.process(BLOCK as u32),
     )
@@ -498,6 +576,9 @@ fn knead_level() -> Level {
     i.set_shift_semitones(4.0);
     let (lp, rp) = (i.get_input_left_ptr(), i.get_input_right_ptr());
     effect_level(
+        // SAFETY: `lp` and `rp` are the starts of `left_buf` and `right_buf`, two separate
+        // 4096-sample vectors that `KneadInstance::new` allocates and nothing resizes,
+        // `BLOCK` (128) <= 4096, and no reference to either is live while `fill` runs.
         &mut |o| unsafe { fill_input(lp, rp, BLOCK, o) },
         &mut || i.process(BLOCK as u32),
     )
@@ -603,7 +684,11 @@ fn a_queued_levain_attack_matches_its_isolated_humanized_destination() {
     assert_eq!(isolated.active_voices(), 1);
     let mut rendered = Vec::with_capacity(INSTRUMENT_BLOCKS * BLOCK);
     for _ in 0..INSTRUMENT_BLOCKS {
+        // SAFETY: `process` returns the start of `left_buf`, a `LEVAIN_BLOCK_FRAMES` (4096)
+        // sample vector that `LevainInstance::new` allocates and nothing resizes, so `BLOCK`
+        // (128) samples are in bounds and this call just wrote them.
         let actual = unsafe { read_output(queued.process(BLOCK as u32), BLOCK) };
+        // SAFETY: same as above, for `isolated`'s own `left_buf`.
         let expected = unsafe { read_output(isolated.process(BLOCK as u32), BLOCK) };
         assert_eq!(actual, expected);
         rendered.extend_from_slice(&actual);

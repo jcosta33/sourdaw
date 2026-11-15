@@ -147,7 +147,7 @@ describe('handleReverseClip', () => {
         });
     });
 
-    it('restores the absent audioOffsetBeats key when the modern capture recorded absence', () => {
+    it('restores the absent audioOffsetBeats key when the modern capture recorded absence', async () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [
                 {
@@ -206,7 +206,7 @@ describe('handleReverseClip', () => {
             throw new Error('expected restoreReversedClip inverse');
         }
 
-        handleRestoreReversedClip.execute(inverse);
+        await handleRestoreReversedClip.execute(inverse);
 
         const updater = mocks.updateClipInStore.mock.calls[0]?.[1];
         expect(updater).toBeTypeOf('function');
@@ -224,7 +224,7 @@ describe('handleReverseClip', () => {
         expect(restored).not.toHaveProperty('audioOffsetBeats');
     });
 
-    it('restores the original audioOffsetBeats when undo applies the inverse restore', () => {
+    it('restores the original audioOffsetBeats when undo applies the inverse restore', async () => {
         const description = handleReverseClip.describe({
             type: 'reverseClip',
             payload: { clipId: 'c1', reversedBufferId: 'reversed-command-1' },
@@ -259,7 +259,7 @@ describe('handleReverseClip', () => {
             throw new Error('expected restoreReversedClip inverse');
         }
 
-        handleRestoreReversedClip.execute(inverse);
+        await handleRestoreReversedClip.execute(inverse);
 
         const updater = mocks.updateClipInStore.mock.calls[0]?.[1];
         expect(updater).toBeTypeOf('function');

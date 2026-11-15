@@ -1920,68 +1920,80 @@ describe('shellPort', () => {
         const commands: { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv }[] = [];
         const session: GhSession = { configDir: '/config', env: { GH_TOKEN: 'token' }, dispose: () => undefined };
         try {
-            const port = shellPort(session, root, (command, args, options) => {
-                commands.push({ command, args, cwd: options?.cwd, env: options?.env });
-                if (command === 'git' && args[0] === 'rev-parse') {
-                    return `${join(root, '.git')}\n`;
-                }
-                if (command !== 'gh') {
-                    return '';
-                }
-                if (args[0] === 'repo') {
-                    return 'jcosta33/sourdaw';
-                }
-                const query = args[3] ?? '';
-                if (query.includes('headRefOid')) {
-                    return JSON.stringify({ data: { repository: { pullRequest: { headRefOid: HEAD } } } });
-                }
-                if (query.includes('baseRefOid')) {
-                    return JSON.stringify({ data: { repository: { pullRequest: { baseRefOid: BASE } } } });
-                }
-                if (query.includes('reviewThreads')) {
-                    return JSON.stringify({
-                        data: {
-                            repository: {
-                                pullRequest: {
-                                    reviewThreads: {
-                                        nodes: [
-                                            {
-                                                id: THREAD,
-                                                isResolved: false,
-                                                diffSide: 'RIGHT',
-                                                comments: {
-                                                    nodes: [
-                                                        {
-                                                            id: 'PRRC_kwDOconfirmRoot',
-                                                            databaseId: ROOT_COMMENT_ID,
-                                                            body: 'Defect.',
-                                                            path: FINDING_PATH,
-                                                            line: FINDING_LINE,
-                                                            pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
-                                                            author: {
-                                                                __typename: 'Bot',
-                                                                login: 'r',
-                                                                id: REVIEWER_BOT_NODE_ID,
+            const port = shellPort(
+                session,
+                root,
+                (command, args, options) => {
+                    commands.push({ command, args, cwd: options?.cwd, env: options?.env });
+                    if (command === 'git' && args[0] === 'rev-parse') {
+                        return `${join(root, '.git')}\n`;
+                    }
+                    if (command !== 'gh') {
+                        return '';
+                    }
+                    if (args[0] === 'repo') {
+                        // A lane rewrote `remote.origin.gh-resolved` after the coordinator's assertion.
+                        return 'cli/cli';
+                    }
+                    const query = args[3] ?? '';
+                    if (query.includes('headRefOid')) {
+                        return JSON.stringify({ data: { repository: { pullRequest: { headRefOid: HEAD } } } });
+                    }
+                    if (query.includes('baseRefOid')) {
+                        return JSON.stringify({ data: { repository: { pullRequest: { baseRefOid: BASE } } } });
+                    }
+                    if (query.includes('reviewThreads')) {
+                        return JSON.stringify({
+                            data: {
+                                repository: {
+                                    pullRequest: {
+                                        reviewThreads: {
+                                            nodes: [
+                                                {
+                                                    id: THREAD,
+                                                    isResolved: false,
+                                                    diffSide: 'RIGHT',
+                                                    comments: {
+                                                        nodes: [
+                                                            {
+                                                                id: 'PRRC_kwDOconfirmRoot',
+                                                                databaseId: ROOT_COMMENT_ID,
+                                                                body: 'Defect.',
+                                                                path: FINDING_PATH,
+                                                                line: FINDING_LINE,
+                                                                pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
+                                                                author: {
+                                                                    __typename: 'Bot',
+                                                                    login: 'r',
+                                                                    id: REVIEWER_BOT_NODE_ID,
+                                                                },
                                                             },
-                                                        },
-                                                    ],
-                                                    pageInfo: { hasNextPage: false, endCursor: null },
+                                                        ],
+                                                        pageInfo: { hasNextPage: false, endCursor: null },
+                                                    },
                                                 },
-                                            },
-                                        ],
-                                        pageInfo: { hasNextPage: false, endCursor: null },
+                                            ],
+                                            pageInfo: { hasNextPage: false, endCursor: null },
+                                        },
                                     },
                                 },
                             },
-                        },
-                    });
-                }
-                return '';
-            });
+                        });
+                    }
+                    return '';
+                },
+                'jcosta33/sourdaw'
+            );
             expect(port.pullRequestHead(PR)).toBe(HEAD);
             expect(port.pullRequestBase(PR)).toBe(BASE);
             expect(port.readThreads(PR).map((thread) => thread.thread)).toEqual([THREAD]);
-            const ghCall = commands.find((entry) => entry.command === 'gh');
+            const ghCalls = commands.filter((entry) => entry.command === 'gh');
+            expect(ghCalls.filter((entry) => entry.args[0] === 'repo')).toEqual([]);
+            expect(ghCalls).toHaveLength(3);
+            for (const entry of ghCalls) {
+                expect(entry.args.join(' ')).toContain('-f owner=jcosta33 -f name=sourdaw');
+            }
+            const ghCall = ghCalls[0];
             expect(ghCall?.cwd).toBe(root);
             expect(ghCall?.env).toEqual({ GH_TOKEN: 'token' });
         } finally {
@@ -2056,6 +2068,24 @@ describe('coordinateConfirmReviewRepairs', () => {
             `minted actor ${AUTHOR_BOT_NODE_ID} is not ${REVIEWER_BOT_NODE_ID}`
         );
         expect(events).toEqual(['auth:/repo', 'dispose']);
+    });
+
+    it('should hand the port the one repository name it asserted', async () => {
+        const reads: string[] = [];
+        const handed: string[] = [];
+        const { dependencies } = fakeDependencies({
+            repositoryName: () => {
+                reads.push('read');
+                return 'jcosta33/sourdaw';
+            },
+            port: (_session, _primaryRoot, repository) => {
+                handed.push(repository);
+                return fakePort().port;
+            },
+        });
+        await coordinateConfirmReviewRepairs(PR, HEAD, dependencies);
+        expect(reads).toEqual(['read']);
+        expect(handed).toEqual(['jcosta33/sourdaw']);
     });
 
     it('should refuse a foreign repository', async () => {

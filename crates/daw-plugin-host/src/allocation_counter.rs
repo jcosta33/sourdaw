@@ -28,11 +28,11 @@ pub(crate) fn allocation_count() -> u64 {
 unsafe impl std::alloc::GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
         count_allocation();
-        std::alloc::System.alloc(layout)
+        unsafe { std::alloc::System.alloc(layout) }
     }
 
     unsafe fn dealloc(&self, pointer: *mut u8, layout: std::alloc::Layout) {
-        std::alloc::System.dealloc(pointer, layout)
+        unsafe { std::alloc::System.dealloc(pointer, layout) }
     }
 
     unsafe fn realloc(
@@ -42,7 +42,7 @@ unsafe impl std::alloc::GlobalAlloc for CountingAllocator {
         new_size: usize,
     ) -> *mut u8 {
         count_allocation();
-        std::alloc::System.realloc(pointer, layout, new_size)
+        unsafe { std::alloc::System.realloc(pointer, layout, new_size) }
     }
 }
 
