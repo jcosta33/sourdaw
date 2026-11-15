@@ -8,7 +8,8 @@ import { type AnswerInterpretationCatalog } from '../models/AnswerInterpretation
 import { expandMixRecipe } from './expandMixRecipe';
 import { type MetricGoal } from './metricGoalContractTypes';
 import { readRecipeExpectationTolerance } from './metricHoldTolerances';
-import { type ComparedQuality, readComparedQualities } from './readComparedQualities';
+import { readComparedQualities } from './readComparedQualities';
+import { type ComparedQuality } from './readComparedQualityWords';
 import { readRequestMetricNumbers } from './readRequestMetricNumbers';
 import { readUnaccountedQualityWord } from './readUnaccountedQualityWord';
 

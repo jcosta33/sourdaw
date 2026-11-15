@@ -16,13 +16,17 @@ function blankSpans(text: string, names: readonly string[]): string {
     return masked.join('');
 }
 
+function readNamedDevice(device: { name?: string; parameters?: readonly { name: string }[] }): NamedDevice[] {
+    if (device.name === undefined || device.name === '') {
+        return [];
+    }
+    return [{ name: device.name, parameterNames: (device.parameters ?? []).map((parameter) => parameter.name) }];
+}
+
 function readNamedDevices(context: ProjectContext): NamedDevice[] {
     const projectDevices = context.tracks.flatMap((track) => track.devices);
-    return [...projectDevices, ...(context.availableDeviceTypes ?? [])].flatMap((device) =>
-        device.name === undefined || device.name === ''
-            ? []
-            : [{ name: device.name, parameterNames: (device.parameters ?? []).map((parameter) => parameter.name) }]
-    );
+    const availableDevices = context.availableDeviceTypes ?? [];
+    return [...projectDevices, ...availableDevices].flatMap(readNamedDevice);
 }
 
 /** Every name of a thing the request can cite: a device, its type, a clip, a marker, a section, a preset. */

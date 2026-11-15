@@ -4,12 +4,12 @@ import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCas
 import { type ProjectContext } from '../models/ProjectContext';
 import { scanPromptQuotedText } from '../transformers/promptParser/promptQuotedText';
 
-import { readFirstPerceptualTerm } from './admitPerceptualGoalDecline';
 import { escapeRegExp } from './agentReference/groundingStrategies/escapeRegExp';
 import { maskProjectObjectNames } from './maskProjectObjectNames';
 import { maskTrackReferences } from './maskTrackReferences';
 import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
-import { readComparedQualityWords } from './readComparedQualities';
+import { readComparedQualityWords } from './readComparedQualityWords';
+import { readFirstPerceptualTerm } from './readFirstPerceptualTerm';
 
 // A slash joins clauses only with space around it, so a registered phrase such as "punch in/out" stays whole.
 const CLAUSE_SEPARATOR = /[.;,!?\n&:()—–]|\s\/\s|\b(?:and|then|but|so|while|with|or|plus)\b/u;
@@ -111,9 +111,10 @@ const SUPPLIED_NAME = new RegExp(String.raw`(?:\b(?:named|called)|${COMMAND_CARR
 function blankSuppliedName(clause: string): string {
     const match = SUPPLIED_NAME.exec(clause);
     const name = match?.[1];
-    return match === null || name === undefined
-        ? clause
-        : blank(clause, match.index + match[0].length - name.length, clause.length);
+    if (match === null || name === undefined) {
+        return clause;
+    }
+    return blank(clause, match.index + match[0].length - name.length, clause.length);
 }
 
 /**

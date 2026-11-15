@@ -19,6 +19,7 @@ import { resolveWholeMember } from './agentReference/resolveWholeMember';
 import { resolveWorkflowTrackIds } from './agentReference/resolveWorkflowTrackIds';
 import { discoverMixRecipes } from './discoverMixRecipes';
 import { maskTrackReferences } from './maskTrackReferences';
+import { readFirstPerceptualTerm } from './readFirstPerceptualTerm';
 
 type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 type RecipeRole = MixRecipeCatalog['roles'][number];
@@ -45,30 +46,6 @@ const ADMITTED: PerceptualGoalDeclineAdmission = { status: 'admitted' };
 /** Every track name and literal id is blanked, so a reference to "Bright Keys" states no goal. */
 function maskTrackNames(prompt: string, context: ProjectContext): string {
     return maskTrackReferences(prompt, context, ' ');
-}
-
-/**
- * The catalog's own descriptor terms the prompt states, longest phrase first so "less bright" is
- * read once, as `dark`'s term, and not again as `bright`.
- */
-export function readFirstPerceptualTerm(
-    prompt: string,
-    context: ProjectContext,
-    catalog: MixRecipeCatalog
-): { term: string; start: number; end: number } | null {
-    const masked = maskTrackNames(prompt, context);
-    const terms = catalog.descriptors
-        .flatMap((descriptor) => catalog.descriptorTerms[descriptor])
-        .toSorted((left, right) => right.length - left.length);
-    let first: { term: string; start: number; end: number } | null = null;
-    for (const term of terms) {
-        const words = normalizeAgentReferenceText(term).split(' ').map(escapeRegExp).join('[\\s-]+');
-        const match = new RegExp(`(?<![\\p{L}\\p{N}])${words}(?![\\p{L}\\p{N}])`, 'iu').exec(masked);
-        if (match !== null && (first === null || match.index < first.start)) {
-            first = { term, start: match.index, end: match.index + match[0].length };
-        }
-    }
-    return first;
 }
 
 function readRoleWords(role: RecipeRole): string[] {
