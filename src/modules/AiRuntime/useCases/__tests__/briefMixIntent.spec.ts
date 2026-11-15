@@ -21,17 +21,40 @@ describe('brief mix intent', () => {
         const canonicalIntent = schema.function.parameters.properties.mixIntent;
         const strictIntent = strict.function.parameters.properties.mixIntent;
         const catalog = getBriefMixIntentCatalog();
-        const valid = { catalogId: catalog.catalogId, requestedDescriptors: ['warm', 'wide'] };
-        for (const projected of [canonicalIntent, strictIntent]) {
+        const canonicalValid = { catalogId: catalog.catalogId, requestedDescriptors: ['warm', 'wide'] };
+        // A strict reply states every optional property, as null when it means none.
+        const strictValid = { ...canonicalValid, alternatives: null };
+        for (const [projected, valid] of [
+            [canonicalIntent, canonicalValid],
+            [strictIntent, strictValid],
+        ] as const) {
             expect(matchesJsonSchema(valid, projected)).toBe(true);
             expect(matchesJsonSchema(null, projected)).toBe(false);
             expect(matchesJsonSchema({ ...valid, extra: true }, projected)).toBe(false);
             expect(matchesJsonSchema({ ...valid, catalogId: 'foreign' }, projected)).toBe(false);
             expect(matchesJsonSchema({ ...valid, requestedDescriptors: ['unknown'] }, projected)).toBe(false);
         }
-        expect(matchesJsonSchema({ ...valid, requestedDescriptors: ['warm', 'warm'] }, canonicalIntent)).toBe(false);
+        expect(matchesJsonSchema({ ...canonicalValid, requestedDescriptors: ['warm', 'warm'] }, canonicalIntent)).toBe(
+            false
+        );
         // Strict hosted providers omit uniqueItems and maxItems; the runtime still enforces both.
-        expect(readBriefMixIntent({ ...valid, requestedDescriptors: ['warm', 'warm'] })).toBeNull();
-        expect(readBriefMixIntent({ ...valid, requestedDescriptors: [...catalog.descriptors, 'warm'] })).toBeNull();
+        expect(readBriefMixIntent({ ...canonicalValid, requestedDescriptors: ['warm', 'warm'] })).toBeNull();
+        expect(
+            readBriefMixIntent({ ...canonicalValid, requestedDescriptors: [...catalog.descriptors, 'warm'] })
+        ).toBeNull();
+        const reading = (name: string, requestedDescriptors: string[]) => ({ name, requestedDescriptors });
+        const offered = {
+            ...canonicalValid,
+            requestedDescriptors: [],
+            alternatives: [reading('Darker', ['dark']), reading('Body', ['warm'])],
+        };
+        for (const projected of [canonicalIntent, strictIntent]) {
+            expect(matchesJsonSchema(offered, projected)).toBe(true);
+            expect(matchesJsonSchema({ ...offered, alternatives: [reading('Darker', ['unknown'])] }, projected)).toBe(
+                false
+            );
+        }
+        // Strict hosted providers omit minLength; the runtime reader still refuses a blank name.
+        expect(matchesJsonSchema({ ...offered, alternatives: [reading('', ['dark'])] }, canonicalIntent)).toBe(false);
     });
 });

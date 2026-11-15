@@ -146,11 +146,13 @@ type ScheduleInput = {
 type Catalog = ReturnType<typeof getMixRecipeCatalog>;
 type Collected = Extract<Awaited<ReturnType<typeof collectVibeRunInitialBaselines>>, { status: 'collected' }>;
 
-function readCandidates(input: ScheduleInput, catalog: Catalog, protectedTargetIds: readonly string[]) {
+type CandidateInput = Pick<ScheduleInput, 'context' | 'brief'> & { descriptors: readonly string[] };
+
+function readCandidates(input: CandidateInput, catalog: Catalog, protectedTargetIds: readonly string[]) {
     const tracks = withBriefTrackRoles(input.context.tracks, input.brief);
     const plannerInput = {
         context: { tracks, sections: input.context.sections, productionBrief: input.brief },
-        descriptors: input.mixIntent.requestedDescriptors,
+        descriptors: input.descriptors,
         recipes: catalog.recipes.filter((recipe) => recipe.origin === undefined),
         maxTargetsPerBatch: ANALYSIS_MEASURE_MAX_TARGETS,
         protectedTargetIds,
@@ -522,7 +524,11 @@ async function planSchedule(input: ScheduleInput): Promise<PlannedVibeRunSchedul
             ],
         };
     }
-    const candidate = readCandidates(input, catalog, protections.protectedTrackIds);
+    const candidate = readCandidates(
+        { context: input.context, brief: input.brief, descriptors: input.mixIntent.requestedDescriptors },
+        catalog,
+        protections.protectedTrackIds
+    );
     if (candidate.plan.batches.length === 0) {
         return { status: 'none' };
     }
@@ -592,6 +598,21 @@ async function planSchedule(input: ScheduleInput): Promise<PlannedVibeRunSchedul
         reading,
         collected,
     });
+}
+
+/**
+ * How many batches the authored recipes would plan for these characters on this project, before
+ * anything is measured: the same candidate step a vibe run begins with, so a reading that counts zero
+ * here would schedule nothing.
+ */
+export function countVibeRunCandidateBatches(input: {
+    prompt: string;
+    context: ProjectContext;
+    brief: ProjectContextProductionBrief;
+    descriptors: readonly string[];
+}): number {
+    const protections = readExplicitProtections(input.prompt, input.context);
+    return readCandidates(input, getMixRecipeCatalog(), protections.protectedTrackIds).plan.batches.length;
 }
 
 /** Only this application path classifies its admitted initial reads as optional for the brief. */

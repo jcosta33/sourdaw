@@ -36,6 +36,7 @@ import {
     type TerminalMeasurementSettlement,
 } from '../models/ApplicationOwnedTool';
 import { type BriefMixIntent } from '../models/BriefMixIntent';
+import { type BriefMixAlternative } from '../models/BriefReading';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
 import {
@@ -1451,6 +1452,7 @@ type ExecutedRead = {
     briefChangeLines?: readonly string[] | null;
     composedBrief?: ProjectContextProductionBrief | null;
     mixIntent?: BriefMixIntent | null;
+    mixAlternatives?: readonly BriefMixAlternative[];
 };
 
 function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedCommandSet): RetainedCompilation {
@@ -1468,6 +1470,7 @@ function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedComma
             changeLines: executed.briefChangeLines,
             brief: executed.composedBrief,
             mixIntent: executed.mixIntent,
+            ...(executed.mixAlternatives === undefined ? {} : { mixAlternatives: executed.mixAlternatives }),
         };
     }
     if (executed.measuredPreview !== undefined && executed.measuredPreview !== null) {

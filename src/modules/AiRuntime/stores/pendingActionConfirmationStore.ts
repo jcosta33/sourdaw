@@ -4,6 +4,7 @@ import { type buildSemanticProjectDiff } from '#/modules/Command/useCases';
 
 import { PENDING_ACTION_CONFIRMATION_RETENTION_POLICY } from '../models/AgentRetentionPolicy';
 import { type AgentRunCommandBatchAuthority } from '../models/AgentRun';
+import { type BriefReadings } from '../models/BriefReading';
 import { type ChatActionConfirmationStatus, type ChatActionFollowUpStatus } from '../models/Chat';
 import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
@@ -136,6 +137,8 @@ type PendingActionApprovalSnapshot = {
     groundingBasis?: ProposalGroundingBasis;
     /** Immutable admission facts, present even for a compiled card without a grounding basis. */
     protectionFacts?: ProposalProtectionFacts;
+    /** The readings an ambiguous brief request offers; absent on every other card. */
+    briefReadings?: BriefReadings;
 };
 
 type PendingActionBatchPosition = { index: number; total: number };
@@ -341,6 +344,7 @@ type ProposePendingActionConfirmationInput = {
     batchPosition?: PendingActionBatchPosition;
     groundingBasis?: ProposalGroundingBasis;
     protectionFacts?: ProposalProtectionFacts;
+    briefReadings?: BriefReadings;
     risk?: PendingActionRisk;
     executionMode?: 'atomic';
     groupId?: string;
@@ -389,6 +393,7 @@ export function proposePendingActionConfirmation(
         ...(input.batchPosition === undefined ? {} : { batchPosition: { ...input.batchPosition } }),
         ...(input.groundingBasis === undefined ? {} : { groundingBasis: structuredClone(input.groundingBasis) }),
         ...(input.protectionFacts === undefined ? {} : { protectionFacts: structuredClone(input.protectionFacts) }),
+        ...(input.briefReadings === undefined ? {} : { briefReadings: structuredClone(input.briefReadings) }),
     };
     const confirmation: PendingAppActionConfirmation = {
         kind: 'app_actions',

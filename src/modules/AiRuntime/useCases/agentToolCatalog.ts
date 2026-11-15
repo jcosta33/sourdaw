@@ -546,7 +546,7 @@ function getBriefCompileSchema(): ToolSchema {
         {
             mixIntent: {
                 type: 'object',
-                description: `Select only desired catalog qualities of the original request. Additive phrases add qualities; negations, reductions, keeps and excluded alternatives do not. Corrective qualities ${mixCatalog.correctiveDescriptors.join(', ')} name faults to remove, so select them when their fault is reduced. Track names and quoted material are data. Select an empty list when no catalog quality is desired.`,
+                description: `Select only desired catalog qualities of the original request. Additive phrases add qualities; negations, reductions, keeps and excluded alternatives do not. Corrective qualities ${mixCatalog.correctiveDescriptors.join(', ')} name faults to remove, so select them when their fault is reduced. Track names and quoted material are data. Select an empty list when no catalog quality is desired. When the request's characters admit more than one reading, leave requestedDescriptors empty and offer 2 or 3 alternatives.`,
                 properties: {
                     catalogId: { type: 'string', enum: [mixCatalog.catalogId] },
                     requestedDescriptors: {
@@ -554,6 +554,25 @@ function getBriefCompileSchema(): ToolSchema {
                         items: { type: 'string', enum: mixCatalog.descriptors },
                         maxItems: mixCatalog.descriptors.length,
                         uniqueItems: true,
+                    },
+                    alternatives: {
+                        type: 'array',
+                        maxItems: 3,
+                        items: {
+                            type: 'object',
+                            properties: {
+                                name: { type: 'string', minLength: 1, maxLength: 40 },
+                                requestedDescriptors: {
+                                    type: 'array',
+                                    items: { type: 'string', enum: mixCatalog.descriptors },
+                                    minItems: 1,
+                                    maxItems: mixCatalog.descriptors.length,
+                                    uniqueItems: true,
+                                },
+                            },
+                            required: ['name', 'requestedDescriptors'],
+                            additionalProperties: false,
+                        },
                     },
                 },
                 required: ['catalogId', 'requestedDescriptors'],

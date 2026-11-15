@@ -43,6 +43,10 @@ type PersistPromptActionConfirmationInput = {
     /** What a terse refinement of this card inherits; present only for an ordinary card. */
     groundingBasis?: ConfirmationProposal['groundingBasis'];
     protectionFacts?: ConfirmationProposal['protectionFacts'];
+    /** The readings an ambiguous brief request offers on this card. */
+    briefReadings?: ConfirmationProposal['briefReadings'];
+    /** A id reserved earlier so a card it replaces can already name it; minted here when absent. */
+    confirmationId?: string;
     executionMode: ConfirmationProposal['executionMode'];
     group: {
         groupId: string;
@@ -135,8 +139,12 @@ function recordConfirmationMetricGoalPlan(
     });
 }
 
+export function createPromptConfirmationId(): string {
+    return `prompt-confirmation-${crypto.randomUUID()}`;
+}
+
 export function persistPromptActionConfirmation(input: PersistPromptActionConfirmationInput): string | null {
-    const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
+    const confirmationId = input.confirmationId ?? createPromptConfirmationId();
     // A batch whose handlers cannot describe themselves still deserves a semantic view, so
     // the diff degrades to `irreversible` recoveries rather than losing the whole projection.
     const described = describeCommandBatchRecovery(input.parsedCommandBatch.envelope);
@@ -176,6 +184,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             batchPosition: input.batchPosition,
             groundingBasis: input.groundingBasis,
             protectionFacts: input.protectionFacts,
+            briefReadings: input.briefReadings,
             risk: {
                 level: input.agentApproval.policy.risk,
                 reason: input.agentApproval.policy.reasons.join(' ') || null,

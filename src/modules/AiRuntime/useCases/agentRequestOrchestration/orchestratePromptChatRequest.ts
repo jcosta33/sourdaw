@@ -791,6 +791,10 @@ async function dispatchPromptPlan(input: {
                 batchPosition: getBatchPosition(result.batchSchedule),
                 groundingBasis,
                 protectionFacts,
+                briefReadings:
+                    result.briefReadings === undefined
+                        ? undefined
+                        : { ...result.briefReadings, trustCeiling: request.options?.trustCeiling ?? null },
                 executionMode: result.executionMode,
                 group: commandGroup,
                 projectRevision,
