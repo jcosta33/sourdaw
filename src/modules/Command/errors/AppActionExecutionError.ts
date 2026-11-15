@@ -26,3 +26,11 @@ export class AppActionConflictError extends Error {
         this.reason = reason;
     }
 }
+
+/**
+ * The dispatch gate refused the action before any handler ran (repair required or
+ * production brief locked). Handlers report their own conflicts as plain
+ * `AppActionConflictError`s, so only this subclass means "the project can't be changed".
+ * It keeps the parent's `name` so name-based checks still treat it as a conflict.
+ */
+export class AppActionAdmissionRefusedError extends AppActionConflictError {}
