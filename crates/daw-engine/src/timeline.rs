@@ -1549,13 +1549,24 @@ pub(crate) trait CompensationDevices {
 
 /// What one removal hands back to the retirement channel, so the audio thread
 /// never runs a destructor.
+///
+/// The boxes are held only so their destructor runs on the control-thread
+/// reclaimer, which is why the fields are never read.
 pub(crate) enum RetiredTimelineObject {
-    Track(Box<TimelineTrack>),
-    Bus(Box<TimelineBus>),
-    Clip(Box<TimelineClip>),
+    Track {
+        _track: Box<TimelineTrack>,
+    },
+    Bus {
+        _bus: Box<TimelineBus>,
+    },
+    Clip {
+        _clip: Box<TimelineClip>,
+    },
     /// A compensation delay a refused send, a removed send, or a replaced
     /// device latency gave up. Its ring is heap like any other buffer here.
-    Delay(Box<CompensationDelay>),
+    Delay {
+        _delay: Box<CompensationDelay>,
+    },
 }
 
 /// One strip in the render sequence. Tracks and buses share an order so a

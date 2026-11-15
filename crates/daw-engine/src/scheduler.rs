@@ -6747,7 +6747,9 @@ impl AudioScheduler {
                     dry_delay,
                 } => match self.effect_mut(effect_id) {
                     Some(effect) => effect.aim_dry_line(latency_frames, dry_delay).map(|delay| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: delay,
+                        })
                     }),
                     None => {
                         // Refused like every other command naming an effect the
@@ -6755,7 +6757,9 @@ impl AudioScheduler {
                         // the retirement channel rather than being freed here.
                         self.timeline.record_unknown_target();
                         dry_delay.map(|delay| {
-                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                                _delay: delay,
+                            })
                         })
                     }
                 },
@@ -6947,7 +6951,7 @@ impl AudioScheduler {
                     None
                 }
                 GraphCommand::AddTrack(track) => self.timeline.add_track(track).map(|rejected| {
-                    RetiredGraphObjects::timeline(RetiredTimelineObject::Track(rejected))
+                    RetiredGraphObjects::timeline(RetiredTimelineObject::Track { _track: rejected })
                 }),
                 GraphCommand::RemoveTrack(id) => {
                     let placed_on = EffectPlacement::Track(id);
@@ -6965,7 +6969,9 @@ impl AudioScheduler {
                                 }
                             }
                         }
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Track(track))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Track {
+                            _track: track,
+                        })
                     })
                 }
                 GraphCommand::SetTrackOutput(id, target) => {
@@ -7001,7 +7007,9 @@ impl AudioScheduler {
                     };
                     self.spare_input_hold(entry.effect_id, spliced, hold)
                         .map(|delay| {
-                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                                _delay: delay,
+                            })
                         })
                 }
                 GraphCommand::RemoveTrackDevice {
@@ -7047,7 +7055,9 @@ impl AudioScheduler {
                     };
                     self.spare_input_hold(entry.effect_id, spliced, hold)
                         .map(|delay| {
-                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                                _delay: delay,
+                            })
                         })
                 }
                 GraphCommand::RemoveBusDevice { bus_id, effect_id } => {
@@ -7074,11 +7084,15 @@ impl AudioScheduler {
                     .timeline
                     .add_send(track_id, bus_id, tap, level, delay)
                     .map(|refused| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(refused))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: refused,
+                        })
                     }),
                 GraphCommand::RemoveSend { track_id, bus_id } => {
                     self.timeline.remove_send(track_id, bus_id).map(|removed| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(removed))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: removed,
+                        })
                     })
                 }
                 GraphCommand::AddBusSend {
@@ -7091,7 +7105,9 @@ impl AudioScheduler {
                     .timeline
                     .add_bus_send(source_bus_id, bus_id, tap, level, delay)
                     .map(|refused| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(refused))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: refused,
+                        })
                     }),
                 GraphCommand::RemoveBusSend {
                     source_bus_id,
@@ -7100,10 +7116,12 @@ impl AudioScheduler {
                     .timeline
                     .remove_bus_send(source_bus_id, bus_id)
                     .map(|removed| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(removed))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: removed,
+                        })
                     }),
                 GraphCommand::AddBus(bus) => self.timeline.add_bus(bus).map(|rejected| {
-                    RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(rejected))
+                    RetiredGraphObjects::timeline(RetiredTimelineObject::Bus { _bus: rejected })
                 }),
                 GraphCommand::RemoveBus(id) => {
                     let placed_on = EffectPlacement::Bus(id);
@@ -7118,7 +7136,7 @@ impl AudioScheduler {
                                 }
                             }
                         }
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(bus))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Bus { _bus: bus })
                     })
                 }
                 GraphCommand::SetBusOutput(id, target) => {
@@ -7135,13 +7153,16 @@ impl AudioScheduler {
                 }
                 GraphCommand::AddClip(track_id, clip) => {
                     self.timeline.add_clip(track_id, clip).map(|rejected| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Clip(rejected))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Clip {
+                            _clip: rejected,
+                        })
                     })
                 }
-                GraphCommand::RemoveClip(track_id, clip_id) => self
-                    .timeline
-                    .remove_clip(track_id, clip_id)
-                    .map(|clip| RetiredGraphObjects::timeline(RetiredTimelineObject::Clip(clip))),
+                GraphCommand::RemoveClip(track_id, clip_id) => {
+                    self.timeline.remove_clip(track_id, clip_id).map(|clip| {
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Clip { _clip: clip })
+                    })
+                }
                 GraphCommand::SetClipPlacement(track_id, clip_id, placement) => {
                     self.timeline
                         .set_clip_placement(track_id, clip_id, placement);
@@ -11586,7 +11607,7 @@ mod tests {
                 .expect("the refused splice must hand its line off");
             assert!(matches!(
                 &retired.timeline_object,
-                Some(RetiredTimelineObject::Delay(_))
+                Some(RetiredTimelineObject::Delay { _delay: _ })
             ));
         }
 
@@ -11644,7 +11665,7 @@ mod tests {
                     .pop()
                     .expect("the refused send must hand its line off")
                     .timeline_object,
-                Some(RetiredTimelineObject::Delay(_))
+                Some(RetiredTimelineObject::Delay { _delay: _ })
             ));
 
             command_tx
@@ -11662,7 +11683,7 @@ mod tests {
                     .pop()
                     .expect("the removed send must hand its line off")
                     .timeline_object,
-                Some(RetiredTimelineObject::Delay(_))
+                Some(RetiredTimelineObject::Delay { _delay: _ })
             ));
         }
 
@@ -14515,7 +14536,7 @@ mod timeline_tests {
         // Every sample buffer the track and its clips own has to leave with
         // it: dropping them here is exactly the free ADR 0020 forbids.
         match &retired.timeline_object {
-            Some(RetiredTimelineObject::Track(track)) => {
+            Some(RetiredTimelineObject::Track { _track: track }) => {
                 assert_eq!(track.id(), 1);
                 assert_eq!(track.clip_ids().collect::<Vec<_>>(), vec![9, 10]);
             }
@@ -14534,12 +14555,12 @@ mod timeline_tests {
         let clip = harness.retired_rx.pop().expect("the removed clip");
         assert!(matches!(
             clip.timeline_object,
-            Some(RetiredTimelineObject::Clip(_))
+            Some(RetiredTimelineObject::Clip { _clip: _ })
         ));
         let bus = harness.retired_rx.pop().expect("the removed bus");
         assert!(matches!(
             bus.timeline_object,
-            Some(RetiredTimelineObject::Bus(_))
+            Some(RetiredTimelineObject::Bus { _bus: _ })
         ));
     }
 
@@ -14566,7 +14587,7 @@ mod timeline_tests {
                 .pop()
                 .expect("the rejected track")
                 .timeline_object,
-            Some(RetiredTimelineObject::Track(_))
+            Some(RetiredTimelineObject::Track { _track: _ })
         ));
     }
 
@@ -14597,7 +14618,7 @@ mod timeline_tests {
                 .pop()
                 .expect("the refused track")
                 .timeline_object,
-            Some(RetiredTimelineObject::Track(_))
+            Some(RetiredTimelineObject::Track { _track: _ })
         ));
     }
 
@@ -18354,7 +18375,7 @@ mod timeline_tests {
         assert!(
             matches!(
                 &retired.timeline_object,
-                Some(RetiredTimelineObject::Delay(_))
+                Some(RetiredTimelineObject::Delay { _delay: _ })
             ),
             "the refused splice's own line is what leaves"
         );
