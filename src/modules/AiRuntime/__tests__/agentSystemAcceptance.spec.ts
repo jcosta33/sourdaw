@@ -107,8 +107,8 @@ import { confirmPendingChatActions } from '../useCases/confirmPendingChatActions
 import { evaluateMetricGoalAdmission } from '../useCases/evaluateMetricGoalAdmission';
 import { getPlannedActionAffectedIds } from '../useCases/getPlannedActionAffectedIds';
 import { getProjectContext } from '../useCases/getProjectContext';
-import { metricGoalStateCodec } from '../useCases/metricGoalStateCodec';
 import { type ObjectiveMetricId } from '../useCases/metricGoalContractTypes';
+import { metricGoalStateCodec } from '../useCases/metricGoalStateCodec';
 import { OBJECTIVE_METRIC_LABELS, objectiveMetricProjection } from '../useCases/objectiveMetricProjection';
 import { parsePromptToActions } from '../useCases/parsePromptToActions';
 import { type planPromptActions } from '../useCases/planPromptActions';
@@ -116,6 +116,7 @@ import { readChatThreadContext } from '../useCases/readChatThreadContext';
 import { sendChatMessage } from '../useCases/sendChatMessage';
 
 import { completeAcceptanceResults, createAcceptanceFixtureLifetime } from './acceptanceFixtureLifetime';
+import { installProviderHostGuard, readProviderHosts } from './acceptanceProviderHostGuard';
 import { createAcceptanceRenderLaw } from './acceptanceRenderLaw';
 
 registerDeviceEnginePorts();
@@ -718,9 +719,7 @@ function publishedObjectiveId(
     });
     const [objective] = matches;
     if (matches.length !== 1 || objective?.id === undefined) {
-        throw new Error(
-            `The intake publishes ${String(matches.length)} objectives for ${JSON.stringify(selection)}`
-        );
+        throw new Error(`The intake publishes ${String(matches.length)} objectives for ${JSON.stringify(selection)}`);
     }
     return objective.id;
 }
@@ -805,7 +804,10 @@ function proposeCompiledCall(turn: ProposeCompiledTurn): ProviderCall & { id: st
         arguments: {
             commands: [],
             compiledCallIds: turn.compiledCallIds,
-            plan: metricGoalProviderPlan('Apply the measured change the request asks for.', turn.targets.map(fixtureTrackId)),
+            plan: metricGoalProviderPlan(
+                'Apply the measured change the request asks for.',
+                turn.targets.map(fixtureTrackId)
+            ),
         },
     };
 }
@@ -1015,6 +1017,40 @@ type PlannedActions = Awaited<ReturnType<typeof parsePromptToActions>>['actions'
 
 /** One scored case and the writes it made that its oracle never asked for. */
 type CaseRun = { result: AgentAcceptanceCaseResult; unintendedMutations: number };
+
+/** The prompt classes a measurement decides: a sealed case in one must act or answer, never give up. */
+const MEASURED_PROMPT_CLASSES: ReadonlySet<AgentPromptClass> = new Set([
+    'comparative-by-measurement',
+    'perceptual-single-target',
+    'perceptual-multi-target',
+    'whole-project-vibe-with-constraint',
+]);
+
+/** The outcomes that leave a request unanswered: asking back, abstaining, or declining it. */
+const GIVE_UP_OUTCOME_CLASSES: ReadonlySet<AgentAcceptanceOutcomeClass> = new Set([
+    'clarify-required',
+    'abstain-unsupported',
+    'deny-policy',
+]);
+
+/** Every sealed measured-class result that asked, abstained or declined instead of acting (AC-068). */
+function measuredResultsThatGaveUp(
+    results: readonly AgentAcceptanceCaseResult[],
+    sealed: readonly AgentPromptClass[]
+): string[] {
+    const sealedMeasured = new Set(sealed.filter((promptClass) => MEASURED_PROMPT_CLASSES.has(promptClass)));
+    return results
+        .filter((result) => sealedMeasured.has(result.promptClass) && GIVE_UP_OUTCOME_CLASSES.has(result.observed))
+        .map((result) => `${result.id} (${result.promptClass}) observed ${result.observed}`);
+}
+
+/** A case whose plan renders and measures the project, before or after a previewed change. */
+function measuresProject(testCase: CorpusCase): boolean {
+    return testCase.providerTurns.some((turn) => turn.kind === 'measure' || turn.kind === 'measure-preview');
+}
+
+/** Every provider host the production sources name, refused for the whole acceptance run (AC-074). */
+const PROVIDER_HOSTS = readProviderHosts(REPOSITORY_ROOT);
 
 type ProjectTruth = Record<string, Record<string, unknown>>;
 type ProjectObservation = { kind: 'full' | 'root'; truth: ProjectTruth };
@@ -1448,7 +1484,12 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
     const measuresPreview = testCase.providerTurns.some((turn) => turn.kind === 'measure-preview');
     if (measuresPreview) {
         expect(
-            agentRunLifecycle.create({ runId, request: testCase.prompt, mode: 'apply', createdRevision: projectRevision })
+            agentRunLifecycle.create({
+                runId,
+                request: testCase.prompt,
+                mode: 'apply',
+                createdRevision: projectRevision,
+            })
         ).toEqual({ status: 'created' });
         agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
     }
@@ -2537,14 +2578,26 @@ describe('agent acceptance corpora', () => {
                             completed.set(testCase.id, run);
                         }
                     });
-                    await fixtureLifetime.track(async () => {
-                        const barrel = spyOnBarrelWrites();
-                        try {
-                            run = await runCorpusCase(testCase, barrel.log);
-                        } finally {
-                            barrel.restore();
-                        }
-                    });
+                    const guard = installProviderHostGuard(PROVIDER_HOSTS);
+                    try {
+                        await fixtureLifetime.track(async () => {
+                            const barrel = spyOnBarrelWrites();
+                            try {
+                                run = await runCorpusCase(testCase, barrel.log);
+                            } finally {
+                                barrel.restore();
+                            }
+                        });
+                    } finally {
+                        guard.restore();
+                    }
+                    expect(guard.attempts(), `Case ${testCase.id} reached a provider host`).toEqual([]);
+                    if (measuresProject(testCase)) {
+                        expect(
+                            run?.unintendedMutations,
+                            `Case ${testCase.id} wrote to the project while planning, measuring or previewing`
+                        ).toBe(0);
+                    }
                 },
                 CORPUS_RUN_TIMEOUT_MS
             );
@@ -2562,6 +2615,10 @@ describe('agent acceptance corpora', () => {
             const unintendedMutations = runs.reduce((total, run) => total + run.unintendedMutations, 0);
             const metrics = computeAgentAcceptanceMetrics(results, unintendedMutations);
             expect(metrics.unintendedMutations).toBe(0);
+            expect(
+                measuredResultsThatGaveUp(results, sealedClasses(corpora[corpusName])),
+                'A sealed measured case asked, abstained or declined instead of acting'
+            ).toEqual([]);
             expect(
                 failedAgentAcceptanceThresholds(metrics, corpusName, sealedScoredClasses(corpora[corpusName]))
             ).toEqual([]);
@@ -2656,6 +2713,111 @@ describe('agent acceptance corpora', () => {
                     measurement: { ...developmentOracle.measurement, metrics: { truePeak } },
                 })
             ).not.toThrow();
+        });
+    });
+
+    describe('measured-run gate self-checks', { timeout: CORPUS_RUN_TIMEOUT_MS }, () => {
+        function seededResult(
+            id: string,
+            promptClass: AgentPromptClass,
+            observed: AgentAcceptanceOutcomeClass
+        ): AgentAcceptanceCaseResult {
+            return { id, class: 'execute-exact', promptClass, oracleKind: 'proposal', observed, exactMatch: false };
+        }
+
+        it('reports a sealed measured case that asked, abstained or declined, and nothing else', () => {
+            const results = [
+                seededResult('clarified', 'perceptual-single-target', 'clarify-required'),
+                seededResult('abstained', 'comparative-by-measurement', 'abstain-unsupported'),
+                seededResult('declined', 'comparative-by-measurement', 'deny-policy'),
+                seededResult('executed', 'perceptual-single-target', 'execute-exact'),
+                seededResult('boundary', 'boundary', 'clarify-required'),
+                seededResult('unsealed', 'perceptual-multi-target', 'clarify-required'),
+            ];
+            expect(
+                measuredResultsThatGaveUp(results, [
+                    'boundary',
+                    'comparative-by-measurement',
+                    'perceptual-single-target',
+                ])
+            ).toEqual([
+                'clarified (perceptual-single-target) observed clarify-required',
+                'abstained (comparative-by-measurement) observed abstain-unsupported',
+                'declined (comparative-by-measurement) observed deny-policy',
+            ]);
+        });
+
+        it('reads every hosted provider and model artifact host from the production sources', () => {
+            expect([...PROVIDER_HOSTS]).toEqual(
+                expect.arrayContaining(['api.anthropic.com', 'api.openai.com', 'huggingface.co'])
+            );
+        });
+
+        it('refuses and records a planning run that reaches a provider host', async () => {
+            const transport = vi.fn<typeof fetch>(async () => new Response('{}'));
+            vi.stubGlobal('fetch', transport);
+            const guard = installProviderHostGuard(PROVIDER_HOSTS);
+            const providerUrl = 'https://api.anthropic.com/v1/messages';
+            try {
+                await fetch('https://fixture.test/elsewhere');
+                expect(transport).toHaveBeenCalledTimes(1);
+                runtimeMocks.generateWebLlmCompletion.mockReset();
+                runtimeMocks.generateWebLlmCompletion.mockImplementation(async () => {
+                    await fetch(providerUrl);
+                    return '[]';
+                });
+                const result = await parsePromptToActions({
+                    prompt: corpusCase('development', 'AC067-DEV-PERCEPTUAL-1').prompt,
+                    context,
+                    projectRevision: 'revision-provider-host-guard',
+                });
+                expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalled();
+                expect(result.planningOutcome.kind).toBe('denied');
+                if (result.planningOutcome.kind === 'denied') {
+                    expect(result.planningOutcome.reason).toMatch(
+                        new RegExp(`^${PROVIDER_FAILURE_REASON_PREFIX}`, 'u')
+                    );
+                }
+                expect(guard.attempts()).toEqual([providerUrl]);
+                expect(transport).toHaveBeenCalledTimes(1);
+            } finally {
+                guard.restore();
+                vi.unstubAllGlobals();
+                runtimeMocks.generateWebLlmCompletion.mockReset();
+            }
+        });
+
+        it('counts a project write a preview render makes against its measured case', async () => {
+            const testCase = corpusCase('development', 'AC067-DEV-PERCEPTUAL-1');
+            let previewWrites = 0;
+            runtimeMocks.renderTrackSubgraphOffline.mockImplementation(async (input) => {
+                const kickGain = trackStore.value?.tracks.find((track) => track.id === 'track-kick')?.gain;
+                if (input.source !== undefined && previewWrites === 0 && kickGain !== undefined) {
+                    previewWrites += 1;
+                    await commandUseCases.executeAppAction(
+                        {
+                            type: 'setTrackGain',
+                            payload: { trackId: 'track-kick', deltaDb: -1, expectedGain: kickGain },
+                        },
+                        { skipUndo: true }
+                    );
+                }
+                return renderLaw.renderTrack(input);
+            });
+            try {
+                const run = await fixtureLifetime.track(async () => {
+                    const barrel = spyOnBarrelWrites();
+                    try {
+                        return await runCorpusCase(testCase, barrel.log);
+                    } finally {
+                        barrel.restore();
+                    }
+                });
+                expect(previewWrites).toBe(1);
+                expect(run.unintendedMutations).toBeGreaterThan(0);
+            } finally {
+                armRenderLaw();
+            }
         });
     });
 
