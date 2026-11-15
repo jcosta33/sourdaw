@@ -4,6 +4,7 @@ import { type ScannedPlugin } from '../../../../models/ScannedPlugin';
 import { type PluginScanAttempt } from '../../../../repositories/pluginBridge/scanPlugins';
 import { type ScanResult } from '../../../../repositories/pluginBridge/types';
 import { type PluginScanState } from '../../../../stores/pluginScanStore';
+import { removePluginFolder } from '../removePluginFolder';
 import { startPluginScan } from '../startPluginScan';
 
 function create_scanned_plugin(overrides: Partial<ScannedPlugin> = {}): ScannedPlugin {
@@ -89,6 +90,10 @@ const mocks = vi.hoisted(() => {
             vi.fn<typeof import('../../../../repositories/pluginBridge/isScanPathAuthorized').isScanPathAuthorized>(),
         getPluginFolderGrants:
             vi.fn<typeof import('../../../../repositories/pluginBridge/getPluginFolderGrants').getPluginFolderGrants>(),
+        revokePluginFolderGrant:
+            vi.fn<
+                typeof import('../../../../repositories/pluginBridge/revokePluginFolderGrant').revokePluginFolderGrant
+            >(),
     };
 });
 
@@ -116,6 +121,10 @@ vi.mock('../../../../repositories/pluginBridge/isScanPathAuthorized', () => ({
 
 vi.mock('../../../../repositories/pluginBridge/getPluginFolderGrants', () => ({
     getPluginFolderGrants: mocks.getPluginFolderGrants,
+}));
+
+vi.mock('../../../../repositories/pluginBridge/revokePluginFolderGrant', () => ({
+    revokePluginFolderGrant: mocks.revokePluginFolderGrant,
 }));
 
 describe('startPluginScan', () => {
@@ -515,6 +524,43 @@ describe('startPluginScan', () => {
         expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
             expect.objectContaining({ isScanning: false, errors: ['grant store unreadable'] })
         );
+    });
+
+    it('does not put back the plugins of a folder removed while the scan ran', async () => {
+        const removed_row = create_scanned_plugin({ id: 'removed', path: '/Users/me/Plugins/Synth.vst3' });
+        const default_row = create_scanned_plugin({
+            id: 'default',
+            descriptor_id: 'com.test.default',
+            path: '/default/path/Delay.vst3',
+        });
+        mocks.getPluginFolderGrants.mockResolvedValueOnce([{ path: '/Users/me/Plugins', unavailable_reason: null }]);
+        mocks.getPluginFolderGrants.mockResolvedValue([]);
+        mocks.revokePluginFolderGrant.mockResolvedValue(undefined);
+        const scan_deferred = create_deferred<PluginScanAttempt>();
+        mocks.scanPlugins.mockReturnValue(scan_deferred.promise);
+
+        const scan_promise = startPluginScan();
+        await vi.waitFor(() => {
+            expect(mocks.scanPlugins).toHaveBeenCalledWith(['/default/path', '/Users/me/Plugins']);
+        });
+        await expect(removePluginFolder('/Users/me/Plugins')).resolves.toEqual({ removed: true });
+        scan_deferred.resolve({
+            ran: true,
+            result: create_scan_result({ plugins: [removed_row, default_row] }),
+        });
+        await scan_promise;
+
+        expect(mocks.pluginScanStoreValue.value.scannedPlugins).toEqual([default_row]);
+    });
+
+    it('keeps the plugins of a granted folder when no removal happened during the scan', async () => {
+        const granted_row = create_scanned_plugin({ id: 'granted', path: '/Users/me/Plugins/Synth.vst3' });
+        mocks.getPluginFolderGrants.mockResolvedValue([{ path: '/Users/me/Plugins', unavailable_reason: null }]);
+        mocks.scanPlugins.mockResolvedValue({ ran: true, result: create_scan_result({ plugins: [granted_row] }) });
+
+        await startPluginScan();
+
+        expect(mocks.pluginScanStoreValue.value.scannedPlugins).toEqual([granted_row]);
     });
 
     it('should not restore a scan path removed while scanPlugins is awaiting', async () => {
