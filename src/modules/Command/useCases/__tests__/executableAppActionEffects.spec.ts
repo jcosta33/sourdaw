@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import { commandBatchEffectByActionType } from '../../models/CommandBatchActionEffect';
 import { type ExecutableAppActionEffect } from '../../models/ExecutableAppActionEffect';
 import { executableAppActionEffectsByType, getExecutableAppActionEffect } from '../executableAppActionEffects';
 import { executableAppActionDescriptors, isExecutableAppActionType } from '../executableAppActionRegistry';
-import { commandBatchEffectByActionType } from '../../models/CommandBatchActionEffect';
 
 const descriptorActionTypes = executableAppActionDescriptors.map((descriptor) => descriptor.actionType);
 const executableActionTypeSet = new Set<string>(descriptorActionTypes);
