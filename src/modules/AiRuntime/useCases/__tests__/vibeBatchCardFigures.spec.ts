@@ -16,6 +16,7 @@ import { getProjectContext } from '../getProjectContext';
 import { type MetricGoal, type MetricGoalState, type MetricRequestAuthority } from '../metricGoalContractTypes';
 import { OBJECTIVE_METRIC_UNITS } from '../objectiveMetricProjection';
 import { describeVibeBatchCard } from '../vibeRun/describeVibeBatchCard';
+import { describeVibeRunSummary } from '../vibeRun/describeVibeRunSummary';
 import { readVibeBatchRecipeGoals } from '../vibeRun/readVibeBatchRecipeGoals';
 
 import { configureMetricGoalProject, resetMetricGoalProject } from './metricGoalWorkflowFixture';
@@ -193,7 +194,7 @@ function admitAndDescribe(input: {
         adoptedRecipes: [],
         valueChoice: { source: 'catalogue-defaults', reason: 'local-backend', detail: '' },
     });
-    return { evaluation, cardLines: lines.filter((line) => line.startsWith(CARD_LINE)) };
+    return { batch, evaluation, cardLines: lines.filter((line) => line.startsWith(CARD_LINE)) };
 }
 
 const KICK = 'Kick';
@@ -334,5 +335,43 @@ describe('a vibe batch card shows what admission measured', () => {
         expect(blockedFirst.failure).toBe('out-of-tolerance');
         expect(blockedFirst.reason).toBe('Actual preview measurements do not satisfy the frozen objective criterion.');
         expect(blockedFirst.criteria.map((criterion) => criterion.outcome)).toEqual(['not-met', 'not-met']);
+    });
+
+    it('reports an applied single-step target in the run summary exactly as it always has', () => {
+        const { batch, evaluation } = admitAndDescribe({
+            recipeIds: ['drums-warm'],
+            kept: [{ recipeId: 'drums-warm', metricId: 'spectralCentroid' }],
+            previews: [{ spectralCentroid: { baseline: 2000, preview: 1800 } }],
+        });
+
+        const summary = describeVibeRunSummary({
+            batches: [{ position: 2, batch, outcome: { kind: 'applied', criteria: evaluation.criteria } }],
+            context: getProjectContext(),
+        });
+
+        expect(summary).toContain(
+            '- Batch 2 (warm drums): spectral centroid on Kick approval preview, arrangement [0, 4], 2000 Hz → 1800 Hz.'
+        );
+    });
+
+    it('reports a two-step target in the run summary from its initial figure to its final one', () => {
+        // The warm step ends the centroid at 1900 before the muddy step moves it on to 1800.
+        const { batch, evaluation } = admitAndDescribe({
+            recipeIds: ['drums-muddy', 'drums-warm'],
+            kept: [{ recipeId: 'drums-warm', metricId: 'spectralCentroid' }],
+            previews: [
+                { spectralCentroid: { baseline: 2000, preview: 1900 } },
+                { spectralCentroid: { baseline: 2000, preview: 1800 } },
+            ],
+        });
+
+        const summary = describeVibeRunSummary({
+            batches: [{ position: 2, batch, outcome: { kind: 'applied', criteria: evaluation.criteria } }],
+            context: getProjectContext(),
+        });
+
+        expect(evaluation.status).toBe('verified');
+        expect(summary).toContain('arrangement [0, 4], 2000 Hz → 1800 Hz.');
+        expect(summary).not.toContain('1900');
     });
 });
