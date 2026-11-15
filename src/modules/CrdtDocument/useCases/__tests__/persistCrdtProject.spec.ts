@@ -304,7 +304,7 @@ describe('persistCrdtProject', () => {
         const secondAttempt = persistCrdtProject();
         const secondTransaction = await persistence.waitForTransaction('readwrite', 3);
         const secondChunk = secondTransaction.writes.find((write) => write.kind === 'add');
-        expect(secondChunk?.value).toEqual(firstChunk?.value);
+        expect(secondChunk?.value).toEqual(firstChunk.value);
         secondTransaction.abort();
         await expect(secondAttempt).rejects.toThrow('IDB transaction aborted');
         expect(crdtProjectCompactionState.incrementalSaveCount).toBe(0);
@@ -313,7 +313,7 @@ describe('persistCrdtProject', () => {
         const successfulRetry = persistCrdtProject();
         const retryTransaction = await persistence.waitForTransaction('readwrite', 4);
         const retryChunk = retryTransaction.writes.find((write) => write.kind === 'add');
-        expect(retryChunk?.value).toEqual(firstChunk?.value);
+        expect(retryChunk?.value).toEqual(firstChunk.value);
         retryTransaction.complete();
         await successfulRetry;
         expect(crdtProjectCompactionState.incrementalSaveCount).toBe(1);
