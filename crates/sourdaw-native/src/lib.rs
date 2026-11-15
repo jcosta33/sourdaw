@@ -11,6 +11,7 @@
     test,
     allow(
         clippy::unwrap_used,
+        clippy::expect_used,
         clippy::unreachable,
         clippy::panic,
         reason = "tests assert by unwrapping and fail by panicking"
@@ -60,9 +61,9 @@ pub struct NativeSingletons {
 }
 
 impl NativeSingletons {
-    pub fn new(events: Arc<dyn EventSink>) -> Self {
-        Self {
-            app_state: AppState::with_persisted_plugin_registry(),
+    pub fn new(events: Arc<dyn EventSink>) -> Result<Self, String> {
+        Ok(Self {
+            app_state: AppState::with_persisted_plugin_registry()?,
             collab: CollabState::default(),
             link: LinkState::default(),
             midi: MidiState::default(),
@@ -71,7 +72,7 @@ impl NativeSingletons {
             crumbs: CrumbsState::default(),
             provider_gateway: ProviderGatewayState::default(),
             events,
-        }
+        })
     }
 
     /// Run the process-exit cascade over these singletons.

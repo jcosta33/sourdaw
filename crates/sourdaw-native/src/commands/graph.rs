@@ -2811,12 +2811,11 @@ fn builtin_parameter(
 /// comparison the layer-routing law makes.
 ///
 /// An address the engine names itself belongs to no instrument's vocabulary,
-/// and [`BuiltinParamName::parse`] admits no empty name, so the empty string
-/// can never be read as a routing key.
-fn addressed_parameter_name(param: &DeviceParam) -> &str {
+/// so it spells no name and can never be read as a routing key.
+fn addressed_parameter_name(param: &DeviceParam) -> Option<&str> {
     match param {
         DeviceParam::BuiltinNamed(name) => name.as_str(),
-        _ => "",
+        _ => None,
     }
 }
 
@@ -17422,7 +17421,7 @@ mod tests {
             assert_eq!(
                 record
                     .iter()
-                    .map(|(name, value)| (name.as_str(), *value))
+                    .map(|(name, value)| (name.as_str().unwrap(), *value))
                     .collect::<Vec<_>>(),
                 vec![
                     ("dither_bits", expected),
@@ -17477,7 +17476,7 @@ mod tests {
         let live =
             immediate_device_parameters(BuiltinEffectType::Proof, &values, "d-proof").unwrap();
         assert_eq!(live.len(), 1, "only runtime A/B is a live DSP target");
-        assert_eq!(addressed_parameter_name(&live[0].0), "ab_bypass");
+        assert_eq!(addressed_parameter_name(&live[0].0), Some("ab_bypass"));
         for bad in [
             json!({"eq_band0Xfreq":400}),
             json!({"dither_mode":0.25}),

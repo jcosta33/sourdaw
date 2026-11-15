@@ -232,10 +232,16 @@ impl BuiltinParamName {
         })
     }
 
-    /// The name, spelled as the instrument's own `set_param` takes it.
-    pub fn as_str(&self) -> &str {
-        std::str::from_utf8(&self.bytes[..self.len as usize])
-            .expect("parse admits ASCII bytes alone, and ASCII is always valid UTF-8")
+    /// The name, spelled as the instrument's own `set_param` takes it, or
+    /// `None` when the carrier does not hold a name.
+    ///
+    /// [`Self::parse`] admits ASCII bytes alone and so never builds a carrier
+    /// that answers `None`; the view is fallible only because the type cannot
+    /// carry that proof without `unsafe`. A caller refuses a `None` exactly as
+    /// it refuses a name no body answers to.
+    pub fn as_str(&self) -> Option<&str> {
+        let bytes = self.bytes.get(..usize::from(self.len))?;
+        std::str::from_utf8(bytes).ok()
     }
 }
 
@@ -3756,7 +3762,7 @@ mod tests {
     fn a_builtin_param_name_reads_back_as_the_name_it_was_parsed_from() {
         let parsed = BuiltinParamName::parse("cutoff").expect("'cutoff' is a well-shaped name");
 
-        assert_eq!(parsed.as_str(), "cutoff");
+        assert_eq!(parsed.as_str(), Some("cutoff"));
     }
 
     /// The inline name keeps a parameter address inside the size
@@ -3790,7 +3796,7 @@ mod tests {
         let parsed = BuiltinParamName::parse(&longest)
             .expect("a name the length of the buffer fits the buffer");
 
-        assert_eq!(parsed.as_str(), longest);
+        assert_eq!(parsed.as_str(), Some(longest.as_str()));
     }
 
     /// A key that was never shaped like any built-in's name is refused by
@@ -3840,11 +3846,11 @@ mod tests {
     fn a_camel_case_builtin_param_name_parses() {
         let longest_dynamic = BuiltinParamName::parse("neuralCustomConvWeight3_2")
             .expect("a well-shaped camelCase name parses");
-        assert_eq!(longest_dynamic.as_str(), "neuralCustomConvWeight3_2");
+        assert_eq!(longest_dynamic.as_str(), Some("neuralCustomConvWeight3_2"));
 
         let round_tripped =
             BuiltinParamName::parse("inputGain").expect("a well-shaped camelCase name parses");
-        assert_eq!(round_tripped.as_str(), "inputGain");
+        assert_eq!(round_tripped.as_str(), Some("inputGain"));
     }
 
     #[test]

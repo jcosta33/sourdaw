@@ -9,7 +9,11 @@
 //! positions a render carries is read per channel from a single-frequency DFT
 //! bin rather than from level alone.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use daw_dsp::levain::LevainInstance;
 use std::ops::RangeInclusive;

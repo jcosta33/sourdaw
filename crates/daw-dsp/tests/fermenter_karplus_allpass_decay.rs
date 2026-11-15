@@ -22,7 +22,11 @@
 //! below first-differences the render, which removes that inaudible residue
 //! while leaving the oscillation's decay rate untouched.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests assert by unwrapping"
+)]
 
 use daw_dsp::fermenter::physical::KarplusStrong;
 
