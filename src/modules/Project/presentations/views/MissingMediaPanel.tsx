@@ -120,7 +120,9 @@ export const MissingMediaPanel = (): ReactElement | null => {
                                                 size="sm"
                                                 variant="outline"
                                                 disabled={locatingBufferId !== null}
-                                                onClick={() => void handleLocate(item)}
+                                                onClick={() => {
+                                                    void handleLocate(item);
+                                                }}
                                             >
                                                 {locatingBufferId === item.bufferId ? 'Locating…' : 'Locate…'}
                                             </Button>

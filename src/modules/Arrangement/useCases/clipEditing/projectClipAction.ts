@@ -4,8 +4,8 @@ import { hasUnprojectedAudioSourceWrite } from './hasUnprojectedAudioSourceWrite
 import { projectClipRestore } from './projectClipRestore';
 import { projectDuplicate } from './projectDuplicate';
 import { projectPreparedSplit } from './projectPreparedSplit';
-import { projectRemoval } from './projectRemoval';
 import { projectRelinkAudioSourceTracks } from './projectRelinkAudioSourceTracks';
+import { projectRemoval } from './projectRemoval';
 import { projectSplitReplay } from './projectSplitReplay';
 import { projectTempoAction } from './projectTempoAction';
 import { type ShiftedOwnerState } from './ShiftedOwnerState';

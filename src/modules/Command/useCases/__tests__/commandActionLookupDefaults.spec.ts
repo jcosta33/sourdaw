@@ -7,8 +7,8 @@ import { COMMAND_APPLICATION_ID_RULES } from '../../models/CommandApplicationIdR
 import { undoEntryStoresCommandIdByActionType } from '../../models/UndoEntryCommandIdPolicy';
 import { clearHandlerRegistry } from '../../stores/handlerRegistry';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
-import { executeAppActionBatch } from '../executeAppActionBatch';
 import { isExecutableAppActionType } from '../executableAppActionRegistry';
+import { executeAppActionBatch } from '../executeAppActionBatch';
 import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
 import { COMMAND_TEMPO_TARGET_ID, getCommandDivergenceTargetIds } from '../getCommandDivergenceTargetIds';
 import { lowerSourceMacroAction } from '../macro/lowerSourceMacroAction';
