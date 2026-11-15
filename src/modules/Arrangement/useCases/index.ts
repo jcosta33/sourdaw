@@ -14,7 +14,6 @@ export { reserveNextTrackColorForCommand } from './reserveNextTrackColorForComma
 export { getDeviceContractVersionForCommand } from './getDeviceContractVersionForCommand';
 export { getDeviceManifestProtocolContract } from './getDeviceManifestProtocolContract';
 export { getDeviceTypesForCommandDeviceIds } from './getDeviceTypesForCommandDeviceIds';
-export { duplicateTrack } from './duplicateTrack';
 export { updateTrack } from './updateTrack';
 export { getAllTracks } from './getAllTracks';
 export { runtimeGraphTopology } from './runtimeGraphTopology';

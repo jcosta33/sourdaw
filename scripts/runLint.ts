@@ -86,6 +86,14 @@ export function lintThreads(source: NodeJS.ProcessEnv = process.env): string {
     return source.SOURDAW_LINT_THREADS ?? '2';
 }
 
+/**
+ * Existing violations of promoted rules, counted per file and rule. Naming the file explicitly
+ * makes ESLint refuse to run when it is missing instead of silently reporting no suppressions,
+ * and ESLint fails a run whose linted files hold fewer violations than recorded, so the file
+ * only shrinks through `--prune-suppressions`.
+ */
+export const ESLINT_SUPPRESSIONS_FILE = 'eslint-suppressions.json';
+
 export function buildEslintArgv(
     options: Pick<Options, 'fix' | 'full'>,
     eslintTargets: string[],
@@ -101,6 +109,8 @@ export function buildEslintArgv(
         'node_modules/.cache/eslint/',
         '--cache-strategy',
         'content',
+        '--suppressions-location',
+        ESLINT_SUPPRESSIONS_FILE,
         ...(options.fix ? ['--fix'] : []),
         ...eslintTargets,
     ];

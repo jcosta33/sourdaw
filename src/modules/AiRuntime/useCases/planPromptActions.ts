@@ -45,6 +45,8 @@ type PlanPromptActionsInput = {
     thread?: ThreadContext | null;
     /** An earlier answer's suggestion the user asked to see proposed, compiled without a provider. */
     suggestion?: AnswerSuggestion;
+    /** The Prompt Bar's provider route: a brief or a multi-batch list hands off to the agent chat. */
+    chatHandOff?: true;
     /** Called as each initial render of a vibe run begins, naming its target and range group. */
     onVibeRunProgress?: (progress: MeasurementUnitProgress) => void;
 };
@@ -203,6 +205,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
     };
     const profileOptions = input.profile === undefined ? {} : { profile: input.profile };
     const suggestionOptions = input.suggestion === undefined ? {} : { suggestion: input.suggestion };
+    const chatHandOffOptions = input.chatHandOff === undefined ? {} : { chatHandOff: input.chatHandOff };
     let result;
     try {
         result = await parsePromptToActions({
@@ -219,6 +222,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             thread: input.thread,
             ...profileOptions,
             ...suggestionOptions,
+            ...chatHandOffOptions,
         });
         if (input.profile === 'readonly-answer') {
             result = guardReadonlyPlanningResult(result);
@@ -304,6 +308,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 onVibeRunProgress: input.onVibeRunProgress,
                 thread: input.thread,
                 ...profileOptions,
+                ...chatHandOffOptions,
             });
         }
         if (input.profile === 'readonly-answer') {
@@ -352,6 +357,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 onMeasurementAttempt,
                 thread: input.thread,
                 ...profileOptions,
+                ...chatHandOffOptions,
             });
         }
     } catch (error) {

@@ -2,12 +2,9 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { onPluginParameterEvents } from '../../repositories/pluginBridge/onPluginParameterEvents';
 import { type PluginParameterEvents } from '../../repositories/pluginBridge/types';
-import { patchExternalPluginParameterValue } from '../../stores/externalPluginParameterStore';
 
-import {
-    type ExternalPluginParameterEdit,
-    externalPluginParameterEditObservers,
-} from './externalPluginParameterEditObservers';
+import { type ExternalPluginParameterEdit } from './externalPluginParameterEditObservers';
+import { publishExternalPluginParameterEdit } from './publishExternalPluginParameterEdit';
 
 /**
  * The single live subscription, or `null` when none is running. Held as the
@@ -27,20 +24,6 @@ function toEdit(instanceId: string, event: PluginParameterEvents['events'][numbe
     };
 }
 
-function publish(edit: ExternalPluginParameterEdit): void {
-    // The host's own view of the parameter follows the plugin's. Without this a
-    // knob turned in the plugin's editor leaves every reader of the snapshot —
-    // the automation menu, lane range resolution — showing the value from before
-    // the user touched it.
-    if (edit.kind === 'value' && edit.value !== undefined) {
-        patchExternalPluginParameterValue(edit.instanceId, edit.parameterId, edit.value);
-    }
-
-    for (const observe of externalPluginParameterEditObservers) {
-        observe(edit);
-    }
-}
-
 /**
  * Ensure the `plugin-parameter-events` subscription is live, so the parameter
  * snapshot follows edits the user makes inside a plugin's own editor and every
@@ -57,7 +40,7 @@ export function watchExternalPluginParameterEvents(): void {
 
     subscription = onPluginParameterEvents((batch) => {
         for (const event of batch.events) {
-            publish(toEdit(batch.instance_id, event));
+            publishExternalPluginParameterEdit(toEdit(batch.instance_id, event));
         }
     }).catch((error: unknown) => {
         subscription = null;
