@@ -309,6 +309,12 @@ impl BiquadState {
     }
 }
 
+impl Default for BiquadState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod coefficient_smoothing_tests {
     use super::{BiquadCoeffs, BiquadState, SmoothedBiquadCoeffs};
@@ -710,7 +716,7 @@ mod low_frequency_precision_tests {
 
     /// Pole radius of the coefficient set, used to size the settling run.
     fn pole_radius(c: &BiquadCoeffs) -> f64 {
-        let (a1, a2) = (c.a1 as f64, c.a2 as f64);
+        let (a1, a2) = (c.a1, c.a2);
         let disc = a1 * a1 - 4.0 * a2;
         if disc < 0.0 {
             a2.sqrt()

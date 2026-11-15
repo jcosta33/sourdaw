@@ -2165,7 +2165,7 @@ pub(crate) mod tests {
         fn feed(&mut self, value: f32) {
             self.driver.service_owner_commands();
             let mut input = [0.0f32; 1024];
-            for frame in input.chunks_exact_mut(2) {
+            for frame in input.as_chunks_mut::<2>().0 {
                 frame[0] = value;
                 frame[1] = value / 2.0;
             }

@@ -90,9 +90,9 @@ pub fn estimate_bpm(samples: &[f32], sample_rate: u32) -> BpmResult {
     // which is what `max_lag` was derived from — unreachable. A loop at that
     // tempo reported the strongest lag inside the scanned range instead, i.e.
     // some faster harmonic of itself.
-    for lag in (min_lag + 1)..=max_lag {
-        if acf[lag] > best_val {
-            best_val = acf[lag];
+    for (lag, &value) in acf.iter().enumerate().take(max_lag + 1).skip(min_lag + 1) {
+        if value > best_val {
+            best_val = value;
             best_lag = lag;
         }
     }

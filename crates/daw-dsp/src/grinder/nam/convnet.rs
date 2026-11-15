@@ -67,7 +67,7 @@ impl ConvnetBlock {
             let mut bn_loc = vec![0.0; out_channels];
             for index in 0..out_channels {
                 let variance = eps + running_var[index];
-                if !(variance > 0.0) {
+                if variance.is_nan() || variance <= 0.0 {
                     return Err(NamModelError::InvalidConfig(
                         "batchnorm running variance must be positive".into(),
                     ));

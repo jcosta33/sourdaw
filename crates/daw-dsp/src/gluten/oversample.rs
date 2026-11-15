@@ -104,6 +104,12 @@ impl Oversample2x {
     }
 }
 
+impl Default for Oversample2x {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Process a nonlinear function at 2x oversampled rate.
 #[inline]
 pub fn process_oversampled<F: Fn(f32) -> f32>(os: &mut Oversample2x, input: f32, f: F) -> f32 {
