@@ -5676,7 +5676,7 @@ mod tests {
     /// row reaches the plugin, whose construction the test replaces.
     fn register_editor_support_fixture(plugins: &LoadFixtureRoot, state: &AppState) {
         plugins.insert_entry(
-            &state,
+            state,
             "editor-support-fixture".to_string(),
             PluginRegistryEntry {
                 path: "/plugins/editor-support-fixture.clap".to_string(),
@@ -5767,7 +5767,7 @@ mod tests {
         format: &str,
     ) {
         plugins.insert_entry(
-            &state,
+            state,
             plugin_id.to_string(),
             PluginRegistryEntry {
                 path: format!("/plugins/{plugin_id}.{format}"),
