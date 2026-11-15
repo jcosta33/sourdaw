@@ -1,3 +1,5 @@
+import { createUserAppActionRefusalEpisodes } from '#/modules/Command/useCases';
+
 import { crumbsStore, type CrumbsState } from '../stores/crumbsStore';
 import { hasUnsettledCrumbsPairedReconcile } from '../stores/sampleLoadGate';
 
@@ -30,6 +32,7 @@ function playbackKey(state: CrumbsState): string {
  */
 export function initCrumbsDeviceStatePersistence(): () => void {
     const committed = new Map<string, string>();
+    const episodes = createUserAppActionRefusalEpisodes();
 
     const mirrorPass = (deviceId: string, state: CrumbsState): void => {
         const previous = committed.get(deviceId);
@@ -49,13 +52,14 @@ export function initCrumbsDeviceStatePersistence(): () => void {
         if (previous === undefined || previous === current) {
             return;
         }
-        commitCrumbsDeviceState(deviceId);
+        commitCrumbsDeviceState(deviceId, episodes);
     };
     liveCrumbsMirrorPass.current = mirrorPass;
 
     const unsubscribe = crumbsStore.subscribe((instances) => {
         if (!instances) {
             committed.clear();
+            episodes.endAll();
             return;
         }
 
@@ -68,6 +72,7 @@ export function initCrumbsDeviceStatePersistence(): () => void {
         for (const deviceId of committed.keys()) {
             if (!(deviceId in instances)) {
                 committed.delete(deviceId);
+                episodes.end(deviceId);
             }
         }
     });

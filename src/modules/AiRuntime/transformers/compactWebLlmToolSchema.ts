@@ -86,76 +86,152 @@ function compactSchema(schema: unknown, depth: number): unknown {
     return compacted;
 }
 
-function countRepeated(node: unknown, counts: Map<string, number>): void {
-    if (Array.isArray(node)) {
-        for (const child of node) {
-            countRepeated(child, counts);
-        }
-        return;
+type Occurrences = { count: number; units: Set<number> };
+
+/**
+ * The value under `keyword` with each sub-schema in a position the compaction spells out — a
+ * property, `items` or a combinator branch — passed through `map`. A `properties` map, an `enum`
+ * list or a `const` value is not a schema, so it is never a candidate for a definition.
+ */
+function mapSubschemaValue(keyword: string, value: unknown, map: (subschema: unknown) => unknown): unknown {
+    if (keyword === 'properties' && isRecord(value)) {
+        return Object.fromEntries(Object.entries(value).map(([name, property]) => [name, map(property)]));
     }
-    if (!isRecord(node)) {
-        return;
+    if (keyword === 'items' && isRecord(value)) {
+        return map(value);
     }
-    const key = JSON.stringify(node);
-    if (key.length >= MIN_DEFINITION_LENGTH) {
-        counts.set(key, (counts.get(key) ?? 0) + 1);
+    if (COMBINATOR_KEYWORDS.has(keyword) && Array.isArray(value)) {
+        return value.map(map);
     }
-    for (const child of Object.values(node)) {
-        countRepeated(child, counts);
-    }
+    return value;
 }
 
-function replaceRepeated(node: unknown, key: string, reference: SchemaRecord): unknown {
-    if (Array.isArray(node)) {
-        return node.map((child) => replaceRepeated(child, key, reference));
-    }
-    if (!isRecord(node)) {
-        return node;
-    }
-    if (JSON.stringify(node) === key) {
-        return reference;
-    }
+function mapSubschemas(schema: SchemaRecord, map: (subschema: unknown) => unknown): SchemaRecord {
     return Object.fromEntries(
-        Object.entries(node).map(([keyword, child]) => [keyword, replaceRepeated(child, key, reference)])
+        Object.entries(schema).map(([keyword, value]) => [keyword, mapSubschemaValue(keyword, value, map)])
     );
 }
 
+function listSubschemas(schema: SchemaRecord): unknown[] {
+    return Object.entries(schema).flatMap(([keyword, value]) => {
+        if (keyword === 'properties' && isRecord(value)) {
+            return Object.values(value);
+        }
+        if (keyword === 'items' && isRecord(value)) {
+            return [value];
+        }
+        if (!COMBINATOR_KEYWORDS.has(keyword) || !Array.isArray(value)) {
+            return [];
+        }
+        const branches: unknown[] = value;
+        return branches;
+    });
+}
+
+function countSubschemas(schema: SchemaRecord, unit: number, counts: Map<string, Occurrences>): void {
+    for (const subschema of listSubschemas(schema)) {
+        countRepeated(subschema, unit, counts);
+    }
+}
+
+function countRepeated(schema: unknown, unit: number, counts: Map<string, Occurrences>): void {
+    if (!isRecord(schema)) {
+        return;
+    }
+    const key = JSON.stringify(schema);
+    if (key.length >= MIN_DEFINITION_LENGTH) {
+        const occurrences = counts.get(key) ?? { count: 0, units: new Set<number>() };
+        occurrences.count += 1;
+        occurrences.units.add(unit);
+        counts.set(key, occurrences);
+    }
+    countSubschemas(schema, unit, counts);
+}
+
+function replaceRepeated(schema: unknown, key: string, reference: SchemaRecord): unknown {
+    if (!isRecord(schema)) {
+        return schema;
+    }
+    if (JSON.stringify(schema) === key) {
+        return reference;
+    }
+    return replaceSubschemas(schema, key, reference);
+}
+
+function replaceSubschemas(schema: SchemaRecord, key: string, reference: SchemaRecord): SchemaRecord {
+    return mapSubschemas(schema, (subschema) => replaceRepeated(subschema, key, reference));
+}
+
 /**
- * Moves a sub-schema the tool repeats into one named definition the prompt shows once, the way a
- * schema author would, so the repeated text costs a reference each time. It picks the repeat that
- * saves the most, then looks again, because replacing one repeat can expose another.
+ * Moves sub-schemas repeated in `trees` into named definitions shown once, the way a schema author
+ * would, so the repeated text costs a reference each time. The definitions are searched beside the
+ * trees, as unit 0, so a repeat inside a definition is defined too. `isEligible` says which repeats
+ * the definitions may take, by the units they occur in (tree `i` is unit `i + 1`). It picks the
+ * repeat that saves the most, then looks again, because replacing one repeat can expose another.
+ * Only byte-identical text is a repeat, so a shape that differs anywhere is never merged.
  */
-function defineRepeated(parameters: SchemaRecord): SchemaRecord {
-    let tree = parameters;
-    const definitions: SchemaRecord = {};
+function defineRepeated(input: {
+    trees: readonly SchemaRecord[];
+    prefix: string;
+    isEligible: (occurrences: Occurrences) => boolean;
+}): { trees: SchemaRecord[]; definitions: SchemaRecord } {
+    let trees = [...input.trees];
+    let definitions: SchemaRecord = {};
     for (let index = 1; index <= MAX_DEFINITIONS; index += 1) {
-        const counts = new Map<string, number>();
-        countRepeated(tree, counts);
-        const reference = { $ref: `#/${DEFINITIONS_KEYWORD}/d${String(index)}` };
+        const counts = new Map<string, Occurrences>();
+        // A tool's whole parameters, or a definition's whole body, is a root and never replaced.
+        for (const definition of Object.values(definitions)) {
+            if (isRecord(definition)) {
+                countSubschemas(definition, 0, counts);
+            }
+        }
+        for (const [treeIndex, tree] of trees.entries()) {
+            countSubschemas(tree, treeIndex + 1, counts);
+        }
+        const name = `${input.prefix}${String(index)}`;
+        const reference = { $ref: `#/${DEFINITIONS_KEYWORD}/${name}` };
         const referenceLength = JSON.stringify(reference).length;
         let best: { key: string; saving: number } | null = null;
-        for (const [key, count] of counts) {
-            const saving = (key.length - referenceLength) * count - key.length;
-            if (count >= 2 && saving > 0 && (best === null || saving > best.saving)) {
+        for (const [key, occurrences] of counts) {
+            const saving = (key.length - referenceLength) * occurrences.count - key.length;
+            if (
+                occurrences.count >= 2 &&
+                saving > 0 &&
+                input.isEligible(occurrences) &&
+                (best === null || saving > best.saving)
+            ) {
                 best = { key, saving };
             }
         }
         if (best === null) {
             break;
         }
-        const replaced = replaceRepeated(tree, best.key, reference);
-        if (!isRecord(replaced)) {
-            break;
-        }
-        definitions[`d${String(index)}`] = JSON.parse(best.key);
-        tree = replaced;
+        const { key } = best;
+        trees = trees.map((tree) => replaceSubschemas(tree, key, reference));
+        const definition: unknown = JSON.parse(key);
+        definitions = {
+            ...Object.fromEntries(
+                Object.entries(definitions).map(([definitionName, definition]) => [
+                    definitionName,
+                    isRecord(definition) ? replaceSubschemas(definition, key, reference) : definition,
+                ])
+            ),
+            [name]: definition,
+        };
     }
+    return { trees, definitions };
+}
+
+/** A repeat within one tool is that tool's own definition. */
+function defineRepeatedWithinTool(parameters: SchemaRecord): SchemaRecord {
+    const { trees, definitions } = defineRepeated({ trees: [parameters], prefix: 'd', isEligible: () => true });
+    const tree = trees[0] ?? parameters;
     return Object.keys(definitions).length === 0 ? tree : { ...tree, [DEFINITIONS_KEYWORD]: definitions };
 }
 
 function compactParameters(parameters: SchemaRecord): SchemaRecord {
     const compacted = compactSchema(parameters, 0);
-    return isRecord(compacted) ? defineRepeated(compacted) : parameters;
+    return isRecord(compacted) ? defineRepeatedWithinTool(compacted) : parameters;
 }
 
 /**
@@ -169,4 +245,38 @@ export function compactWebLlmToolSchema(tool: CompactableTool): CompactableTool 
     const { parameters } = tool.function;
     const compactedParameters = parameters === undefined ? {} : { parameters: compactParameters(parameters) };
     return { ...tool, function: { ...tool.function, ...compactedParameters } };
+}
+
+/**
+ * The tools as one prompt spells them together: each compacted as `compactWebLlmToolSchema` does,
+ * except that a sub-schema byte-identical after compaction in two or more of the tools is defined
+ * once in `sharedDefinitions`, which the prompt shows once before the tools, and each tool refers
+ * to it by `{"$ref":"#/$defs/sN"}`. A repeat inside the shared definitions is defined there too,
+ * and a repeat within one tool stays that tool's own `$defs`. Read with the shared definitions
+ * merged into its `$defs`, each tool's schema admits exactly what its compacted schema alone does.
+ */
+export function compactWebLlmToolSchemas(tools: readonly CompactableTool[]): {
+    sharedDefinitions: SchemaRecord;
+    tools: CompactableTool[];
+} {
+    const trees = tools.map((tool) => {
+        const tree = tool.function.parameters === undefined ? undefined : compactSchema(tool.function.parameters, 0);
+        return isRecord(tree) ? tree : {};
+    });
+    const shared = defineRepeated({
+        trees,
+        prefix: 's',
+        // A repeat within one tool alone stays that tool's; unit 0 is the shared definitions.
+        isEligible: (occurrences) => occurrences.units.size >= 2 || occurrences.units.has(0),
+    });
+    return {
+        sharedDefinitions: shared.definitions,
+        tools: tools.map((tool, index) => {
+            if (tool.function.parameters === undefined) {
+                return tool;
+            }
+            const tree = shared.trees[index] ?? {};
+            return { ...tool, function: { ...tool.function, parameters: defineRepeatedWithinTool(tree) } };
+        }),
+    };
 }

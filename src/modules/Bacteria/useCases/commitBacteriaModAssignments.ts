@@ -1,4 +1,4 @@
-import { executeAppAction } from '#/modules/Command/useCases';
+import { type createUserAppActionRefusalEpisodes } from '#/modules/Command/useCases';
 
 import { toBacteriaModAssignmentsState } from '../models/BacteriaModAssignmentsState';
 import { bacteriaStore } from '../stores/bacteriaStore';
@@ -17,15 +17,21 @@ import { bacteriaStore } from '../stores/bacteriaStore';
  * Fire-and-forget by design: routing edits are UI-rate and already applied to
  * the store and the engine by the time this runs, so a caller that awaited it
  * would stall on a document write. A no-op when the device is gone from
- * project truth.
+ * project truth. A refused project (repair required, brief locked) keeps the
+ * edit in the session and tells the user once per device through `episodes`,
+ * not once per routing change.
  */
-export function commitBacteriaModAssignments(deviceId: string): void {
+export function commitBacteriaModAssignments(
+    deviceId: string,
+    episodes: ReturnType<typeof createUserAppActionRefusalEpisodes>
+): void {
     const state = bacteriaStore.value?.[deviceId];
     if (!state) {
         return;
     }
 
-    void executeAppAction(
+    void episodes.execute(
+        deviceId,
         {
             type: 'setDeviceState',
             payload: { deviceId, state: toBacteriaModAssignmentsState(state.patch.modAssignments) },

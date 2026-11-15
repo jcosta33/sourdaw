@@ -14,6 +14,8 @@ vi.mock('#/modules/Command/useCases', () => ({
 
     getExecutableAppActionEffect: vi.fn(() => null),
     clearUndoHistory: vi.fn(),
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(),
     executeUserAppAction: vi.fn(),

@@ -4,7 +4,7 @@ import { addSection } from '../../useCases/marker/sectionOperations/addSection';
 import { getMarkerState } from '../../useCases/timelineQueries';
 
 type AddSectionAction = {
-    payload: { startBeat: number; endBeat: number; name: string; sectionId?: string; color?: string };
+    payload: { startBeat: number; endBeat: number; name: string; sectionId?: string; color?: string; index?: number };
 };
 
 // Mirror of handleDuplicateClip's ensureTargetClipId: the inverse needs the
@@ -19,14 +19,28 @@ function ensureSectionId(action: AddSectionAction): string {
     return sectionId;
 }
 
+const MALFORMED_INDEX_REASON = 'Section slot must be a non-negative integer.';
+
+// executeAppAction (undo/redo replay included) never calls validate, so execute enforces the same rule.
+function isValidSectionIndex(index: number | undefined): boolean {
+    return index === undefined || (Number.isInteger(index) && index >= 0);
+}
+
 export const handleAddSection = createHandler<'addSection'>({
+    // Singleton keeps addSection out of multi-action batches, as it was before it gained a validator.
+    batchExecution: 'singleton',
+    validate: (action) => isValidSectionIndex(action.payload.index),
     execute: (action) => {
+        if (!isValidSectionIndex(action.payload.index)) {
+            return { status: 'conflict', reason: MALFORMED_INDEX_REASON };
+        }
         const changed = addSection(
             action.payload.startBeat,
             action.payload.endBeat,
             action.payload.name,
             ensureSectionId(action),
-            action.payload.color
+            action.payload.color,
+            action.payload.index
         );
         if (!changed) {
             return { status: 'no-write' };

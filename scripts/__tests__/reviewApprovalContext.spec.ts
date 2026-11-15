@@ -1,13 +1,21 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
 import * as githubAppIdentity from '../githubAppIdentity.ts';
-import { AUTHOR_BOT_NODE_ID, GITHUB_HTTPS_REMOTE, spawnCapture } from '../githubAppIdentity.ts';
+import {
+    AUTHOR_BOT_NODE_ID,
+    GITHUB_HTTPS_REMOTE,
+    gitCredentialHelperPath,
+    gitCredentialHelperValue,
+    spawnCapture,
+} from '../githubAppIdentity.ts';
 import { shellPort } from '../publishReview.ts';
 import { writeLaneStack, type LaneStack } from '../stackedLanes.ts';
+
+const FIXTURE_TOKEN = ['ghs', 'fixture'].join('_');
 
 /**
  * A host git wrapper can keep writing under .git after `git commit` returns (git-ai records
@@ -18,7 +26,7 @@ function removeFixture(root: string): void {
     rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
 }
 
-function fixture(parentMergedAt: string | null = '2026-09-13', env: NodeJS.ProcessEnv = {}) {
+function fixture(parentMergedAt: string | null = '2026-09-13', env: NodeJS.ProcessEnv = { GH_TOKEN: FIXTURE_TOKEN }) {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-approval-context-'));
     const git = (args: string[]) => spawnCapture('git', args, { cwd: root });
     git(['init', '-b', 'main']);
@@ -113,33 +121,32 @@ function fixture(parentMergedAt: string | null = '2026-09-13', env: NodeJS.Proce
 }
 
 describe('real shell approval context', () => {
-    it.each(['gho_synthetic_user', 'ghs_synthetic_bot'])(
-        'fetches through the isolated role credential protocol for %s',
-        (token) => {
-            const env = { GH_TOKEN: token, SOURDAW_TRUSTED_GH_PATH: "/trusted/O'Brien Tools/gh" };
-            const f = fixture(undefined, env);
-            try {
-                expect(f.read()).toEqual(f.context);
-                expect(f.calls.find((args) => args.includes('fetch'))).toEqual([
-                    'git',
-                    '-c',
-                    'credential.helper=',
-                    '-c',
-                    "credential.helper=!'/trusted/O'\\''Brien Tools/gh' auth git-credential",
-                    'fetch',
-                    '--no-write-fetch-head',
-                    GITHUB_HTTPS_REMOTE,
-                    f.base,
-                    f.head,
-                ]);
-                expect(f.fetchEnvironments).toEqual([env]);
-                expect(JSON.stringify(f.calls)).not.toContain(token);
-                expect(existsSync(join(f.root, 'git-credential-github'))).toBe(false);
-            } finally {
-                removeFixture(f.root);
-            }
+    it('fetches with the role helper from an isolated git directory', () => {
+        const token = ['ghs', 'synthetic', 'bot'].join('_');
+        const f = fixture(undefined, { GH_TOKEN: token });
+        try {
+            expect(f.read()).toEqual(f.context);
+            const fetch = f.calls.find((args) => args.includes('fetch')) ?? [];
+            const gitDir = fetch[1]?.replace(/^--git-dir=/, '') ?? '';
+            expect(fetch[1]).toMatch(/^--git-dir=/);
+            expect(realpathSync(dirname(gitDir))).not.toBe(realpathSync(f.root));
+            expect(existsSync(gitDir)).toBe(false);
+            expect(fetch.slice(2)).toEqual([
+                '-c',
+                'credential.helper=',
+                '-c',
+                `credential.helper=${gitCredentialHelperValue(gitCredentialHelperPath(f.root))}`,
+                'fetch',
+                '--no-write-fetch-head',
+                GITHUB_HTTPS_REMOTE,
+                f.base,
+                f.head,
+            ]);
+            expect(JSON.stringify(f.calls)).not.toContain(token);
+        } finally {
+            removeFixture(f.root);
         }
-    );
+    });
     it('uses the actual merge-base and allows unrelated main movement', () => {
         const f = fixture();
         try {
@@ -220,7 +227,7 @@ describe('real shell live review comparison', () => {
         const f = fixture();
         const patch = Buffer.from([0xff, 0xfe, 0x0a]);
         const captureBytes = vi.fn<typeof githubAppIdentity.spawnCaptureBytes>().mockReturnValue(patch);
-        const session = { configDir: f.root, env: {}, dispose: () => undefined };
+        const session = { configDir: f.root, env: { GH_TOKEN: FIXTURE_TOKEN }, dispose: () => undefined };
         try {
             const port = shellPort(
                 session,
@@ -255,7 +262,7 @@ describe('real shell live review comparison', () => {
 
     function compare(f: ReturnType<typeof fixture>) {
         const port = shellPort(
-            { configDir: f.root, env: {}, dispose: () => undefined },
+            { configDir: f.root, env: { GH_TOKEN: FIXTURE_TOKEN }, dispose: () => undefined },
             f.root,
             (command, args, options) => {
                 if (command === 'gh' && args[0] === 'pr') {
@@ -288,7 +295,7 @@ describe('real shell live review comparison', () => {
             expect(live.numstat.toString('utf8')).toBe('1\t0\tchild\0');
             expect(captureBytes).toHaveBeenCalledExactlyOnceWith('git', ['diff', `${f.base}...${f.head}`], {
                 cwd: f.root,
-                env: {},
+                env: { GH_TOKEN: FIXTURE_TOKEN },
                 maxBufferBytes: 512 * 1024 * 1024,
             });
         } finally {

@@ -1,151 +1,334 @@
-import { nextDefaultTrackName, resolveMusicalRange } from '#/modules/Arrangement/useCases';
-import { getNotesForClip, projectDrumPreviewCandidateNotes } from '#/modules/MIDI/useCases';
-import { getBarAtBeat, getBarStartBeat } from '#/modules/Transport/useCases';
-import { FADER_MAX_GAIN, resolveSendLevelFields, SEND_LEVEL_LAW, toLevelDb } from '#/utils/audioLevelLaw';
-import { normalizeDeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type MaterializableRuntimeAction } from '../models/ExecutableRuntimeAction';
-import { projectMidiArticulationTransfer } from '../transformers/projectMidiArticulationTransfer';
+import { type RuntimeActionType } from '../models/RuntimeAction';
 
-import { type BassProcessingCopyRequestScope } from './agentReference/getBassProcessingCopyPromptScope';
-import { type DrumPreviewBranchesRequestScope } from './agentReference/getDrumPreviewBranchesPromptScope';
-import { type MidiOverlapTransformRequestScope } from './agentReference/getMidiOverlapTransformPromptScope';
-import { type SyncopatedArpeggioRequestScope } from './agentReference/getSyncopatedArpeggioPromptScope';
-import { type ProjectContext, type ProjectContextAdjustmentLayer, type ProjectContextTrack } from './getProjectContext';
+import { guardTrackAction } from './actionStateGuards/guardTrackAction';
+import {
+    type MaterializationState,
+    type MaterializationStep,
+    type MaterializeActionStateGuardsOptions,
+} from './actionStateGuards/MaterializationState';
+import { materializeAddedDevice } from './actionStateGuards/materializeAddedDevice';
+import { materializeAddedSend } from './actionStateGuards/materializeAddedSend';
+import { materializeAddedTrack } from './actionStateGuards/materializeAddedTrack';
+import { materializeAdjustmentRegion } from './actionStateGuards/materializeAdjustmentRegion';
+import { materializeArpeggio } from './actionStateGuards/materializeArpeggio';
+import { materializeCopyMidiArticulations } from './actionStateGuards/materializeCopyMidiArticulations';
+import { materializeCreatedBus } from './actionStateGuards/materializeCreatedBus';
+import { materializeDeviceParameter } from './actionStateGuards/materializeDeviceParameter';
+import { materializeDrumPreviewBranches } from './actionStateGuards/materializeDrumPreviewBranches';
+import { materializeParameterRange } from './actionStateGuards/materializeParameterRange';
+import { materializeSectionRenders } from './actionStateGuards/materializeSectionRenders';
+import { materializeSendRange } from './actionStateGuards/materializeSendRange';
+import { materializeSendRanges } from './actionStateGuards/materializeSendRanges';
+import { materializeShortMidiOverlaps } from './actionStateGuards/materializeShortMidiOverlaps';
+import { materializeTrackGainRange } from './actionStateGuards/materializeTrackGainRange';
+import { type ProjectContext, type ProjectContextAdjustmentLayer } from './getProjectContext';
 import { stampProcessingOnlyParameterPolicy } from './stampProcessingOnlyParameterPolicy';
 
-/**
- * A rejection carries `questions` only when the request is answerable but names
- * its target ambiguously — two sections matching a reference equally — so the
- * planner can ask which one instead of refusing.
- */
-type MaterializeActionStateGuardsResult =
-    | { status: 'accepted'; actions: AppAction[] }
-    | { status: 'rejected'; reason: string; questions?: readonly string[] };
+type MaterializeActionStateGuardsResult = MaterializationStep;
 
-type MusicalRangeResolution = ReturnType<typeof resolveMusicalRange>;
+type ActionOf<Type extends RuntimeActionType> = Extract<MaterializableRuntimeAction, { type: Type }>;
 
-function askWhichSection(
-    resolution: Extract<MusicalRangeResolution, { kind: 'ambiguous-section' }>
-): readonly string[] {
-    const candidates = resolution.candidates
-        .map((section) => `"${section.name}" from beat ${String(section.startBeat)} to ${String(section.endBeat)}`)
-        .join(', or ');
-    return [`Which part of the song do you mean by "${resolution.reference}": ${candidates}?`];
+type ActionMaterializer<Type extends RuntimeActionType> = (
+    action: ActionOf<Type>,
+    state: MaterializationState
+) => MaterializationStep;
+
+/** An action no guard pins: it joins the batch as it was proposed. */
+function passThrough(action: AppAction): MaterializationStep {
+    return { status: 'accepted', actions: [action] };
 }
 
-/**
- * The beats a range write covers in the plan's own project snapshot, so the
- * production-brief guard that follows reads the interval the write will touch.
- * The owning handler resolves the same range again against the live project
- * when the command is admitted.
- */
-function materializeParameterRange(
-    action: Extract<MaterializableRuntimeAction, { type: 'automateParameterRange' }>,
-    context: ProjectContext
-): { status: 'accepted'; action: AppAction } | Extract<MaterializeActionStateGuardsResult, { status: 'rejected' }> {
-    const resolution = resolveMusicalRange({
-        range: action.payload.range,
-        sections: context.sections ?? [],
-        markers: context.markers ?? [],
-        tracks: context.tracks,
-        barStartBeat: getBarStartBeat,
-        barAtBeat: getBarAtBeat,
-    });
-    if (resolution.kind === 'ambiguous-section') {
-        return { status: 'rejected', reason: resolution.reason, questions: askWhichSection(resolution) };
-    }
-    if (resolution.kind !== 'resolved') {
-        return { status: 'rejected', reason: resolution.reason };
-    }
-    return {
-        status: 'accepted',
-        action: {
-            type: 'automateParameterRange',
-            payload: { ...action.payload, startBeat: resolution.startBeat, endBeat: resolution.endBeat },
-        },
-    };
+function rejectStemImport(): MaterializationStep {
+    return { status: 'rejected', reason: 'Stem imports require application-owned file materialization' };
 }
 
-type MaterializeActionStateGuardsOptions = {
-    appOwnedRenderTailSeconds?: number;
-    bassProcessingCopyScope?: BassProcessingCopyRequestScope;
-    midiOverlapTransformScope?: MidiOverlapTransformRequestScope;
-    drumPreviewBranchesScope?: DrumPreviewBranchesRequestScope;
-    syncopatedArpeggioScope?: SyncopatedArpeggioRequestScope;
+// Every runtime action type states how its state guards are pinned: a new action does not compile until it does.
+const materializerByActionType: { readonly [Type in RuntimeActionType]: ActionMaterializer<Type> } = {
+    importStemSet: rejectStemImport,
+    addTrack: materializeAddedTrack,
+    removeTrack: passThrough,
+    restoreTrack: passThrough,
+    restoreClip: passThrough,
+    removeAllTracks: passThrough,
+    renameTrack: passThrough,
+    createTrackAlternative: passThrough,
+    switchTrackAlternative: passThrough,
+    renameTrackAlternative: passThrough,
+    deleteTrackAlternative: passThrough,
+    selectTrack: passThrough,
+    muteTrack: (action, state) =>
+        guardTrackAction(state, action.payload.trackId, (track) => ({
+            type: 'muteTrack',
+            payload: { ...action.payload, expectedMuted: track.muted },
+        })),
+    soloTrack: (action, state) =>
+        guardTrackAction(state, action.payload.trackId, (track) => ({
+            type: 'soloTrack',
+            payload: { ...action.payload, expectedSoloed: track.soloed },
+        })),
+    selectTake: passThrough,
+    toggleSoloSafe: passThrough,
+    setSoloSafe: passThrough,
+    armTrack: passThrough,
+    freezeTrack: passThrough,
+    unfreezeTrack: passThrough,
+    flattenTrack: passThrough,
+    bounceInPlace: passThrough,
+    reorderTrack: passThrough,
+    setTempo: passThrough,
+    setTimeSignature: passThrough,
+    setPlayback: passThrough,
+    togglePlayback: passThrough,
+    stopPlayback: passThrough,
+    toggleRecording: passThrough,
+    setMasterGain: passThrough,
+    toggleLoop: passThrough,
+    toggleMetronome: passThrough,
+    setMetronomeVolume: passThrough,
+    setLoopRegion: passThrough,
+    setLoopEnabled: passThrough,
+    setMetronomeEnabled: passThrough,
+    restoreLoopRegion: passThrough,
+    addClip: passThrough,
+    moveClip: passThrough,
+    duplicateClip: passThrough,
+    duplicateClipToNextBar: passThrough,
+    duplicateTrack: passThrough,
+    removeClip: passThrough,
+    renameClip: passThrough,
+    splitClip: passThrough,
+    trimClipStart: passThrough,
+    trimClipEnd: passThrough,
+    slipClipContent: passThrough,
+    drawClip: passThrough,
+    duplicateClipAt: passThrough,
+    moveClips: passThrough,
+    addDevice: materializeAddedDevice,
+    bypassDevice: passThrough,
+    removeDevice: passThrough,
+    setDeviceParameter: materializeDeviceParameter,
+    createBus: materializeCreatedBus,
+    createFolder: passThrough,
+    setSend: passThrough,
+    setWorkspaceMode: passThrough,
+    openPreferencesDialog: passThrough,
+    openMixer: passThrough,
+    closeMixer: passThrough,
+    toggleSidebar: passThrough,
+    toggleInspector: passThrough,
+    toggleChatPanel: passThrough,
+    setTrackInput: passThrough,
+    setEditingTool: passThrough,
+    setMarqueeSelection: passThrough,
+    addMarker: passThrough,
+    removeMarker: passThrough,
+    setMarkerColor: passThrough,
+    addSection: passThrough,
+    removeSection: passThrough,
+    renameSection: passThrough,
+    addAutomationLane: passThrough,
+    automateSendRange: materializeSendRange,
+    automateSendRanges: materializeSendRanges,
+    renderProjectSections: materializeSectionRenders,
+    automateTrackGainRange: materializeTrackGainRange,
+    automateParameterRange: materializeParameterRange,
+    setAutomationLaneEnabled: passThrough,
+    addAutomationPoint: passThrough,
+    quantizeNotes: passThrough,
+    removeShortMidiOverlaps: materializeShortMidiOverlaps,
+    createDrumPreviewBranches: materializeDrumPreviewBranches,
+    copyMidiArticulations: materializeCopyMidiArticulations,
+    quantizeNoteLengths: passThrough,
+    transposeNotes: passThrough,
+    humanizeNotes: passThrough,
+    invertNotes: passThrough,
+    retrogradeNotes: passThrough,
+    scaleVelocities: passThrough,
+    scaleAllVelocities: passThrough,
+    setAllVelocities: passThrough,
+    setTrackGain: (action, state) =>
+        guardTrackAction(state, action.payload.trackId, (track) => ({
+            type: 'setTrackGain',
+            payload: { ...action.payload, expectedGain: track.gain },
+        })),
+    setTrackPan: (action, state) =>
+        guardTrackAction(state, action.payload.trackId, (track) => ({
+            type: 'setTrackPan',
+            payload: { ...action.payload, expectedPan: track.pan },
+        })),
+    setTrackColor: passThrough,
+    copyClip: passThrough,
+    cutClip: passThrough,
+    pasteClip: passThrough,
+    setClipFade: passThrough,
+    importMidiFile: passThrough,
+    normalizeClip: passThrough,
+    reverseClip: passThrough,
+    glueClips: passThrough,
+    nudgeClip: passThrough,
+    crossfadeClips: passThrough,
+    setClipGain: passThrough,
+    setClipColor: passThrough,
+    lockClip: passThrough,
+    consolidateSelection: passThrough,
+    bounceSelection: passThrough,
+    seekPlayhead: passThrough,
+    setPunchIn: passThrough,
+    setPunchOut: passThrough,
+    setPunchEnabled: passThrough,
+    toggleCountIn: passThrough,
+    setCountInBars: passThrough,
+    togglePreRoll: passThrough,
+    setPreRollBars: passThrough,
+    zoomTracksVertical: passThrough,
+    addTimeSignatureChange: passThrough,
+    removeTimeSignatureChange: passThrough,
+    setTrackOutput: passThrough,
+    addSend: materializeAddedSend,
+    removeSend: passThrough,
+    removeAutomationPoint: passThrough,
+    setAutomationMode: passThrough,
+    hideTrack: passThrough,
+    disableTrack: passThrough,
+    setTrackHeight: passThrough,
+    setSnapValue: passThrough,
+    zoomToFit: passThrough,
+    zoomToSelection: passThrough,
+    exportProject: passThrough,
+    saveProject: passThrough,
+    newProject: passThrough,
+    importAudioFile: passThrough,
+    exportMidi: passThrough,
+    foldTrack: passThrough,
+    groupTracks: passThrough,
+    ungroupTracks: passThrough,
+    scaleAutomation: passThrough,
+    stretchAutomation: passThrough,
+    invertAutomation: passThrough,
+    reverseAutomation: passThrough,
+    thinAutomation: passThrough,
+    quantizeAutomation: passThrough,
+    restoreAutomationLanePoints: passThrough,
+    loadPreset: passThrough,
+    savePreset: passThrough,
+    generateDrumPattern: passThrough,
+    generateMelody: passThrough,
+    generateChordProgression: passThrough,
+    setClipLoop: passThrough,
+    setClipLoopLength: passThrough,
+    extractGroove: passThrough,
+    applyGroove: passThrough,
+    setClipStretchMode: passThrough,
+    setClipStretchRatio: passThrough,
+    fitClipToBeats: passThrough,
+    analyzeMix: passThrough,
+    autoFixMix: passThrough,
+    enableMpe: passThrough,
+    disableMpe: passThrough,
+    getLatencyReport: passThrough,
+    createCollabSession: passThrough,
+    joinCollabSession: passThrough,
+    leaveCollabSession: passThrough,
+    scanPlugins: passThrough,
+    loadExternalPlugin: passThrough,
+    audioToMidi: passThrough,
+    muteClip: passThrough,
+    clearSolos: passThrough,
+    setTrackNotes: passThrough,
+    deleteTime: passThrough,
+    insertTime: passThrough,
+    duplicateTimeRange: passThrough,
+    stripSilence: passThrough,
+    detectTempo: passThrough,
+    detectKey: passThrough,
+    consolidateAllTracks: passThrough,
+    arpeggiate: materializeArpeggio,
+    addSidechainRoute: passThrough,
+    removeSidechainRoute: passThrough,
+    bounceToNewTrack: passThrough,
+    saveTrackTemplate: passThrough,
+    loadTrackTemplate: passThrough,
+    deleteTrackTemplate: passThrough,
+    setProductionBrief: passThrough,
+    createVcaGroup: passThrough,
+    assignToVca: passThrough,
+    removeFromVca: passThrough,
+    setVcaGain: passThrough,
+    setMidiOutput: passThrough,
+    clearMidiOutput: passThrough,
+    addNotes: passThrough,
+    completeMidi: passThrough,
+    variationMidi: passThrough,
+    generateBassline: passThrough,
+    autoOrganizeProject: passThrough,
+    addChordEvent: passThrough,
+    removeChordEvent: passThrough,
+    toggleChordTrack: passThrough,
+    clearChordTrack: passThrough,
+    clearAllMidiMappings: passThrough,
+    toggleScratchPad: passThrough,
+    captureScratchPad: passThrough,
+    commitScratchPad: passThrough,
+    clearScratchPad: passThrough,
+    createPatternInstance: passThrough,
+    detachPatternInstance: passThrough,
+    startMacroRecording: passThrough,
+    stopMacroRecording: passThrough,
+    playMacro: passThrough,
+    deleteMacro: passThrough,
+    undo: passThrough,
+    redo: passThrough,
+    toggleUndoTree: passThrough,
+    labelUndoBranch: passThrough,
+    detectSongStructure: passThrough,
+    createProjectVersion: passThrough,
+    restoreProjectVersion: passThrough,
+    createVersionBranch: passThrough,
+    generateFill: passThrough,
+    generateAllTransitions: passThrough,
+    compareToReference: passThrough,
+    toggleControlRoomMono: passThrough,
+    toggleControlRoomDim: passThrough,
+    switchMonitor: passThrough,
+    getMentorTips: passThrough,
+    searchSamples: passThrough,
+    createCompGroup: passThrough,
+    togglePunchRecording: passThrough,
+    toggleLoopRecord: passThrough,
+    triggerScene: passThrough,
+    nextSetlistItem: passThrough,
+    previousSetlistItem: passThrough,
+    createAdjustmentLayer: passThrough,
+    addAdjustmentRegion: materializeAdjustmentRegion,
+    detectTransients: passThrough,
+    quantizeTransients: passThrough,
+    toggleNodeView: passThrough,
+    setControlSurface: passThrough,
+    addCvOutput: passThrough,
+    connectPush: passThrough,
+    disconnectPush: passThrough,
+    exportDawProject: passThrough,
+    loadRaveModel: passThrough,
+    setRaveBlend: passThrough,
+    enableWarping: passThrough,
+    setWarpAlgorithm: passThrough,
+    setWarpPitchShift: passThrough,
+    setYeastProcessorParam: passThrough,
+    setYeastArpPattern: passThrough,
+    setYeastProcessorBypass: passThrough,
+    addYeastProcessor: passThrough,
+    removeYeastProcessor: passThrough,
+    reorderYeastProcessor: passThrough,
 };
 
-function createProjectedBus(busId: string, name: string): ProjectContextTrack {
-    return {
-        id: busId,
-        name,
-        kind: 'bus',
-        muted: false,
-        soloed: false,
-        soloSafe: false,
-        armed: false,
-        frozen: false,
-        gain: 1,
-        gainDb: toLevelDb(1),
-        pan: 0,
-        automationMode: 'read',
-        vcaGroupId: null,
-        outputId: 'master',
-        clipCount: 0,
-        alternativeClipIds: [],
-        deviceCount: 0,
-        clips: [],
-        devices: [],
-        sends: [],
-    };
-}
-
-function createProjectedTrack(
-    trackId: string,
-    name: string,
-    kind: string,
-    initialDeviceId: string | undefined
-): ProjectContextTrack {
-    const devices =
-        kind === 'midi' && initialDeviceId !== undefined
-            ? [{ id: initialDeviceId, name: 'Synth', type: 'builtin-synth', bypassed: false, parameters: [] }]
-            : [];
-    return {
-        id: trackId,
-        name,
-        kind,
-        muted: false,
-        soloed: false,
-        soloSafe: false,
-        armed: false,
-        frozen: false,
-        gain: 0.8,
-        gainDb: toLevelDb(0.8),
-        pan: 0,
-        automationMode: 'read',
-        vcaGroupId: null,
-        outputId: 'master',
-        clipCount: 0,
-        alternativeClipIds: [],
-        deviceCount: devices.length,
-        clips: [],
-        devices,
-        sends: [],
-    };
-}
-
-function hasDeviceParameterStateGuards(
-    action: Extract<MaterializableRuntimeAction, { type: 'setDeviceParameter' }>
-): boolean {
-    return (
-        action.payload.expectedTrackId !== undefined ||
-        action.payload.expectedDeviceType !== undefined ||
-        action.payload.expectedDeviceIds !== undefined ||
-        action.payload.expectedValue !== undefined ||
-        action.payload.expectedValuePresent !== undefined ||
-        action.payload.expectedTrackFrozen !== undefined
-    );
+function materialize<Type extends RuntimeActionType>(
+    action: ActionOf<Type>,
+    state: MaterializationState
+): MaterializationStep {
+    return materializerByActionType[action.type](action, state);
 }
 
 export function materializeActionStateGuards(
@@ -160,716 +343,30 @@ export function materializeActionStateGuards(
         (context.adjustmentLayers ?? []).flatMap((layer) => layer.regions.map((region) => region.id))
     );
     const projectedAdjustmentLayers = new Map<string, ProjectContextAdjustmentLayer>(
-        (context.adjustmentLayers ?? []).map((layer) => [
-            layer.id,
-            {
-                ...layer,
-                parameters: layer.parameters.map((parameter) => ({ ...parameter })),
-                affectedTrackIds: [...layer.affectedTrackIds],
-                regions: layer.regions.map((region) => ({ ...region })),
-            },
-        ])
+        (context.adjustmentLayers ?? []).map((layer) => [layer.id, structuredClone(layer)])
     );
     const deviceIdsByTrack = new Map(
         context.tracks.map((track) => [track.id, track.devices.map((device) => device.id)] as const)
     );
+    const state: MaterializationState = {
+        context,
+        options,
+        tracksById,
+        frozenByTrack,
+        reservedDeviceIds,
+        reservedAdjustmentRegionIds,
+        projectedAdjustmentLayers,
+        deviceIdsByTrack,
+    };
     const materialized: AppAction[] = [];
 
     for (const action of actions) {
-        if (action.type === 'addAdjustmentRegion') {
-            const scope = options.bassProcessingCopyScope;
-            const entry = scope?.entries.find(
-                (candidate) =>
-                    candidate.layer.id === action.payload.layerId &&
-                    candidate.targetRegion.startBeat === action.payload.startBeat &&
-                    candidate.targetRegion.endBeat === action.payload.endBeat &&
-                    candidate.targetRegion.blend === action.payload.blend &&
-                    candidate.targetRegion.fadeInBeats === action.payload.fadeInBeats &&
-                    candidate.targetRegion.fadeOutBeats === action.payload.fadeOutBeats
-            );
-            const layer = projectedAdjustmentLayers.get(action.payload.layerId);
-            if (!scope || !entry || !layer) {
-                return { status: 'rejected', reason: 'EX-03 adjustment-layer scope is unavailable' };
-            }
-            const expectedTracks = layer.affectedTrackIds.flatMap((trackId) => {
-                const track = tracksById.get(trackId);
-                return track ? [{ trackId: track.id, trackName: track.name, frozen: track.frozen ?? false }] : [];
-            });
-            if (expectedTracks.length !== layer.affectedTrackIds.length) {
-                return { status: 'rejected', reason: `EX-03 target track is unavailable: ${layer.id}` };
-            }
-            let regionId = `adjr-${crypto.randomUUID()}`;
-            while (reservedAdjustmentRegionIds.has(regionId)) {
-                regionId = `adjr-${crypto.randomUUID()}`;
-            }
-            reservedAdjustmentRegionIds.add(regionId);
-            const region = {
-                id: regionId,
-                startBeat: action.payload.startBeat,
-                endBeat: action.payload.endBeat,
-                blend: action.payload.blend,
-                fadeInBeats: action.payload.fadeInBeats,
-                fadeOutBeats: action.payload.fadeOutBeats,
-            };
-            materialized.push({
-                type: 'addAdjustmentRegion',
-                payload: {
-                    ...action.payload,
-                    regionId,
-                    sourceRegionId: entry.sourceRegion.id,
-                    sourceSection: { ...scope.sourceSection },
-                    targetSection: { ...scope.targetSection },
-                    expectedLayer: {
-                        ...layer,
-                        parameters: layer.parameters.map((parameter) => ({ ...parameter })),
-                        affectedTrackIds: [...layer.affectedTrackIds],
-                        regions: layer.regions.map((region) => ({ ...region })),
-                    },
-                    expectedTracks,
-                },
-            });
-            projectedAdjustmentLayers.set(layer.id, {
-                ...layer,
-                regions: [...layer.regions, region].sort((alpha, beta) => alpha.startBeat - beta.startBeat),
-            });
-            continue;
+        const step = materialize(action, state);
+        if (step.status === 'rejected') {
+            return step;
         }
-        if (action.type === 'copyMidiArticulations') {
-            const sourceTarget = context.tracks.flatMap((track) =>
-                track.clips.filter((clip) => clip.id === action.payload.sourceClipId).map((clip) => ({ clip, track }))
-            )[0];
-            const targetTarget = context.tracks.flatMap((track) =>
-                track.clips.filter((clip) => clip.id === action.payload.targetClipId).map((clip) => ({ clip, track }))
-            )[0];
-            if (
-                !sourceTarget ||
-                !targetTarget ||
-                sourceTarget.track.id !== targetTarget.track.id ||
-                sourceTarget.track.frozen === true ||
-                sourceTarget.clip.type !== 'midi' ||
-                targetTarget.clip.type !== 'midi' ||
-                sourceTarget.clip.locked === true ||
-                targetTarget.clip.locked === true
-            ) {
-                return { status: 'rejected', reason: 'MF-03 clip pair is unavailable or protected' };
-            }
-            const expectedSourceNotes = getNotesForClip(action.payload.sourceClipId).map((note) => ({ ...note }));
-            const expectedTargetNotes = getNotesForClip(action.payload.targetClipId).map((note) => ({ ...note }));
-            const projectedPairs = projectMidiArticulationTransfer({
-                sourceNotes: expectedSourceNotes,
-                targetNotes: expectedTargetNotes,
-            });
-            if (!projectedPairs) {
-                return { status: 'rejected', reason: 'MF-03 note topology is incomplete or ambiguous' };
-            }
-            materialized.push({
-                type: 'copyMidiArticulations',
-                payload: {
-                    trackId: sourceTarget.track.id,
-                    sourceClipId: action.payload.sourceClipId,
-                    targetClipId: action.payload.targetClipId,
-                    notePairs: projectedPairs.map((pair) => ({
-                        sourceNoteId: pair.sourceNoteId,
-                        targetNoteId: pair.targetNoteId,
-                    })),
-                    expectedSourceNotes,
-                    expectedTargetNotes,
-                    expectedTrackFrozen: sourceTarget.track.frozen ?? false,
-                    expectedSourceClipLocked: sourceTarget.clip.locked ?? false,
-                    expectedTargetClipLocked: targetTarget.clip.locked ?? false,
-                },
-            });
-            continue;
-        }
-        if (action.type === 'removeShortMidiOverlaps') {
-            const scope = options.midiOverlapTransformScope;
-            const entry = scope?.entries.find(
-                (candidate) =>
-                    candidate.clipId === action.payload.clipId &&
-                    scope.maximumOverlapMs === action.payload.maximumOverlapMs
-            );
-            if (!scope || !entry) {
-                return { status: 'rejected', reason: 'EX-04 selected MIDI overlap scope is unavailable' };
-            }
-            materialized.push({
-                type: 'removeShortMidiOverlaps',
-                payload: {
-                    clipId: entry.clipId,
-                    maximumOverlapMs: scope.maximumOverlapMs,
-                    expectedTempo: scope.tempo,
-                    expectedTrackId: entry.trackId,
-                    trackName: entry.trackName,
-                    expectedTrackFrozen: entry.expectedTrackFrozen,
-                    clipName: entry.clipName,
-                    expectedClipLocked: entry.expectedClipLocked,
-                    expectedNotes: entry.expectedNotes.map((note) => ({ ...note })),
-                },
-            });
-            continue;
-        }
-        if (action.type === 'arpeggiate') {
-            const scope = options.syncopatedArpeggioScope;
-            if (!scope || action.payload.clipId !== scope.clipId) {
-                return { status: 'rejected', reason: 'EX-07 syncopated arpeggio scope is unavailable' };
-            }
-            const reservedNoteIds = new Set(scope.expectedNotes.map((note) => note.id));
-            const addedNotes = scope.addedNotes.map((note) => {
-                let id = `arp-${crypto.randomUUID()}`;
-                while (reservedNoteIds.has(id)) {
-                    id = `arp-${crypto.randomUUID()}`;
-                }
-                reservedNoteIds.add(id);
-                return { id, ...note };
-            });
-            materialized.push({
-                type: 'arpeggiate',
-                payload: {
-                    clipId: scope.clipId,
-                    pattern: 'up',
-                    rate: 8,
-                    octaves: 1,
-                    gate: 50,
-                    expectedTrackId: scope.trackId,
-                    trackName: scope.trackName,
-                    expectedTrackFrozen: scope.expectedTrackFrozen,
-                    clipName: scope.clipName,
-                    expectedClipLocked: scope.expectedClipLocked,
-                    expectedNotes: scope.expectedNotes.map((note) => ({ ...note })),
-                    addedNotes,
-                },
-            });
-            continue;
-        }
-        if (action.type === 'createDrumPreviewBranches') {
-            const scope = options.drumPreviewBranchesScope;
-            if (!scope || action.payload.sectionId !== scope.section.id) {
-                return { status: 'rejected', reason: 'EX-05 drum preview branch scope is unavailable' };
-            }
-            const recipes = ['ghost-note-pocket', 'half-time-space', 'syncopated-hats'] as const;
-            const candidates: Extract<
-                AppAction,
-                { type: 'createDrumPreviewBranches' }
-            >['payload']['candidates'][number][] = [];
-            for (const [index, recipe] of recipes.entries()) {
-                const branchId = crypto.randomUUID();
-                const snareNotes = projectDrumPreviewCandidateNotes({
-                    branchId,
-                    endBeat: scope.section.endBeat,
-                    notes: scope.snare.expectedNotes,
-                    recipe,
-                    role: 'snare',
-                    startBeat: scope.section.startBeat,
-                });
-                const hiHatNotes = projectDrumPreviewCandidateNotes({
-                    branchId,
-                    endBeat: scope.section.endBeat,
-                    notes: scope.hiHat.expectedNotes,
-                    recipe,
-                    role: 'hi-hat',
-                    startBeat: scope.section.startBeat,
-                });
-                if (!snareNotes || !hiHatNotes) {
-                    return { status: 'rejected', reason: 'EX-05 drum candidate projection is unavailable' };
-                }
-                const names = ['Ghost-note Pocket', 'Half-time Space', 'Syncopated Hats'] as const;
-                candidates.push({
-                    branchId,
-                    branchName: `Drum Candidate ${String(index + 1)} — ${names[index]!}`,
-                    rootDocId: `branch_${branchId}`,
-                    recipe,
-                    snareNotes: snareNotes.map((note) => ({ ...note })),
-                    hiHatNotes: hiHatNotes.map((note) => ({ ...note })),
-                });
-            }
-            materialized.push({
-                type: 'createDrumPreviewBranches',
-                payload: {
-                    ownerId: crypto.randomUUID(),
-                    createdAt: Date.now(),
-                    expectedSourceBranchId: scope.sourceBranchId,
-                    expectedSourceHeads: [...scope.sourceHeads],
-                    expectedDocuments: scope.expectedDocuments.map(({ docId, heads }) => ({
-                        docId,
-                        heads: [...heads],
-                    })),
-                    expectedBranchState: structuredClone(scope.expectedBranchState),
-                    sectionId: scope.section.id,
-                    sectionName: scope.section.name,
-                    sectionStartBeat: scope.section.startBeat,
-                    sectionEndBeat: scope.section.endBeat,
-                    candidateCount: 3,
-                    varyingRoles: ['snare', 'hi-hat'],
-                    kick: { ...scope.kick, expectedNotes: scope.kick.expectedNotes.map((note) => ({ ...note })) },
-                    snare: { ...scope.snare, expectedNotes: scope.snare.expectedNotes.map((note) => ({ ...note })) },
-                    hiHat: { ...scope.hiHat, expectedNotes: scope.hiHat.expectedNotes.map((note) => ({ ...note })) },
-                    candidates,
-                },
-            });
-            continue;
-        }
-        if (action.type === 'setTrackGain') {
-            const track = tracksById.get(action.payload.trackId);
-            if (!track) {
-                return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
-            }
-            materialized.push({
-                type: 'setTrackGain',
-                payload: { ...action.payload, expectedGain: track.gain },
-            });
-            continue;
-        }
-        if (action.type === 'setTrackPan') {
-            const track = tracksById.get(action.payload.trackId);
-            if (!track) {
-                return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
-            }
-            materialized.push({
-                type: 'setTrackPan',
-                payload: { ...action.payload, expectedPan: track.pan },
-            });
-            continue;
-        }
-        if (action.type === 'muteTrack') {
-            const track = tracksById.get(action.payload.trackId);
-            if (!track) {
-                return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
-            }
-            materialized.push({
-                type: 'muteTrack',
-                payload: { ...action.payload, expectedMuted: track.muted },
-            });
-            continue;
-        }
-        if (action.type === 'soloTrack') {
-            const track = tracksById.get(action.payload.trackId);
-            if (!track) {
-                return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
-            }
-            materialized.push({
-                type: 'soloTrack',
-                payload: { ...action.payload, expectedSoloed: track.soloed },
-            });
-            continue;
-        }
-        if (action.type === 'addTrack' && action.payload.id) {
-            if (tracksById.has(action.payload.id)) {
-                return { status: 'rejected', reason: `Track identity is already in use: ${action.payload.id}` };
-            }
-            // A nameless track is pinned to the owner's default name for its kind among the
-            // tracks projected so far, so the proposal, its guards and its replay name it once.
-            const name = action.payload.name ?? nextDefaultTrackName(action.payload.kind, [...tracksById.values()]);
-            tracksById.set(
-                action.payload.id,
-                createProjectedTrack(action.payload.id, name, action.payload.kind, action.payload.initialDeviceId)
-            );
-            deviceIdsByTrack.set(
-                action.payload.id,
-                action.payload.kind === 'midi' && action.payload.initialDeviceId !== undefined
-                    ? [action.payload.initialDeviceId]
-                    : []
-            );
-            frozenByTrack.set(action.payload.id, false);
-            materialized.push(
-                action.payload.name === undefined ? { ...action, payload: { ...action.payload, name } } : action
-            );
-            continue;
-        }
-        if (action.type === 'addDevice') {
-            const expectedFrozen = frozenByTrack.get(action.payload.trackId);
-            if (expectedFrozen === undefined) {
-                return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
-            }
-            if (expectedFrozen) {
-                return { status: 'rejected', reason: `Track is frozen: ${action.payload.trackId}` };
-            }
-            const expectedDeviceIds = deviceIdsByTrack.get(action.payload.trackId);
-            if (!expectedDeviceIds) {
-                return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
-            }
-            let deviceId = action.payload.deviceId;
-            if (deviceId) {
-                if (reservedDeviceIds.has(deviceId)) {
-                    return { status: 'rejected', reason: `Device identity is already in use: ${deviceId}` };
-                }
-            } else {
-                const baseDeviceId = `device-ai-${action.payload.trackId}-${action.payload.deviceType}`;
-                deviceId = baseDeviceId;
-                let suffix = 2;
-                while (reservedDeviceIds.has(deviceId)) {
-                    deviceId = `${baseDeviceId}-${String(suffix)}`;
-                    suffix += 1;
-                }
-            }
-            reservedDeviceIds.add(deviceId);
-            const nextDeviceIds = [...expectedDeviceIds];
-            let insertionIndex = nextDeviceIds.length;
-            if (action.payload.afterDeviceId) {
-                const anchorIndex = nextDeviceIds.indexOf(action.payload.afterDeviceId);
-                if (anchorIndex < 0) {
-                    return {
-                        status: 'rejected',
-                        reason: `Device is unavailable: ${action.payload.afterDeviceId}`,
-                    };
-                }
-                insertionIndex = anchorIndex + 1;
-            }
-            nextDeviceIds.splice(insertionIndex, 0, deviceId);
-            deviceIdsByTrack.set(action.payload.trackId, nextDeviceIds);
-            const projectedTrack = tracksById.get(action.payload.trackId);
-            if (!projectedTrack) {
-                return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
-            }
-            const projectedDevices = [...projectedTrack.devices];
-            const descriptor = context.availableDeviceTypes?.find(
-                (candidate) => candidate.id === action.payload.deviceType
-            );
-            projectedDevices.splice(insertionIndex, 0, {
-                id: deviceId,
-                ...(descriptor ? { name: descriptor.name } : {}),
-                type: action.payload.deviceType,
-                bypassed: false,
-                parameters: descriptor?.parameters?.map((parameter) => ({ ...parameter })) ?? [],
-            });
-            tracksById.set(action.payload.trackId, {
-                ...projectedTrack,
-                deviceCount: projectedDevices.length,
-                devices: projectedDevices,
-            });
-            materialized.push({
-                type: 'addDevice',
-                payload: {
-                    ...action.payload,
-                    deviceId,
-                    expectedDeviceIds,
-                    expectedFrozen,
-                },
-            });
-            continue;
-        }
-        if (action.type === 'setDeviceParameter' && hasDeviceParameterStateGuards(action)) {
-            const guarded = materializeGuardedParameter(action, tracksById, deviceIdsByTrack);
-            if (guarded.status === 'rejected') {
-                return guarded;
-            }
-            materialized.push(...guarded.actions);
-            continue;
-        }
-        if (action.type === 'createBus' && action.payload.busId) {
-            if (tracksById.has(action.payload.busId)) {
-                return { status: 'rejected', reason: `Bus identity is already in use: ${action.payload.busId}` };
-            }
-            tracksById.set(action.payload.busId, createProjectedBus(action.payload.busId, action.payload.name));
-            deviceIdsByTrack.set(action.payload.busId, []);
-            frozenByTrack.set(action.payload.busId, false);
-            materialized.push(action);
-            continue;
-        }
-        if (action.type === 'addSend') {
-            const sourceTrack = tracksById.get(action.payload.trackId);
-            const destinationBus = tracksById.get(action.payload.busId);
-            if (!sourceTrack || destinationBus?.kind !== 'bus') {
-                return {
-                    status: 'rejected',
-                    reason: `Send endpoints are unavailable: ${action.payload.trackId} -> ${action.payload.busId}`,
-                };
-            }
-            if (sourceTrack.sends?.some((send) => send.busId === action.payload.busId)) {
-                return {
-                    status: 'rejected',
-                    reason: `Send already exists: ${action.payload.trackId} -> ${action.payload.busId}`,
-                };
-            }
-            // The guard has to record the level the send will actually hold,
-            // not the form the request stated it in: a later action in the same
-            // batch reads this projection to decide what it is changing.
-            const level = resolveSendLevelFields(action.payload, SEND_LEVEL_LAW.unity);
-            if (!level.ok) {
-                return { status: 'rejected', reason: level.reason };
-            }
-            const projectedSends = [
-                ...(sourceTrack.sends ?? []),
-                {
-                    busId: action.payload.busId,
-                    level: level.linear,
-                    levelDb: toLevelDb(level.linear),
-                    preFader: action.payload.preFader ?? false,
-                },
-            ];
-            tracksById.set(action.payload.trackId, { ...sourceTrack, sends: projectedSends });
-            materialized.push(action);
-            continue;
-        }
-        if (action.type === 'automateSendRange') {
-            const bus = tracksById.get(action.payload.busId);
-            if (!bus || bus.kind !== 'bus') {
-                return { status: 'rejected', reason: `Bus is unavailable: ${action.payload.busId}` };
-            }
-            const section = (context.sections ?? []).find(
-                (candidate) => candidate.name.toLocaleLowerCase() === action.payload.sectionName.toLocaleLowerCase()
-            );
-            if (!section) {
-                return { status: 'rejected', reason: `Section is unavailable: ${action.payload.sectionName}` };
-            }
-            const expectedSends = [];
-            for (const trackId of action.payload.trackIds) {
-                const track = tracksById.get(trackId);
-                const send = track?.sends?.find((candidate) => candidate.busId === action.payload.busId);
-                if (!track || !send) {
-                    return {
-                        status: 'rejected',
-                        reason: `Send is unavailable: ${trackId} -> ${action.payload.busId}`,
-                    };
-                }
-                expectedSends.push({ trackId, level: send.level, preFader: send.preFader });
-            }
-            materialized.push({
-                type: 'automateSendRange',
-                payload: {
-                    ...action.payload,
-                    busName: bus.name,
-                    sectionId: section.id,
-                    startBeat: section.startBeat,
-                    endBeat: section.endBeat,
-                    expectedSends,
-                    expectedSection: {
-                        name: section.name,
-                        startBeat: section.startBeat,
-                        endBeat: section.endBeat,
-                    },
-                },
-            });
-            continue;
-        }
-        if (action.type === 'automateParameterRange') {
-            const parameterRange = materializeParameterRange(action, context);
-            if (parameterRange.status === 'rejected') {
-                return parameterRange;
-            }
-            materialized.push(parameterRange.action);
-            continue;
-        }
-        if (action.type === 'automateTrackGainRange') {
-            const section = (context.sections ?? []).find(
-                (candidate) => candidate.name.toLocaleLowerCase() === action.payload.sectionName.toLocaleLowerCase()
-            );
-            if (!section) {
-                return { status: 'rejected', reason: `Section is unavailable: ${action.payload.sectionName}` };
-            }
-            const expectedTracks = [];
-            for (const trackId of action.payload.trackIds) {
-                const track = tracksById.get(trackId);
-                if (!track || track.kind !== 'bus') {
-                    return { status: 'rejected', reason: `Bus is unavailable: ${trackId}` };
-                }
-                if (
-                    track.frozen === true ||
-                    track.automationMode === 'off' ||
-                    !Number.isFinite(track.gain) ||
-                    track.gain <= 0 ||
-                    // The fader's own ceiling, matching what
-                    // `handleAutomateTrackGainRange` admits. Bounding at unity
-                    // rejects a lift the fader itself can reach by hand.
-                    track.gain * 10 ** (action.payload.gainDb / 20) > FADER_MAX_GAIN ||
-                    (context.automationLanes ?? []).some(
-                        (lane) =>
-                            lane.id === `auto-gain-${encodeURIComponent(trackId)}` ||
-                            (!lane.clipId && lane.trackId === trackId && lane.parameterId === 'gain')
-                    )
-                ) {
-                    return { status: 'rejected', reason: `Bus cannot accept gain automation: ${trackId}` };
-                }
-                expectedTracks.push({
-                    trackId,
-                    trackName: track.name,
-                    gain: track.gain,
-                    automationMode: track.automationMode,
-                    frozen: track.frozen ?? false,
-                });
-            }
-            materialized.push({
-                type: 'automateTrackGainRange',
-                payload: {
-                    ...action.payload,
-                    sectionId: section.id,
-                    startBeat: section.startBeat,
-                    endBeat: section.endBeat,
-                    expectedTracks,
-                    expectedSection: {
-                        name: section.name,
-                        startBeat: section.startBeat,
-                        endBeat: section.endBeat,
-                    },
-                },
-            });
-            continue;
-        }
-        if (action.type === 'automateSendRanges') {
-            const bus = tracksById.get(action.payload.busId);
-            if (!bus || bus.kind !== 'bus') {
-                return { status: 'rejected', reason: `Bus is unavailable: ${action.payload.busId}` };
-            }
-            const [numerator, denominator] = context.timeSignature;
-            const beatsPerBar = numerator * (4 / denominator);
-            const automationLengthBeats = beatsPerBar * action.payload.tailBars;
-            if (!Number.isFinite(automationLengthBeats) || automationLengthBeats <= 0) {
-                return { status: 'rejected', reason: 'Send automation requires a finite positive time signature' };
-            }
-            const sectionsById = new Map((context.sections ?? []).map((section) => [section.id, section]));
-            const ranges = [];
-            for (const sectionId of action.payload.sectionIds) {
-                const section = sectionsById.get(sectionId);
-                if (!section || section.endBeat - section.startBeat < automationLengthBeats) {
-                    return { status: 'rejected', reason: `Section cannot accept send automation: ${sectionId}` };
-                }
-                ranges.push({
-                    sectionId,
-                    sectionName: section.name,
-                    startBeat: section.startBeat,
-                    endBeat: section.endBeat,
-                    automationStartBeat: section.endBeat - automationLengthBeats,
-                });
-            }
-            const expectedTracks = [];
-            for (const trackId of action.payload.trackIds) {
-                const track = tracksById.get(trackId);
-                const send = track?.sends?.find((candidate) => candidate.busId === action.payload.busId);
-                const laneId = `auto-send-${encodeURIComponent(trackId)}-${encodeURIComponent(action.payload.busId)}`;
-                if (
-                    !track ||
-                    track.frozen === true ||
-                    track.automationMode === 'off' ||
-                    !send ||
-                    send.preFader ||
-                    !Number.isFinite(send.level) ||
-                    (context.automationLanes ?? []).some(
-                        (lane) =>
-                            lane.id === laneId ||
-                            (!lane.clipId &&
-                                lane.trackId === trackId &&
-                                lane.parameterId === `send:${action.payload.busId}`)
-                    )
-                ) {
-                    return { status: 'rejected', reason: `Track cannot accept send automation: ${trackId}` };
-                }
-                expectedTracks.push({
-                    trackId,
-                    trackName: track.name,
-                    frozen: track.frozen ?? false,
-                    automationMode: track.automationMode,
-                    sendLevel: send.level,
-                    sendPreFader: send.preFader,
-                });
-            }
-            materialized.push({
-                type: 'automateSendRanges',
-                payload: {
-                    ...action.payload,
-                    busName: bus.name,
-                    expectedTimeSignature: [numerator, denominator],
-                    ranges,
-                    expectedTracks,
-                },
-            });
-            continue;
-        }
-        if (action.type === 'renderProjectSections') {
-            const tailSeconds = options.appOwnedRenderTailSeconds;
-            if (tailSeconds === undefined || !Number.isFinite(tailSeconds) || tailSeconds < 0) {
-                return { status: 'rejected', reason: 'Section render tail was not materialized by the application' };
-            }
-            const sectionsById = new Map((context.sections ?? []).map((section) => [section.id, section]));
-            const jobs = [];
-            for (const sectionId of action.payload.sectionIds) {
-                const section = sectionsById.get(sectionId);
-                if (!section || !Number.isFinite(section.startBeat) || section.endBeat <= section.startBeat) {
-                    return { status: 'rejected', reason: `Section cannot be rendered: ${sectionId}` };
-                }
-                jobs.push({
-                    jobId: `render-job-ai-${crypto.randomUUID()}`,
-                    sectionId,
-                    sectionName: section.name,
-                    startBeat: section.startBeat,
-                    endBeat: section.endBeat,
-                    sampleRate: 44_100,
-                    tailSeconds,
-                });
-            }
-            materialized.push({ type: 'renderProjectSections', payload: { ...action.payload, jobs } });
-            continue;
-        }
-        if (action.type === 'importStemSet') {
-            return { status: 'rejected', reason: 'Stem imports require application-owned file materialization' };
-        }
-        materialized.push(action);
+        materialized.push(...step.actions);
     }
 
     return { status: 'accepted', actions: stampProcessingOnlyParameterPolicy(materialized) };
-}
-
-function getNativeParameterUnit(valueUnit: unknown, descriptorUnit: string) {
-    if (valueUnit !== undefined) {
-        return {};
-    }
-    const nativeUnit = normalizeDeviceParameterValueUnit(descriptorUnit);
-    if (nativeUnit === null) {
-        return {};
-    }
-    return { valueUnit: nativeUnit };
-}
-
-function materializeGuardedParameter(
-    action: Extract<MaterializableRuntimeAction, { type: 'setDeviceParameter' }>,
-    tracksById: ReadonlyMap<string, ProjectContextTrack>,
-    deviceIdsByTrack: ReadonlyMap<string, string[]>
-): MaterializeActionStateGuardsResult {
-    const owners = [...tracksById.values()].filter((track) =>
-        track.devices.some((device) => device.id === action.payload.deviceId)
-    );
-    const owner = owners.length === 1 ? owners[0] : undefined;
-    const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
-    const parameter = device?.parameters?.find((candidate) => candidate.id === action.payload.paramId);
-    const valuePresent = parameter?.valuePresent !== false;
-    if (
-        !owner ||
-        !device ||
-        !parameter ||
-        owner.frozen === true ||
-        (action.payload.expectedTrackId !== undefined && action.payload.expectedTrackId !== owner.id) ||
-        (action.payload.expectedDeviceType !== undefined && action.payload.expectedDeviceType !== device.type) ||
-        !matchesParameterBeforeValue(action, parameter.value, valuePresent) ||
-        (action.payload.expectedTrackFrozen !== undefined && action.payload.expectedTrackFrozen !== owner.frozen)
-    ) {
-        return {
-            status: 'rejected',
-            reason: `Device parameter state is unavailable or protected: ${action.payload.deviceId}/${action.payload.paramId}`,
-        };
-    }
-    const expectedDeviceIds = deviceIdsByTrack.get(owner.id);
-    if (!expectedDeviceIds) {
-        return { status: 'rejected', reason: `Track is unavailable: ${owner.id}` };
-    }
-    return {
-        status: 'accepted',
-        actions: [
-            {
-                type: 'setDeviceParameter',
-                payload: {
-                    ...action.payload,
-                    ...getNativeParameterUnit(action.payload.valueUnit, parameter.unit),
-                    expectedDeviceIds: [...expectedDeviceIds],
-                },
-            },
-        ],
-    };
-}
-
-function matchesParameterBeforeValue(
-    action: Extract<MaterializableRuntimeAction, { type: 'setDeviceParameter' }>,
-    value: number,
-    valuePresent: boolean
-): boolean {
-    if (action.payload.expectedValuePresent !== undefined && action.payload.expectedValuePresent !== valuePresent) {
-        return false;
-    }
-    return action.payload.expectedValue === undefined || (valuePresent && action.payload.expectedValue === value);
 }

@@ -160,6 +160,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/gitAncestry.ts',
     'scripts/githubAppIdentity.ts',
     'scripts/guardRecoveryProof.ts',
+    'scripts/isolatedGitTransport.ts',
     'scripts/laneActivity.ts',
     'scripts/laneStackForkMarkers.ts',
     'scripts/measurementRevisionHolders.ts',

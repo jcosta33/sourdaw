@@ -4,6 +4,14 @@ export const LOCAL_PLANNING_REPLY_RESERVE_TOKENS = 2_048;
 /** Tokens the chat template wraps around the system and user messages, the empty thinking block included. */
 export const LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS = 32;
 
+/**
+ * Tokens the planning prompt measured by `directLevelContextWindow.spec.ts` must leave unspent in
+ * the local window after its reserves: room for a longer user request than that fixture's and for
+ * error in the token estimate. A lane adding planner-facing text spends only the headroom above
+ * this floor; it never lowers the floor or the reply, thread and template reserves to fit.
+ */
+export const LOCAL_PLANNING_PROMPT_HEADROOM_FLOOR_TOKENS = 2_000;
+
 /** The failure code of a local planning request that does not fit the local model's context window. */
 export const LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE = 'local-context-window-exceeded';
 
