@@ -989,6 +989,69 @@ fn the_pending_cancel_record_is_bounded_and_forgets_the_oldest() {
 }
 
 #[test]
+fn a_cancel_after_its_render_finished_does_not_cancel_the_next_render_under_its_id() {
+    let fx = InstalledFx::create("cancel-late");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let seams = fx.seams();
+    let print = || {
+        render(
+            batch(impulse_track(json!([fx_device()]))),
+            &state,
+            &ui,
+            &seams,
+            Some("r"),
+        )
+    };
+
+    print().expect("the first render under the id prints");
+    cancel_graph_offline("r".to_string(), &state).expect("a late cancel is answered");
+    assert_eq!(
+        state
+            .offline_renders
+            .lock()
+            .expect("renders")
+            .pending_cancel_count(),
+        0,
+        "a cancel for a finished render is dropped, not queued"
+    );
+    print().expect("the id's next render is not cancelled by the late cancel");
+}
+
+#[test]
+fn a_cancel_for_a_finished_id_still_cancels_once_a_render_begins_under_it_again() {
+    let mut renders = OfflineRenders::default();
+    renders.begin("r").expect("the id is free");
+    renders.finish("r");
+    let again = renders.begin("r").expect("a finished id is free");
+    renders.finish("r");
+
+    renders.cancel("r");
+    assert_eq!(renders.pending_cancel_count(), 0, "the id just finished");
+    let rebegun = renders.begin("r").expect("a finished id is free");
+    renders.cancel("r");
+    assert!(
+        rebegun.is_cancelled(),
+        "a render under a reused id is cancellable"
+    );
+    assert!(!again.is_cancelled());
+    renders.finish("r");
+
+    for index in 0..=FINISHED_RENDER_LIMIT {
+        renders
+            .begin(&format!("finished-{index}"))
+            .expect("the id is free");
+        renders.finish(&format!("finished-{index}"));
+    }
+    renders.cancel("finished-0");
+    assert_eq!(
+        renders.pending_cancel_count(),
+        1,
+        "the finished record is bounded: the oldest id is forgotten, and its cancel is kept"
+    );
+}
+
+#[test]
 fn a_cancel_mid_render_stops_it_and_releases_its_clap_instance_on_the_ui_thread() {
     a_cancel_mid_render_stops_the_render_of(Format::Clap);
 }

@@ -62,16 +62,22 @@ const OFFLINE_CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
 /// render that never came was for nothing.
 pub const PENDING_CANCEL_LIMIT: usize = 64;
 
+/// How many finished render ids are remembered, so a cancel that arrives
+/// after its render ended is recognised as late rather than kept for the next
+/// render to reuse the id. Bounded and oldest-first, like the pending cancels.
+pub const FINISHED_RENDER_LIMIT: usize = 64;
+
 /// The text every cancelled render's error starts with — a contract the
 /// renderer side matches on.
 pub const OFFLINE_RENDER_CANCELLED: &str = "offline-render-cancelled";
 
-/// The offline renders in flight, by the id their caller named, and the
-/// cancels that arrived before their render did.
+/// The offline renders in flight, by the id their caller named, the cancels
+/// that arrived before their render did, and the ids that recently finished.
 #[derive(Debug, Default)]
 pub struct OfflineRenders {
     in_flight: HashMap<String, Arc<OfflineRenderControl>>,
     pending_cancels: VecDeque<String>,
+    recently_finished: VecDeque<String>,
 }
 
 impl OfflineRenders {
@@ -84,6 +90,8 @@ impl OfflineRenders {
                 "offline-render-id-in-use: a render under id '{render_id}' is already in flight"
             ));
         }
+        self.recently_finished
+            .retain(|finished| finished != render_id);
         let control = Arc::new(OfflineRenderControl::default());
         if let Some(position) = self
             .pending_cancels
@@ -100,10 +108,18 @@ impl OfflineRenders {
 
     /// Cancel the render under `render_id`, or remember the cancel for a
     /// render that has not started. Never an error: a render that already
-    /// finished has nothing left to stop.
+    /// finished has nothing left to stop, so its late cancel is dropped rather
+    /// than kept to cancel the next render that reuses the id.
     fn cancel(&mut self, render_id: &str) {
         if let Some(control) = self.in_flight.get(render_id) {
             control.cancel();
+            return;
+        }
+        if self
+            .recently_finished
+            .iter()
+            .any(|finished| finished == render_id)
+        {
             return;
         }
         if self
@@ -121,6 +137,10 @@ impl OfflineRenders {
 
     fn finish(&mut self, render_id: &str) {
         self.in_flight.remove(render_id);
+        if self.recently_finished.len() == FINISHED_RENDER_LIMIT {
+            self.recently_finished.pop_front();
+        }
+        self.recently_finished.push_back(render_id.to_string());
     }
 
     #[cfg(test)]
@@ -197,7 +217,7 @@ impl Drop for InFlightRender<'_> {
 }
 
 /// Cancel the offline render under `render_id`. A cancel before its render
-/// starts still cancels it; one for an unknown or finished id does nothing.
+/// starts still cancels it; one for a finished id does nothing.
 pub fn cancel_graph_offline(render_id: String, state: &AppState) -> Result<(), String> {
     state
         .offline_renders
