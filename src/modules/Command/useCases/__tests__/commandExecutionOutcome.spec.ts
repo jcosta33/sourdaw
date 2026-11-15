@@ -373,21 +373,24 @@ describe('command execution outcome vocabulary', () => {
             }
         );
 
-        it('names a retired action type ahead of an admission-mode action instead of failing its preflight', async () => {
-            registerHandlerMap(getArrangementHandlers());
-            const retired = JSON.parse('{"type":"retiredType"}');
-            const split = JSON.parse(
-                '{"type":"splitClip","payload":{"clipId":"clip-1","trackId":"track-1","splitBeat":1}}'
-            );
+        it.each(['retiredType', 'constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+            'names the unregistered type %s ahead of an admission-mode action instead of failing its preflight',
+            async (unregisteredType) => {
+                registerHandlerMap(getArrangementHandlers());
+                const unregistered = JSON.parse(`{"type":"${unregisteredType}"}`);
+                const split = JSON.parse(
+                    '{"type":"splitClip","payload":{"clipId":"clip-1","trackId":"track-1","splitBeat":1}}'
+                );
 
-            const result = await executeAppActionBatch([retired, split]);
+                const result = await executeAppActionBatch([unregistered, split]);
 
-            expect(result).toEqual({
-                status: 'rejected',
-                reason: 'No registered handler for action: retiredType',
-                actions: [],
-            });
-        });
+                expect(result).toEqual({
+                    status: 'rejected',
+                    reason: `No registered handler for action: ${unregisteredType}`,
+                    actions: [],
+                });
+            }
+        );
 
         it('reports a conflict when a handler refuses to write', async () => {
             registerHandlerMap({

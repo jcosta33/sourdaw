@@ -144,12 +144,14 @@ src/modules/Arrangement/handlers/track/__tests__/handleAddTrackDefaultName.integ
    multi-action batches.
 10. **An untrusted action type reaches a per-action lookup before the registry rejects it (#6599).** Failure: a
     record indexed by `action.type` turns a retired, misspelt or inherited-name type (`constructor`, `toString`,
-    `__proto__`) from a persisted batch, undo entry, saved macro or model output into a TypeError or an
-    `Object.prototype` member, so the batch fails on a lookup instead of the kernel's no-handler rejection. The
-    admission loop materializes admission-mode handlers over earlier raw actions before that check, which is
-    where a new table is first reached. Probe: through `executeAppActionBatch`, feed such a type (a `JSON.parse`
-    literal) ahead of an admission-mode action (`splitClip`, `setTempo`) and assert `rejected` with `No registered
-handler for action: <type>`; reverting a lookup's own-property guard must fail it.
+    `__proto__`) into a TypeError or an `Object.prototype` member, so the batch fails on a lookup instead of the
+    kernel's no-handler rejection. The admission loop materializes admission-mode handlers over earlier raw
+    actions before that check, so a lookup reached there (`projectClipAction`, `hasUnprojectedAudioSourceWrite`
+    through `projectClipReplayPrefix`) needs an own-property guard. Guard only lookups reachable before the
+    registry, each with a row that fails on removal; lookups behind the registry rely on its own-property check
+    in `getHandlerByType`. Probe: through `executeAppActionBatch`, feed such a type (a `JSON.parse` literal) ahead
+    of an admission-mode action (`splitClip`, `setTempo`) and assert `rejected` with `No registered handler for
+action: <type>`; reverting a reachable lookup's guard must fail it.
 
 ## Relocated
 

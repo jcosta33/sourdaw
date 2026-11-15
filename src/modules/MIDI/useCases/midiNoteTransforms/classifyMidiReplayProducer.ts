@@ -409,9 +409,6 @@ const midiReplayProducerByActionType: {
 };
 
 function lookup<Type extends AppActionType>(action: ActionOf<Type>): MidiReplayProducer {
-    if (!Object.hasOwn(midiReplayProducerByActionType, action.type)) {
-        return producesNothing();
-    }
     return midiReplayProducerByActionType[action.type](action);
 }
 

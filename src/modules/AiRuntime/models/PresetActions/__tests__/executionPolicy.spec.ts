@@ -52,15 +52,4 @@ describe('preset action execution policy', () => {
             .sort();
         expect(unclassifiedActionTypes).toEqual([]);
     });
-
-    it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
-        'gives the inherited name %s the default policy',
-        (inheritedName) => {
-            expect(getAppActionExecutionPolicy(inheritedName)).toMatchObject({
-                classification: 'default',
-                risk: 'unclassified',
-                requiresConfirmation: true,
-            });
-        }
-    );
 });

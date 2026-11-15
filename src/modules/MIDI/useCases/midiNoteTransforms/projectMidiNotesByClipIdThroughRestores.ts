@@ -449,10 +449,6 @@ const notesProjectionByActionType: {
 };
 
 function lookup<Type extends AppActionType>(action: ActionOf<Type>, notesByClipId: Record<string, MidiNote[]>): void {
-    if (!Object.hasOwn(notesProjectionByActionType, action.type)) {
-        noNotesProjection();
-        return;
-    }
     notesProjectionByActionType[action.type](action, notesByClipId);
 }
 

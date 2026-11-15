@@ -566,10 +566,6 @@ function lookup<Type extends AppActionType>(
     before: State,
     after: State
 ): void {
-    if (!Object.hasOwn(addActionSourceOwnersByActionType, action.type)) {
-        addNoOwners();
-        return;
-    }
     addActionSourceOwnersByActionType[action.type](action, owners, before, after);
 }
 

@@ -437,9 +437,6 @@ const controllerRestoresByActionType: {
 };
 
 function lookup<Type extends AppActionType>(action: ActionOf<Type>): ControllerRestore[] {
-    if (!Object.hasOwn(controllerRestoresByActionType, action.type)) {
-        return noControllerRestores();
-    }
     return controllerRestoresByActionType[action.type](action);
 }
 

@@ -407,9 +407,6 @@ const tempoScalarTransitionByActionType: {
 };
 
 function lookup<Type extends AppActionType>(action: ActionOf<Type>): TempoScalarTransition | null | undefined {
-    if (!Object.hasOwn(tempoScalarTransitionByActionType, action.type)) {
-        return notATempoAction();
-    }
     return tempoScalarTransitionByActionType[action.type](action);
 }
 

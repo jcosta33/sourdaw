@@ -427,9 +427,6 @@ function lookup<Type extends AppActionType>(
     busId: string,
     bus: PlannedBus | undefined
 ): PlannedBus | undefined {
-    if (!Object.hasOwn(plannedBusByActionType, action.type)) {
-        return unchangedBus(action, busId, bus);
-    }
     return plannedBusByActionType[action.type](action, busId, bus);
 }
 
