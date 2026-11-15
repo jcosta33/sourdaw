@@ -4723,55 +4723,53 @@ fn map_parameter_write(
         _ => {}
     }
 
-    let (strip, automation_target, value_law): (
-        &StripEntry,
-        AutomationTarget,
-        fn(f64, &StripEntry) -> Result<f32, String>,
-    ) = match target {
-        StripParameterTargetPayload::TrackFader { track_id } => {
-            let strip = strip_for(track_id)?;
-            let target = match strip.kind {
-                StripKind::Track => AutomationTarget::TrackGain(strip.native_id),
-                StripKind::Bus => AutomationTarget::BusGain(strip.native_id),
-            };
-            (strip, target, |value, strip| {
-                fader_gain(value, strip.vca_multiplier)
-            })
-        }
-        StripParameterTargetPayload::TrackPan { track_id } => {
-            let strip = strip_for(track_id)?;
-            let target = match strip.kind {
-                StripKind::Track => AutomationTarget::TrackPan(strip.native_id),
-                StripKind::Bus => AutomationTarget::BusPan(strip.native_id),
-            };
-            (strip, target, |value, _| pan_position(value))
-        }
-        StripParameterTargetPayload::TrackSendLevel { track_id, bus_id } => {
-            let strip = strip_for(track_id)?;
-            if !strip.send_bus_ids.iter().any(|id| id == bus_id) {
-                return Err(format!(
-                    "write-parameter: '{track_id}' has no send to '{bus_id}'"
-                ));
+    type ValueLaw = fn(f64, &StripEntry) -> Result<f32, String>;
+    let (strip, automation_target, value_law): (&StripEntry, AutomationTarget, ValueLaw) =
+        match target {
+            StripParameterTargetPayload::TrackFader { track_id } => {
+                let strip = strip_for(track_id)?;
+                let target = match strip.kind {
+                    StripKind::Track => AutomationTarget::TrackGain(strip.native_id),
+                    StripKind::Bus => AutomationTarget::BusGain(strip.native_id),
+                };
+                (strip, target, |value, strip| {
+                    fader_gain(value, strip.vca_multiplier)
+                })
             }
-            let destination = registry
-                .strips
-                .get(bus_id)
-                .ok_or_else(|| format!("write-parameter: unknown bus '{bus_id}'"))?;
-            let target = match strip.kind {
-                StripKind::Track => AutomationTarget::TrackSendLevel {
-                    track_id: strip.native_id,
-                    bus_id: destination.native_id,
-                },
-                StripKind::Bus => AutomationTarget::BusSendLevel {
-                    source_bus_id: strip.native_id,
-                    bus_id: destination.native_id,
-                },
-            };
-            (strip, target, |value, _| send_level(value))
-        }
-        StripParameterTargetPayload::TrackMuteGate { .. }
-        | StripParameterTargetPayload::TrackSoloGate { .. } => unreachable!("handled above"),
-    };
+            StripParameterTargetPayload::TrackPan { track_id } => {
+                let strip = strip_for(track_id)?;
+                let target = match strip.kind {
+                    StripKind::Track => AutomationTarget::TrackPan(strip.native_id),
+                    StripKind::Bus => AutomationTarget::BusPan(strip.native_id),
+                };
+                (strip, target, |value, _| pan_position(value))
+            }
+            StripParameterTargetPayload::TrackSendLevel { track_id, bus_id } => {
+                let strip = strip_for(track_id)?;
+                if !strip.send_bus_ids.iter().any(|id| id == bus_id) {
+                    return Err(format!(
+                        "write-parameter: '{track_id}' has no send to '{bus_id}'"
+                    ));
+                }
+                let destination = registry
+                    .strips
+                    .get(bus_id)
+                    .ok_or_else(|| format!("write-parameter: unknown bus '{bus_id}'"))?;
+                let target = match strip.kind {
+                    StripKind::Track => AutomationTarget::TrackSendLevel {
+                        track_id: strip.native_id,
+                        bus_id: destination.native_id,
+                    },
+                    StripKind::Bus => AutomationTarget::BusSendLevel {
+                        source_bus_id: strip.native_id,
+                        bus_id: destination.native_id,
+                    },
+                };
+                (strip, target, |value, _| send_level(value))
+            }
+            StripParameterTargetPayload::TrackMuteGate { .. }
+            | StripParameterTargetPayload::TrackSoloGate { .. } => unreachable!("handled above"),
+        };
 
     let automation_write = match write {
         ParameterWritePayload::RampTo {

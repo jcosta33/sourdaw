@@ -21,6 +21,7 @@ import { type VibeRunInitialBaselineRefusal } from '../models/VibeRunPlan';
 import { WORKFLOW_CAPABILITY_TOOL_NAME } from '../models/WorkflowCapability';
 
 import { ANALYSIS_MEASURE_TOOL_NAME } from './agentToolCatalog';
+import { NO_AUDIBLE_CLAIM_REASON } from './deriveMeasuredAudibleImpact';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { readVibeRunInitialRefusal } from './vibeRun/readVibeRunInitialRefusal';
 
@@ -492,10 +493,7 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
             steps: actionDescriptions,
             expectedImpact: {
                 project: actionDescriptions.map((step) => step.description),
-                audible: {
-                    status: 'not-claimed',
-                    reason: 'The application plans state changes but does not infer or claim that it listened to audio.',
-                },
+                audible: { status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON },
             },
             capabilities,
             risks: input.requiresConfirmation ? ['The compiled command policy requires explicit confirmation.'] : [],

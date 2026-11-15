@@ -1059,7 +1059,7 @@ mod tests {
         );
         stall_the_engine_in_the_slot(&state);
 
-        let gate_guard = block_on_test(hold_plugin_runtime_gate_exclusively());
+        let gate_guard = hold_plugin_runtime_gate_exclusively();
         let (retire_started, retire_starting) = mpsc::channel();
 
         let retiring_state = &state;

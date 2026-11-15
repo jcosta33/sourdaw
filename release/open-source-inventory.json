@@ -172,7 +172,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:ce680ad6639d40da5baa584ebc892b81bbd72e77cd25b8db5a644ae584d037dc:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:ddbcd2d47c650d7193852679bf91116ed774f5f85026aa3c5902624bfd86eceb:release/dependency-license-proofs.json"
+                "sha256:72e8ebe8d0a39191be941c6209c8cb6fbe5b9e19bc2a7836940ffafd9f1258f1:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1225,14 +1225,14 @@
                 "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
             ],
             "digests": [
-                "tracked-set-sha256:f9d4aa6e76faf670fb139af1913ea26320803db1a45b70dd533d75e265bd7125:grand-boule-native-rust",
+                "tracked-set-sha256:256ab7b660aa577a416bca50523096298b8093bbc9b3d975131220533a092937:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:20bcf828794365a588f32d7e13808657502a13d0e8427a6543cf78c2cec789ce:grand-boule-discovery-catalog",
                 "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
                 "tracked-set-sha256:eaa809018aea8e96f598f3b55ad0711e475c6a79f06c87491af507ad88d346bd:grand-boule-live-runtime",
-                "tracked-set-sha256:33535e3e0c7d019b07cac0548c48f37842900656659d9d50c6c6b8a01edc873e:grand-boule-project-state",
+                "tracked-set-sha256:e505ea87f6a0fa03694ae194a3e802cd9f52fab1fa60792013b6cc401836796b:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:b98f17787085efbbbc1799925d05d17a97326f4cf5dc05bac21d6b94adf3ab64:grand-boule-release-proof"
+                "tracked-set-sha256:88850d0cd229f166563a451b2df7dc4bcc90b9e3691aa2f008f484daebc1c6d6:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1908,7 +1908,7 @@
         },
         {
             "path": "Cargo.toml",
-            "sha256": "3a13e58e939eae530fc9892451b6a90196904b38d027787caa734f7ee911f57e"
+            "sha256": "5abe21b6211a445df6ee051433d8b21f28525b4065af29c67aabdbf498b039e1"
         },
         {
             "path": "Cargo.lock",

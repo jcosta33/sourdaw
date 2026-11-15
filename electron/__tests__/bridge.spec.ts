@@ -13,6 +13,7 @@ import {
     EVENT_CHANNEL,
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
+    SYSTEM_TOTAL_MEMORY_CHANNEL,
     STREAM_CHANNEL,
     DIALOG_MESSAGE_CHANNEL,
     DIALOG_OPEN_CHANNEL,
@@ -85,11 +86,13 @@ describe('the published surface', () => {
             'paths',
             'platform',
             'stream',
+            'system',
             'voiceDictation',
             'windowControls',
         ]);
         expect(Object.keys(bridge.dialog).sort()).toEqual(['message', 'open', 'save']);
         expect(Object.keys(bridge.paths).sort()).toEqual(['join', 'samplesBase']);
+        expect(Object.keys(bridge.system)).toEqual(['totalMemoryBytes']);
         expect(Object.keys(bridge.display)).toEqual(['setZoomFactor']);
         expect(Object.keys(bridge.windowControls).sort()).toEqual([
             'close',
@@ -744,5 +747,27 @@ describe('dialogs and paths', () => {
 
         await expect(createSourdawBridge(fake.ipc).paths.samplesBase()).resolves.toBe('app://sourdaw/samples');
         expect(fake.invoke).toHaveBeenCalledWith(PATHS_SAMPLES_BASE_CHANNEL);
+    });
+
+    it('asks main for the total memory and returns a positive integer byte count', async () => {
+        const fake = fakeIpc(() => 17_179_869_184);
+
+        await expect(createSourdawBridge(fake.ipc).system.totalMemoryBytes()).resolves.toBe(17_179_869_184);
+        expect(fake.invoke).toHaveBeenCalledWith(SYSTEM_TOTAL_MEMORY_CHANNEL);
+    });
+
+    it.each([
+        { label: 'zero', answer: 0 },
+        { label: 'negative', answer: -1 },
+        { label: 'fractional', answer: 8.5e9 + 0.5 },
+        { label: 'above the safe integer range', answer: 2 ** 53 },
+        { label: 'not finite', answer: Number.POSITIVE_INFINITY },
+        { label: 'NaN', answer: Number.NaN },
+        { label: 'a numeric string', answer: '17179869184' },
+        { label: 'missing', answer: undefined },
+    ])('refuses a total-memory answer that is $label', async ({ answer }) => {
+        const bridge = createSourdawBridge(fakeIpc(() => answer).ipc);
+
+        await expect(bridge.system.totalMemoryBytes()).rejects.toThrow(TypeError);
     });
 });
