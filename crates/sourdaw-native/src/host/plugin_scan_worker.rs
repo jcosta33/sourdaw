@@ -1420,6 +1420,27 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     #[cfg(unix)]
     const VALID_RESPONSE: &str = r#"{"worker_pid":1,"result":{"Ok":[]}}"#;
 
+    /// An `Err` the helper reports in its response is the plugin's own text.
+    /// Whatever it says, it is a data-level refusal: classification reads the
+    /// variant, so a plugin that echoes a classified message cannot get itself
+    /// quarantined or its row blamed on the helper's limit.
+    #[cfg(unix)]
+    #[test]
+    fn a_reported_error_that_reads_like_a_classified_message_stays_data_level() {
+        let echoed_limit = oversized_response_error(1);
+        for text in ["Plugin scan helper timed out", echoed_limit.as_str()] {
+            let response = format!(r#"{{"worker_pid":1,"result":{{"Err":"{text}"}}}}"#);
+
+            let failure =
+                scan_with_stand_in_helper(format!("printf '%s' '{response}' > \"$out\"\nexit 0"))
+                    .expect_err("a reported error must be returned as a failure");
+
+            assert_eq!(failure, ScanFailure::Refused(text.to_string()));
+            assert!(!failure.is_process_failure(), "{failure}");
+            assert!(!failure.is_response_limit_refusal(), "{failure}");
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_healthy_response_is_read() {
