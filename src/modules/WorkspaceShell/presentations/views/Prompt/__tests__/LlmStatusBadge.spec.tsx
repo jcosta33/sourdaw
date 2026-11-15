@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { aiBackendPreferenceStore, hostedLlmProviderStatusStore } from '#/modules/AiRuntime/stores';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 
 import { LlmStatusBadge } from '../LlmStatusBadge';
@@ -192,6 +193,73 @@ describe('LlmStatusBadge', () => {
 
             expect(onLoad).toHaveBeenCalledWith();
             expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        });
+    });
+
+    describe('while a turn is answering', () => {
+        const PRO_MODEL_ID = 'Qwen3-8B-q4f16_1-MLC';
+        const localAnswering = { state: 'generating' as const, backend: 'webllm' as const, modelId: PRO_MODEL_ID };
+        const hostedAnswering = {
+            state: 'generating' as const,
+            backend: 'cloud' as const,
+            provider: 'anthropic' as const,
+            modelId: 'claude-hosted-model',
+        };
+
+        beforeEach(() => {
+            capabilityStore.set({ phase: 'done', report: verifiedWebGpuReport });
+            aiBackendPreferenceStore.set('auto');
+            hostedLlmProviderStatusStore.set(null);
+        });
+
+        it('names the local model answering the turn', () => {
+            render(<LlmStatusBadge status={localAnswering} onLoad={vi.fn()} />);
+
+            expect(screen.getByRole('status')).toHaveTextContent('Answering with Browser · Pro');
+        });
+
+        it('names the hosted provider and model as the ready panel names them', () => {
+            render(<LlmStatusBadge status={hostedAnswering} onLoad={vi.fn()} />);
+
+            expect(screen.getByRole('status')).toHaveTextContent('Answering with Anthropic · claude-hosted-model');
+        });
+
+        it('follows a fall-through from the hosted provider to the local model', () => {
+            const view = render(<LlmStatusBadge status={hostedAnswering} onLoad={vi.fn()} />);
+            expect(screen.getByRole('status')).toHaveTextContent('Anthropic · claude-hosted-model');
+
+            view.rerender(<LlmStatusBadge status={localAnswering} onLoad={vi.fn()} />);
+
+            expect(screen.getByRole('status')).toHaveTextContent('Answering with Browser · Pro');
+            expect(screen.queryByText(/Anthropic/)).not.toBeInTheDocument();
+        });
+
+        // Red when the badge names the preference or the configured hosted provider instead of the
+        // backend of the generating status. Which backend answers under automatic routing is
+        // `inference.spec.ts`'s; this case only feeds the badge a local attempt beside those distractors.
+        it('names the backend of the generating status, never the preference or the configured hosted provider', () => {
+            aiBackendPreferenceStore.set('auto');
+            hostedLlmProviderStatusStore.set({
+                provider: 'anthropic',
+                model: 'claude-hosted-model',
+                baseUrl: null,
+                authentication: 'api-key',
+                reasoningEffort: null,
+                thinking: null,
+            });
+
+            render(<LlmStatusBadge status={localAnswering} onLoad={vi.fn()} />);
+
+            expect(screen.getByRole('status')).toHaveTextContent('Answering with Browser · Pro');
+            expect(screen.queryByText(/Anthropic|claude-hosted-model/)).not.toBeInTheDocument();
+        });
+
+        it('says nothing about answering while idle', () => {
+            render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={vi.fn()} />);
+
+            expect(screen.getByRole('button', { name: 'Load AI' })).toBeInTheDocument();
+            expect(screen.queryByText(/Answering/)).not.toBeInTheDocument();
+            expect(screen.queryByRole('status')).not.toBeInTheDocument();
         });
     });
 });
