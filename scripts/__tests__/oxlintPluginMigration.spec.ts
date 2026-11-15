@@ -485,6 +485,7 @@ describe('production Oxlint public-plugin migration', () => {
                 })
             );
             writeFileSync(fixture, 'export const value = void 0;\n');
+            writeFileSync(join(directory, 'other.js'), 'export const other = void 1;\n');
             const budget = JSON.stringify({
                 'fixture.js': { 'no-void': { count: 2 } },
                 'other.js': { 'no-void': { count: 1 } },
