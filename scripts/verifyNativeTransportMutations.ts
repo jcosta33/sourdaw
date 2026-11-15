@@ -331,6 +331,15 @@ function childEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.Proce
 
 type GitCommand = (...args: string[]) => Promise<string>;
 
+async function hasFeatureTransportChanges(git: GitCommand, base: string, head: string): Promise<boolean> {
+    // An advanced event base can contain main-only changes absent from the feature.
+    const featureBase = await git('merge-base', '--all', base, head);
+    if (!/^[a-f0-9]{40}$/u.test(featureBase)) {
+        throw new Error('Expected one immutable merge base for native source scope');
+    }
+    return (await git('diff', '--name-only', featureBase, head, '--', SOURCE)) !== '';
+}
+
 async function nativeGraphDigest(git: GitCommand, sha: string): Promise<string> {
     const files = (await git('ls-tree', '-r', '--name-only', sha))
         .split('\n')
@@ -429,12 +438,14 @@ async function proveIsolatedTransport(context: {
     return proof;
 }
 
+type HostedProbeContext = {
+    root: string;
+    environment: NodeJS.ProcessEnv;
+    platform: NodeJS.Platform;
+};
+
 export async function hostedProbe(
-    context: {
-        root: string;
-        environment: NodeJS.ProcessEnv;
-        platform: NodeJS.Platform;
-    } = {
+    context: HostedProbeContext = {
         root: resolvePath(import.meta.dirname, '..'),
         environment: process.env,
         platform: process.platform,
@@ -500,12 +511,7 @@ export async function hostedProbe(
         ) {
             throw new Error('Event commits were not fetched by the isolated checkout');
         }
-        // An advanced event base can contain main-only changes absent from the feature.
-        const featureBase = await git('merge-base', '--all', base, head);
-        if (!/^[a-f0-9]{40}$/u.test(featureBase)) {
-            throw new Error('Expected one immutable merge base for native source scope');
-        }
-        if ((await git('diff', '--name-only', featureBase, head, '--', SOURCE)) === '') {
+        if (!(await hasFeatureTransportChanges(git, base, head))) {
             record.result = 'not-scheduled';
             record.reason = 'owning source unchanged';
             record.restored = true;
