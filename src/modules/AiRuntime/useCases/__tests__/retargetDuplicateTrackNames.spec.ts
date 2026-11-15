@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
@@ -6,65 +6,39 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, getMixRecipeCatalog, setArrangementEventBus } from '#/modules/Arrangement/useCases';
-import { removeTrackStrip } from '#/modules/AudioEngine/useCases';
+import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import { clearUndoHistory, resetActionReplayAuthority, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
 import {
-    clearUndoHistory,
-    executeAppAction,
-    resetActionReplayAuthority,
-    setActionHistoryMetadataPort,
-    undo,
-} from '#/modules/Command/useCases';
-import {
-    captureProjectIdentity,
-    captureProjectRevision,
     createCrdtDoc,
-    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
-    settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { createAcceptanceFixtureLifetime } from '../../__tests__/acceptanceFixtureLifetime';
-import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
-import { agentRunStore } from '../../stores/agentRunStore';
-import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
-import { appendChatMessage, chatStore, stopGenerating } from '../../stores/chatStore';
+import { clearAiHistory } from '../../stores/aiActionHistoryStore';
+import { chatStore } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
-    getPendingActionConfirmation,
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
-import { readLastCommitRequest } from '../../transformers/readLastCommitRequest';
-import { revertThreadCommit } from '../agentRequestOrchestration/revertThreadCommit';
 import { agentRunLifecycle } from '../agentRunLifecycle';
-import { agentRunWorkLease } from '../agentRunWorkLease';
-import { proposeAnswerSuggestion } from '../aiPanelActions/proposeAnswerSuggestion';
-import { agentRunCancellation } from '../cancelAgentRun';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
-import { expandMixRecipe } from '../expandMixRecipe';
 import { getProjectContext } from '../getProjectContext';
-import { parsePromptToActions } from '../parsePromptToActions';
-import { planLastCommitContinuation } from '../planLastCommitContinuation';
-import { type planPromptActions } from '../planPromptActions';
 import { readNamedTracks } from '../lastCommitContinuation/readNamedTracks';
+import { type planPromptActions } from '../planPromptActions';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
-import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
-
-registerDeviceEnginePorts();
 
 registerDeviceEnginePorts();
 
@@ -253,13 +227,6 @@ function getTrack(id: string): Track {
     return track;
 }
 
-/** Rewrites one track in the store, as an edit made outside the planner would. */
-function updateTrack(id: string, update: (track: Track) => Track): void {
-    const current = trackStore.value!;
-    const tracks = current.tracks.map((track) => (track.id === id ? update(track) : track));
-    trackStore.set({ ...current, tracks });
-}
-
 function decibelsOf(trackId: string): number {
     return Math.round(20 * Math.log10(getTrack(trackId).gain) * 1000) / 1000;
 }
@@ -341,10 +308,6 @@ async function sendChatMessage(prompt: string, options?: Parameters<typeof sendC
     chatPlanning.last = null;
     await sendChatMessageWithoutDocumentFlush(prompt, options);
 }
-function providerCallCount(): number {
-    return runtimeMocks.generateWebLlmCompletion.mock.calls.length;
-}
-
 function lastAssistantMessage() {
     return chatStore.value?.messages.findLast((message) => message.role === 'assistant');
 }
@@ -404,9 +367,10 @@ function setProjectTracks(tracks: ReadonlyArray<NamedTrack>): void {
 
 /** The track ids the newest committed batch moved. */
 function newestCommittedTrackIds(): string[] {
-    return newestCommittedActions().flatMap((action) =>
-        typeof action?.payload.trackId === 'string' ? [action.payload.trackId] : []
-    );
+    return newestCommittedActions().flatMap((action) => {
+        const payload: Record<string, unknown> = action?.payload ?? {};
+        return typeof payload.trackId === 'string' ? [payload.trackId] : [];
+    });
 }
 
 async function askAfterVocalsCommit(prompt: string): Promise<string> {

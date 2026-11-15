@@ -15,7 +15,7 @@ function describeCandidates(candidates: readonly AmbiguousTrack[]): string {
     }
     const options = candidates.map((candidate) =>
         shares(candidate)
-            ?`the ${ORDINAL_WORDS[candidate.order - 1] ?? String(candidate.order)} ${candidate.name}`
+            ? `the ${ORDINAL_WORDS[candidate.order - 1] ?? String(candidate.order)} ${candidate.name}`
             : candidate.name
     );
     const last = options.at(-1);
