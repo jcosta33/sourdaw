@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 
 import { Cpu, Download, HardDrive, Loader2, Power, Sparkles, Check } from 'lucide-react';
 
@@ -15,9 +15,14 @@ import {
     aiBackendPreferenceStore,
     hostedLlmProviderStatusStore,
     type LlmEngineStatus,
+    machineMemoryStore,
+    type MachineMemoryReading,
 } from '#/modules/AiRuntime/stores';
 import {
+    chooseLocalModel,
     DEFAULT_WEBLLM_MODEL,
+    listOfferedLocalModels,
+    readMachineMemory,
     resolveBackend,
     unloadEngine,
     WEBLLM_MODELS,
@@ -71,7 +76,14 @@ function getAnsweringName(status: Extract<LlmEngineStatus, { state: 'generating'
 
 export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactElement | null => {
     const [showPanel, setShowPanel] = useState(false);
-    const [selectedModelId, setSelectedModelId] = useState(getActiveModelId);
+    const [wantedModelId, setWantedModelId] = useState(getActiveModelId);
+    const machineMemory = useStore(machineMemoryStore, { state: 'unread' });
+    useEffect(() => {
+        void readMachineMemory();
+    }, []);
+    const offeredModels = listOfferedLocalModels(machineMemory);
+    // The picker never offers to download a model this machine cannot run, whatever was selected before.
+    const selectedModelId = chooseLocalModel(offeredModels, wantedModelId)?.id ?? wantedModelId;
     const backendPreference = useStore(aiBackendPreferenceStore, 'auto');
     const hostedProviderStatus = useStore(hostedLlmProviderStatusStore, null);
     // Browser-local availability is only known once BrowserAi's adapter/device
@@ -173,7 +185,9 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                         tierKey={tierKey}
                         modelInfo={modelInfo}
                         selectedModelId={selectedModelId}
-                        onSelectModel={setSelectedModelId}
+                        onSelectModel={setWantedModelId}
+                        offeredModels={offeredModels}
+                        machineMemory={machineMemory}
                         onLoad={(modelId) => {
                             setShowPanel(false);
                             onLoad(modelId);
@@ -290,7 +304,9 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                         modelInfo={modelInfo}
                         selectedModelId={selectedModelId}
                         refusalMessage={status.message}
-                        onSelectModel={setSelectedModelId}
+                        onSelectModel={setWantedModelId}
+                        offeredModels={offeredModels}
+                        machineMemory={machineMemory}
                         onLoad={(modelId) => {
                             setShowPanel(false);
                             onLoad(modelId);
@@ -316,6 +332,13 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     );
 };
 
+function describeNoFittingModel(machineMemory: MachineMemoryReading): string {
+    if (machineMemory.state !== 'known') {
+        return 'No local model fits this machine.';
+    }
+    return `This machine has ${(machineMemory.totalBytes / 1e9).toFixed(1)} GB of memory, and no local model fits. Use a hosted model.`;
+}
+
 // ── Model setup panel ───────────────────────────────────────────────────
 
 type ModelSetupPanelProps = {
@@ -324,6 +347,8 @@ type ModelSetupPanelProps = {
     tierKey: 'cloud' | 'webllm';
     modelInfo: BadgeModelInfo;
     selectedModelId: string;
+    offeredModels: readonly BadgeModelInfo[];
+    machineMemory: MachineMemoryReading;
     /** The sentence saying why the last load was refused, shown above the chooser. */
     refusalMessage?: string;
     onSelectModel: (modelId: string) => void;
@@ -336,11 +361,14 @@ const ModelSetupPanel = ({
     tierKey,
     modelInfo,
     selectedModelId,
+    offeredModels,
+    machineMemory,
     refusalMessage,
     onSelectModel,
     onLoad,
 }: ModelSetupPanelProps): ReactElement => {
-    const selectedName = WEBLLM_MODELS.find((message) => message.id === selectedModelId)?.displayName ?? 'Model';
+    const selectedName = offeredModels.find((model) => model.id === selectedModelId)?.displayName ?? 'Model';
+    const nothingFits = backend === 'webllm' && offeredModels.length === 0;
     return (
         <>
             <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
@@ -363,7 +391,12 @@ const ModelSetupPanel = ({
                 )}
                 {backend === 'webllm' ? (
                     <>
-                        {WEBLLM_MODELS.map((model) => (
+                        {nothingFits ? (
+                            <p className="px-1 text-[10px] text-muted-foreground leading-relaxed">
+                                {describeNoFittingModel(machineMemory)}
+                            </p>
+                        ) : null}
+                        {offeredModels.map((model) => (
                             <ModelOption
                                 key={model.id}
                                 model={model}
@@ -394,19 +427,21 @@ const ModelSetupPanel = ({
                     </p>
                 ) : (
                     <>
-                        {backend === 'webllm' ? (
+                        {backend === 'webllm' && !nothingFits ? (
                             <p className="px-1 text-[10px] text-muted-foreground leading-relaxed">
                                 Downloads and verifies this model for private use in this browser.
                             </p>
                         ) : null}
-                        <Button
-                            size="sm"
-                            className="w-full text-xs h-7 mt-1"
-                            onClick={() => onLoad(backend === 'webllm' ? selectedModelId : undefined)}
-                        >
-                            <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
-                            {`Download & Load ${selectedName}`}
-                        </Button>
+                        {nothingFits ? null : (
+                            <Button
+                                size="sm"
+                                className="w-full text-xs h-7 mt-1"
+                                onClick={() => onLoad(backend === 'webllm' ? selectedModelId : undefined)}
+                            >
+                                <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
+                                {`Download & Load ${selectedName}`}
+                            </Button>
+                        )}
                     </>
                 )}
             </Stack>

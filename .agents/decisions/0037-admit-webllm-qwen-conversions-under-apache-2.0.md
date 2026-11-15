@@ -59,9 +59,9 @@ Admit only these exact WebLLM Qwen MLC conversions:
 
 | Qwen model | MLC conversion revision                    | Artifact-set digest                                                |
 | ---------- | ------------------------------------------ | ------------------------------------------------------------------ |
-| Qwen3 1.7B | `80b3abcec6c3b3f5355dc0cc99cc4fb578f192bc` | `932ad158daa0d6814a50c5fb6aa85f88c3d3892a58a0dc20d47ff0b9e6e0b255` |
-| Qwen3 4B   | `a5c9fab855e3ccbdfed2e7e69683d75f30332161` | `2438f2a6b58372e12ca0aa949443a49ca7b6060ad3e7971aed0d56b49a35195f` |
-| Qwen3 8B   | `b3d55c289eae58f77095f5b68c895eeea358ee09` | `7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb` |
+| Qwen3 1.7B | `80b3abcec6c3b3f5355dc0cc99cc4fb578f192bc` | `a8c02294f8d3c23e7ff2a9174d3a575e7809c7463870b6e23d2d6e6f1dac7991` |
+| Qwen3 4B   | `a5c9fab855e3ccbdfed2e7e69683d75f30332161` | `2e136079f88bb3aea4289642db64fef8d77a0cb4c503ca6ca90a4030e0b75756` |
+| Qwen3 8B   | `b3d55c289eae58f77095f5b68c895eeea358ee09` | `5121d9a5818d4693e0b0f2dc55f2982ece120b875c955203e4650a9269ad6d2a` |
 
 The corresponding immutable licensed Qwen candidate revisions are
 `70d244cc86ccca08cf5af4e1e306ecf908b1ad5e` (1.7B),

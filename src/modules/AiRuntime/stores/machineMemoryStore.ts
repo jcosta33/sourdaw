@@ -1,0 +1,9 @@
+import { createStore } from '#/infra/store/createStore';
+
+/** What is known of this machine's total physical memory. A process constant once read. */
+export type MachineMemoryReading =
+    { state: 'unread' } | { state: 'known'; totalBytes: number } | { state: 'unavailable' };
+
+export const machineMemoryStore = createStore<MachineMemoryReading>({
+    initialData: { state: 'unread' },
+});

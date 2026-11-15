@@ -1,10 +1,34 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { aiBackendPreferenceStore, hostedLlmProviderStatusStore } from '#/modules/AiRuntime/stores';
+import { aiBackendPreferenceStore, hostedLlmProviderStatusStore, machineMemoryStore } from '#/modules/AiRuntime/stores';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 
 import { LlmStatusBadge } from '../LlmStatusBadge';
+
+import type { MachineMemoryReading } from '#/modules/AiRuntime/stores';
+
+// The catalogue has no large-tier model yet. This one stands in for the tier a later release adds,
+// so the rule that hides a tier above Pro without a memory figure has something to hide.
+vi.mock('#/modules/AiRuntime/models/ModelInfo', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/modules/AiRuntime/models/ModelInfo')>();
+    return {
+        ...original,
+        WEBLLM_MODELS: [
+            ...original.WEBLLM_MODELS,
+            {
+                id: 'Synthetic-70B-test',
+                displayName: 'Large',
+                parameterCount: '70B',
+                description: 'A stand-in large local model.',
+                downloadSize: '~40 GB',
+                ramUsage: '~40.0 GB',
+                memoryGb: 40,
+                tier: 'large',
+            },
+        ],
+    };
+});
 
 // Nothing here is stubbed: the badge resolves its backend through the real
 // admission chain, so the capability report is the only input that decides what
@@ -34,6 +58,7 @@ function renderBadge(): void {
 describe('LlmStatusBadge', () => {
     beforeEach(() => {
         capabilityStore.set({ phase: 'idle' });
+        machineMemoryStore.set({ state: 'unread' });
     });
 
     it('reports that availability is still being checked while detection is pending', () => {
@@ -121,6 +146,110 @@ describe('LlmStatusBadge', () => {
 
         fireEvent.click(readyButton);
         expect(screen.getByRole('button', { name: 'Unload from Memory' })).toBeInTheDocument();
+    });
+
+    describe('the local models this machine can run', () => {
+        const light = /^Light/;
+        const standard = /^Standard/;
+        const pro = /^Pro/;
+        const large = /^Large/;
+
+        async function openPicker(reading: MachineMemoryReading, onLoad = vi.fn()): Promise<void> {
+            capabilityStore.set({ phase: 'done', report: verifiedWebGpuReport });
+            machineMemoryStore.set(reading);
+            await act(async () => {
+                render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={onLoad} />);
+            });
+            fireEvent.click(screen.getByRole('button', { name: 'Load AI' }));
+        }
+
+        it.each([
+            {
+                label: '8 GB clears Light and Standard only',
+                bytes: 8_000_000_000,
+                listed: [light, standard],
+                hidden: [pro, large],
+            },
+            {
+                label: '16 GB clears Light, Standard and Pro',
+                bytes: 16_000_000_000,
+                listed: [light, standard, pro],
+                hidden: [large],
+            },
+            {
+                label: 'exactly the Pro figure clears Pro',
+                bytes: 10_300_000_000,
+                listed: [light, standard, pro],
+                hidden: [large],
+            },
+            {
+                label: 'one byte under the Pro figure does not',
+                bytes: 10_299_999_999,
+                listed: [light, standard],
+                hidden: [pro, large],
+            },
+            {
+                label: 'exactly the Standard figure clears Standard',
+                bytes: 4_300_000_000,
+                listed: [light, standard],
+                hidden: [pro, large],
+            },
+            {
+                label: 'one byte under the Standard figure does not',
+                bytes: 4_299_999_999,
+                listed: [light],
+                hidden: [standard, pro, large],
+            },
+            {
+                label: 'enough memory lists the large tier',
+                bytes: 40_000_000_000,
+                listed: [light, standard, pro, large],
+                hidden: [],
+            },
+        ])('lists only what the reported memory clears: $label', async ({ bytes, listed, hidden }) => {
+            await openPicker({ state: 'known', totalBytes: bytes });
+
+            for (const name of listed) {
+                expect(screen.getByRole('button', { name })).toBeInTheDocument();
+            }
+            for (const name of hidden) {
+                expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+            }
+        });
+
+        it.each([
+            { label: 'unavailable', reading: { state: 'unavailable' } as const },
+            { label: 'unread', reading: { state: 'unread' } as const },
+        ])(
+            'lists every tier up to Pro with its memory figure and hides larger ones when the reading is $label',
+            async ({ reading }) => {
+                await openPicker(reading);
+
+                expect(screen.getByRole('button', { name: light })).toHaveTextContent('~2.7 GB');
+                expect(screen.getByRole('button', { name: standard })).toHaveTextContent('~4.3 GB');
+                expect(screen.getByRole('button', { name: pro })).toHaveTextContent('~10.3 GB');
+                expect(screen.queryByRole('button', { name: large })).not.toBeInTheDocument();
+            }
+        );
+
+        it('selects the largest offered model, not the unoffered default, and loads that one', async () => {
+            const onLoad = vi.fn();
+            await openPicker({ state: 'known', totalBytes: 8_000_000_000 }, onLoad);
+
+            const downloadButton = screen.getByRole('button', { name: /^Download & Load/ });
+            expect(downloadButton).toHaveTextContent('Download & Load Standard');
+
+            fireEvent.click(downloadButton);
+            expect(onLoad).toHaveBeenCalledWith('Qwen3-4B-q4f16_1-MLC');
+        });
+
+        it('states the machine memory and offers no download when no local model fits', async () => {
+            await openPicker({ state: 'known', totalBytes: 1_000_000_000 });
+
+            expect(screen.getByText(/1\.0 GB of memory, and no local model fits/)).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /^Download & Load/ })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: light })).not.toBeInTheDocument();
+        });
     });
 
     describe('when this machine cannot run the requested model', () => {
