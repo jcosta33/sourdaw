@@ -443,7 +443,7 @@ async function recentProjectKey(page: Page, name: string): Promise<string> {
             const entries: unknown =
                 typeof stored === 'object' && stored !== null && 'json' in stored ? stored.json : stored;
             if (!Array.isArray(entries)) {
-                throw new Error('The recent-projects index is unreadable');
+                throw new TypeError('The recent-projects index is unreadable');
             }
             for (const entry of entries) {
                 if (

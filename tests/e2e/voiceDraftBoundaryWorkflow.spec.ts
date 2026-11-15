@@ -66,7 +66,7 @@ test('native transcript stays a draft until explicit submission and confirmation
     test.setTimeout(180_000);
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
-        throw new Error('Voice boundary acceptance requires the app origin');
+        throw new TypeError('Voice boundary acceptance requires the app origin');
     }
     const appOrigin = new URL(configuredBaseUrl).origin;
     const externalRequests: string[] = [];

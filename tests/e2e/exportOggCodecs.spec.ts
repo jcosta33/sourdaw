@@ -259,7 +259,7 @@ for (const codec of ['ogg', 'opus']) {
             await page.evaluate(() => {
                 const original = Reflect.get(window, 'showSaveFilePicker');
                 if (typeof original !== 'function') {
-                    throw new Error('Missing captured file picker');
+                    throw new TypeError('Missing captured file picker');
                 }
                 Object.defineProperty(window, 'showSaveFilePicker', {
                     configurable: true,

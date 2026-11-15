@@ -14,7 +14,7 @@ function record(value: unknown): value is Record<string, unknown> {
 function receipt(request: ScriptedToolRequest, id: string) {
     const item = request.messages.find((message) => message.role === 'tool' && message.tool_call_id === id);
     if (typeof item?.content !== 'string') {
-        throw new Error(`Missing receipt ${id}`);
+        throw new TypeError(`Missing receipt ${id}`);
     }
     const value: unknown = JSON.parse(item.content);
     if (!record(value) || value.status !== 'success' || !record(value.data)) {
@@ -76,7 +76,7 @@ async function rendered(page: Page) {
             hashes.push(Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', data.buffer))).join(','));
             for (const sample of data) {
                 if (!Number.isFinite(sample)) {
-                    throw new Error('Rendered nonfinite audio');
+                    throw new TypeError('Rendered nonfinite audio');
                 }
                 energy += sample * sample;
                 peak = Math.max(peak, Math.abs(sample));
@@ -645,7 +645,7 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
         // kept the old gain. Hold every message until the re-entry is captured,
         // so the case proves re-entry never depends on one.
         if (!(device.outputNode instanceof AudioWorkletNode)) {
-            throw new Error('Shaper output is not its worklet');
+            throw new TypeError('Shaper output is not its worklet');
         }
         const shaperPort = device.outputNode.port;
         const heldMessages: unknown[] = [];
@@ -1037,7 +1037,7 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
     const start = events.find((event) => event.name === 'transient-active-start');
     const end = events.find((event) => event.name === 'transient-active-end');
     if (typeof start?.ts !== 'number' || typeof end?.ts !== 'number') {
-        throw new Error('Active trace bounds absent');
+        throw new TypeError('Active trace bounds absent');
     }
     const startTs = start.ts,
         endTs = end.ts;

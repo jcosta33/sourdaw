@@ -187,7 +187,7 @@ async function pianoRollGeometry(frame: Frame): Promise<PianoRollGeometry> {
         const tabPanel = document.getElementById('bottom-dock-tabpanel');
         const dock = tabPanel?.parentElement;
         if (!(dock instanceof HTMLElement)) {
-            throw new Error('Bottom dock is unavailable');
+            throw new TypeError('Bottom dock is unavailable');
         }
 
         const copyRect = (rect: DOMRect): Rect => ({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });

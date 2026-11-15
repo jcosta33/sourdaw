@@ -17,7 +17,7 @@ export const test = base.extend<object, { compiledPersistenceOrigin: string }>({
             if (isBuiltE2eShardRun(process.env)) {
                 const origin = workerInfo.project.use.baseURL;
                 if (typeof origin !== 'string') {
-                    throw new Error('Built persistence shard requires its configured preview origin');
+                    throw new TypeError('Built persistence shard requires its configured preview origin');
                 }
                 await use(origin);
                 return;

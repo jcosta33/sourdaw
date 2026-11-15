@@ -15,7 +15,7 @@ function tool(request: ScriptedToolRequest, name: string): string {
 function receipt(request: ScriptedToolRequest, id: string): Record<string, unknown> {
     const item = request.messages.find((message) => message.role === 'tool' && message.tool_call_id === id);
     if (typeof item?.content !== 'string') {
-        throw new Error(`Missing receipt ${id}`);
+        throw new TypeError(`Missing receipt ${id}`);
     }
     const value: unknown = JSON.parse(item.content);
     if (
@@ -149,7 +149,7 @@ test('every controlled compressor expansion lowers measured dynamic range throug
             let wetEnergy = 0;
             for (const sample of wet.getChannelData(0)) {
                 if (!Number.isFinite(sample)) {
-                    throw new Error(`${entry.id}: nonfinite audio`);
+                    throw new TypeError(`${entry.id}: nonfinite audio`);
                 }
                 wetEnergy += sample * sample;
             }
@@ -289,7 +289,7 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
                 for (let frame = 0; frame < data.length; frame++) {
                     const sample = data[frame];
                     if (!Number.isFinite(sample)) {
-                        throw new Error('Nonfinite gate output');
+                        throw new TypeError('Nonfinite gate output');
                     }
                     if (frame >= 7_200 && frame < 10_800) {
                         openEnergy += sample * sample;

@@ -245,7 +245,7 @@ test('production Faust plays and exports after slow native loading, refuses a na
 }, testInfo) => {
     const origin = testInfo.project.use.baseURL;
     if (typeof origin !== 'string') {
-        throw new Error('Production preview origin is missing');
+        throw new TypeError('Production preview origin is missing');
     }
     const identity = await buildIdentity(origin);
     const observations: Record<string, unknown> = { identity };

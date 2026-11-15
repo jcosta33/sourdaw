@@ -86,7 +86,7 @@ function installPicker({
     const callBinding = (name: string, ...args: unknown[]): Promise<unknown> => {
         const binding = Reflect.get(window, name);
         if (typeof binding !== 'function') {
-            throw new Error(`Missing test file picker binding: ${name}`);
+            throw new TypeError(`Missing test file picker binding: ${name}`);
         }
         return (binding as (...values: unknown[]) => Promise<unknown>)(...args);
     };

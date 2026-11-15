@@ -23,7 +23,7 @@ function receiptData(request: ScriptedToolRequest, callId: string): Record<strin
         (candidate) => candidate.role === 'tool' && candidate.tool_call_id === callId
     );
     if (typeof message?.content !== 'string') {
-        throw new Error(`No application receipt for ${callId}.`);
+        throw new TypeError(`No application receipt for ${callId}.`);
     }
     const receipt: unknown = JSON.parse(message.content);
     if (!isRecord(receipt) || receipt.status !== 'success' || !isRecord(receipt.data)) {
@@ -37,7 +37,7 @@ function targetsFromReceipt(request: ScriptedToolRequest, names: string[]): Targ
     expect(receipt.schema).toBe('sourdaw.semantic-project-query');
     expect(receipt.nextCursor).toBeNull();
     if (!Array.isArray(receipt.items)) {
-        throw new Error('Project query returned no items.');
+        throw new TypeError('Project query returned no items.');
     }
     const items: unknown[] = receipt.items;
     return names.map((name) => {

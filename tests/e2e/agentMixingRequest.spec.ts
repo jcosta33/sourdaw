@@ -396,7 +396,7 @@ async function installOutputProbe(page: Page, confirmationId: string) {
             await context.suspend();
             const gate: unknown = Reflect.get(audio.audioEngine, 'previewProgrammeGate');
             if (!(gate instanceof GainNode)) {
-                throw new Error('Missing actual programme gate.');
+                throw new TypeError('Missing actual programme gate.');
             }
             const originalDisconnect = gate.disconnect;
             gate.disconnect = new Proxy(originalDisconnect, {

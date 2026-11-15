@@ -47,7 +47,7 @@ async function capture(page: Page) {
                 return { type: 'bytes', value: Array.from(value) };
             }
             if (typeof value !== 'object' || value instanceof Map || value instanceof Set) {
-                throw new Error(`Unsupported evidence value: ${typeof value}`);
+                throw new TypeError(`Unsupported evidence value: ${typeof value}`);
             }
             return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, encode(item)]));
         }

@@ -69,7 +69,7 @@ async function readBody(request: IncomingMessage): Promise<unknown> {
     let size = 0;
     for await (const chunk of request) {
         if (!Buffer.isBuffer(chunk)) {
-            throw new Error('Expected a binary request chunk.');
+            throw new TypeError('Expected a binary request chunk.');
         }
         size += chunk.byteLength;
         if (size > 1_048_576) {

@@ -28,7 +28,7 @@ async function sampleClips(page: Page) {
             }
             const summarize = (value: unknown) => {
                 if (!Array.isArray(value)) {
-                    throw new Error('Project tracks are unavailable');
+                    throw new TypeError('Project tracks are unavailable');
                 }
                 const tracks: unknown[] = value;
                 const ids: string[] = [];
@@ -37,7 +37,7 @@ async function sampleClips(page: Page) {
                         throw new Error('Project track is malformed');
                     }
                     if (typeof track.id !== 'string' || !Array.isArray(track.clips)) {
-                        throw new Error('Project track identity or clips are malformed');
+                        throw new TypeError('Project track identity or clips are malformed');
                     }
                     const trackId = track.id;
                     ids.push(trackId);

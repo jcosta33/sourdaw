@@ -56,7 +56,7 @@ export function installFaustProbe(): void {
         construct(target, args, newTarget) {
             const context: unknown = Reflect.construct(target, args, newTarget);
             if (!(context instanceof NativeAudioContext)) {
-                throw new Error('Native AudioContext construction returned the wrong type');
+                throw new TypeError('Native AudioContext construction returned the wrong type');
             }
             contexts.set(context.audioWorklet, { kind: 'live', context });
             return context;
@@ -66,7 +66,7 @@ export function installFaustProbe(): void {
         construct(target, args, newTarget) {
             const context: unknown = Reflect.construct(target, args, newTarget);
             if (!(context instanceof NativeOfflineAudioContext)) {
-                throw new Error('Native OfflineAudioContext construction returned the wrong type');
+                throw new TypeError('Native OfflineAudioContext construction returned the wrong type');
             }
             contexts.set(context.audioWorklet, { kind: 'offline', context });
             return context;
@@ -137,7 +137,7 @@ export function installFaustProbe(): void {
             }
             const node: unknown = Reflect.construct(target, args, newTarget);
             if (!(node instanceof NativeAudioWorkletNode)) {
-                throw new Error('Native AudioWorkletNode construction returned the wrong type');
+                throw new TypeError('Native AudioWorkletNode construction returned the wrong type');
             }
             if (load?.context === 'live') {
                 const analyser = node.context.createAnalyser();

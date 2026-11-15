@@ -150,7 +150,7 @@ function observationRecord(value: unknown): object {
 function observationString(value: object, key: string): string {
     const field: unknown = Reflect.get(value, key);
     if (typeof field !== 'string') {
-        throw new Error('Malformed production transport observation');
+        throw new TypeError('Malformed production transport observation');
     }
     return field;
 }
@@ -158,7 +158,7 @@ function observationString(value: object, key: string): string {
 function observationNumber(value: object, key: string): number {
     const field: unknown = Reflect.get(value, key);
     if (typeof field !== 'number' || !Number.isFinite(field)) {
-        throw new Error('Malformed production transport geometry or timestamp');
+        throw new TypeError('Malformed production transport geometry or timestamp');
     }
     return field;
 }
@@ -233,7 +233,7 @@ function pointMatches(current: Geometry, client: Point, main: Point): boolean {
 function observationBoolean(value: object, key: string): boolean {
     const observed: unknown = Reflect.get(value, key);
     if (typeof observed !== 'boolean') {
-        throw new Error('Missing native event admission evidence');
+        throw new TypeError('Missing native event admission evidence');
     }
     return observed;
 }
@@ -277,7 +277,7 @@ export function parseProductionTransportEvent(text: string): TransportEvent {
 // Each browser entry is self-contained: Playwright serializes its source without module closures.
 export function observeProductionTransportState(original: Element, options: { marker: string }) {
     if (!(original instanceof HTMLButtonElement)) {
-        throw new Error('Production Stop is not a native button');
+        throw new TypeError('Production Stop is not a native button');
     }
     const cluster = original.closest('[role="group"][aria-label="Playback controls"]');
     const host = window.frameElement;
@@ -335,7 +335,7 @@ export function installProductionTransportCapture(
     options: { marker: string; initialGeometry: Geometry; point: Point }
 ) {
     if (!(original instanceof HTMLButtonElement)) {
-        throw new Error('Production Stop is not a native button');
+        throw new TypeError('Production Stop is not a native button');
     }
     const button: HTMLButtonElement = original;
     const cluster = button.closest('[role="group"][aria-label="Playback controls"]');

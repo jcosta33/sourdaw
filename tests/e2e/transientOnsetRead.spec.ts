@@ -52,7 +52,7 @@ function toolWith(request: ScriptedToolRequest, properties: string[]): string {
 function receipt(request: ScriptedToolRequest, callId: string): Record<string, unknown> {
     const wire = request.messages.find((message) => message.role === 'tool' && message.tool_call_id === callId);
     if (typeof wire?.content !== 'string') {
-        throw new Error(`Missing correlated receipt ${callId}`);
+        throw new TypeError(`Missing correlated receipt ${callId}`);
     }
     const value: unknown = JSON.parse(wire.content);
     if (!isRecord(value) || value.status !== 'success' || !isRecord(value.data)) {
@@ -65,7 +65,7 @@ function numericHits(data: Record<string, unknown>) {
     expect(data.kind).toBe('transient-onset-read');
     expect(data.timeAxis).toBe('source-buffer');
     if (typeof data.sampleRate !== 'number' || !Array.isArray(data.hits)) {
-        throw new Error('Source geometry or numeric page is absent');
+        throw new TypeError('Source geometry or numeric page is absent');
     }
     let previous = -1;
     for (const hit of data.hits as unknown[]) {
