@@ -90,6 +90,48 @@ export function normalizeElasticTransientSensitivity(value: unknown): number {
     return Math.max(0, Math.min(1, value));
 }
 
+/** How many hosted provider identities the backend question remembers, and how long one may be. */
+export const HOSTED_BACKEND_QUESTION_MAX_IDENTITIES = 16;
+export const HOSTED_BACKEND_QUESTION_MAX_IDENTITY_LENGTH = 2048;
+
+/**
+ * The hosted provider a saved configuration names, as the backend question remembers it: the
+ * provider kind, or an OpenAI-compatible endpoint by its normalized base URL. Model and key are not
+ * part of it, so a new model or key for the same provider is not asked about again.
+ */
+export function hostedBackendQuestionIdentity(input: {
+    provider: 'anthropic' | 'openai' | 'openai-compatible';
+    baseUrl: string;
+}): string {
+    if (input.provider !== 'openai-compatible') {
+        return input.provider;
+    }
+    return `openai-compatible ${normalizeHostedBaseUrl(input.baseUrl)}`;
+}
+
+/** The base URL as the provider configuration stores it: parsed, with no trailing slash. */
+function normalizeHostedBaseUrl(baseUrl: string): string {
+    const trimmed = baseUrl.trim();
+    try {
+        return new URL(trimmed).toString().replace(/\/$/u, '');
+    } catch {
+        return trimmed;
+    }
+}
+
+export function isHostedBackendQuestionIdentityList(value: unknown): value is string[] {
+    return (
+        Array.isArray(value) &&
+        value.length <= HOSTED_BACKEND_QUESTION_MAX_IDENTITIES &&
+        value.every(
+            (identity) =>
+                typeof identity === 'string' &&
+                identity.length > 0 &&
+                identity.length <= HOSTED_BACKEND_QUESTION_MAX_IDENTITY_LENGTH
+        )
+    );
+}
+
 export type Preferences = {
     preferencesSchemaVersion: number;
     trackHeight: 'compact' | 'normal' | 'large';
@@ -118,6 +160,11 @@ export type Preferences = {
     soloMode: SoloModePreference;
     preRollEnabled: boolean;
     preRollBars: 1 | 2 | 4;
+    /**
+     * Hosted providers the user was already asked to select while the backend was Automatic. Identities
+     * only (`hostedBackendQuestionIdentity`), never a key or anything secret.
+     */
+    hostedBackendQuestionAsked: string[];
 };
 
 export const defaultPreferences: Preferences = {
@@ -151,6 +198,7 @@ export const defaultPreferences: Preferences = {
     soloMode: 'sip',
     preRollEnabled: false,
     preRollBars: 2,
+    hostedBackendQuestionAsked: [],
 };
 
 export const TRACK_HEIGHT_VALUES: Record<Preferences['trackHeight'], number> = {

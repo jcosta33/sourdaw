@@ -40,7 +40,7 @@ describe('handleDuplicateTrack', () => {
         mocks.duplicateTrack.mockReturnValue(createdDuplicate);
         // The guard finalizes from the committed store track — the use case's
         // return value predates its own copy steps.
-        const committedDuplicate = { id: targetTrackId, name: 'Copy', kind: 'audio', clips: [] };
+        const committedDuplicate = { id: targetTrackId, name: 'Copy', kind: 'audio', devices: [], clips: [] };
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', name: 'Source', kind: 'audio' }, committedDuplicate],
         });
@@ -79,7 +79,13 @@ describe('handleDuplicateTrack', () => {
         // onto the copies' new clip ids, so the finalized guard must capture
         // exactly those lanes — requiring absence would make the copy's own
         // undo conflict on what the duplication itself created.
-        const committedDuplicate = { id: targetTrackId, name: 'Copy', kind: 'audio', clips: [{ id: 'clip-copy' }] };
+        const committedDuplicate = {
+            id: targetTrackId,
+            name: 'Copy',
+            kind: 'audio',
+            devices: [],
+            clips: [{ id: 'clip-copy' }],
+        };
         mocks.duplicateTrack.mockReturnValue({ id: targetTrackId, name: 'Copy', kind: 'audio' });
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', name: 'Source', kind: 'audio' }, committedDuplicate],

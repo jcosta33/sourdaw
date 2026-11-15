@@ -6,7 +6,7 @@ use crate::host::plugin_registry_store::{
     PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanClaim, ScanRow,
 };
 use crate::host::plugin_scan_policy::PluginScanPolicy;
-use crate::host::plugin_scan_worker;
+use crate::host::plugin_scan_worker::{self, ScanFailure};
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::host::ui_thread::{
     call_on_ui_thread, lend_on_ui_thread, release_on_ui_thread, UiThread,
@@ -496,8 +496,12 @@ fn quarantine_timestamp_ms() -> u64 {
 /// like a hung or crashed descriptor helper does, and both need the same
 /// escape hatch or a single bad candidate can exhaust the whole scan's
 /// deadline on every run.
-fn quarantine_if_process_failure(registry_store: &PluginRegistryStore, path: &Path, error: &str) {
-    if plugin_scan_worker::is_process_failure(error) {
+fn quarantine_if_process_failure(
+    registry_store: &PluginRegistryStore,
+    path: &Path,
+    error: &ScanFailure,
+) {
+    if error.is_process_failure() {
         registry_store.quarantine_failure(path, error.to_string(), quarantine_timestamp_ms());
     }
 }
@@ -520,7 +524,7 @@ fn quarantine_if_process_failure(registry_store: &PluginRegistryStore, path: &Pa
 /// (#3866).
 fn apply_instance_scan_result(
     descriptor: &mut ScannedDescriptor,
-    instance: Result<ScannedInstance, String>,
+    instance: Result<ScannedInstance, ScanFailure>,
     registry_store: &PluginRegistryStore,
     path: &Path,
 ) {
@@ -531,12 +535,11 @@ fn apply_instance_scan_result(
         }
         Err(error) => {
             quarantine_if_process_failure(registry_store, path, &error);
-            descriptor.parameter_metadata_reason =
-                Some(if plugin_scan_worker::is_response_limit_refusal(&error) {
-                    plugin_scan_worker::response_limit_metadata_reason()
-                } else {
-                    scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string()
-                });
+            descriptor.parameter_metadata_reason = Some(if error.is_response_limit_refusal() {
+                plugin_scan_worker::response_limit_metadata_reason()
+            } else {
+                scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string()
+            });
         }
     }
 }
@@ -611,10 +614,10 @@ async fn scan_plugins_with_backend(
     scan_policy: PluginScanPolicy,
     budget: ScanBudget,
     state: &AppState,
-    scan_descriptor: impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, String>
+    scan_descriptor: impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, ScanFailure>
         + Send
         + 'static,
-    scan_instance: impl Fn(PluginFormat, &Path, &str, Duration) -> Result<ScannedInstance, String>
+    scan_instance: impl Fn(PluginFormat, &Path, &str, Duration) -> Result<ScannedInstance, ScanFailure>
         + Send
         + 'static,
 ) -> Result<ScanResult, String> {
@@ -741,7 +744,7 @@ async fn scan_plugins_with_backend(
                                 // Not a truncated attempt: "deadline" is a
                                 // data-level refusal, so the row keeps its
                                 // reason and the binary is not blamed.
-                                Err("deadline".to_string())
+                                Err(ScanFailure::Refused("deadline".to_string()))
                             };
                             apply_instance_scan_result(
                                 descriptor,
@@ -1084,7 +1087,8 @@ fn rescan_plugin_file(
     let format = PluginFormat::from_wire_name(format)
         .ok_or_else(|| format!("Unknown plugin format: {format}"))?;
     let bundle =
-        plugin_scan_worker::scan_descriptor_metadata(format, path, TARGETED_RESCAN_TIMEOUT)?;
+        plugin_scan_worker::scan_descriptor_metadata(format, path, TARGETED_RESCAN_TIMEOUT)
+            .map_err(|failure| failure.to_string())?;
     let scanned = scanner::scanned_bundle_plugins(path, bundle);
     let requested = pick_rescanned_bundle_row(&scanned, plugin_id, last_known_descriptor_id)
         .ok_or_else(|| {
@@ -5850,7 +5854,7 @@ mod tests {
         _format: PluginFormat,
         _path: &Path,
         _timeout: Duration,
-    ) -> Result<Vec<ScannedDescriptor>, String> {
+    ) -> Result<Vec<ScannedDescriptor>, ScanFailure> {
         Ok(vec![descriptor("com.vendor.recovered")])
     }
 
@@ -5859,7 +5863,7 @@ mod tests {
         _path: &Path,
         _plugin_id: &str,
         _timeout: Duration,
-    ) -> Result<ScannedInstance, String> {
+    ) -> Result<ScannedInstance, ScanFailure> {
         Ok(scanner::ScannedInstance::default())
     }
 
@@ -6278,8 +6282,9 @@ mod tests {
     /// A descriptor backend that records every call and answers from the path.
     fn recording_descriptor_scan(
         log: ScanCallLog,
-    ) -> impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, String> + Send + 'static
-    {
+    ) -> impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, ScanFailure>
+           + Send
+           + 'static {
         move |_format, path, timeout| {
             record_scan_call(&log, path, timeout);
             Ok(vec![descriptor_for(path)])
@@ -6290,8 +6295,9 @@ mod tests {
     /// which is what makes a row eligible for reuse.
     fn recording_instance_scan(
         log: ScanCallLog,
-    ) -> impl Fn(PluginFormat, &Path, &str, Duration) -> Result<ScannedInstance, String> + Send + 'static
-    {
+    ) -> impl Fn(PluginFormat, &Path, &str, Duration) -> Result<ScannedInstance, ScanFailure>
+           + Send
+           + 'static {
         move |_format, path, _plugin_id, timeout| {
             record_scan_call(&log, path, timeout);
             Ok(ScannedInstance::default())
@@ -6469,7 +6475,9 @@ mod tests {
             recording_descriptor_scan(scan_call_log()),
             // A data-level refusal, not a process failure: the candidate is not
             // quarantined, it just has no parameter contract recorded.
-            |_format, _path, _plugin_id, _timeout| Err("deadline".to_string()),
+            |_format, _path, _plugin_id, _timeout| {
+                Err(ScanFailure::Refused("deadline".to_string()))
+            },
         ))
         .expect("a scan whose instance pass is refused still publishes the descriptor row");
         assert_eq!(
@@ -6605,8 +6613,9 @@ mod tests {
     /// per-identity retention and the order they came back in is observable.
     fn recording_two_plugin_descriptor_scan(
         log: ScanCallLog,
-    ) -> impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, String> + Send + 'static
-    {
+    ) -> impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, ScanFailure>
+           + Send
+           + 'static {
         move |_format, path, timeout| {
             record_scan_call(&log, path, timeout);
             Ok(vec![
@@ -6621,8 +6630,9 @@ mod tests {
     fn recording_vst3_descriptor_scan(
         log: ScanCallLog,
         name: &'static str,
-    ) -> impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, String> + Send + 'static
-    {
+    ) -> impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, ScanFailure>
+           + Send
+           + 'static {
         move |_format, path, timeout| {
             record_scan_call(&log, path, timeout);
             let mut answered = descriptor("com.vendor.bundled");
@@ -7080,12 +7090,7 @@ mod tests {
         let path = Path::new("/plugins/HangsOnActivate.clap");
         let mut row = descriptor("com.vendor.hangs-on-activate");
 
-        apply_instance_scan_result(
-            &mut row,
-            Err("Plugin scan helper timed out".to_string()),
-            &store,
-            path,
-        );
+        apply_instance_scan_result(&mut row, Err(ScanFailure::TimedOut), &store, path);
 
         assert_eq!(
             row.parameter_metadata_reason.as_deref(),
@@ -7109,7 +7114,12 @@ mod tests {
         let path = Path::new("/plugins/RanOutOfTime.clap");
         let mut row = descriptor("com.vendor.ran-out-of-time");
 
-        apply_instance_scan_result(&mut row, Err("deadline".to_string()), &store, path);
+        apply_instance_scan_result(
+            &mut row,
+            Err(ScanFailure::Refused("deadline".to_string())),
+            &store,
+            path,
+        );
 
         assert_eq!(
             row.parameter_metadata_reason.as_deref(),
@@ -7131,7 +7141,9 @@ mod tests {
         let store = PluginRegistryStore::in_memory_only();
         let path = Path::new("/plugins/HugeParameterList.vst3");
         let mut row = descriptor("com.vendor.huge-parameter-list");
-        let error = plugin_scan_worker::response_write_refusal_error(path);
+        let error = ScanFailure::ResponseWriteRefused {
+            path: path.to_path_buf(),
+        };
 
         apply_instance_scan_result(&mut row, Err(error), &store, path);
 

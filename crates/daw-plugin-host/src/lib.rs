@@ -3,6 +3,8 @@
     allow(clippy::unwrap_used, reason = "tests assert by unwrapping")
 )]
 
+#[cfg(test)]
+mod allocation_counter;
 pub mod clap_host;
 pub mod clap_wrapper;
 pub mod parameter_events;
@@ -25,9 +27,10 @@ pub mod vst3_scanner;
 pub mod vst3_wrapper;
 
 pub use clap_host::{
-    signal_pending_editor_resize, signal_pending_latency_requery, signal_pending_tail_change,
+    signal_pending_editor_resize, signal_pending_latency_requery,
+    signal_pending_main_thread_callback, signal_pending_tail_change,
     take_pending_editor_resize_signal, take_pending_latency_requery_signal,
-    take_pending_tail_change_signal,
+    take_pending_main_thread_callback_signal, take_pending_tail_change_signal,
 };
 pub use clap_wrapper::ClapWrapper;
 pub use parameter_events::{
