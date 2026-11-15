@@ -8,7 +8,6 @@ import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { type TakeLane } from '../../models/TakeLane';
 import { getHeldClips } from '../../models/TrackAlternativeClips';
-import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
 import { decodeTrackSnapshot, type Track } from '../../stores/trackStore';
@@ -218,7 +217,7 @@ function decodeRestoredRows(
     if (track?.id !== payload.trackId) {
         return null;
     }
-    const ownClipIds = new Set(collectTrackClipIds(track));
+    const ownClipIds = new Set(getHeldClips(track).map((clip) => clip.id));
     if (
         !holdsOnlyOwnClips(track) ||
         !describesRow(payload, track) ||
@@ -238,9 +237,10 @@ function describesRow(payload: RestoreTrackPayload, track: Track): boolean {
     return payload.trackKind === track.kind && (payload.trackParentId ?? null) === track.parentId;
 }
 
-// The capture keys MIDI data and satellites by the clips the row holds, live
-// or in a stored alternative; a key naming any other clip would overwrite
-// another track's clip data.
+// The capture keys MIDI data and satellites by the clips the row holds: its
+// own clips and each inactive alternative's. The active alternative's stored
+// copy is stale and may name a clip since moved to another track, so a key
+// naming it, or any other clip, would overwrite another track's clip data.
 function keysOnlyOwnClips(payload: RestoreTrackPayload, ownClipIds: ReadonlySet<string>): boolean {
     return [
         ...Object.keys(payload.midiNotesByClipId),
@@ -262,9 +262,10 @@ function reusesLiveHeldClipId(row: Track, liveHeldClipIds: ReadonlySet<string>):
 }
 
 // The capture takes every automation lane of the track. A clip lane rides one
-// of the row's clips, or a clip no list holds any more: deleting an alternative
-// drops its clips and leaves their lanes behind. A lane on a clip a live track
-// holds would retarget that clip's automation. The contract type names only
+// of the row's held clips, or a clip no track holds any more: deleting an
+// alternative drops its clips and leaves their lanes behind. A lane on a clip a
+// live track holds, including one only the row's stale active copy still
+// names, would retarget that clip's automation. The contract type names only
 // the lane's identity, so a captured `clipId` is narrowed from the snapshot.
 function lanesSpareLiveClips(
     payload: RestoreTrackPayload,

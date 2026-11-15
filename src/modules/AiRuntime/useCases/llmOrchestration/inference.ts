@@ -99,11 +99,12 @@ const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
 
 // The general-planning mandatory set of a workflow-shaped request (the workflow selector, the
 // mandatory planning tools, command-index search, catalog discovery, the joint interpretation tool
-// and every workflow action tool) plus exactly one optional or discovered tool, selected below. A
+// every workflow action tool, and the brief compiler when the request offers it) plus exactly one
+// optional or discovered tool, selected below. A
 // request no workflow with capability data can ground is offered no workflow action tool, and a
 // phase that publishes fewer mandatory tools leaves spare capacity, which never admits another
 // command.
-export const WEBLLM_TOOL_BUDGET = 35;
+export const WEBLLM_TOOL_BUDGET = 36;
 
 /**
  * What one hosted turn replays: the run's first user message, the turns behind it, and the note
@@ -614,11 +615,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         const narrowed = narrowWebLlmWorkflowSelector(tool, workflowOffer.selectableCapabilityIds);
                         return narrowed === null ? [] : [narrowed];
                     });
-                    const applicationTools = toolSchemas.filter((tool) =>
-                        WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name)
+                    const applicationTools = toolSchemas.filter(
+                        (tool) =>
+                            WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name) ||
+                            tool.function.name === BRIEF_COMPILE_TOOL_NAME
                     );
-                    // The reference comparison and the brief compiler are not mandatory and are never
-                    // offered locally.
+                    // The brief compiler is in the request only when it offered it, and is then mandatory
+                    // beside the application tools. The reference comparison is never offered locally.
                     const actionTools = toolSchemas.filter(
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
