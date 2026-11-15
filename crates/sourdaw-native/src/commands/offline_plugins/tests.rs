@@ -488,8 +488,9 @@ fn render(
         seams,
     ))
     .map(|bytes| {
-        bytes
-            .chunks_exact(8)
+        let (frames, _) = bytes.as_chunks::<8>();
+        frames
+            .iter()
             .map(|frame| f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]))
             .collect()
     })
@@ -1393,7 +1394,7 @@ fn an_unload_of_every_plugin_does_not_wait_out_an_exports_build() {
             let reply = block_on_test(crate::commands::plugins::unload_plugin(
                 None,
                 &crate::host::plugin_window::NoWindowHost,
-                &state,
+                state,
             ));
             let _ = unloaded.send(reply.map(|_| ()));
         });
