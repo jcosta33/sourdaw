@@ -1,20 +1,43 @@
 import { describe, expect, it } from 'vitest';
 
-import { type ProjectContext } from '../../models/ProjectContext';
+import { type ProjectContext, type ProjectContextAutomationLane } from '../../models/ProjectContext';
 import { type RuntimeAction } from '../../models/RuntimeAction';
-import { getMovedClipAutomationLaneIds } from '../llmMovedClipAutomationLaneIds';
+import {
+    getMovedClipAutomationLaneIds,
+    movedClipAutomationLaneIdsByActionType,
+    noMovedAutomationLanes,
+} from '../llmMovedClipAutomationLaneIds';
 
-const context = {
-    automationLanes: [
-        { id: 'lane-a', clipId: 'clip-a' },
-        { id: 'lane-b', clipId: 'clip-b' },
-        { id: 'lane-c', clipId: 'clip-c' },
-    ],
+function lane(id: string, clipId: string): ProjectContextAutomationLane {
+    return { id, trackId: 'track-1', clipId, parameterId: 'gain', name: id, enabled: true, minValue: 0, maxValue: 1 };
+}
+
+const context: ProjectContext = {
+    tempo: 120,
+    timeSignature: [4, 4],
+    isPlaying: false,
+    isRecording: false,
+    isLooping: false,
+    loopStart: 0,
+    loopEnd: 4,
+    punchInEnabled: false,
+    punchInBeat: 0,
+    punchOutBeat: 4,
+    metronomeEnabled: false,
+    metronomeVolume: 0.5,
+    masterGain: 1,
     tracks: [],
-} as unknown as ProjectContext;
+    selectedTrackId: null,
+    selectedClipId: null,
+    selectedClipIds: [],
+    activeView: 'arrange',
+    playheadPosition: 0,
+    automationLanes: [lane('lane-a', 'clip-a'), lane('lane-b', 'clip-b'), lane('lane-c', 'clip-c')],
+};
 
 function parseAction(json: string): RuntimeAction {
-    return JSON.parse(json) as RuntimeAction;
+    const action: RuntimeAction = JSON.parse(json);
+    return action;
 }
 
 describe('getMovedClipAutomationLaneIds', () => {
@@ -36,5 +59,14 @@ describe('getMovedClipAutomationLaneIds', () => {
 
     it('answers no lanes for an inherited object member parsed from JSON', () => {
         expect(getMovedClipAutomationLaneIds(parseAction('{"type":"constructor","payload":{}}'), context)).toEqual([]);
+    });
+
+    it('lists exactly the action types whose entry reads a payload', () => {
+        const listed = Object.entries(movedClipAutomationLaneIdsByActionType).filter(
+            ([, reader]) => reader !== noMovedAutomationLanes
+        );
+        const types = listed.map(([type]) => type).sort();
+
+        expect(types).toEqual(['moveClip', 'moveClips']);
     });
 });

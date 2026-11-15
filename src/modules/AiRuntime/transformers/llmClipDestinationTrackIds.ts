@@ -3,7 +3,7 @@ import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAct
 type ActionOf<Type extends RuntimeActionType> = Extract<RuntimeAction, { type: Type }>;
 type ClipDestinationLookup = { readonly [Type in RuntimeActionType]: (action: ActionOf<Type>) => string[] };
 
-function noDestinationTracks(): string[] {
+export function noDestinationTracks(): string[] {
     return [];
 }
 
@@ -11,7 +11,7 @@ function payloadTrackId(action: ActionOf<'addClip' | 'drawClip' | 'moveClip'>): 
     return [action.payload.trackId];
 }
 
-const clipDestinationTrackIdsByActionType: ClipDestinationLookup = {
+export const clipDestinationTrackIdsByActionType: ClipDestinationLookup = {
     importStemSet: noDestinationTracks,
     addTrack: noDestinationTracks,
     removeTrack: noDestinationTracks,

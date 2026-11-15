@@ -8,11 +8,11 @@ type MovedAutomationLaneLookup = {
     readonly [Type in RuntimeActionType]: (action: ActionOf<Type>, context: ProjectContext) => string[];
 };
 
-function noMovedAutomationLanes(): string[] {
+export function noMovedAutomationLanes(): string[] {
     return [];
 }
 
-const movedClipAutomationLaneIdsByActionType: MovedAutomationLaneLookup = {
+export const movedClipAutomationLaneIdsByActionType: MovedAutomationLaneLookup = {
     importStemSet: noMovedAutomationLanes,
     addTrack: noMovedAutomationLanes,
     removeTrack: noMovedAutomationLanes,

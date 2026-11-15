@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { type RuntimeAction } from '../../models/RuntimeAction';
-import { getSplitDuplicateSubjects } from '../llmSplitDuplicateSubjects';
+import {
+    getSplitDuplicateSubjects,
+    noSplitDuplicateSubjects,
+    splitDuplicateSubjectsByActionType,
+} from '../llmSplitDuplicateSubjects';
 
 const none = {
     addedClipTrackId: null,
@@ -12,7 +16,8 @@ const none = {
 };
 
 function parseAction(json: string): RuntimeAction {
-    return JSON.parse(json) as RuntimeAction;
+    const action: RuntimeAction = JSON.parse(json);
+    return action;
 }
 
 describe('getSplitDuplicateSubjects', () => {
@@ -33,5 +38,21 @@ describe('getSplitDuplicateSubjects', () => {
 
     it('answers no subject for an inherited object member parsed from JSON', () => {
         expect(getSplitDuplicateSubjects(parseAction('{"type":"constructor","payload":{}}'))).toEqual(none);
+    });
+
+    it('lists exactly the action types whose entry reads a payload', () => {
+        const listed = Object.entries(splitDuplicateSubjectsByActionType).filter(
+            ([, reader]) => reader !== noSplitDuplicateSubjects
+        );
+        const types = listed.map(([type]) => type).sort();
+
+        expect(types).toEqual([
+            'addClip',
+            'duplicateClip',
+            'duplicateClipToNextBar',
+            'duplicateTrack',
+            'glueClips',
+            'splitClip',
+        ]);
     });
 });

@@ -21,7 +21,7 @@ const noSubjects: SplitDuplicateSubjects = {
     splitClipId: null,
 };
 
-function noSplitDuplicateSubjects(): SplitDuplicateSubjects {
+export function noSplitDuplicateSubjects(): SplitDuplicateSubjects {
     return noSubjects;
 }
 
@@ -29,7 +29,7 @@ function duplicatedClipSubject(action: ActionOf<'duplicateClip' | 'duplicateClip
     return { ...noSubjects, duplicatedClipId: action.payload.clipId };
 }
 
-const splitDuplicateSubjectsByActionType: SplitDuplicateLookup = {
+export const splitDuplicateSubjectsByActionType: SplitDuplicateLookup = {
     importStemSet: noSplitDuplicateSubjects,
     addTrack: noSplitDuplicateSubjects,
     removeTrack: noSplitDuplicateSubjects,

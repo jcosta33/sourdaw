@@ -4,7 +4,8 @@ import { type RuntimeAction } from '../../models/RuntimeAction';
 import { getClipLifecycleKind } from '../llmClipLifecycleKind';
 
 function parseAction(json: string): RuntimeAction {
-    return JSON.parse(json) as RuntimeAction;
+    const action: RuntimeAction = JSON.parse(json);
+    return action;
 }
 
 describe('getClipLifecycleKind', () => {

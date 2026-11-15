@@ -5,11 +5,11 @@ type AutomationPointLaneLookup = {
     readonly [Type in RuntimeActionType]: (action: ActionOf<Type>) => string | null;
 };
 
-function noAutomationPointLane(): string | null {
+export function noAutomationPointLane(): string | null {
     return null;
 }
 
-const automationPointLaneIdByActionType: AutomationPointLaneLookup = {
+export const automationPointLaneIdByActionType: AutomationPointLaneLookup = {
     importStemSet: noAutomationPointLane,
     addTrack: noAutomationPointLane,
     removeTrack: noAutomationPointLane,

@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { type RuntimeAction } from '../../models/RuntimeAction';
-import { getAutomationPointLaneId } from '../llmAutomationPointLaneId';
+import {
+    automationPointLaneIdByActionType,
+    getAutomationPointLaneId,
+    noAutomationPointLane,
+} from '../llmAutomationPointLaneId';
 
 function parseAction(json: string): RuntimeAction {
-    return JSON.parse(json) as RuntimeAction;
+    const action: RuntimeAction = JSON.parse(json);
+    return action;
 }
 
 describe('getAutomationPointLaneId', () => {
@@ -20,5 +25,14 @@ describe('getAutomationPointLaneId', () => {
 
     it('answers null for an inherited object member parsed from JSON', () => {
         expect(getAutomationPointLaneId(parseAction('{"type":"constructor","payload":{}}'))).toBeNull();
+    });
+
+    it('lists exactly the action types whose entry reads a payload', () => {
+        const listed = Object.entries(automationPointLaneIdByActionType).filter(
+            ([, reader]) => reader !== noAutomationPointLane
+        );
+        const types = listed.map(([type]) => type).sort();
+
+        expect(types).toEqual(['addAutomationPoint']);
     });
 });

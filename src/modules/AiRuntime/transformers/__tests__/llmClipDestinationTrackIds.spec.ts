@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { type RuntimeAction } from '../../models/RuntimeAction';
-import { getClipDestinationTrackIds } from '../llmClipDestinationTrackIds';
+import {
+    clipDestinationTrackIdsByActionType,
+    getClipDestinationTrackIds,
+    noDestinationTracks,
+} from '../llmClipDestinationTrackIds';
 
 function parseAction(json: string): RuntimeAction {
-    return JSON.parse(json) as RuntimeAction;
+    const action: RuntimeAction = JSON.parse(json);
+    return action;
 }
 
 describe('getClipDestinationTrackIds', () => {
@@ -27,5 +32,14 @@ describe('getClipDestinationTrackIds', () => {
 
     it('answers no tracks for an inherited object member parsed from JSON', () => {
         expect(getClipDestinationTrackIds(parseAction('{"type":"constructor","payload":{}}'))).toEqual([]);
+    });
+
+    it('lists exactly the action types whose entry reads a payload', () => {
+        const listed = Object.entries(clipDestinationTrackIdsByActionType).filter(
+            ([, reader]) => reader !== noDestinationTracks
+        );
+        const types = listed.map(([type]) => type).sort();
+
+        expect(types).toEqual(['addClip', 'drawClip', 'duplicateClipAt', 'moveClip', 'moveClips']);
     });
 });
