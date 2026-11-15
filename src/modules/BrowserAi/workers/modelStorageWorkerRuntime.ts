@@ -235,7 +235,7 @@ function throwIfAborted(session: WriteSession): void {
     }
 }
 
-async function closeWriteAccess(session: WriteSession): Promise<void> {
+function closeWriteAccess(session: WriteSession): void {
     if (session.access === null) {
         return;
     }
@@ -509,7 +509,7 @@ export function createModelStorageRequestHandler({
                         `Size check failed for ${session.modelId}: expected ${String(session.expectedSizeBytes)} bytes, got ${String(session.offset)}`
                     );
                 }
-                await closeWriteAccess(session);
+                closeWriteAccess(session);
 
                 let storedBytes = session.offset;
                 let extractedPath: string | null = null;
@@ -557,7 +557,7 @@ export function createModelStorageRequestHandler({
                         );
                     }
                     storedBytes = bytesWritten;
-                    await closeWriteAccess(session);
+                    closeWriteAccess(session);
                 }
 
                 if (session.expectedSha256 !== undefined || session.archive) {

@@ -8,7 +8,15 @@ import { type ReadIntent } from './inputMonitoringAdmission';
 import { reconcileAutoInputMonitoring } from './reconcileAutoInputMonitoring';
 
 /** Restore admission and its pending grant must both observe current committed intent. */
-export async function rearmCommittedTrackInputMonitoring(trackId: string): Promise<void> {
+export function rearmCommittedTrackInputMonitoring(trackId: string): Promise<void> {
+    // Callers settle each track's rearm independently, so a failure must reject rather than throw.
+    return new Promise((resolve) => {
+        rearmTrack(trackId);
+        resolve();
+    });
+}
+
+function rearmTrack(trackId: string): void {
     const track = readCommittedInputMonitoringTrack(trackId);
     if (!track || track.inputMonitoring !== 'on') {
         return;

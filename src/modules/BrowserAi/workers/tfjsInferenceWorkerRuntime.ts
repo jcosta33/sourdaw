@@ -467,7 +467,7 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
                         ...(modelJson.format !== undefined && { format: modelJson.format }),
                         ...(modelJson.generatedBy !== undefined && { generatedBy: modelJson.generatedBy }),
                     };
-                    loadedModel = await tf.loadGraphModel({ load: async () => modelArtifacts });
+                    loadedModel = await tf.loadGraphModel({ load: () => Promise.resolve(modelArtifacts) });
                     throwIfAborted(controller.signal);
                     requireWebgpu(tf);
                     if (disposed || load.subscribers.size === 0) {

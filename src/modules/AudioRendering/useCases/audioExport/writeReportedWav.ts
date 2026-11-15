@@ -41,10 +41,12 @@ export async function writeReportedWav(input: {
     await complete(() =>
         audioBufferToWav(input.source, input.bitDepth, undefined, dither, {
             checkCancelled,
-            write: async (bytes) => {
-                checkCancelled();
-                first.write(bytes);
-            },
+            write: (bytes) =>
+                new Promise((resolve) => {
+                    checkCancelled();
+                    first.write(bytes);
+                    resolve();
+                }),
         })
     );
     const threshold = first.finish();

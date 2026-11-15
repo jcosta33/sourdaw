@@ -42,12 +42,16 @@ export function parseResolveReviewThreadArgs(args: string[]): ResolveReviewThrea
  * Keep the old command discoverable, but require the repair/confirm route for every resolution.
  * Historical records remain readable through their owning reconstruction and repair contracts.
  */
-export async function runResolveReviewThreadCli(args: string[]): Promise<number> {
-    const parsed = parseResolveReviewThreadArgs(args);
-    if (parsed.help) {
-        console.log(`Usage: ${USAGE.slice('usage: '.length)}`);
-        console.log(RESOLUTION_RETIRED_MESSAGE);
-        return 0;
-    }
-    return fail(RESOLUTION_RETIRED_MESSAGE);
+export function runResolveReviewThreadCli(args: string[]): Promise<number> {
+    // The executor runs synchronously, so a usage failure still rejects rather than throws.
+    return new Promise((resolve) => {
+        const parsed = parseResolveReviewThreadArgs(args);
+        if (parsed.help) {
+            console.log(`Usage: ${USAGE.slice('usage: '.length)}`);
+            console.log(RESOLUTION_RETIRED_MESSAGE);
+            resolve(0);
+            return;
+        }
+        fail(RESOLUTION_RETIRED_MESSAGE);
+    });
 }

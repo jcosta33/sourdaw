@@ -260,8 +260,8 @@ export const createQuitHandler = (
     {
         exit,
         report,
-        canQuit = async () => true,
-        beforeRun = async () => 'success',
+        canQuit = () => Promise.resolve(true),
+        beforeRun = () => Promise.resolve<QuitPreparationOutcome>('success'),
         timers = systemTimers,
     }: QuitDependencies
 ): ((event: PreventableEvent) => void) => {

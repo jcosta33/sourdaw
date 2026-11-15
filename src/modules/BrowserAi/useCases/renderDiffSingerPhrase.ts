@@ -19,6 +19,6 @@ type RenderDiffSingerPhraseOutput = Promise<{
     provenance: RenderProvenance;
 }>;
 
-export async function renderDiffSingerPhrase(_input: RenderDiffSingerPhraseInput): RenderDiffSingerPhraseOutput {
-    throw new Error('Singing synthesis is unavailable until a compatible vocoder is admitted.');
+export function renderDiffSingerPhrase(_input: RenderDiffSingerPhraseInput): RenderDiffSingerPhraseOutput {
+    return Promise.reject(new Error('Singing synthesis is unavailable until a compatible vocoder is admitted.'));
 }

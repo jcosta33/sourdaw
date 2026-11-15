@@ -440,15 +440,17 @@ async function runToggle(groupId: string): Promise<AgentChangeComparisonToggle> 
 }
 
 function start({ groupId }: { groupId: string }): Promise<AgentChangeComparisonStart> {
-    return serialise(async () => {
-        const admission = availability({ groupId });
-        if (!admission.available) {
-            return { status: 'refused', reason: admission.reason };
-        }
-        beginAgentChangeComparison({ groupId, measurement: resolveMeasurement() });
-        startSampling();
-        return { status: 'started' };
-    });
+    return serialise(() => Promise.resolve(beginComparison(groupId)));
+}
+
+function beginComparison(groupId: string): AgentChangeComparisonStart {
+    const admission = availability({ groupId });
+    if (!admission.available) {
+        return { status: 'refused', reason: admission.reason };
+    }
+    beginAgentChangeComparison({ groupId, measurement: resolveMeasurement() });
+    startSampling();
+    return { status: 'started' };
 }
 
 function toggle(): Promise<AgentChangeComparisonToggle> {

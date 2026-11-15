@@ -471,7 +471,7 @@ function watchVibeBatchRePreview(
     const run = agentRunLifecycle.get(confirmation.runId);
     const position = confirmation.approvalSnapshot.batchPosition;
     if (run?.plan?.batchSchedule?.kind !== 'vibe-run' || !position) {
-        return { onBegin: undefined, onProgress: undefined, settle: async () => undefined };
+        return { onBegin: undefined, onProgress: undefined, settle: () => Promise.resolve() };
     }
     const messageId = confirmation.assistantMessageId;
     let begun = false;

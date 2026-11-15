@@ -602,20 +602,25 @@ export function createGuardStorage(input: {
             owner = nextOwner;
             writeStorageOwner(path, owner);
         },
-        release: async (treeStopped) => {
+        release: (treeStopped) => {
             if (!treeStopped) {
-                return false;
+                return Promise.resolve(false);
             }
-            return reclaimGuardStorage({
-                root: input.root,
-                owner,
-                reclaimer: input.owner,
-                // A retry resumes from the claim an earlier attempt moved the payload into.
-                sourceClaim: claimed,
-                onMoved: (claim) => {
-                    claimed = claim;
-                },
-                canRemove: (payload) => treeStopped && localReleaseAllowed(payload),
+            // Callers `.catch()` the release, so a failed reclaim must reject rather than throw.
+            return new Promise((resolve) => {
+                resolve(
+                    reclaimGuardStorage({
+                        root: input.root,
+                        owner,
+                        reclaimer: input.owner,
+                        // A retry resumes from the claim an earlier attempt moved the payload into.
+                        sourceClaim: claimed,
+                        onMoved: (claim) => {
+                            claimed = claim;
+                        },
+                        canRemove: (payload) => treeStopped && localReleaseAllowed(payload),
+                    })
+                );
             });
         },
     };

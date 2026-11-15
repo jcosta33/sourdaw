@@ -1608,8 +1608,8 @@ const scoringDescriptor: WasmDeviceDescriptor = {
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = { setParam: () => {}, setBypass: () => {} };
         placeholder.scoringControls = {
-            importScala: async () => ({ ok: false }),
-            importTun: async () => ({ ok: false }),
+            importScala: () => Promise.resolve({ ok: false }),
+            importTun: () => Promise.resolve({ ok: false }),
         };
         const loadPromise = createScoringNode(context, signal)
             .then(async (result: ScoringNodeResult) => {

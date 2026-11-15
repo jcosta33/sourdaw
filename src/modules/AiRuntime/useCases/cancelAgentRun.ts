@@ -212,11 +212,20 @@ function bindAgentRunAbortController(input: {
     };
 }
 
-async function cancelAgentRun(input: {
+type CancelAgentRunInput = {
     runId: string;
     reason: string;
     requestedAt?: number;
-}): Promise<CancelAgentRunResult> {
+};
+
+function cancelAgentRun(input: CancelAgentRunInput): Promise<CancelAgentRunResult> {
+    // The executor runs synchronously, so cancellation still completes in this turn and a failure rejects.
+    return new Promise((resolve) => {
+        resolve(revokeAgentRun(input));
+    });
+}
+
+function revokeAgentRun(input: CancelAgentRunInput): CancelAgentRunResult {
     const run = agentRunLifecycle.get(input.runId);
     if (!run) {
         return { status: 'missing' };
