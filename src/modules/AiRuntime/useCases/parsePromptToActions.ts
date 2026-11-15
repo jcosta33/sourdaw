@@ -98,6 +98,7 @@ import { resolveRawPresetActions } from './aiRuntimeQueries/resolveRawPresetActi
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
 import { collectMetricGoalProof } from './collectMetricGoalProof';
+import { compileAdoptedRecipeMetricAuthority } from './compileAdoptedRecipeMetricAuthority';
 import { type ArbitraryCommandListCompilation, compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { compilePreviewMeasurementProposal } from './compilePreviewMeasurementProposal';
 import { createPlanningInterpretationToolSchema } from './createPlanningInterpretationToolSchema';
@@ -593,6 +594,7 @@ function createLastCommitContinuationResult(
                 grounded: continuation.grounded,
                 creativeAuthority: continuation.creativeAuthority,
                 adoptedRecipes: continuation.adoptedRecipes,
+                compilations: continuation.compilations,
                 origin: 'last-commit-recipe',
                 prompt,
                 context,
@@ -666,6 +668,7 @@ function createAnswerSuggestionResult(input: {
         grounded: planned.grounded,
         creativeAuthority: planned.creativeAuthority,
         adoptedRecipes: [planned.adoptedRecipe],
+        compilations: planned.compilations,
         origin: 'answer-suggestion',
         prompt: input.prompt,
         context: input.context,
@@ -676,39 +679,58 @@ function createAnswerSuggestionResult(input: {
  * The proposal of recipes the application expanded itself on tracks the user named: an answer's
  * suggestion taken up, or the last commit's recipe repeated on other tracks. It always goes to
  * confirmation and carries the recipes it adopted as its provenance; no provider is asked anything.
+ * The user chose the recipes, as they choose a preset, so the proposal states no objective of its own;
+ * what an authored recipe's own metric expectations promise is frozen as its goals, which the preview
+ * measures and Confirm waits for. A batch of presets only is a literal request with nothing to verify.
  */
 function createAdoptedRecipeResult(input: {
     grounded: Extract<ReturnType<typeof planAnswerSuggestion>, { status: 'grounded' }>['grounded'];
     creativeAuthority: CreativeRequestAuthority;
     adoptedRecipes: NonNullable<IntentResult['adoptedRecipes']>;
+    compilations: Extract<ReturnType<typeof planAnswerSuggestion>, { status: 'grounded' }>['compilations'];
     origin: 'answer-suggestion' | 'last-commit-recipe';
     prompt: string;
     context: ProjectContext;
 }): IntentResult {
     const { grounded, creativeAuthority } = input;
-    // The user chose a named recipe on named tracks, as they choose a preset: a literal request with
-    // no objective to verify, the recipe being attributed knowledge, never a measured claim about the
-    // project.
-    const literalAuthority: MetricRequestAuthority = {
-        schemaVersion: 1,
-        authorityId: `${input.origin}-${creativeAuthority.authorityId}`,
+    const adopted = compileAdoptedRecipeMetricAuthority({
         origin: input.origin,
-        callId: null,
-        turn: null,
-        catalogId: creativeAuthority.catalogId,
-        requestDigest: creativeAuthority.requestDigest,
-        revision: creativeAuthority.revision,
-        projectId: captureProjectIdentity(),
-        selection: getCreativeSelectionSnapshot(input.context),
-        kind: 'literal',
-        goals: [],
+        compilations: input.compilations,
+        context: input.context,
+        prompt: input.prompt,
         creativeAuthority,
-    };
+    });
+    if (adopted.status === 'refused') {
+        return {
+            actions: [],
+            rawText: input.prompt,
+            requiresConfirmation: false,
+            rejectionReason: `The recipe's expectations could not be prepared for verification: ${adopted.reason}.`,
+        };
+    }
+    const authority: MetricRequestAuthority =
+        adopted.status === 'perceptual'
+            ? adopted.authority
+            : {
+                  schemaVersion: 1,
+                  authorityId: `${input.origin}-${creativeAuthority.authorityId}`,
+                  origin: input.origin,
+                  callId: null,
+                  turn: null,
+                  catalogId: creativeAuthority.catalogId,
+                  requestDigest: creativeAuthority.requestDigest,
+                  revision: creativeAuthority.revision,
+                  projectId: captureProjectIdentity(),
+                  selection: getCreativeSelectionSnapshot(input.context),
+                  kind: 'literal',
+                  goals: [],
+                  creativeAuthority,
+              };
     const result: IntentResult = {
         metricGoalState: serializePromptMetricState({
             actions: grounded.actions,
-            steps: [],
-            authorities: [literalAuthority],
+            steps: adopted.status === 'perceptual' ? adopted.steps : [],
+            authorities: [authority],
             metricProofs: [],
             inheritedMetricState: null,
             nativeLiteralUses: [],

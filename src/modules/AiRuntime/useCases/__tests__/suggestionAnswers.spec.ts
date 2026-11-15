@@ -241,7 +241,7 @@ describe('AC-003 a question about what to change answers with a recipe-backed su
         expect(aiActionHistoryStore.value).toEqual(aiHistoryBefore);
     });
 
-    it('leaves the card confirmable, since a chosen recipe states no objective to verify', async () => {
+    it('leaves the card confirmable in a project with no audio, where a recipe has nothing to measure', async () => {
         const answer = await askForWarmth();
         await proposeAnswerSuggestion(answer.id);
         const [card] = confirmations();

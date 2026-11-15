@@ -38,6 +38,7 @@ import { preflightVibeRunBatch } from './preflightVibeRunBatch';
 import { readBulkSetSliceEvidence } from './readBulkSetSliceEvidence';
 import { readSkippedVibeBatchPositions } from './readSkippedVibeBatchPositions';
 import { rebaseBulkSetSliceEvidence } from './rebaseBulkSetSliceEvidence';
+import { recordBatchPreviewEvidence } from './recordBatchPreviewEvidence';
 import { settleStoppedBatchPreparation } from './settleStoppedBatchPreparation';
 
 type ScheduledBatchOutcome =
@@ -194,34 +195,6 @@ function groundBulkSetSlice(
 }
 
 type MaterializedBatch = Extract<ReturnType<typeof materializePromptCommandPlan>, { status: 'prepared' }>;
-
-/** The run keeps the batch's measured goal state and every receipt its preview read, after those of earlier batches. */
-function recordBatchPreviewEvidence(
-    liveRun: AgentRun,
-    revision: GroundedBatch['revision'],
-    metricGoalState: string | undefined,
-    receipts: Awaited<ReturnType<typeof prepareMetricGoalPreview>>['receipts']
-): void {
-    if (!liveRun.plan) {
-        return;
-    }
-    const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
-    agentRunLifecycle.recordPlan({
-        runId: liveRun.runId,
-        summary: liveRun.plan.summary,
-        commandIds: liveRun.plan.commandIds,
-        serializedBatchIdentity: liveRun.plan.serializedBatchIdentity,
-        revision,
-        scope: liveRun.scope,
-        grants: liveRun.grants,
-        budgets: liveRun.budgets,
-        plan: {
-            ...liveRun.plan,
-            metricGoalState,
-            applicationToolReceipts: [...priorReceipts, ...receipts],
-        },
-    });
-}
 
 /**
  * A vibe-run batch always waits for approval with a measured preview: the preview renders the live
