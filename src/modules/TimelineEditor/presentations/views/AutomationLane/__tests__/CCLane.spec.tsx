@@ -10,6 +10,7 @@ import {
     restoreMidiCCPoints,
     revisitHandEditedCCReturns,
 } from '#/modules/MIDI/useCases';
+import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { type MidiCC } from '../../../../models/MidiNoteViewTypes';
 import { readClipPlayheadBeat } from '../../../helpers/clipPlayheadBeat';
@@ -46,10 +47,31 @@ vi.mock('#/utils/Styles/cn', () => ({
     },
 }));
 
+type PlacedClipFixture = { id: string; startBeat: number; endBeat: number };
+
 const laneMocks = vi.hoisted(() => {
     const ccByClipId: Record<string, MidiCC[]> = {};
-    return { midiState: { ccByClipId }, useActualStore: false };
+    return {
+        midiState: { ccByClipId },
+        useActualStore: false,
+        trackState: { tracks: [] as Array<{ id: string; clips: PlacedClipFixture[] }> },
+        transportState: { playheadPosition: 0 },
+    };
 });
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: {
+        get value() {
+            return laneMocks.trackState;
+        },
+    },
+}));
+
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
+    getTransportState: () => laneMocks.transportState,
+}));
 
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
     const original = await importOriginal<typeof import('#/modules/MIDI/stores')>();
@@ -146,6 +168,9 @@ describe('CCLane', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         laneMocks.midiState = { ccByClipId: {} };
+        laneMocks.trackState.tracks = [];
+        laneMocks.transportState.playheadPosition = 0;
+        playheadPositionRef.current = 0;
     });
 
     it('should render without crashing with clipId', () => {
@@ -526,7 +551,7 @@ describe('CCLane', () => {
         it('adds an undoable point on the line at the playhead on Enter and claims the key', () => {
             vi.mocked(readClipPlayheadBeat).mockReturnValue(1);
             laneMocks.midiState.ccByClipId['clip-1'] = [
-                { id: 'cc-late', controller: 1, value: 100, beat: 4, channel: 0 },
+                { id: 'cc-late', controller: 1, value: 100, beat: 3, channel: 0 },
                 { id: 'cc-other', controller: 7, value: 127, beat: 2, channel: 0 },
                 { id: 'cc-early', controller: 1, value: 20, beat: 0, channel: 0 },
             ];
@@ -535,8 +560,25 @@ describe('CCLane', () => {
             expect(fireEvent.keyDown(screen.getByRole('toolbar'), { key: 'Enter' })).toBe(false);
 
             expect(readClipPlayheadBeat).toHaveBeenCalledWith('clip-1');
-            expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, 40, 1, 0);
+            // 20 + (100 - 20) / 3 = 46.67 on the line; a controller value is a whole step.
+            expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, 47, 1, 0);
             expect(pushUndoEntry).toHaveBeenCalledWith('Add CC point', expect.any(Function), expect.any(Function));
+        });
+
+        it('inserts at the live playhead while the transport store still holds the last seek', async () => {
+            const actual = await vi.importActual<typeof import('../../../helpers/clipPlayheadBeat')>(
+                '../../../helpers/clipPlayheadBeat'
+            );
+            vi.mocked(readClipPlayheadBeat).mockImplementation(actual.readClipPlayheadBeat);
+            laneMocks.trackState.tracks = [{ id: 'track-1', clips: [{ id: 'clip-1', startBeat: 4, endBeat: 12 }] }];
+            laneMocks.transportState.playheadPosition = 5;
+            playheadPositionRef.current = 7;
+            render(<CCLane {...defaultProps} />);
+
+            fireEvent.keyDown(screen.getByRole('toolbar'), { key: 'Enter' });
+
+            // The clip starts at beat 4, so the live arrangement beat 7 is clip beat 3.
+            expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, 64, 3, 0);
         });
 
         it('starts an empty lane at the controller midpoint', () => {

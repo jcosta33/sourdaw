@@ -10,6 +10,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
 
@@ -255,6 +256,8 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
             muted: false,
         });
         trackStore.set({ tracks: [track], selectedTrackId: 'track-1' });
+        // The split reads the live playhead channel, not the transport store.
+        playheadPositionRef.current = 2.5;
         const { canvas } = renderRoll({ selectedNoteIds: new Set(['n1']) });
         fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
         expect(getNotesForClip('clip-1').filter((note) => note.pitch === 60)).toHaveLength(2);

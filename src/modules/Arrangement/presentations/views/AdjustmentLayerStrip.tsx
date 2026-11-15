@@ -903,6 +903,9 @@ const AdjustmentLayerRow = ({
                         role="gridcell"
                         className="absolute top-0 bottom-0 rounded-sm border"
                         style={bandStyle}
+                        // The cell owns the region's menu and inspector for its body, edges and fades alike.
+                        onContextMenu={(e) => onRegionContextMenu(e, layer, region)}
+                        onDoubleClick={(e) => onRegionDoubleClick(e, layer)}
                     >
                         {/* The band body is the region's focus target; the edges and fades sit above it. */}
                         <Button
@@ -913,8 +916,6 @@ const AdjustmentLayerRow = ({
                             aria-keyshortcuts="Enter ArrowLeft ArrowRight Delete ContextMenu Shift+F10"
                             className="absolute inset-0 cursor-grab rounded-sm active:cursor-grabbing"
                             onMouseDown={(e) => onRegionDragStart(e, layer, region, 'move')}
-                            onContextMenu={(e) => onRegionContextMenu(e, layer, region)}
-                            onDoubleClick={(e) => onRegionDoubleClick(e, layer)}
                             onKeyDown={(e) => onRegionKeyDown(e, layer, region)}
                         />
                         <div

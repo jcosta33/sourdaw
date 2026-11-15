@@ -18,6 +18,7 @@ import {
     selectPointsInRange,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
+import { evaluateAutomationCurve } from '#/utils/automationCurve';
 
 import { type AutomationLane, type AutomationPoint, type AutomationCurveType } from '../../models/AutomationViewTypes';
 
@@ -68,13 +69,13 @@ export const onDrawMouseDown = (
 
 // ── Point insertion ──────────────────────────────────────────────────────────
 
-/** Add one linear point to a lane as a single undoable edit: the click and keyboard routes share it. */
-export const addAutomationPointWithUndo = (laneId: string, beat: number, value: number): void => {
+/** Add one point to a lane as a single undoable edit, addressed by its own id. */
+const addPointWithUndo = (laneId: string, fields: Omit<AutomationPoint, 'id'>): void => {
     // The id is what makes the undo side remove exactly the point this edit
     // added; removing by beat would also take any other point already sitting
     // at the same beat.
     const pointId = `auto-point-${crypto.randomUUID()}`;
-    const point: AutomationPoint = { id: pointId, beat, value, curve: 'linear', tension: 0 };
+    const point: AutomationPoint = { id: pointId, ...fields };
     addAutomationPoint(laneId, point);
     pushUndoEntry(
         'Add automation point',
@@ -85,6 +86,96 @@ export const addAutomationPointWithUndo = (laneId: string, beat: number, value: 
             addAutomationPoint(laneId, point);
         }
     );
+};
+
+/** Add one linear point where the click landed, as a single undoable edit. */
+export const addAutomationPointWithUndo = (laneId: string, beat: number, value: number): void => {
+    addPointWithUndo(laneId, { beat, value, curve: 'linear', tension: 0 });
+};
+
+/**
+ * Curve families a point can split at any interior beat with both halves
+ * replaying the source values: a straight ramp restricted to a sub-span is the
+ * same ramp, and a hold is a hold. The other families are laws of the segment
+ * fraction that do not commute with re-basing a sub-span onto [0,1] (the
+ * analysis beside the clip split's seam in `splitClipSatellites.ts`): `stairs`
+ * re-spaces its steps, `exponential` and `s-curve` are no longer powers or
+ * smoothsteps of the new fraction, and an exact `bezier` split would also
+ * rewrite the left point's control points, which no automation write offers.
+ */
+const SPLIT_EXACT_CURVES: ReadonlySet<AutomationCurveType> = new Set(['linear', 'step']);
+
+/** `bezier` with authored controls and `smooth` read more than the two segment values, so a flat span is not flat for them. */
+const FLAT_EXACT_CURVES: ReadonlySet<AutomationCurveType> = new Set([
+    'linear',
+    'step',
+    'stairs',
+    'exponential',
+    's-curve',
+]);
+
+/**
+ * The point that splits the lane at `beat` without changing what it plays on
+ * either side, or `undefined` when no such point exists. `smooth` segments
+ * take their tangents from the neighbouring points, so a point next to one
+ * changes it and is refused.
+ */
+const resolveShapePreservingPoint = (
+    points: readonly AutomationPoint[],
+    beat: number
+): Omit<AutomationPoint, 'id'> | undefined => {
+    if (points.length === 0 || points.some((point) => point.beat === beat)) {
+        return undefined;
+    }
+    const rightIndex = points.findIndex((point) => point.beat > beat);
+    const leftIndex = rightIndex === -1 ? points.length - 1 : rightIndex - 1;
+    const left = points[leftIndex];
+    const right = rightIndex === -1 ? undefined : points[rightIndex];
+    if (left === undefined) {
+        // Before the first point the lane holds that point's value; a flat
+        // ramp up to it holds the same value.
+        return right === undefined ? undefined : { beat, value: right.value, curve: 'linear', tension: 0 };
+    }
+    if (left.curve === 'smooth' || points[leftIndex - 1]?.curve === 'smooth' || right?.curve === 'smooth') {
+        return undefined;
+    }
+    if (right === undefined) {
+        // After the last point the lane holds its value; the new segment
+        // between two equal values must stay flat under the left point's curve.
+        return FLAT_EXACT_CURVES.has(left.curve) ? continueShapeOf(left, beat, left.value) : undefined;
+    }
+    if (!SPLIT_EXACT_CURVES.has(left.curve)) {
+        return undefined;
+    }
+    return continueShapeOf(left, beat, evaluateAutomationCurve({ firstPoint: left, secondPoint: right, beat }));
+};
+
+/** A point at `beat` carrying the shape of the segment it splits, which its left point owns. */
+const continueShapeOf = (left: AutomationPoint, beat: number, value: number): Omit<AutomationPoint, 'id'> => {
+    const point: Omit<AutomationPoint, 'id'> = { beat, value, curve: left.curve, tension: left.tension };
+    if (left.stairSteps !== undefined) {
+        point.stairSteps = left.stairSteps;
+    }
+    return point;
+};
+
+/**
+ * Add a point at `beat` that leaves the lane's evaluated values unchanged on
+ * both sides, as one undoable edit. Returns false, adding nothing, when the
+ * lane's shape at that beat cannot be split exactly. The keyboard insert uses
+ * it; click-to-add keeps its linear point.
+ */
+export const insertAutomationPointPreservingShape = (laneId: string, beat: number): boolean => {
+    const lane = automationStore.value?.lanes.find((candidate) => candidate.id === laneId);
+    if (lane === undefined) {
+        return false;
+    }
+    const point = resolveShapePreservingPoint(lane.points, beat);
+    if (point === undefined) {
+        return false;
+    }
+    addPointWithUndo(laneId, point);
+    return true;
 };
 
 // ── Rubber-band selection ────────────────────────────────────────────────────

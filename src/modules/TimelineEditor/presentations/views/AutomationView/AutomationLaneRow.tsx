@@ -15,7 +15,6 @@ import {
     adjustYZoom,
     zoomToUsedRange,
     getAutomationLaneCeiling,
-    getAutomationValueAtBeat,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
@@ -26,7 +25,7 @@ import { isDragGestureActive, isPlainEscapePress } from '#/utils/UI/activeDragGe
 
 import { type AutomationLane, type AutomationCurveType } from '../../../models/AutomationViewTypes';
 import {
-    addAutomationPointWithUndo,
+    insertAutomationPointPreservingShape,
     onDrawMouseDown,
     onRubberBandStart,
     onTensionMouseDown,
@@ -341,14 +340,10 @@ export const AutomationLaneRow = ({
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
     // The playhead is the lane's keyboard cursor: Enter adds a point where the
-    // line already sits there, and the menu key opens the shape menu for it.
+    // line already sits there without reshaping it (a shape that cannot be
+    // split exactly takes no point), and the menu key opens the shape menu.
     const insertPointAtPlayhead = (): void => {
-        const beat = playheadPositionRef.current;
-        const value = getAutomationValueAtBeat(lane.id, beat);
-        if (value === null) {
-            return;
-        }
-        addAutomationPointWithUndo(lane.id, beat, value);
+        insertAutomationPointPreservingShape(lane.id, playheadPositionRef.current);
     };
 
     const openShapeMenuAtPlayhead = (laneElement: HTMLElement): void => {

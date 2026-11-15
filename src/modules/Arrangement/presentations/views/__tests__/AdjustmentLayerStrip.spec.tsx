@@ -589,6 +589,26 @@ describe('AdjustmentLayerStrip', () => {
             }
         );
 
+        it('opens the region menu, not the layer menu, on a right-click of a region edge', () => {
+            mocks.layers = [layerWithRegion()];
+            renderStrip();
+
+            fireEvent.contextMenu(getEdge('Region start'), { clientX: 100, clientY: 100 });
+
+            const menu = screen.getByTestId('adjustment-layer-context-menu');
+            expect(within(menu).getByText('Remove Region')).toBeInTheDocument();
+            expect(within(menu).queryByText('Remove Layer')).not.toBeInTheDocument();
+        });
+
+        it('opens the inspector on a double-click of a fade handle', () => {
+            mocks.layers = [layerWithRegion()];
+            renderStrip();
+
+            fireEvent.doubleClick(screen.getByRole('slider', { name: 'Fade in' }));
+
+            expect(screen.getByRole('dialog', { name: /adjustment layer: eq layer/i })).toBeInTheDocument();
+        });
+
         it('removes the focused region on Delete', () => {
             mocks.layers = [layerWithRegion()];
             renderStrip();

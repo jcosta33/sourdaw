@@ -4,6 +4,7 @@ import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
 
@@ -283,7 +284,10 @@ describe('usePianoRollInteractions', () => {
         mocks.getNotesForClip.mockReturnValue([]);
         mocks.previewEngine?.resetGraph();
         mocks.playAuditionNote.mockReturnValue(mocks.auditionStop);
-        mocks.getTransportState.mockReturnValue({ playheadPosition: 2.5 });
+        // The store keeps the beat of the last seek while playback moves the live
+        // channel on; the split must follow the live one.
+        mocks.getTransportState.mockReturnValue({ playheadPosition: 40 });
+        playheadPositionRef.current = 2.5;
         mocks.stepRecordState = { currentPitch: 62 };
         latest.current = null;
     });
@@ -1348,7 +1352,7 @@ describe('usePianoRollInteractions', () => {
             it('translates the playhead into a clip placed away from beat zero', () => {
                 placeClip({ startBeat: 8, endBeat: 12 });
                 const store = installNoteStore('clip-1', [makeNote('n1', 60, 1, 3)]);
-                mocks.getTransportState.mockReturnValue({ playheadPosition: 10 });
+                playheadPositionRef.current = 10;
                 const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
 
                 fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
@@ -1378,7 +1382,7 @@ describe('usePianoRollInteractions', () => {
             it('wraps the playhead through the clip loop and restores the media offset', () => {
                 placeClip({ startBeat: 4, endBeat: 16, loopEnabled: true, loopLength: 4, midiOffsetBeats: 2 });
                 const store = installNoteStore('clip-1', [makeNote('n1', 60, 3, 3)]);
-                mocks.getTransportState.mockReturnValue({ playheadPosition: 10 });
+                playheadPositionRef.current = 10;
                 const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
 
                 fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
@@ -1396,7 +1400,7 @@ describe('usePianoRollInteractions', () => {
             it('does not split when the playhead sits before the visible clip', () => {
                 placeClip({ startBeat: 8, endBeat: 12 });
                 const store = installNoteStore('clip-1', [makeNote('n1', 60, 1, 3)]);
-                mocks.getTransportState.mockReturnValue({ playheadPosition: 5 });
+                playheadPositionRef.current = 5;
                 const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
 
                 fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
@@ -1410,7 +1414,7 @@ describe('usePianoRollInteractions', () => {
             it('does not split when the playhead sits at the clip end', () => {
                 placeClip({ startBeat: 8, endBeat: 12 });
                 const store = installNoteStore('clip-1', [makeNote('n1', 60, 1, 3)]);
-                mocks.getTransportState.mockReturnValue({ playheadPosition: 12 });
+                playheadPositionRef.current = 12;
                 const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
 
                 fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });

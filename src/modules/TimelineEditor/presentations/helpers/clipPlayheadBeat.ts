@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getTransportState } from '#/modules/Transport/useCases';
+import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { type ClipPlacement, resolveAudibleNoteWindow } from './audibleNoteWindow';
 
@@ -55,11 +55,15 @@ function arrangementPlayheadToClipBeat(playheadBeat: number, placement: ClipPlac
  * clip is not in the arrangement or the playhead is outside it. Controller and
  * pitch-bend rows share the note coordinates, so keyboard insertion in their
  * lanes reads the same position the piano roll splits at.
+ *
+ * The beat comes from the live playhead channel: the transport store's
+ * `playheadPosition` is written only on start, stop, pause and seek, so during
+ * playback it still holds the beat playback started from.
  */
 export function readClipPlayheadBeat(clipId: string): number | undefined {
     const placement = resolveClipPlacement(clipId);
     if (placement === undefined) {
         return undefined;
     }
-    return arrangementPlayheadToClipBeat(getTransportState()?.playheadPosition ?? 0, placement);
+    return arrangementPlayheadToClipBeat(playheadPositionRef.current, placement);
 }
