@@ -187,7 +187,7 @@ for (const rate of [44100, 48000, 88200, 96000]) {
                 expect(Math.abs(reference.frames - Math.round((frames * 48000) / rate))).toBeLessThanOrEqual(1);
                 const measurements = [];
                 for (const codec of ['ogg', 'opus']) {
-                    const name = names.find((name) => name.endsWith('.' + codec));
+                    const name = names.find((name) => name.endsWith(`.${codec}`));
                     expect(name).toBeTruthy();
                     const bytes = entries[name!],
                         actual = await decode(page, bytes);
@@ -253,7 +253,7 @@ for (const rate of [44100, 48000, 88200, 96000]) {
 for (const codec of ['ogg', 'opus']) {
     test(`UI saves ${codec} alone with audio/ogg picker and real complete-file decode`, async ({ page }, info) => {
         test.setTimeout(180000);
-        const capture = await installFilePickerCapture(page, info.outputPath('actual.' + codec));
+        const capture = await installFilePickerCapture(page, info.outputPath(`actual.${codec}`));
         try {
             const dialog = await audibleProject(page, 48000, 2, 48137);
             await page.evaluate(() => {
@@ -269,18 +269,18 @@ for (const codec of ['ogg', 'opus']) {
                     },
                 });
             });
-            await dialog.getByTestId('export-format-' + codec).click();
+            await dialog.getByTestId(`export-format-${codec}`).click();
             await dialog.getByTestId('export-format-wav').click();
             await expect(dialog.getByTestId('export-format-wav')).toHaveAttribute('aria-checked', 'false');
-            await expect(dialog.getByTestId('export-format-' + codec)).toHaveAttribute('aria-checked', 'true');
+            await expect(dialog.getByTestId(`export-format-${codec}`)).toHaveAttribute('aria-checked', 'true');
             await dialog.getByRole('button', { name: 'Export mixdown', exact: true }).click();
             await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeVisible({
                 timeout: 120000,
             });
             await capture.waitForClose();
-            expect(await capture.pickerFilename).toMatch(new RegExp('\\.' + codec + '$'));
+            expect(await capture.pickerFilename).toMatch(new RegExp(`\\.${codec}$`));
             expect(await page.evaluate(() => Reflect.get(window, '__codecPickerOptions'))).toMatchObject({
-                types: [{ accept: { 'audio/ogg': ['.' + codec] } }],
+                types: [{ accept: { 'audio/ogg': [`.${codec}`] } }],
             });
             const result = await decode(page, await readFile(capture.path));
             expect(result.channels).toHaveLength(2);
@@ -313,7 +313,7 @@ test('Slices saves actual codec stems with the selected-rate WAV reference', asy
         expect(new DataView(wav.buffer, wav.byteOffset).getUint32(24, true)).toBe(44100);
         const reference = await decode(page, wav);
         for (const codec of ['ogg', 'opus']) {
-            const name = Object.keys(entries).find((entry) => entry.endsWith('.' + codec));
+            const name = Object.keys(entries).find((entry) => entry.endsWith(`.${codec}`));
             expect(name).toBeTruthy();
             const actual = await decode(page, entries[name!]);
             expect(actual.channels).toHaveLength(2);
@@ -590,7 +590,7 @@ for (const codec of ['ogg', 'opus']) {
             });
         });
         const dialog = await audibleProject(page, 48000, 2, 48000 * 8.5);
-        await dialog.getByTestId('export-format-' + codec).click();
+        await dialog.getByTestId(`export-format-${codec}`).click();
         await dialog.getByTestId('export-format-wav').click();
         await dialog.getByRole('button', { name: 'Export mixdown', exact: true }).click();
         await expect.poll(() => page.evaluate(() => Reflect.get(window, '__oggLifecycleProof').held)).toBe(true);
