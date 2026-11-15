@@ -825,14 +825,14 @@ describe('the plan’s audible claim', () => {
     });
 
     describe('a stored claim the reader refuses', () => {
-        type StoredClaim = Record<string, unknown> & { metrics: Record<string, unknown>[] };
+        type StoredClaim = Record<string, unknown> & { metrics?: Record<string, unknown>[] };
         type Corruption = {
             rule: string;
             base: 'measured' | 'not-claimed';
             edit: (claim: StoredClaim) => void;
         };
         const firstMetric = (claim: StoredClaim): Record<string, unknown> => {
-            const [metric] = claim.metrics;
+            const [metric] = claim.metrics ?? [];
             if (metric === undefined) {
                 throw new Error('Expected a metric to corrupt.');
             }
