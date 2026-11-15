@@ -314,12 +314,12 @@ describe('createUserAppActionRefusalEpisodes', () => {
             refuse();
             await episodes.execute('A', action);
 
-            unlock();
+            // The dispatch commits while the episode is still open: no admission signal has
+            // reached it, so only the committed dispatch can end it.
             await expect(episodes.execute('A', action, { onCommitted })).resolves.toBe('committed');
             expect(onCommitted).toHaveBeenCalledTimes(1);
 
             // The episode ended: the next refusal on the key warns afresh.
-            lock();
             refuse();
             await episodes.execute('A', action);
             expect(notifyUser).toHaveBeenCalledTimes(2);
