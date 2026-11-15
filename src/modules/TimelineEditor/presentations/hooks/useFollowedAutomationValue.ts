@@ -20,6 +20,8 @@ type UseFollowedAutomationValueInput = {
 
 type FollowedValue = {
     value: number;
+    /** The scheduler's write sequence the value was adopted under. */
+    writeSequence: number;
     settledAtRead: unknown;
     /** Whether the latest read delivered a value; false once the lane stops driving the parameter. */
     delivering: boolean;
@@ -34,10 +36,12 @@ type FollowedAutomationValue = {
  * The value a running automation lane is delivering to a device parameter, for display only.
  *
  * Follows only while the parameter is automated, the transport plays and `element` is on screen. After
- * the transport stops it keeps the last followed value until `settledParameters` changes identity, so the
- * row never falls back to a stale store value before the host's real value has been read. Any newer fact
- * about the parameter (its `settledToken` changing) wins over the held value; a delivered value equal to
- * the one last adopted is then not adopted again, so a flat lane segment cannot overwrite a user edit.
+ * the transport stops it keeps the last followed value until `settledToken` changes identity, so the
+ * row never falls back to a stale store value before the host's real value has been read. A delivered
+ * value is adopted whenever the scheduler wrote the parameter since the last adoption (a new write
+ * sequence), even if the number is unchanged, because the plugin then holds that value whatever the
+ * store says (Play start, seek, loop wrap). With no new write, any newer fact about the parameter (its
+ * `settledToken` changing) wins over the held value, so a flat lane segment cannot overwrite a user edit.
  */
 export const useFollowedAutomationValue = ({
     deviceId,
@@ -73,18 +77,23 @@ export const useFollowedAutomationValue = ({
         }
         const parameterKey = String(parameterId);
         const read = (): void => {
-            const value = readAppliedAutomationValue(deviceId, parameterKey);
+            const applied = readAppliedAutomationValue(deviceId, parameterKey);
             setFollowed((previous) => {
-                if (value === undefined) {
+                if (applied === undefined) {
                     return previous === null || !previous.delivering ? previous : { ...previous, delivering: false };
                 }
-                if (previous?.value === value) {
+                const { value, writeSequence } = applied;
+                if (previous !== null && previous.writeSequence === writeSequence) {
+                    // No new scheduler write since the last adoption: a newer store object is a fact the
+                    // lane has not contradicted, so it keeps winning over the held value.
                     if (previous.settledAtRead !== settledToken) {
                         return previous;
                     }
-                    return previous.delivering ? previous : { ...previous, delivering: true };
+                    if (previous.value === value) {
+                        return previous.delivering ? previous : { ...previous, delivering: true };
+                    }
                 }
-                return { value, settledAtRead: settledToken, delivering: true };
+                return { value, writeSequence, settledAtRead: settledToken, delivering: true };
             });
         };
 

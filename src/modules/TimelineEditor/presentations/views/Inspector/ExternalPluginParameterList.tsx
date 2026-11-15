@@ -41,8 +41,8 @@ const PAGE_SIZE = 50;
 const REFUSED_MESSAGE = 'The plugin refused this change.';
 const FOLLOWING_VALUE_TEXT = 'Following automation';
 
-/** Plugin parameter ids that any lane on this device, track-level or clip-level, drives. */
-function collectAutomatedParameterIds(state: AutomationStoreState | null, deviceId: string): ReadonlySet<number> {
+/** Sorted, comma-joined plugin parameter ids that any lane on this device, track-level or clip-level, drives. */
+function selectAutomatedIdsKey(state: AutomationStoreState | null, deviceId: string): string {
     const ids = new Set<number>();
     for (const lane of state?.lanes ?? []) {
         if (getDeviceAutomationOwnerId(lane.parameterId) !== deviceId) {
@@ -53,7 +53,11 @@ function collectAutomatedParameterIds(state: AutomationStoreState | null, device
             ids.add(parameterId);
         }
     }
-    return ids;
+    return [...ids].sort((a, b) => a - b).join(',');
+}
+
+function parseAutomatedIdsKey(key: string): ReadonlySet<number> {
+    return new Set(key === '' ? [] : key.split(',').map(Number));
 }
 
 function pluralParameters(count: number): string {
@@ -212,7 +216,7 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
     const parameterState = useStore(externalPluginParameterStore, defaultExternalPluginParameterState);
     // The marker set is plain module memory; the store's version is the render signal for it.
     const restoreFailure = useStore(externalPluginRestoreFailureStore, defaultExternalPluginRestoreFailureState);
-    const automationState = useStore<AutomationStoreState>(automationStore, { lanes: [] });
+    const automatedIdsKey = useStoreSelector(automationStore, (state) => selectAutomatedIdsKey(state, device.id));
     const isPlaying = useStoreSelector(transportStore, (state) => state?.isPlaying ?? false);
     const [query, setQuery] = useState('');
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -236,8 +240,7 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
         .filter((plugin) => isSupportedPluginFormat(plugin.format))
         .find((plugin) => plugin.id === device.externalPluginId || plugin.descriptor_id === device.externalPluginId);
     const snapshot = instanceId ? parameterState.byInstanceId[instanceId] : undefined;
-    const automatedParameterIds = collectAutomatedParameterIds(automationState, device.id);
-    const automatedIdsKey = [...automatedParameterIds].sort((a, b) => a - b).join(',');
+    const automatedParameterIds = parseAutomatedIdsKey(automatedIdsKey);
 
     // Host-side automation writes are not echoed as edits, so the store holds the pre-play value; on each
     // stop edge (and on mount) re-read what the plugin actually holds. A patch is not an edit.
@@ -280,6 +283,7 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
         query
     );
     const shown = rows.slice(0, visibleCount);
+    const settledById = new Map(snapshot.parameters.map((parameter) => [parameter.id, parameter]));
 
     const changeQuery = (next: string): void => {
         setQuery(next);
@@ -309,7 +313,7 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
                         instanceId={instanceId}
                         deviceId={device.id}
                         automated={automatedParameterIds.has(row.id)}
-                        settledParameter={snapshot.parameters.find((parameter) => parameter.id === row.id)}
+                        settledParameter={settledById.get(row.id)}
                         row={row}
                         onAnnounce={setAnnouncement}
                     />

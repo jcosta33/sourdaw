@@ -39,7 +39,11 @@ import { DEFAULT_TEMPO_BPM, transportStore } from '../../../stores/transportStor
 import { beatAtSecondsFromAnchor } from '../../playheadScheduler/beatAtSecondsFromAnchor';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 
-import { appliedAutomationBases, clearAppliedAutomationBases } from './appliedAutomationBases';
+import {
+    appliedAutomationBases,
+    clearAppliedAutomationBases,
+    recordAppliedAutomationWrite,
+} from './appliedAutomationBases';
 import { clearDeviceReadBeatByTrack, deviceReadBeatByTrack } from './deviceReadBeatByTrack';
 import { deviceRuntimeParameterWriters } from './deviceRuntimeParameterWriters';
 import { restoreAutomationBaseValue } from './restoreAutomationBaseValue';
@@ -855,6 +859,10 @@ export function applyAutomation(currentBeat: number): Set<string> {
                     isDiscontinuity ||
                     enteredLaneScope ||
                     (Math.abs(smoothed - seed) > AUTOMATION_SLEW_EPSILON && delivered !== previousDelivered);
+                if (moved) {
+                    // A write of an unchanged value is invisible to a display that compares values.
+                    recordAppliedAutomationWrite(device.id, paramId);
+                }
                 const released = takeBypassReleaseEdge(bypassReleaseEdges, device.id, device.bypassed);
                 // A device the native session carries has its parameters
                 // stamped on the audio thread from the engine's own queue,

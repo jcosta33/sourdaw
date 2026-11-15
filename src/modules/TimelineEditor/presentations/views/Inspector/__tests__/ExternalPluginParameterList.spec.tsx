@@ -34,11 +34,16 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
 });
 
 const mockReadApplied = vi.fn<(deviceId: string, parameterId: string) => number | undefined>();
+/** The scheduler's write sequence the mocked read reports; a test bumps it to say the scheduler wrote. */
+let mockWriteSequence = 1;
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
     return {
         ...actual,
-        readAppliedAutomationValue: (deviceId: string, parameterId: string) => mockReadApplied(deviceId, parameterId),
+        readAppliedAutomationValue: (deviceId: string, parameterId: string) => {
+            const value = mockReadApplied(deviceId, parameterId);
+            return value === undefined ? undefined : { value, writeSequence: mockWriteSequence };
+        },
     };
 });
 
@@ -210,6 +215,7 @@ describe('ExternalPluginParameterList', () => {
         mockRefresh.mockReset();
         mockRefresh.mockResolvedValue();
         mockReadApplied.mockReset();
+        mockWriteSequence = 1;
         frameCallbacks = new Map();
         nextFrameId = 1;
         intersecting = true;
@@ -773,6 +779,29 @@ describe('ExternalPluginParameterList', () => {
             expect(slider).toHaveAttribute('aria-valuetext', '0.500');
         });
 
+        it('shows the value the scheduler rewrites on the next play over an edit made while stopped', () => {
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            setPlaying(false);
+
+            act(() => {
+                moveStoreValue(7, 'Decay', 0.9);
+            });
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+            expect(slider).toHaveValue('0.9');
+
+            // Play start rewrites the flat lane's 0.5 into the plugin: same number, new write.
+            mockWriteSequence = 2;
+            setPlaying(true);
+            runFrame(50);
+
+            expect(slider).toHaveValue('0.5');
+            expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
+        });
+
         it('keeps an accepted user edit over an unchanged delivered value until the lane moves', async () => {
             let resolveSend: () => void = () => {};
             let sent: Promise<void> = Promise.resolve();
@@ -801,6 +830,7 @@ describe('ExternalPluginParameterList', () => {
             expect(slider).toHaveAttribute('aria-valuetext', '0.900');
 
             mockReadApplied.mockReturnValue(0.6);
+            mockWriteSequence = 2;
             runFrame(150);
             runFrame(200);
             expect(slider).toHaveValue('0.6');
@@ -853,6 +883,16 @@ describe('ExternalPluginParameterList', () => {
                 moveStoreValue(7, 'Decay', 0.3);
             });
             expect(slider).toHaveValue('0.3');
+        });
+
+        it('never re-reads a plugin that never had automation when playback starts and stops', () => {
+            seed([parameter({ id: 7, name: 'Decay', value: 0.25 })]);
+            render(<ExternalPluginParameterList device={device} />);
+
+            setPlaying(true);
+            setPlaying(false);
+
+            expect(mockRefresh).not.toHaveBeenCalled();
         });
 
         it('observes visibility only for automated rows', () => {
