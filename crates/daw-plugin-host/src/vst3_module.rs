@@ -724,7 +724,10 @@ pub fn factory_is_non_discardable(factory: &ComPtr<IPluginFactory>) -> bool {
     let Some(info) = factory_info(factory) else {
         return false;
     };
-    info.flags & FactoryFlags_::kComponentNonDiscardable as i32 != 0
+    // The flag constant is `c_int` on Windows and `c_uint` elsewhere, while
+    // the field is always `i32`; reinterpreting the bytes is the same bits.
+    let non_discardable = i32::from_ne_bytes(FactoryFlags_::kComponentNonDiscardable.to_ne_bytes());
+    info.flags & non_discardable != 0
 }
 
 /// The factory's own `PFactoryInfo`, or `None` when it refuses to describe
@@ -903,16 +906,16 @@ mod tests {
         let cache = fake_cache();
         let unloads = Arc::new(AtomicUsize::new(0));
         let loads = AtomicUsize::new(0);
-        let mut load = || {
+        let load = || {
             loads.fetch_add(1, AtomicOrdering::SeqCst);
             Ok(Arc::new(FakeModule {
                 unloads: Arc::clone(&unloads),
             }))
         };
 
-        let first = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+        let first = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
             .expect("the fake loads");
-        let second = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+        let second = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
             .expect("the fake loads");
 
         assert_eq!(loads.load(AtomicOrdering::SeqCst), 1);
@@ -957,7 +960,7 @@ mod tests {
         let cache = fake_cache();
         let unloads = Arc::new(AtomicUsize::new(0));
         let loads = AtomicUsize::new(0);
-        let mut load = || {
+        let load = || {
             loads.fetch_add(1, AtomicOrdering::SeqCst);
             Ok(Arc::new(FakeModule {
                 unloads: Arc::clone(&unloads),
@@ -965,10 +968,10 @@ mod tests {
         };
 
         drop(
-            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
                 .expect("the fake loads"),
         );
-        let reopened = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+        let reopened = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load)
             .expect("the fake loads");
 
         assert_eq!(loads.load(AtomicOrdering::SeqCst), 2);

@@ -25,7 +25,11 @@
 //! nothing and whose tail had decayed to silence would pass by comparing two
 //! identical renders, which is the shape this file exists to catch.
 
-#![allow(clippy::unwrap_used, reason = "tests assert by unwrapping")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "tests assert by unwrapping and fail by panicking"
+)]
 
 use proof_chamber::fdn::FdnReverb;
 use proof_chamber::proof_chamber::ProofChamber;

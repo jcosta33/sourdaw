@@ -1,10 +1,10 @@
-/// Real CLAP plugin wrapper — loads .clap shared libraries and hosts them.
-///
-/// Flow: dlopen → clap_entry.init() → factory.create_plugin(host, id) → plugin.activate() → plugin.process()
-///
-/// RT-safety: `process_audio_internal` and `process_with_midi` are called on the audio thread.
-/// All scratch buffers are preallocated in `new` — no heap allocation occurs
-/// on the RT path.
+//! Real CLAP plugin wrapper — loads .clap shared libraries and hosts them.
+//!
+//! Flow: dlopen → clap_entry.init() → factory.create_plugin(host, id) → plugin.activate() → plugin.process()
+//!
+//! RT-safety: `process_audio_internal` and `process_with_midi` are called on the audio thread.
+//! All scratch buffers are preallocated in `new` — no heap allocation occurs
+//! on the RT path.
 
 /// Maximum audio buffer size this host supports (must match the max_frames_count passed to activate).
 ///
@@ -107,8 +107,9 @@ pub struct ClapWrapper {
     entry: *const clap_plugin_entry,
     /// Pointer to the clap_plugin struct.
     plugin: *const clap_plugin,
-    /// Host descriptor — must outlive the plugin.
-    host: Box<clap_host>,
+    /// Host descriptor — the plugin holds a pointer to it, so it must outlive
+    /// the plugin. Never read after construction; held for its lifetime.
+    _host: Box<clap_host>,
     /// Whether the plugin has been activated.
     activated: bool,
     /// Plugin name for logging.
@@ -265,6 +266,10 @@ unsafe impl Sync for ClapWrapper {}
 
 // ── Declared audio bus layout ───────────────────────────────────────────
 
+/// One direction's scratch audio, the channel pointers into it, and the buffer
+/// descriptors the plugin is handed.
+type PortBuffers = (Box<[f32]>, Vec<*mut f32>, Vec<clap_audio_buffer>);
+
 /// The plugin's declared audio port layout and the preallocated buffers that
 /// honour it.
 ///
@@ -325,48 +330,43 @@ impl AudioBusLayout {
     /// Free of any plugin call so the buffer arithmetic is testable against
     /// plain numbers, and so the load path only owes the reading.
     fn declared(input_ports: &[u32], output_ports: &[u32]) -> Result<Self, String> {
-        let build =
-            |ports: &[u32],
-             direction: &str|
-             -> Result<(Box<[f32]>, Vec<*mut f32>, Vec<clap_audio_buffer>), String> {
-                let total_channels: u32 =
-                    ports.iter().copied().try_fold(0u32, |sum, channels| {
-                        sum.checked_add(channels)
-                            .filter(|_| channels > 0)
-                            .ok_or_else(|| {
-                                format!("CLAP {direction} port declares an unusable channel count")
-                            })
-                    })?;
-                if total_channels > MAX_RUNTIME_AUDIO_CHANNELS {
-                    return Err(format!(
-                        "CLAP {direction} audio channel count exceeds runtime bounds"
-                    ));
-                }
-                let mut scratch =
-                    vec![0.0f32; total_channels as usize * MAX_BUFFER].into_boxed_slice();
-                let mut pointers = Vec::with_capacity(total_channels as usize);
-                for channel in 0..total_channels as usize {
-                    pointers.push(unsafe { scratch.as_mut_ptr().add(channel * MAX_BUFFER) });
-                }
-                let buffers = ports
-                    .iter()
-                    .scan(0usize, |offset, channels| {
-                        let port = clap_audio_buffer {
-                            // `clap_audio_buffer.data32` is `*mut *mut f32` for both
-                            // directions; the input buffers are read-only by
-                            // contract, and the cast states the struct's shape.
-                            data32: unsafe { pointers.as_ptr().add(*offset) } as *mut *mut f32,
-                            data64: ptr::null_mut(),
-                            channel_count: *channels,
-                            latency: 0,
-                            constant_mask: 0,
-                        };
-                        *offset += *channels as usize;
-                        Some(port)
+        let build = |ports: &[u32], direction: &str| -> Result<PortBuffers, String> {
+            let total_channels: u32 = ports.iter().copied().try_fold(0u32, |sum, channels| {
+                sum.checked_add(channels)
+                    .filter(|_| channels > 0)
+                    .ok_or_else(|| {
+                        format!("CLAP {direction} port declares an unusable channel count")
                     })
-                    .collect();
-                Ok((scratch, pointers, buffers))
-            };
+            })?;
+            if total_channels > MAX_RUNTIME_AUDIO_CHANNELS {
+                return Err(format!(
+                    "CLAP {direction} audio channel count exceeds runtime bounds"
+                ));
+            }
+            let mut scratch = vec![0.0f32; total_channels as usize * MAX_BUFFER].into_boxed_slice();
+            let mut pointers = Vec::with_capacity(total_channels as usize);
+            for channel in 0..total_channels as usize {
+                pointers.push(unsafe { scratch.as_mut_ptr().add(channel * MAX_BUFFER) });
+            }
+            let buffers = ports
+                .iter()
+                .scan(0usize, |offset, channels| {
+                    let port = clap_audio_buffer {
+                        // `clap_audio_buffer.data32` is `*mut *mut f32` for both
+                        // directions; the input buffers are read-only by
+                        // contract, and the cast states the struct's shape.
+                        data32: unsafe { pointers.as_ptr().add(*offset) } as *mut *mut f32,
+                        data64: ptr::null_mut(),
+                        channel_count: *channels,
+                        latency: 0,
+                        constant_mask: 0,
+                    };
+                    *offset += *channels as usize;
+                    Some(port)
+                })
+                .collect();
+            Ok((scratch, pointers, buffers))
+        };
 
         let (input_scratch, input_channel_ptrs, input_buffers) = build(input_ports, "input")?;
         let (output_scratch, output_channel_ptrs, output_buffers) = build(output_ports, "output")?;
@@ -769,7 +769,7 @@ impl ClapWrapper {
         sample_rate: f64,
     ) -> Result<Self, String> {
         // 4. Get the plugin factory
-        let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr() as *const i8;
+        let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr();
         let factory_ptr = if let Some(get_factory) = unsafe { (*entry_ptr).get_factory } {
             unsafe { get_factory(factory_id) }
         } else {
@@ -877,7 +877,7 @@ impl ClapWrapper {
             _library: None,
             entry: entry_ptr,
             plugin,
-            host,
+            _host: host,
             activated,
             name,
             sample_rate,
@@ -924,7 +924,7 @@ impl ClapWrapper {
             _library: None,
             entry: ptr::null(),
             plugin: ptr::null(),
-            host: Box::new(create_host_descriptor()),
+            _host: Box::new(create_host_descriptor()),
             activated: true,
             name: name.to_string(),
             sample_rate: Self::ENGINE_OWNED_COMMAND_FIXTURE_SAMPLE_RATE,
@@ -2282,9 +2282,8 @@ fn fill_input_scratch(audio: &mut AudioBusLayout, inputs: &[&[f32]], n_samp: usi
         .first()
         .map_or(0, |main_port| main_port.channel_count as usize);
     let channels = (inputs.len().min(2)).min(connected_channels);
-    for channel in 0..channels {
+    for (channel, source) in inputs.iter().enumerate().take(channels) {
         let destination = &mut audio.input_scratch[channel * MAX_BUFFER..][..n_samp];
-        let source = &inputs[channel];
         let len = source.len().min(n_samp);
         destination[..len].copy_from_slice(&source[..len]);
         destination[len..].fill(0.0);
@@ -3471,7 +3470,7 @@ mod tests {
             _library: None,
             entry: ptr::null(),
             plugin,
-            host: Box::new(create_host_descriptor()),
+            _host: Box::new(create_host_descriptor()),
             activated: true,
             name: "stub".to_string(),
             sample_rate: 48_000.0,
@@ -3630,7 +3629,7 @@ mod tests {
     /// exactly as the loader does before the plugin is created, so the
     /// plugin's own callbacks find it through `host_data`.
     fn pin_host_state(wrapper: &mut ClapWrapper) {
-        wrapper.host.host_data = (&*wrapper.host_state as *const HostCallbackState) as *mut c_void;
+        wrapper._host.host_data = (&*wrapper.host_state as *const HostCallbackState) as *mut c_void;
     }
 
     /// The issue's own repro: a plugin raises `request_callback` — twice, to
@@ -3650,12 +3649,12 @@ mod tests {
 
         // Through the descriptor, the only route a real plugin has.
         let request_callback = wrapper
-            .host
+            ._host
             .request_callback
             .expect("the host descriptor installs request_callback");
         unsafe {
-            request_callback(&*wrapper.host);
-            request_callback(&*wrapper.host);
+            request_callback(&*wrapper._host);
+            request_callback(&*wrapper._host);
         }
 
         wrapper.service_main_thread_callback();
@@ -3671,7 +3670,7 @@ mod tests {
         assert_eq!(MAIN_THREAD_CALLBACKS.load(Ordering::Relaxed), 1);
 
         // A fresh ask is recorded and serviced in its turn.
-        unsafe { request_callback(&*wrapper.host) };
+        unsafe { request_callback(&*wrapper._host) };
         wrapper.service_main_thread_callback();
         assert_eq!(MAIN_THREAD_CALLBACKS.load(Ordering::Relaxed), 2);
     }

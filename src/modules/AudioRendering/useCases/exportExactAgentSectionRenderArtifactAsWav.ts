@@ -1,6 +1,6 @@
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
-import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
+import { type RenderProjectSectionJobSnapshot } from '../events/audioRenderingAppActions';
 import { downloadAudioWav } from '../repositories/audioExport/downloadAudioWav';
 
 import { audioBufferToWav } from './audioBufferToWav';

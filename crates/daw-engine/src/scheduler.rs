@@ -17,12 +17,14 @@ use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use crate::plugin_slot::{
     CaptureInputBlock, MidiControlEvent, MidiNoteEvent, NativePlugin, TransportState,
 };
+#[cfg(test)]
+use crate::timeline::timeline_rt_diagnostics_channel;
 use crate::timeline::{
-    timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, BuiltinParamName,
-    ChainEntry, ClipPlacement, ClipPlayback, CompensationDevices, DeviceChain, DeviceParam,
-    DeviceParamEvent, DeviceParamQueue, DeviceParamTarget, RetiredTimelineObject, RouteTarget,
-    SendTap, TimelineBus, TimelineClip, TimelineGraph, TimelineRtDiagnosticsSnapshot,
-    TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
+    AutomationTarget, AutomationWrite, BuiltinParamName, ChainEntry, ClipPlacement, ClipPlayback,
+    CompensationDevices, DeviceChain, DeviceParam, DeviceParamEvent, DeviceParamQueue,
+    DeviceParamTarget, RetiredTimelineObject, RouteTarget, SendTap, TimelineBus, TimelineClip,
+    TimelineGraph, TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES,
+    MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use crate::transport_map::{LoopRegion, TransportMaps};
 use daw_dsp::bacteria::engine::BacteriaEngine;
@@ -1146,7 +1148,7 @@ impl GraphCommand {
 /// one nor free it (ADR 0020): it installs the instance into the effect
 /// table, or hands it back over the retirement channel, and nothing else.
 pub enum PluginCore {
-    Knead(KneadEngine),
+    Knead(Box<KneadEngine>),
     Fermenter(Box<FermenterBody>),
     GrandBoule(Box<GrandBouleBody>),
     Gluten(Box<GlutenBody>),
@@ -1171,7 +1173,7 @@ impl PluginCore {
     /// built-in against different clocks.
     pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Self {
         match plugin_type {
-            BuiltinEffectType::Knead => Self::Knead(KneadEngine::new(sample_rate)),
+            BuiltinEffectType::Knead => Self::Knead(Box::new(KneadEngine::new(sample_rate))),
             BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
             BuiltinEffectType::GrandBoule => Self::grand_boule_with_patch(sample_rate, &[]),
             BuiltinEffectType::Gluten => Self::gluten_with_patch(sample_rate, &[]),
@@ -3089,51 +3091,15 @@ impl BacteriaBody {
 /// alias another is answered here, where every other body answers it.
 const PROOF_PATCH_PRECEDENCE: &[&str] = &[];
 
-/// The Proof parameter name the graph owns rather than the chain, and which
-/// [`ProofBody::set_param`] therefore drops on both threads.
-///
-/// `bypass` is the device's bypass, and the device's bypass is
-/// [`GraphCommand::SetBypass`] for every body the engine hosts: the chain skips
-/// a bypassed device rather than handing it a block, and
-/// [`ActiveEffect::refresh_declared_latency`] reads that state to declare 0
-/// while it holds. Forwarding the name would put a second, invisible bypass
-/// inside a device the graph already believes it is running — the block would
-/// come back untouched while the graph went on declaring the chain's figure,
-/// so every route meeting the strip would wait for a delay the signal no longer
-/// takes.
-///
-/// `ab_bypass` is deliberately not here. It is the mastering panel's A/B
-/// compare, which `ProofChain::process` answers by returning the dry signal
-/// scaled by the loudness offset it has been tracking
-/// (`crates/daw-dsp/src/proof/chain.rs`). It is a chain control all the same,
-/// and a compare pressed while the session rolls natively is a gesture on the
-/// carrier that is sounding. Dropping it here would leave the panel's chip
-/// reading "A / dry" over the processed mix. The gain offset the compare is
-/// matched with is the chain's own: it opens at 0 dB and the chain re-derives
-/// it from its meters on every pass it processes, so this body gain-matches
-/// out of the same state the web twin does, whatever reads the meters
-/// afterwards.
-///
-/// The project has not persisted it since 11563e86b (2026-08-16) —
-/// `setProofParam` (`src/modules/Proof/useCases/proofParamBridge`) holds it out
-/// of the saved device row — but a row saved before that commit can still
-/// carry it. [`PROOF_RECORD_REFUSED`] is what refuses that name at the record
-/// door; this constant governs only the live arm.
-///
-/// The name is dropped on the control thread too, unlike
-/// [`BACTERIA_CONTROL_THREAD_ONLY`], because the reason is not which thread may
-/// run the arm: it is that the arm belongs to a carrier this body is not. A
-/// persisted record carrying it leaves the chain exactly where the graph's own
-/// bypass put it.
-const PROOF_GRAPH_OWNED: &[&str] = &["bypass"];
-
 /// The Proof parameter name a persisted patch record must not carry, refused
 /// only at the record door in [`ProofBody::load_patch`]. A live
 /// [`ProofBody::set_param`] still forwards it: the arm it engages there is a
-/// session gesture, not a saved value, and [`PROOF_GRAPH_OWNED`]'s doc is what
-/// explains why that arm is not dropped on the live path.
+/// session gesture, not a saved value.
 ///
-/// `ab_bypass` is the mastering panel's A/B compare. Before 11563e86b
+/// `ab_bypass` is the mastering panel's A/B compare, which `ProofChain::process`
+/// answers by returning the dry signal scaled by the loudness offset it has been
+/// tracking (`crates/daw-dsp/src/proof/chain.rs`); a compare pressed while the
+/// session rolls natively is a gesture on the carrier that is sounding. Before 11563e86b
 /// (2026-08-16) the panel persisted it into the device row like any other
 /// control; that commit stopped the persistence, but a project saved before it
 /// can still carry `ab_bypass: 1`. Feeding that value through `load_patch`
@@ -3219,9 +3185,9 @@ fn proof_chain_order_slot(name: &str) -> Option<usize> {
 ///
 /// ## Names the graph owns
 ///
-/// [`PROOF_GRAPH_OWNED`] — `bypass` — is dropped here rather than forwarded, for
-/// the reason that constant carries: the device's bypass is
-/// [`GraphCommand::SetBypass`]. `ab_bypass` is not in it, and reaches the chain
+/// `bypass` is dropped here rather than forwarded (the parameter registry
+/// admits it as graph-owned), because the device's bypass is
+/// [`GraphCommand::SetBypass`]. `ab_bypass` is not dropped, and reaches the chain
 /// like any other control, so the panel's A/B compare is audible on a natively
 /// carried strip.
 ///
@@ -3449,7 +3415,7 @@ const DUTCH_OVEN_PATCH_PRECEDENCE: &[&str] = &[];
 /// never as a parameter — the `dutch-oven` descriptor
 /// (`src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts`)
 /// declares no `bypass` row, and `ProofChamberInstance::set_param` has no arm
-/// for one — so there is no [`PROOF_GRAPH_OWNED`] analogue to withhold. Nor is
+/// for one — so there is no graph-owned name to withhold. Nor is
 /// there a record-door refusal like [`PROOF_RECORD_REFUSED`]: no wire name
 /// engages a session-only audition here, and the one internal name the record
 /// carries beyond the descriptor's automatable rows,
@@ -5029,7 +4995,7 @@ impl IdSlotIndex {
 
     #[inline]
     fn bit_at(id: usize, depth: u32) -> usize {
-        ((id >> (usize::BITS - 1 - depth)) & 1) as usize
+        (id >> (usize::BITS - 1 - depth)) & 1
     }
 
     #[inline]
@@ -6282,6 +6248,7 @@ impl AudioScheduler {
         Self::with_midi_rt_diagnostics(command_rx, retired_tx, sample_rate, diagnostics_tx)
     }
 
+    #[cfg(test)]
     pub(crate) fn with_midi_rt_diagnostics(
         command_rx: Consumer<GraphCommand>,
         retired_tx: Producer<RetiredGraphObjects>,
@@ -6780,7 +6747,9 @@ impl AudioScheduler {
                     dry_delay,
                 } => match self.effect_mut(effect_id) {
                     Some(effect) => effect.aim_dry_line(latency_frames, dry_delay).map(|delay| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: delay,
+                        })
                     }),
                     None => {
                         // Refused like every other command naming an effect the
@@ -6788,7 +6757,9 @@ impl AudioScheduler {
                         // the retirement channel rather than being freed here.
                         self.timeline.record_unknown_target();
                         dry_delay.map(|delay| {
-                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                                _delay: delay,
+                            })
                         })
                     }
                 },
@@ -6980,7 +6951,7 @@ impl AudioScheduler {
                     None
                 }
                 GraphCommand::AddTrack(track) => self.timeline.add_track(track).map(|rejected| {
-                    RetiredGraphObjects::timeline(RetiredTimelineObject::Track(rejected))
+                    RetiredGraphObjects::timeline(RetiredTimelineObject::Track { _track: rejected })
                 }),
                 GraphCommand::RemoveTrack(id) => {
                     let placed_on = EffectPlacement::Track(id);
@@ -6998,7 +6969,9 @@ impl AudioScheduler {
                                 }
                             }
                         }
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Track(track))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Track {
+                            _track: track,
+                        })
                     })
                 }
                 GraphCommand::SetTrackOutput(id, target) => {
@@ -7034,7 +7007,9 @@ impl AudioScheduler {
                     };
                     self.spare_input_hold(entry.effect_id, spliced, hold)
                         .map(|delay| {
-                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                                _delay: delay,
+                            })
                         })
                 }
                 GraphCommand::RemoveTrackDevice {
@@ -7080,7 +7055,9 @@ impl AudioScheduler {
                     };
                     self.spare_input_hold(entry.effect_id, spliced, hold)
                         .map(|delay| {
-                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                                _delay: delay,
+                            })
                         })
                 }
                 GraphCommand::RemoveBusDevice { bus_id, effect_id } => {
@@ -7107,11 +7084,15 @@ impl AudioScheduler {
                     .timeline
                     .add_send(track_id, bus_id, tap, level, delay)
                     .map(|refused| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(refused))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: refused,
+                        })
                     }),
                 GraphCommand::RemoveSend { track_id, bus_id } => {
                     self.timeline.remove_send(track_id, bus_id).map(|removed| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(removed))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: removed,
+                        })
                     })
                 }
                 GraphCommand::AddBusSend {
@@ -7124,7 +7105,9 @@ impl AudioScheduler {
                     .timeline
                     .add_bus_send(source_bus_id, bus_id, tap, level, delay)
                     .map(|refused| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(refused))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: refused,
+                        })
                     }),
                 GraphCommand::RemoveBusSend {
                     source_bus_id,
@@ -7133,10 +7116,12 @@ impl AudioScheduler {
                     .timeline
                     .remove_bus_send(source_bus_id, bus_id)
                     .map(|removed| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(removed))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay {
+                            _delay: removed,
+                        })
                     }),
                 GraphCommand::AddBus(bus) => self.timeline.add_bus(bus).map(|rejected| {
-                    RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(rejected))
+                    RetiredGraphObjects::timeline(RetiredTimelineObject::Bus { _bus: rejected })
                 }),
                 GraphCommand::RemoveBus(id) => {
                     let placed_on = EffectPlacement::Bus(id);
@@ -7151,7 +7136,7 @@ impl AudioScheduler {
                                 }
                             }
                         }
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(bus))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Bus { _bus: bus })
                     })
                 }
                 GraphCommand::SetBusOutput(id, target) => {
@@ -7168,13 +7153,16 @@ impl AudioScheduler {
                 }
                 GraphCommand::AddClip(track_id, clip) => {
                     self.timeline.add_clip(track_id, clip).map(|rejected| {
-                        RetiredGraphObjects::timeline(RetiredTimelineObject::Clip(rejected))
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Clip {
+                            _clip: rejected,
+                        })
                     })
                 }
-                GraphCommand::RemoveClip(track_id, clip_id) => self
-                    .timeline
-                    .remove_clip(track_id, clip_id)
-                    .map(|clip| RetiredGraphObjects::timeline(RetiredTimelineObject::Clip(clip))),
+                GraphCommand::RemoveClip(track_id, clip_id) => {
+                    self.timeline.remove_clip(track_id, clip_id).map(|clip| {
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Clip { _clip: clip })
+                    })
+                }
                 GraphCommand::SetClipPlacement(track_id, clip_id, placement) => {
                     self.timeline
                         .set_clip_placement(track_id, clip_id, placement);
@@ -9107,8 +9095,8 @@ mod tests {
         for ordinal in (0..64).step_by(2) {
             assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
         }
-        for ordinal in 64..128 {
-            assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
+        for (ordinal, id) in ids.iter().copied().enumerate().skip(64).take(64) {
+            assert_eq!(index.delete(id), Some(ordinal + 1_000));
         }
         assert!(
             index.last_delete_steps <= 2 * usize::BITS as usize,
@@ -9132,8 +9120,8 @@ mod tests {
         // Refill a fully removed shared-prefix branch. This would grow the node
         // store if deletion left dead paths behind; it also makes every
         // surviving mapping contend with reused radix nodes.
-        for ordinal in 64..128 {
-            assert!(index.insert(ids[ordinal], ordinal + 1_000));
+        for (ordinal, id) in ids.iter().copied().enumerate().skip(64).take(64) {
+            assert!(index.insert(id, ordinal + 1_000));
         }
         assert_eq!(
             index.nodes.len(),
@@ -11619,7 +11607,7 @@ mod tests {
                 .expect("the refused splice must hand its line off");
             assert!(matches!(
                 &retired.timeline_object,
-                Some(RetiredTimelineObject::Delay(_))
+                Some(RetiredTimelineObject::Delay { _delay: _ })
             ));
         }
 
@@ -11677,7 +11665,7 @@ mod tests {
                     .pop()
                     .expect("the refused send must hand its line off")
                     .timeline_object,
-                Some(RetiredTimelineObject::Delay(_))
+                Some(RetiredTimelineObject::Delay { _delay: _ })
             ));
 
             command_tx
@@ -11695,7 +11683,7 @@ mod tests {
                     .pop()
                     .expect("the removed send must hand its line off")
                     .timeline_object,
-                Some(RetiredTimelineObject::Delay(_))
+                Some(RetiredTimelineObject::Delay { _delay: _ })
             ));
         }
 
@@ -12301,7 +12289,7 @@ mod tests {
             const FRAMES: usize = 512;
             let frame_total = material.len();
             assert!(
-                frame_total % FRAMES == 0,
+                frame_total.is_multiple_of(FRAMES),
                 "the fixture material must be a whole number of callbacks"
             );
             let callbacks = frame_total / FRAMES;
@@ -13123,9 +13111,7 @@ mod timeline_tests {
         }
     }
 
-    fn parameter_recording_plugin(
-        accepts: bool,
-    ) -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<(u32, f64)>>>) {
+    fn parameter_recording_plugin(accepts: bool) -> (Box<dyn NativePlugin>, QueuedParameters) {
         let queued = Arc::new(Mutex::new(Vec::new()));
         (
             Box::new(ParameterRecordingPlugin {
@@ -13225,6 +13211,9 @@ mod timeline_tests {
     /// allocation the guard exists to catch.
     const RECORDED_NOTE_CAPACITY: usize = 64;
 
+    /// The `(parameter id, value)` writes a recording plugin has accepted.
+    type QueuedParameters = Arc<Mutex<Vec<(u32, f64)>>>;
+
     /// One note as an instrument received it: the absolute frame it landed
     /// on, which note it named, and whether it pressed or released.
     type RecordedNote = (u64, u8, bool);
@@ -13249,7 +13238,7 @@ mod timeline_tests {
     }
 
     impl FrameRecordingInstrument {
-        fn new() -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<AddressedNote>>>) {
+        fn with_log() -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<AddressedNote>>>) {
             let received = Arc::new(Mutex::new(Vec::with_capacity(RECORDED_NOTE_CAPACITY)));
             let instrument = Box::new(Self {
                 processed: 0,
@@ -14547,7 +14536,7 @@ mod timeline_tests {
         // Every sample buffer the track and its clips own has to leave with
         // it: dropping them here is exactly the free ADR 0020 forbids.
         match &retired.timeline_object {
-            Some(RetiredTimelineObject::Track(track)) => {
+            Some(RetiredTimelineObject::Track { _track: track }) => {
                 assert_eq!(track.id(), 1);
                 assert_eq!(track.clip_ids().collect::<Vec<_>>(), vec![9, 10]);
             }
@@ -14566,12 +14555,12 @@ mod timeline_tests {
         let clip = harness.retired_rx.pop().expect("the removed clip");
         assert!(matches!(
             clip.timeline_object,
-            Some(RetiredTimelineObject::Clip(_))
+            Some(RetiredTimelineObject::Clip { _clip: _ })
         ));
         let bus = harness.retired_rx.pop().expect("the removed bus");
         assert!(matches!(
             bus.timeline_object,
-            Some(RetiredTimelineObject::Bus(_))
+            Some(RetiredTimelineObject::Bus { _bus: _ })
         ));
     }
 
@@ -14598,7 +14587,7 @@ mod timeline_tests {
                 .pop()
                 .expect("the rejected track")
                 .timeline_object,
-            Some(RetiredTimelineObject::Track(_))
+            Some(RetiredTimelineObject::Track { _track: _ })
         ));
     }
 
@@ -14629,7 +14618,7 @@ mod timeline_tests {
                 .pop()
                 .expect("the refused track")
                 .timeline_object,
-            Some(RetiredTimelineObject::Track(_))
+            Some(RetiredTimelineObject::Track { _track: _ })
         ));
     }
 
@@ -18386,7 +18375,7 @@ mod timeline_tests {
         assert!(
             matches!(
                 &retired.timeline_object,
-                Some(RetiredTimelineObject::Delay(_))
+                Some(RetiredTimelineObject::Delay { _delay: _ })
             ),
             "the refused splice's own line is what leaves"
         );
@@ -19040,7 +19029,7 @@ mod timeline_tests {
         const CLIP_FRAMES: usize = 8_192;
 
         track_with_constant_clip(harness, track_id, track_id + 100, 1.0, CLIP_FRAMES);
-        let (instrument, received) = FrameRecordingInstrument::new();
+        let (instrument, received) = FrameRecordingInstrument::with_log();
         insert_track_generator(harness, track_id, effect_id, instrument, 0);
         received
     }
@@ -19221,7 +19210,7 @@ mod timeline_tests {
     fn an_effect_without_a_store_refuses_scheduled_notes() {
         let mut harness = Harness::new(32);
         track_with_constant_clip(&mut harness, 1, 101, 1.0, 1_024);
-        let (instrument, received) = FrameRecordingInstrument::new();
+        let (instrument, received) = FrameRecordingInstrument::with_log();
         harness.send(GraphCommand::AddPlugin(7, instrument, None));
         harness.send(insert_track_device(1, effect(7), 0));
         harness.playing();
@@ -19906,6 +19895,8 @@ mod timeline_tests {
         audio_only_calls: Arc<AtomicUsize>,
     }
 
+    type SharedTransports = Arc<Mutex<Vec<RecordedTransport>>>;
+
     /// The transport facts the assertion reads, at a precision that compares.
     #[derive(Clone, Copy, PartialEq, Debug)]
     struct RecordedTransport {
@@ -19971,11 +19962,7 @@ mod timeline_tests {
         const CHAIN_DEVICE: usize = 8;
         const MASTER_DEVICE: usize = 9;
 
-        fn recording_plugin() -> (
-            Box<dyn NativePlugin>,
-            Arc<Mutex<Vec<RecordedTransport>>>,
-            Arc<AtomicUsize>,
-        ) {
+        fn recording_plugin() -> (Box<dyn NativePlugin>, SharedTransports, Arc<AtomicUsize>) {
             let transports = Arc::new(Mutex::new(Vec::new()));
             let audio_only_calls = Arc::new(AtomicUsize::new(0));
             let plugin = Box::new(TransportRecordingPlugin {
@@ -20061,7 +20048,7 @@ mod timeline_tests {
         const FILL_FROM: u64 = LOOP_END - crate::midi_fx::MIDI_EVENT_BUFFER_CAPACITY as u64;
 
         let mut harness = Harness::new(32);
-        let (instrument, received) = FrameRecordingInstrument::new();
+        let (instrument, received) = FrameRecordingInstrument::with_log();
         harness.send(GraphCommand::AddPlugin(
             7,
             instrument,
@@ -20470,7 +20457,7 @@ mod timeline_tests {
         const NOTE_ON: u64 = 8;
 
         let mut harness = Harness::new(32);
-        let (instrument, received) = FrameRecordingInstrument::new();
+        let (instrument, received) = FrameRecordingInstrument::with_log();
         harness.send(GraphCommand::AddPlugin(
             7,
             instrument,
@@ -23255,17 +23242,14 @@ mod timeline_tests {
     /// Render one pedal pressed alone, with the two single-pedal references to
     /// judge it against.
     ///
+    /// One rendered `(left, right)` pair.
+    type StereoRender = (Vec<f32>, Vec<f32>);
+
     /// Returns the hosted pair, the reference pair for `controller`'s own pedal,
     /// and the reference pair for the other switch pedal. Both references run
     /// the same programme and engage exactly one pedal, so the pair of them
     /// separates CC66 from CC67 rather than a pedal from no pedal.
-    fn render_one_grand_boule_pedal(
-        controller: u8,
-    ) -> (
-        (Vec<f32>, Vec<f32>),
-        (Vec<f32>, Vec<f32>),
-        (Vec<f32>, Vec<f32>),
-    ) {
+    fn render_one_grand_boule_pedal(controller: u8) -> (StereoRender, StereoRender, StereoRender) {
         const CALLBACK: usize = SINGLE_PEDAL_CALLBACK_FRAMES;
         const CALLBACKS: usize = 16;
         const RUNS: usize = CALLBACK * CALLBACKS / GRAND_BOULE_RUN_FRAMES;

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { checkProjectLicense } from './checkProjectLicense.ts';
 import {
+    ADAPTED_MIT_NOTICE_PATH,
     checkReleaseInventory,
     fileSha256,
     pathAddressedSha256,
@@ -59,6 +60,7 @@ const RESTAMPED_SNAPSHOT_PATHS = new Set<string>(
 );
 const RESTAMPED_DIGEST_PATHS = new Set<string>([
     ...DEPENDENCY_LICENSE_ARTIFACT_PATHS,
+    ADAPTED_MIT_NOTICE_PATH,
     ...Object.keys(SNAPSHOT_DIGEST_SURFACES),
 ]);
 

@@ -90,8 +90,7 @@ pub fn detect_pitch(samples: &[f32], sample_rate: f32) -> PitchResult {
 
     // Calculate window positions (evenly spaced).
     let num_windows = ((analysis_len - ANALYSIS_FRAME_SIZE) / (ANALYSIS_FRAME_SIZE / 2))
-        .min(MAX_ANALYSIS_WINDOWS)
-        .max(1);
+        .clamp(1, MAX_ANALYSIS_WINDOWS);
 
     let step = if num_windows > 1 {
         (analysis_len - ANALYSIS_FRAME_SIZE) / (num_windows - 1)
@@ -110,7 +109,7 @@ pub fn detect_pitch(samples: &[f32], sample_rate: f32) -> PitchResult {
         let result: YinResult = yin_frame(frame, &yin_config, &mut work_d, &mut work_cmnd);
 
         if let Some(freq) = result.f0_hz {
-            if freq >= MIN_PITCH_HZ && freq <= MAX_PITCH_HZ {
+            if (MIN_PITCH_HZ..=MAX_PITCH_HZ).contains(&freq) {
                 detected_freqs.push(freq);
                 total_periodicity += result.periodicity;
             }

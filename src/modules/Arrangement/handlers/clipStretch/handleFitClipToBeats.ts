@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
-import { type ClipStretchStateSnapshot } from '#/utils/handlerContract';
 
+import { type ClipStretchStateSnapshot } from '../../events/arrangementClipAppActions';
 import { fitClipToBeats } from '../../useCases/clipStretch/fitClipToBeats';
 import { clampRatio } from '../../useCases/clipStretch/helpers';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';

@@ -1,8 +1,8 @@
-/// Smart Loop Points — automatic zero-crossing detection and crossfade
-/// length calculation for click-free loops.
-///
-/// Scans the waveform to find optimal loop start/end positions that land
-/// on zero crossings with similar waveform shape, minimizing click artifacts.
+//! Smart Loop Points — automatic zero-crossing detection and crossfade
+//! length calculation for click-free loops.
+//!
+//! Scans the waveform to find optimal loop start/end positions that land
+//! on zero crossings with similar waveform shape, minimizing click artifacts.
 
 /// Result of smart loop point detection.
 #[derive(Debug, Clone)]

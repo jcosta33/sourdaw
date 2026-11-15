@@ -102,14 +102,11 @@ impl MpmDetector {
         let max_tau = self.max_tau.min(len / 2);
         let r0 = autocorr[0]; // = sum of x² (total energy)
 
-        for tau in 0..=max_tau {
-            if tau >= self.nsdf.len() {
-                break;
-            }
+        for (tau, slot) in self.nsdf.iter_mut().enumerate().take(max_tau + 1) {
             // More accurate: m₀(τ) = Σ(x_j² + x_{j+τ}²) for j=0..W-τ
             // Simplified: use 2*r(0) decaying linearly as the window empties
             let m0_approx = 2.0 * r0 * (1.0 - tau as f32 / len as f32).max(0.01);
-            self.nsdf[tau] = if m0_approx > 1e-10 {
+            *slot = if m0_approx > 1e-10 {
                 2.0 * autocorr[tau] / m0_approx
             } else {
                 0.0
@@ -190,7 +187,7 @@ impl MpmDetector {
             self.nsdf[k]
         };
         let y0 = self.nsdf[k];
-        let y_p = if k + 1 <= max_tau && k + 1 < self.nsdf.len() {
+        let y_p = if k < max_tau && k + 1 < self.nsdf.len() {
             self.nsdf[k + 1]
         } else {
             self.nsdf[k]

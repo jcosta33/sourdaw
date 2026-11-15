@@ -18,7 +18,7 @@ import { projectReadonlyAnswerMeasurementToolSchema } from './projectReadonlyAns
  * never invalidates a decision that is waiting.
  *
  * `brief.compile` follows the same rule: it is in the contract, and offered only when the caller
- * says the request may write the brief (a hosted chat request that is not a decision resume).
+ * says the request may write the brief (a hosted or local chat request that is not a decision resume).
  */
 export function getPlanningProviderToolSchemas(
     profile?: PlanningProfile,

@@ -38,15 +38,7 @@ const FEEDBACK_SCALE: f32 = 5.0e-5;
 /// Piano strings never exceed ~3 mm at the strike point. Clamping here
 /// prevents numerical runaway even if the modal bank briefly overshoots.
 const MAX_STRING_DISPLACEMENT: f32 = 0.003;
-const STEAL_FADE_SECONDS: f32 = 0.001;
 const STEAL_SILENCE_GAIN: f32 = 1.0e-5;
-
-/// Time constant of the rectified-output follower that drives progressive
-/// simplification. Long compared with the period of the lowest piano
-/// fundamental (A0 ≈ 27.5 Hz, 36 ms) so the follower reads the note's decay
-/// rather than its waveform, and short enough that a voice which has actually
-/// quietened is downgraded promptly. One multiply-add per sample.
-const DECAY_FOLLOWER_SECONDS: f32 = 0.050;
 
 /// Coarse voice lifecycle state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -137,9 +129,6 @@ pub struct PianoVoice {
     /// are relative to it, which keeps them a fraction of the note's own
     /// loudness exactly as they were a fraction of the initial `amplitude`.
     decay_peak: f32,
-    /// One-pole coefficient for `decay_envelope`, derived once from the sample
-    /// rate.
-    decay_follower_coefficient: f32,
     sample_rate: f32,
     configured_quality: VoiceQuality,
     quality: VoiceQuality,
@@ -182,8 +171,6 @@ impl PianoVoice {
             release_coefficient: 1.0,
             decay_envelope: 0.0,
             decay_peak: 0.0,
-            decay_follower_coefficient: 1.0
-                - (-1.0 / (DECAY_FOLLOWER_SECONDS * sample_rate.max(1.0))).exp(),
             sample_rate,
             configured_quality: VoiceQuality::Standard,
             quality: VoiceQuality::Standard,
@@ -202,32 +189,8 @@ impl PianoVoice {
         self.quality = quality;
     }
 
-    /// Record a new configured tier without touching the live one. Sounding
-    /// voices keep the model they were struck with — swapping the physics
-    /// mid-note discontinues the string state audibly — and pick up the new
-    /// tier on their next strike, when `note_on` copies configured to live.
-    pub fn set_configured_quality(&mut self, quality: VoiceQuality) {
-        self.configured_quality = quality;
-    }
-
-    pub fn stage(&self) -> VoiceStage {
-        self.stage
-    }
-
-    pub fn midi_note(&self) -> u8 {
-        self.midi_note
-    }
-
     pub fn age_samples(&self) -> u64 {
         self.age_samples
-    }
-
-    pub fn is_idle(&self) -> bool {
-        self.stage == VoiceStage::Idle
-    }
-
-    pub fn amplitude(&self) -> f32 {
-        self.amplitude
     }
 
     /// Attempt to arm the hybrid sampled-attack playhead for this voice.
@@ -236,55 +199,6 @@ impl PianoVoice {
         self.attack_key = key;
         self.attack_position = 0;
         self.attack_length = clip_length.min(u32::MAX as usize) as u32;
-    }
-
-    /// Current sampled-attack playhead state: (key, position, length).
-    /// Returns `None` if no clip is loaded / playback has finished.
-    pub fn attack_playhead(&self) -> Option<(u32, u32, u32)> {
-        if self.attack_length == 0 || self.attack_position >= self.attack_length {
-            return None;
-        }
-        Some((self.attack_key, self.attack_position, self.attack_length))
-    }
-
-    /// Advance the attack playhead by one sample. Called by the engine
-    /// after it has read the sample for the current frame.
-    #[inline]
-    pub fn advance_attack(&mut self) {
-        if self.attack_length > 0 && self.attack_position < self.attack_length {
-            self.attack_position += 1;
-        }
-    }
-
-    /// Fade this displaced voice to silence over one millisecond.
-    ///
-    /// The engine moves the voice into a preallocated tail slot before calling
-    /// this method, so the replacement can start immediately without resetting
-    /// the outgoing resonators or doing note initialization in the sample loop.
-    pub fn begin_steal(&mut self) {
-        if self.stage == VoiceStage::Idle {
-            return;
-        }
-        self.held = false;
-        self.sostenuto_captured = false;
-        self.stage = VoiceStage::Stealing;
-        let fade_samples = (STEAL_FADE_SECONDS * self.sample_rate).round().max(1.0);
-        self.release_coefficient = STEAL_SILENCE_GAIN.powf(1.0 / fade_samples);
-    }
-
-    /// Voice-stealing priority. Higher tuples are better
-    /// victims. The first field ranks lifecycle and key ownership; the second
-    /// chooses the oldest voice within that class without converting the
-    /// sample clock to an imprecise loudness proxy.
-    pub fn steal_priority(&self) -> (u8, u64) {
-        let class = match self.stage {
-            VoiceStage::Idle => 4,
-            VoiceStage::Releasing => 3,
-            VoiceStage::Active if !self.held => 2,
-            VoiceStage::Active => 1,
-            VoiceStage::Stealing => 0,
-        };
-        (class, self.age_samples)
     }
 
     /// Assign this voice to a new note.
@@ -405,49 +319,6 @@ impl PianoVoice {
         self.arm_attack(key, attack_length);
     }
 
-    /// Begin the release phase. The voice keeps ringing but its amplitude
-    /// decays exponentially toward zero.
-    pub fn note_off(&mut self) {
-        if self.stage == VoiceStage::Idle {
-            return;
-        }
-        self.release_key();
-        self.stage = VoiceStage::Releasing;
-        // ~300 ms release tail — realistic felt-damper mute time for a grand
-        // piano (150 ms was too fast, giving a harpsichord-like cut-off).
-        let release_seconds = 0.30_f32;
-        self.release_coefficient = (-1.0 / (release_seconds * self.sample_rate)).exp();
-    }
-
-    /// End physical-key and per-note-expression ownership without damping the
-    /// sounding voice. Pedal-held notes use this transition until the owning
-    /// pedal later starts their acoustic release.
-    pub fn release_key(&mut self) {
-        if self.stage == VoiceStage::Idle {
-            return;
-        }
-        self.held = false;
-    }
-
-    /// Latch this exact sounding voice on the sostenuto rising edge.
-    pub fn capture_sostenuto(&mut self) {
-        if self.stage != VoiceStage::Idle && self.held {
-            self.sostenuto_captured = true;
-        }
-    }
-
-    /// Clear this voice's sostenuto ownership and report whether it had been
-    /// captured, so the engine can start the release when no other pedal owns it.
-    pub fn release_sostenuto_capture(&mut self) -> bool {
-        let was_captured = self.sostenuto_captured;
-        self.sostenuto_captured = false;
-        was_captured
-    }
-
-    pub fn is_sostenuto_captured(&self) -> bool {
-        self.sostenuto_captured
-    }
-
     /// Force the voice back to idle immediately.
     pub fn kill(&mut self) {
         self.stage = VoiceStage::Idle;
@@ -468,37 +339,6 @@ impl PianoVoice {
         self.duplex.reset();
     }
 
-    /// Update the extra damping applied uniformly to all strings (used by
-    /// damper and una-corda pedal handling). Takes effect on the next sample.
-    pub fn set_extra_damping(&mut self, extra_damping_hz: f32) {
-        if (extra_damping_hz - self.extra_damping_hz).abs() < 1.0e-3 {
-            return;
-        }
-        self.extra_damping_hz = extra_damping_hz;
-        self.retune_strings();
-    }
-
-    /// This voice's per-note expression address (audit MD-2).
-    pub fn channel(&self) -> u8 {
-        self.channel
-    }
-
-    /// True while the note is held — a ringing release tail is not.
-    pub fn is_held(&self) -> bool {
-        self.held
-    }
-
-    /// Current per-note bend as a frequency ratio; 1.0 is neutral.
-    pub fn bend_ratio(&self) -> f32 {
-        self.expr_bend_ratio
-    }
-
-    /// Set the per-note pitch bend in semitones. Takes effect on the
-    /// next block via `apply_pending_bend`.
-    pub fn set_expression_bend(&mut self, bend_semitones: f32) {
-        self.expr_bend_ratio = (2.0_f32).powf(bend_semitones.clamp(-96.0, 96.0) / 12.0);
-    }
-
     /// Retune the ringing strings to the current fundamental x bend.
     ///
     /// `reset_decay` rewrites c1/c2 only and never touches the biquad
@@ -514,23 +354,6 @@ impl PianoVoice {
             self.extra_damping_hz,
         );
         self.expr_bend_tuned = self.expr_bend_ratio;
-    }
-
-    /// Block-rate hook: retune only when the bend moved since the last
-    /// retune, so an unbent voice costs one comparison.
-    ///
-    /// Measured cost when it does run: ~3.2 us per voice (3 unisons x 2
-    /// polarizations), i.e. ~3.8% of a 128-frame block at 48 kHz with all
-    /// 32 voices bending — see
-    /// `coupled_strings::tests::measure_block_rate_retune_cost`.
-    pub fn apply_pending_bend(&mut self) {
-        if self.stage == VoiceStage::Idle {
-            return;
-        }
-        if (self.expr_bend_ratio - self.expr_bend_tuned).abs() < 1.0e-6 {
-            return;
-        }
-        self.retune_strings();
     }
 
     /// Render one output sample from this voice.

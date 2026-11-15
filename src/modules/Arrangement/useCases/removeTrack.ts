@@ -10,10 +10,10 @@ import { removeMidiClipData } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes, removeSidechainRoute } from '#/modules/Routing/useCases';
 import { runAllEffects } from '#/utils/runEffects';
 
+import { getHeldClips } from '../models/TrackAlternativeClips';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
-import { collectTrackClipIds } from '../services/collectTrackClipIds';
 import { reconcileRoutingAfterRemoval } from '../services/reconcileRoutingAfterRemoval';
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
@@ -51,7 +51,10 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
             const removedTrack = track;
             const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
 
-            const clipIds = collectTrackClipIds(track);
+            // The clips the track holds now. The active alternative's stored
+            // copy is stale between switches and can still name a clip since
+            // moved to another track, whose data must survive this removal.
+            const clipIds = [...new Set(getHeldClips(track).map((clip) => clip.id))];
 
             // FX-6: dropping the row is not enough. Any surviving track that
             // routed its output here, or held a send to it, would keep a

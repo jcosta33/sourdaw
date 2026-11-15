@@ -78,23 +78,6 @@ fn relative_delta(actual: f64, expected: f64) -> f64 {
     (actual - expected).abs() / expected.abs()
 }
 
-pub fn matches_contract(samples: &[f32], expected: &Contract) -> bool {
-    let actual = measure(samples);
-    actual.peak.is_finite()
-        && actual.rms.is_finite()
-        && actual.peak > 0.0
-        && actual.rms > 0.0
-        && relative_delta(actual.peak, expected.peak) <= SHAPE_RELATIVE_TOLERANCE
-        && relative_delta(actual.rms, expected.rms) <= SHAPE_RELATIVE_TOLERANCE
-        && actual
-            .projections
-            .iter()
-            .zip(expected.projections)
-            .all(|(actual, expected)| {
-                actual.is_finite() && (*actual - expected).abs() <= PROJECTION_ABSOLUTE_TOLERANCE
-            })
-}
-
 pub fn assert_matches_contract(samples: &[f32], expected: &Contract, label: &str) {
     let actual = measure(samples);
     assert!(

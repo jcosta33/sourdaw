@@ -158,7 +158,7 @@ impl SmoothedParam {
     pub fn set_target(&mut self, target: f32) {
         self.target = target;
     }
-    pub fn next(&mut self) -> f32 {
+    pub fn next_value(&mut self) -> f32 {
         self.current = self.target + self.coeff * (self.current - self.target);
         self.current
     }

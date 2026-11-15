@@ -1713,11 +1713,12 @@ fn state_with_editor(editor: &Arc<FakeEditor>) -> Arc<FakeState> {
     state
 }
 
+/// The `(width, height)` sizes a recording window was told, in order.
+type WindowSizes = Arc<Mutex<Vec<(u32, u32)>>>;
+
 /// The host's native-window resizer, recording every size it was told into the
 /// editor's own call log so the order of the handshake is observable.
-fn recording_window(
-    editor: &Arc<FakeEditor>,
-) -> (EditorWindowResizer, Arc<Mutex<Vec<(u32, u32)>>>) {
+fn recording_window(editor: &Arc<FakeEditor>) -> (EditorWindowResizer, WindowSizes) {
     let sizes = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&sizes);
     let editor = Arc::clone(editor);

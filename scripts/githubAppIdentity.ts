@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { fail, TRUSTED_GH_PATH_ENV, TRUSTED_GIT_PATH_ENV } from './prContract.ts';
+import { assertRunsInLiveIsolatedGitDirectory, withGhChildLocation } from './tokenBearingChildPlacement.ts';
 
 export const AUTHOR_BOT_NODE_ID = 'BOT_kgDOEv71mA';
 export const REVIEWER_BOT_NODE_ID = 'BOT_kgDOEv74EA';
@@ -772,22 +773,6 @@ function isTokenBearingGitChild(args: readonly string[], env: NodeJS.ProcessEnv)
 }
 
 /**
- * A credential reaches git only through a helper, and a lane can write the config and attributes of
- * every lane and of the primary checkout. A child that installs a helper therefore must name its git
- * directory with `--git-dir`: `withIsolatedGitTransport` points it at a directory whose config only
- * the script writes, so no lane-chosen transport, remote helper, URL rewrite or `http.*` setting
- * applies beside the token.
- */
-function assertCredentialHelperChildIsIsolated(args: readonly string[]): void {
-    if (!installsCredentialHelper(args)) {
-        return;
-    }
-    if (!gitGlobalOptions(args).some((option) => option.startsWith('--git-dir='))) {
-        throw new Error('refusing a token-bearing git child outside an isolated git directory');
-    }
-}
-
-/**
  * Config-defined hooks (`hook.<name>.event` with `hook.<name>.command`) run whatever
  * `core.hooksPath` says, and `<name>` is the lane's choice, so no fixed-name override disarms them.
  * A token-bearing git child therefore refuses to start while the config it reads defines any
@@ -831,7 +816,9 @@ function assertTokenBearingGitChildIsHookFree(
     if (basename(childCommand) !== 'git' || !isTokenBearingGitChild(args, env)) {
         return;
     }
-    assertCredentialHelperChildIsIsolated(args);
+    if (installsCredentialHelper(args)) {
+        assertRunsInLiveIsolatedGitDirectory(gitGlobalOptions(args), env);
+    }
     assertNoConfigDefinedHooks(childCommand, args, cwd, env);
 }
 
@@ -853,15 +840,17 @@ export function spawnCaptureBytes(command: string, args: string[], options: Capt
     const childCommand = trustedChildExecutable(command, options.env ?? process.env);
     const cwd = options.cwd ?? process.cwd();
     assertTokenBearingGitChildIsHookFree(childCommand, args, cwd, options.env ?? process.env);
-    const result = spawnSync(childCommand, args, {
-        cwd,
-        env: childEnvironment(childCommand, options.env),
-        // Ordinary commands retain 64 MiB; full review diffs explicitly request bounded headroom.
-        // Overflow still throws through result.error rather than returning a partial capture.
-        maxBuffer: maxBufferBytes,
-        shell: false,
-        input: options.input,
-    });
+    const result = withGhChildLocation(childCommand, args, cwd, options.env, (location) =>
+        spawnSync(childCommand, args, {
+            cwd: location.cwd,
+            env: childEnvironment(childCommand, location.env),
+            // Ordinary commands retain 64 MiB; full review diffs explicitly request bounded headroom.
+            // Overflow still throws through result.error rather than returning a partial capture.
+            maxBuffer: maxBufferBytes,
+            shell: false,
+            input: options.input,
+        })
+    );
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -890,14 +879,16 @@ export function spawnRun(
     const childCommand = trustedChildExecutable(command, options.env ?? process.env);
     const cwd = options.cwd ?? process.cwd();
     assertTokenBearingGitChildIsHookFree(childCommand, args, cwd, options.env ?? process.env);
-    const result = spawnSync(childCommand, args, {
-        cwd,
-        env: childEnvironment(childCommand, options.env),
-        // Captured stderr keeps a failing child's own words in the thrown error (#4344).
-        stdio: ['inherit', 'inherit', 'pipe'],
-        maxBuffer: 64 * 1024 * 1024,
-        shell: false,
-    });
+    const result = withGhChildLocation(childCommand, args, cwd, options.env, (location) =>
+        spawnSync(childCommand, args, {
+            cwd: location.cwd,
+            env: childEnvironment(childCommand, location.env),
+            // Captured stderr keeps a failing child's own words in the thrown error (#4344).
+            stdio: ['inherit', 'inherit', 'pipe'],
+            maxBuffer: 64 * 1024 * 1024,
+            shell: false,
+        })
+    );
     if (result.error !== undefined) {
         throw result.error;
     }

@@ -857,20 +857,17 @@ enum FinalizeClaim {
 
 /// Take the claim under one write lock, so two concurrent finalizes cannot
 /// both find the saga unclaimed and both replace the destination.
-fn claim_finalize(
-    saga_id: &str,
-    owner: &AgentWorkOwner,
-) -> Result<FinalizeClaim, AgentAssetSagaReceipt> {
+fn claim_finalize(saga_id: &str, owner: &AgentWorkOwner) -> FinalizeClaim {
     let mut rows = write_sagas();
     let Some(row) = rows.get_mut(saga_id) else {
-        return Err(AgentAssetSagaReceipt::refused(
+        return FinalizeClaim::Refused(Box::new(AgentAssetSagaReceipt::refused(
             saga_id.to_string(),
             owner.clone(),
             OPERATION_FINALIZE_EXPORT,
             AgentAssetFailureKind::HandleUnknown,
             AgentAssetCompensation::NotNeeded,
             "No staged export with that saga id".to_string(),
-        ));
+        )));
     };
 
     if &row.owner != owner {
@@ -883,7 +880,7 @@ fn claim_finalize(
             "Saga belongs to another work owner".to_string(),
         );
         receipt.handle_id = Some(row.destination_handle.clone());
-        return Err(receipt);
+        return FinalizeClaim::Refused(Box::new(receipt));
     }
 
     if let Some(finalize_owner) = row.finalize_owner.clone() {
@@ -898,11 +895,11 @@ fn claim_finalize(
         receipt.handle_id = Some(row.destination_handle.clone());
         receipt.finalize_owner = Some(finalize_owner);
         receipt.cleanup_owner = row.cleanup_owner.clone();
-        return Ok(FinalizeClaim::Refused(Box::new(receipt)));
+        return FinalizeClaim::Refused(Box::new(receipt));
     }
 
     row.finalize_owner = Some(owner.lease_id.clone());
-    Ok(FinalizeClaim::Claimed(row.clone()))
+    FinalizeClaim::Claimed(row.clone())
 }
 
 /// What is still undoable about a saga: staged bytes exist, or they do not.
@@ -942,9 +939,8 @@ pub async fn agent_asset_finalize_export(
         .map_err(|error| format!("Export authorization is malformed: {error}"))?;
 
     let row = match claim_finalize(&saga_id, &owner) {
-        Ok(FinalizeClaim::Claimed(row)) => row,
-        Ok(FinalizeClaim::Refused(receipt)) => return Ok(*receipt),
-        Err(receipt) => return Ok(receipt),
+        FinalizeClaim::Claimed(row) => row,
+        FinalizeClaim::Refused(receipt) => return Ok(*receipt),
     };
 
     let outcome = finalize_claimed_saga(&saga_id, &owner, &authorization, &row);

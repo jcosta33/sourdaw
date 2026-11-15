@@ -57,6 +57,7 @@ import {
     type SettleAgentRunWorkLeaseResult as SettleWorkLeaseResult,
     settleAgentRunWorkLease as settleWorkLease,
 } from './agentRequestOrchestration/settleAgentRunWorkLease';
+import { NO_AUDIBLE_CLAIM_REASON } from './deriveMeasuredAudibleImpact';
 import { projectAgentRunReceiptSaga, type AgentRunReceiptSagaInput } from './projectAgentRunReceiptSaga';
 
 /** Batches a cancellation leaves as they settled: what committed, changed nothing, or was skipped stays so. */
@@ -489,6 +490,8 @@ function recordAgentRunPlan(input: {
     grants: AgentRunGrants;
     budgets: AgentRunBudgets;
     plan?: AgentRunPlan;
+    /** The measured claim this write itself supplies; every other plan write claims nothing audible. */
+    audibleClaim?: AgentRunPlan['expectedImpact']['audible'];
     recordedAt?: number;
 }): AgentRun {
     return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
@@ -502,25 +505,49 @@ function recordAgentRunPlan(input: {
             scope: structuredClone(input.scope),
             grants: structuredClone(refuseDeferredMediaGrants(input.grants)),
             budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
-            plan: carryBatchSchedule(
-                {
-                    ...structuredClone(
-                        input.plan ??
-                            createLegacyAgentRunPlan({
-                                summary: input.summary,
-                                commandIds: input.commandIds,
-                                serializedBatchIdentity: input.serializedBatchIdentity,
-                                applicationToolReceipts: input.applicationToolReceipts ?? [],
-                                revision: input.revision,
-                                scope: input.scope,
-                            })
-                    ),
-                    metricGoalState: input.metricGoalState ?? input.plan?.metricGoalState,
-                },
-                run.plan
+            plan: withAudibleClaim(
+                carryBatchSchedule(
+                    {
+                        ...structuredClone(
+                            input.plan ??
+                                createLegacyAgentRunPlan({
+                                    summary: input.summary,
+                                    commandIds: input.commandIds,
+                                    serializedBatchIdentity: input.serializedBatchIdentity,
+                                    applicationToolReceipts: input.applicationToolReceipts ?? [],
+                                    revision: input.revision,
+                                    scope: input.scope,
+                                })
+                        ),
+                        metricGoalState: input.metricGoalState ?? input.plan?.metricGoalState,
+                    },
+                    run.plan
+                ),
+                input.audibleClaim
             ),
         };
     });
+}
+
+/**
+ * A claim describes one measurement of one batch, so a plan keeps it only when the write that
+ * records the plan supplies it; every other write leaves nothing claimed.
+ */
+function withAudibleClaim(
+    plan: AgentRunPlan,
+    claim: AgentRunPlan['expectedImpact']['audible'] | undefined
+): AgentRunPlan {
+    const audible = plan.expectedImpact.audible;
+    if (claim === undefined && audible.status === 'not-claimed' && audible.reason === NO_AUDIBLE_CLAIM_REASON) {
+        return plan;
+    }
+    return {
+        ...plan,
+        expectedImpact: {
+            ...plan.expectedImpact,
+            audible: claim ?? { status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON },
+        },
+    };
 }
 
 /** Keep the run's approval snapshot aligned when a pending card is rebound after unrelated project edits. */
@@ -543,7 +570,10 @@ function rebindAgentRunMetricGoalState(input: {
         plan:
             current.plan === null
                 ? null
-                : { ...current.plan, metricGoalState: input.metricGoalState, revision: input.revision },
+                : withAudibleClaim(
+                      { ...current.plan, metricGoalState: input.metricGoalState, revision: input.revision },
+                      undefined
+                  ),
     }));
     return true;
 }
@@ -587,10 +617,10 @@ function recordAgentRunApplicationToolEvidence(input: {
                       revision: input.revision,
                       scope: input.scope,
                   })
-                : {
-                      ...run.plan,
-                      applicationToolReceipts: structuredClone(input.applicationToolReceipts),
-                  };
+                : withAudibleClaim(
+                      { ...run.plan, applicationToolReceipts: structuredClone(input.applicationToolReceipts) },
+                      undefined
+                  );
         if (run.plan !== null) {
             return { ...run, plan };
         }

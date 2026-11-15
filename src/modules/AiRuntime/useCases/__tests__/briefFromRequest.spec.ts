@@ -819,6 +819,47 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         );
     });
 
+    // Red when a whole-project request planned on the local planner is not offered the brief tool and the
+    // interpretation's brief mode, or its run is not planned, or its card claims a hosted provider is asked.
+    it('offers the brief to the local planner and plans the vibe run behind it without a hosted value call', async () => {
+        runtimeMocks.backend.value = 'webllm';
+        const STEM_ID = 'track-stem';
+        landProjectEdit(() => {
+            trackStore.set({
+                tracks: [{ ...createTrack(STEM_ID, 'Stem 7'), clips: [audioClip(STEM_ID)] }],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            markerStore.set({ markers: [], sections: [] });
+        });
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => renderShelvedTone(input));
+        const stemRole = { vision: 'A warmer low end', trackRoles: [{ trackId: STEM_ID, role: 'bass' }] };
+        const requests = scriptPlanningTurns([briefIntake, compileBrief(stemRole, ['warm']), proposeCompiled()]);
+
+        await sendChatMessage('make it warmer');
+
+        expect(requests[0]?.schemas.map((schema) => schema.function.name)).toContain('brief.compile');
+        const brief = getPendingProposal();
+        expect(brief.message.content).toContain('- Batch 2 of 2: warm bass — Stem 7');
+        expect(brief.message.content).not.toContain('The run asks the hosted provider');
+
+        await expect(confirmPendingChatActions({ confirmationId: brief.confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        const batch = pendingActionConfirmationStore.value?.confirmations.find(
+            (card) => card.status === 'proposed' && card.runId === brief.confirmation.runId
+        );
+        expect(batch?.approvalSnapshot.adoptedRecipes?.[0]?.valueSource).toBe('catalogue-defaults');
+        expect(batch?.actions.map((action) => action.type)).toContain('setDeviceParameter');
+        expect(getAgentApprovalView({ confirmationId: batch?.id ?? '' })?.metricGoals.status).toBe('verified');
+        const batchMessage = chatStore.value?.messages.find(
+            (candidate) => candidate.pendingActionConfirmationId === batch?.id
+        );
+        expect(batchMessage?.content).toContain('Recipe values are catalogue defaults: the run is on a local backend');
+        expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(3);
+    }, 15_000);
+
     // Red when a run whose value choice cannot fit its hostedTextPlanningTokens budget is still scheduled.
     it('schedules no batch when value choice for every batch would not fit the hosted planning budget', async () => {
         agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, hostedTextPlanningTokens: 3_000 });
@@ -925,24 +966,21 @@ describe('writing the production brief from a whole-project request (AC-001 of #
             expect(countCards()).toBe(0);
         });
 
-        it.each([
-            {
-                name: 'a hand-off planned on a local model',
-                backend: 'webllm',
-                input: { prompt: VIBE_PROMPT, chatHandOff: true as const },
-            },
-            {
-                name: 'a hosted request that asks for no hand-off and has no thread',
-                backend: 'cloud',
-                input: { prompt: VIBE_PROMPT },
-            },
-        ])('never offers the brief to $name', async ({ backend, input }) => {
-            runtimeMocks.backend.value = backend;
+        it('never offers the brief to a hosted request that asks for no hand-off and has no thread', async () => {
             const requests = scriptPlanningTurns([decline]);
 
-            await planPromptActions(input);
+            await planPromptActions({ prompt: VIBE_PROMPT });
 
             expect(requests[0]?.schemas.map((schema) => schema.function.name)).not.toContain('brief.compile');
+        });
+
+        it('offers the brief to a hand-off planned on a local model', async () => {
+            runtimeMocks.backend.value = 'webllm';
+            const requests = scriptPlanningTurns([decline]);
+
+            await planPromptActions({ prompt: VIBE_PROMPT, chatHandOff: true });
+
+            expect(requests[0]?.schemas.map((schema) => schema.function.name)).toContain('brief.compile');
         });
     });
 });
