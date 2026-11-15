@@ -158,12 +158,12 @@ describe('positive whole-request metric intent', () => {
         ['Make Lead Vocal brighter', 'brighter'],
         ['Make Lead Vocal warmer', 'warmer'],
         ['Make Lead Vocal punchier', 'punchier'],
-        ['Make Lead Vocal louder than Bass', 'loudness'],
+        ['Make Lead Vocal louder than Bass', 'louder'],
         ['Make the drums glue together more', 'glue'],
         ['Set Bass gain to -3 dB so the Lead Vocal sounds brighter', 'brighter'],
         ['Make Lead Vocal brighter / set Bass gain to -3 dB', 'brighter'],
-        ['Quieter than Kick', 'loudness'],
-        ['Set Bass gain to -3 dB so the Lead Vocal sounds louder', 'loudness'],
+        ['Quieter than Kick', 'quieter'],
+        ['Set Bass gain to -3 dB so the Lead Vocal sounds louder', 'louder'],
     ])('refuses the literal label on a request that names a perceptual quality: %s', (prompt, word) => {
         const value = fixture(prompt);
         const admitted = admitPlanningInterpretation({

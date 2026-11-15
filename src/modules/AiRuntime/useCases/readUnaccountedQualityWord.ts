@@ -8,7 +8,7 @@ import { readFirstPerceptualTerm } from './admitPerceptualGoalDecline';
 import { escapeRegExp } from './agentReference/groundingStrategies/escapeRegExp';
 import { maskTrackReferences } from './maskTrackReferences';
 import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
-import { readComparedQualities } from './readComparedQualities';
+import { readComparedQualityWords } from './readComparedQualities';
 
 // A slash joins clauses only with space around it, so a registered phrase such as "punch in/out" stays whole.
 const CLAUSE_SEPARATOR = /[.;,!?\n&:()—–]|\s\/\s|\b(?:and|then|but|so|while|with|or|plus)\b/u;
@@ -90,9 +90,9 @@ export function readUnaccountedQualityWord(prompt: string, context: ProjectConte
         if (term !== null) {
             return term.term;
         }
-        const [quality] = readComparedQualities(stated, context);
-        if (quality !== undefined) {
-            return quality;
+        const [word] = readComparedQualityWords(stated, context).values();
+        if (word !== undefined) {
+            return word;
         }
     }
     return null;
