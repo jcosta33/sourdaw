@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { readLastAutomationWriteSequence } from '#/modules/Transport/stores';
+import { readLastObservationSequence } from '#/infra/ordering/observationSequence';
 
 import { getPluginParameters } from '../../../repositories/pluginBridge/getPluginParameters';
 import { type PluginParameter } from '../../../repositories/pluginBridge/types';
@@ -19,8 +19,8 @@ vi.mock('../../../repositories/pluginBridge/getPluginParameters', () => ({
     getPluginParameters: vi.fn(),
 }));
 
-vi.mock('#/modules/Transport/stores', () => ({
-    readLastAutomationWriteSequence: vi.fn<() => number>(),
+vi.mock('#/infra/ordering/observationSequence', () => ({
+    readLastObservationSequence: vi.fn<() => number>(),
 }));
 
 function pluginParameter(overrides: Partial<PluginParameter> & Pick<PluginParameter, 'id' | 'name'>): PluginParameter {
@@ -38,8 +38,8 @@ function pluginParameter(overrides: Partial<PluginParameter> & Pick<PluginParame
 describe('refreshExternalPluginParameters', () => {
     beforeEach(() => {
         vi.mocked(getPluginParameters).mockReset();
-        vi.mocked(readLastAutomationWriteSequence).mockReset();
-        vi.mocked(readLastAutomationWriteSequence).mockReturnValue(0);
+        vi.mocked(readLastObservationSequence).mockReset();
+        vi.mocked(readLastObservationSequence).mockReturnValue(0);
         loadedExternalInstances.clear();
         externalPluginParameterStore.set(defaultExternalPluginParameterState);
     });
@@ -212,11 +212,11 @@ describe('refreshExternalPluginParameters', () => {
 
         it('tags each published object with the scheduler write that was latest when the read was issued', async () => {
             seedLoaded();
-            vi.mocked(readLastAutomationWriteSequence).mockReturnValue(5);
+            vi.mocked(readLastObservationSequence).mockReturnValue(5);
             const read = deferredRead();
             const pending = refreshExternalPluginParameters('inst-1');
 
-            vi.mocked(readLastAutomationWriteSequence).mockReturnValue(9);
+            vi.mocked(readLastObservationSequence).mockReturnValue(9);
             patchExternalPluginParameterValue('inst-1', 1, 0.3);
             read.resolve([
                 pluginParameter({ id: 1, name: 'Decay', value: 0.5 }),

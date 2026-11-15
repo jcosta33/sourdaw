@@ -1,5 +1,5 @@
+import { readLastObservationSequence } from '#/infra/ordering/observationSequence';
 import { createStore } from '#/infra/store/createStore';
-import { readLastAutomationWriteSequence } from '#/modules/Transport/stores';
 
 /**
  * One automatable control an external plugin instance reports about itself.
@@ -272,7 +272,7 @@ export function issueExternalPluginParameterRead(instanceId: string): ExternalPl
     return {
         token: lastReadToken,
         editGenerations: new Map(editGenerations.get(instanceId)),
-        automationWriteSequence: readLastAutomationWriteSequence(),
+        automationWriteSequence: readLastObservationSequence(),
     };
 }
 

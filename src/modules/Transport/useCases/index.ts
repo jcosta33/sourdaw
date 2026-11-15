@@ -7,10 +7,7 @@ export { getSchedulerTimingDiagnostics } from './getSchedulerTimingDiagnostics';
 export { reconcileVcaGroupRuntimeGain } from './scheduling/applyAutomation/reconcileVcaGroupRuntimeGain';
 export { reconcileVcaRuntimeGain } from './scheduling/applyAutomation/reconcileVcaRuntimeGain';
 // Published for display: the inspector follows automation playback from the value the scheduler delivered.
-export {
-    readAppliedAutomationValue,
-    readLatestAutomationWriteSequence,
-} from './scheduling/applyAutomation/readAppliedAutomationValue';
+export { readAppliedAutomationValue } from './scheduling/applyAutomation/readAppliedAutomationValue';
 // Published because the composition root registers the runtime writes device modules own.
 export { deviceRuntimeParameterWriters } from './scheduling/applyAutomation/deviceRuntimeParameterWriters';
 // Published because the composition root registers the MIDI effect rack, kit

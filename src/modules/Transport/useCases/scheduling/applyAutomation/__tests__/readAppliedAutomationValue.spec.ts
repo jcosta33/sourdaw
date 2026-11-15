@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { readLastObservationSequence } from '#/infra/ordering/observationSequence';
+
 import {
     appliedAutomationBases,
     recordAppliedAutomationWrite,
     appliedAutomationWriteSequences,
     clearAppliedAutomationBases,
 } from '../appliedAutomationBases';
-import { readAppliedAutomationValue, readLatestAutomationWriteSequence } from '../readAppliedAutomationValue';
+import { readAppliedAutomationValue } from '../readAppliedAutomationValue';
 
 describe('readAppliedAutomationValue', () => {
     afterEach(() => {
@@ -44,13 +46,13 @@ describe('readAppliedAutomationValue', () => {
 
     it('reports a latest write sequence below every later write and equal to the last one', () => {
         recordAppliedAutomationWrite('device-a', '7');
-        const issuedAt = readLatestAutomationWriteSequence();
-        expect(readLatestAutomationWriteSequence()).toBe(issuedAt);
+        const issuedAt = readLastObservationSequence();
+        expect(readLastObservationSequence()).toBe(issuedAt);
 
         recordAppliedAutomationWrite('device-b', '9');
         appliedAutomationBases.set('device-b', new Map([['9', 0.5]]));
 
         expect(readAppliedAutomationValue('device-b', '9')?.writeSequence).toBeGreaterThan(issuedAt);
-        expect(readLatestAutomationWriteSequence()).toBe(readAppliedAutomationValue('device-b', '9')?.writeSequence);
+        expect(readLastObservationSequence()).toBe(readAppliedAutomationValue('device-b', '9')?.writeSequence);
     });
 });

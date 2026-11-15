@@ -823,6 +823,28 @@ describe('ExternalPluginParameterList', () => {
             expect(slider).toHaveAttribute('aria-valuetext', '0.300');
         });
 
+        it('shows the plugin value when the re-read was issued at the latest scheduler write and answers differently', () => {
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            setPlaying(false);
+
+            // No scheduler write came after the re-read was issued, so its answer is the plugin's current value.
+            const issuedAt = mockWriteSequence;
+            act(() => {
+                publishTagged(issuedAt, 7, 'Decay', 0.9);
+            });
+            setPlaying(true);
+            runFrame(50);
+            runFrame(100);
+
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+            expect(slider).toHaveValue('0.9');
+            expect(slider).toHaveAttribute('aria-valuetext', '0.900');
+        });
+
         it('keeps the delivered value over the answer to a re-read the list did not issue', () => {
             seedAutomated();
             setPlaying(true);

@@ -1,4 +1,4 @@
-import { takeNextAutomationWriteSequence } from '../../../stores/automationWriteSequence';
+import { takeNextObservationSequence } from '#/infra/ordering/observationSequence';
 
 /**
  * The device-parameter values the live automation pass actually wrote
@@ -55,5 +55,5 @@ export function recordAppliedAutomationWrite(deviceId: string, parameterId: stri
         byParameter = new Map<string, number>();
         appliedAutomationWriteSequences.set(deviceId, byParameter);
     }
-    byParameter.set(parameterId, takeNextAutomationWriteSequence());
+    byParameter.set(parameterId, takeNextObservationSequence());
 }
