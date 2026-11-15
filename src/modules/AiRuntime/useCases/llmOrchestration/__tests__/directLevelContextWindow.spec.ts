@@ -22,6 +22,7 @@ import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSch
 import { getProjectContext } from '../../getProjectContext';
 import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
+import { prepareMetricIntentCatalog } from '../../prepareMetricIntentCatalog';
 import { projectPlanningProviderToolSchemas } from '../../projectPlanningProviderToolSchemas';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET } from '../inference';
 
@@ -130,5 +131,95 @@ describe('direct level context window', () => {
             windowTokens - cost,
             `local planning prompt leaves ${String(windowTokens - cost)} tokens of headroom: cost ${String(cost)} in a ${String(windowTokens)}-token window, floor ${String(LOCAL_PLANNING_PROMPT_HEADROOM_FLOOR_TOKENS)}`
         ).toBeGreaterThanOrEqual(LOCAL_PLANNING_PROMPT_HEADROOM_FLOOR_TOKENS);
+    });
+});
+
+/** Bounds the comparison objectives' share of the local prompt; the absolute floor for the metric-aware prompt is tracked in #6706. */
+const COMPARISON_OBJECTIVES_MAX_EXTRA_TOKENS = 700;
+
+/** The local planning prompt's cost for one request, built as production builds it, metric catalog included. */
+async function measureMetricAwareLocalPromptCost(prompt: string): Promise<number> {
+    mocks.completion.mockClear();
+    mocks.toolCalls.mockClear();
+    const base = createPlanningProject(getProjectContext(), 5);
+    const context = { ...base, metronomeVolume: 0.5 };
+    const catalog = prepareCreativeInterpretationCatalog({ prompt, context, projectRevision: 'revision-1' });
+    const advertised = projectPlanningProviderToolSchemas(
+        [
+            ...getPlanningProviderToolSchemas(undefined, { offersBrief: true }),
+            createCreativeInterpretationToolSchema(catalog),
+        ],
+        'planning'
+    );
+    const system = buildPlanningSystemPrompt(undefined, 'planning');
+    const built = buildAgentContext({
+        fixedPolicy: system,
+        prompt,
+        context,
+        projectRevision: 'revision-1',
+        receipts: [],
+        capabilitySchemas: advertised.map((tool) => ({ name: tool.function.name, schemaVersion: 1 })),
+        thread: createFullThreadContext(),
+    });
+    const answer = prepareAnswerInterpretationCatalog({ prompt, context, projectRevision: 'revision-1' });
+    const tools = projectPlanningProviderToolSchemas(
+        [
+            ...getPlanningProviderToolSchemas(undefined, { offersBrief: true }),
+            createPlanningInterpretationToolSchema({
+                creative: catalog,
+                answer,
+                binding: built.planningBinding,
+                metric: prepareMetricIntentCatalog({ prompt, answer }),
+            }),
+        ],
+        'planning'
+    );
+    const actual = await vi.importActual<typeof import('../../../repositories/webLlm/toolCalling')>(
+        '../../../repositories/webLlm/toolCalling'
+    );
+    mocks.toolCalls.mockImplementation(actual.generateWebLlmToolCalls);
+    mocks.completion.mockResolvedValue('[]');
+    await generateToolPlanningOutcome(
+        system,
+        built.message,
+        tools,
+        undefined,
+        prompt,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        built.localMessage,
+        { keptCapabilityIds: built.localWorkflowCapabilityIds }
+    );
+    const [systemText, userText] = mocks.completion.mock.calls[0] ?? [];
+    if (typeof systemText !== 'string' || typeof userText !== 'string') {
+        throw new TypeError('Expected the local request to reach the engine.');
+    }
+    const section = `\n\nthread_context:\n${userText.split('\n\nthread_context:\n')[1]?.split('\n\n')[0] ?? ''}`;
+    return (
+        estimateConservativePromptTokens(systemText) +
+        estimateConservativePromptTokens(userText.replace(section, '')) +
+        LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS +
+        THREAD_CONTEXT_MAX_BYTES.local +
+        LOCAL_PLANNING_REPLY_RESERVE_TOKENS
+    );
+}
+
+describe('comparison objectives in the local planning prompt', () => {
+    it('adds a bounded number of tokens when the request names the comparison qualities', async () => {
+        const named = await measureMetricAwareLocalPromptCost(
+            'make the chorus wider, louder, brighter and punchier than the verse'
+        );
+        const unnamed = await measureMetricAwareLocalPromptCost(
+            'make the chorus thicker, fuller, warmer and tighter than the verse'
+        );
+        const extra = named - unnamed;
+        expect(extra, `the comparison objectives add ${String(extra)} tokens to the local prompt`).toBeGreaterThan(0);
+        expect(
+            extra,
+            `the comparison objectives add ${String(extra)} tokens, bound ${String(COMPARISON_OBJECTIVES_MAX_EXTRA_TOKENS)}`
+        ).toBeLessThanOrEqual(COMPARISON_OBJECTIVES_MAX_EXTRA_TOKENS);
     });
 });
