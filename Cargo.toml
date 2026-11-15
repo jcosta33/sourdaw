@@ -43,13 +43,10 @@ unused_assignments = "warn"
 all = { level = "deny", priority = -1 }
 dbg_macro = "deny"
 get_unwrap = "deny"
+panic = "deny"
 todo = "deny"
 unimplemented = "deny"
 unwrap_used = "deny"
-if_same_then_else = "warn"
-large_enum_variant = "warn"
-len_without_is_empty = "warn"
-panic = "warn"
 too_many_arguments = "warn"
 # Rejected: timeline tracks, buses and clips cross the scheduler command ring
 # as boxes, so the audio thread neither reallocates nor copies large structs
