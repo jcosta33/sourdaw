@@ -65,10 +65,25 @@ const reverbContexts = new WeakMap<ConvolverNode, BaseAudioContext>();
 /** Latest accepted shape after a successful installation, so partial writes merge. */
 const reverbShapes = new WeakMap<ConvolverNode, ReverbImpulseShape>();
 
+/**
+ * Ratio between neighbouring Decay buckets: half the 5 % just-noticeable
+ * difference of reverberation time (ISO 3382-1, Annex A), so an installed
+ * impulse never trails the written decay by an audible amount.
+ */
+const DECAY_BUCKET_RATIO = 1.025;
+/** Size and Damping buckets: one hundredth of their 0..1 range. */
+const UNIT_BUCKETS = 100;
+
+/**
+ * The shape's equivalence bucket. Rendering and installing an impulse costs
+ * time proportional to its decay, and live automation writes these
+ * parameters on every scheduler tick, so a bucket finer than an audible step
+ * makes a ramp re-render on every tick and starves the main thread (#6743).
+ */
 function impulseCacheKey(shape: ReverbImpulseShape): string {
-    // Millisecond quantisation: repeated writes of a drifted float reuse the cache.
-    const thousandths = (value: number): number => Math.round(value * 1000);
-    return `${thousandths(shape.size)}|${thousandths(shape.decay)}|${thousandths(shape.damping)}`;
+    const unitBucket = (value: number): number => Math.round(value * UNIT_BUCKETS);
+    const decayBucket = Math.round(Math.log(shape.decay) / Math.log(DECAY_BUCKET_RATIO));
+    return `${unitBucket(shape.size)}|${decayBucket}|${unitBucket(shape.damping)}`;
 }
 
 function resolveConvolver(dn: OfflineDeviceNode): ConvolverNode | null {

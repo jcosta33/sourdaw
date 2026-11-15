@@ -384,6 +384,47 @@ describe('reverb impulse rendering (#3731)', () => {
         expect(impulseOf(dn).length).toBe(SAMPLE_RATE * 3);
     });
 
+    /**
+     * #6743: live automation writes a device parameter on every 10 ms
+     * scheduler tick. A Decay ramp from 3.2 s to 11 s over 79 s (the demo's
+     * "Chaos space decay" lane) moved the value past the old millisecond
+     * bucket on every tick, so the main thread rendered and installed a
+     * multi-second impulse a hundred times a second and stopped answering.
+     * The impulse may follow the ramp only as often as the change is audible.
+     */
+    it.each([
+        { key: 'rev-decay', from: 3.2, to: 11, maxRenders: 60 },
+        { key: 'rev-size', from: 0, to: 1, maxRenders: 101 },
+        { key: 'rev-damping', from: 0, to: 1, maxRenders: 101 },
+    ] as const)('re-renders a continuous $key ramp per audible step, not per tick', ({ key, from, to, maxRenders }) => {
+        const ctx = makeContext();
+        ctx.sampleRate = 1_000;
+        const dn = createReverb(asBaseAudioContext(ctx));
+        ctx.createBuffer.mockClear();
+        const ticks = 7_900;
+
+        for (let tick = 0; tick <= ticks; tick++) {
+            applyReverbParams(dn, { [key]: from + ((to - from) * tick) / ticks });
+        }
+
+        expect(ctx.createBuffer.mock.calls.length).toBeGreaterThan(1);
+        expect(ctx.createBuffer.mock.calls.length).toBeLessThanOrEqual(maxRenders);
+    });
+
+    it('keeps the installed Decay within an inaudible distance of the end of a ramp', () => {
+        const ctx = makeContext();
+        ctx.sampleRate = 1_000;
+        const dn = createReverb(asBaseAudioContext(ctx));
+        const ticks = 7_900;
+
+        for (let tick = 0; tick <= ticks; tick++) {
+            applyReverbParams(dn, { 'rev-decay': 3.2 + (7.8 * tick) / ticks });
+        }
+
+        // 5 % is the just-noticeable difference of reverberation time (ISO 3382-1, Annex A).
+        expect(Math.abs(impulseOf(dn).length / (11 * ctx.sampleRate) - 1)).toBeLessThan(0.05);
+    });
+
     it('clamps out-of-range writes to the declared parameter window', () => {
         const ctx = makeContext();
         const dn = createReverb(asBaseAudioContext(ctx));
