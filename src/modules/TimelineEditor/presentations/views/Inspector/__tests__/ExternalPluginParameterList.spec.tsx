@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type AutomationLane, automationStore } from '#/modules/Automation/stores';
 import {
     defaultExternalPluginActivationState,
     defaultExternalPluginParameterState,
@@ -13,11 +14,13 @@ import {
     externalPluginRestoreFailureStore,
     pluginScanStore,
 } from '#/modules/PluginHost/stores';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { type Device } from '../../../../models/TrackViewTypes';
 import { ExternalPluginParameterList } from '../ExternalPluginParameterList';
 
 const mockEdit = vi.fn<(input: { instanceId: string; parameterId: number; value: number }) => Promise<void>>();
+const mockRefresh = vi.fn<(instanceId: string) => Promise<void>>();
 const mockHasRestoreFailure = vi.fn<(instanceId: string) => boolean>();
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
@@ -26,6 +29,16 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
         editExternalPluginParameter: (input: { instanceId: string; parameterId: number; value: number }) =>
             mockEdit(input),
         hasUnresolvedExternalPluginRestoreFailure: (instanceId: string) => mockHasRestoreFailure(instanceId),
+        refreshExternalPluginParameters: (instanceId: string) => mockRefresh(instanceId),
+    };
+});
+
+const mockReadApplied = vi.fn<(deviceId: string, parameterId: string) => number | undefined>();
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
+    return {
+        ...actual,
+        readAppliedAutomationValue: (deviceId: string, parameterId: string) => mockReadApplied(deviceId, parameterId),
     };
 });
 
@@ -132,8 +145,81 @@ const scanRow = (id: number, flags: { is_stepped?: boolean; is_enum?: boolean })
     is_enum: flags.is_enum ?? false,
 });
 
+const automationLane = (deviceId: string, parameterId: number, clipId?: string): AutomationLane => ({
+    id: `lane-${deviceId}-${String(parameterId)}`,
+    trackId: 'track-1',
+    parameterId: `${deviceId}:${String(parameterId)}`,
+    parameterName: `Param ${String(parameterId)}`,
+    points: [],
+    objects: [],
+    visible: true,
+    enabled: true,
+    collapsed: false,
+    minValue: 0,
+    maxValue: 1,
+    ...(clipId === undefined ? {} : { clipId }),
+});
+
+const setPlaying = (isPlaying: boolean): void => {
+    act(() => {
+        transportStore.set({ ...defaultTransportState, isPlaying });
+    });
+};
+
+type FrameCallback = (timestamp: number) => void;
+let frameCallbacks = new Map<number, FrameCallback>();
+let nextFrameId = 1;
+let intersecting = true;
+
+/** Runs every frame requested so far once, at the given timestamp. */
+const runFrame = (timestamp: number): void => {
+    const pending = [...frameCallbacks.values()];
+    frameCallbacks = new Map();
+    act(() => {
+        for (const callback of pending) {
+            callback(timestamp);
+        }
+    });
+};
+
+class StubIntersectionObserver {
+    private readonly callback: IntersectionObserverCallback;
+
+    constructor(callback: IntersectionObserverCallback) {
+        this.callback = callback;
+    }
+
+    observe(target: Element): void {
+        this.callback(
+            [{ isIntersecting: intersecting, target } as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver
+        );
+    }
+
+    disconnect(): void {}
+    unobserve(): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+        return [];
+    }
+}
+
 describe('ExternalPluginParameterList', () => {
     beforeEach(() => {
+        mockRefresh.mockReset();
+        mockRefresh.mockResolvedValue();
+        mockReadApplied.mockReset();
+        frameCallbacks = new Map();
+        nextFrameId = 1;
+        intersecting = true;
+        vi.stubGlobal('IntersectionObserver', StubIntersectionObserver);
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameCallback) => {
+            const id = nextFrameId++;
+            frameCallbacks.set(id, callback);
+            return id;
+        });
+        vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+            frameCallbacks.delete(id);
+        });
         mockEdit.mockReset();
         mockEdit.mockResolvedValue();
         mockHasRestoreFailure.mockReset();
@@ -141,6 +227,9 @@ describe('ExternalPluginParameterList', () => {
     });
 
     afterEach(() => {
+        vi.unstubAllGlobals();
+        automationStore.set({ lanes: [] });
+        transportStore.set(defaultTransportState);
         pluginScanStore.set(defaultPluginScanState);
         externalPluginActivationStore.set(defaultExternalPluginActivationState);
         externalPluginParameterStore.set(defaultExternalPluginParameterState);
@@ -518,5 +607,151 @@ describe('ExternalPluginParameterList', () => {
         expect(screen.getByText(text)).toBeInTheDocument();
         expect(screen.queryByRole('slider')).not.toBeInTheDocument();
         expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    });
+
+    describe('following automation', () => {
+        const seedAutomated = (): void => {
+            seed([parameter({ id: 7, name: 'Decay', value: 0.25 }), parameter({ id: 8, name: 'Mix', value: 0.25 })]);
+            automationStore.set({ lanes: [automationLane(device.id, 7)] });
+        };
+
+        it('marks only a parameter that a lane on this device drives', () => {
+            seed([
+                parameter({ id: 7, name: 'Decay' }),
+                parameter({ id: 8, name: 'Mix' }),
+                parameter({ id: 9, name: 'Size' }),
+            ]);
+            automationStore.set({
+                lanes: [automationLane(device.id, 7, 'clip-1'), automationLane('other-device', 8)],
+            });
+            render(<ExternalPluginParameterList device={device} />);
+
+            expect(screen.getByTestId('external-parameter-7')).toHaveAttribute('data-automated', 'true');
+            expect(screen.getByRole('slider', { name: 'Decay' })).toHaveAccessibleDescription('Automated');
+            for (const [id, name] of [
+                [8, 'Mix'],
+                [9, 'Size'],
+            ] as const) {
+                expect(screen.getByTestId(`external-parameter-${String(id)}`)).not.toHaveAttribute('data-automated');
+                expect(screen.getByRole('slider', { name })).not.toHaveAccessibleDescription('Automated');
+            }
+        });
+
+        it('moves an automated row with the delivered value without announcing each step', () => {
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+
+            runFrame(0);
+            expect(slider).toHaveValue('0.5');
+            expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
+            expect(within(screen.getByTestId('external-parameter-7')).getByText('0.500')).toBeInTheDocument();
+            expect(mockReadApplied).toHaveBeenCalledWith(device.id, '7');
+
+            mockReadApplied.mockReturnValue(0.75);
+            runFrame(10);
+            expect(slider).toHaveValue('0.5');
+
+            runFrame(50);
+            expect(slider).toHaveValue('0.75');
+            expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
+            expect(within(screen.getByTestId('external-parameter-7')).getByText('0.750')).toBeInTheDocument();
+        });
+
+        it('does not read or move a row that is scrolled out of view', () => {
+            seedAutomated();
+            setPlaying(true);
+            intersecting = false;
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+
+            runFrame(0);
+            runFrame(50);
+
+            expect(mockReadApplied).not.toHaveBeenCalledWith(device.id, '7');
+            expect(screen.getByRole('slider', { name: 'Decay' })).toHaveValue('0.25');
+        });
+
+        it('never reads for an unautomated row', () => {
+            seed([parameter({ id: 7, name: 'Decay', value: 0.25 })]);
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+
+            runFrame(0);
+            runFrame(50);
+
+            expect(mockReadApplied).not.toHaveBeenCalled();
+            expect(screen.getByRole('slider', { name: 'Decay' })).toHaveValue('0.25');
+        });
+
+        it('re-reads the plugin on stop and holds the last followed value until the parameters are replaced', () => {
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            expect(mockRefresh).not.toHaveBeenCalled();
+
+            setPlaying(false);
+
+            expect(mockRefresh).toHaveBeenCalledExactlyOnceWith(INSTANCE_ID);
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+            expect(slider).toHaveValue('0.5');
+            expect(slider).toHaveAttribute('aria-valuetext', '0.500');
+
+            act(() => {
+                moveStoreValue(7, 'Decay', 0.8);
+            });
+            expect(slider).toHaveValue('0.8');
+            expect(slider).toHaveAttribute('aria-valuetext', '0.800');
+        });
+
+        it('never publishes a followed value as a plugin edit', () => {
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+
+            runFrame(0);
+            mockReadApplied.mockReturnValue(0.75);
+            runFrame(50);
+            setPlaying(false);
+
+            expect(screen.getByRole('slider', { name: 'Decay' })).toHaveValue('0.75');
+            expect(mockEdit).not.toHaveBeenCalled();
+        });
+
+        it('sends a user edit on an automated row and shows it while the send is pending, then follows again', async () => {
+            let resolveSend: () => void = () => {};
+            let sent: Promise<void> = Promise.resolve();
+            mockEdit.mockImplementation(() => {
+                sent = new Promise<void>((resolve) => {
+                    resolveSend = resolve;
+                });
+                return sent;
+            });
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+
+            fireEvent.change(slider, { target: { value: '0.9' } });
+
+            expect(mockEdit).toHaveBeenCalledExactlyOnceWith({ instanceId: INSTANCE_ID, parameterId: 7, value: 0.9 });
+            expect(slider).toHaveValue('0.9');
+            expect(slider).toHaveAttribute('aria-valuetext', '0.900');
+
+            await act(async () => {
+                resolveSend();
+                await sent;
+            });
+            expect(slider).toHaveValue('0.5');
+            expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
+        });
     });
 });
