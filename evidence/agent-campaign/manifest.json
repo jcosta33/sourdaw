@@ -247,7 +247,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts",
-                    "digest": "9958887aa9883ef9ac45edb99c940e1a2728601b7b2b098c0d83048cd9aec3e0"
+                    "digest": "cc7cac5501186013008cfae5891f58e030cb772b031205e059e9d05fbd133497"
                 }
             ]
         },
@@ -745,7 +745,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "02f48d6c71d9818d9e805b07d9ee7174fea432b8654f7141f5839c672567fd52"
+                    "digest": "92424b9b33ccc30db11ebf853b9ad9624416cb01706f8bd9e0a7c40937f93d03"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",
