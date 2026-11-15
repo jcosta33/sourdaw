@@ -10,6 +10,7 @@ import {
     LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS,
 } from '../../../models/LocalPlanningBudget';
 import { THREAD_CONTEXT_MAX_BYTES } from '../../../models/ThreadContext';
+import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { getWebLlmContextWindowSize } from '../../../repositories/webLlm/getWebLlmContextWindowSize';
 import { buildPlanningSystemPrompt } from '../../../transformers/buildPlanningSystemPrompt';
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
@@ -106,7 +107,7 @@ describe('direct level context window', () => {
         // command-index search, catalog discovery, the joint interpretation tool, the brief compiler
         // and the one prompt-selected slot: no workflow action tool.
         expect(mocks.toolCalls.mock.calls[0]?.[2]).toHaveLength(15);
-        expect(mocks.toolCalls.mock.calls[0]?.[2]?.map((tool) => tool.function.name)).toContain(
+        expect(mocks.toolCalls.mock.calls[0]?.[2]?.map((tool: ToolSchema) => tool.function.name)).toContain(
             BRIEF_COMPILE_TOOL_NAME
         );
         expect(mocks.toolCalls.mock.calls[0]?.[2]?.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
