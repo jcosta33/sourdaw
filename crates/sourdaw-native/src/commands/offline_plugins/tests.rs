@@ -14,7 +14,9 @@
 use super::*;
 use crate::block_on_test;
 use crate::commands::graph::render_graph_offline_with;
-use crate::commands::plugins::{create_hosted_runtime, VettedRegistryEntry};
+use crate::commands::plugins::{
+    create_hosted_runtime, read_plugin_state_chunk, VettedRegistryEntry,
+};
 use crate::host::plugin_registry_store::plugin_file_fingerprint;
 use crate::host::ui_thread::UiThreadTask;
 use crate::state::{EnginePluginInstanceData, PluginRegistryEntry, TimelineSample};
@@ -157,7 +159,7 @@ impl InstalledFx {
     fn seams(&self) -> OfflinePluginSeams {
         OfflinePluginSeams {
             scan_policy: PluginScanPolicy::with_allowed_roots(vec![self.root.clone()]),
-            capture_state: read_plugin_state_chunk,
+            capture_state: read_live_state,
             construct: create_hosted_runtime,
             after_build: None,
             before_restore: None,
@@ -781,6 +783,97 @@ fn a_clap_class_that_requires_real_time_refuses_the_render_by_name() {
             && refusal.contains("requires real-time rendering and cannot render offline"),
         "{refusal}"
     );
+}
+
+// ── A reload under the same id mid-capture ──────────────────────────────
+
+thread_local! {
+    /// The live instance a capture seam swaps in under the captured id.
+    static RELOAD: RefCell<Option<(HostedRuntime, VettedRegistryEntry)>> = const { RefCell::new(None) };
+}
+
+/// The files offline instances were constructed from. Construction runs on
+/// the UI thread, so this is a process static, written only by the one test
+/// whose construct seam records into it.
+static CONSTRUCTED_FROM: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn construct_recording_its_file(
+    backend: HostBackend,
+    path: &str,
+    descriptor_id: &str,
+    sample_rate: f64,
+    mode: ProcessMode,
+) -> Result<HostedRuntime, String> {
+    CONSTRUCTED_FROM
+        .lock()
+        .expect("constructed")
+        .push(path.to_string());
+    create_hosted_runtime(backend, path, descriptor_id, sample_rate, mode)
+}
+
+/// Read the live state, then unload the instance and load another file under
+/// the same id before the read returns — what a graph rebuild can do.
+fn capture_then_reload_under_the_same_id(
+    runtime: &SharedHostedPlugin,
+    state: &AppState,
+) -> Result<Vec<u8>, String> {
+    let chunk = read_live_state(runtime, state)?;
+    if let Some((reloaded, load_resolution)) = RELOAD.with(|reload| reload.borrow_mut().take()) {
+        attach(state, reloaded, load_resolution, DeviceKind::Effect);
+    }
+    Ok(chunk)
+}
+
+/// The state an offline instance restores and the file it is built from are
+/// one live load's: a reload under the instance's id between the state read
+/// and the build never pairs the first load's state with the second's file.
+#[test]
+fn a_reload_under_the_same_id_never_pairs_one_loads_state_with_anothers_file() {
+    let fx = InstalledFx::create("reload-first");
+    let reloaded_fx = InstalledFx::create("reload-second");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let descriptor = processing_class(Format::Clap);
+    RELOAD.with(|reload| {
+        *reload.borrow_mut() = Some((
+            live_runtime(&reloaded_fx, Format::Clap, &descriptor),
+            reloaded_fx.load_resolution(Format::Clap, &descriptor),
+        ))
+    });
+    CONSTRUCTED_FROM.lock().expect("constructed").clear();
+    let mut seams = fx.seams();
+    seams.scan_policy =
+        PluginScanPolicy::with_allowed_roots(vec![fx.root.clone(), reloaded_fx.root.clone()]);
+    seams.capture_state = capture_then_reload_under_the_same_id;
+    seams.construct = construct_recording_its_file;
+
+    let outcome = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &seams,
+        None,
+    );
+
+    assert!(
+        RELOAD.with(|reload| reload.borrow().is_none()),
+        "the reload landed during the state read"
+    );
+    let constructed_from = CONSTRUCTED_FROM.lock().expect("constructed").clone();
+    match outcome {
+        Ok(_) => assert_eq!(
+            constructed_from,
+            vec![fx.clap_path.to_str().expect("utf8").to_string()],
+            "the offline instance is built from the file whose state it restores"
+        ),
+        Err(refusal) => {
+            assert!(refusal.contains("'d-fx'"), "{refusal}");
+            assert!(
+                constructed_from.is_empty(),
+                "a refused pairing builds nothing: {constructed_from:?}"
+            );
+        }
+    }
 }
 
 #[test]
