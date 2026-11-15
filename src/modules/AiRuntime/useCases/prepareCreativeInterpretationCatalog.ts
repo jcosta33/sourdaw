@@ -290,10 +290,11 @@ function collectCreationSlots(targets: readonly CreativeTargetCandidate[]): Crea
         },
     ];
     const nextId = () => `slot-${String(slots.length + 1)}`;
-    const trackCandidate = targets.find((target) => target.objectType === 'track');
+    // Every target gets slots of its own: a slot names one parent object, so a request touching
+    // several tracks (a comparison's subject beside its reference) needs one under each.
     // Pushed one at a time: `nextId` counts what the list already holds, so minting several ids in
     // one push call would hand every slot in it the same id and make all but the first unselectable.
-    if (trackCandidate !== undefined) {
+    for (const trackCandidate of targets.filter((target) => target.objectType === 'track')) {
         slots.push({
             candidateId: nextId(),
             objectType: 'clip',
@@ -313,8 +314,7 @@ function collectCreationSlots(targets: readonly CreativeTargetCandidate[]): Crea
             budget: DEVICE_CREATION_BUDGET,
         });
     }
-    const clipCandidate = targets.find((target) => target.objectType === 'clip');
-    if (clipCandidate !== undefined) {
+    for (const clipCandidate of targets.filter((target) => target.objectType === 'clip')) {
         slots.push({
             candidateId: nextId(),
             objectType: 'notes',
