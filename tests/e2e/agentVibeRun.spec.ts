@@ -25,11 +25,11 @@ function constText(value: unknown): string {
     return constant;
 }
 function onlyEnum(value: unknown): string {
-    const [first, ...rest] = record(value).enum as unknown[];
-    if (typeof first !== 'string' || rest.length > 0) {
+    const options = record(value).enum;
+    if (!Array.isArray(options) || options.length !== 1 || typeof options[0] !== 'string') {
         throw new TypeError('Expected exactly one published catalog id.');
     }
-    return first;
+    return options[0];
 }
 function tool(request: ScriptedToolRequest, wireName: string) {
     return request.tools.find((candidate) => candidate.function.name === wireName);
@@ -251,7 +251,7 @@ test('drives a whole-project vibe run through brief, per-batch audition, skip an
         await page.getByTestId('chat-composer-input').fill(PROMPT);
         await page.getByTestId('chat-composer-input').press('Enter');
 
-        // 1. The brief card lists the three planned batches and applies nothing before Confirm.
+        // 1. The brief card lists the four planned batches and applies nothing before Confirm.
         await expect(
             page.getByText('After the brief, 4 batches follow, each measured, previewed and approved on its own:')
         ).toBeVisible({
