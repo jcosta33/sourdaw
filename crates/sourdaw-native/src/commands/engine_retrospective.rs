@@ -221,7 +221,7 @@ mod tests {
         state: &AppState,
     ) -> rtrb::Consumer<daw_engine::scheduler::GraphCommand> {
         let (engine, commands, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
         commands
     }
