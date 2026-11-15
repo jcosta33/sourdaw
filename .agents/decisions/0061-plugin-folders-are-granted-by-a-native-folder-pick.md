@@ -39,7 +39,8 @@ question.
    grant that fails is excluded and reported unavailable with its reason; it is not deleted, so a
    reconnected drive works again.
 4. **A pick may not overlap what the scan must never reach**: a filesystem root, the home folder or
-   an ancestor of it, a default plugin folder, or storage the renderer writes without a pick. Grants
+   an ancestor of it, a default plugin folder, storage the renderer writes without a pick, or a path
+   the renderer holds a read-write file grant on, whichever pick came first. Grants
    stay disjoint from one another.
 5. **Granted folders rank after every default folder**, in grant order, and never take the
    symlink exception reserved for the platform's own folders.

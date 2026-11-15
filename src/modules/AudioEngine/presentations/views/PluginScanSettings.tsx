@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import {
     FolderOpen,
@@ -36,6 +36,8 @@ export const PluginScanSettings = (): ReactElement | null => {
     const state = useStore(pluginScanStore, defaultPluginScanState);
     const [isAddingFolder, setIsAddingFolder] = useState(false);
     const [folderError, setFolderError] = useState<string | null>(null);
+    const [folderStatus, setFolderStatus] = useState<string | null>(null);
+    const addFolderButtonRef = useRef<HTMLButtonElement>(null);
 
     const { hasPluginScanning } = getPlatformCapabilities();
 
@@ -84,9 +86,12 @@ export const PluginScanSettings = (): ReactElement | null => {
     const handleAddFolder = async (): Promise<void> => {
         setIsAddingFolder(true);
         setFolderError(null);
+        setFolderStatus(null);
         try {
             const outcome = await addPluginFolder();
-            if (!outcome.added && 'reason' in outcome) {
+            if (outcome.added) {
+                setFolderStatus(`Added ${outcome.path}`);
+            } else if ('reason' in outcome) {
                 setFolderError(outcome.reason);
             }
         } finally {
@@ -96,10 +101,16 @@ export const PluginScanSettings = (): ReactElement | null => {
 
     const handleRemoveFolder = async (path: string): Promise<void> => {
         setFolderError(null);
+        setFolderStatus(null);
         const outcome = await removePluginFolder(path);
         if (!outcome.removed) {
             setFolderError(outcome.reason);
+            return;
         }
+        // The removed row took the focused Remove button with it; without
+        // this, keyboard focus falls back to the document body.
+        addFolderButtonRef.current?.focus();
+        setFolderStatus(`Removed ${path}`);
     };
 
     const handleScan = () => {
@@ -184,6 +195,7 @@ export const PluginScanSettings = (): ReactElement | null => {
                 ) : null}
 
                 <Button
+                    ref={addFolderButtonRef}
                     variant="outline"
                     size="xs"
                     className="w-fit gap-1 text-xs"
@@ -195,6 +207,10 @@ export const PluginScanSettings = (): ReactElement | null => {
                     <FolderPlus className="size-3" aria-hidden="true" />
                     Add Folder
                 </Button>
+
+                <p role="status" className="text-[10px] text-muted-foreground empty:hidden">
+                    {folderStatus}
+                </p>
 
                 {folderError !== null ? (
                     <Row align="start" gap={1} className="text-[10px] text-destructive" role="alert">

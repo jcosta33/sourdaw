@@ -3,7 +3,7 @@ import { addPluginFolder as requestPluginFolderGrant } from '../../../repositori
 import { refreshPluginFolderGrants } from './refreshPluginFolderGrants';
 
 export type AddPluginFolderOutcome =
-    { added: true } | { added: false; reason: string } | { added: false; cancelled: true };
+    { added: true; path: string } | { added: false; reason: string } | { added: false; cancelled: true };
 
 /**
  * Let the user pick a folder to scan for plugins, and grant it.
@@ -31,5 +31,5 @@ export async function addPluginFolder(): Promise<AddPluginFolderOutcome> {
     if (!refresh.refreshed) {
         return { added: false, reason: `Added ${result.path}, but ${refresh.reason}` };
     }
-    return { added: true };
+    return { added: true, path: result.path };
 }

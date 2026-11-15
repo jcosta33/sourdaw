@@ -57,7 +57,9 @@ renderer-provided absolute path is not enough authority, and no other route adds
   contains a default plugin folder, which keeps the defaults' priority order the only one that
   applies to them, and when it is inside or contains storage the renderer may write without a user
   pick, because a plugin folder there would let a page plant native code that the scan and the
-  loader then execute. A pick inside an existing grant is refused; one containing existing grants
+  loader then execute. For the same reason a pick is refused when it is inside or contains a path
+  the user granted read-write file access to, and a stored grant becomes unavailable once such a
+  file grant appears. A pick inside an existing grant is refused; one containing existing grants
   replaces them, so grants never overlap.
 - **Ranking.** Granted folders rank after every default folder, in grant order, so a copy of a
   plugin in a default folder always wins.

@@ -69,10 +69,9 @@ describe('PluginScanSettings', () => {
             lastScanTime: null,
             quarantined: [],
             grantedFolders: [],
-            grantedFolders: [],
         });
         (getPlatformCapabilities as ReturnType<typeof vi.fn>).mockReturnValue({ hasPluginScanning: true });
-        (addPluginFolder as ReturnType<typeof vi.fn>).mockResolvedValue({ added: true });
+        (addPluginFolder as ReturnType<typeof vi.fn>).mockResolvedValue({ added: true, path: '/Users/me/Plugins' });
         (removePluginFolder as ReturnType<typeof vi.fn>).mockResolvedValue({ removed: true });
         (refreshPluginFolderGrants as ReturnType<typeof vi.fn>).mockResolvedValue({ refreshed: true });
     });
@@ -117,7 +116,6 @@ describe('PluginScanSettings', () => {
             lastScanTime: null,
             quarantined: [],
             grantedFolders: [],
-            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('Scanning...')).toBeInTheDocument();
@@ -132,7 +130,6 @@ describe('PluginScanSettings', () => {
             notices: [],
             lastScanTime: null,
             quarantined: [],
-            grantedFolders: [],
             grantedFolders: [],
         });
         render(<PluginScanSettings />);
@@ -151,7 +148,6 @@ describe('PluginScanSettings', () => {
             lastScanTime: now,
             quarantined: [],
             grantedFolders: [],
-            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('Last Scan')).toBeInTheDocument();
@@ -167,7 +163,6 @@ describe('PluginScanSettings', () => {
             lastScanTime: null,
             quarantined: [],
             grantedFolders: [],
-            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('Failed to scan /invalid/path')).toBeInTheDocument();
@@ -182,7 +177,6 @@ describe('PluginScanSettings', () => {
             notices: [],
             lastScanTime: Date.now(),
             quarantined: [],
-            grantedFolders: [],
             grantedFolders: [],
         });
         render(<PluginScanSettings />);
@@ -207,7 +201,6 @@ describe('PluginScanSettings', () => {
             lastScanTime: null,
             quarantined: [],
             grantedFolders: [],
-            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         expect(screen.queryByText('All plugins scanned successfully')).not.toBeInTheDocument();
@@ -223,7 +216,6 @@ describe('PluginScanSettings', () => {
             lastScanTime: null,
             quarantined: [],
             grantedFolders: [],
-            grantedFolders: [],
         });
         render(<PluginScanSettings />);
         expect(screen.queryByText('All plugins scanned successfully')).not.toBeInTheDocument();
@@ -238,7 +230,6 @@ describe('PluginScanSettings', () => {
             notices: [],
             lastScanTime: null,
             quarantined: [],
-            grantedFolders: [],
             grantedFolders: [],
         });
         render(<PluginScanSettings />);
@@ -329,7 +320,7 @@ describe('PluginScanSettings', () => {
     });
 
     it('disables Add Folder while an add is in flight', async () => {
-        let finish = (_outcome: { added: true }): void => {};
+        let finish = (_outcome: { added: true; path: string }): void => {};
         (addPluginFolder as ReturnType<typeof vi.fn>).mockReturnValue(
             new Promise((resolve) => {
                 finish = resolve;
@@ -343,7 +334,7 @@ describe('PluginScanSettings', () => {
             expect(button).toBeDisabled();
         });
 
-        finish({ added: true });
+        finish({ added: true, path: '/Users/me/Plugins' });
         await waitFor(() => {
             expect(button).toBeEnabled();
         });
@@ -424,6 +415,26 @@ describe('PluginScanSettings', () => {
             expect(removePluginFolder).toHaveBeenCalledWith('/Users/me/Plugins-old');
         });
         expect(removePluginFolder).toHaveBeenCalledTimes(1);
+    });
+
+    it('announces an added folder politely', async () => {
+        render(<PluginScanSettings />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Add Folder' }));
+
+        expect(await screen.findByRole('status')).toHaveTextContent('Added /Users/me/Plugins');
+    });
+
+    it('moves focus to Add Folder and announces the removal once a folder is removed', async () => {
+        withGrantedFolders([{ path: '/Users/me/Plugins', unavailableReason: null }]);
+        render(<PluginScanSettings />);
+        const remove = screen.getByRole('button', { name: 'Remove plugin folder /Users/me/Plugins' });
+
+        remove.focus();
+        fireEvent.click(remove);
+
+        expect(await screen.findByRole('status')).toHaveTextContent('Removed /Users/me/Plugins');
+        expect(screen.getByRole('button', { name: 'Add Folder' })).toHaveFocus();
     });
 
     it('announces a failed removal', async () => {

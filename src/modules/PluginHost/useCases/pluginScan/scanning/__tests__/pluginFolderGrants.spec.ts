@@ -77,7 +77,7 @@ describe('plugin folder grants', () => {
             mocks.addPluginFolder.mockResolvedValue({ status: 'granted', path: '/Users/me/Plugins' });
             mocks.getPluginFolderGrants.mockResolvedValue([{ path: '/Users/me/Plugins', unavailable_reason: null }]);
 
-            await expect(addPluginFolder()).resolves.toEqual({ added: true });
+            await expect(addPluginFolder()).resolves.toEqual({ added: true, path: '/Users/me/Plugins' });
             expect(mocks.getPluginFolderGrants).toHaveBeenCalledTimes(1);
             expect(pluginScanStore.value?.grantedFolders).toEqual([
                 { path: '/Users/me/Plugins', unavailableReason: null },
