@@ -2,9 +2,8 @@ import { type Frame, type FrameLocator, type Locator, type Page } from '@playwri
 import { stringify as superjsonStringify } from 'superjson';
 
 import { expect, test } from './e2eTest';
-import { expectStartupExact, readStartupSnapshot, requireStartupMirror } from './helpers/startupRecoveryEvidence';
-
 import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS } from './e2eUtils';
+import { expectStartupExact, readStartupSnapshot, requireStartupMirror } from './helpers/startupRecoveryEvidence';
 
 type Box = { x: number; y: number; width: number; height: number };
 type RecentProject = { key: string; name: string; updatedAt: number };

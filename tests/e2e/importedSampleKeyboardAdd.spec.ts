@@ -1,5 +1,5 @@
-import { fileURLToPath } from 'node:url';
 import { env } from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 import { type Locator, type Page, type TestInfo } from '@playwright/test';
 
