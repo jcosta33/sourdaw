@@ -37,11 +37,11 @@ export function isValidListRestoreSlot(slot: { index?: unknown; beforeId?: unkno
 
 // Before the old successor, else after the old predecessor, else the recorded
 // index clamped to the list, else the end (no slot: a fresh add).
-export function insertAtListRestoreSlot<T extends { id: string }>(
-    items: readonly T[],
-    item: T,
+export function insertAtListRestoreSlot<TItem extends { id: string }>(
+    items: readonly TItem[],
+    item: TItem,
     slot: ListRestoreSlot
-): T[] {
+): TItem[] {
     const slotIndex = resolveListRestoreIndex(items, slot);
     return [...items.slice(0, slotIndex), item, ...items.slice(slotIndex)];
 }
