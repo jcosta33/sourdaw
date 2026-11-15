@@ -43,18 +43,15 @@ function isBarrel(file: string): boolean {
 }
 
 function splitSpecifierList(list: string): { name: string; local: string; typeOnly: boolean }[] {
-    return list
-        .split(',')
-        .map((part) => part.trim())
-        .filter((part) => part !== '')
-        .map((part) => {
-            const typeOnly = /^type\s/u.test(part);
-            const [name = '', local = name] = part
-                .replace(/^type\s+/u, '')
-                .split(/\s+as\s+/u)
-                .map((piece) => piece.trim());
-            return { name, local, typeOnly };
-        });
+    const parts = list.split(',');
+    const trimmed = parts.map((part) => part.trim());
+    const nonEmpty = trimmed.filter((part) => part !== '');
+    return nonEmpty.map((part) => {
+        const typeOnly = /^type\s/u.test(part);
+        const pieces = part.replace(/^type\s+/u, '').split(/\s+as\s+/u);
+        const [name = '', local = name] = pieces.map((piece) => piece.trim());
+        return { name, local, typeOnly };
+    });
 }
 
 export function discoverHostedBodyCensus(): HostedBodyCensus {
@@ -169,7 +166,8 @@ export function discoverHostedBodyCensus(): HostedBodyCensus {
             if (reached.has(file) || isBarrel(file)) {
                 continue;
             }
-            const importsPropagating = [...(uses.get(file) ?? [])].some(
+            const fileUses = uses.get(file);
+            const importsPropagating = Array.from(fileUses ?? []).some(
                 (used) => reached.has(used) && !TERMINAL_TIER.test(relative(SRC_ROOT, used))
             );
             if (importsPropagating) {
@@ -181,7 +179,7 @@ export function discoverHostedBodyCensus(): HostedBodyCensus {
 
     const toRelative = (file: string) => relative(SRC_ROOT, file);
     return {
-        modules: [...reached].map(toRelative).sort(),
+        modules: Array.from(reached, toRelative).sort(),
         transports: transports.map(toRelative).sort(),
         reaches: (from, to) => {
             const target = join(SRC_ROOT, to);

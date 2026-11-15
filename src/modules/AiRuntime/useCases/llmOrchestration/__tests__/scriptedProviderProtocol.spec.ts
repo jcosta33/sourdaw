@@ -36,7 +36,9 @@ const transportMocks = vi.hoisted(() => ({
     anthropic: vi.fn(),
     openAiCompatible: vi.fn(),
 }));
-const valueChoiceRoute = vi.hoisted(() => ({ transport: { value: 'anthropic' as 'anthropic' | 'openai-compatible' } }));
+const valueChoiceRoute = vi.hoisted((): { transport: { value: 'anthropic' | 'openai-compatible' } } => ({
+    transport: { value: 'anthropic' },
+}));
 
 vi.mock('../../../repositories/cloudLlm/cloudInference/requestAnthropicProvider', () => ({
     requestAnthropicProvider: transportMocks.anthropic,
@@ -53,28 +55,32 @@ vi.mock('../../../repositories/cloudLlm/usesStrictCloudToolSchemas', () => ({
     usesStrictCloudToolSchemas: () => false,
 }));
 vi.mock('../../../repositories/cloudLlm/getCloudProviderInfo', () => ({
-    getCloudProviderInfo: () =>
-        valueChoiceRoute.transport.value === 'anthropic'
-            ? { provider: 'anthropic', model: 'claude-test', baseUrl: 'https://api.anthropic.com' }
-            : { provider: 'openai-compatible', model: 'compatible-test', baseUrl: 'http://localhost:1234/v1' },
+    getCloudProviderInfo: () => {
+        if (valueChoiceRoute.transport.value === 'anthropic') {
+            return { provider: 'anthropic', model: 'claude-test', baseUrl: 'https://api.anthropic.com' };
+        }
+        return { provider: 'openai-compatible', model: 'compatible-test', baseUrl: 'http://localhost:1234/v1' };
+    },
 }));
 vi.mock('../../../repositories/cloudLlm/getCloudProviderRuntime', () => ({
-    getCloudProviderRuntime: () =>
-        valueChoiceRoute.transport.value === 'anthropic'
-            ? {
-                  provider: 'anthropic',
-                  authentication: 'api-key',
-                  model: 'claude-test',
-                  session_id: `provider-session-${'0'.repeat(32)}`,
-              }
-            : {
-                  provider: 'openai-compatible',
-                  authentication: 'none',
-                  session_id: null,
-                  model: 'compatible-test',
-                  base_url: 'http://localhost:1234/v1',
-                  strict_tool_schemas: false,
-              },
+    getCloudProviderRuntime: () => {
+        if (valueChoiceRoute.transport.value === 'anthropic') {
+            return {
+                provider: 'anthropic',
+                authentication: 'api-key',
+                model: 'claude-test',
+                session_id: `provider-session-${'0'.repeat(32)}`,
+            };
+        }
+        return {
+            provider: 'openai-compatible',
+            authentication: 'none',
+            session_id: null,
+            model: 'compatible-test',
+            base_url: 'http://localhost:1234/v1',
+            strict_tool_schemas: false,
+        };
+    },
 }));
 
 const PROVIDER_CALLS: readonly ProviderCall[] = [
@@ -398,9 +404,10 @@ function findOpenAiToolResultIdProblem(messages: readonly Record<string, unknown
  */
 function findToolResultIdProblem(transport: Transport, request: Record<string, unknown>): string | null {
     const messages = readMessages(request);
-    return transport === 'anthropic'
-        ? findAnthropicToolResultIdProblem(messages)
-        : findOpenAiToolResultIdProblem(messages);
+    if (transport === 'anthropic') {
+        return findAnthropicToolResultIdProblem(messages);
+    }
+    return findOpenAiToolResultIdProblem(messages);
 }
 
 /** What a request-side adapter defect looks like: every tool result names an id its turn never issued. */
@@ -409,13 +416,12 @@ function withMismatchedToolResultIds(transport: Transport, request: Record<strin
         if (transport === 'anthropic' && message.role === 'user' && Array.isArray(message.content)) {
             return {
                 ...message,
-                content: message.content
-                    .filter(isRecord)
-                    .map((block) =>
-                        block.type === 'tool_result'
-                            ? { ...block, tool_use_id: `${String(block.tool_use_id)}-mismatch` }
-                            : block
-                    ),
+                content: message.content.filter(isRecord).map((block) => {
+                    if (block.type === 'tool_result') {
+                        return { ...block, tool_use_id: `${String(block.tool_use_id)}-mismatch` };
+                    }
+                    return block;
+                }),
             };
         }
         if (transport === 'openai-compatible' && message.role === 'tool') {
@@ -568,7 +574,7 @@ function chooseValues() {
 }
 
 function userContentOf(request: Record<string, unknown>): string {
-    const [first] = readMessages(request).filter((message) => message.role === 'user');
+    const first = readMessages(request).find((message) => message.role === 'user');
     return JSON.stringify(first?.content ?? null);
 }
 

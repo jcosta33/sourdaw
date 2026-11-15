@@ -1882,7 +1882,7 @@ function provideEarlierConversation(): void {
         ],
         isGenerating: false,
         enableReasoning: true,
-        chatMode: 'explain',
+        chatMode: 'chat',
     });
 }
 
@@ -1927,7 +1927,7 @@ describeNoSampleData(EXPLAIN_CASE, {
         carries: EXPLAIN_QUESTION,
         build: async (dialect, injection) => {
             await selectHostedDialect(dialect);
-            chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'explain' });
+            chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'chat' });
             return recordHostedBodies(() => sendChatMessage(textFor(injection, EXPLAIN_QUESTION), { mode: 'explain' }));
         },
     },
@@ -1959,7 +1959,7 @@ describeNoSampleData(MIX_HEALTH_CASE, {
             if (injection.kind === 'samples') {
                 trackStore.set({
                     tracks: [
-                        { ...createTrack({ id: 'drums', name: injection.json, kind: 'audio' }) },
+                        createTrack({ id: 'drums', name: injection.json, kind: 'audio' }),
                         createTrack({ id: 'master', name: 'Master', kind: 'master' }),
                     ],
                     selectedTrackId: null,
@@ -2048,8 +2048,9 @@ describeNoSampleData(AI_GENERATION_CASE, {
             await selectHostedDialect(dialect);
             const clipId = textFor(injection, 'clip-1');
             installMidiClip(clipId);
-            return recordHostedBodies(() =>
-                getAiMidiHandlers().variationMidi.execute({ type: 'variationMidi', payload: { clipId } })
+            return recordHostedBodies(
+                async () =>
+                    await getAiMidiHandlers().variationMidi.execute({ type: 'variationMidi', payload: { clipId } })
             );
         },
     },
@@ -2059,11 +2060,12 @@ describeNoSampleData(AI_GENERATION_CASE, {
             await selectHostedDialect(dialect);
             const clipId = textFor(injection, 'clip-1');
             installMidiClip(clipId);
-            return recordHostedBodies(() =>
-                getAiMidiHandlers().completeMidi.execute({
-                    type: 'completeMidi',
-                    payload: { clipId, bars: 2, direction: 'forward' },
-                })
+            return recordHostedBodies(
+                async () =>
+                    await getAiMidiHandlers().completeMidi.execute({
+                        type: 'completeMidi',
+                        payload: { clipId, bars: 2, direction: 'forward' },
+                    })
             );
         },
     },
@@ -2073,8 +2075,12 @@ describeNoSampleData(AI_GENERATION_CASE, {
             await selectHostedDialect(dialect);
             const clipId = textFor(injection, 'clip-1');
             installMidiClip(clipId);
-            return recordHostedBodies(() =>
-                getAiMidiHandlers().generateBassline.execute({ type: 'generateBassline', payload: { clipId } })
+            return recordHostedBodies(
+                async () =>
+                    await getAiMidiHandlers().generateBassline.execute({
+                        type: 'generateBassline',
+                        payload: { clipId },
+                    })
             );
         },
     },
