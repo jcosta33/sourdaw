@@ -116,6 +116,21 @@ if (sizeBaselineFiles.length > 0) {
 
 export default tseslint.config(
     eslintPluginComments.recommended,
+    // Counted bulk suppressions are an ESLint CLI contract. These promoted
+    // rules stay here until Oxlint exposes an equivalent stable public API.
+    {
+        rules: {
+            '@eslint-react/exhaustive-deps': 'error',
+            '@eslint-react/naming-convention-context-name': 'error',
+            '@eslint-react/naming-convention-ref-name': 'error',
+            '@eslint-react/no-array-index-key': 'error',
+            '@eslint-react/set-state-in-effect': 'error',
+            '@eslint-react/use-state': 'error',
+            'react-hooks/exhaustive-deps': 'error',
+            'react-hooks/refs': 'error',
+            'react-hooks/set-state-in-effect': 'error',
+        },
+    },
     {
         ignores: [
             'build/',
@@ -146,7 +161,7 @@ export default tseslint.config(
     {
         linterOptions: { reportUnusedDisableDirectives: false },
         // Keep canonical and historical names available for directive validation.
-        // Only canonical names enable moved rules in the cofix settings below.
+        // Bulk-owned hook rules keep their original names; cofix projects moved names.
         plugins: {
             '@eslint-react': eslintPluginReact,
             '@tanstack/query': eslintPluginQuery,
@@ -218,7 +233,7 @@ export default tseslint.config(
             'preserve-caught-error': 'error',
             'no-useless-computed-key': 'error',
             'no-void': [
-                'warn',
+                'error',
                 {
                     allowAsStatement: true,
                 },
@@ -376,7 +391,7 @@ export default tseslint.config(
         ],
         rules: {
             'no-restricted-syntax': [
-                'warn',
+                'error',
                 {
                     selector: "CallExpression[callee.object.name='localStorage']",
                     message:

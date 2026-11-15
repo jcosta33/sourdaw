@@ -120,7 +120,7 @@ export const SpectralBinEditor = ({
     // §150.2 — only redraw when bin content / layout / mode changes.
     useEffect(() => {
         draw();
-        // eslint-disable-next-line react-hooks-js/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [values, numBins, width, height, mode]);
 
     const updateBinsFromPointer = (e: React.PointerEvent): void => {

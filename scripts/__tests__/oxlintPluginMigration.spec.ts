@@ -1,15 +1,16 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 
 import { clearCaches } from '@typescript-eslint/parser';
 import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
-import { eslintEnvironment } from '../runLint.ts';
+import { buildEslintArgv, eslintEnvironment } from '../runLint.ts';
 
 import { configuredSourdawRules } from './helpers/configuredSourdawRules.ts';
-import { lintMigratedRules, runProductionLint } from './helpers/lintMigratedRules.ts';
+import { lintMigratedRules, runProductionLint, withLintFixture } from './helpers/lintMigratedRules.ts';
 import { typeQueryLintFixtures } from './helpers/typeQueryLintFixtures.ts';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -178,6 +179,61 @@ const cases = [
 // sequential suite. A native TS program can enumerate another worker's fixture
 // before that worker deletes it, then fail when opening the missing file.
 describe('production Oxlint public-plugin migration', () => {
+    it.each([false, true])(
+        'enforces retained bulk suppression budgets through the production ESLint CLI (fix=%s)',
+        (fix) => {
+            const rule = '@eslint-react/no-array-index-key';
+            const oneViolation =
+                'export function Example() {\n    return [1].map((value, index) => <div key={index}>{value}</div>);\n}\n';
+            const twoViolations =
+                'export function Example() {\n    return [1].map((value, index) => <div key={index}><span key={index}>{value}</span></div>);\n}\n';
+            const noViolation =
+                'export function Example() {\n    return [1].map((value) => <div key={value}>{value}</div>);\n}\n';
+            withLintFixture(oneViolation, 'src/app/Example.tsx', (fixture) => {
+                const directory = mkdtempSync(join(tmpdir(), 'lint-migration-suppressions-'));
+                const suppressionsFile = join(directory, 'eslint-suppressions.json');
+                const budget = JSON.stringify({ [relative(process.cwd(), fixture)]: { [rule]: { count: 1 } } });
+                const run = (text: string, target = fixture) => {
+                    writeFileSync(target, text);
+                    const argv = buildEslintArgv({ fix, full: false }, [target]);
+                    const location = argv.indexOf('--suppressions-location');
+                    expect(location).toBeGreaterThan(0);
+                    expect(argv[location + 1]).toBe('eslint-suppressions.json');
+                    expect(argv).not.toContain('--pass-on-unpruned-suppressions');
+                    argv[location + 1] = suppressionsFile;
+                    const result = spawnSync('pnpm', argv, {
+                        cwd: process.cwd(),
+                        encoding: 'utf8',
+                        timeout: 120_000,
+                        env: eslintEnvironment(process.env, fix),
+                    });
+                    expect(result.error).toBeUndefined();
+                    expect(readFileSync(suppressionsFile, 'utf8')).toBe(budget);
+                    return { status: result.status, output: result.stdout + result.stderr };
+                };
+                try {
+                    writeFileSync(suppressionsFile, budget);
+                    const accepted = run(oneViolation);
+                    expect(accepted.status, accepted.output).toBe(0);
+                    const excess = run(twoViolations);
+                    expect(excess.status, excess.output).toBe(1);
+                    expect(excess.output).toContain(rule);
+                    const unused = run(noViolation);
+                    expect(unused.status, unused.output).toBe(2);
+                    expect(unused.output).toContain('suppression');
+                    const unrecorded = withLintFixture(oneViolation, 'src/app/Unrecorded.tsx', (target) =>
+                        run(oneViolation, target)
+                    );
+                    expect(unrecorded.status, unrecorded.output).toBe(1);
+                    expect(unrecorded.output).toContain(rule);
+                } finally {
+                    rmSync(directory, { recursive: true, force: true });
+                }
+            });
+        },
+        180_000
+    );
+
     it.each(cases)(
         'preserves $rule invalid and valid behavior',
         ({ rule, filename, invalid, valid }) => {
@@ -344,7 +400,7 @@ describe('production Oxlint public-plugin migration', () => {
         expect(verified.status, verified.output).toBe(0);
     }, 180_000);
 
-    it('runs migrated rules in Oxlint and keeps only service gaps and core rules active in ESLint', async () => {
+    it('runs migrated rules in Oxlint and retains service gaps, bulk budgets and core rules in ESLint', async () => {
         const eslint = new ESLint();
         const config = await eslint.calculateConfigForFile(resolve('src/app/App.tsx'));
         if (!config) {
@@ -360,6 +416,15 @@ describe('production Oxlint public-plugin migration', () => {
             .map(([name]) => name);
         expect(active.sort()).toEqual(
             [
+                '@eslint-react/exhaustive-deps',
+                '@eslint-react/naming-convention-context-name',
+                '@eslint-react/naming-convention-ref-name',
+                '@eslint-react/no-array-index-key',
+                '@eslint-react/set-state-in-effect',
+                '@eslint-react/use-state',
+                'react-hooks/exhaustive-deps',
+                'react-hooks/refs',
+                'react-hooks/set-state-in-effect',
                 '@eslint-react/no-leaked-conditional-rendering',
                 '@eslint-community/eslint-comments/disable-enable-pair',
                 '@eslint-community/eslint-comments/no-aggregating-enable',
@@ -488,6 +553,20 @@ describe('production Oxlint public-plugin migration', () => {
         for (const target of targets) {
             for (const mode of [check, fix]) {
                 expect(mode[target].legacy, target).toEqual(['jsx-a11y-x', 'promise', 'react-hooks']);
+                for (const rule of [
+                    '@eslint-react/exhaustive-deps',
+                    '@eslint-react/naming-convention-context-name',
+                    '@eslint-react/naming-convention-ref-name',
+                    '@eslint-react/no-array-index-key',
+                    '@eslint-react/set-state-in-effect',
+                    '@eslint-react/use-state',
+                    'react-hooks/exhaustive-deps',
+                    'react-hooks/refs',
+                    'react-hooks/set-state-in-effect',
+                ]) {
+                    const expected = rule === '@eslint-react/use-state' ? [2, {}] : [2];
+                    expect(mode[target].rules[rule], `${target}: ${rule}`).toEqual(expected);
+                }
                 const legacyActive = Object.entries(mode[target].rules).filter(([name, setting]) => {
                     if (!/^(jsx-a11y-x|promise|react-hooks)\//.test(name)) {
                         return false;
@@ -497,7 +576,11 @@ describe('production Oxlint public-plugin migration', () => {
                     }
                     return setting[0] !== 0;
                 });
-                expect(legacyActive, target).toEqual([]);
+                expect(legacyActive.map(([name]) => name).sort(), target).toEqual([
+                    'react-hooks/exhaustive-deps',
+                    'react-hooks/refs',
+                    'react-hooks/set-state-in-effect',
+                ]);
             }
             expect(fix[target].react, target).toEqual(canonical.settings['react-x']);
             expect(fix[target].project, target).toEqual(check[target].project);
@@ -529,7 +612,8 @@ describe('production Oxlint public-plugin migration', () => {
         }
         expect(naming[0]).toBe(0);
         expect(fix.app.rules['react-hooks-js/purity']).toEqual([2]);
-        expect(fix.app.rules['react-hooks-js/refs']).toEqual([1]);
+        expect(fix.app.rules['react-hooks-js/refs']).toBeUndefined();
+        expect(fix.app.rules['react-hooks/refs']).toEqual([2]);
         expect(fix.server.project).toBe('./server/tsconfig.json');
         expect(fix.e2e.project).toBe('./tsconfig.e2e.json');
         expect(fix.tool.project).toBe(false);

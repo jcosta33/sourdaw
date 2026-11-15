@@ -10,7 +10,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 // The sequential integration suite owns every caller so another worker cannot
 // remove a workspace fixture while a native TypeScript program is loading it.
-function withLintFixture<Result>(code: string, filename: string, inspect: (fixture: string) => Result): Result {
+export function withLintFixture<Result>(code: string, filename: string, inspect: (fixture: string) => Result): Result {
     const inModule = filename.startsWith('src/modules/Example/');
     const parent =
         ['scripts', 'electron', 'tests/e2e', 'server'].find((path) => filename.startsWith(`${path}/`)) ?? 'src/app';

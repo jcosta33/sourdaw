@@ -1,6 +1,7 @@
 import { playExclusiveAudioBufferPreview } from '#/modules/AudioEngine/useCases';
 import { agentMeasurementArtifactStore } from '#/modules/AudioRendering/stores';
 import { subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases';
+import { transportStore } from '#/modules/Transport/stores';
 
 import {
     measuredPreviewAuditionRuntime,
@@ -13,7 +14,10 @@ import { pendingActionConfirmationStore } from '../stores/pendingActionConfirmat
 import { resolveMeasuredPreviewAudition } from './resolveMeasuredPreviewAudition';
 import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 
-type StartInput = Parameters<typeof resolveMeasuredPreviewAudition>[0] & { side: 'baseline' | 'preview' };
+type StartInput = Parameters<typeof resolveMeasuredPreviewAudition>[0] & {
+    side: 'baseline' | 'preview';
+    surface: MeasuredPreviewAuditionOperation['surface'];
+};
 type ResolvedPair = Extract<ReturnType<typeof resolveMeasuredPreviewAudition>, { status: 'available' }>;
 
 function prepareOperation(input: StartInput, pair: ResolvedPair) {
@@ -22,6 +26,7 @@ function prepareOperation(input: StartInput, pair: ResolvedPair) {
     const operation: MeasuredPreviewAuditionOperation = {
         id: crypto.randomUUID(),
         confirmationId: input.confirmationId,
+        surface: input.surface,
         targetId: input.targetId,
         side: input.side,
         identity: pair.identity,
@@ -53,11 +58,23 @@ function prepareOperation(input: StartInput, pair: ResolvedPair) {
             void stop();
         }
     };
+    // Starting transport playback takes the output over from a preview, as in any DAW. A transport
+    // already playing when the audition began stays gated silent until the audition ends.
+    let transportPlaying = transportStore.value?.isPlaying === true;
+    const yieldToTransportPlayback = () => {
+        const playing = transportStore.value?.isPlaying === true;
+        const started = playing && !transportPlaying;
+        transportPlaying = playing;
+        if (started && !operation.abort.signal.aborted) {
+            void stop();
+        }
+    };
     const subscriptions = [
         agentMeasurementArtifactStore.subscribe(revalidate),
         pendingActionConfirmationStore.subscribe(revalidate),
         agentRunStore.subscribe(revalidate),
         subscribeToCrdtChanges(revalidate),
+        transportStore.subscribe(yieldToTransportPlayback),
     ];
     operation.releaseObservers = () => {
         for (const unsubscribe of subscriptions.splice(0)) {

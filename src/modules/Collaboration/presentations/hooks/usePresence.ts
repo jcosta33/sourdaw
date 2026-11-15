@@ -100,6 +100,6 @@ export const usePresence = (): readonly PresenceData[] => {
     // is intentional: `version` ensures React re-renders only when data changes,
     // while the ref avoids stale-closure issues in the subscription callback.
     void version;
-    // eslint-disable-next-line react-hooks-js/refs -- intentional version-counter pattern: ref stores mutable presence map, state version triggers re-render
+    // eslint-disable-next-line react-hooks/refs -- intentional version-counter pattern: ref stores mutable presence map, state version triggers re-render
     return Object.values(dataRef.current);
 };

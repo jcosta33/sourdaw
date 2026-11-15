@@ -83,6 +83,11 @@ printf '%s\n' \
     '    test) exit "${FAKE_CARGO_TEST_STATUS:-0}" ;;' \
     'esac' \
     > "$fake_bin/cargo"
+printf '%s\n' \
+    '#!/bin/sh' \
+    'set -eu' \
+    'printf "rustup %s\n" "$*" >> "$COMMAND_LOG"' \
+    > "$fake_bin/rustup"
 cat > "$fake_bin/curl" <<'SH'
 #!/bin/sh
 set -eu
@@ -133,7 +138,7 @@ exit "${FAKE_GITLEAKS_STATUS:-0}"
 GITLEAKS
 chmod +x "$extract_dir/gitleaks"
 SH
-chmod +x "$fake_bin/pnpm" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" "$fake_bin/sha256sum" "$fake_bin/tar"
+chmod +x "$fake_bin/pnpm" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/rustup" "$fake_bin/curl" "$fake_bin/sha256sum" "$fake_bin/tar"
 cat > "$fake_bin/gh" <<'SH'
 #!/bin/sh
 set -eu
@@ -2120,6 +2125,8 @@ PATH="$fake_bin:$PATH" \
 printf '%s\n' \
     'cargo fmt --all --check' \
     'cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features' \
+    'rustup target add wasm32-unknown-unknown' \
+    'cargo clippy --target wasm32-unknown-unknown --package daw-dsp --package proof-chamber --package scoring --package daw-wasm-decoder --all-features' \
     'cargo test --workspace --exclude sourdaw-native --all-features' \
     > "$temp_root/expected-rust-success.log"
 diff -u "$temp_root/expected-rust-success.log" "$temp_root/rust-success.log"
@@ -2151,6 +2158,8 @@ test "$rust_test_status" -eq 134
 printf '%s\n' \
     'cargo fmt --all --check' \
     'cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features' \
+    'rustup target add wasm32-unknown-unknown' \
+    'cargo clippy --target wasm32-unknown-unknown --package daw-dsp --package proof-chamber --package scoring --package daw-wasm-decoder --all-features' \
     'cargo test --workspace --exclude sourdaw-native --all-features' \
     > "$temp_root/expected-rust-test-failure.log"
 diff -u "$temp_root/expected-rust-test-failure.log" "$temp_root/rust-test-failure.log"

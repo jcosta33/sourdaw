@@ -1645,6 +1645,17 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
     for (const name of ['Test the audio crates', 'Lint the native crate', 'Test the native crate']) {
         expect(recordAt(stepNamed(nativeConsumer, name), 'env').CARGO_NET_OFFLINE).toBe(NATIVE_OFFLINE_EXACT);
     }
+
+    const windowsConsumer = jobAt(consumer, 'native-windows');
+    const windowsLint = stepNamed(windowsConsumer, 'Lint the Windows audio crates');
+    expect(windowsLint.run).toBe(
+        'cargo clippy --package daw-engine --package daw-plugin-host --all-targets --all-features'
+    );
+    expect(recordAt(windowsLint, 'env').CARGO_NET_OFFLINE).toBe(NATIVE_OFFLINE_EXACT);
+    const windowsNames = arrayAt(windowsConsumer, 'steps').map((step) => asRecord(step, 'step').name);
+    expect(windowsNames.indexOf('Lint the Windows audio crates')).toBeLessThan(
+        windowsNames.indexOf('Test the audio crates')
+    );
 }
 
 type WorkflowSet = {

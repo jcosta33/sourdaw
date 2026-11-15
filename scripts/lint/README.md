@@ -22,8 +22,19 @@ comments. The remaining plugin names stay unchanged. ESLint registers these name
 without enabling moved rules in check mode, so the split passes accept each other's suppressions.
 It also retains the historical `react-hooks/`, `promise/`, and `jsx-a11y-x/` plugin
 registrations so directives naming inactive rules remain valid. Those registrations
-enable no legacy rules, and unknown rule names still fail directive validation.
+enable only the three bulk-owned hook rules (`exhaustive-deps`, `refs`, and
+`set-state-in-effect`) under their original `react-hooks/` names. The other moved
+hook rules use `react-hooks-js/`. Unknown rule names still fail directive validation.
 Unused-disable reporting remains off because neither pass observes all rules.
+
+ESLint also owns the promoted React rules `exhaustive-deps`,
+`naming-convention-context-name`, `naming-convention-ref-name`, `no-array-index-key`,
+`set-state-in-effect`, and `use-state`, plus the three bulk-owned hook rules above.
+Their existing per-file violation budgets stay in `eslint-suppressions.json`.
+The runner names that file with `--suppressions-location` for both checks and fixes;
+extra violations fail, and unused counts fail until explicitly pruned. Oxlint's stable
+public CLI does not expose counted bulk suppression support, so these rules must not
+move there or run twice. The committed suppression counts only shrink.
 
 ESLint remains necessary for `@eslint-react/no-leaked-conditional-rendering`,
 `@tanstack/query/no-void-query-fn`, `@tanstack/query/no-rest-destructuring`, and

@@ -2378,6 +2378,7 @@ describe('repository tooling selects no browser suite', () => {
         'eslint.config.mjs',
         'eslint.size-baseline.mjs',
         'eslint.size-baseline.d.mts',
+        'eslint-suppressions.json',
         'oxlint.craft-baseline.mjs',
         'oxlint.craft-baseline.d.mts',
         'knip.json',

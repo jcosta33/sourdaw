@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest';
 
 import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
 
-const TRACKED_IN_6486 = 'existing violations remain; promotion or baselining tracked in #6486';
 const SIZE_BASELINE =
     'scoped to eslint.size-baseline.mjs files that already exceed the size limits; the list only shrinks';
 
@@ -22,24 +21,8 @@ function sizeBaselineEntries(): AllowedWarnRule[] {
     return SIZE_RULES.map((rule) => [`${sizeBaselineFiles.join(',')}:${rule}`, SIZE_BASELINE]);
 }
 
-const ALLOWED_WARN_RULES: readonly AllowedWarnRule[] = [
-    ['**/*.{js,jsx,ts,tsx,mts,cts}:no-void', TRACKED_IN_6486],
-    [
-        '**/*.{ts,mts,cts} !**/*.spec.ts,src/infra/store/storage/createLocalStorage.ts,src/infra/store/storage/createPlainJsonLocalStorage.ts,src/modules/Command/stores/undoSessionMirror.ts:no-restricted-syntax',
-        TRACKED_IN_6486,
-    ],
-    ['**/*.{tsx,jsx}:@eslint-react/set-state-in-effect', TRACKED_IN_6486],
-    ['**/*.{tsx,jsx}:react-hooks/refs', TRACKED_IN_6486],
-    ['**/*.{tsx,jsx}:react-hooks/set-state-in-effect', TRACKED_IN_6486],
-    ['global:@eslint-react/exhaustive-deps', TRACKED_IN_6486],
-    ['global:@eslint-react/naming-convention-context-name', TRACKED_IN_6486],
-    ['global:@eslint-react/naming-convention-ref-name', TRACKED_IN_6486],
-    ['global:@eslint-react/no-array-index-key', TRACKED_IN_6486],
-    ['global:@eslint-react/set-state-in-effect', TRACKED_IN_6486],
-    ['global:@eslint-react/use-state', TRACKED_IN_6486],
-    ['global:react-hooks/exhaustive-deps', TRACKED_IN_6486],
-    ...sizeBaselineEntries(),
-];
+// Every other rule is at error; its existing violations live in eslint-suppressions.json.
+const ALLOWED_WARN_RULES: readonly AllowedWarnRule[] = sizeBaselineEntries();
 
 type ScopedSetting = { scope: string; rule: string; setting: unknown };
 

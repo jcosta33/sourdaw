@@ -106,7 +106,7 @@ export const StepSequencerEditor = ({
     // §150.2 — Only redraw when step content or size changes.
     useEffect(() => {
         draw();
-        // eslint-disable-next-line react-hooks-js/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [steps, numSteps, width, height]);
 
     const updateStepFromPointer = (e: React.PointerEvent): void => {
