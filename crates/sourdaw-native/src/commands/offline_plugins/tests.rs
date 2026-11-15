@@ -162,6 +162,7 @@ impl InstalledFx {
             capture_state: read_live_state,
             construct: create_hosted_runtime,
             after_build: None,
+            after_mapping: None,
             before_restore: None,
         }
     }
@@ -329,11 +330,29 @@ fn attach(
     chain_kind: DeviceKind,
 ) -> Arc<SharedHostedPlugin> {
     let shared = Arc::new(SharedHostedPlugin::new(runtime));
+    record_engine_instance(
+        state,
+        Arc::clone(&shared),
+        load_resolution,
+        chain_kind,
+        ENGINE_PLUGIN_ID,
+    );
+    shared
+}
+
+/// Record `shared` under the instance id, replacing any record already there.
+fn record_engine_instance(
+    state: &AppState,
+    shared: Arc<SharedHostedPlugin>,
+    load_resolution: VettedRegistryEntry,
+    chain_kind: DeviceKind,
+    engine_plugin_id: usize,
+) {
     state.engine_plugins.lock().expect("engine plugins").insert(
         INSTANCE.to_string(),
         EnginePluginInstanceData {
-            engine_plugin_id: ENGINE_PLUGIN_ID,
-            runtime: Arc::clone(&shared),
+            engine_plugin_id,
+            runtime: shared,
             name: "Sourdaw Harness Fx".to_string(),
             parameters: Vec::new(),
             has_gui: false,
@@ -342,7 +361,6 @@ fn attach(
             load_resolution,
         },
     );
-    shared
 }
 
 /// The descriptor id of the class that processes every block.
@@ -859,21 +877,128 @@ fn a_reload_under_the_same_id_never_pairs_one_loads_state_with_anothers_file() {
         RELOAD.with(|reload| reload.borrow().is_none()),
         "the reload landed during the state read"
     );
+    // The record and its load were read together before the state read, so
+    // the reload only moves the next render: this one prints the first load.
+    outcome.expect("the render prints the load whose state it read");
     let constructed_from = CONSTRUCTED_FROM.lock().expect("constructed").clone();
-    match outcome {
-        Ok(_) => assert_eq!(
-            constructed_from,
-            vec![fx.clap_path.to_str().expect("utf8").to_string()],
-            "the offline instance is built from the file whose state it restores"
-        ),
-        Err(refusal) => {
-            assert!(refusal.contains("'d-fx'"), "{refusal}");
-            assert!(
-                constructed_from.is_empty(),
-                "a refused pairing builds nothing: {constructed_from:?}"
+    assert_eq!(
+        constructed_from,
+        vec![fx.clap_path.to_str().expect("utf8").to_string()],
+        "the offline instance is built from the file whose state it restores"
+    );
+}
+
+/// A live runtime reloaded away while the render reads its state is held by
+/// the render alone once the read returns. That last reference is retired for
+/// the sweep to tear down on the UI thread, never dropped on the render's own
+/// thread.
+#[test]
+fn a_live_runtime_reloaded_away_during_its_state_read_is_retired_not_dropped_by_the_render() {
+    let fx = InstalledFx::create("retired-first");
+    let reloaded_fx = InstalledFx::create("retired-second");
+    let (state, live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let teardown_threads = Arc::new(Mutex::new(Vec::new()));
+    live.witness_teardown(Arc::clone(&teardown_threads));
+    let reloaded_away = Arc::downgrade(&live);
+    drop(live);
+    let descriptor = processing_class(Format::Clap);
+    RELOAD.with(|reload| {
+        *reload.borrow_mut() = Some((
+            live_runtime(&reloaded_fx, Format::Clap, &descriptor),
+            reloaded_fx.load_resolution(Format::Clap, &descriptor),
+        ))
+    });
+    let mut seams = fx.seams();
+    seams.scan_policy =
+        PluginScanPolicy::with_allowed_roots(vec![fx.root.clone(), reloaded_fx.root.clone()]);
+    seams.capture_state = capture_then_reload_under_the_same_id;
+
+    render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &seams,
+        None,
+    )
+    .expect("the render prints the load whose state it read");
+
+    assert!(
+        RELOAD.with(|reload| reload.borrow().is_none()),
+        "the reload landed during the state read"
+    );
+    assert!(
+        teardown_threads.lock().expect("teardown").is_empty(),
+        "the reloaded-away runtime was not torn down by the render"
+    );
+    {
+        let retired = state.retired_engine_plugins.lock().expect("retired");
+        assert_eq!(retired.len(), 1, "the render's last reference is retired");
+        assert!(
+            std::ptr::eq(Arc::as_ptr(&retired[0]), reloaded_away.as_ptr()),
+            "the retired runtime is the one reloaded away"
+        );
+    }
+
+    state.sweep_retired_engine_plugins(&ui);
+    assert_eq!(
+        *teardown_threads.lock().expect("teardown"),
+        vec![ui.thread_id],
+        "the sweep tears it down on the UI thread"
+    );
+}
+
+/// The mapping and the build read the live records under separate locks. A
+/// reload under the instance's id between them — here an instrument from
+/// another file, under another engine plugin id — is refused by the plugin the
+/// batch was mapped against, and nothing is built.
+#[test]
+fn a_reload_between_the_mapping_and_the_build_refuses_the_render_by_name() {
+    let fx = InstalledFx::create("replaced-first");
+    let reloaded_fx = InstalledFx::create("replaced-second");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let descriptor = processing_class(Format::Clap);
+    let reloaded = Arc::new(SharedHostedPlugin::new(live_runtime(
+        &reloaded_fx,
+        Format::Clap,
+        &descriptor,
+    )));
+    let reload = Mutex::new(Some((
+        reloaded,
+        reloaded_fx.load_resolution(Format::Clap, &descriptor),
+    )));
+    let mut seams = fx.seams();
+    seams.scan_policy =
+        PluginScanPolicy::with_allowed_roots(vec![fx.root.clone(), reloaded_fx.root.clone()]);
+    seams.after_mapping = Some(Box::new(move |state: &AppState| {
+        if let Some((shared, load_resolution)) = reload.lock().expect("reload").take() {
+            record_engine_instance(
+                state,
+                shared,
+                load_resolution,
+                DeviceKind::Generator,
+                ENGINE_PLUGIN_ID + 1,
             );
         }
-    }
+    }));
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &seams,
+        None,
+    )
+    .expect_err("a print of another plugin than the one mapped is refused");
+
+    assert!(
+        refusal.contains("'d-fx'")
+            && refusal.contains("'Sourdaw Harness Fx'")
+            && refusal.contains("its live instance was replaced while the render started"),
+        "{refusal}"
+    );
+    assert_eq!(ui.tasks_run(), 0, "nothing is built");
 }
 
 #[test]
