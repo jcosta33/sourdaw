@@ -1096,6 +1096,44 @@ fn a_render_id_is_bounded_on_the_render_and_the_cancel_alike() {
     );
 }
 
+/// A rate outside the range is refused before the live state is read or an
+/// instance is built; a built-in-only render is held to the same range.
+#[test]
+fn the_export_sample_rate_is_bounded_before_anything_is_built() {
+    let fx = InstalledFx::create("rate-bound");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    let ui = RecordingUiThread::start();
+    let mut seams = fx.seams();
+    seams.capture_state = |_, _| Err("a refused rate reads no live state".to_string());
+    let render_at = |devices: Value, sample_rate: f64| {
+        block_on_test(render_graph_offline_with(
+            batch(impulse_track(devices)),
+            1_024,
+            sample_rate,
+            None,
+            &ui,
+            &state,
+            &seams,
+        ))
+    };
+
+    for sample_rate in [7_999.0, 384_001.0, f64::NAN, f64::INFINITY] {
+        for devices in [json!([fx_device()]), json!([])] {
+            let refusal = render_at(devices, sample_rate).expect_err("the rate is refused");
+            assert!(
+                refusal
+                    .contains("outside the offline render's supported range of 8000 to 384000 Hz"),
+                "{refusal}"
+            );
+        }
+    }
+    assert_eq!(ui.tasks_run(), 0, "a refused rate builds nothing");
+
+    for sample_rate in [8_000.0, 384_000.0] {
+        render_at(json!([]), sample_rate).expect("a built-in-only render at the bound renders");
+    }
+}
+
 #[test]
 fn a_cancel_mid_render_stops_it_and_releases_its_clap_instance_on_the_ui_thread() {
     a_cancel_mid_render_stops_the_render_of(Format::Clap);

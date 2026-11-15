@@ -246,6 +246,11 @@ const FIRST_GRAPH_EFFECT_ID: usize = 2_000_000;
 /// twice over.
 const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
 
+/// The sample rates an offline render accepts, in Hz. A plugin is activated at
+/// the export rate, so a rate no plugin supports is refused before any state is
+/// read or any instance is built, rather than handed to the plugin.
+pub(crate) const OFFLINE_RENDER_SAMPLE_RATES: std::ops::RangeInclusive<f64> = 8_000.0..=384_000.0;
+
 /// Create-*-strip plus set-track-output, then the per-strip send, device, and
 /// clip slots a maximal topology batch fills.
 const MAX_STRIP_TOPOLOGY_COMMANDS: usize =
@@ -6311,8 +6316,13 @@ pub(crate) async fn render_graph_offline_with(
     seams: &OfflinePluginSeams,
 ) -> Result<Vec<u8>, String> {
     let batch = parse_batch(batch)?;
-    if !(sample_rate.is_finite() && sample_rate > 0.0) {
-        return Err("Sample rate must be a positive, finite number".to_string());
+    if !OFFLINE_RENDER_SAMPLE_RATES.contains(&sample_rate) {
+        return Err(format!(
+            "Sample rate {sample_rate} Hz is outside the offline render's supported range of \
+             {} to {} Hz",
+            OFFLINE_RENDER_SAMPLE_RATES.start(),
+            OFFLINE_RENDER_SAMPLE_RATES.end()
+        ));
     }
     let frames = frames as usize;
     if frames == 0 {
