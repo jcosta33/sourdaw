@@ -13,6 +13,7 @@ describe('readAppliedAutomationValue', () => {
         appliedAutomationBases.set('device-b', new Map([['7', 0.125]]));
 
         expect(readAppliedAutomationValue('device-a', '7')).toBe(0.625);
+        expect(readAppliedAutomationValue('device-a', '7')).toBe(0.625);
         expect(readAppliedAutomationValue('device-b', '7')).toBe(0.125);
     });
 

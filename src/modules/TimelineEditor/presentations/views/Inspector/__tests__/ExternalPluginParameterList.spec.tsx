@@ -170,6 +170,7 @@ type FrameCallback = (timestamp: number) => void;
 let frameCallbacks = new Map<number, FrameCallback>();
 let nextFrameId = 1;
 let intersecting = true;
+let observerCount = 0;
 
 /** Runs every frame requested so far once, at the given timestamp. */
 const runFrame = (timestamp: number): void => {
@@ -186,6 +187,7 @@ class StubIntersectionObserver {
     private readonly callback: IntersectionObserverCallback;
 
     constructor(callback: IntersectionObserverCallback) {
+        observerCount++;
         this.callback = callback;
     }
 
@@ -211,6 +213,7 @@ describe('ExternalPluginParameterList', () => {
         frameCallbacks = new Map();
         nextFrameId = 1;
         intersecting = true;
+        observerCount = 0;
         vi.stubGlobal('IntersectionObserver', StubIntersectionObserver);
         vi.stubGlobal('requestAnimationFrame', (callback: FrameCallback) => {
             const id = nextFrameId++;
@@ -752,6 +755,116 @@ describe('ExternalPluginParameterList', () => {
             });
             expect(slider).toHaveValue('0.5');
             expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
+        });
+
+        it('shows the real value once a lane stops delivering, keeping the last delivered number', () => {
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+            expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
+
+            mockReadApplied.mockReturnValue(undefined);
+            runFrame(50);
+
+            expect(slider).toHaveValue('0.5');
+            expect(slider).toHaveAttribute('aria-valuetext', '0.500');
+        });
+
+        it('keeps an accepted user edit over an unchanged delivered value until the lane moves', async () => {
+            let resolveSend: () => void = () => {};
+            let sent: Promise<void> = Promise.resolve();
+            mockEdit.mockImplementation(() => {
+                sent = new Promise<void>((resolve) => {
+                    resolveSend = resolve;
+                });
+                return sent;
+            });
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+
+            fireEvent.change(slider, { target: { value: '0.9' } });
+            await act(async () => {
+                moveStoreValue(7, 'Decay', 0.9);
+                resolveSend();
+                await sent;
+            });
+            runFrame(50);
+            runFrame(100);
+            expect(slider).toHaveValue('0.9');
+            expect(slider).toHaveAttribute('aria-valuetext', '0.900');
+
+            mockReadApplied.mockReturnValue(0.6);
+            runFrame(150);
+            runFrame(200);
+            expect(slider).toHaveValue('0.6');
+            expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
+        });
+
+        it('keeps the followed value when an unrelated parameter is patched', () => {
+            const decay = parameter({ id: 7, name: 'Decay', value: 0.25 });
+            const mix = parameter({ id: 8, name: 'Mix', value: 0.25 });
+            seed([decay, mix]);
+            automationStore.set({ lanes: [automationLane(device.id, 7)] });
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+
+            act(() => {
+                externalPluginParameterStore.set({
+                    byInstanceId: {
+                        [INSTANCE_ID]: { engineAttached: true, parameters: [decay, { ...mix, value: 0.9 }] },
+                    },
+                });
+            });
+            runFrame(50);
+
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+            expect(slider).toHaveValue('0.5');
+            expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
+            expect(screen.getByRole('slider', { name: 'Mix' })).toHaveValue('0.9');
+        });
+
+        it('holds the followed value and re-reads the plugin when the last lane is removed', () => {
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.8);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            setPlaying(false);
+            expect(mockRefresh).toHaveBeenCalledTimes(1);
+
+            act(() => {
+                automationStore.set({ lanes: [] });
+            });
+
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+            expect(slider).toHaveValue('0.8');
+            expect(mockRefresh).toHaveBeenCalledTimes(2);
+
+            act(() => {
+                moveStoreValue(7, 'Decay', 0.3);
+            });
+            expect(slider).toHaveValue('0.3');
+        });
+
+        it('observes visibility only for automated rows', () => {
+            seed([
+                parameter({ id: 7, name: 'Decay' }),
+                parameter({ id: 8, name: 'Mix' }),
+                parameter({ id: 9, name: 'Size' }),
+            ]);
+            automationStore.set({ lanes: [automationLane(device.id, 7)] });
+            render(<ExternalPluginParameterList device={device} />);
+
+            expect(observerCount).toBe(1);
         });
     });
 });

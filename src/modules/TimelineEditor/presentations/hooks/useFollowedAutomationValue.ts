@@ -11,13 +11,18 @@ type UseFollowedAutomationValueInput = {
     parameterId: number;
     automated: boolean;
     element: RefObject<HTMLElement | null>;
-    /** Identity changes when the host's parameters are re-read; it ends the hold on the last followed value. */
-    settledParameters: readonly unknown[] | undefined;
+    /**
+     * The parameter's own store object. Its identity changes when an edit or a re-read of the host
+     * patches this parameter, which ends the hold on the last followed value.
+     */
+    settledToken: unknown;
 };
 
 type FollowedValue = {
     value: number;
-    settledAtRead: readonly unknown[] | undefined;
+    settledAtRead: unknown;
+    /** Whether the latest read delivered a value; false once the lane stops driving the parameter. */
+    delivering: boolean;
 };
 
 type FollowedAutomationValue = {
@@ -30,14 +35,16 @@ type FollowedAutomationValue = {
  *
  * Follows only while the parameter is automated, the transport plays and `element` is on screen. After
  * the transport stops it keeps the last followed value until `settledParameters` changes identity, so the
- * row never falls back to a stale store value before the host's real value has been read.
+ * row never falls back to a stale store value before the host's real value has been read. Any newer fact
+ * about the parameter (its `settledToken` changing) wins over the held value; a delivered value equal to
+ * the one last adopted is then not adopted again, so a flat lane segment cannot overwrite a user edit.
  */
 export const useFollowedAutomationValue = ({
     deviceId,
     parameterId,
     automated,
     element,
-    settledParameters,
+    settledToken,
 }: UseFollowedAutomationValueInput): FollowedAutomationValue => {
     const isPlaying = useStoreSelector(transportStore, (state) => state?.isPlaying ?? false);
     const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined');
@@ -45,7 +52,7 @@ export const useFollowedAutomationValue = ({
 
     useEffect(() => {
         const target = element.current;
-        if (!target || typeof IntersectionObserver === 'undefined') {
+        if (!automated || !target || typeof IntersectionObserver === 'undefined') {
             return undefined;
         }
         const observer = new IntersectionObserver((entries) => {
@@ -56,7 +63,7 @@ export const useFollowedAutomationValue = ({
         });
         observer.observe(target);
         return () => observer.disconnect();
-    }, [element]);
+    }, [automated, element]);
 
     const active = automated && isPlaying && visible;
 
@@ -67,14 +74,18 @@ export const useFollowedAutomationValue = ({
         const parameterKey = String(parameterId);
         const read = (): void => {
             const value = readAppliedAutomationValue(deviceId, parameterKey);
-            if (value === undefined) {
-                return;
-            }
-            setFollowed((previous) =>
-                previous?.value === value && previous.settledAtRead === settledParameters
-                    ? previous
-                    : { value, settledAtRead: settledParameters }
-            );
+            setFollowed((previous) => {
+                if (value === undefined) {
+                    return previous === null || !previous.delivering ? previous : { ...previous, delivering: false };
+                }
+                if (previous?.value === value) {
+                    if (previous.settledAtRead !== settledToken) {
+                        return previous;
+                    }
+                    return previous.delivering ? previous : { ...previous, delivering: true };
+                }
+                return { value, settledAtRead: settledToken, delivering: true };
+            });
         };
 
         let rafId = 0;
@@ -94,16 +105,10 @@ export const useFollowedAutomationValue = ({
         };
         rafId = requestAnimationFrame(loop);
         return () => cancelAnimationFrame(rafId);
-    }, [active, deviceId, parameterId, settledParameters]);
+    }, [active, deviceId, parameterId, settledToken]);
 
-    if (!automated || followed === null) {
+    if (followed === null || followed.settledAtRead !== settledToken) {
         return { value: null, following: false };
     }
-    if (active) {
-        return { value: followed.value, following: true };
-    }
-    if (followed.settledAtRead === settledParameters) {
-        return { value: followed.value, following: false };
-    }
-    return { value: null, following: false };
+    return { value: followed.value, following: active && followed.delivering };
 };

@@ -12,6 +12,7 @@ import {
     defaultExternalPluginRestoreFailureState,
     defaultPluginScanState,
     externalPluginActivationStore,
+    type ExternalPluginParameter,
     externalPluginParameterStore,
     externalPluginRestoreFailureStore,
     pluginScanStore,
@@ -74,7 +75,8 @@ type ParameterRowProps = {
     instanceId: string;
     deviceId: string;
     automated: boolean;
-    settledParameters: readonly unknown[];
+    /** The parameter's own store object; a patch to this parameter replaces it. */
+    settledParameter: ExternalPluginParameter | undefined;
     row: ExternalPluginParameterRow;
     /** Writes to the list's live region, which is mounted before any edit so the text is announced. */
     onAnnounce: (message: string) => void;
@@ -84,7 +86,7 @@ const ParameterRow = ({
     instanceId,
     deviceId,
     automated,
-    settledParameters,
+    settledParameter,
     row,
     onAnnounce,
 }: ParameterRowProps): ReactElement => {
@@ -95,7 +97,7 @@ const ParameterRow = ({
         parameterId: row.id,
         automated,
         element: rowRef,
-        settledParameters,
+        settledToken: settledParameter,
     });
     const [refused, setRefused] = useState(false);
     // The store moves only once the plugin accepts a change, so while the latest send is in flight the
@@ -216,6 +218,7 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [announcement, setAnnouncement] = useState('');
     const listRef = useRef<HTMLUListElement>(null);
+    const hadAutomationRef = useRef(false);
     const focusIndexAfterRevealRef = useRef<number | null>(null);
 
     // Revealing a page can unmount the focused Show more button; move focus to the first revealed control.
@@ -234,16 +237,24 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
         .find((plugin) => plugin.id === device.externalPluginId || plugin.descriptor_id === device.externalPluginId);
     const snapshot = instanceId ? parameterState.byInstanceId[instanceId] : undefined;
     const automatedParameterIds = collectAutomatedParameterIds(automationState, device.id);
-    const hasAutomation = automatedParameterIds.size > 0;
+    const automatedIdsKey = [...automatedParameterIds].sort((a, b) => a - b).join(',');
 
     // Host-side automation writes are not echoed as edits, so the store holds the pre-play value; on each
     // stop edge (and on mount) re-read what the plugin actually holds. A patch is not an edit.
     useEffect(() => {
-        if (isPlaying || !hasAutomation || !instanceId) {
+        if (automatedIdsKey !== '') {
+            hadAutomationRef.current = true;
+        }
+        if (isPlaying || !instanceId) {
+            return;
+        }
+        // A list that never had automation has nothing the host could have moved; losing the last lane
+        // still re-reads, because the row holds a followed value the store does not have.
+        if (automatedIdsKey === '' && !hadAutomationRef.current) {
             return;
         }
         void refreshExternalPluginParameters(instanceId);
-    }, [isPlaying, hasAutomation, instanceId]);
+    }, [isPlaying, automatedIdsKey, instanceId]);
 
     const status = resolveExternalPluginParameterStatus({
         device,
@@ -298,7 +309,7 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
                         instanceId={instanceId}
                         deviceId={device.id}
                         automated={automatedParameterIds.has(row.id)}
-                        settledParameters={snapshot.parameters}
+                        settledParameter={snapshot.parameters.find((parameter) => parameter.id === row.id)}
                         row={row}
                         onAnnounce={setAnnouncement}
                     />
