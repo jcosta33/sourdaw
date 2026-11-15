@@ -22,7 +22,9 @@ const VELOCITY: f32 = 0.8;
 /// returns for a block of `frames` — the instance's own channel buffer.
 unsafe fn read_channel(ptr: *const f32, frames: usize) -> Vec<f32> {
     assert!(!ptr.is_null(), "process returned a null buffer");
-    (0..frames).map(|index| *ptr.add(index)).collect()
+    (0..frames)
+        .map(|index| unsafe { *ptr.add(index) })
+        .collect()
 }
 
 /// Render one block and return both channels, the way a host reads them.
