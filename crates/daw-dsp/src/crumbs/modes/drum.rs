@@ -45,10 +45,11 @@ impl DrumMode {
     pub fn new() -> Self {
         let mut pads = Vec::with_capacity(MAX_PADS);
         for idx in 0..MAX_PADS {
-            let mut pad = PadConfig::default();
-            pad.playback_mode = PlaybackMode::OneShot;
-            pad.root_note = (DEFAULT_BASE_NOTE as usize + idx).min(127) as u8;
-            pads.push(pad);
+            pads.push(PadConfig {
+                playback_mode: PlaybackMode::OneShot,
+                root_note: (DEFAULT_BASE_NOTE as usize + idx).min(127) as u8,
+                ..PadConfig::default()
+            });
         }
         Self {
             pads,

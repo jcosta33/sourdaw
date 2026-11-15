@@ -81,7 +81,7 @@ pub fn yin_frame(
         if work_buffer_cmnd[tau] < cfg.cmnd_threshold {
             // Found a dip! Now look for the local minimum.
             let mut t0 = tau;
-            while t0 + 1 <= tau_max && work_buffer_cmnd[t0 + 1] < work_buffer_cmnd[t0] {
+            while t0 < tau_max && work_buffer_cmnd[t0 + 1] < work_buffer_cmnd[t0] {
                 t0 += 1;
             }
             pick = Some(t0);

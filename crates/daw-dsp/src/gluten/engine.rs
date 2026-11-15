@@ -525,7 +525,7 @@ impl GlutenEngine {
             gr_sum += gr_db;
 
             // Makeup gain
-            let makeup = self.makeup_gain.next();
+            let makeup = self.makeup_gain.next_value();
             let effective_makeup = if self.auto_makeup {
                 // Use auto-makeup based on current topology settings
                 makeup + self.compute_auto_makeup()
@@ -537,7 +537,7 @@ impl GlutenEngine {
             let made_up_r = wet_r * makeup_lin;
 
             // Parallel mix
-            let mix = self.mix.next();
+            let mix = self.mix.next_value();
             let mixed_l = parallel_mix(delayed_l, made_up_l, mix);
             let mixed_r = parallel_mix(delayed_r, made_up_r, mix);
 
