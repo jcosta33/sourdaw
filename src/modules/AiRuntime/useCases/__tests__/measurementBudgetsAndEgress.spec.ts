@@ -79,9 +79,7 @@ import { chatStore } from '../../stores/chatStore';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { admitCreativeInterpretation } from '../admitCreativeInterpretation';
-import { streamExplainChatResponse } from '../agentRequestOrchestration/streamExplainChatResponse';
 import { agentRunLifecycle } from '../agentRunLifecycle';
-import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentWorkBudget } from '../agentWorkBudget';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { configureAgentResourceLimits } from '../configureAgentResourceLimits';
@@ -1874,35 +1872,6 @@ function describeNoSampleData(title: string, builders: Readonly<Record<string, C
 
 const EXPLAIN_QUESTION = 'how loud is the mix';
 
-function provideEarlierConversation(): void {
-    chatStore.set({
-        messages: [
-            { id: 'earlier-user', role: 'user', content: 'earlier question about the low end', timestamp: 1 },
-            { id: 'earlier-assistant', role: 'assistant', content: 'earlier answer about the low end', timestamp: 2 },
-        ],
-        isGenerating: false,
-        enableReasoning: true,
-        chatMode: 'chat',
-    });
-}
-
-async function claimProviderLease() {
-    const claimed = agentRunWorkLease.claim({
-        runId: RUN_ID,
-        workId: 'provider-explain',
-        ownerKind: 'provider',
-        cleanupOwner: 'provider-adapter',
-        idempotencyKey: 'provider:explain',
-        receiptIdentity: 'provider:explain',
-        idempotent: false,
-        retriable: true,
-    });
-    if (claimed.status !== 'claimed') {
-        throw new Error(`Expected the provider lease to be claimed: ${claimed.status}`);
-    }
-    return claimed.lease;
-}
-
 const EXPLAIN_CASE = 'no sample data reaches a hosted provider through an Explain request';
 const MIX_HEALTH_CASE = 'no sample data reaches a hosted provider through Mix Health';
 const AI_GENERATION_CASE = 'no sample data reaches a hosted provider through AI MIDI generation';
@@ -1929,24 +1898,6 @@ describeNoSampleData(EXPLAIN_CASE, {
             await selectHostedDialect(dialect);
             chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'chat' });
             return recordHostedBodies(() => sendChatMessage(textFor(injection, EXPLAIN_QUESTION), { mode: 'explain' }));
-        },
-    },
-    'the answer stream run by streamExplainChatResponse': {
-        carries: 'earlier question about the low end',
-        build: async (dialect, injection) => {
-            await selectHostedDialect(dialect);
-            provideEarlierConversation();
-            const providerLease = await claimProviderLease();
-            return recordHostedBodies(() =>
-                streamExplainChatResponse({
-                    userText: textFor(injection, EXPLAIN_QUESTION),
-                    runId: RUN_ID,
-                    backend: 'cloud',
-                    providerLease,
-                    providerReceiptIdentity: 'provider:explain',
-                    providerWorkId: 'provider-explain',
-                })
-            );
         },
     },
 });
@@ -2167,10 +2118,6 @@ const HOSTED_BODY_COVERAGE: Readonly<Record<string, CoverageRow>> = {
     [`${USE_CASES}/aiRuntimeQueries/streamCloudChatCompletion.ts`]: {
         kind: 'forwards',
         via: [`${USE_CASES}/streamHostedModelText.ts`],
-    },
-    [`${USE_CASES}/agentRequestOrchestration/streamExplainChatResponse.ts`]: {
-        kind: 'composes',
-        cases: [EXPLAIN_CASE],
     },
     [`${USE_CASES}/agentRequestOrchestration/orchestratePromptChatRequest.ts`]: {
         kind: 'composes',
