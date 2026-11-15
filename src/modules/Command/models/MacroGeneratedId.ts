@@ -46,9 +46,16 @@ function routeIdOf(action: ActionOf<'addSidechainRoute'>): string | undefined {
     return action.payload.routeId;
 }
 
-/** The id a replayed create carried once the kernel minted it; creates only, every other action has none. */
+function scratchPadSectionIdsOf(action: ActionOf<'captureScratchPad'>): readonly string[] | undefined {
+    return action.payload?.sectionIds;
+}
+
+/**
+ * The id a replayed create carried once it was minted, or the ids in order for a create that
+ * mints a list; creates only, every other action has none.
+ */
 export const macroGeneratedIdByActionType: {
-    readonly [Type in AppActionType]: (action: ActionOf<Type>) => string | undefined;
+    readonly [Type in AppActionType]: (action: ActionOf<Type>) => string | readonly string[] | undefined;
 } = {
     importStemSet: noGeneratedId,
     discardImportedStemSet: noGeneratedId,
@@ -354,7 +361,7 @@ export const macroGeneratedIdByActionType: {
     removeMidiMapping: noGeneratedId,
     restoreMidiLearnMappings: noGeneratedId,
     toggleScratchPad: noGeneratedId,
-    captureScratchPad: noGeneratedId,
+    captureScratchPad: scratchPadSectionIdsOf,
     commitScratchPad: noGeneratedId,
     clearScratchPad: noGeneratedId,
     removeScratchPadSection: noGeneratedId,

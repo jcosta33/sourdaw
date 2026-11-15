@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_BOT_NODE_ID, ORCHESTRATOR_USER_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
@@ -21,6 +25,7 @@ import {
     requiredStatusContexts,
     rulesetDifferences,
     runRulesetHardeningCli,
+    shellPort,
     writableRuleset,
     writeRulesetById,
     type RulesetDocument,
@@ -862,7 +867,13 @@ describe('hardenRuleset', () => {
 
 describe('coordinateRulesetHardening', () => {
     function coordinator(actorNodeId: string, repositoryName = 'jcosta33/sourdaw') {
-        const state = { disposed: false, portCalls: 0, hardenCalls: [] as boolean[] };
+        const state = {
+            disposed: false,
+            portCalls: 0,
+            repositoryReads: 0,
+            portRepositories: [] as string[],
+            hardenCalls: [] as boolean[],
+        };
         const session: GhSession = {
             configDir: '/tmp/sourdaw-ruleset',
             env: {},
@@ -873,9 +884,13 @@ describe('coordinateRulesetHardening', () => {
         const dependencies: RulesetHardeningCoordinatorDependencies = {
             primaryRoot: () => '/repo',
             authenticateOrchestrator: () => ({ minted: { actorNodeId }, session }),
-            repositoryName: () => repositoryName,
-            port: () => {
+            repositoryName: () => {
+                state.repositoryReads += 1;
+                return repositoryName;
+            },
+            port: (_session, _primaryRoot, repository) => {
                 state.portCalls += 1;
+                state.portRepositories.push(repository);
                 return fakePort(liveShape(), buildHardenedRuleset(liveShape())).port;
             },
             harden: (apply, port) => {
@@ -892,6 +907,13 @@ describe('coordinateRulesetHardening', () => {
         expect(receipt.outcome).toBe('dry-run');
         expect(state.hardenCalls).toEqual([false]);
         expect(state.disposed).toBe(true);
+    });
+
+    it('should hand the port the one repository name it asserted', () => {
+        const { dependencies, state } = coordinator(ORCHESTRATOR_USER_NODE_ID);
+        coordinateRulesetHardening(false, dependencies);
+        expect(state.repositoryReads).toBe(1);
+        expect(state.portRepositories).toEqual(['jcosta33/sourdaw']);
     });
 
     it('should refuse a non-orchestrator identity before creating the port or writing', () => {
@@ -1045,5 +1067,37 @@ describe('ruleset REST helpers', () => {
         expect(() => writeRulesetById(REPOSITORY, RULESET_ID, hardened, recordingGh(() => ({ id: 7 })).gh)).toThrow(
             `write ruleset ${String(RULESET_ID)} for ${REPOSITORY} did not record ruleset ${String(RULESET_ID)}`
         );
+    });
+});
+
+describe('shellPort', () => {
+    it('should address the asserted repository without reading the checkout query again', () => {
+        const parent = mkdtempSync(join(tmpdir(), 'ruleset-shell-'));
+        mkdirSync(join(parent, 'primary', '.git'), { recursive: true });
+        const root = realpathSync(join(parent, 'primary'));
+        const ghCalls: string[][] = [];
+        const session: GhSession = { configDir: '/config', env: { GH_TOKEN: 'token' }, dispose: () => undefined };
+        try {
+            const port = shellPort(
+                session,
+                root,
+                (command, args) => {
+                    if (command === 'git' && args[0] === 'rev-parse') {
+                        return `${join(root, '.git')}\n`;
+                    }
+                    if (command !== 'gh') {
+                        return '';
+                    }
+                    ghCalls.push(args);
+                    // A lane rewrote `remote.origin.gh-resolved` after the coordinator's assertion.
+                    return args[0] === 'repo' ? 'cli/cli' : '[]';
+                },
+                'jcosta33/sourdaw'
+            );
+            expect(() => port.resolveRulesetId()).toThrow('rulesets for jcosta33/sourdaw carries no repository');
+            expect(ghCalls).toEqual([['api', 'repos/jcosta33/sourdaw/rulesets?per_page=100']]);
+        } finally {
+            rmSync(parent, { recursive: true, force: true });
+        }
     });
 });

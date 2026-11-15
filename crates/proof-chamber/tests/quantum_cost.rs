@@ -193,8 +193,12 @@ fn proof_chamber_per_quantum_cost() {
         let mut sum = 0.0_f64;
         for frame in 0..QUANTUM {
             // SAFETY: `process` returns a pointer to its own `out_left`, which
-            // is 1024 long and was just written for `QUANTUM` frames.
-            let sample = unsafe { *out.add(frame) } as f64;
+            // is `PROOF_CHAMBER_BLOCK_FRAMES` (1024) long and never resized, and
+            // `frame < QUANTUM`, which is inside that capacity.
+            let slot = unsafe { out.add(frame) };
+            // SAFETY: `slot` is in bounds of that buffer, which `process` just
+            // wrote and nothing writes before this read.
+            let sample = unsafe { *slot } as f64;
             sum += sample * sample;
         }
         let rms = (sum / QUANTUM as f64).sqrt();

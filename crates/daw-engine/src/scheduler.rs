@@ -1761,12 +1761,11 @@ impl FermenterBody {
         // The two buffers are separate heap allocations, so the pair of
         // slices aliases nothing. Nothing mutates the instrument between the
         // render and this copy.
-        let (rendered_left, rendered_right) = unsafe {
-            (
-                std::slice::from_raw_parts(rendered_left, frames),
-                std::slice::from_raw_parts(rendered_right, frames),
-            )
-        };
+        let rendered_left = unsafe { std::slice::from_raw_parts(rendered_left, frames) };
+        // SAFETY: `rendered_right` names the instrument's separate right
+        // buffer, sized and bounded exactly as the left one above, and nothing
+        // mutates the instrument before this copy.
+        let rendered_right = unsafe { std::slice::from_raw_parts(rendered_right, frames) };
         for (out, sample) in left.iter_mut().zip(rendered_left) {
             *out += *sample;
         }
@@ -2246,12 +2245,11 @@ impl GrandBouleBody {
         // each slice lies inside the allocation it names. The two buffers are
         // separate heap allocations, so the pair of slices aliases nothing.
         // Nothing mutates the instrument between the render and this copy.
-        let (rendered_left, rendered_right) = unsafe {
-            (
-                std::slice::from_raw_parts(rendered_left, frames),
-                std::slice::from_raw_parts(rendered_right, frames),
-            )
-        };
+        let rendered_left = unsafe { std::slice::from_raw_parts(rendered_left, frames) };
+        // SAFETY: `rendered_right` names the instrument's separate right
+        // buffer, sized and bounded exactly as the left one above, and nothing
+        // mutates the instrument before this copy.
+        let rendered_right = unsafe { std::slice::from_raw_parts(rendered_right, frames) };
         for (out, sample) in left.iter_mut().zip(rendered_left) {
             *out += *sample;
         }
@@ -3510,12 +3508,11 @@ impl DutchOvenBody {
         // allocations, so the pair of slices aliases nothing, and neither
         // aliases the callback's own `left`/`right`. Nothing mutates the
         // instance between the render and this copy.
-        let (rendered_left, rendered_right) = unsafe {
-            (
-                std::slice::from_raw_parts(rendered_left, run),
-                std::slice::from_raw_parts(rendered_right, run),
-            )
-        };
+        let rendered_left = unsafe { std::slice::from_raw_parts(rendered_left, run) };
+        // SAFETY: `rendered_right` names the instance's separate `out_right`,
+        // sized and bounded exactly as `out_left` above, and nothing mutates
+        // the instance before this copy.
+        let rendered_right = unsafe { std::slice::from_raw_parts(rendered_right, run) };
         left.copy_from_slice(rendered_left);
         right.copy_from_slice(rendered_right);
     }
@@ -3845,12 +3842,12 @@ impl ToasterBody {
         // argument to that same capacity, so the frames it rendered are the
         // frames read here. Nothing mutates the instrument between the render
         // and this copy.
-        let (rendered_left, rendered_right) = unsafe {
-            (
-                std::slice::from_raw_parts(rendered_left, run),
-                std::slice::from_raw_parts(rendered_right, run),
-            )
-        };
+        let rendered_left = unsafe { std::slice::from_raw_parts(rendered_left, run) };
+        // SAFETY: `rendered_right` is the right channel one 4096-frame capacity
+        // past the left inside that same allocation, so `run <= 128` frames
+        // from it stay inside it and overlap neither the left slice nor the
+        // callback's buffers; nothing mutates the instrument before this copy.
+        let rendered_right = unsafe { std::slice::from_raw_parts(rendered_right, run) };
         for (out, sample) in left.iter_mut().zip(rendered_left) {
             *out += *sample;
         }
@@ -4231,12 +4228,11 @@ impl LevainBody {
         // separate heap allocations, so the pair of slices aliases nothing, and
         // neither aliases the callback's own `left`/`right`. Nothing mutates
         // the instrument between the render and this copy.
-        let (rendered_left, rendered_right) = unsafe {
-            (
-                std::slice::from_raw_parts(rendered_left, run),
-                std::slice::from_raw_parts(rendered_right, run),
-            )
-        };
+        let rendered_left = unsafe { std::slice::from_raw_parts(rendered_left, run) };
+        // SAFETY: `rendered_right` names the instrument's separate right
+        // buffer, sized and bounded exactly as the left one above, and nothing
+        // mutates the instrument before this copy.
+        let rendered_right = unsafe { std::slice::from_raw_parts(rendered_right, run) };
         for (out, sample) in left.iter_mut().zip(rendered_left) {
             *out += *sample;
         }
@@ -20873,16 +20869,14 @@ mod timeline_tests {
             // SAFETY: `process` has just rendered `FERMENTER_BLOCK_FRAMES`
             // frames into the instance's own pair of buffers, which are exactly
             // that long and are never resized.
-            unsafe {
-                worklet_left.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_left,
-                    FERMENTER_BLOCK_FRAMES,
-                ));
-                worklet_right.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_right,
-                    FERMENTER_BLOCK_FRAMES,
-                ));
-            }
+            worklet_left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, FERMENTER_BLOCK_FRAMES)
+            });
+            // SAFETY: `rendered_right` names the separate right buffer of that
+            // pair, rendered and sized exactly as the left one above.
+            worklet_right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, FERMENTER_BLOCK_FRAMES)
+            });
         }
 
         assert!(
@@ -21373,16 +21367,14 @@ mod timeline_tests {
             // frames into the instance's own pair of buffers, which are
             // `GRAND_BOULE_BLOCK_FRAMES` long — never shorter, as the spec
             // below pins — and are never resized.
-            unsafe {
-                left.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_left,
-                    GRAND_BOULE_RUN_FRAMES,
-                ));
-                right.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_right,
-                    GRAND_BOULE_RUN_FRAMES,
-                ));
-            }
+            left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, GRAND_BOULE_RUN_FRAMES)
+            });
+            // SAFETY: `rendered_right` names the separate right buffer of that
+            // pair, rendered and sized exactly as the left one above.
+            right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, GRAND_BOULE_RUN_FRAMES)
+            });
         }
         (left, right)
     }
@@ -21697,12 +21689,14 @@ mod timeline_tests {
             // `a_grand_boule_instance_buffers_exactly_the_frames_the_host_trusts`
             // pins — and `run_frames` never exceeds that. Both pointers are
             // read and copied here, before the instance is mutated again.
-            unsafe {
-                reference_left
-                    .extend_from_slice(std::slice::from_raw_parts(rendered_left, run_frames));
-                reference_right
-                    .extend_from_slice(std::slice::from_raw_parts(rendered_right, run_frames));
-            }
+            reference_left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, run_frames)
+            });
+            // SAFETY: `rendered_right` names the separate right buffer of that
+            // pair, rendered and sized exactly as the left one above.
+            reference_right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, run_frames)
+            });
         }
 
         assert!(
@@ -21780,19 +21774,19 @@ mod timeline_tests {
             }
             let rendered_left = instance.process(GRAND_BOULE_RUN_FRAMES as u32);
             let rendered_right = instance.get_right_ptr();
-            // SAFETY: as in the partial-tail spec above — the pointers name
-            // this run's fixed-length render into the instance's own
-            // buffers, copied before the instance is mutated again.
-            unsafe {
-                reference_left.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_left,
-                    GRAND_BOULE_RUN_FRAMES,
-                ));
-                reference_right.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_right,
-                    GRAND_BOULE_RUN_FRAMES,
-                ));
-            }
+            // SAFETY: as in the partial-tail spec above — `rendered_left`
+            // names the instance's own left buffer, `GRAND_BOULE_BLOCK_FRAMES`
+            // long and never resized, into which `process` has just rendered
+            // `GRAND_BOULE_RUN_FRAMES` frames, copied before the instance is
+            // mutated again.
+            reference_left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, GRAND_BOULE_RUN_FRAMES)
+            });
+            // SAFETY: `rendered_right` names the separate right buffer of that
+            // pair, rendered and sized exactly as the left one above.
+            reference_right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, GRAND_BOULE_RUN_FRAMES)
+            });
         }
 
         assert!(
@@ -23665,16 +23659,15 @@ mod timeline_tests {
             // instance's own output buffers, which are 4096 frames long and
             // are never resized; nothing mutates the instance between the
             // render and this copy.
-            unsafe {
-                worklet_left.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_left,
-                    GLUTEN_RUN_FRAMES,
-                ));
-                worklet_right.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_right,
-                    GLUTEN_RUN_FRAMES,
-                ));
-            }
+            worklet_left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, GLUTEN_RUN_FRAMES)
+            });
+            // SAFETY: `rendered_right` names the instance's separate right
+            // output buffer, sized exactly as the left one above and untouched
+            // since the render.
+            worklet_right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, GLUTEN_RUN_FRAMES)
+            });
         }
 
         assert!(
@@ -23982,14 +23975,15 @@ mod timeline_tests {
             // instance's own output buffers, which are 4096 frames long and
             // are never resized; nothing mutates the instance between the
             // render and this copy.
-            unsafe {
-                worklet_left
-                    .extend_from_slice(std::slice::from_raw_parts(rendered_left, CRUST_RUN_FRAMES));
-                worklet_right.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_right,
-                    CRUST_RUN_FRAMES,
-                ));
-            }
+            worklet_left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, CRUST_RUN_FRAMES)
+            });
+            // SAFETY: `rendered_right` names the instance's separate right
+            // output buffer, sized exactly as the left one above and untouched
+            // since the render.
+            worklet_right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, CRUST_RUN_FRAMES)
+            });
         }
 
         assert!(
@@ -24266,16 +24260,15 @@ mod timeline_tests {
             // instance's own output buffers, which are `MAX_GRINDER_BLOCK_SIZE`
             // frames long and are never resized; nothing mutates the instance
             // between the render and this copy.
-            unsafe {
-                worklet_left.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_left,
-                    GRINDER_RUN_FRAMES,
-                ));
-                worklet_right.extend_from_slice(std::slice::from_raw_parts(
-                    rendered_right,
-                    GRINDER_RUN_FRAMES,
-                ));
-            }
+            worklet_left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, GRINDER_RUN_FRAMES)
+            });
+            // SAFETY: `rendered_right` names the instance's separate right
+            // output buffer, sized exactly as the left one above and untouched
+            // since the render.
+            worklet_right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, GRINDER_RUN_FRAMES)
+            });
         }
 
         assert!(
@@ -26093,15 +26086,15 @@ mod timeline_tests {
                 run as u32,
             );
             let run_right = instance.get_right_ptr();
-            // SAFETY: both pointers name the instance's own output buffers,
-            // which its constructor sizes at 1024 frames and no method resizes;
-            // `run` is bounded by `run_frames`, which every caller here passes
-            // at or below that length. Nothing mutates the instance between the
-            // render and these reads.
-            unsafe {
-                out_left.extend_from_slice(std::slice::from_raw_parts(run_left, run));
-                out_right.extend_from_slice(std::slice::from_raw_parts(run_right, run));
-            }
+            // SAFETY: `run_left` names the instance's own `out_left`, which its
+            // constructor sizes at `PROOF_CHAMBER_BLOCK_FRAMES` (1024) frames and
+            // no method resizes; `run` is bounded by `run_frames`, which this
+            // helper's only caller passes as exactly that length. Nothing
+            // mutates the instance between the render and this read.
+            out_left.extend_from_slice(unsafe { std::slice::from_raw_parts(run_left, run) });
+            // SAFETY: `run_right` names the separate `out_right`, sized and
+            // bounded exactly as `out_left` above.
+            out_right.extend_from_slice(unsafe { std::slice::from_raw_parts(run_right, run) });
             rendered = run_end;
         }
         (out_left, out_right)
@@ -26557,10 +26550,15 @@ mod timeline_tests {
             // well inside that, and the right channel starts one such channel
             // past the left. Nothing mutates the instrument between the render
             // and these reads.
-            unsafe {
-                left.extend_from_slice(std::slice::from_raw_parts(rendered_left, run_frames));
-                right.extend_from_slice(std::slice::from_raw_parts(rendered_right, run_frames));
-            }
+            left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, run_frames)
+            });
+            // SAFETY: `rendered_right` is the right channel one 4096-frame
+            // channel past the left in that same buffer, so `run_frames` from it
+            // stay inside the allocation, untouched since the render.
+            right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, run_frames)
+            });
             rendered += run_frames;
             run += 1;
         }
@@ -27468,10 +27466,14 @@ mod timeline_tests {
             // buffers are separate allocations, so the reads alias nothing.
             // Nothing mutates the instrument between the render and these
             // reads.
-            unsafe {
-                left.extend_from_slice(std::slice::from_raw_parts(rendered_left, run_frames));
-                right.extend_from_slice(std::slice::from_raw_parts(rendered_right, run_frames));
-            }
+            left.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_left, run_frames)
+            });
+            // SAFETY: `rendered_right` names the instrument's separate right
+            // buffer, sized and bounded exactly as the left one above.
+            right.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(rendered_right, run_frames)
+            });
             rendered += run_frames;
             run += 1;
         }
