@@ -112,16 +112,46 @@ describe('commandBatchEffectByActionType count readers', () => {
         });
     }
 
-    it('reads each figure from the command arguments', () => {
-        const ids = { trackIds: ['a', 'b'], sectionIds: ['s'], stems: [1, 2, 3] };
-        expect(commandBatchEffectByActionType.importStemSet.createdTracks?.(ids)).toBe(4);
-        expect(commandBatchEffectByActionType.automateSendRanges.automationPoints?.(ids)).toBe(4);
-        expect(commandBatchEffectByActionType.removeTrack.deletedObjects?.({ expectedClipIds: [1] })).toBe(2);
-        expect(commandBatchEffectByActionType.glueClips.deletedObjects?.({})).toBe(1);
-        expect(commandBatchEffectByActionType.automateParameterRange.automationPoints?.({})).toBe(5);
-        expect(commandBatchEffectByActionType.automateSendRange.automationPoints?.(ids)).toBe(4);
-        expect(commandBatchEffectByActionType.renderProjectSections.renderJobs?.(ids)).toBe(1);
-        expect(commandBatchEffectByActionType.importStemSet.importedAssets?.(ids)).toBe(3);
-        expect(commandBatchEffectByActionType.thinAutomation.deletedObjects?.(ids)).toBe(0);
+    type ReaderRow = {
+        type: keyof typeof commandBatchEffectByActionType;
+        field: (typeof readerFields)[number];
+        args: Readonly<Record<string, unknown>>;
+        expected: number;
+    };
+    // Argument lengths differ per key so a reader that reads the wrong key or drops a factor fails.
+    const sized = { trackIds: ['a', 'b', 'c'], sectionIds: ['s', 't'], stems: [1, 2, 3, 4] };
+    const rows: readonly ReaderRow[] = [
+        { type: 'addTrack', field: 'createdTracks', args: {}, expected: 1 },
+        { type: 'createBus', field: 'createdTracks', args: {}, expected: 1 },
+        { type: 'duplicateTrack', field: 'createdTracks', args: {}, expected: 1 },
+        { type: 'importStemSet', field: 'createdTracks', args: sized, expected: 5 },
+        { type: 'importStemSet', field: 'importedAssets', args: sized, expected: 4 },
+        {
+            type: 'removeTrack',
+            field: 'deletedObjects',
+            args: { expectedClipIds: [1], expectedAlternativeClipIds: [1, 2] },
+            expected: 4,
+        },
+        { type: 'glueClips', field: 'deletedObjects', args: { clipIds: ['a', 'b', 'c'] }, expected: 3 },
+        { type: 'glueClips', field: 'deletedObjects', args: {}, expected: 1 },
+        { type: 'thinAutomation', field: 'deletedObjects', args: sized, expected: 0 },
+        { type: 'addAutomationPoint', field: 'automationPoints', args: sized, expected: 1 },
+        { type: 'automateParameterRange', field: 'automationPoints', args: {}, expected: 5 },
+        { type: 'automateSendRange', field: 'automationPoints', args: sized, expected: 6 },
+        { type: 'automateSendRanges', field: 'automationPoints', args: sized, expected: 12 },
+        { type: 'automateTrackGainRange', field: 'automationPoints', args: sized, expected: 6 },
+        { type: 'renderProjectSections', field: 'renderJobs', args: sized, expected: 2 },
+    ];
+
+    it('asserts a figure for every declared reader', () => {
+        const covered = rows.map((row) => `${row.type}.${row.field}`);
+        const declared = Object.entries(commandBatchEffectByActionType).flatMap(([type, effect]) =>
+            readerFields.filter((field) => effect[field] !== undefined).map((field) => `${type}.${field}`)
+        );
+        expect(new Set(covered)).toEqual(new Set(declared));
+    });
+
+    it.each(rows)('$type $field reads $expected from its arguments', ({ type, field, args, expected }) => {
+        expect(commandBatchEffectByActionType[type][field]?.(args)).toBe(expected);
     });
 });
