@@ -93,6 +93,8 @@ type IssueFixture = {
     ignoreLabelEdit?: boolean;
     timeline?: TimelineEntry[];
     hideClaimComments?: boolean;
+    /** Runs after each timeline page is served, standing in for a write between two page fetches. */
+    afterTimelinePage?: (page: number, timeline: TimelineEntry[]) => TimelineEntry[] | undefined;
     commentIds?: number[];
     boardTotalCount?: number;
     boardsResponse?: string;
@@ -120,6 +122,19 @@ function fixtureToken(digit: string): string {
 const TOKEN_A = fixtureToken('a');
 const TOKEN_B = fixtureToken('b');
 const TOKEN_STALE = fixtureToken('c');
+
+/** The page size the claim requests, so fixtures can place entries on either side of a page boundary. */
+const TIMELINE_PAGE_SIZE = 100;
+
+/** Ordinary operator comments that are not claim tokens, numbered from 1. */
+function noteComments(count: number): TimelineEntry[] {
+    return Array.from({ length: count }, (_, index) => ({
+        event: 'commented',
+        id: index + 1,
+        body: `Progress note ${index + 1}.`,
+        user: { node_id: OPERATOR_NODE_ID },
+    }));
+}
 
 function tokenComment(id: number, token: string, nodeId: string = OPERATOR_NODE_ID): TimelineEntry {
     return {
@@ -158,6 +173,25 @@ function fakeIssue(initialLabels: string[], boards: BoardFixture[], issue: Issue
     const issueView = (viewed: string[]) =>
         JSON.stringify({ labels: viewed.map((name) => ({ name })), state: issue.state ?? 'OPEN' });
 
+    /**
+     * Pages are positional like GitHub's `page`/`per_page` timeline: each page is cut from the
+     * timeline as it stands when that page is fetched, so a deletion between two fetches shifts
+     * later entries onto a page already read.
+     */
+    function timelinePages(): TimelineEntry[][] {
+        const pages: TimelineEntry[][] = [];
+        for (let page = 0; ; page += 1) {
+            const visible =
+                issue.hideClaimComments === true ? timeline.filter((e) => e.event !== 'commented') : timeline;
+            const entries = visible.slice(page * TIMELINE_PAGE_SIZE, (page + 1) * TIMELINE_PAGE_SIZE);
+            pages.push(entries);
+            timeline = issue.afterTimelinePage?.(page, timeline) ?? timeline;
+            if (entries.length < TIMELINE_PAGE_SIZE) {
+                return pages;
+            }
+        }
+    }
+
     function claimer(options: { firstReadBeforeAnyEdit?: boolean } = {}) {
         const calls: string[][] = [];
         const firstRead = labels;
@@ -192,9 +226,7 @@ function fakeIssue(initialLabels: string[], boards: BoardFixture[], issue: Issue
                 return '';
             }
             if (args[0] === 'api' && args[1] === '--paginate') {
-                const visible =
-                    issue.hideClaimComments === true ? timeline.filter((e) => e.event !== 'commented') : timeline;
-                return JSON.stringify([visible.slice(0, 2), visible.slice(2)]);
+                return JSON.stringify(timelinePages());
             }
             if (args[0] === 'project' && args[1] === 'field-list') {
                 const projectNumber = Number(args[2]);
@@ -554,6 +586,84 @@ describe('concurrent claims', () => {
         expect(claimComments(issue.timeline()).map((entry) => entry.id)).toEqual([5001]);
     });
 
+    it('refuses the later claim when a comment on an already-read timeline page is deleted before the next page is read', () => {
+        let deleteBetweenPages = false;
+        const issue = fakeIssue(['bug', 'status:ready'], [ROADMAP], {
+            timeline: noteComments(TIMELINE_PAGE_SIZE - 2),
+            afterTimelinePage: (page, timeline) => {
+                if (!deleteBetweenPages || page !== 0) {
+                    return undefined;
+                }
+                deleteBetweenPages = false;
+                return timeline.filter((entry) => entry.id !== 5);
+            },
+        });
+        const first = issue.claimer();
+        const second = issue.claimer({ firstReadBeforeAnyEdit: true });
+
+        claimTrackerIssue(7, first.gh, () => undefined, TOKEN_A);
+        deleteBetweenPages = true;
+        expect(() => claimTrackerIssue(7, second.gh, () => undefined, TOKEN_B)).toThrow(
+            /issue #7 was claimed concurrently by https:\/\/github\.com\/jcosta33\/sourdaw\/issues\/7#issuecomment-5000; /
+        );
+
+        expect(deleteBetweenPages).toBe(false);
+        expect(itemEdits(first.calls)).toHaveLength(1);
+        expect(itemEdits(second.calls)).toEqual([]);
+        expect(second.calls).toContainEqual(['api', '-X', 'DELETE', 'repos/jcosta33/sourdaw/issues/comments/5001']);
+        expect(claimComments(issue.timeline()).filter((entry) => entry.id === 5000 || entry.id === 5001)).toHaveLength(
+            1
+        );
+    });
+
+    it('refuses the later claim when deletions during two consecutive reads hide the same rival token from both', () => {
+        let armed = false;
+        let read = 0;
+        const issue = fakeIssue(['bug', 'status:ready'], [ROADMAP], {
+            timeline: noteComments(2 * TIMELINE_PAGE_SIZE - 2),
+            afterTimelinePage: (page, timeline) => {
+                if (!armed) {
+                    return undefined;
+                }
+                read += page === 0 ? 1 : 0;
+                if (read === 1 && page === 1) {
+                    return timeline.filter((entry) => entry.id !== 1);
+                }
+                if (read === 2 && page === 0) {
+                    return timeline.filter((entry) => entry.id === undefined || entry.id < 2 || entry.id > 101);
+                }
+                return undefined;
+            },
+        });
+        const first = issue.claimer();
+        const second = issue.claimer({ firstReadBeforeAnyEdit: true });
+
+        claimTrackerIssue(7, first.gh, () => undefined, TOKEN_A);
+        armed = true;
+        expect(() => claimTrackerIssue(7, second.gh, () => undefined, TOKEN_B)).toThrow(
+            /issue #7 was claimed concurrently by https:\/\/github\.com\/jcosta33\/sourdaw\/issues\/7#issuecomment-5000; /
+        );
+
+        expect(read).toBeGreaterThanOrEqual(2);
+        expect(itemEdits(first.calls)).toHaveLength(1);
+        expect(itemEdits(second.calls)).toEqual([]);
+    });
+
+    it('refuses and withdraws when no two consecutive timeline reads agree', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP], {
+            timeline: noteComments(TIMELINE_PAGE_SIZE - 2),
+            afterTimelinePage: (page, timeline) => (page === 0 ? timeline.slice(1) : undefined),
+        });
+
+        expect(() => claimTrackerIssue(7, gh, () => undefined, TOKEN_A)).toThrow(
+            'issue #7 timeline changed between every two consecutive reads of 4; no board was moved; ' +
+                'status:active stays on the issue — if no lane holds it, remove the label and claim again'
+        );
+        expect(callsWith(calls, ['api', '--paginate'])).toHaveLength(4);
+        expect(calls).toContainEqual(['api', '-X', 'DELETE', 'repos/jcosta33/sourdaw/issues/comments/5000']);
+        expect(callsWith(calls, ['project', 'item-edit'])).toEqual([]);
+    });
+
     it('refuses both claims and moves no board when each reads the timeline holding both tokens', () => {
         const issue = fakeIssue(['bug', 'status:ready'], [ROADMAP]);
         const inner = issue.claimer({ firstReadBeforeAnyEdit: true });
@@ -572,15 +682,14 @@ describe('concurrent claims', () => {
             return inner.gh(args);
         };
         const outerGh: Gh = (args) => {
-            if (args[0] === 'api' && args[1] === '--paginate') {
+            if (args[0] === 'api' && args[1] === '--paginate' && outerView === undefined) {
                 try {
                     claimTrackerIssue(7, innerGh, () => undefined, TOKEN_B);
                 } catch (error) {
                     innerError = error;
                 }
-                return outerView ?? outer.gh(args);
             }
-            return outer.gh(args);
+            return args[0] === 'api' && args[1] === '--paginate' ? (outerView ?? outer.gh(args)) : outer.gh(args);
         };
 
         expect(() => claimTrackerIssue(7, outerGh, () => undefined, TOKEN_A)).toThrow(
@@ -636,6 +745,7 @@ describe('concurrent claims', () => {
             'issue view 7',
             'api -X POST',
             'api --paginate --slurp',
+            'api --paginate --slurp',
             'project item-edit --project-id',
         ]);
         expect(calls[5]).toEqual([
@@ -652,6 +762,7 @@ describe('concurrent claims', () => {
             '--slurp',
             'repos/jcosta33/sourdaw/issues/7/timeline?per_page=100',
         ]);
+        expect(calls[7]).toEqual(calls[6]);
     });
 
     it('ignores a claim token left before status:active was last removed', () => {
@@ -934,7 +1045,7 @@ describe('claim cli wiring', () => {
 
         await expect(runClaimTrackerIssueCli(['9'], deps)).resolves.toBe(0);
 
-        expect(order).toEqual(['bind', 'authenticate', 'gh', 'gh', 'gh', 'gh', 'gh', 'gh', 'dispose']);
+        expect(order).toEqual(['bind', 'authenticate', 'gh', 'gh', 'gh', 'gh', 'gh', 'gh', 'gh', 'dispose']);
         expect(createGhSessions).toHaveLength(1);
         expect(createGhSessions[0]).toBe(authSession);
     });
