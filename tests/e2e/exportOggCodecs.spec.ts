@@ -31,7 +31,7 @@ function oggPacketDigests(bytes: Uint8Array) {
         parts: Uint8Array[] = [];
     while (offset < bytes.length) {
         expect(Buffer.from(bytes.subarray(offset, offset + 4)).toString()).toBe('OggS');
-        const segmentEnd = offset + 27 + bytes[offset + 26]!;
+        const segmentEnd = offset + 27 + bytes[offset + 26];
         let position = segmentEnd;
         for (const length of bytes.subarray(offset + 27, segmentEnd)) {
             parts.push(bytes.subarray(position, position + length));
@@ -117,7 +117,7 @@ function opusDuration(bytes: Uint8Array) {
         eos = false;
     while (offset < bytes.length) {
         expect(Buffer.from(bytes.subarray(offset, offset + 4)).toString()).toBe('OggS');
-        const segments = bytes[offset + 26]!,
+        const segments = bytes[offset + 26],
             body = offset + 27 + segments;
         if (offset === 0) {
             expect(Buffer.from(bytes.subarray(body, body + 8)).toString()).toBe('OpusHead');
@@ -125,7 +125,7 @@ function opusDuration(bytes: Uint8Array) {
         }
         const view = new DataView(bytes.buffer, bytes.byteOffset + offset);
         granule = view.getBigUint64(6, true);
-        eos = (bytes[offset + 5]! & 4) !== 0;
+        eos = (bytes[offset + 5] & 4) !== 0;
         offset = body + bytes.subarray(offset + 27, body).reduce((sum, n) => sum + n, 0);
     }
     expect(offset).toBe(bytes.length);
@@ -182,14 +182,14 @@ for (const rate of [44100, 48000, 88200, 96000]) {
                 expect(names).toHaveLength(3);
                 const wavName = names.find((name) => name.endsWith('.wav'))!;
                 expect(wavName).toBeTruthy();
-                const reference = await decode(page, entries[wavName]!);
+                const reference = await decode(page, entries[wavName]);
                 expect(reference.channels).toHaveLength(channels);
                 expect(Math.abs(reference.frames - Math.round((frames * 48000) / rate))).toBeLessThanOrEqual(1);
                 const measurements = [];
                 for (const codec of ['ogg', 'opus']) {
                     const name = names.find((name) => name.endsWith('.' + codec));
                     expect(name).toBeTruthy();
-                    const bytes = entries[name!]!,
+                    const bytes = entries[name!],
                         actual = await decode(page, bytes);
                     expect(actual.rate).toBe(48000);
                     expect(actual.channels).toHaveLength(channels);
@@ -198,7 +198,7 @@ for (const rate of [44100, 48000, 88200, 96000]) {
                         expect(Math.abs(actual.frames - opusDuration(bytes))).toBeLessThanOrEqual(1);
                     } else {
                         // decodeAudioData resamples to its context; inspect the real identification header.
-                        const body = 27 + bytes[26]!;
+                        const body = 27 + bytes[26];
                         expect(Buffer.from(bytes.subarray(body + 1, body + 7)).toString()).toBe('vorbis');
                         expect(bytes[body]).toBe(1);
                         expect(bytes[body + 11]).toBe(channels);
@@ -215,9 +215,9 @@ for (const rate of [44100, 48000, 88200, 96000]) {
                             let a = 0,
                                 b = 0,
                                 correlation = 0;
-                            for (let frame = start!; frame < end!; frame++) {
-                                const x = actual.channels[channel]![frame]!,
-                                    y = reference.channels[channel]![frame]!;
+                            for (let frame = start; frame < end; frame++) {
+                                const x = actual.channels[channel][frame],
+                                    y = reference.channels[channel][frame];
                                 a += x * x;
                                 b += y * y;
                                 correlation += x * y;
@@ -309,21 +309,21 @@ test('Slices saves actual codec stems with the selected-rate WAV reference', asy
         expect(Object.keys(entries)).toHaveLength(3);
         const wavName = Object.keys(entries).find((name) => name.endsWith('.wav'));
         expect(wavName).toBeTruthy();
-        const wav = entries[wavName!]!;
+        const wav = entries[wavName!];
         expect(new DataView(wav.buffer, wav.byteOffset).getUint32(24, true)).toBe(44100);
         const reference = await decode(page, wav);
         for (const codec of ['ogg', 'opus']) {
             const name = Object.keys(entries).find((entry) => entry.endsWith('.' + codec));
             expect(name).toBeTruthy();
-            const actual = await decode(page, entries[name!]!);
+            const actual = await decode(page, entries[name!]);
             expect(actual.channels).toHaveLength(2);
             expect(Math.abs(actual.frames - reference.frames)).toBeLessThanOrEqual(1);
             for (let channel = 0; channel < 2; channel++) {
                 let sourceEnergy = 0,
                     actualEnergy = 0;
                 for (let frame = 256; frame < reference.frames - 128; frame++) {
-                    sourceEnergy += reference.channels[channel]![frame]! ** 2;
-                    actualEnergy += actual.channels[channel]![frame]! ** 2;
+                    sourceEnergy += reference.channels[channel][frame] ** 2;
+                    actualEnergy += actual.channels[channel][frame] ** 2;
                 }
                 expect(sourceEnergy).toBeGreaterThan(0);
                 expect(Math.abs(10 * Math.log10(actualEnergy / sourceEnergy))).toBeLessThanOrEqual(0.5);
@@ -409,8 +409,8 @@ test('the actual codec wrappers preserve short and nominal mono/stereo duration 
                         let reference = 0,
                             actual = 0;
                         for (let frame = 0; frame < Math.min(frames, output.frames); frame++) {
-                            reference += pcm[channel]![frame]! ** 2;
-                            actual += output.channels[channel]![frame]! ** 2;
+                            reference += pcm[channel][frame] ** 2;
+                            actual += output.channels[channel][frame] ** 2;
                         }
                         const differenceDb = 10 * Math.log10(actual / reference);
                         result.differencesDb.push(differenceDb);

@@ -291,8 +291,8 @@ async function takeRowBeatRange(page: Page, trackId: string): Promise<{ minBeat:
         if (clips.length !== 1) {
             throw new Error(`Expected one captured clip for the take-row scale; found ${clips.length}`);
         }
-        const minBeat = Math.max(0, clips[0]!.startBeat);
-        return { minBeat, maxBeat: Math.max(clips[0]!.endBeat, minBeat + 4) };
+        const minBeat = Math.max(0, clips[0].startBeat);
+        return { minBeat, maxBeat: Math.max(clips[0].endBeat, minBeat + 4) };
     }, trackId);
 }
 
@@ -1913,9 +1913,9 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
         expect(midi.rawMatchesProjection).toBe(true);
         expect(midi.clips).toHaveLength(1);
         expect(midi.rows.notes).toHaveLength(1);
-        expect(midi.rows.notes[0]!.pitch).toBe(67);
-        const midiClip = midi.clips[0]!;
-        const note = midi.rows.notes[0]!;
+        expect(midi.rows.notes[0].pitch).toBe(67);
+        const midiClip = midi.clips[0];
+        const note = midi.rows.notes[0];
         expect(midiClip.startBeat - (midiClip.midiOffsetBeats ?? 0) + note.startBeat + note.duration).toBeCloseTo(
             outBeat,
             7
@@ -1924,7 +1924,7 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
         expect(midi.rows.bend).toEqual([]);
         expect(midi.recordingHistory).toHaveLength(2);
         expect(new Set(midi.recordingHistory.map((entry) => entry.groupId)).size).toBe(1);
-        expect(midi.recordingHistory[0]!.groupId).toBeTruthy();
+        expect(midi.recordingHistory[0].groupId).toBeTruthy();
         const owners = await recordingOwners(page, audioTrackId);
         const midiOwners = await recordingOwners(page, midiTrackId);
         expect(owners.raw).toEqual(owners.projected);
@@ -1962,7 +1962,7 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
             inverseClipId: clipId,
             redoType: 'restoreRecording',
             redoClipId: clipId,
-            groupId: midi.recordingHistory[0]!.groupId,
+            groupId: midi.recordingHistory[0].groupId,
             actionVersion: 1,
             inverseVersion: 1,
             redoVersion: 1,

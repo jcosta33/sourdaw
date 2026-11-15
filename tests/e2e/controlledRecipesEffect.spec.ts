@@ -484,7 +484,7 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
                     const { executeAppAction } = await import('/src/modules/Command/useCases/index.ts');
                     await executeAppAction({ type: 'setDeviceParameter', payload: { deviceId, paramId, value } });
                 },
-                { deviceId: gate!.id, paramId: alternative.paramId, value: gate!.parameterValues[alternative.paramId]! }
+                { deviceId: gate!.id, paramId: alternative.paramId, value: gate!.parameterValues[alternative.paramId] }
             );
             expect((await render()).hashes).toEqual(wet.hashes);
         }

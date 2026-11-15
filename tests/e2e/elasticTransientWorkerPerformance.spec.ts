@@ -576,12 +576,12 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await coldTrace.stop();
     const after = await sourceState(page);
     const gaps = measured.frames.slice(1).flatMap((time, index) => {
-        const previous = measured.frames[index]!;
+        const previous = measured.frames[index];
         return time >= measured.start ? [time - previous] : [];
     });
     const observedGaps = measured.observedFrames
         .slice(1)
-        .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]!] : []));
+        .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]] : []));
     const commit = measured.measures.filter((entry) => entry.name === 'elastic-transient-commit');
     const copy = measured.measures.filter((entry) => entry.name === 'elastic-transient-copy-task');
     const commitTasks = measured.measures.filter(
@@ -1039,10 +1039,10 @@ async function assertPopulatedMeasurement(
     await trace.stop();
     const gaps = measured.frames
         .slice(1)
-        .flatMap((time, index) => (time >= measured.start ? [time - measured.frames[index]!] : []));
+        .flatMap((time, index) => (time >= measured.start ? [time - measured.frames[index]] : []));
     const observedGaps = measured.observedFrames
         .slice(1)
-        .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]!] : []));
+        .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]] : []));
     const copy = measured.measures.filter((entry) => entry.name === 'elastic-transient-copy-task');
     const commitTasks = measured.measures.filter(
         (entry) =>

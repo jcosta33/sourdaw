@@ -170,14 +170,14 @@ test('source-onset read crosses the real chat planner and Worker with numeric pa
             const dataText = request.messages
                 .map((message) => message.content)
                 .find((content) => content?.includes('untrusted_project_data:\n'))!;
-            const data = JSON.parse(dataText.split('untrusted_project_data:\n')[1]!.split('\n')[0]!).data as {
+            const data = JSON.parse(dataText.split('untrusted_project_data:\n')[1].split('\n')[0]).data as {
                 selectableTargets: Array<{ clips: Array<{ id: string }> }>;
             };
             const trackIndex = data.selectableTargets.findIndex((track) =>
                 track.clips.some((clip) => clip.id === imported.clips[0].id)
             );
             expect(trackIndex).toBeGreaterThanOrEqual(0);
-            const clipIndex = data.selectableTargets[trackIndex]!.clips.findIndex(
+            const clipIndex = data.selectableTargets[trackIndex].clips.findIndex(
                 (clip) => clip.id === imported.clips[0].id
             );
             const reference = `c${String(trackIndex)}.${String(clipIndex)}`;

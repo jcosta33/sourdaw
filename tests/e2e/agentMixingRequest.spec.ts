@@ -475,7 +475,7 @@ async function installOutputProbe(page: Page, confirmationId: string) {
                             const expectedIndex = block.frame - start.frame + index + shift;
                             maximum = Math.max(
                                 maximum,
-                                Math.abs(block.selected[index]! - (expected[expectedIndex] ?? 0) * start.expectedGain)
+                                Math.abs(block.selected[index] - (expected[expectedIndex] ?? 0) * start.expectedGain)
                             );
                         }
                     }

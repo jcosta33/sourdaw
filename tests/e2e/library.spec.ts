@@ -156,10 +156,10 @@ test.describe('Sample Library', () => {
         const placed = await sampleClips(page);
         expect(placed.raw).toEqual(placed.projected);
         expect(placed.projected.ids).toEqual(before.projected.ids);
-        expect(before.projected.ids).toContain(placed.projected.clips[0]!.trackId);
+        expect(before.projected.ids).toContain(placed.projected.clips[0].trackId);
         expect(placed.projected.clips[0]).toMatchObject({ type: 'audio', audioBufferId: expect.any(String) });
-        expect(placed.projected.clips[0]!.assetHash).toMatch(/^sha256:[a-f0-9]{64}$/);
-        expect(placed.projected.clips[0]!.endBeat).toBeGreaterThan(placed.projected.clips[0]!.startBeat);
+        expect(placed.projected.clips[0].assetHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+        expect(placed.projected.clips[0].endBeat).toBeGreaterThan(placed.projected.clips[0].startBeat);
         const sourceMatches = await page.evaluate(
             async ({ bufferId, entryPath }) => {
                 const { audio }: typeof import('./persistedHydrationEntry') = await import(entryPath);
@@ -188,7 +188,7 @@ test.describe('Sample Library', () => {
                 }
                 return true;
             },
-            { bufferId: placed.projected.clips[0]!.audioBufferId, entryPath: HYDRATION_ENTRY }
+            { bufferId: placed.projected.clips[0].audioBufferId, entryPath: HYDRATION_ENTRY }
         );
         expect(sourceMatches).toBe(true);
 
