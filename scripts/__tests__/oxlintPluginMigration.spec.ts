@@ -358,7 +358,7 @@ describe('production Oxlint public-plugin migration', () => {
     }, 60_000);
 
     it.each([
-        ['preserve-caught-error', "try { JSON.parse('bad'); } catch (error) { throw new Error('failed'); }\n"],
+        ['preserve-caught-error', "try { JSON.parse('bad'); } catch (error) { throw new Error(String(error)); }\n"],
         ['no-useless-computed-key', "export const value = { ['key']: 1 };\n"],
         [
             'max-lines',
@@ -411,9 +411,9 @@ describe('production Oxlint public-plugin migration', () => {
     it('reports caught-error loss on final formatted bytes beyond a next-line directive', () => {
         const input =
             '// eslint-disable-next-line preserve-caught-error -- Controlled suppression scope probe.\n' +
-            "try { JSON.parse('bad'); } catch (error) { throw new Error('failed'); }\n";
+            "try { JSON.parse('bad'); } catch (error) { throw new Error(String(error)); }\n";
         const fixed = runProductionLint(input, 'scripts/example.js', true);
-        expect(fixed.text).toContain("    throw new Error('failed');");
+        expect(fixed.text).toContain('    throw new Error(String(error));');
         expect(fixed.status, fixed.output).toBe(1);
         expect(fixed.output).toContain('preserve-caught-error');
     }, 180_000);
