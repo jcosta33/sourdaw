@@ -212,6 +212,17 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 
     // ── Ready: compact pill + unload panel ──────────────────────────────────
     if (status.state === 'ready') {
+        // The panel describes the model that is loaded, not the one the picker would select.
+        const loadedModel: BadgeModelInfo =
+            backend === 'webllm'
+                ? (WEBLLM_MODELS.find((candidate) => candidate.id === status.modelId) ?? {
+                      displayName: status.modelId,
+                      description: '',
+                      downloadSize: 'Unknown',
+                      ramUsage: 'unknown',
+                      parameterCount: 'Unknown',
+                  })
+                : modelInfo;
         return (
             <Popover open={showPanel} onOpenChange={setShowPanel}>
                 <PopoverTrigger asChild>
@@ -235,7 +246,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                     <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
                         <Row justify="between" gap={2}>
                             <span className="text-xs font-semibold text-foreground truncate">
-                                {modelInfo.displayName}
+                                {loadedModel.displayName}
                             </span>
                             <DawMicroBadge rounded="full" className={TIER_COLORS[tierKey]}>
                                 {backendLabel}
@@ -245,7 +256,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                     <Stack gap={2.5} className="px-3 py-2.5">
                         <Row gap={1.5} className="text-[10px] text-primary">
                             <DawStatusDot tone="primary" pulse />
-                            <span>Active · {modelInfo.ramUsage} RAM</span>
+                            <span>Active · {loadedModel.ramUsage} RAM</span>
                         </Row>
                         <Button
                             size="sm"
@@ -318,12 +329,28 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     }
 
     // ── Error ───────────────────────────────────────────────────────────────
+    if (backend === 'webllm' && offeredModels.length === 0) {
+        return (
+            <span
+                className="text-[9px] text-muted-foreground/50 whitespace-nowrap"
+                title={describeNoFittingModel(machineMemory)}
+            >
+                No local model fits
+            </span>
+        );
+    }
     return (
         <Button
             variant="outline"
             size="xs"
             type="button"
-            onClick={() => onLoad()}
+            onClick={() => {
+                if (backend === 'webllm') {
+                    onLoad(selectedModelId);
+                } else {
+                    onLoad();
+                }
+            }}
             className="h-6 gap-1 px-2 text-[10px] font-medium border-destructive/30 text-destructive/80 hover:text-destructive hover:bg-destructive/10"
             title={status.message}
         >

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { aiBackendPreferenceStore, hostedLlmProviderStatusStore, machineMemoryStore } from '#/modules/AiRuntime/stores';
+import { configureCloudProvider, removeCloudProvider } from '#/modules/AiRuntime/useCases';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 
 import { LlmStatusBadge } from '../LlmStatusBadge';
@@ -257,6 +258,80 @@ describe('LlmStatusBadge', () => {
         });
     });
 
+    describe('loads started from the badge go through the offered selection', () => {
+        const errorStatus = { state: 'error' as const, message: 'The model download failed.' };
+
+        beforeEach(() => {
+            capabilityStore.set({ phase: 'done', report: verifiedWebGpuReport });
+            aiBackendPreferenceStore.set('auto');
+            hostedLlmProviderStatusStore.set(null);
+        });
+
+        // The engine's active model id is the Pro default: the model the retry used to fall back to.
+        it('retries with the largest offered model, not the unoffered active default, on an 8 GB machine', () => {
+            machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000 });
+            const onLoad = vi.fn();
+            render(<LlmStatusBadge status={errorStatus} onLoad={onLoad} />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Retry Model Download' }));
+
+            expect(onLoad).toHaveBeenCalledWith('Qwen3-4B-q4f16_1-MLC');
+        });
+
+        it('offers no local retry when no local model fits', () => {
+            machineMemoryStore.set({ state: 'known', totalBytes: 1_000_000_000 });
+            render(<LlmStatusBadge status={errorStatus} onLoad={vi.fn()} />);
+
+            expect(screen.queryByRole('button', { name: 'Retry Model Download' })).not.toBeInTheDocument();
+            expect(screen.getByText('No local model fits')).toHaveAttribute(
+                'title',
+                expect.stringContaining('no local model fits')
+            );
+        });
+
+        it('keeps the hosted retry as it was', async () => {
+            await act(async () => {
+                await configureCloudProvider({
+                    provider: 'openai-compatible',
+                    model: 'local-hosted-model',
+                    baseUrl: 'http://localhost:1234/v1',
+                    authentication: 'none',
+                    apiKey: '',
+                });
+            });
+            aiBackendPreferenceStore.set('cloud');
+            machineMemoryStore.set({ state: 'known', totalBytes: 8_000_000_000 });
+            const onLoad = vi.fn();
+            try {
+                render(<LlmStatusBadge status={errorStatus} onLoad={onLoad} />);
+
+                fireEvent.click(screen.getByRole('button', { name: 'AI Error — retry' }));
+
+                expect(onLoad).toHaveBeenCalledWith();
+            } finally {
+                await act(async () => {
+                    await removeCloudProvider();
+                });
+            }
+        });
+
+        it('describes the model that is loaded, not the one the picker would select', () => {
+            machineMemoryStore.set({ state: 'known', totalBytes: 16_000_000_000 });
+            render(
+                <LlmStatusBadge
+                    status={{ state: 'ready', backend: 'webllm', modelId: 'Qwen3-1.7B-q4f16_1-MLC' }}
+                    onLoad={vi.fn()}
+                />
+            );
+
+            fireEvent.click(screen.getByRole('button', { name: 'AI Ready' }));
+
+            expect(screen.getByText('Light')).toBeInTheDocument();
+            expect(screen.getByText('Active · ~2.7 GB RAM')).toBeInTheDocument();
+            expect(screen.queryByText('Pro')).not.toBeInTheDocument();
+        });
+    });
+
     describe('when this machine cannot run the requested model', () => {
         const storageRefusal = {
             state: 'error' as const,
@@ -325,7 +400,8 @@ describe('LlmStatusBadge', () => {
 
             fireEvent.click(screen.getByRole('button', { name: 'Retry Model Download' }));
 
-            expect(onLoad).toHaveBeenCalledWith();
+            // The picker's selection, not the engine's silent fallback, is what a retry loads.
+            expect(onLoad).toHaveBeenCalledWith('Qwen3-8B-q4f16_1-MLC');
             expect(screen.queryByRole('alert')).not.toBeInTheDocument();
         });
     });

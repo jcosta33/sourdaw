@@ -1132,6 +1132,16 @@ type AdmissionCheckInput = {
     decisionText: string | null;
 };
 
+/** The markdown table row (one model per line) that names the needle. */
+function findTableRow(text: string, needle: string): string | undefined {
+    return text.split('\n').find((line) => line.startsWith('|') && line.includes(needle));
+}
+
+function swapInText(text: string, first: string, second: string): string {
+    const placeholder = 'swap-placeholder';
+    return text.replaceAll(first, placeholder).replaceAll(second, first).replaceAll(placeholder, second);
+}
+
 function findAdmissionGaps({ manifest, prebuiltList, admission, decisionText }: AdmissionCheckInput): AdmissionGap[] {
     const gaps: AdmissionGap[] = [];
     const prebuilt = prebuiltList.find((entry) => entry.model_id === manifest.modelId);
@@ -1150,17 +1160,23 @@ function findAdmissionGaps({ manifest, prebuiltList, admission, decisionText }: 
         if (!/^status:\s*accepted\s*$/mu.test(decisionText)) {
             gaps.push('decision-record-not-accepted');
         }
-        if (
-            !decisionText.includes(manifest.modelSource.revision) ||
-            !decisionText.includes(manifest.artifactSetDigest)
-        ) {
+        // Values are bound to their table row: a digest elsewhere in the record, or on another model's
+        // row, does not admit this model.
+        const conversionRow = findTableRow(decisionText, manifest.modelSource.revision);
+        if (conversionRow === undefined || !conversionRow.includes(manifest.artifactSetDigest)) {
             gaps.push('decision-record-lacks-revision-or-digest');
         }
         if (!decisionText.includes(manifest.wasmSource.revision)) {
             gaps.push('decision-record-lacks-libraries-revision');
         }
         const library = manifest.artifacts.find((artifact) => artifact.kind === 'model-library');
-        if (library === undefined || !decisionText.includes(library.sha256)) {
+        const libraryRow = library === undefined ? undefined : findTableRow(decisionText, library.path);
+        if (
+            library === undefined ||
+            libraryRow === undefined ||
+            !libraryRow.includes(library.sha256) ||
+            !libraryRow.includes(library.sizeBytes.toLocaleString('en-US'))
+        ) {
             gaps.push('decision-record-lacks-library-hash');
         }
     }
@@ -1228,6 +1244,29 @@ describe('WebLLM catalogue admission record', () => {
 
     it('records an admission for exactly the catalogue models', () => {
         expect(Object.keys(WEBLLM_MODEL_ADMISSIONS).sort()).toEqual(WEBLLM_MODELS.map((model) => model.id).sort());
+    });
+
+    it('binds each digest and library hash to its own model row, so swapping two models fails both', async () => {
+        const prebuiltList = await readPrebuiltList();
+        const [first, second] = ['Qwen3-4B-q4f16_1-MLC', 'Qwen3-8B-q4f16_1-MLC'].map((modelId) =>
+            realInput(modelId, prebuiltList)
+        );
+        const libraryOf = (input: AdmissionCheckInput): string =>
+            input.manifest.artifacts.find((artifact) => artifact.kind === 'model-library')?.sha256 ?? '';
+        const text = first.decisionText ?? '';
+
+        const digestsSwapped = swapInText(text, first.manifest.artifactSetDigest, second.manifest.artifactSetDigest);
+        const hashesSwapped = swapInText(text, libraryOf(first), libraryOf(second));
+
+        for (const input of [first, second]) {
+            expect(findAdmissionGaps({ ...input, decisionText: digestsSwapped })).toEqual([
+                'decision-record-lacks-revision-or-digest',
+            ]);
+            expect(findAdmissionGaps({ ...input, decisionText: hashesSwapped })).toEqual([
+                'decision-record-lacks-library-hash',
+            ]);
+            expect(findAdmissionGaps({ ...input, decisionText: text })).toEqual([]);
+        }
     });
 
     describe('names each gap on a catalogue model with one thing taken away', () => {
