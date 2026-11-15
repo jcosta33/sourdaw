@@ -38,11 +38,6 @@ export type DeviceStateChunkSnapshot = {
     readonly data: { readonly [key: string]: DeviceStateValueSnapshot };
 };
 
-export type DevicePatchStateSnapshot = {
-    deviceState: DeviceStateChunkSnapshot | null;
-    parameterValues: Record<string, number | null>;
-};
-
 export type DeviceSnapshot = {
     readonly id: string;
     readonly name: string;
@@ -914,14 +909,6 @@ export type AdjustmentLayerSnapshot = {
     readonly mix: number;
     readonly color: string;
 };
-/** A pitch-shift segment carried by `commitPitchEdit`. Command cannot import Knead's
- *  segment model (model isolation), so this specifies only the structural fields the
- *  pitch render consumes. Kept assignable to Knead's mutable shape (plain arrays). */
-export type PitchEditSegmentSnapshot = {
-    start_time_ms: number;
-    end_time_ms: number;
-    shift_semitones: number;
-};
 /** A pitch-contour point carried by `commitPitchEdit`. Structural mirror of Knead's
  *  `PitchPoint` — model isolation forbids importing the concrete model. */
 export type PitchContourPointSnapshot = {
@@ -1003,16 +990,6 @@ export type SendAutomationRangeSnapshot = {
     startBeat: number;
     endBeat: number;
     automationStartBeat: number;
-};
-
-export type RenderProjectSectionJobSnapshot = {
-    jobId: string;
-    sectionId: string;
-    sectionName: string;
-    startBeat: number;
-    endBeat: number;
-    sampleRate: number;
-    tailSeconds: number;
 };
 
 export type GrooveConsumerSnapshot = 'clip' | 'yeast-processor' | 'toaster-pattern' | 'arpeggiator' | 'sequencer';
@@ -1275,50 +1252,6 @@ export type DrumPreviewCandidateSnapshot = {
     readonly hiHatNotes: readonly MidiClipNoteSnapshot[];
 };
 
-export type DrumPreviewBranchPlanSnapshot = {
-    readonly ownerId: string;
-    readonly createdAt: number;
-    readonly expectedSourceBranchId: string;
-    readonly expectedSourceHeads: readonly string[];
-    readonly expectedDocuments: readonly {
-        readonly docId: string;
-        readonly heads: readonly string[];
-    }[];
-    readonly expectedBranchState: {
-        readonly activeBranchId: string;
-        readonly branches: readonly {
-            readonly branchId: string;
-            readonly name: string;
-            readonly rootDocId: string;
-            readonly sourceBranchId: string | null;
-            readonly createdAt: number;
-            readonly createdFromHeads: readonly string[];
-            readonly note: string;
-        }[];
-    };
-    readonly sectionId: string;
-    readonly sectionName: string;
-    readonly sectionStartBeat: number;
-    readonly sectionEndBeat: number;
-    readonly candidateCount: 3;
-    readonly varyingRoles: readonly ['snare', 'hi-hat'];
-    readonly kick: DrumPreviewSourceClipSnapshot;
-    readonly snare: DrumPreviewSourceClipSnapshot;
-    readonly hiHat: DrumPreviewSourceClipSnapshot;
-    readonly candidates: readonly DrumPreviewCandidateSnapshot[];
-};
-
-export type DeleteDrumPreviewBranchesSnapshot = {
-    readonly ownerId: string;
-    readonly expectedSourceBranchId: string;
-    readonly branches: readonly {
-        readonly branchId: string;
-        readonly branchName: string;
-        readonly rootDocId: string;
-        readonly expectedHeads: readonly string[];
-    }[];
-};
-
 type MidiGenerationClipReplaySnapshot = {
     id: string;
     trackId: string;
@@ -1372,7 +1305,7 @@ type GeneratedMidiReplayOperation =
  */
 export type AutomationRecordingPolicy = 'suppressed';
 
-export type AppAction =
+type LegacyAppAction =
     | {
           type: 'importStemSet';
           payload: {
@@ -2004,30 +1937,6 @@ export type AppAction =
       }
     | { type: 'setDeviceState'; payload: { deviceId: string; state: DeviceStateChunkSnapshot } }
     | {
-          type: 'setFermenterPatch';
-          payload: {
-              deviceId: string;
-              before: DeviceStateChunkSnapshot;
-              after: DeviceStateChunkSnapshot;
-              expectedCurrent: DeviceStateChunkSnapshot;
-              beforeProject: DevicePatchStateSnapshot;
-              afterProject: DevicePatchStateSnapshot;
-              expectedProject: DevicePatchStateSnapshot;
-              expectedTrackId: string;
-              expectedDeviceIds: readonly string[];
-              expectedTrackFrozen: boolean;
-              label: string;
-          };
-      }
-    | {
-          type: 'setGrandBouleDeviceState';
-          payload: {
-              deviceId: string;
-              before: DeviceStateChunkSnapshot;
-              after: DeviceStateChunkSnapshot;
-          };
-      }
-    | {
           type: 'createBus';
           payload: {
               name: string;
@@ -2071,13 +1980,6 @@ export type AppAction =
               expectedPreFader?: boolean;
           };
       }
-    | { type: 'setWorkspaceMode'; payload: { mode: 'arrange' | 'clip' } }
-    | { type: 'openPreferencesDialog'; payload?: undefined }
-    | { type: 'openMixer'; payload?: undefined }
-    | { type: 'closeMixer'; payload?: undefined }
-    | { type: 'toggleSidebar'; payload?: undefined }
-    | { type: 'toggleInspector'; payload?: undefined }
-    | { type: 'toggleChatPanel'; payload?: undefined }
     | { type: 'setTrackInput'; payload: { trackId: string; inputId: string | null } }
     | {
           /** Guarded inverse and redo of `setTrackInput`. Replaying the captured prior
@@ -2088,11 +1990,6 @@ export type AppAction =
            *  Emitted only by the `setTrackInput` handler's `describe()`. */
           type: 'restoreTrackInput';
           payload: { trackId: string; expected: string | null; replacement: string | null };
-      }
-    | { type: 'setEditingTool'; payload: { tool: string } }
-    | {
-          type: 'setMarqueeSelection';
-          payload: { selection: { startBeat: number; endBeat: number; trackIds: string[] } | null };
       }
     | { type: 'addMarker'; payload: { beat: number; name: string; markerId?: string; color?: string } }
     | { type: 'removeMarker'; payload: { markerId: string } }
@@ -2210,21 +2107,6 @@ export type AppAction =
                   sendLevel: number;
                   sendPreFader: boolean;
               }>;
-          };
-      }
-    | {
-          type: 'renderProjectSections';
-          payload: {
-              sectionIds: string[];
-              jobs?: RenderProjectSectionJobSnapshot[];
-          };
-      }
-    | {
-          /** Internal guarded inverse for `renderProjectSections`. */
-          type: 'removeRenderedProjectSections';
-          payload: {
-              sectionIds: string[];
-              jobs: RenderProjectSectionJobSnapshot[];
           };
       }
     | {
@@ -2394,15 +2276,6 @@ export type AppAction =
           };
       }
     | {
-          type: 'createDrumPreviewBranches';
-          payload: DrumPreviewBranchPlanSnapshot;
-      }
-    | {
-          /** Internal guarded inverse for `createDrumPreviewBranches`. */
-          type: 'deleteDrumPreviewBranches';
-          payload: DeleteDrumPreviewBranchesSnapshot;
-      }
-    | {
           type: 'copyMidiArticulations';
           payload: {
               trackId: string;
@@ -2513,7 +2386,6 @@ export type AppAction =
               expectedFadeOutBeats?: number;
           };
       }
-    | { type: 'importMidiFile'; payload?: undefined }
     | { type: 'normalizeClip'; payload: { clipId: string; mode?: 'peak' | 'rms' | 'lufs'; targetDb?: number } }
     | {
           type: 'reverseClip';
@@ -2774,13 +2646,6 @@ export type AppAction =
           payload: { trackId: string; expected: boolean; replacement: boolean };
       }
     | { type: 'setTrackHeight'; payload: { trackId: string; height: number } }
-    | { type: 'setSnapValue'; payload: { value: number } }
-    | { type: 'zoomToFit'; payload?: undefined }
-    | { type: 'zoomToSelection'; payload?: undefined }
-    | { type: 'exportProject'; payload?: undefined }
-    | { type: 'saveProject'; payload?: undefined }
-    | { type: 'newProject'; payload?: undefined }
-    | { type: 'importAudioFile'; payload?: undefined }
     | { type: 'exportMidi'; payload: { clipId: string } }
     | { type: 'foldTrack'; payload: { trackId: string; folded: boolean } }
     | { type: 'groupTracks'; payload: { trackIds: string[]; name: string } }
@@ -3002,43 +2867,8 @@ export type AppAction =
     | { type: 'enableMpe'; payload?: undefined }
     | { type: 'disableMpe'; payload?: undefined }
     | { type: 'getLatencyReport'; payload?: undefined }
-    | { type: 'createCollabSession'; payload: { name?: string } }
-    | { type: 'joinCollabSession'; payload: { inviteString: string; peerName?: string } }
-    | { type: 'leaveCollabSession'; payload?: undefined }
-    | { type: 'scanPlugins'; payload?: undefined }
     | { type: 'loadExternalPlugin'; payload: { pluginId: string; trackId?: string } }
     | { type: 'audioToMidi'; payload: { clipId: string; trackId?: string; sensitivity?: number; mode?: string } }
-    | {
-          /** Applies a manual pitch-shift render to an audio clip and swaps the clip's
-           *  file pointer to the rendered output. Flows through `executeAppAction`; its
-           *  handler's `describe()` emits `restoreClipFileId` as the inverse. */
-          type: 'commitPitchEdit';
-          payload: {
-              clipId: string;
-              segments: PitchEditSegmentSnapshot[];
-              contour: PitchContourSnapshot;
-              retuneSpeedMs?: number;
-              formantPreserve?: boolean;
-          };
-      }
-    | {
-          /** Inverse of `commitPitchEdit`. Restores everything the commit consumed:
-           *  the clip's file pointer, the buffer it plays from, and the pitch analysis
-           *  (contour plus the user's edited blobs) the commit dropped. Restoring the
-           *  pointers alone would leave the clip un-analysed and the user's blob edits
-           *  gone — a lossy undo. Emitted only by the `commitPitchEdit` handler's
-           *  `describe()`. Every field past `clipId` is optional: the commit skips the
-           *  buffer repoint on the native render path, and a clip can legitimately have
-           *  had no blobs or no contour. */
-          type: 'restoreClipFileId';
-          payload: {
-              clipId: string;
-              fileId: string;
-              audioBufferId?: string;
-              blobs?: KneadPitchBlobSnapshot[];
-              contour?: PitchContourSnapshot;
-          };
-      }
     | { type: 'muteClip'; payload: { clipId: string; muted: boolean; expectedMuted?: boolean } }
     | { type: 'clearSolos'; payload?: undefined }
     | {
@@ -3198,25 +3028,6 @@ export type AppAction =
     | { type: 'saveTrackTemplate'; payload: { trackId: string; name: string; category: string } }
     | { type: 'loadTrackTemplate'; payload: { templateId: string } }
     | { type: 'deleteTrackTemplate'; payload: { templateId: string } }
-    | { type: 'createProjectFromTemplate'; payload: { templateId: string } }
-    | {
-          type: 'setProductionBrief';
-          payload: {
-              expectedRevision: number;
-              brief: unknown;
-          };
-      }
-    | {
-          /**
-           * User-initiated repair of a repair-required project (issue #3573):
-           * closes the document's unresolved conflicts by keeping the value each
-           * already resolved to and re-projects every slot. The one action type
-           * the repair-required admission gate admits while it holds; a
-           * user route only, deliberately absent from the agent surface.
-           */
-          type: 'repairProjectData';
-          payload?: undefined;
-      }
     | {
           type: 'createVcaGroup';
           payload: {
@@ -3282,17 +3093,6 @@ export type AppAction =
           payload: { clipId: string; stems?: string[] };
       }
     | {
-          type: 'autoOrganizeProject';
-          payload: {
-              tracks: Array<{
-                  trackId: string;
-                  newName?: string;
-                  color?: string;
-                  folderName?: string;
-              }>;
-          };
-      }
-    | {
           type: 'addChordEvent';
           payload: { beat: number; root: number; quality: string; duration?: number; eventId?: string };
       }
@@ -3320,8 +3120,6 @@ export type AppAction =
           type: 'restoreMidiLearnMappings';
           payload: { expected: MidiLearnMappingsActionSnapshot; replacement: MidiLearnMappingsActionSnapshot };
       }
-    | { type: 'toggleScratchPad'; payload?: undefined }
-    | { type: 'captureScratchPad'; payload?: undefined }
     | { type: 'commitScratchPad'; payload?: undefined }
     | { type: 'clearScratchPad'; payload?: undefined }
     | {
@@ -3355,28 +3153,15 @@ export type AppAction =
     | { type: 'toggleUndoTree'; payload?: undefined }
     | { type: 'labelUndoBranch'; payload: { nodeId: string; label: string } }
     | { type: 'detectSongStructure'; payload: { trackId?: string } }
-    | { type: 'createProjectVersion'; payload: { label: string; description?: string } }
-    | { type: 'restoreProjectVersion'; payload: { versionId: string } }
-    | { type: 'createVersionBranch'; payload: { name: string } }
     | { type: 'generateFill'; payload: { atBeat: number; durationBeats?: number; style?: string } }
     | { type: 'generateAllTransitions'; payload?: undefined }
     | { type: 'compareToReference'; payload?: undefined }
-    | { type: 'toggleControlRoomMono'; payload?: undefined }
-    | { type: 'toggleControlRoomDim'; payload?: undefined }
-    | { type: 'switchMonitor'; payload: { monitorId: string } }
-    | { type: 'getMentorTips'; payload?: undefined }
-    | { type: 'searchSamples'; payload: { query: string } }
     | {
           type: 'createCompGroup';
           /** `groupId` is application-owned and materialized before `describe`, so the
            *  inverse names the created group rather than guessing the newest one. */
           payload: { name: string; trackIds: string[]; groupId?: string };
       }
-    | { type: 'togglePunchRecording'; payload?: undefined }
-    | { type: 'toggleLoopRecord'; payload: { slotId: string } }
-    | { type: 'triggerScene'; payload: { column: number } }
-    | { type: 'nextSetlistItem'; payload?: undefined }
-    | { type: 'previousSetlistItem'; payload?: undefined }
     | { type: 'createAdjustmentLayer'; payload: { name: string; effectType: string; layerId?: string } }
     | { type: 'removeAdjustmentLayer'; payload: { layerId: string } }
     | { type: 'toggleAdjustmentLayer'; payload: { layerId: string } }
@@ -3459,16 +3244,9 @@ export type AppAction =
           type: 'elasticSetTool';
           payload: { tool: 'select' | 'add-marker' | 'remove-marker' | 'lock-marker' };
       }
-    | { type: 'toggleNodeView'; payload?: undefined }
     | { type: 'setControlSurface'; payload: { protocol: 'mcu' | 'osc' | 'hui' | null } }
-    | { type: 'addCvOutput'; payload: { name: string; channel: number; type: string } }
-    | { type: 'removeCvOutput'; payload: { outputId: string } }
     | { type: 'connectPush'; payload: { model: 'push2' | 'push3' } }
     | { type: 'disconnectPush'; payload?: undefined }
-    | { type: 'exportDawProject'; payload?: undefined }
-    | { type: 'importDawProject'; payload?: undefined }
-    | { type: 'loadRaveModel'; payload: { modelId: string } }
-    | { type: 'setRaveBlend'; payload: { blend: number } }
     | { type: 'enableWarping'; payload: { clipId: string } }
     | { type: 'setWarpAlgorithm'; payload: { clipId: string; algorithm: string } }
     | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } }
@@ -3620,6 +3398,17 @@ export type AppAction =
       };
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
+
+/**
+ * Open registry of app-action variants. Each owning module adds a key from its `events/`
+ * folder; `legacy` holds the variants not yet moved.
+ */
+// eslint-disable-next-line @typescript-eslint/consistent-type-definitions -- declaration-merging target: a type alias cannot merge
+export interface AppActionRegistry {
+    legacy: LegacyAppAction;
+}
+
+export type AppAction = AppActionRegistry[keyof AppActionRegistry];
 
 export type AppActionType = AppAction['type'];
 

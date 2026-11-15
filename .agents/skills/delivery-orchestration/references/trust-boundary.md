@@ -56,7 +56,11 @@ own store so fetched objects land where later reads find them and pushes find wh
 Automatic gc and maintenance are off there, because they would treat the shared store's objects as
 unreachable. The directory starts with the repository's `origin` tracking refs for negotiation and
 pruning; afterwards only changed tracking refs are written back, each against its seeded value, so
-a concurrent update refuses. A token-bearing Git child that names no `--git-dir` refuses to start.
+a concurrent update refuses. A credential-holding Git child refuses to start unless every
+`--git-dir` it names is, character for character, a directory a running transport created; the
+shared repository's own Git directory, a look-alike temporary directory, and a transport directory
+after its transport returned all refuse, and so does a child whose environment sets
+`GIT_COMMON_DIR`, which would move its config back to the shared repository.
 Working-tree and object commands (status, diff, merge, show) need lane config but no token, and
 run in the lane or primary without it.
 
@@ -66,8 +70,13 @@ planted `objects/info/alternates` store. Config-defined hooks (`hook.<name>.even
 `hook.<name>.command`) take a lane-chosen name, so a token-bearing Git child refuses to start while
 the config it reads defines any `hook.*` key. Transports are an allowlist of `https` and `file`;
 `ext::`, `ssh`, and `git` are each refused by their own override. These keep their value as
-defence in depth beside the isolated directory. The GitHub CLI holds the token and runs Git itself
-only to read remote names when a command omits `--repo`; that runs no config-selected program.
+defence in depth beside the isolated directory. The GitHub CLI holds the token and starts Git
+itself, so every token-bearing `gh` child starts in a fresh empty directory that Git cannot climb
+out of, with inherited repository routing removed: any Git it runs finds no repository and reads no
+repository config. Each such call therefore names its repository with `--repo` or an explicit API
+path. The one exception is the exact checkout repository query (`gh repo view --json nameWithOwner
+--jq .nameWithOwner`), which reads remote names in the caller's repository with `git remote -v` and
+`git config --get-regexp`; those read config but start no config-selected program.
 Keeping the token secret from same-account processes is outside this
 boundary. Every Git-read environment
 ignores replace refs. The

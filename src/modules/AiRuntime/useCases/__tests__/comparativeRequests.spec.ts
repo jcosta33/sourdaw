@@ -55,6 +55,34 @@ import {
 
 registerDeviceEnginePorts();
 
+// A committed mute builds a live strip on this context, which jsdom leaves without a stereo panner.
+vi.hoisted(() => {
+    const OriginalAudioContext = globalThis.AudioContext;
+    const createAudioParam = (value: number) => ({
+        value,
+        setValueAtTime: () => undefined,
+        linearRampToValueAtTime: () => undefined,
+        exponentialRampToValueAtTime: () => undefined,
+        setTargetAtTime: () => undefined,
+        cancelScheduledValues: () => undefined,
+    });
+    function AudioContextWithStereoPanner(options?: AudioContextOptions): AudioContext {
+        return Object.assign(new OriginalAudioContext(options), {
+            currentTime: 0,
+            createStereoPanner: () => ({
+                connect: (destination: unknown) => destination,
+                disconnect: () => undefined,
+                pan: createAudioParam(0),
+            }),
+        });
+    }
+    Object.defineProperty(globalThis, 'AudioContext', {
+        configurable: true,
+        writable: true,
+        value: AudioContextWithStereoPanner,
+    });
+});
+
 const audio = vi.hoisted(() => ({
     renderTrackSubgraphOffline: vi.fn(),
     renderOffline: vi.fn(),
@@ -325,10 +353,12 @@ describe('actual current-preview comparison approval', () => {
         }
         expect(getAgentApprovalView({ confirmationId })?.canConfirm).toBe(false);
         agentRunLifecycle.transitionPhase({ runId, phase: 'waiting-for-approval' });
-        expect(await confirmPendingChatActions({ confirmationId })).toMatchObject({
+        const refused = await confirmPendingChatActions({ confirmationId });
+        expect(refused).toMatchObject({
             status: 'failed',
             reason: expect.stringMatching(/objective|metric|measure/u),
         });
+        expect(refused).not.toMatchObject({ reason: 'The approved trust mode or risk policy no longer matches.' });
         expect(trackStore.value).toEqual(before.tracks);
         expect(undoHistoryStore.value).toEqual(before.undo);
         expect(captureProjectRevision()).toBe(before.revision);
@@ -2692,5 +2722,50 @@ describe('comparisons by loudness, brightness, width, dynamics and punch', () =>
                 'spectral-centroid-comparison-v1',
             ]);
         });
+    });
+});
+
+describe('a request that states no objective confirms without a measured preview', () => {
+    const drums = () => trackStore.value?.tracks.find((track) => track.id === 'drums');
+
+    it.each([
+        {
+            name: 'an exact gain figure',
+            runId: 'confirmable-gain',
+            prompt: 'Set Drums to -6 dB',
+            commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', gainDb: -6 } }],
+            landed: () => expect(drums()?.gain).toBeCloseTo(10 ** (-6 / 20), 4),
+        },
+        {
+            name: 'a rename',
+            runId: 'confirmable-rename',
+            prompt: 'Rename Drums to Lead',
+            commands: [{ name: 'renameTrack', arguments: { trackId: 'drums', name: 'Lead' } }],
+            landed: () => expect(drums()?.name).toBe('Lead'),
+        },
+    ])('executes $name on Confirm and writes nothing before it', async ({ prompt, runId, commands, landed }) => {
+        const before = structuredClone(trackStore.value);
+        const card = await proposeLiteralCard({ prompt, runId, commands });
+        expect(trackStore.value).toEqual(before);
+        expect(getAgentApprovalView({ confirmationId: card.confirmationId })?.canConfirm).toBe(true);
+        expect(await confirmPendingChatActions({ confirmationId: card.confirmationId })).toEqual({
+            status: 'executed',
+        });
+        landed();
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+
+    it('executes a literal mute on Confirm without a measured preview', async () => {
+        const card = await proposeLiteralCard({
+            prompt: 'Mute Drums',
+            runId: 'confirmable-mute',
+            commands: [{ name: 'muteTrack', arguments: { trackId: 'drums', muted: true } }],
+        });
+        expect(drums()?.muted).toBe(false);
+        expect(getAgentApprovalView({ confirmationId: card.confirmationId })?.canConfirm).toBe(true);
+        expect(await confirmPendingChatActions({ confirmationId: card.confirmationId })).toEqual({
+            status: 'executed',
+        });
+        expect(drums()?.muted).toBe(true);
     });
 });

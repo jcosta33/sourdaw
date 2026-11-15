@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type RenderProjectSectionJobSnapshot } from '#/modules/AudioRendering/events';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -8,7 +9,6 @@ import {
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
-import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { agentRunStore, readAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
