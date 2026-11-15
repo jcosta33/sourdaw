@@ -26,13 +26,13 @@ const RAW_TRACE_BYTE_CAP = 64 * 1024 * 1024;
 const TRACE_STREAM_CHUNK_BYTES = 1024 * 1024;
 const TRACE_CATEGORIES = ['disabled-by-default-audio-worklet', 'disabled-by-default-webaudio.audionode'];
 
-interface TraceConfiguration {
+type TraceConfiguration = {
     recordMode: 'recordUntilFull';
     traceBufferSizeInKb: number;
     enableSampling: false;
     enableSystrace: false;
     includedCategories: string[];
-}
+};
 
 const TRACE_CONFIGURATION: TraceConfiguration = {
     recordMode: 'recordUntilFull',
@@ -145,26 +145,26 @@ class OfflineNativeTraceProcessor extends AudioWorkletProcessor {
 registerProcessor('offline-native-trace', OfflineNativeTraceProcessor);
 `;
 
-interface TraceCompletion {
+type TraceCompletion = {
     dataLossOccurred?: unknown;
     stream?: unknown;
     traceFormat?: unknown;
     streamCompression?: unknown;
-}
+};
 
-interface CapturedStream {
+type CapturedStream = {
     bytes: Buffer;
     complete: boolean;
-}
+};
 
-interface ProducerResult {
+type ProducerResult = {
     isSecureContext: boolean;
     receipt: unknown;
     processorErrors: number;
     renderedFrames: number;
     renderedSampleMismatches: number;
     terminalNonzeroSamples: number;
-}
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

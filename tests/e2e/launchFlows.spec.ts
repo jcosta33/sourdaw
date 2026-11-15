@@ -4,12 +4,7 @@ import { chooseProjectDirectory } from './chosenProjectDirectory';
 import { expect, test } from './e2eTest';
 import { launch_new_project, launch_new_project_via_ui, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
-interface Box {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-}
+type Box = { x: number; y: number; width: number; height: number };
 
 const boxOf = async (locator: Locator, name: string): Promise<Box> => {
     const box = await locator.boundingBox();

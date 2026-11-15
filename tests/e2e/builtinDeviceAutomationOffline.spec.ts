@@ -7,7 +7,7 @@ const DURATION_SECONDS = 0.5;
 const FRAME_COUNT = SAMPLE_RATE * DURATION_SECONDS;
 const RESIDUAL_BUDGET_DBFS = -90;
 
-interface Case {
+type Case = {
     name: string;
     deviceType: 'builtin-gain' | 'builtin-compressor' | 'builtin-limiter';
     parameterId: string;
@@ -18,7 +18,7 @@ interface Case {
     /** The device's other parameters, identical on both channels. */
     parameterValues: Record<string, number>;
     signal: 'steady' | 'dynamics';
-}
+};
 
 /**
  * Each case automates a parameter whose offline binding is a real `AudioParam`.

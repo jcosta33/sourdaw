@@ -14,14 +14,8 @@ const LOOP_START = 8;
 const LOOP_END = 12;
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-interface CapturedNote {
-    id: string;
-    pitch: number;
-    startBeat: number;
-    duration: number;
-    recordingPassIndex?: number;
-}
-interface CapturedTake {
+type CapturedNote = { id: string; pitch: number; startBeat: number; duration: number; recordingPassIndex?: number };
+type CapturedTake = {
     id: string;
     name: string;
     selected: boolean;
@@ -30,14 +24,14 @@ interface CapturedTake {
     endBeat: number;
     sourceOffsetBeats?: number;
     midiSource?: import('../../src/utils/handlerContract').MidiTakeSourceSnapshot;
-}
-interface OscillatorStart {
+};
+type OscillatorStart = {
     frequency: number;
     scheduledContextSeconds: number;
     sampleRate: number;
     clock?: { beat: number; contextSeconds: number; compensationSeconds: number };
-}
-interface Capture {
+};
+type Capture = {
     projectId: string;
     clipId: string | null;
     notes: CapturedNote[];
@@ -45,7 +39,7 @@ interface Capture {
     regions: { startBeat: number; endBeat: number; takeId: string }[];
     rawMatchesProjection: boolean;
     ownerComparison: { clips: boolean; lane: boolean; notes: boolean };
-}
+};
 
 async function capture(page: Page, trackId: string): Promise<Capture> {
     return page.evaluate(async (id) => {

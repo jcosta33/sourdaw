@@ -38,16 +38,16 @@ const ALPHA_NOTICE_DISMISSED_STORAGE_KEY = 'sourdaw-alpha-notice-dismissed';
 export const PREFERENCES_STORAGE_KEY = 'sourdaw-preferences';
 export const RECENT_PROJECTS_STORAGE_KEY = 'sourdaw-recent-projects';
 
-interface LaunchFromTemplateInput {
+type LaunchFromTemplateInput = {
     page: Page;
     template_name: string | RegExp;
-}
+};
 
-interface SetupWorkspaceOptions {
+type SetupWorkspaceOptions = {
     /** Fresh-context persistence proofs must keep their own saved data across reload. */
     clearLocalStorage?: boolean;
     localStorage?: Array<{ name: string; value: string }>;
-}
+};
 
 /**
  * Existing E2E specs address the application through Playwright's Page fixture.
@@ -133,9 +133,9 @@ export async function wait_for_workspace_ready(page: Page): Promise<void> {
  * handshake, React render, WASM boot, `[capabilities]`), so a red leg
  * diagnoses itself instead of surfacing as an opaque "element(s) not found".
  */
-interface LaunchFirstPaintOptions {
+type LaunchFirstPaintOptions = {
     firstPaintTimeoutMs?: number;
-}
+};
 
 export async function wait_for_launch_first_paint(
     page: Page,
@@ -232,11 +232,11 @@ export async function add_midi_track(page: Page): Promise<void> {
 
 const PANEL_OPEN_TIMEOUT_MS = 30_000;
 
-interface OpenBrowserInstrumentInput {
+type OpenBrowserInstrumentInput = {
     page: Page;
     /** The instrument card label, which is also its device-panel label. */
     instrument: string;
-}
+};
 
 /**
  * Open an instrument's device panel from the Browser → Instruments tab, waiting

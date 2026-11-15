@@ -3,10 +3,7 @@ import { add_midi_track, launch_new_project, setupWorkspace } from './e2eUtils';
 
 import type { ProjectInspectionModule } from './directProjectSetupContract';
 
-interface PreviewPcm {
-    sampleRate: number;
-    channels: Float32Array[];
-}
+type PreviewPcm = { sampleRate: number; channels: Float32Array[] };
 
 declare global {
     interface Window {

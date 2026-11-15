@@ -14,28 +14,16 @@ const STEP_TIMEOUT = 30_000;
 const CHILDREN = ['addTrack', 'addClip', 'addNotes'];
 test.use({ actionTimeout: STEP_TIMEOUT, navigationTimeout: STEP_TIMEOUT });
 
-interface Clip {
-    id: string;
-    trackId: string;
-    type: string;
-    audioBufferId?: string;
-    startBeat: number;
-    endBeat: number;
-}
-interface Track {
-    id: string;
-    kind: string;
-    name: string;
-    clips: Clip[];
-}
-interface Entry {
+type Clip = { id: string; trackId: string; type: string; audioBufferId?: string; startBeat: number; endBeat: number };
+type Track = { id: string; kind: string; name: string; clips: Clip[] };
+type Entry = {
     id: string;
     kind: string;
     groupId?: string;
     action?: { type: string };
     inverseAction?: { type: string };
-}
-interface Snapshot {
+};
+type Snapshot = {
     projectId: string;
     name: string;
     witness: string;
@@ -47,7 +35,7 @@ interface Snapshot {
     future: Entry[];
     history: { actionKind: string; groupId?: string }[];
     mirror: { projectId?: string; witness?: string; past: Entry[]; future: Entry[] };
-}
+};
 
 function onsetWav(): Buffer {
     const wav = buildSineWav(2);

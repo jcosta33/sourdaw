@@ -142,7 +142,7 @@ async function openBakery(app: FrameLocator): Promise<Locator> {
     return dialog;
 }
 
-interface SavedCapture {
+type SavedCapture = {
     name: string;
     filename: string;
     bytes: number;
@@ -151,7 +151,7 @@ interface SavedCapture {
     aborts: number;
     requests: number;
     writables: number;
-}
+};
 
 function captureCounts(capture: FilePickerCapture) {
     return {

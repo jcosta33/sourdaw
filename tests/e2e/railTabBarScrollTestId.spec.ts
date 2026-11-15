@@ -3,12 +3,12 @@ import { type Locator, type Page } from '@playwright/test';
 import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-interface MainRail {
+type MainRail = {
     /** The horizontal tab strip that actually scrolls (parent of the tab buttons). */
     scroller: Locator;
     scrollLeftButton: Locator;
     scrollRightButton: Locator;
-}
+};
 
 async function ensureBrowserOpen(page: Page): Promise<void> {
     const search = page.getByTestId('browser-search');

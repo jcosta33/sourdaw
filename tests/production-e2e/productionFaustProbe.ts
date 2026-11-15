@@ -1,6 +1,6 @@
 // This installer is serialized by Playwright; keep every runtime dependency local or global.
 type LoadMode = 'pass' | 'hold-live' | 'hold-offline' | 'reject-offline';
-interface LoadObservation {
+type LoadObservation = {
     context: 'live' | 'offline';
     processorName: string;
     heldAt: number | null;
@@ -9,21 +9,21 @@ interface LoadObservation {
     nativeCompleted: boolean;
     nativeRejected: string | null;
     constructions: number;
-}
-interface ProbeSnapshot {
+};
+type ProbeSnapshot = {
     loads: LoadObservation[];
     tapCount: number;
     finite: boolean;
     samplePeak: number;
     successNotifications: number;
-}
-interface FaustProbe {
+};
+type FaustProbe = {
     setMode: (mode: LoadMode) => void;
     release: () => void;
     snapshot: () => ProbeSnapshot;
     observeSuccess: () => void;
     stopObservingSuccess: () => void;
-}
+};
 
 declare global {
     interface Window {

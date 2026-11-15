@@ -5,11 +5,7 @@ import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 import { literalWholeRequestIntake, startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
 
-interface Target {
-    id: string;
-    name: string;
-    gain: number;
-}
+type Target = { id: string; name: string; gain: number };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);

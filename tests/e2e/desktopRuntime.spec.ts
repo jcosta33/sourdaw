@@ -7,10 +7,7 @@ const ALLOWED_WARNING_FRAGMENTS = [
     'No available adapters.',
 ] as const;
 
-interface RuntimeCall {
-    command: string;
-    args: unknown;
-}
+type RuntimeCall = { command: string; args: unknown };
 
 test('launches a project through the window.sourdaw desktop-runtime contract', async ({ page }, testInfo) => {
     test.setTimeout(180_000);

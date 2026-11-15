@@ -5,17 +5,8 @@ import { expect, test } from './e2eTest';
 import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS } from './e2eUtils';
 import { expectStartupExact, readStartupSnapshot, requireStartupMirror } from './helpers/startupRecoveryEvidence';
 
-interface Box {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-}
-interface RecentProject {
-    key: string;
-    name: string;
-    updatedAt: number;
-}
+type Box = { x: number; y: number; width: number; height: number };
+type RecentProject = { key: string; name: string; updatedAt: number };
 
 const VIEWPORT = { width: 1280, height: 720 };
 const RECENT_PROJECTS: RecentProject[] = Array.from({ length: 10 }, (_, index) => ({

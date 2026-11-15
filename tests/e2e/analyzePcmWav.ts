@@ -7,24 +7,24 @@ const LOW_FREQUENCY_CUTOFF_HZ = 150;
 const ACTIVE_BLOCK_SECONDS = 1;
 const ACTIVE_BLOCK_RMS = 0.001;
 
-interface WavPayload {
+type WavPayload = {
     audioFormat: number;
     bitsPerSample: number;
     channels: number;
     dataBytes: number;
     dataOffset: number;
     sampleRate: number;
-}
+};
 
-interface DecodedPcm {
+type DecodedPcm = {
     channelData: Float32Array[];
     clippedSampleCount: number;
     dcOffsets: number[];
     length: number;
     samplePeak: number;
-}
+};
 
-export interface PcmWavAnalysis {
+export type PcmWavAnalysis = {
     activeBlockRatio: number;
     audioFormat: number;
     bitsPerSample: number;
@@ -39,7 +39,7 @@ export interface PcmWavAnalysis {
     samplePeak: number;
     sampleRate: number;
     truePeakDbTp: number;
-}
+};
 
 function readAscii(bytes: Uint8Array, start: number, end: number): string {
     let value = '';

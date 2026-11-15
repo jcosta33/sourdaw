@@ -38,24 +38,21 @@ const FRAME_GAP_FREEZE_MS = 100;
  */
 const DETECT_WALL_HANG_MS = 5000;
 
-interface TaskAttribution {
+type TaskAttribution = {
     name: string;
     containerType: string;
     containerSrc: string;
     containerId: string;
     containerName: string;
-}
-interface CapturedLongTask {
+};
+type CapturedLongTask = {
     start: number;
     duration: number;
     name: string;
     attribution: TaskAttribution[];
-}
+};
 type AttributedPerformanceEntry = PerformanceEntry & { attribution?: readonly TaskAttribution[] };
-interface ElasticTaskTrace {
-    stop(): Promise<void>;
-    attach(): Promise<string[]>;
-}
+type ElasticTaskTrace = { stop(): Promise<void>; attach(): Promise<string[]> };
 const elasticTaskTraces = new WeakMap<TestInfo, ElasticTaskTrace[]>();
 const TRACE_BYTE_CAP = 32 * 1024 * 1024;
 const TRACE_CATEGORIES = [
@@ -70,12 +67,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-interface TraceInterval {
-    pid: number;
-    tid: number;
-    startUs: number;
-    endUs: number;
-}
+type TraceInterval = { pid: number; tid: number; startUs: number; endUs: number };
 
 function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
@@ -471,14 +463,14 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     page.on('worker', (worker) => workers.push(worker.url()));
     const coldTrace = await startElasticTaskTrace(page, info, 'cold-detect');
     await page.evaluate(async () => {
-        interface Metrics {
+        type Metrics = {
             start: number;
             end: number;
             frames: number[];
             observedFrames: number[];
             tasks: CapturedLongTask[];
             measures: { name: string; duration: number; startTime: number }[];
-        }
+        };
         const metrics: Metrics = { start: 0, end: 0, frames: [], observedFrames: [], tasks: [], measures: [] };
         const target = window as Window & { elasticMeasurement?: Promise<Metrics> };
         const button = document.querySelector('[data-testid="elastic-detect-button"]');
@@ -914,14 +906,14 @@ test('saved 82 sensitivity seeds first Worker Detect on a new clip after complet
 // Repeat routes retain the cold case's fixture, thresholds, observation clocks and full completion boundary.
 async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity'): Promise<void> {
     await page.evaluate(async (route) => {
-        interface Metrics {
+        type Metrics = {
             start: number;
             end: number;
             frames: number[];
             observedFrames: number[];
             tasks: CapturedLongTask[];
             measures: { name: string; duration: number; startTime: number }[];
-        }
+        };
         const metrics: Metrics = { start: 0, end: 0, frames: [], observedFrames: [], tasks: [], measures: [] };
         const target = window as Window & { populatedElasticMeasurement?: Promise<Metrics> };
         const control = document.querySelector(

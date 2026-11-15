@@ -9,13 +9,7 @@ import { startScriptedToolProvider, type ScriptedToolRequest } from './scriptedT
 
 const PROMPT = 'Match Drums loudness to Bass over Chorus';
 
-interface FixtureSubjects {
-    drumsId: string;
-    bassId: string;
-    deviceId: string;
-    trimId: string;
-    sectionId: string;
-}
+type FixtureSubjects = { drumsId: string; bassId: string; deviceId: string; trimId: string; sectionId: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -197,12 +191,8 @@ async function fixtureState(page: Page, subjects: FixtureSubjects) {
     }, subjects);
 }
 
-interface ProbeBlock {
-    frame: number;
-    selected: number[];
-    upstream: number[];
-}
-interface SourceStart {
+type ProbeBlock = { frame: number; selected: number[]; upstream: number[] };
+type SourceStart = {
     side: 'baseline' | 'preview';
     frame: number;
     gain: number;
@@ -211,7 +201,7 @@ interface SourceStart {
     duration: number | null;
     frames: number;
     expectedFrames: number;
-}
+};
 declare global {
     interface Window {
         measuredAuditionProbe?: {

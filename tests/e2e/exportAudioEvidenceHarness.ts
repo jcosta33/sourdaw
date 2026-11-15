@@ -26,10 +26,10 @@ const DEVICE_PROMOTION_ROLLBACK_CAUSE_FRAGMENT = ' rolled back after ';
 export const MANUAL_TAIL_SECONDS = 2;
 export const WAV_BYTES_PER_SECOND = 44_100 * 2 * 3;
 
-export interface ExportRunFindings {
+export type ExportRunFindings = {
     /** Asserts the page raised no console error, unexpected warning, page error, or off-origin/failed request. */
     expectClean: () => void;
-}
+};
 
 export function watchExportRun(page: Page, appOrigin: string): ExportRunFindings {
     const consoleErrors: string[] = [];
