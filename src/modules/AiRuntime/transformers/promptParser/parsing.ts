@@ -5,6 +5,7 @@
  */
 
 import { PRESET_ACTIONS, type PresetContext } from '../../models/PresetActions/Registry';
+import { presetMayEmitByActionType } from '../../models/PresetMayEmitByActionType';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import { getAvailablePresets } from '../../services/fuzzySearch';
@@ -84,19 +85,7 @@ export function tryPresetMatch(normalized: string, context: PresetContext): Runt
         return [];
     }
     const actions = Array.isArray(result) ? result : [result];
-    if (
-        actions.some(
-            (action) =>
-                action.type === 'quantizeNotes' ||
-                action.type === 'transposeNotes' ||
-                action.type === 'invertNotes' ||
-                action.type === 'retrogradeNotes' ||
-                action.type === 'quantizeNoteLengths' ||
-                action.type === 'scaleAllVelocities' ||
-                action.type === 'setAllVelocities' ||
-                action.type === 'setPunchEnabled'
-        )
-    ) {
+    if (actions.some((action) => !presetMayEmitByActionType[action.type])) {
         return [];
     }
     return actions;

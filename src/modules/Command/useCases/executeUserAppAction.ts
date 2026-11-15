@@ -3,19 +3,8 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AppActionConflictError } from '../errors/AppActionExecutionError';
 
-import { ACTION_LABELS } from './actionLabels';
+import { describeAppActionRefusal } from './describeAppActionRefusal';
 import { executeAppAction, type ExecuteAppActionOptions } from './executeAppAction';
-import { getProjectMutationAdmissionFailure } from './getProjectMutationAdmissionFailure';
-import { humanizeActionType } from './humanizeActionType';
-
-function describeRefusal(action: AppAction): string {
-    const admissionFailure = getProjectMutationAdmissionFailure();
-    if (admissionFailure) {
-        return admissionFailure;
-    }
-    const label = ACTION_LABELS[action.type] ?? humanizeActionType(action.type);
-    return `${label} was refused because the project can't be changed right now.`;
-}
 
 /**
  * Dispatch entry point for actions a person triggered from the UI.
@@ -33,6 +22,6 @@ export async function executeUserAppAction(action: AppAction, options?: ExecuteA
         if (!(error instanceof AppActionConflictError)) {
             throw error;
         }
-        notifyUser(describeRefusal(action), 'warning');
+        notifyUser(describeAppActionRefusal(action.type), 'warning');
     }
 }

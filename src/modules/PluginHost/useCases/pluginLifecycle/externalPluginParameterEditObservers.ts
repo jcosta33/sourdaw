@@ -1,6 +1,6 @@
 /**
- * One edit a plugin made to one of its own parameters, as a foreign module reads
- * it.
+ * One edit to a hosted plugin's parameter, as a foreign module reads it. It comes
+ * from the plugin's own editor or from the host's own control surface.
  *
  * camelCase, and named for the instance rather than the wire: the snake_case DTO
  * stays inside `repositories/pluginBridge`, like every other bridge shape.
@@ -17,7 +17,8 @@ export type ExternalPluginParameterEdit = {
 };
 
 /**
- * Everyone listening for edits a plugin makes to its own parameters.
+ * Everyone listening for edits to a hosted plugin's parameters, made in the
+ * plugin's editor or from the host's own control surface.
  *
  * A set rather than one handler because the native event is a broadcast and the
  * consumers are unrelated: the project marks itself dirty, and an automation

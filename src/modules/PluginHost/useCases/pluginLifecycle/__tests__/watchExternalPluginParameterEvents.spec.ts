@@ -6,6 +6,10 @@ vi.mock('../../../repositories/pluginBridge/onPluginParameterEvents', () => ({
     onPluginParameterEvents: vi.fn(),
 }));
 
+vi.mock('../../../repositories/pluginBridge/setPluginParameter', () => ({
+    setPluginParameter: vi.fn(),
+}));
+
 type PushBatch = (batch: PluginParameterEvents) => void;
 
 /**
@@ -197,5 +201,35 @@ describe('watchExternalPluginParameterEvents', () => {
         watcher.start();
 
         expect(watcher.subscribeCalls()).toBe(1);
+    });
+
+    it('keeps the value the plugin reported when a host send that was in flight then settles', async () => {
+        const watcher = await freshWatcher();
+        snapshot(watcher.store, 'inst-1');
+        const seen: number[] = [];
+        watcher.observe((edit) => {
+            if (edit.value !== undefined) {
+                seen.push(edit.value);
+            }
+        });
+        const repo = await import('../../../repositories/pluginBridge/setPluginParameter');
+        let settle = (): void => {};
+        vi.mocked(repo.setPluginParameter).mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    settle = resolve;
+                })
+        );
+        const { editExternalPluginParameter } = await import('../editExternalPluginParameter');
+
+        const send = editExternalPluginParameter({ instanceId: 'inst-1', parameterId: 12, value: 0.9 });
+        watcher.push({ instance_id: 'inst-1', events: [{ param_id: 12, kind: 'value', value: 0.4 }] });
+        settle();
+        await send;
+
+        expect(watcher.store.externalPluginParameterStore.value?.byInstanceId['inst-1']?.parameters).toEqual([
+            expect.objectContaining({ id: 12, value: 0.4 }),
+        ]);
+        expect(seen).toEqual([0.4]);
     });
 });

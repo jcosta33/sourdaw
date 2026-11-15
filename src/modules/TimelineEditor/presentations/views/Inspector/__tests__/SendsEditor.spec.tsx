@@ -21,6 +21,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     commitRedoInverseCapture: vi.fn(),
     readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
 
+    describeAppActionRefusal: vi.fn(),
+    isAppActionAdmissionRefusal: vi.fn(),
     executeUserAppAction: (...args: unknown[]) => mockExecuteUserAppAction(...args),
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: (...args: unknown[]) => mockExecuteAppAction(...args),
