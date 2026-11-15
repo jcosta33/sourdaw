@@ -94,6 +94,19 @@ pub const DEFAULT_EDITOR_CONTENT_SCALE: f64 = 1.0;
 /// note-offs among them — after the slot has already counted them delivered.
 pub const MAX_MIDI_EVENTS_PER_BLOCK: usize = 128;
 
+/// How a hosted plugin's audio will be consumed: as it plays, or rendered
+/// faster or slower than real time for an export.
+///
+/// Fixed when a wrapper is constructed and never changed on a live instance:
+/// VST3 states the mode through `setupProcessing`, which may not be re-entered
+/// under the audio thread, and an export builds an independent instance rather
+/// than re-moding the one the engine plays through.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProcessMode {
+    Realtime,
+    Offline,
+}
+
 /// One host-side parameter write waiting to reach a plugin.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct HostParameterUpdate {

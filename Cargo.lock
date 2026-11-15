@@ -2534,6 +2534,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sourdaw-harness-fx"
+version = "0.1.0"
+dependencies = [
+ "clap-sys",
+ "daw-plugin-host",
+ "vst3",
+]
+
+[[package]]
 name = "sourdaw-harness-tone"
 version = "0.1.0"
 dependencies = [
