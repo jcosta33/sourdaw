@@ -185,7 +185,6 @@ function assertSentWindow(attempts: ProviderAttemptAdmission[], label: string): 
             })
         );
         expect(needed).toBeLessThanOrEqual(32768);
-        expect(tools.map((tool) => tool.function.name)).not.toContain('brief.compile');
     }
 }
 
@@ -543,7 +542,7 @@ it.each(['intake', 'answer', 'Explain'] as const)('refuses an unadvertised propo
     assertSentWindow(attempts, `rejected-${phase}`);
 });
 
-it('carries real workflow capability data for ordinary whole-project local planning without the brief compiler', async () => {
+it('carries real workflow capability data for ordinary whole-project local planning, with the brief compiler offered', async () => {
     const clip = trackStore.value!.tracks[0]!.clips[0]!;
     clipSelectionStore.set({ selectedClipId: clip.id, selectedClipIds: [clip.id], marqueeSelection: null });
     midiStore.set({
@@ -587,6 +586,7 @@ it('carries real workflow capability data for ordinary whole-project local plann
         },
     });
     expect(toolsFrom(attempts[1]!).map((tool) => tool.function.name)).toContain('selectWorkflowCapability');
+    expect(toolsFrom(attempts[1]!).map((tool) => tool.function.name)).toContain('brief.compile');
     // The kept capability makes its workflow selectable and its action tool offered locally; a
     // workflow the message carries no capability for is not selectable.
     const selector = toolsFrom(attempts[1]!).find((tool) => tool.function.name === 'selectWorkflowCapability');

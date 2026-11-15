@@ -2399,10 +2399,10 @@ async function planBriefVibeRun(input: {
 }
 
 /**
- * Only a hosted request from the chat, or from the Prompt Bar asking to hand it to the chat, may write
- * the production brief. WebLLM, Explain and a decision resume keep the tools and interpretation modes
- * they had, so no profile is offered a mode its tools cannot complete. Automatic never yields an
- * all-hosted chain, so it never offers the brief.
+ * A hosted or local request from the chat, or from the Prompt Bar asking to hand it to the chat, may write
+ * the production brief. Explain and a decision resume keep the tools and interpretation modes they had, so
+ * no profile is offered a mode its tools cannot complete. Automatic stays local, so it offers the brief on
+ * the local planner without ever reaching a hosted provider.
  */
 function isBriefWritingRequest(input: {
     thread: ThreadContext | null | undefined;
@@ -2418,7 +2418,10 @@ function isBriefWritingRequest(input: {
         return false;
     }
     const chain = getBackendChain();
-    return chain.length > 0 && chain.every((backend) => backend === 'cloud');
+    return (
+        chain.length > 0 &&
+        (chain.every((backend) => backend === 'cloud') || chain.every((backend) => backend === 'webllm'))
+    );
 }
 
 /** A request the Prompt Bar runs in the agent chat instead; it carries no batch. */

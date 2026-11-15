@@ -98,7 +98,8 @@ const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
 
 // The general-planning mandatory set of a workflow-shaped request (the workflow selector, the
 // mandatory planning tools, command-index search, catalog discovery, the joint interpretation tool
-// and every workflow action tool) plus exactly one optional or discovered tool, selected below. A
+// and every workflow action tool) plus exactly one optional or discovered tool, selected below. The
+// brief compiler joins the mandatory set when the request offers it, one tool past this figure. A
 // request no workflow with capability data can ground is offered no workflow action tool, and a
 // phase that publishes fewer mandatory tools leaves spare capacity, which never admits another
 // command.
@@ -603,11 +604,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         const narrowed = narrowWebLlmWorkflowSelector(tool, workflowOffer.selectableCapabilityIds);
                         return narrowed === null ? [] : [narrowed];
                     });
-                    const applicationTools = toolSchemas.filter((tool) =>
-                        WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name)
+                    const applicationTools = toolSchemas.filter(
+                        (tool) =>
+                            WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name) ||
+                            tool.function.name === BRIEF_COMPILE_TOOL_NAME
                     );
-                    // The reference comparison and the brief compiler are not mandatory and are never
-                    // offered locally.
+                    // The brief compiler is in the request only when it offered it, and is then mandatory
+                    // beside the application tools. The reference comparison is never offered locally.
                     const actionTools = toolSchemas.filter(
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
