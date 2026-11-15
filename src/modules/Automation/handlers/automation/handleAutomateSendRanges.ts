@@ -8,7 +8,7 @@ import { getPlannedBus } from '../../useCases/automation/getPlannedBus';
 import { getPlannedSend } from '../../useCases/automation/getPlannedSend';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
-import { isLegacyRangeWriteSessionEntry } from './validateRangeWriteSessionEntries';
+import { isLegacyRangeWriteSessionEntry } from './isLegacyRangeWriteSessionEntry';
 
 type AutomateSendRangesAction = Extract<AppAction, { type: 'automateSendRanges' }>;
 type MaterializedPayload = AutomateSendRangesAction['payload'] & {
