@@ -362,7 +362,7 @@ describe('production Oxlint public-plugin migration', () => {
         ['no-useless-computed-key', "export const value = { ['key']: 1 };\n"],
         [
             'max-lines',
-            Array.from({ length: 601 }, (_, index) => `export const value${index} = ${index};`).join('\n') + '\n',
+            `${Array.from({ length: 601 }, (_, index) => `export const value${index} = ${index};`).join('\n')}\n`,
         ],
         ['max-lines-per-function', `export function example() {\n${'    Math.random();\n'.repeat(99)}}\n`],
         [
@@ -462,12 +462,18 @@ describe('production Oxlint public-plugin migration', () => {
         const directory = mkdtempSync(join(tmpdir(), 'lint-native-suppression-gap-'));
         const suppression = join(directory, 'oxlint-suppressions.json');
         const fixture = join(directory, 'fixture.js');
-        const run = (fix: boolean) =>
-            spawnSync(
-                resolve('node_modules/.bin/oxlint'),
-                ['--config=.oxlintrc.json', '--threads=2', '--format=json', ...(fix ? ['--fix'] : []), 'fixture.js'],
-                { cwd: directory, encoding: 'utf8', timeout: 60_000 }
-            );
+        const run = (fix: boolean) => {
+            const args = ['--config=.oxlintrc.json', '--threads=2', '--format=json'];
+            if (fix) {
+                args.push('--fix');
+            }
+            args.push('fixture.js');
+            return spawnSync(resolve('node_modules/.bin/oxlint'), args, {
+                cwd: directory,
+                encoding: 'utf8',
+                timeout: 60_000,
+            });
+        };
         try {
             writeFileSync(
                 join(directory, '.oxlintrc.json'),
@@ -952,7 +958,7 @@ describe('production Oxlint public-plugin migration', () => {
             expect(check.app.rules[rule], rule).toBeUndefined();
             const setting = fix.app.rules[rule];
             if (!Array.isArray(setting)) {
-                throw new Error(`Missing cofix setting for ${rule}`);
+                throw new TypeError(`Missing cofix setting for ${rule}`);
             }
             expect(setting[0], rule).toBe(2);
         }
@@ -961,7 +967,7 @@ describe('production Oxlint public-plugin migration', () => {
                 const config = target === 'spec' ? fix.spec : fix.e2e;
                 const setting = config.rules[rule];
                 if (!Array.isArray(setting)) {
-                    throw new Error(`Missing disabled cofix setting for ${target}: ${rule}`);
+                    throw new TypeError(`Missing disabled cofix setting for ${target}: ${rule}`);
                 }
                 expect(setting[0], `${target}: ${rule}`).toBe(0);
             }
