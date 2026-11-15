@@ -181,16 +181,17 @@ export function createAcceptanceRenderLaw(input: {
         return toAudioBuffer(renderChannel(target, render.renderTracks, render.startBeat, frames));
     }
 
-    /** `renderOffline`: the live project's master output. */
+    /** `renderOffline`: the live project's master output, from beat 0 when no start is given, as the renderer reads it. */
     function renderMixdown(render: MixdownRenderInput): AudioBuffer {
         const tracks = input.liveTracks();
-        const frames = frameCount(render.startBeat, render.startBeat + render.durationBeats);
+        const startBeat = render.startBeat ?? 0;
+        const frames = frameCount(startBeat, startBeat + render.durationBeats);
         const master = { left: new Float64Array(frames), right: new Float64Array(frames) };
         for (const track of tracks) {
             if (track.muted || track.outputId !== 'master') {
                 continue;
             }
-            mixInto(master, renderChannel(track, tracks, render.startBeat, frames), input.masterGain());
+            mixInto(master, renderChannel(track, tracks, startBeat, frames), input.masterGain());
         }
         return toAudioBuffer(master);
     }

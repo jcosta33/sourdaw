@@ -20,7 +20,7 @@ export function readProviderHosts(repositoryRoot: string): ReadonlySet<string> {
     const hosts = new Set<string>();
     for (const path of PROVIDER_ORIGIN_SOURCES) {
         const text = readFileSync(resolve(repositoryRoot, path), 'utf8');
-        const found = [...text.matchAll(HTTPS_LITERAL)].map((match) => new URL(match[1] ?? '').host);
+        const found = Array.from(text.matchAll(HTTPS_LITERAL), (match) => new URL(match[1] ?? '').host);
         if (found.length === 0) {
             throw new Error(`${path} no longer names a provider base URL the guard can read.`);
         }

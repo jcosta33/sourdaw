@@ -747,10 +747,7 @@ function metricIntakeTurn(turn: MetricIntakeTurn): ScriptedTurn {
         const objectives = turn.objectives.map((selection) => ({
             objectiveId: publishedObjectiveId(publication, selection),
             scopeCandidateId: advertisedAnswerCandidateId(wire, fixtureTrackId(selection.targetName)),
-            referenceScopeCandidateId:
-                selection.referenceName === undefined
-                    ? null
-                    : advertisedAnswerCandidateId(wire, fixtureTrackId(selection.referenceName)),
+            referenceScopeCandidateId: referenceScopeCandidateId(wire, selection),
             rangeCandidateId: advertisedAnswerCandidateId(wire, selection.rangeName, 'ranges'),
         }));
         return [
@@ -768,22 +765,34 @@ function metricIntakeTurn(turn: MetricIntakeTurn): ScriptedTurn {
     };
 }
 
+/** The candidate a comparative objective's reference track was advertised under; a perceptual one names none. */
+function referenceScopeCandidateId(wire: readonly unknown[], selection: CorpusObjectiveSelection): string | null {
+    if (selection.referenceName === undefined) {
+        return null;
+    }
+    return advertisedAnswerCandidateId(wire, fixtureTrackId(selection.referenceName));
+}
+
 /** The `analysis.measure` scope naming fixture tracks or fixture buses by name; a mix of both is a corpus defect. */
 function namedTrackScope(names: readonly string[]): Record<string, unknown> {
     const tracks = names.map((name) => context.tracks.find((track) => track.id === fixtureTrackId(name)));
     const buses = tracks.filter((track) => track?.kind === 'bus');
-    if (buses.length !== 0 && buses.length !== tracks.length) {
+    if (buses.length > 0 && buses.length !== tracks.length) {
         throw new Error(`A measured scope mixes tracks and buses: ${names.join(', ')}`);
     }
     return { kind: buses.length === 0 ? 'tracks' : 'buses', ids: names.map(fixtureTrackId) };
 }
 
+/** What a preview measures: an earlier recipe expansion by call id, or the plain commands the turn lists. */
+function previewSource(turn: PreviewMeasureTurn): Record<string, unknown> {
+    if (turn.recipeCallId !== undefined) {
+        return { recipeCallId: turn.recipeCallId };
+    }
+    return { proposal: { schemaVersion: 1, items: turn.items ?? [] } };
+}
+
 function previewMeasureCall(turn: PreviewMeasureTurn): ProviderCall & { id: string } {
     const { startBeat, endBeat } = fixtureSection(turn.rangeName);
-    const source =
-        turn.recipeCallId === undefined
-            ? { proposal: { schemaVersion: 1, items: turn.items ?? [] } }
-            : { recipeCallId: turn.recipeCallId };
     return {
         id: turn.id,
         name: 'analysis.measure',
@@ -792,7 +801,7 @@ function previewMeasureCall(turn: PreviewMeasureTurn): ProviderCall & { id: stri
             scope: namedTrackScope(turn.targets),
             range: { startBeat, endBeat },
             metrics: turn.metrics,
-            ...source,
+            ...previewSource(turn),
         },
     };
 }
@@ -1507,17 +1516,13 @@ async function scorePlannedCorpusCase(
     run: { projectRevision: string; rendersBefore: number; runId: string; measuresPreview: boolean }
 ): Promise<AgentAcceptanceCaseResult> {
     const { projectRevision, runId } = run;
-    const result = await parsePromptToActions({
-        prompt: testCase.prompt,
-        context,
-        projectRevision,
-        ...(run.measuresPreview
-            ? {
-                  streamIdentity: { runId, requestId: runId, cancellationGeneration: 0 },
-                  onMeasurementAttempt: agentWorkBudget.admitMeasurement(runId),
-              }
-            : {}),
-    });
+    const request: Parameters<typeof parsePromptToActions>[0] = { prompt: testCase.prompt, context, projectRevision };
+    if (run.measuresPreview) {
+        // A preview spends its renders from a live run, so the request names that run's stream.
+        request.streamIdentity = { runId, requestId: runId, cancellationGeneration: 0 };
+        request.onMeasurementAttempt = agentWorkBudget.admitMeasurement(runId);
+    }
+    const result = await parsePromptToActions(request);
     expect(
         renderCount() - run.rendersBefore,
         `Case ${testCase.id} rendered a different number of times than its own measurements ask for`
