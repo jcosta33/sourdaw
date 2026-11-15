@@ -9,7 +9,7 @@ import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
 import { type CatalogBriefMixAlternative, readBriefMixIntentWithAlternatives } from './readBriefMixAlternatives';
-import { countVibeRunCandidateBatches } from './vibeRun/planVibeRunSchedule';
+import { countVibeRunCandidateBatches } from './vibeRun/countVibeRunCandidateBatches';
 
 type BriefUpdate = Parameters<typeof composeProductionBriefUpdate>[0]['update'];
 type BriefStatement = NonNullable<BriefUpdate['preferences']>[number];

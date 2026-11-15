@@ -18,12 +18,10 @@ import {
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { unionProposalProtectionFacts } from './agentReference/proposalGroundingBasis';
+import { createPromptConfirmationId } from './agentRequestOrchestration/createPromptConfirmationId';
 import { describeInitialMeasurementProgress } from './agentRequestOrchestration/describeInitialMeasurementProgress';
 import { materializePromptCommandPlan } from './agentRequestOrchestration/materializePromptCommandPlan';
-import {
-    createPromptConfirmationId,
-    persistPromptActionConfirmation,
-} from './agentRequestOrchestration/persistPromptActionConfirmation';
+import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
 import { readConfirmationBatchId } from './agentRequestOrchestration/readConfirmationBatchId';
 import { retireSupersededConfirmation } from './agentRequestOrchestration/retireSupersededConfirmation';
 import { agentRunLifecycle } from './agentRunLifecycle';
@@ -36,7 +34,7 @@ import { getProjectContext } from './getProjectContext';
 import { readBriefMixIntent } from './readBriefMixIntent';
 import { readVibeBriefReadingAvailability } from './readVibeBriefReadingAvailability';
 import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
-import { describeChosenBriefReading } from './vibeRun/describeBriefReadings';
+import { describeChosenBriefReading } from './vibeRun/describeChosenBriefReading';
 import { planBriefVibeRun } from './vibeRun/planBriefVibeRun';
 
 type ChooseVibeBriefReadingInput = {

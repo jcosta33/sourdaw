@@ -17,6 +17,8 @@ import { deriveMeasuredAudibleImpact, NO_AUDIBLE_CLAIM_REASON } from '../deriveM
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 
+import { createPromptConfirmationId } from './createPromptConfirmationId';
+
 import type { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
 type ConfirmationProposal = Parameters<typeof proposePendingActionConfirmation>[0];
@@ -137,10 +139,6 @@ function recordConfirmationMetricGoalPlan(
         plan: { ...run.plan, metricGoalState, revision: input.projectRevision },
         audibleClaim: claim ?? undefined,
     });
-}
-
-export function createPromptConfirmationId(): string {
-    return `prompt-confirmation-${crypto.randomUUID()}`;
 }
 
 export function persistPromptActionConfirmation(input: PersistPromptActionConfirmationInput): string | null {

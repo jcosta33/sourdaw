@@ -139,7 +139,8 @@ import { readBriefMixIntent } from './readBriefMixIntent';
 import { settledProjectContentMatches } from './settledProjectContentMatches';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
-import { buildBriefReadings, describeBriefReadings } from './vibeRun/describeBriefReadings';
+import { buildBriefReadings } from './vibeRun/buildBriefReadings';
+import { describeBriefReadings } from './vibeRun/describeBriefReadings';
 import { planBriefVibeRun } from './vibeRun/planBriefVibeRun';
 
 type ParsePromptToActionsInput = {
