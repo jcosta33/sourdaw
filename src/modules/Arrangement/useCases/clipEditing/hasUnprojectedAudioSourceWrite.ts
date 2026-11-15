@@ -447,6 +447,9 @@ const hasUnprojectedAudioSourceWriteByActionType: {
 };
 
 function lookup<Type extends AppActionType>(action: ActionOf<Type>, state: ClipOwners): boolean {
+    if (!Object.hasOwn(hasUnprojectedAudioSourceWriteByActionType, action.type)) {
+        return noUnprojectedWrite();
+    }
     return hasUnprojectedAudioSourceWriteByActionType[action.type](action, state);
 }
 
