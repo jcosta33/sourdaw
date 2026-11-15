@@ -96,6 +96,19 @@ describe('createUserAppActionRefusalEpisodes', () => {
             expect(notifyUser).toHaveBeenCalledTimes(1);
         });
 
+        it('still warns for an in-flight refusal when a different key is ended', async () => {
+            const episodes = createUserAppActionRefusalEpisodes();
+            const dispatch = Promise.withResolvers<void>();
+            vi.mocked(executeAppAction).mockReturnValueOnce(dispatch.promise);
+            const outcome = episodes.execute('device-2', action);
+
+            episodes.end('device-1');
+            dispatch.reject(new AppActionAdmissionRefusedError('addTrack'));
+
+            await expect(outcome).resolves.toBe('refused');
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+
         it('opens no episode for a refusal dispatched before endAll()', async () => {
             const episodes = createUserAppActionRefusalEpisodes();
             const dispatch = Promise.withResolvers<void>();
