@@ -165,19 +165,21 @@ export function captureRelinkAudioSourceCommitValidation(
     const identity = captureProjectIdentity();
     const owner = getCurrentAutomergeStorageMutationOwner();
     const root = getCrdtDoc<{ tracks: NonNullable<typeof trackStore.value> }>('root');
-    const rawTracks = root?.tracks?.tracks;
+    const rawTracks = root?.tracks.tracks;
     let planned: ReturnType<typeof projectRelinkAudioSourceTracks> = null;
     if (Array.isArray(rawTracks)) {
         planned = projectRelinkAudioSourceTracks(rawTracks, context?.actions.slice(0, context.actionIndex) ?? []);
     }
     const admitted = planned !== null && documentMatches({ tracks: { tracks: planned } }, targets, 'before');
     const before = readOwnerFingerprints(root, targets);
-    const projected = () => ({ tracks: trackStore.value });
+    function projected(): { tracks: typeof trackStore.value } {
+        return { tracks: trackStore.value };
+    }
     let observed = readOwnerFingerprints(projected(), targets);
     let expected: string[] | null = null;
     let heads = root ? getHeads(root).toSorted() : [];
     let authorityIntervened = false;
-    const observe = (): void => {
+    function observe(): void {
         const current = getCrdtDoc<Record<string, unknown>>('root');
         if (!current) {
             authorityIntervened = true;
@@ -204,7 +206,7 @@ export function captureRelinkAudioSourceCommitValidation(
         }
         observed = next;
         heads = nextHeads;
-    };
+    }
     const release = owner && root ? trackStore.subscribe(observe) : () => undefined;
     const reason = 'Audio source or owning clip changed before relink publication';
     function initialOwnersMatch(document: Readonly<Record<string, unknown>> | undefined): boolean {

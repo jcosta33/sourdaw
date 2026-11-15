@@ -20,7 +20,7 @@ export function captureRelinkAudioSourceTargets(
 ): RelinkTarget[] {
     const targets: RelinkTarget[] = [];
     for (const track of state?.tracks ?? []) {
-        const capture = (clip: Clip, alternativeId: string | null): void => {
+        function capture(clip: Clip, alternativeId: string | null): void {
             if (clip.type !== 'audio' || (clip.audioBufferId ?? clip.id) !== sourceBufferId) {
                 return;
             }
@@ -34,7 +34,7 @@ export function captureRelinkAudioSourceTargets(
                 before,
                 after: { ...before, audioBufferId: replacementBufferId },
             });
-        };
+        }
         for (const clip of track.clips) {
             capture(clip, null);
         }

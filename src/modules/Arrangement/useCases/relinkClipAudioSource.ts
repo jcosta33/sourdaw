@@ -38,7 +38,7 @@ export async function relinkClipAudioSource({
         captureProjectIdentity() === identity &&
         shouldExecute?.() !== false &&
         getCachedAudioBuffer({ bufferId: sourceBufferId }) === null;
-    let committed = false;
+    const execution = { committed: false };
     try {
         await executeUserAppAction(
             { type: 'relinkClipAudioSources', payload: { targets } },
@@ -46,18 +46,18 @@ export async function relinkClipAudioSource({
                 shouldExecute: isCurrent,
                 shouldCommit: isCurrent,
                 onCommitted: () => {
-                    committed = true;
+                    execution.committed = true;
                 },
             }
         );
     } catch (error) {
-        if (!committed && !isAppActionCommittedError(error)) {
+        if (!execution.committed && !isAppActionCommittedError(error)) {
             throw error;
         }
-        committed = true;
+        execution.committed = true;
         notifyUser(error instanceof Error ? error.message : 'Audio source relink committed with a warning', 'warning');
     }
-    if (!committed) {
+    if (!execution.committed) {
         return { status: 'rejected' };
     }
     return { status: 'relinked', relinkedClipIds: [...new Set(targets.map((target) => target.clipId))] };
