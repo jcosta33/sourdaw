@@ -187,7 +187,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts",
-                    "digest": "b6c88199b06546e16f6cab8623dbf158d17ce30e2556da9020f7110907216066"
+                    "digest": "1e06ddc2f541be76603248f77d9cdc7dc41999560a240d4fe6687a2ac4775594"
                 }
             ]
         },
@@ -295,7 +295,7 @@
             "fixtures": [
                 {
                     "path": "src/app/__tests__/agentProtocolVersioning.spec.ts",
-                    "digest": "08ee50e3a73ef340a560b5fe6c305d984b2c0f0f6536c737b15deca2eae3e0f7"
+                    "digest": "25291eb5feacc839634ec9271303a62ef6dd801c01223024d80c53c676c734a4"
                 }
             ]
         },
@@ -923,7 +923,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts",
-                    "digest": "7fc9f145ce62db9406c11ce5f75cb96e110f871995165e7d669a4f469942548c"
+                    "digest": "96f1c26c2b451ee2d2862ef021ad15d26d9ac37fb075808b62fdc9b2bb9e38cb"
                 }
             ]
         },
