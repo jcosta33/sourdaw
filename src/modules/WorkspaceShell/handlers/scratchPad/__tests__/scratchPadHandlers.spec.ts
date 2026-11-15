@@ -169,11 +169,11 @@ describe('Workspace Scratch Pad Handlers', () => {
                 payload: { sectionIds: ['pad-a'] },
             };
             handleCaptureScratchPad.materializeCommandArguments?.(action);
-            const description = handleCaptureScratchPad.describe?.(action);
+            const description = handleCaptureScratchPad.describe(action);
             void handleCaptureScratchPad.execute(action);
 
             expect(padIdsByOrder()).toEqual(action.payload?.sectionIds);
-            expect(description?.inverseAction).toEqual(
+            expect(description.inverseAction).toEqual(
                 expect.objectContaining({
                     payload: expect.objectContaining({
                         expectedSections: scratchPadStore.value?.sections,
