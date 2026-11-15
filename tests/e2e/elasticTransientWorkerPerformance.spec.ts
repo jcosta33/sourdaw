@@ -518,8 +518,9 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
                     entry.name.startsWith('elastic-transient-') ||
                     entry.name === 'automerge-storage-prepared-publication' ||
                     entry.name === 'automerge-storage-materialization-handoff-task'
-                )
+                ) {
                     metrics.measures.push({ name: entry.name, duration: entry.duration, startTime: entry.startTime });
+                }
             }
         });
         measures.observe({ type: 'measure', buffered: false });
@@ -965,8 +966,9 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                     entry.name.startsWith('elastic-transient-') ||
                     entry.name === 'automerge-storage-prepared-publication' ||
                     entry.name === 'automerge-storage-materialization-handoff-task'
-                )
+                ) {
                     metrics.measures.push({ name: entry.name, duration: entry.duration, startTime: entry.startTime });
+                }
             }
         });
         measures.observe({ type: 'measure', buffered: false });

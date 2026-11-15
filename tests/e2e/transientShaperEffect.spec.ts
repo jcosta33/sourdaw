@@ -505,8 +505,9 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
             ['attackGain', attack],
             ['sustainGain', sustain],
         ] as const) {
-            for (const point of points)
+            for (const point of points) {
                 audio.scheduleDeviceParam(trackId, deviceId, name, point.value, (start + point.frame) / rate);
+            }
         }
         source.start(start / rate);
         const live = await captured;
@@ -881,7 +882,9 @@ test('real worklet export failure and terminal reset exhaustion cannot report su
             const buffer = await context.startRendering();
             let energy = 0;
             for (let channel = 0; channel < 2; channel++) {
-                for (const sample of buffer.getChannelData(channel)) energy += sample * sample;
+                for (const sample of buffer.getChannelData(channel)) {
+                    energy += sample * sample;
+                }
             }
             node.destroy();
             return { exportFailure, runtimeFailure, energy, successfulProcessing: energy > 0 };
