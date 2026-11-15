@@ -174,6 +174,17 @@ describe('lint ledger crossing decision', () => {
         expect(lintLedgerCrossingPaths([], [], { base, main: edited, head: base })).toEqual([]);
     });
 
+    it('does not cross when one side rewrites a figure with the same members in another order, and the mirror', () => {
+        const base = {
+            [OXC]: '{ "overrides": [{ "files": ["./src/x.ts"], "rules": { "max-lines": ["error", { "max": 10, "skipComments": true }] } }] }',
+        };
+        const reordered = {
+            [OXC]: '{ "overrides": [{ "files": ["./src/x.ts"], "rules": { "max-lines": ["error", { "skipComments": true, "max": 10 }] } }] }',
+        };
+        expect(lintLedgerCrossingPaths([], ['src/x.ts'], { base, main: reordered, head: base })).toEqual([]);
+        expect(lintLedgerCrossingPaths(['src/x.ts'], [], { base, main: base, head: reordered })).toEqual([]);
+    });
+
     it('crosses when main changes the rules of an override whose files list stays the same', () => {
         const withRules = (rule: string): LedgerTree => ({
             [OXC]: `{ "overrides": [{ "files": ["./src/x.ts"], "rules": { "${rule}": "off" } }] }`,
