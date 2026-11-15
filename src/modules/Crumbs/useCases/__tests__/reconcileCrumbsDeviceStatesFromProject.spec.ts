@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     getWaveformPeaks: vi.fn(() => Promise.resolve([])),
     getDroppedWrites: vi.fn(() => Promise.resolve(0)),
     executeAppAction: vi.fn((_action: unknown, _options?: unknown) => Promise.resolve()),
+    onAdmitted: { current: undefined as ((key: string) => void) | undefined },
 }));
 
 // Exhaustive over this spec's graph: the sweep reads `trackStore` and nothing
@@ -32,12 +33,17 @@ vi.mock('../../repositories/crumbsBridge/getCrumbsDroppedSampleWrites', () => ({
 // data-loss case can read exactly what a local edit mirrored into the document.
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
-    // The real episodes object would dispatch through the real kernel; route it to the captured door.
-    createUserAppActionRefusalEpisodes: () => ({
-        execute: (_key: string, action: unknown, options?: unknown) => mocks.executeAppAction(action, options),
-        end: vi.fn(),
-        endAll: vi.fn(),
-    }),
+    // The real episodes object would dispatch through the real kernel; route it to the captured door,
+    // and keep its admission callback so a case can deliver the project becoming changeable again.
+    createUserAppActionRefusalEpisodes: (options?: { onAdmitted?: (key: string) => void }) => {
+        mocks.onAdmitted.current = options?.onAdmitted;
+        return {
+            execute: (_key: string, action: unknown, executeOptions?: unknown) =>
+                mocks.executeAppAction(action, executeOptions),
+            end: vi.fn(),
+            endAll: vi.fn(),
+        };
+    },
 }));
 
 import { setCrumbsEventBus } from '../../stores/crumbsEventBus';
@@ -321,6 +327,51 @@ describe('reconcileCrumbsDeviceStatesFromProject', () => {
         expect(commits.some((commit) => commit.payload.state.data.activeSample?.filePath === '/samples/a.wav')).toBe(
             false
         );
+    });
+
+    // Issue 6778: a refused local sample is still the store's leaf when a peer's
+    // sample-only merge unlocks the project. The merge's reconcile starts the
+    // peer's decode, and the unlock delivers the refused key while that decode
+    // is pending. Writing then would put the stale local sample over the peer's
+    // document reference; a failed decode would leave it there for good.
+    it('writes nothing on unlock while a sample-only reconcile decode is pending, then commits the peer sample', async () => {
+        const peerDecode = deferredDecode();
+        mocks.nativeLoadSample.mockImplementationOnce(() => peerDecode.promise);
+        setMode(DEVICE_ID, 'quick');
+
+        projectWith(crumbsDevice(peerChunk({ filePath: '/samples/b.wav', sampleId: 7 })));
+        reconcileCrumbsDeviceStatesFromProject();
+        mocks.onAdmitted.current?.(DEVICE_ID);
+        await flushLoad();
+        expect(setDeviceStateCommits()).toEqual([]);
+
+        peerDecode.resolve(LOCAL_DECODE_OF_B);
+        await flushLoad();
+        await flushLoad();
+
+        const commits = setDeviceStateCommits();
+        expect(commits.map((commit) => commit.payload.state.data.activeSample?.filePath)).toEqual(['/samples/b.wav']);
+    });
+
+    it('keeps the peer sample reference when the pending sample-only decode fails after the unlock', async () => {
+        const peerDecode = deferredDecode();
+        mocks.nativeLoadSample.mockImplementationOnce(() => peerDecode.promise);
+        setMode(DEVICE_ID, 'quick');
+
+        projectWith(crumbsDevice(peerChunk({ filePath: '/samples/b.wav', sampleId: 7 })));
+        reconcileCrumbsDeviceStatesFromProject();
+        mocks.onAdmitted.current?.(DEVICE_ID);
+        peerDecode.reject(new Error('unreadable file'));
+        await flushLoad();
+        await flushLoad();
+        setTune(DEVICE_ID, 3);
+        await flushLoad();
+
+        const commits = setDeviceStateCommits();
+        expect(commits.some((commit) => commit.payload.state.data.activeSample?.filePath === '/samples/a.wav')).toBe(
+            false
+        );
+        expect(crumbsStore.value?.[DEVICE_ID]?.activeSample?.filePath).toBe('/samples/b.wav');
     });
 
     // Finding 2's swallowed edit: a user drop that supersedes the reconcile
