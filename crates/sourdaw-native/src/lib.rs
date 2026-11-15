@@ -11,6 +11,7 @@
     test,
     allow(
         clippy::unwrap_used,
+        clippy::unreachable,
         clippy::panic,
         reason = "tests assert by unwrapping and fail by panicking"
     )
