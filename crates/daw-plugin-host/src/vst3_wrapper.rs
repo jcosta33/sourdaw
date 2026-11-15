@@ -15,7 +15,7 @@ use crate::params::PluginParameter;
 use crate::traits::{
     signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostMidiEvent,
     HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier,
-    PluginHostRequestNotifier, ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
+    PluginHostRequestNotifier, ProcessMode, ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
     MAX_MIDI_EVENTS_PER_BLOCK,
 };
 use crate::vst3_bus_layout::{
@@ -1047,6 +1047,10 @@ pub struct Vst3Wrapper {
 
     descriptor_id: String,
     sample_rate: f64,
+    /// The `ProcessModes_` value this instance was built with, stated in every
+    /// `setupProcessing` and every `ProcessData`. Held as the format's own
+    /// value so a block reads a field rather than converting one.
+    process_mode: int32,
     activated: bool,
     accepts_midi: bool,
     processing: Arc<ProcessingGate>,
@@ -1103,8 +1107,24 @@ impl Vst3Wrapper {
     /// Load a bundle, instantiate the class the descriptor names, and activate
     /// it at the given sample rate.
     pub fn new(bundle_path: &Path, descriptor_id: &str, sample_rate: f64) -> Result<Self, String> {
+        Self::new_with_mode(
+            bundle_path,
+            descriptor_id,
+            sample_rate,
+            ProcessMode::Realtime,
+        )
+    }
+
+    /// [`Vst3Wrapper::new`], with the process mode the plugin is set up in and
+    /// told on every block.
+    pub fn new_with_mode(
+        bundle_path: &Path,
+        descriptor_id: &str,
+        sample_rate: f64,
+        mode: ProcessMode,
+    ) -> Result<Self, String> {
         let instance = Vst3Instance::open(bundle_path, descriptor_id)?;
-        Self::activated(instance, parse_class_id(descriptor_id)?, sample_rate)
+        Self::activated_with_mode(instance, parse_class_id(descriptor_id)?, sample_rate, mode)
     }
 
     /// Activate an already-instantiated plugin. Separate so a test can build the
@@ -1113,6 +1133,16 @@ impl Vst3Wrapper {
         instance: Vst3Instance,
         class_id: TUID,
         sample_rate: f64,
+    ) -> Result<Self, String> {
+        Self::activated_with_mode(instance, class_id, sample_rate, ProcessMode::Realtime)
+    }
+
+    /// [`Vst3Wrapper::activated`], in the given process mode.
+    pub fn activated_with_mode(
+        instance: Vst3Instance,
+        class_id: TUID,
+        sample_rate: f64,
+        mode: ProcessMode,
     ) -> Result<Self, String> {
         let mut wrapper = Self {
             editor: None,
@@ -1125,6 +1155,7 @@ impl Vst3Wrapper {
             editor_scale: DEFAULT_EDITOR_CONTENT_SCALE,
             descriptor_id: format_class_id(&class_id),
             sample_rate,
+            process_mode: vst3_process_mode(mode),
             activated: false,
             processing: Arc::new(ProcessingGate::default()),
             input_scratch: Box::new([[0.0; MAX_BUFFER]; CHANNELS]),
@@ -1213,7 +1244,7 @@ impl Vst3Wrapper {
 
     fn process_setup(&self) -> ProcessSetup {
         ProcessSetup {
-            processMode: ProcessModes_::kRealtime as int32,
+            processMode: self.process_mode,
             symbolicSampleSize: SymbolicSampleSizes_::kSample32 as int32,
             maxSamplesPerBlock: MAX_BUFFER as int32,
             sampleRate: self.sample_rate,
@@ -1611,7 +1642,7 @@ impl Vst3Wrapper {
 
         let refused = {
             let mut data = ProcessData {
-                processMode: ProcessModes_::kRealtime as int32,
+                processMode: self.process_mode,
                 symbolicSampleSize: SymbolicSampleSizes_::kSample32 as int32,
                 numSamples: samples as int32,
                 numInputs: self.input_bus_buffers.len() as int32,
@@ -1639,8 +1670,9 @@ impl Vst3Wrapper {
                 },
             };
 
-            // SAFETY: audio thread, inside the processing state the gate just
-            // confirmed; `processor` is retained by `self.processor`, and every
+            // SAFETY: the thread that runs this instance's blocks (the audio thread,
+            // or the render thread of an offline instance), inside the processing
+            // state the gate just confirmed; `processor` is retained by `self.processor`, and every
             // pointer in `data` addresses storage that outlives this call.
             unsafe { processor.process(&mut data) != kResultOk }
         };
@@ -2319,6 +2351,13 @@ fn read_char8(value: &[std::ffi::c_char]) -> String {
 
 fn non_empty(value: String) -> Option<String> {
     (!value.trim().is_empty()).then_some(value)
+}
+
+fn vst3_process_mode(mode: ProcessMode) -> int32 {
+    match mode {
+        ProcessMode::Realtime => ProcessModes_::kRealtime as int32,
+        ProcessMode::Offline => ProcessModes_::kOffline as int32,
+    }
 }
 
 fn empty_process_context(sample_rate: f64) -> ProcessContext {

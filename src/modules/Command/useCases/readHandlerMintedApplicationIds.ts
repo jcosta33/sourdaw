@@ -375,7 +375,7 @@ const HANDLER_MINTED_ID_READERS: { readonly [Type in AppActionType]: HandlerMint
     removeMidiMapping: noHandlerMintedIds,
     restoreMidiLearnMappings: noHandlerMintedIds,
     toggleScratchPad: noHandlerMintedIds,
-    captureScratchPad: noHandlerMintedIds,
+    captureScratchPad: (argumentsValue) => readIdList(argumentsValue, 'sectionIds'),
     commitScratchPad: noHandlerMintedIds,
     clearScratchPad: noHandlerMintedIds,
     removeScratchPadSection: noHandlerMintedIds,

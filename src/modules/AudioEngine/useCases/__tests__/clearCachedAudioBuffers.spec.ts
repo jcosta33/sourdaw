@@ -26,8 +26,8 @@ describe('clearCachedAudioBuffers', () => {
         expect(mocks.audioBufferCacheClear).toHaveBeenCalledTimes(1);
     });
 
-    it('clears only the runtime cache for project transitions', () => {
-        clearRuntimeCachedAudioBuffers();
+    it('clears only the runtime cache for project transitions', async () => {
+        await clearRuntimeCachedAudioBuffers();
 
         expect(mocks.clearRuntimeAudioBufferCache).toHaveBeenCalledTimes(1);
         expect(mocks.audioBufferCacheClear).not.toHaveBeenCalled();

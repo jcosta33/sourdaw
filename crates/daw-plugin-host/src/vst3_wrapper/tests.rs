@@ -51,6 +51,9 @@ const SIX_CHANNELS: SpeakerArrangement = 0b111111;
 /// allocation inside `process`.
 const OBSERVED_BUS_CAPACITY: usize = 8;
 
+/// A process mode no host ever stated.
+const MODE_NEVER_STATED: int32 = -1;
+
 /// Everything a test can observe about what the host did to the plugin.
 #[derive(Default)]
 struct FakeState {
@@ -81,6 +84,11 @@ struct FakeState {
     event_input_buses: AtomicI32,
     max_block: AtomicI32,
     sample_rate: AtomicU64,
+    /// The `processMode` of the last `setupProcessing` and of the last
+    /// `ProcessData`. Start at [`MODE_NEVER_STATED`], because `kRealtime` is
+    /// zero and a default-initialised field would read as a realtime host.
+    setup_process_mode: AtomicI32,
+    block_process_mode: AtomicI32,
     saw_process_context: AtomicBool,
     saw_tempo: AtomicU64,
 
@@ -137,6 +145,12 @@ impl FakeState {
 
     fn with_buses(inputs: Vec<FakeBus>, outputs: Vec<FakeBus>) -> Arc<Self> {
         let state = Arc::new(Self::default());
+        state
+            .setup_process_mode
+            .store(MODE_NEVER_STATED, Ordering::Release);
+        state
+            .block_process_mode
+            .store(MODE_NEVER_STATED, Ordering::Release);
         state
             .processor_gain
             .store(1.0f64.to_bits(), Ordering::Release);
@@ -668,6 +682,12 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
         return kInvalidArgument;
     }
     state.process_calls.fetch_add(1, Ordering::AcqRel);
+    // SAFETY: `data` is non-null (checked above) and, by this fn's contract, the
+    // host's live `ProcessData` for this call.
+    let process_mode = unsafe { (*data).processMode };
+    state
+        .block_process_mode
+        .store(process_mode, Ordering::Release);
     if state.refuses_process.load(Ordering::Acquire) {
         // Before touching a buffer: a processor that answers a failure has told
         // the host its output means nothing, and one that wrote first would let
@@ -965,6 +985,11 @@ macro_rules! fake_component_impls {
                 self.state
                     .sample_rate
                     .store(sample_rate.to_bits(), Ordering::Release);
+                // SAFETY: as above.
+                let process_mode = unsafe { (*setup).processMode };
+                self.state
+                    .setup_process_mode
+                    .store(process_mode, Ordering::Release);
                 kResultOk
             }
 
@@ -1904,6 +1929,11 @@ fn try_load(state: &Arc<FakeState>, class_id: TUID) -> Result<Vst3Wrapper, Strin
     Vst3Wrapper::activated(instantiate(state, class_id), class_id, 48_000.0)
 }
 
+fn load_in_mode(state: &Arc<FakeState>, class_id: TUID, mode: ProcessMode) -> Vst3Wrapper {
+    Vst3Wrapper::activated_with_mode(instantiate(state, class_id), class_id, 48_000.0, mode)
+        .expect("the fake plugin activates")
+}
+
 /// A plugin that offers the given editor. Without one, `createView` answers
 /// null, which is how VST3 says "no editor".
 fn state_with_editor(editor: &Arc<FakeEditor>) -> Arc<FakeState> {
@@ -2070,6 +2100,51 @@ fn the_plugin_is_set_up_with_the_hosts_real_block_and_rate() {
     assert_eq!(
         f64::from_bits(state.sample_rate.load(Ordering::Acquire)),
         48_000.0
+    );
+}
+
+/// The mode an instance is built in is the one the plugin is set up in and the
+/// one every block states; a setup that says offline over blocks that say
+/// realtime leaves the plugin on whichever answer it happens to read.
+#[test]
+fn an_offline_instance_states_offline_to_setup_and_to_every_block() {
+    let state = FakeState::new();
+    let mut wrapper = load_in_mode(&state, COMBINED_CID, ProcessMode::Offline);
+    render(&mut wrapper, 1.0, 8);
+
+    let offline = ProcessModes_::kOffline as int32;
+    assert_eq!(state.setup_process_mode.load(Ordering::Acquire), offline);
+    assert_eq!(state.block_process_mode.load(Ordering::Acquire), offline);
+}
+
+#[test]
+fn a_realtime_instance_states_realtime_to_setup_and_to_every_block() {
+    let state = FakeState::new();
+    let mut wrapper = load(&state, COMBINED_CID);
+    render(&mut wrapper, 1.0, 8);
+
+    let realtime = ProcessModes_::kRealtime as int32;
+    assert_eq!(state.setup_process_mode.load(Ordering::Acquire), realtime);
+    assert_eq!(state.block_process_mode.load(Ordering::Acquire), realtime);
+}
+
+/// A latency change re-runs `setupProcessing`, and the re-setup must restate
+/// the mode the instance was built in rather than fall back to realtime.
+#[test]
+fn a_latency_reactivation_restates_the_offline_mode() {
+    let state = FakeState::new();
+    let mut wrapper = load_in_mode(&state, COMBINED_CID, ProcessMode::Offline);
+    state
+        .setup_process_mode
+        .store(MODE_NEVER_STATED, Ordering::Release);
+
+    wrapper
+        .reactivate_for_latency()
+        .expect("the fake re-activates");
+
+    assert_eq!(
+        state.setup_process_mode.load(Ordering::Acquire),
+        ProcessModes_::kOffline as int32
     );
 }
 

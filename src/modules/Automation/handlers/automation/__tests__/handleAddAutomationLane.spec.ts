@@ -29,27 +29,27 @@ beforeEach(() => {
 });
 
 describe('handleAddAutomationLane — execute', () => {
-    it('calls addAutomationLane with trackId, parameterId, parameterName, and generated laneId', () => {
+    it('calls addAutomationLane with trackId, parameterId, parameterName, and generated laneId', async () => {
         const action = {
             type: 'addAutomationLane' as const,
             payload: { trackId: 't1', parameterId: 'gain', parameterName: 'Gain', laneId: 'lane1' },
         };
-        handleAddAutomationLane.execute(action);
+        await handleAddAutomationLane.execute(action);
         expect(mockedAddLane).toHaveBeenCalledWith('t1', 'gain', 'Gain', 'lane1');
     });
 
-    it('generates a laneId when not provided', () => {
+    it('generates a laneId when not provided', async () => {
         const action = {
             type: 'addAutomationLane' as const,
             payload: { trackId: 't1', parameterId: 'gain', parameterName: 'Gain' },
         };
-        handleAddAutomationLane.execute(action);
+        await handleAddAutomationLane.execute(action);
         expect(mockedAddLane).toHaveBeenCalledTimes(1);
         const laneId = mockedAddLane.mock.calls[0]?.[3];
         expect(laneId).toMatch(/^auto-/);
     });
 
-    it('persists the generated laneId on the action payload', () => {
+    it('persists the generated laneId on the action payload', async () => {
         const action = {
             type: 'addAutomationLane' as const,
             payload: { trackId: 't1', parameterId: 'gain', parameterName: 'Gain' },
@@ -57,7 +57,7 @@ describe('handleAddAutomationLane — execute', () => {
             type: 'addAutomationLane';
             payload: { trackId: string; parameterId: string; parameterName: string; laneId?: string };
         };
-        handleAddAutomationLane.execute(action);
+        await handleAddAutomationLane.execute(action);
         expect(action.payload.laneId).toMatch(/^auto-/);
     });
 });

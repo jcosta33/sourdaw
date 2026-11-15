@@ -280,7 +280,9 @@ describe('groove template project dirty lifecycle', () => {
         const preview = createAutomergeStoragePreview(new Map([['root', document]]));
         try {
             preview.scope(() => {
-                getMidiGrooveHandlers().createGrooveTemplate.execute(createAction);
+                expect(getMidiGrooveHandlers().createGrooveTemplate.execute(createAction)).toMatchObject({
+                    status: 'written',
+                });
                 expect(grooveTemplateStore.value?.templates).toContainEqual(
                     expect.objectContaining({ id: 'dirty-groove' })
                 );

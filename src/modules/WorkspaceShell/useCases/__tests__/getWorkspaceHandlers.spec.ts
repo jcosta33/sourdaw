@@ -38,10 +38,10 @@ describe('getWorkspaceHandlers', () => {
         expect(getWorkspaceHandlers()).not.toBe(map);
     });
 
-    it('executes preferences opening through the Workspace dialog use case', () => {
+    it('executes preferences opening through the Workspace dialog use case', async () => {
         const map = getWorkspaceHandlers();
 
-        map.openPreferencesDialog.execute({ type: 'openPreferencesDialog' });
+        await map.openPreferencesDialog.execute({ type: 'openPreferencesDialog' });
 
         expect(mocks.eventBus.emit).toHaveBeenCalledWith('dialog.openPreferences', undefined);
         expect(map.openPreferencesDialog.describe({ type: 'openPreferencesDialog' })).toEqual({
