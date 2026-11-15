@@ -4,6 +4,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../__tests__/ClipDummy';
 import { TrackDummy } from '../../__tests__/TrackDummy';
+import { __resetGainEnvelopesForTest, setEnvelope } from '../../stores/gainEnvelopeStore';
 import { captureTrackRemovalSnapshot } from '../captureTrackRemovalSnapshot';
 
 function createAutomationLane(id: string, trackId: string) {
@@ -296,19 +297,18 @@ describe('captureTrackRemovalSnapshot', () => {
         ]);
         expect(snapshot.automationLaneSnapshots).toEqual([removedAutomationLane]);
         expect(snapshot.takeLaneSnapshots).toEqual([removedTakeLane]);
+        // c2 sits only in the active alternative's stored copy, which is stale:
+        // the track holds its own clips and the inactive alternative's.
         expect(snapshot.midiNotesByClipId).toEqual({
             c1: [noteC1],
-            c2: [noteC2],
             c3: [noteC3],
         });
         expect(snapshot.midiCcByClipId).toEqual({
             c1: [ccC1],
-            c2: [ccC2],
             c3: [ccC3],
         });
         expect(snapshot.midiPitchBendByClipId).toEqual({
             c1: [pitchBendC1],
-            c2: [pitchBendC2],
             c3: [pitchBendC3],
         });
         expect(snapshot.sidechainRouteSnapshots).toEqual([removedSidechainRoute]);
@@ -344,5 +344,61 @@ describe('captureTrackRemovalSnapshot', () => {
         expect(snapshot.midiCcByClipId).toEqual({ c1: [ccC1] });
         expect(snapshot.midiPitchBendByClipId).toEqual({ c1: [pitchBendC1] });
         expect(snapshot.automationLaneSnapshots).toEqual([]);
+    });
+
+    it("carries none of a clip moved to another track that the active alternative's stale copy still names (#6613)", () => {
+        const held = ClipDummy.create({ id: 'held', trackId: 'a', type: 'midi' });
+        const inactive = ClipDummy.create({ id: 'inactive', trackId: 'a', type: 'midi' });
+        const staleMoved = ClipDummy.create({ id: 'x', trackId: 'a', type: 'midi' });
+        const trackA = TrackDummy.create({
+            id: 'a',
+            kind: 'midi',
+            clips: [held],
+            activeAlternativeId: 'alt-1',
+            alternatives: [
+                { id: 'alt-1', name: 'Active', clips: [held, staleMoved] },
+                { id: 'alt-2', name: 'Inactive', clips: [inactive] },
+            ],
+        });
+        const trackB = TrackDummy.create({
+            id: 'b',
+            kind: 'midi',
+            clips: [ClipDummy.create({ id: 'x', trackId: 'b', type: 'midi' })],
+        });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [trackA, trackB], selectedTrackId: null });
+        const rows = (clipId: string) => ({
+            note: createMidiNote(`note-${clipId}`, 60),
+            cc: createMidiControlChange(`cc-${clipId}`, 10),
+            bend: createMidiPitchBend(`bend-${clipId}`, 0),
+        });
+        const byClip = { held: rows('held'), inactive: rows('inactive'), x: rows('x') };
+        mocks.midiStoreValue.value = {
+            notesByClipId: { held: [byClip.held.note], inactive: [byClip.inactive.note], x: [byClip.x.note] },
+            ccByClipId: { held: [byClip.held.cc], inactive: [byClip.inactive.cc], x: [byClip.x.cc] },
+            pitchBendByClipId: { held: [byClip.held.bend], inactive: [byClip.inactive.bend], x: [byClip.x.bend] },
+        };
+        for (const clipId of ['held', 'inactive', 'x']) {
+            setEnvelope(clipId, { clipId, points: [], enabled: true });
+        }
+
+        try {
+            const snapshot = captureTrackRemovalSnapshot('a');
+            if (!snapshot) {
+                throw new Error('expected a snapshot');
+            }
+
+            expect(snapshot.midiNotesByClipId).toEqual({
+                held: [byClip.held.note],
+                inactive: [byClip.inactive.note],
+            });
+            expect(snapshot.midiCcByClipId).toEqual({ held: [byClip.held.cc], inactive: [byClip.inactive.cc] });
+            expect(snapshot.midiPitchBendByClipId).toEqual({
+                held: [byClip.held.bend],
+                inactive: [byClip.inactive.bend],
+            });
+            expect(snapshot.clipSatellites.map((entry) => entry.clipId)).toEqual(['held', 'inactive']);
+        } finally {
+            __resetGainEnvelopesForTest();
+        }
     });
 });
