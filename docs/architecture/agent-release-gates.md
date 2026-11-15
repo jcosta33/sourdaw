@@ -127,6 +127,52 @@ Schema version 2 carries, per corpus file:
   leaves undone whole. A revert is an executed reversible change and scores as `execute-exact`. A
   write the prior turn makes to reach its commit is the case's setup; any other write its oracle
   does not name is an unintended mutation.
+- Measured proposal turns — a measured proposal (a perceptual or comparative case) scripts the
+  production planning route, never a shortcut past it. Four turn kinds join the earlier ones:
+  `intake` selects the creative interpretation with a `perceptual` or `comparative` intent, its
+  targets, and its objectives chosen by recipe or policy, target, optional reference and section
+  from the objectives the run itself published, never by a minted id; `expand` calls
+  `recipe.expand` for one recipe on one named track, stating the role the recipe serves; and
+  `measure-preview` calls `analysis.measure` with subject `preview` over one named section, measuring
+  an earlier expansion or a list of plain commands in the live project and in the isolated preview;
+  `propose-compiled` then adopts those measured commands by call id and adds none of its own, so the
+  figures stay bound to the exact batch that persists. A comparative names its subject and reference
+  exactly, and the subject comes before the reference in the fixture's track order, because the
+  catalog places a device slot only under the first track target; a case that needs a role target
+  or a slot under a second track waits rather than leaning on that order.
+- `cases[].oracle.measuredGoals` — a measured proposal's metric claims, each `{metric, band?,
+relation, target, reference?}`: the agent metric (and band for a band metric), the relation the
+  goal states (`increase`, `decrease`, or a comparative policy such as `greater-than-current`), the
+  track it holds over and, for a comparative, the track it is compared with. The scorer reads them
+  from the planned result through the one production route: materialize the batch, decode its goal
+  state with the metric-goal codec, and evaluate admission against the run's own preview receipts.
+  The case matches only when admission returns `verified` and the decoded goals equal the oracle's
+  exactly, so a batch the preview does not support, or one claiming a goal the oracle does not, fails
+  the case however its actions read.
+- Render count — every case must render exactly as often as its own measurements ask: one render
+  per target a project measurement names and two per target a preview names, the live project and
+  the preview. A case leaning on the render double beyond what it measures is a corpus defect, never
+  a free measurement.
+- Render law — measured figures come from one stated, deterministic law that stands in for the
+  offline renderer (`src/modules/AiRuntime/__tests__/acceptanceRenderLaw.ts`): each track sounds a
+  source fixed by its position in the fixture, and the built-in devices, pans, sends, buses and
+  master gain shape it as the law's doc comment states. Every measured figure an oracle pins is
+  derived from that law, independently of the spec, never copied from a run, and the law is never
+  tuned to make a case pass; a change to it moves the pinned figures, which must be derived again.
+- Measured outcomes never give up — a sealed `comparative-by-measurement`, `perceptual-single-target`,
+  `perceptual-multi-target` or `whole-project-vibe-with-constraint` result that observes
+  `clarify-required`, `abstain-unsupported` or `deny-policy` fails the corpus run (AC-068), whatever
+  the thresholds would admit: these requests are answerable by measurement, so asking back,
+  abstaining or declining is a failure, never a safe outcome. A request that is truly underspecified
+  belongs in `boundary`.
+- No provider and no writes — every corpus case runs under a network guard refusing fetch,
+  XMLHttpRequest and WebSocket to every provider host (AC-074). The guard reads the hosts from the
+  production sources that hold the hosted providers' base URLs and the model artifact origins, so a
+  provider added there is refused without a second list, and a source naming none fails the run. Any
+  attempt fails its case. Every case that measures the project, before or after a previewed change,
+  must make no project write across planning, measuring and previewing (AC-078), counted from the
+  command barrel, the materialized project before and after, and every observed transition between.
+  Each gate carries a self-check showing it fails when it stops observing.
 
 ## Frozen thresholds
 
