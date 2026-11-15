@@ -24,4 +24,5 @@ export { readBeatAtSamples } from './readBeatAtSamples';
 export { readBarStartBeat } from './readBarStartBeat';
 export { readBarAtBeat } from './readBarAtBeat';
 export { readNextPhysicalBarBoundary } from './readNextPhysicalBarBoundary';
+export { readLastAutomationWriteSequence } from './automationWriteSequence';
 export { readTempoMapEditTargets } from './readTempoMapEditTargets';

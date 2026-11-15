@@ -1,8 +1,6 @@
-import {
-    appliedAutomationBases,
-    appliedAutomationWriteSequences,
-    readLastAutomationWriteSequence,
-} from './appliedAutomationBases';
+import { readLastAutomationWriteSequence } from '../../../stores/automationWriteSequence';
+
+import { appliedAutomationBases, appliedAutomationWriteSequences } from './appliedAutomationBases';
 
 type AppliedAutomationValue = {
     value: number;

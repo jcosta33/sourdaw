@@ -24,7 +24,6 @@ import {
     refreshExternalPluginParameters,
 } from '#/modules/PluginHost/useCases';
 import { transportStore } from '#/modules/Transport/stores';
-import { readLatestAutomationWriteSequence } from '#/modules/Transport/useCases';
 import { getDeviceAutomationOwnerId, getDeviceAutomationParameterId } from '#/utils/automationDeviceTarget';
 
 import { type Device } from '../../../models/TrackViewTypes';
@@ -82,8 +81,6 @@ type ParameterRowProps = {
     automated: boolean;
     /** The parameter's own store object; a patch to this parameter replaces it. */
     settledParameter: ExternalPluginParameter | undefined;
-    /** Which scheduler write was latest when the re-read that produced a parameter object was issued. */
-    readIssuedAt: WeakMap<object, number>;
     row: ExternalPluginParameterRow;
     /** Writes to the list's live region, which is mounted before any edit so the text is announced. */
     onAnnounce: (message: string) => void;
@@ -94,7 +91,6 @@ const ParameterRow = ({
     deviceId,
     automated,
     settledParameter,
-    readIssuedAt,
     row,
     onAnnounce,
 }: ParameterRowProps): ReactElement => {
@@ -106,7 +102,6 @@ const ParameterRow = ({
         automated,
         element: rowRef,
         settledToken: settledParameter,
-        readIssuedAt,
     });
     const [refused, setRefused] = useState(false);
     // The store moves only once the plugin accepts a change, so while the latest send is in flight the
@@ -216,25 +211,13 @@ const RestoreFailureNotice = ({ instanceId }: { instanceId: string }): ReactElem
 };
 
 /**
- * Re-reads the host and records, for each parameter object the re-read published, the scheduler write
- * that was latest when it was issued: the answer can predate a write that lands while the host replies.
- */
-async function refreshAndTag(instanceId: string, readIssuedAt: WeakMap<object, number>): Promise<void> {
-    const issuedAt = readLatestAutomationWriteSequence();
-    for (const parameter of await refreshExternalPluginParameters(instanceId)) {
-        readIssuedAt.set(parameter, issuedAt);
-    }
-}
-
-/**
  * Host-side automation writes are not echoed as edits, so the store holds the pre-play value; on each
  * stop edge (and on mount) re-read what the plugin actually holds. A patch is not an edit.
  */
 const useRefreshAfterAutomatedPlayback = (
     instanceId: string | undefined,
     automatedIdsKey: string,
-    isPlaying: boolean,
-    readIssuedAt: WeakMap<object, number>
+    isPlaying: boolean
 ): void => {
     const hadAutomationRef = useRef(false);
     useEffect(() => {
@@ -249,8 +232,8 @@ const useRefreshAfterAutomatedPlayback = (
         if (automatedIdsKey === '' && !hadAutomationRef.current) {
             return;
         }
-        void refreshAndTag(instanceId, readIssuedAt);
-    }, [isPlaying, automatedIdsKey, instanceId, readIssuedAt]);
+        void refreshExternalPluginParameters(instanceId);
+    }, [isPlaying, automatedIdsKey, instanceId]);
 };
 
 export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterListProps): ReactElement => {
@@ -266,7 +249,6 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
     const [announcement, setAnnouncement] = useState('');
     const listRef = useRef<HTMLUListElement>(null);
     const focusIndexAfterRevealRef = useRef<number | null>(null);
-    const [readIssuedAt] = useState(() => new WeakMap<object, number>());
 
     // Revealing a page can unmount the focused Show more button; move focus to the first revealed control.
     useEffect(() => {
@@ -284,7 +266,7 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
         .find((plugin) => plugin.id === device.externalPluginId || plugin.descriptor_id === device.externalPluginId);
     const snapshot = instanceId ? parameterState.byInstanceId[instanceId] : undefined;
     const automatedParameterIds = parseAutomatedIdsKey(automatedIdsKey);
-    useRefreshAfterAutomatedPlayback(instanceId, automatedIdsKey, isPlaying, readIssuedAt);
+    useRefreshAfterAutomatedPlayback(instanceId, automatedIdsKey, isPlaying);
 
     const status = resolveExternalPluginParameterStatus({
         device,
@@ -341,7 +323,6 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
                         deviceId={device.id}
                         automated={automatedParameterIds.has(row.id)}
                         settledParameter={settledById.get(row.id)}
-                        readIssuedAt={readIssuedAt}
                         row={row}
                         onAnnounce={setAnnouncement}
                     />

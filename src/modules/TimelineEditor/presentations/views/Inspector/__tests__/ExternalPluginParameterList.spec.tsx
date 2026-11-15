@@ -2,7 +2,6 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AutomationLane, automationStore } from '#/modules/Automation/stores';
-import { type PluginParameter } from '#/modules/PluginHost/repositories/pluginBridge/types';
 import {
     defaultExternalPluginActivationState,
     defaultExternalPluginParameterState,
@@ -15,14 +14,11 @@ import {
     externalPluginRestoreFailureStore,
     pluginScanStore,
 } from '#/modules/PluginHost/stores';
-import { patchExternalPluginParameterValue } from '#/modules/PluginHost/stores/externalPluginParameterStore';
-import { loadedExternalInstances } from '#/modules/PluginHost/useCases/pluginLifecycle/loadedExternalInstances';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { type Device } from '../../../../models/TrackViewTypes';
 import { ExternalPluginParameterList } from '../ExternalPluginParameterList';
 
-const mockGetPluginParameters = vi.hoisted(() => vi.fn<(instanceId: string) => Promise<PluginParameter[]>>());
 const mockEdit = vi.fn<(input: { instanceId: string; parameterId: number; value: number }) => Promise<void>>();
 const mockRefresh = vi.fn<(instanceId: string) => Promise<readonly ExternalPluginParameter[]>>();
 const mockHasRestoreFailure = vi.fn<(instanceId: string) => boolean>();
@@ -40,15 +36,20 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
 const mockReadApplied = vi.fn<(deviceId: string, parameterId: string) => number | undefined>();
 /** The scheduler's write sequence the mocked read reports; a test bumps it to say the scheduler wrote. */
 let mockWriteSequence = 1;
-vi.mock('#/modules/PluginHost/repositories/pluginBridge/getPluginParameters', () => ({
-    getPluginParameters: mockGetPluginParameters,
-}));
+/** The scheduler write each published parameter object's re-read was issued under, as the contract tags them. */
+const mockReadIssues = new WeakMap<object, number>();
+vi.mock('#/modules/PluginHost/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/stores')>();
+    return {
+        ...actual,
+        readExternalPluginParameterReadIssue: (parameter: object) => mockReadIssues.get(parameter),
+    };
+});
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
     return {
         ...actual,
-        readLatestAutomationWriteSequence: () => mockWriteSequence,
         readAppliedAutomationValue: (deviceId: string, parameterId: string) => {
             const value = mockReadApplied(deviceId, parameterId);
             return value === undefined ? undefined : { value, writeSequence: mockWriteSequence };
@@ -147,6 +148,23 @@ const moveStoreValue = (id: number, name: string, value: number): readonly Exter
             [INSTANCE_ID]: { engineAttached: true, parameters },
         },
     });
+    return parameters;
+};
+
+/**
+ * Publishes parameter objects the way a re-read does: tags each with the scheduler write that was latest
+ * when the read was issued, which may be earlier than the write sequence at answer time.
+ */
+const publishTagged = (
+    issuedAt: number,
+    id: number,
+    name: string,
+    value: number
+): readonly ExternalPluginParameter[] => {
+    const parameters = moveStoreValue(id, name, value);
+    for (const published of parameters) {
+        mockReadIssues.set(published, issuedAt);
+    }
     return parameters;
 };
 
@@ -741,8 +759,9 @@ describe('ExternalPluginParameterList', () => {
                 releaseRead = resolve;
             });
             mockRefresh.mockImplementation(async () => {
+                const issuedAt = mockWriteSequence;
                 await readGate;
-                return moveStoreValue(7, 'Decay', 0.9);
+                return publishTagged(issuedAt, 7, 'Decay', 0.9);
             });
             seedAutomated();
             setPlaying(true);
@@ -774,8 +793,9 @@ describe('ExternalPluginParameterList', () => {
                 releaseRead = resolve;
             });
             mockRefresh.mockImplementation(async () => {
+                const issuedAt = mockWriteSequence;
                 await readGate;
-                return moveStoreValue(7, 'Decay', 0.9);
+                return publishTagged(issuedAt, 7, 'Decay', 0.9);
             });
             seedAutomated();
             setPlaying(true);
@@ -803,92 +823,29 @@ describe('ExternalPluginParameterList', () => {
             expect(slider).toHaveAttribute('aria-valuetext', '0.300');
         });
 
-        describe('with the real re-read contract', () => {
-            const hostParameter = (value: number): PluginParameter => ({
-                id: 7,
-                name: 'Decay',
-                value,
-                default_value: 0,
-                min_value: 0,
-                max_value: 1,
-                unit: '',
-                is_automatable: true,
+        it('keeps the delivered value over the answer to a re-read the list did not issue', () => {
+            seedAutomated();
+            setPlaying(true);
+            mockReadApplied.mockReturnValue(0.5);
+            render(<ExternalPluginParameterList device={device} />);
+            runFrame(0);
+            setPlaying(false);
+            // Another surface (the automation panel, a rescan) issues its own re-read now.
+            const issuedAt = mockWriteSequence;
+
+            // Play again: the scheduler rewrites the flat lane's 0.5 before the host answers.
+            mockWriteSequence = 2;
+            setPlaying(true);
+            runFrame(50);
+            act(() => {
+                publishTagged(issuedAt, 7, 'Decay', 0.9);
             });
+            runFrame(100);
+            runFrame(150);
 
-            /** Stop, then play again before the host answers, so the scheduler rewrites the lane's 0.5. */
-            const stopThenReplayWithReadInFlight = (): void => {
-                seedAutomated();
-                loadedExternalInstances.add(INSTANCE_ID);
-                setPlaying(true);
-                mockReadApplied.mockReturnValue(0.5);
-                render(<ExternalPluginParameterList device={device} />);
-                runFrame(0);
-                setPlaying(false);
-                mockWriteSequence = 2;
-                setPlaying(true);
-                runFrame(50);
-            };
-
-            beforeEach(async () => {
-                const actual = await vi.importActual<typeof import('#/modules/PluginHost/useCases')>(
-                    '#/modules/PluginHost/useCases'
-                );
-                mockRefresh.mockImplementation(actual.refreshExternalPluginParameters);
-            });
-
-            afterEach(() => {
-                loadedExternalInstances.clear();
-            });
-
-            it('shows a user edit made while a re-read was in flight when that re-read then fails', async () => {
-                let rejectRead: (reason: Error) => void = () => {};
-                mockGetPluginParameters.mockImplementation(
-                    () =>
-                        new Promise<PluginParameter[]>((_resolve, reject) => {
-                            rejectRead = reject;
-                        })
-                );
-                stopThenReplayWithReadInFlight();
-
-                act(() => {
-                    patchExternalPluginParameterValue(INSTANCE_ID, 7, 0.3);
-                });
-                await act(async () => {
-                    rejectRead(new Error('instance is gone'));
-                    await Promise.resolve();
-                });
-                runFrame(100);
-                runFrame(150);
-
-                const slider = screen.getByRole('slider', { name: 'Decay' });
-                expect(slider).toHaveValue('0.3');
-                expect(slider).toHaveAttribute('aria-valuetext', '0.300');
-            });
-
-            it('shows a user edit made before a re-read issued earlier answers with the older value', async () => {
-                let resolveRead: (parameters: PluginParameter[]) => void = () => {};
-                mockGetPluginParameters.mockImplementation(
-                    () =>
-                        new Promise<PluginParameter[]>((resolve) => {
-                            resolveRead = resolve;
-                        })
-                );
-                stopThenReplayWithReadInFlight();
-
-                act(() => {
-                    patchExternalPluginParameterValue(INSTANCE_ID, 7, 0.3);
-                });
-                await act(async () => {
-                    resolveRead([hostParameter(0.5)]);
-                    await Promise.resolve();
-                });
-                runFrame(100);
-                runFrame(150);
-
-                const slider = screen.getByRole('slider', { name: 'Decay' });
-                expect(slider).toHaveValue('0.3');
-                expect(slider).toHaveAttribute('aria-valuetext', '0.300');
-            });
+            const slider = screen.getByRole('slider', { name: 'Decay' });
+            expect(slider).toHaveValue('0.5');
+            expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
         });
 
         it('never publishes a followed value as a plugin edit', () => {
