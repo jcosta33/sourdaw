@@ -376,6 +376,11 @@ export async function desktopSamplesBaseUrl(): Promise<string> {
     return sourdawBridge().paths.samplesBase();
 }
 
+/** Total physical memory of the desktop machine, in bytes. A positive safe integer; the bridge refuses anything else. */
+export async function desktopTotalMemoryBytes(): Promise<number> {
+    return sourdawBridge().system.totalMemoryBytes();
+}
+
 /** The platform the desktop shell runs on, or null off-desktop. */
 export function desktopPlatform(): string | null {
     if (!isDesktopRuntime()) {

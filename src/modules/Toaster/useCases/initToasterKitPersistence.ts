@@ -1,9 +1,8 @@
-import { createUserAppActionRefusalEpisodes } from '#/modules/Command/useCases';
-
 import { wasToasterKitExplicitlyCommitted } from '../models/ToasterKitCommitMarkers';
 import { toasterStore } from '../stores/toasterStore';
 
 import { commitToasterKit } from './commitToasterKit';
+import { toasterRefusalEpisodes } from './toasterRefusalEpisodes';
 
 /**
  * Mirror every Toaster kit edit into project truth.
@@ -29,7 +28,7 @@ import { commitToasterKit } from './commitToasterKit';
  */
 export function initToasterKitPersistence(): () => void {
     const committedKits = new Map<string, unknown>();
-    const episodes = createUserAppActionRefusalEpisodes();
+    const episodes = toasterRefusalEpisodes;
 
     return toasterStore.subscribe((instances) => {
         if (!instances) {

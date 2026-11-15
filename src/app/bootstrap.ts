@@ -174,6 +174,7 @@ import {
     agentCapabilityDiscoveryPort,
     getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
+    subscribeToProductionBriefChanges,
     initGrooveTemplateDirtyTracking,
     initPluginStateDirtyTracking,
     initProjectDirtyTracking,
@@ -275,6 +276,7 @@ setActionHistoryMetadataPort({
 });
 sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
 productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
+productionBriefAdmissionPort.setSubscription(subscribeToProductionBriefChanges);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
 commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(settledProjectRevisionMatchesLiveIgnoringSaveWrites);
 configureAudioEngineRuntime();

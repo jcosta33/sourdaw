@@ -8,10 +8,12 @@
 //! renderer sends.
 
 pub mod grant_registry;
+mod refusals;
 
 use crate::host::runtime_scope::{RuntimeScope, SCOPE_NAMESPACE};
 use grant_registry::{FileGrant, GrantMode};
 use hound::{WavSpec, WavWriter};
+use refusals::FileRefusal;
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::io::Write;
@@ -238,10 +240,18 @@ pub async fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String>
         std::fs::read_dir(&dir_path).map_err(|e| format!("Failed to read directory: {}", e))?;
 
     for entry in read_dir {
-        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
-        let metadata = entry
-            .metadata()
-            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let entry = entry.map_err(|e| {
+            FileRefusal::EntryUnreadable {
+                cause: e.to_string(),
+            }
+            .to_string()
+        })?;
+        let metadata = entry.metadata().map_err(|e| {
+            FileRefusal::MetadataUnreadable {
+                cause: e.to_string(),
+            }
+            .to_string()
+        })?;
 
         entries.push(DirectoryEntry {
             name: entry.file_name().to_string_lossy().to_string(),
@@ -290,8 +300,8 @@ fn parse_grant_mode(mode: &str) -> Result<GrantMode, String> {
 
 pub fn resolve_existing_file_path(path: &str) -> Result<PathBuf, String> {
     let resolved = resolve_renderer_path(path)?;
-    let canonical = canonicalize_existing_path(&resolved)?;
-    ensure_allowed_root(&canonical, GrantMode::Read)?;
+    let canonical = canonicalize_existing_path(&resolved).map_err(|e| e.to_string())?;
+    ensure_allowed_root(&canonical, GrantMode::Read).map_err(|e| e.to_string())?;
     if !canonical.is_file() {
         return Err("Path is not a file".to_string());
     }
@@ -300,10 +310,10 @@ pub fn resolve_existing_file_path(path: &str) -> Result<PathBuf, String> {
 
 pub fn resolve_existing_directory_path(path: &str) -> Result<PathBuf, String> {
     let resolved = resolve_renderer_path(path)?;
-    let canonical = canonicalize_existing_path(&resolved)?;
-    ensure_allowed_root(&canonical, GrantMode::Read)?;
+    let canonical = canonicalize_existing_path(&resolved).map_err(|e| e.to_string())?;
+    ensure_allowed_root(&canonical, GrantMode::Read).map_err(|e| e.to_string())?;
     if !canonical.is_dir() {
-        return Err("Not a directory".to_string());
+        return Err(FileRefusal::NotADirectory.to_string());
     }
     Ok(canonical)
 }
@@ -333,7 +343,7 @@ pub fn resolve_writable_file_path(path: &str) -> Result<PathBuf, String> {
     let resolved = resolve_renderer_path(path)?;
     refuse_export_staging_path(&resolved)?;
     if let Ok(canonical) = canonicalize_existing_path(&resolved) {
-        ensure_allowed_root(&canonical, GrantMode::ReadWrite)?;
+        ensure_allowed_root(&canonical, GrantMode::ReadWrite).map_err(|e| e.to_string())?;
         if canonical.is_dir() {
             return Err("Path is a directory".to_string());
         }
@@ -349,7 +359,7 @@ pub fn resolve_writable_file_path(path: &str) -> Result<PathBuf, String> {
         return Err("Path must include a parent directory".to_string());
     }
     let destination = canonicalize_through_missing_tail(&resolved)?;
-    ensure_allowed_root(&destination, GrantMode::ReadWrite)?;
+    ensure_allowed_root(&destination, GrantMode::ReadWrite).map_err(|e| e.to_string())?;
     // The checked path is the one returned, never the caller's spelling of it.
     // Windows normalises a path on the way to the filesystem — a trailing
     // period or space on a segment is trimmed — so returning the untouched
@@ -433,9 +443,9 @@ fn normalize_absolute_path(path: &Path) -> Result<PathBuf, String> {
     Ok(normalized)
 }
 
-fn canonicalize_existing_path(path: &Path) -> Result<PathBuf, String> {
+fn canonicalize_existing_path(path: &Path) -> Result<PathBuf, FileRefusal> {
     path.canonicalize()
-        .map_err(|_| "File not found or not accessible".to_string())
+        .map_err(|_| FileRefusal::NotFoundOrNotAccessible)
 }
 
 /// Resolve `path` as far as the filesystem allows, keeping what is missing.
@@ -488,15 +498,15 @@ pub(crate) fn canonicalize_through_missing_tail(path: &Path) -> Result<PathBuf, 
 /// own storage and admit both modes, so they answer before the registry.
 /// `starts_with` is component-wise throughout, so no root or grant admits a
 /// sibling directory whose name merely shares its prefix.
-fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), String> {
+fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), FileRefusal> {
     if is_private_state_path(resolved_path) {
         // Refused with the same message as anything else outside the roots.
         // A distinct one would tell a probing renderer that it had found the
         // directory holding the state that decides what it may reach.
-        return Err("Path is outside allowed native file roots".to_string());
+        return Err(FileRefusal::OutsideAllowedRoots);
     }
     if mode == GrantMode::ReadWrite {
-        refuse_export_staging_path(resolved_path)?;
+        refuse_export_staging_path(resolved_path).map_err(FileRefusal::Message)?;
     }
 
     for root in built_in_roots() {
@@ -509,7 +519,7 @@ fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), Stri
     if grant_registry::admits(resolved_path, mode) {
         return Ok(());
     }
-    Err("Path is outside allowed native file roots".to_string())
+    Err(FileRefusal::OutsideAllowedRoots)
 }
 
 /// The roots Sourdaw owns, readable and writable without a user pick.
@@ -1741,6 +1751,39 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn list_directory_refuses_a_missing_path_with_the_not_accessible_text() {
+        let scratch = TempAuthorityDir::create_owned_scratch();
+        let missing = scratch.path("missing");
+
+        let error = list_directory(missing.to_string_lossy().into_owned())
+            .await
+            .unwrap_err();
+
+        assert_eq!(error, "File not found or not accessible");
+    }
+
+    #[tokio::test]
+    async fn list_directory_refuses_a_file_with_the_not_a_directory_text() {
+        let scratch = TempAuthorityDir::create_owned_scratch();
+        let file = scratch.path("file.txt");
+        std::fs::write(&file, b"x").unwrap();
+
+        let error = list_directory(file.to_string_lossy().into_owned())
+            .await
+            .unwrap_err();
+
+        assert_eq!(error, "Not a directory");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn list_directory_refuses_an_ungranted_path_with_the_outside_roots_text() {
+        let error = list_directory("/etc".to_string()).await.unwrap_err();
+
+        assert_eq!(error, "Path is outside allowed native file roots");
+    }
+
     struct FileCommandOutcomes {
         read: Result<Vec<u8>, String>,
         list: Result<Vec<DirectoryEntry>, String>,
@@ -1836,11 +1879,15 @@ mod tests {
         .expect("the application data directory should resolve");
 
         assert_eq!(
-            ensure_allowed_root(&location, GrantMode::Read).unwrap_err(),
+            ensure_allowed_root(&location, GrantMode::Read)
+                .unwrap_err()
+                .to_string(),
             "Path is outside allowed native file roots"
         );
         assert_eq!(
-            ensure_allowed_root(&location, GrantMode::ReadWrite).unwrap_err(),
+            ensure_allowed_root(&location, GrantMode::ReadWrite)
+                .unwrap_err()
+                .to_string(),
             "Path is outside allowed native file roots"
         );
     }
@@ -1890,7 +1937,9 @@ mod tests {
             let destination = spelled_private_state_path(spelling, &grant_document_name());
 
             assert_eq!(
-                ensure_allowed_root(&destination, GrantMode::Read).unwrap_err(),
+                ensure_allowed_root(&destination, GrantMode::Read)
+                    .unwrap_err()
+                    .to_string(),
                 "Path is outside allowed native file roots",
                 "{spelling} must be refused for reading"
             );
@@ -1982,7 +2031,11 @@ mod tests {
 
         let error = grant_registry::with_grants_for_test(
             vec![grant_of(application_data, GrantMode::ReadWrite, true)],
-            || ensure_allowed_root(&destination, GrantMode::ReadWrite).unwrap_err(),
+            || {
+                ensure_allowed_root(&destination, GrantMode::ReadWrite)
+                    .unwrap_err()
+                    .to_string()
+            },
         );
 
         assert_eq!(error, "Path is outside allowed native file roots");

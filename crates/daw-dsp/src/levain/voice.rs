@@ -574,6 +574,12 @@ impl SamplePlayback {
     }
 }
 
+impl Default for SamplePlayback {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Levain voice
 // ---------------------------------------------------------------------------
@@ -1370,10 +1376,10 @@ impl LevainVoice {
         // velocity-adjacent zone attached by `set_dynamic_layer`, weighted by
         // this block's equal-power layer gains.
         if self.layer_active {
-            for mic in 0..mics {
+            for (mic, mic_sample) in sample.iter_mut().enumerate().take(mics) {
                 if self.layer_attached[mic] {
                     let layer_sample = self.layer_secondary[mic].read_sample(pool);
-                    sample[mic] = sample[mic] * self.layer_gain_primary
+                    *mic_sample = *mic_sample * self.layer_gain_primary
                         + layer_sample * self.layer_gain_secondary;
                 }
             }
@@ -2317,7 +2323,7 @@ mod tests {
         let mut voice = LevainVoice::new(output_rate);
         voice.trigger(72, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
 
-        let expected_speed = 2.0_f64.powf(3.0 / 12.0) * f64::from(44_100.0 / 48_000.0);
+        let expected_speed = 2.0_f64.powf(3.0 / 12.0) * (44_100.0 / 48_000.0);
         assert!(
             (voice.playback[0].base_speed - expected_speed).abs() < 1e-9,
             "base speed {} must be the transposition times the rate ratio {expected_speed}",
@@ -2348,7 +2354,7 @@ mod tests {
         let mut voice = LevainVoice::new(output_rate);
         voice.trigger(69, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
 
-        let ratio = f64::from(44_100.0) / f64::from(48_000.0);
+        let ratio = 44_100.0 / 48_000.0;
         // Halfway through one loop pass: 12,000 output frames have consumed
         // exactly 11,025 source frames.
         for _ in 0..12_000 {
@@ -2379,7 +2385,7 @@ mod tests {
         let (pool, zone) = tonal_sample(44_100.0, 0.5, 440.0, 69);
         let (_pool_alt, zone_alt) = tonal_sample(44_100.0, 0.5, 440.0, 71);
         let output_rate = 48_000.0;
-        let ratio = f64::from(44_100.0) / f64::from(48_000.0);
+        let ratio = 44_100.0 / 48_000.0;
 
         // Crossfade legato: the incoming primary reconfigures against the pool.
         let mut voice = LevainVoice::new(output_rate);

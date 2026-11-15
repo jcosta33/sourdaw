@@ -369,6 +369,10 @@ const hasUnprojectedAudioSourceWriteByActionType: {
     captureScratchPad: noUnprojectedWrite,
     commitScratchPad: noUnprojectedWrite,
     clearScratchPad: noUnprojectedWrite,
+    removeScratchPadSection: noUnprojectedWrite,
+    renameScratchPadSection: noUnprojectedWrite,
+    reorderScratchPadSection: noUnprojectedWrite,
+    setScratchPadSectionColor: noUnprojectedWrite,
     createPatternInstance: noUnprojectedWrite,
     detachPatternInstance: noUnprojectedWrite,
     restorePatternInstanceLink: noUnprojectedWrite,
@@ -447,6 +451,9 @@ const hasUnprojectedAudioSourceWriteByActionType: {
 };
 
 function lookup<Type extends AppActionType>(action: ActionOf<Type>, state: ClipOwners): boolean {
+    if (!Object.hasOwn(hasUnprojectedAudioSourceWriteByActionType, action.type)) {
+        return noUnprojectedWrite();
+    }
     return hasUnprojectedAudioSourceWriteByActionType[action.type](action, state);
 }
 

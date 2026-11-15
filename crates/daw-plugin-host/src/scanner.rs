@@ -1465,7 +1465,7 @@ unsafe fn owned_c_string(value: *const i8) -> String {
 
 /// The bundle's plugin factory, or why it cannot be reached.
 unsafe fn plugin_factory(entry_ref: &clap_plugin_entry) -> Result<&clap_plugin_factory, String> {
-    let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr() as *const i8;
+    let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr();
     let factory_ptr = match entry_ref.get_factory {
         Some(get_factory) => get_factory(factory_id),
         None => return Err("CLAP entry has no factory lookup".to_string()),
@@ -1483,9 +1483,9 @@ unsafe fn plugin_factory(entry_ref: &clap_plugin_entry) -> Result<&clap_plugin_f
 /// one, so walking index 0 alone registers only the first plugin of a
 /// multi-plugin bundle and hides the rest — u-he and other vendors ship
 /// several plugins behind one `.clap` file.
-unsafe fn factory_plugin_descriptors<'a>(
-    factory: &'a clap_plugin_factory,
-) -> Result<Vec<&'a clap_sys::plugin::clap_plugin_descriptor>, String> {
+unsafe fn factory_plugin_descriptors(
+    factory: &clap_plugin_factory,
+) -> Result<Vec<&clap_sys::plugin::clap_plugin_descriptor>, String> {
     let count = match factory.get_plugin_count {
         Some(get_plugin_count) => get_plugin_count(factory),
         None => return Err("CLAP factory has no plugin count".to_string()),

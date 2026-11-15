@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     registerDialogChannels,
     registerPathChannels,
+    registerSystemChannels,
     registerScanCommand,
     registerNativeMenuChannels,
     registerWindowControlChannels,
@@ -24,6 +25,7 @@ import {
     DIALOG_SAVE_CHANNEL,
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
+    SYSTEM_TOTAL_MEMORY_CHANNEL,
     WINDOW_CLOSE_CHANNEL,
     WINDOW_IS_MAXIMIZED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
@@ -632,6 +634,28 @@ describe('the path helpers', () => {
     });
 });
 
+describe('the system channel', () => {
+    const systemHandlers = (totalMemoryBytes: () => number): Map<string, Handler> => {
+        const { ipcMain, handlers } = collectingIpc();
+        registerSystemChannels({ ipcMain, isTrustedFrameUrl, totalMemoryBytes });
+        return handlers;
+    };
+
+    it('answers a trusted frame with the machine total memory from the injected reading', () => {
+        const handlers = systemHandlers(() => 17_179_869_184);
+
+        expect(handlers.get(SYSTEM_TOTAL_MEMORY_CHANNEL)?.(APP_FRAME)).toBe(17_179_869_184);
+    });
+
+    it('refuses a foreign frame without reading the memory', () => {
+        const totalMemoryBytes = vi.fn(() => 17_179_869_184);
+        const handlers = systemHandlers(totalMemoryBytes);
+
+        expect(() => handlers.get(SYSTEM_TOTAL_MEMORY_CHANNEL)?.(FOREIGN_FRAME)).toThrow(/not the application/u);
+        expect(totalMemoryBytes).not.toHaveBeenCalled();
+    });
+});
+
 describe('the origin guard on every non-command channel', () => {
     it('refuses a foreign frame on each one', () => {
         const { ipcMain, handlers } = collectingIpc();
@@ -642,6 +666,7 @@ describe('the origin guard on every non-command channel', () => {
             samplesBaseUrl: 'app://sourdaw/samples',
             join: (...segments) => segments.join('/'),
         });
+        registerSystemChannels({ ipcMain, isTrustedFrameUrl, totalMemoryBytes: () => 1 });
 
         expect([...handlers.keys()].sort()).toEqual(
             [
@@ -650,6 +675,7 @@ describe('the origin guard on every non-command channel', () => {
                 DIALOG_SAVE_CHANNEL,
                 PATHS_JOIN_CHANNEL,
                 PATHS_SAMPLES_BASE_CHANNEL,
+                SYSTEM_TOTAL_MEMORY_CHANNEL,
             ].sort()
         );
         for (const handler of handlers.values()) {

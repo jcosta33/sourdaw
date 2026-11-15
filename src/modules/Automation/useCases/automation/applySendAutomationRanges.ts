@@ -1,4 +1,4 @@
-import { type SendAutomationRangeSnapshot } from '../../events/automationAppActions';
+import { type SendAutomationRangeSnapshot } from '../../models/SendAutomationRangeSnapshot';
 import { buildSendAutomationRangesLane } from '../../services/buildSendAutomationRangesLane';
 import { automationStore } from '../../stores/automationStore';
 

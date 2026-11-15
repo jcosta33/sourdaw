@@ -1013,6 +1013,10 @@ type LegacyAppAction =
     | { type: 'deleteTrackTemplate'; payload: { templateId: string } }
     | { type: 'commitScratchPad'; payload?: undefined }
     | { type: 'clearScratchPad'; payload?: undefined }
+    | { type: 'removeScratchPadSection'; payload: { sectionId: string } }
+    | { type: 'renameScratchPadSection'; payload: { sectionId: string; name: string } }
+    | { type: 'reorderScratchPadSection'; payload: { sectionId: string; direction: 'left' | 'right' } }
+    | { type: 'setScratchPadSectionColor'; payload: { sectionId: string; color: string } }
     | {
           type: 'createPatternInstance';
           payload: { sourceClipId: string; targetTrackId: string; startBeat: number; targetClipId?: string };

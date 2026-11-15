@@ -60,7 +60,7 @@ impl Lfo {
     }
 
     /// Compute next LFO value in [-1, 1] range.
-    pub fn next(&mut self) -> f32 {
+    pub fn next_value(&mut self) -> f32 {
         let phase_inc = self.rate / self.sample_rate;
         self.phase += phase_inc;
 
@@ -69,7 +69,7 @@ impl Lfo {
             // Update S&H on phase wrap
             if matches!(self.shape, LfoShape::SampleAndHold) {
                 // Simple pseudo-random using phase fraction
-                self.sh_value = (self.phase * 12345.6789).sin();
+                self.sh_value = (self.phase * 12_345.679).sin();
             }
         }
 
@@ -176,7 +176,7 @@ impl LorenzAttractor {
 
     /// Advance one step using RK4 integration.
     /// Returns normalized (x, z) values in approximately [-1, 1].
-    pub fn next(&mut self) -> (f32, f32) {
+    pub fn next_value(&mut self) -> (f32, f32) {
         let dt = self.speed / self.sample_rate;
 
         // RK4 integration

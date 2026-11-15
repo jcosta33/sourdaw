@@ -1002,8 +1002,8 @@ mod tests {
         let latency = engine.latency_samples();
         let onset = IMPULSE_AT + latency;
         let recovered = 10.0_f32.powf(-1.0 / 20.0);
-        for index in (onset + 1)..frames {
-            if out_left[index] / BED >= recovered {
+        for (index, &sample) in out_left.iter().enumerate().take(frames).skip(onset + 1) {
+            if sample / BED >= recovered {
                 return index - onset;
             }
         }

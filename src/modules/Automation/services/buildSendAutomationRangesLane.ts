@@ -1,5 +1,5 @@
-import { type SendAutomationRangeSnapshot } from '../events/automationAppActions';
 import { type AutomationLane, type AutomationPoint } from '../models/Automation';
+import { type SendAutomationRangeSnapshot } from '../models/SendAutomationRangeSnapshot';
 
 type BuildSendAutomationRangesLaneInput = {
     trackId: string;

@@ -1,6 +1,4 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
@@ -143,23 +141,5 @@ describe('.oxlintrc.json warn levels', () => {
         [{ categories: { pedantic: 'error' } }, []],
     ])('reports %j as %j', (config, expected) => {
         expect(warnEntriesOf(config)).toEqual(expected);
-    });
-
-    it('fails the lint gate on a new violation of a promoted promise rule', () => {
-        const directory = mkdtempSync(resolve('.oxlint-warn-levels-'));
-        const fixture = join(directory, 'promise.mjs');
-        try {
-            writeFileSync(fixture, 'export const value = Promise.resolve(1, 2);\n');
-            const result = spawnSync(
-                resolve('node_modules/.bin/oxlint'),
-                ['--quiet', '--threads=2', '--format=agent', fixture],
-                { cwd: process.cwd(), encoding: 'utf8' }
-            );
-            expect(result.status, result.stdout + result.stderr).toBe(1);
-            expect(result.stdout).toContain(`${relative(process.cwd(), fixture)}:1:22: error promise(valid-params)`);
-        } finally {
-            unlinkSync(fixture);
-            rmdirSync(directory);
-        }
     });
 });

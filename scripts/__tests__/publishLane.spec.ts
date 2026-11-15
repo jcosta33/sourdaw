@@ -793,6 +793,7 @@ describe('lane publish', () => {
                 'trustedGithubWriteBootstrap.ts',
                 'publishLane.ts',
                 'githubAppIdentity.ts',
+                'tokenBearingChildPlacement.ts',
                 'isolatedGitTransport.ts',
                 'prContract.ts',
                 'testInstructions.ts',
@@ -2071,6 +2072,45 @@ describe('lane publish', () => {
         expect(() =>
             issueExistsFromLookup(12, { status: 1, stdout: '', stderr: 'gh: Bad credentials (HTTP 401)' })
         ).toThrow(/Bad credentials/);
+    });
+
+    it('looks the issue up with a token-bearing gh that starts outside the primary checkout', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-issue-lookup-')));
+        try {
+            const primary = join(root, 'primary');
+            const record = join(root, 'record');
+            const gh = join(root, 'bin', 'gh');
+            mkdirSync(primary);
+            mkdirSync(dirname(gh));
+            fixtureGit(primary, ['init', '-q', '-b', 'main']);
+            writeFileSync(
+                gh,
+                [
+                    '#!/bin/sh',
+                    `printf '%s\\n' "$(pwd -P)" "$(git rev-parse --show-toplevel 2>/dev/null)" > ${JSON.stringify(record)}`,
+                    `printf '{"number":12,"isPullRequest":false}\\n'`,
+                    '',
+                ].join('\n')
+            );
+            chmodSync(gh, 0o755);
+            // Composed at runtime: the pull-request secret scan matches token-shaped literals in source.
+            const token = ['ghs', 'issue', 'lookup', 'sentinel'].join('_');
+
+            const session: GhSession = {
+                configDir: join(root, 'app'),
+                env: { PATH: process.env.PATH, GH_TOKEN: token },
+                dispose: () => {},
+            };
+
+            const found = shellPort(session, primary, primary, { git: 'git', gh }).issueExists(12);
+
+            const [cwd, toplevel] = readFileSync(record, 'utf8').split('\n');
+            expect(found).toBe(true);
+            expect(cwd).not.toBe(primary);
+            expect(toplevel).toBe('');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it('refuses a pull-request number, which the issues endpoint resolves just as happily', () => {
@@ -4000,6 +4040,8 @@ describe('lane publish', () => {
                 'label',
                 'create',
                 'glm-5.3',
+                '--repo',
+                'jcosta33/sourdaw',
                 '--color',
                 '8250df',
                 '--description',
@@ -4034,7 +4076,16 @@ describe('lane publish', () => {
             expect(projectListArgs('jcosta33')).toEqual(['project', 'list', '--owner', 'jcosta33', '--format', 'json']);
             // gh's default page is 30; the limit keeps a growing label set from being truncated,
             // and the description is what the authorship fence reads.
-            expect(labelListArgs()).toEqual(['label', 'list', '--limit', '200', '--json', 'name,description']);
+            expect(labelListArgs()).toEqual([
+                'label',
+                'list',
+                '--repo',
+                'jcosta33/sourdaw',
+                '--limit',
+                '200',
+                '--json',
+                'name,description',
+            ]);
             expect(pullRequestMetadataArgs(41)).toEqual([
                 'pr',
                 'view',

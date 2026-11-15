@@ -153,6 +153,12 @@ impl MidiEventBuffer {
     }
 }
 
+impl Default for MidiEventBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A parameter of a user-placeable MIDI FX, addressed without a name for the
 /// reason given on [`crate::timeline::AutomationTarget`]: a command carrying a
 /// `String` would have its allocation freed on the audio thread when the
@@ -265,6 +271,12 @@ impl MidiFxChain {
     /// order of the chain, so it is load-bearing here.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Box<dyn MidiFx>> {
         self.slots.iter_mut().flatten()
+    }
+}
+
+impl Default for MidiFxChain {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1127,12 +1139,7 @@ mod deterministic_probability {
             ..note_on(60)
         }));
 
-        ProbabilityEvaluator::default().process_midi(
-            &mut events,
-            &TransportState::default(),
-            48_000.0,
-            128,
-        );
+        ProbabilityEvaluator.process_midi(&mut events, &TransportState::default(), 48_000.0, 128);
 
         assert_eq!(events.len(), 1);
     }
@@ -1150,12 +1157,7 @@ mod deterministic_probability {
 
         let mut isolated = MidiEventBuffer::new();
         assert!(isolated.try_push(target));
-        ProbabilityEvaluator::default().process_midi(
-            &mut isolated,
-            &TransportState::default(),
-            48_000.0,
-            128,
-        );
+        ProbabilityEvaluator.process_midi(&mut isolated, &TransportState::default(), 48_000.0, 128);
 
         let mut with_unrelated = MidiEventBuffer::new();
         assert!(with_unrelated.try_push(MidiNoteEvent {
@@ -1167,7 +1169,7 @@ mod deterministic_probability {
             ..note_on(61)
         }));
         assert!(with_unrelated.try_push(target));
-        ProbabilityEvaluator::default().process_midi(
+        ProbabilityEvaluator.process_midi(
             &mut with_unrelated,
             &TransportState::default(),
             48_000.0,
@@ -1292,12 +1294,7 @@ mod probability_distribution {
         };
         let mut isolated = MidiEventBuffer::new();
         assert!(isolated.try_push(target));
-        ProbabilityEvaluator::default().process_midi(
-            &mut isolated,
-            &TransportState::default(),
-            48_000.0,
-            128,
-        );
+        ProbabilityEvaluator.process_midi(&mut isolated, &TransportState::default(), 48_000.0, 128);
 
         let mut interleaved = MidiEventBuffer::new();
         assert!(interleaved.try_push(MidiNoteEvent {
@@ -1309,7 +1306,7 @@ mod probability_distribution {
             probability_cutoff: PROBABILITY_CUTOFF_RANGE,
             ..note_on(61)
         }));
-        ProbabilityEvaluator::default().process_midi(
+        ProbabilityEvaluator.process_midi(
             &mut interleaved,
             &TransportState::default(),
             48_000.0,

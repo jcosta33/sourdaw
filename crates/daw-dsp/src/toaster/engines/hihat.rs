@@ -94,14 +94,14 @@ impl HiHatEngine {
         let fm_index = 4.0; // Heavy metallic mod index
         let mut mixed = 0.0;
 
-        for i in 0..6 {
+        for (i, phase) in self.phases.iter_mut().enumerate() {
             let freq = self.base_freq * RATIOS[i] * tune_ratio;
-            self.phases[i] += freq / sample_rate;
-            if self.phases[i] >= 1.0 {
-                self.phases[i] -= 1.0;
+            *phase += freq / sample_rate;
+            if *phase >= 1.0 {
+                *phase -= 1.0;
             }
             let pm = fm_index * self.y_prevs[i];
-            let y = ((self.phases[i] + pm) * TAU).sin();
+            let y = ((*phase + pm) * TAU).sin();
             self.y_prevs[i] = y;
             mixed += y;
         }

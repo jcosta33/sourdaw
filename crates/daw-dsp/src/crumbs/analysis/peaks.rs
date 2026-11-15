@@ -113,7 +113,7 @@ pub fn select_level(
 
 /// Reduce raw samples to min/max peak pairs at the given block size.
 fn reduce_to_peaks(samples: &[f32], block_size: usize) -> Vec<PeakPair> {
-    let num_blocks = (samples.len() + block_size - 1) / block_size;
+    let num_blocks = samples.len().div_ceil(block_size);
     let mut peaks = Vec::with_capacity(num_blocks);
 
     for chunk in samples.chunks(block_size) {
@@ -135,7 +135,7 @@ fn reduce_to_peaks(samples: &[f32], block_size: usize) -> Vec<PeakPair> {
 
 /// Reduce a peak level by combining adjacent pairs (2:1 decimation).
 fn reduce_peaks_by_2(peaks: &[PeakPair]) -> Vec<PeakPair> {
-    let num_out = (peaks.len() + 1) / 2;
+    let num_out = peaks.len().div_ceil(2);
     let mut out = Vec::with_capacity(num_out);
 
     for pair in peaks.chunks(2) {

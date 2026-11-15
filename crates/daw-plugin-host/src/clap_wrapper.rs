@@ -1,10 +1,10 @@
-/// Real CLAP plugin wrapper — loads .clap shared libraries and hosts them.
-///
-/// Flow: dlopen → clap_entry.init() → factory.create_plugin(host, id) → plugin.activate() → plugin.process()
-///
-/// RT-safety: `process_audio_internal` and `process_with_midi` are called on the audio thread.
-/// All scratch buffers are preallocated in `new` — no heap allocation occurs
-/// on the RT path.
+//! Real CLAP plugin wrapper — loads .clap shared libraries and hosts them.
+//!
+//! Flow: dlopen → clap_entry.init() → factory.create_plugin(host, id) → plugin.activate() → plugin.process()
+//!
+//! RT-safety: `process_audio_internal` and `process_with_midi` are called on the audio thread.
+//! All scratch buffers are preallocated in `new` — no heap allocation occurs
+//! on the RT path.
 
 /// Maximum audio buffer size this host supports (must match the max_frames_count passed to activate).
 ///
@@ -265,6 +265,10 @@ unsafe impl Sync for ClapWrapper {}
 
 // ── Declared audio bus layout ───────────────────────────────────────────
 
+/// One direction's scratch audio, the channel pointers into it, and the buffer
+/// descriptors the plugin is handed.
+type PortBuffers = (Box<[f32]>, Vec<*mut f32>, Vec<clap_audio_buffer>);
+
 /// The plugin's declared audio port layout and the preallocated buffers that
 /// honour it.
 ///
@@ -325,48 +329,43 @@ impl AudioBusLayout {
     /// Free of any plugin call so the buffer arithmetic is testable against
     /// plain numbers, and so the load path only owes the reading.
     fn declared(input_ports: &[u32], output_ports: &[u32]) -> Result<Self, String> {
-        let build =
-            |ports: &[u32],
-             direction: &str|
-             -> Result<(Box<[f32]>, Vec<*mut f32>, Vec<clap_audio_buffer>), String> {
-                let total_channels: u32 =
-                    ports.iter().copied().try_fold(0u32, |sum, channels| {
-                        sum.checked_add(channels)
-                            .filter(|_| channels > 0)
-                            .ok_or_else(|| {
-                                format!("CLAP {direction} port declares an unusable channel count")
-                            })
-                    })?;
-                if total_channels > MAX_RUNTIME_AUDIO_CHANNELS {
-                    return Err(format!(
-                        "CLAP {direction} audio channel count exceeds runtime bounds"
-                    ));
-                }
-                let mut scratch =
-                    vec![0.0f32; total_channels as usize * MAX_BUFFER].into_boxed_slice();
-                let mut pointers = Vec::with_capacity(total_channels as usize);
-                for channel in 0..total_channels as usize {
-                    pointers.push(unsafe { scratch.as_mut_ptr().add(channel * MAX_BUFFER) });
-                }
-                let buffers = ports
-                    .iter()
-                    .scan(0usize, |offset, channels| {
-                        let port = clap_audio_buffer {
-                            // `clap_audio_buffer.data32` is `*mut *mut f32` for both
-                            // directions; the input buffers are read-only by
-                            // contract, and the cast states the struct's shape.
-                            data32: unsafe { pointers.as_ptr().add(*offset) } as *mut *mut f32,
-                            data64: ptr::null_mut(),
-                            channel_count: *channels,
-                            latency: 0,
-                            constant_mask: 0,
-                        };
-                        *offset += *channels as usize;
-                        Some(port)
+        let build = |ports: &[u32], direction: &str| -> Result<PortBuffers, String> {
+            let total_channels: u32 = ports.iter().copied().try_fold(0u32, |sum, channels| {
+                sum.checked_add(channels)
+                    .filter(|_| channels > 0)
+                    .ok_or_else(|| {
+                        format!("CLAP {direction} port declares an unusable channel count")
                     })
-                    .collect();
-                Ok((scratch, pointers, buffers))
-            };
+            })?;
+            if total_channels > MAX_RUNTIME_AUDIO_CHANNELS {
+                return Err(format!(
+                    "CLAP {direction} audio channel count exceeds runtime bounds"
+                ));
+            }
+            let mut scratch = vec![0.0f32; total_channels as usize * MAX_BUFFER].into_boxed_slice();
+            let mut pointers = Vec::with_capacity(total_channels as usize);
+            for channel in 0..total_channels as usize {
+                pointers.push(unsafe { scratch.as_mut_ptr().add(channel * MAX_BUFFER) });
+            }
+            let buffers = ports
+                .iter()
+                .scan(0usize, |offset, channels| {
+                    let port = clap_audio_buffer {
+                        // `clap_audio_buffer.data32` is `*mut *mut f32` for both
+                        // directions; the input buffers are read-only by
+                        // contract, and the cast states the struct's shape.
+                        data32: unsafe { pointers.as_ptr().add(*offset) } as *mut *mut f32,
+                        data64: ptr::null_mut(),
+                        channel_count: *channels,
+                        latency: 0,
+                        constant_mask: 0,
+                    };
+                    *offset += *channels as usize;
+                    Some(port)
+                })
+                .collect();
+            Ok((scratch, pointers, buffers))
+        };
 
         let (input_scratch, input_channel_ptrs, input_buffers) = build(input_ports, "input")?;
         let (output_scratch, output_channel_ptrs, output_buffers) = build(output_ports, "output")?;
@@ -766,7 +765,7 @@ impl ClapWrapper {
         sample_rate: f64,
     ) -> Result<Self, String> {
         // 4. Get the plugin factory
-        let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr() as *const i8;
+        let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr();
         let factory_ptr = if let Some(get_factory) = (*entry_ptr).get_factory {
             get_factory(factory_id)
         } else {
@@ -2268,9 +2267,8 @@ fn fill_input_scratch(audio: &mut AudioBusLayout, inputs: &[&[f32]], n_samp: usi
         .first()
         .map_or(0, |main_port| main_port.channel_count as usize);
     let channels = (inputs.len().min(2)).min(connected_channels);
-    for channel in 0..channels {
+    for (channel, source) in inputs.iter().enumerate().take(channels) {
         let destination = &mut audio.input_scratch[channel * MAX_BUFFER..][..n_samp];
-        let source = &inputs[channel];
         let len = source.len().min(n_samp);
         destination[..len].copy_from_slice(&source[..len]);
         destination[len..].fill(0.0);
