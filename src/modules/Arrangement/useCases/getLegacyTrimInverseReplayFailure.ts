@@ -5,6 +5,9 @@ import { resolveEligibleClipWriteTarget } from '../stores/resolveEligibleClipWri
 import { trackStore } from '../stores/trackStore';
 
 function preservesTrimCoordinates(action: AppAction): boolean {
+    if (!Object.hasOwn(preservesTrimCoordinatesByActionType, action.type)) {
+        return false;
+    }
     return preservesTrimCoordinatesByActionType[action.type];
 }
 
