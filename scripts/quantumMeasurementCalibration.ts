@@ -82,8 +82,9 @@ function refusal(
 }
 
 /**
- * A tail shorter than one millisecond is never rated by the producer, so its
- * samples point one past the last rate. They are admitted only as a contiguous
+ * The producer rates the tail on its own only when it lasted at least one
+ * segment target or no segment has closed yet; otherwise its samples point one
+ * past the last rate. They are admitted only as a contiguous
  * run at the end of the row that directly follows a sample of the last closed
  * segment, in a row whose indices never decrease; returns the run's first
  * sample index, or undefined when there is none.
