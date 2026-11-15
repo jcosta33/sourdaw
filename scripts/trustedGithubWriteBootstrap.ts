@@ -189,6 +189,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/guardRecoveryProof.ts',
         'scripts/isolatedGitTransport.ts',
         'scripts/laneActivity.ts',
+        'scripts/laneRemovalFetch.ts',
         'scripts/pnpmModulesPreflight.ts',
         'scripts/prContract.ts',
         'scripts/processSnapshot.ts',
