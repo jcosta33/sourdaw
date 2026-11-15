@@ -32,6 +32,7 @@ import {
 import { undoStore } from '../stores/undoStore';
 
 import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
+import { admitAppAction } from './admitAppAction';
 import { appendAbortFailures } from './appendAbortFailures';
 import { bindCanonicalRedoAction } from './bindCanonicalRedoAction';
 import { captureRecordedRedoContext } from './captureRecordedRedoContext';
@@ -43,7 +44,6 @@ import { createUndoEntry } from './createUndoEntry';
 import { getCommandHandler } from './getCommandHandler';
 import { getProjectMutationAdmissionFailure } from './getProjectMutationAdmissionFailure';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
-import { admitAppAction } from './isAppActionAdmitted';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';

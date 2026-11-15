@@ -9,8 +9,8 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { fromCrumbsDeviceState } from '../../models/CrumbsDeviceState';
 import { crumbsStore, ensureInstance, setActiveSample, setMode } from '../../stores/crumbsStore';
 import { beginCrumbsPairedReconcile, endCrumbsPairedReconcile } from '../../stores/sampleLoadGate';
-import { initCrumbsDeviceStatePersistence } from '../initCrumbsDeviceStatePersistence';
 import { replayCrumbsDeviceStateCommit } from '../crumbsDeviceStateMirror';
+import { initCrumbsDeviceStatePersistence } from '../initCrumbsDeviceStatePersistence';
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
