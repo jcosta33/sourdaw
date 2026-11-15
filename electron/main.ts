@@ -31,6 +31,7 @@ import {
 import {
     registerDialogChannels,
     registerPathChannels,
+    registerPluginFolderChannels,
     registerSystemChannels,
     registerScanCommand,
     registerNativeMenuChannels,
@@ -832,6 +833,12 @@ if (isPrimaryApplicationInstance) {
         }
 
         registerDialogChannels({
+            ipcMain,
+            isTrustedFrameUrl: isAllowedFrameUrl,
+            dialogs: dialog,
+            native: () => nativeHost,
+        });
+        registerPluginFolderChannels({
             ipcMain,
             isTrustedFrameUrl: isAllowedFrameUrl,
             dialogs: dialog,

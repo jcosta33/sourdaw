@@ -15,8 +15,8 @@ describe('handleMoveAdjustmentRegion', () => {
         vi.clearAllMocks();
     });
 
-    it('forwards region id, startBeat, endBeat', () => {
-        handleMoveAdjustmentRegion.execute({
+    it('forwards region id, startBeat, endBeat', async () => {
+        await handleMoveAdjustmentRegion.execute({
             type: 'moveAdjustmentRegion',
             payload: { regionId: 'R', startBeat: 4, endBeat: 8 },
         });

@@ -65,7 +65,7 @@ describe('handleCreateTrackAlternative', () => {
         expect(result).toEqual({ status: 'written' });
     });
 
-    it('passes sibling tracks through untouched when creating on the target track', () => {
+    it('passes sibling tracks through untouched when creating on the target track', async () => {
         const sibling = {
             id: 'sibling',
             activeAlternativeId: 'sib-alt',
@@ -84,7 +84,7 @@ describe('handleCreateTrackAlternative', () => {
             ],
         });
 
-        handleCreateTrackAlternative.execute({
+        await handleCreateTrackAlternative.execute({
             type: 'createTrackAlternative',
             payload: { trackId: 't1', name: 'New Alt', duplicateActive: false },
         });

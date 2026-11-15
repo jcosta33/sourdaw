@@ -15,8 +15,8 @@ describe('handleToggleAdjustmentLayer', () => {
         vi.clearAllMocks();
     });
 
-    it('invokes toggleAdjustmentLayer with the payload layer id', () => {
-        handleToggleAdjustmentLayer.execute({
+    it('invokes toggleAdjustmentLayer with the payload layer id', async () => {
+        await handleToggleAdjustmentLayer.execute({
             type: 'toggleAdjustmentLayer',
             payload: { layerId: 'layer-1' },
         });

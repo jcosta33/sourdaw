@@ -44,18 +44,40 @@ fn render(
 ) -> Vec<(f32, f32)> {
     let mut output = Vec::with_capacity(input.len());
     for chunk in input.chunks(partition) {
-        unsafe {
-            let left = instance.get_input_left_ptr();
-            let right = instance.get_input_right_ptr();
-            for (i, &(l, r)) in chunk.iter().enumerate() {
-                *left.add(i) = l;
-                *right.add(i) = r;
-            }
+        let left = instance.get_input_left_ptr();
+        let right = instance.get_input_right_ptr();
+        for (i, &(l, r)) in chunk.iter().enumerate() {
+            // SAFETY: `left` is the start of `input_left`, allocated at 4096 samples in
+            // `BacteriaInstance::new` and never resized, and `i < chunk.len() <= partition`,
+            // which every caller keeps at or below 513, so the offset stays inside it.
+            let left_slot = unsafe { left.add(i) };
+            // SAFETY: `left_slot` is in bounds of the initialised `input_left` buffer and no
+            // reference to it is live.
+            unsafe { *left_slot = l };
+            // SAFETY: `right` is the start of `input_right`, allocated at 4096 samples in
+            // `BacteriaInstance::new` and never resized, and `i < chunk.len() <= 513`.
+            let right_slot = unsafe { right.add(i) };
+            // SAFETY: `right_slot` is in bounds of the initialised `input_right` buffer and
+            // no reference to it is live.
+            unsafe { *right_slot = r };
         }
         let left = instance.process(chunk.len() as u32);
         let right = instance.get_right_ptr();
         for i in 0..chunk.len() {
-            let frame = unsafe { (*left.add(i), *right.add(i)) };
+            // SAFETY: `left` is the start of `output_left`, allocated at 4096 samples in
+            // `BacteriaInstance::new` and never resized, and `i < chunk.len() <= 513`.
+            let left_slot = unsafe { left.add(i) };
+            // SAFETY: `left_slot` is inside `output_left`, whose first `chunk.len()` samples
+            // `process` just wrote (it clamps to 4096, above `chunk.len()`), and nothing has
+            // written the instance since.
+            let left_sample = unsafe { *left_slot };
+            // SAFETY: `right` is the start of `output_right`, allocated at 4096 samples in
+            // `BacteriaInstance::new` and never resized, and `i < chunk.len() <= 513`.
+            let right_slot = unsafe { right.add(i) };
+            // SAFETY: `right_slot` is inside `output_right`, whose first `chunk.len()` samples
+            // `process` just wrote, and nothing has written the instance since.
+            let right_sample = unsafe { *right_slot };
+            let frame = (left_sample, right_sample);
             assert!(frame.0.is_finite() && frame.1.is_finite());
             output.push(frame);
         }
@@ -632,18 +654,38 @@ fn real_mixed_render_and_control_writes_neither_allocate_nor_free() {
     let mut output = [(0.0_f32, 0.0_f32); BLOCK];
     assert_no_alloc(|| {
         for _ in 0..32 {
-            unsafe {
-                let left = instance.get_input_left_ptr();
-                let right = instance.get_input_right_ptr();
-                for (n, &(l, r)) in input.iter().enumerate() {
-                    *left.add(n) = l;
-                    *right.add(n) = r;
-                }
+            let left = instance.get_input_left_ptr();
+            let right = instance.get_input_right_ptr();
+            for (n, &(l, r)) in input.iter().enumerate() {
+                // SAFETY: `left` is the start of `input_left`, allocated at 4096 samples in
+                // `BacteriaInstance::new` and never resized, and `n < BLOCK` (128).
+                let left_slot = unsafe { left.add(n) };
+                // SAFETY: `left_slot` is in bounds of the initialised `input_left` buffer and
+                // no reference to it is live.
+                unsafe { *left_slot = l };
+                // SAFETY: `right` is the start of `input_right`, allocated at 4096 samples in
+                // `BacteriaInstance::new` and never resized, and `n < BLOCK` (128).
+                let right_slot = unsafe { right.add(n) };
+                // SAFETY: `right_slot` is in bounds of the initialised `input_right` buffer
+                // and no reference to it is live.
+                unsafe { *right_slot = r };
             }
             let left = instance.process(BLOCK as u32);
             let right = instance.get_right_ptr();
             for (n, frame) in output.iter_mut().enumerate() {
-                *frame = unsafe { (*left.add(n), *right.add(n)) };
+                // SAFETY: `left` is the start of `output_left`, allocated at 4096 samples in
+                // `BacteriaInstance::new` and never resized, and `n < output.len() == BLOCK`.
+                let left_slot = unsafe { left.add(n) };
+                // SAFETY: `left_slot` is inside `output_left`, whose first 128 samples
+                // `process` just wrote, and nothing has written the instance since.
+                let left_sample = unsafe { *left_slot };
+                // SAFETY: `right` is the start of `output_right`, allocated at 4096 samples
+                // in `BacteriaInstance::new` and never resized, and `n < BLOCK` (128).
+                let right_slot = unsafe { right.add(n) };
+                // SAFETY: `right_slot` is inside `output_right`, whose first 128 samples
+                // `process` just wrote, and nothing has written the instance since.
+                let right_sample = unsafe { *right_slot };
+                *frame = (left_sample, right_sample);
             }
         }
     });

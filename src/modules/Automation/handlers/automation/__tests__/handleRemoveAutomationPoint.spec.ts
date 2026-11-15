@@ -38,18 +38,18 @@ beforeEach(() => {
 });
 
 describe('handleRemoveAutomationPoint — execute', () => {
-    it('calls removeAutomationPoint with laneId and beat when using index', () => {
+    it('calls removeAutomationPoint with laneId and beat when using index', async () => {
         setLane([makePoint()]);
-        handleRemoveAutomationPoint.execute({
+        await handleRemoveAutomationPoint.execute({
             type: 'removeAutomationPoint',
             payload: { laneId: 'lane1', pointIndex: 0 },
         });
         expect(mockedRemove).toHaveBeenCalledWith('lane1', 4);
     });
 
-    it('calls removeAutomationPointById when pointId provided', () => {
+    it('calls removeAutomationPointById when pointId provided', async () => {
         setLane([makePoint({ id: 'target' })]);
-        handleRemoveAutomationPoint.execute({
+        await handleRemoveAutomationPoint.execute({
             type: 'removeAutomationPoint',
             payload: { laneId: 'lane1', pointIndex: 0, pointId: 'target' },
         });
@@ -57,9 +57,9 @@ describe('handleRemoveAutomationPoint — execute', () => {
         expect(mockedRemove).not.toHaveBeenCalled();
     });
 
-    it('does nothing when point not found', () => {
+    it('does nothing when point not found', async () => {
         setLane([]);
-        handleRemoveAutomationPoint.execute({
+        await handleRemoveAutomationPoint.execute({
             type: 'removeAutomationPoint',
             payload: { laneId: 'lane1', pointIndex: 0 },
         });
@@ -67,9 +67,9 @@ describe('handleRemoveAutomationPoint — execute', () => {
         expect(mockedRemoveById).not.toHaveBeenCalled();
     });
 
-    it('does nothing when lane not found', () => {
+    it('does nothing when lane not found', async () => {
         mockedGetState.mockReturnValue({ lanes: [] });
-        handleRemoveAutomationPoint.execute({
+        await handleRemoveAutomationPoint.execute({
             type: 'removeAutomationPoint',
             payload: { laneId: 'missing', pointIndex: 0 },
         });

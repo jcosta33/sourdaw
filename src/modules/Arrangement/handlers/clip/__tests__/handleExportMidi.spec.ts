@@ -15,8 +15,8 @@ describe('handleExportMidi', () => {
         vi.clearAllMocks();
     });
 
-    it('should delegate to exportMidiClip with the provided clip id', () => {
-        handleExportMidi.execute({ type: 'exportMidi', payload: { clipId: 'clip1' } });
+    it('should delegate to exportMidiClip with the provided clip id', async () => {
+        await handleExportMidi.execute({ type: 'exportMidi', payload: { clipId: 'clip1' } });
 
         expect(mocks.exportMidiClip).toHaveBeenCalledWith('clip1');
     });
