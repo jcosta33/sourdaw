@@ -150,20 +150,25 @@ const scanRow = (id: number, flags: { is_stepped?: boolean; is_enum?: boolean })
     is_enum: flags.is_enum ?? false,
 });
 
-const automationLane = (deviceId: string, parameterId: number, clipId?: string): AutomationLane => ({
-    id: `lane-${deviceId}-${String(parameterId)}`,
-    trackId: 'track-1',
-    parameterId: `${deviceId}:${String(parameterId)}`,
-    parameterName: `Param ${String(parameterId)}`,
-    points: [],
-    objects: [],
-    visible: true,
-    enabled: true,
-    collapsed: false,
-    minValue: 0,
-    maxValue: 1,
-    ...(clipId === undefined ? {} : { clipId }),
-});
+const automationLane = (deviceId: string, parameterId: number, clipId?: string): AutomationLane => {
+    const lane: AutomationLane = {
+        id: `lane-${deviceId}-${String(parameterId)}`,
+        trackId: 'track-1',
+        parameterId: `${deviceId}:${String(parameterId)}`,
+        parameterName: `Param ${String(parameterId)}`,
+        points: [],
+        objects: [],
+        visible: true,
+        enabled: true,
+        collapsed: false,
+        minValue: 0,
+        maxValue: 1,
+    };
+    if (clipId !== undefined) {
+        lane.clipId = clipId;
+    }
+    return lane;
+};
 
 const setPlaying = (isPlaying: boolean): void => {
     act(() => {
