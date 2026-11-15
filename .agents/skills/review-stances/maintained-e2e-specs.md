@@ -52,7 +52,10 @@ an unselected spec carries no evidence for that head, then read its job result a
    outcome a readout that fails when the deciding canvas or selector is removed. A case that accepts the
    first dialog instead of the named outcome is the blind form: an unrelated dialog must not satisfy it.
    Playback evidence needs two distinct valid Bars.Beats.Ticks positions after start.
-   (#1871, #1536, #1590)
+   DOMContentLoaded does not admit the launch screen: trace launch-dependent layout assertions through the
+   actual launch-ready helper, then rename the required card and require the named case to fail. #6407
+   missed this precondition and charged cold module loading to a layout assertion.
+   (#1871, #1536, #1590, #6407)
 
 5. **The server lifecycle record never reaches the caller.**
    Probe: run a real child through the launcher in `scripts/e2eDevServer.ts` and require its actual PID,
