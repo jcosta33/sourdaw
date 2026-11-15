@@ -1647,6 +1647,69 @@ describe('the plan’s predicted audible claim', () => {
         expect(audible()).toEqual({ status: 'not-claimed', reason: UNBOUND_PREDICTION_REASON });
     });
 
+    it('does not let a later card with no goal state inherit the first card’s predictions', () => {
+        proposeCard({ gain: 0.7, goals: { kind: 'perceptual', goals: [brighter] } });
+        expect(audible().status).toBe('predicted');
+        proposeCard({ gain: 0.6 });
+        expect(audible()).toEqual({ status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON });
+    });
+
+    it('does not restate the earlier batch’s predictions when a write supplies no goal state', () => {
+        proposeCard({ gain: 0.7, goals: { kind: 'perceptual', goals: [brighter] } });
+        expect(audible().status).toBe('predicted');
+        const run = agentRunLifecycle.get(RUN_ID);
+        if (run?.plan === null || run === null) {
+            throw new Error('Expected the run plan.');
+        }
+        const { metricGoalState: carried, ...withoutState } = run.plan;
+        expect(carried).toBeDefined();
+        agentRunLifecycle.recordPlan({
+            runId: RUN_ID,
+            summary: run.plan.summary,
+            commandIds: [],
+            serializedBatchIdentity: null,
+            revision: captureProjectRevision(),
+            scope: run.scope,
+            grants: run.grants,
+            budgets: run.budgets,
+            plan: withoutState,
+        });
+        // The state field is still carried; the claim is not derived from it.
+        expect(agentRunLifecycle.get(RUN_ID)?.plan?.metricGoalState).toBe(carried);
+        expect(audible()).toEqual({ status: 'not-claimed', reason: NO_AUDIBLE_CLAIM_REASON });
+    });
+
+    it('keeps both predictions, and the run across a reload, when two authorities mint the same goal id', () => {
+        proposeCard({ gain: 0.7, goals: { kind: 'perceptual', goals: [brighter] } });
+        const run = agentRunLifecycle.get(RUN_ID);
+        const state = metricGoalStateCodec(run?.plan?.metricGoalState);
+        const authority = state?.authorities[0];
+        if (run?.plan === null || run === null || state === null || authority === undefined) {
+            throw new Error('Expected the bound goal state.');
+        }
+        agentRunLifecycle.recordPlan({
+            runId: RUN_ID,
+            summary: run.plan.summary,
+            commandIds: [],
+            serializedBatchIdentity: null,
+            revision: captureProjectRevision(),
+            scope: run.scope,
+            grants: run.grants,
+            budgets: run.budgets,
+            plan: {
+                ...run.plan,
+                metricGoalState: JSON.stringify({
+                    ...state,
+                    authorities: [authority, { ...authority, authorityId: 'second-authority' }],
+                }),
+            },
+        });
+        const claim = predicted();
+        expect(claim.predictions.map((prediction) => prediction.goalId)).toEqual([brighter.goalId, brighter.goalId]);
+        persistAgentRunState(readAgentRunState());
+        expect(reloadRunFromStorage()?.plan?.expectedImpact.audible).toEqual(claim);
+    });
+
     describe('the size of the observed list', () => {
         const manyTargets = (count: number) =>
             Array.from({ length: count }, (_, index) => vocalTarget({ targetId: `target-${String(index)}` }));
@@ -1740,13 +1803,6 @@ describe('the plan’s predicted audible claim', () => {
         const NON_FINITE = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
 
         const CORRUPTIONS: { rule: string; base: keyof typeof rows; edit: (claim: StoredPredicted) => void }[] = [
-            {
-                rule: 'a duplicate goal id',
-                base: 'unverified',
-                edit: (claim) => {
-                    claim.predictions.push(structuredClone(first(claim)));
-                },
-            },
             {
                 rule: 'no predictions',
                 base: 'unverified',

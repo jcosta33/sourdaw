@@ -312,7 +312,6 @@ function readPredictedImpact(value: Record<string, unknown>): AgentRunPlanAudibl
         batchContentHash === null ||
         predictions === null ||
         predictions.length === 0 ||
-        new Set(predictions.map((prediction) => prediction.goalId)).size !== predictions.length ||
         (verification === null && value.verification !== null) ||
         observed === null ||
         !isCoherentVerification(verification, predictions)

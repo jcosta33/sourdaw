@@ -524,7 +524,8 @@ function recordAgentRunPlan(input: {
                     },
                     run.plan
                 ),
-                input.audibleClaim
+                input.audibleClaim,
+                input.metricGoalState ?? input.plan?.metricGoalState
             ),
         };
     });
@@ -537,10 +538,12 @@ function recordAgentRunPlan(input: {
  */
 function withAudibleClaim(
     plan: AgentRunPlan,
-    claim: AgentRunPlan['expectedImpact']['audible'] | undefined
+    claim: AgentRunPlan['expectedImpact']['audible'] | undefined,
+    suppliedMetricGoalState: string | undefined
 ): AgentRunPlan {
+    // Only the state the write itself supplies is predicted from; a state carried over from an earlier batch is not.
     const audible = claim ??
-        derivePredictedAudibleImpact({ state: metricGoalStateCodec(plan.metricGoalState) }) ?? {
+        derivePredictedAudibleImpact({ state: metricGoalStateCodec(suppliedMetricGoalState) }) ?? {
             status: 'not-claimed',
             reason: NO_AUDIBLE_CLAIM_REASON,
         };
@@ -569,7 +572,8 @@ function rebindAgentRunMetricGoalState(input: {
                 ? null
                 : withAudibleClaim(
                       { ...current.plan, metricGoalState: input.metricGoalState, revision: input.revision },
-                      undefined
+                      undefined,
+                      input.metricGoalState
                   ),
     }));
     return true;
@@ -616,7 +620,8 @@ function recordAgentRunApplicationToolEvidence(input: {
                   })
                 : withAudibleClaim(
                       { ...run.plan, applicationToolReceipts: structuredClone(input.applicationToolReceipts) },
-                      undefined
+                      undefined,
+                      run.plan.metricGoalState
                   );
         if (run.plan !== null) {
             return { ...run, plan };
