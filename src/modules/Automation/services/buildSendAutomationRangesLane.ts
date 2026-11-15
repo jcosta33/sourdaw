@@ -1,5 +1,4 @@
-import { type SendAutomationRangeSnapshot } from '#/utils/handlerContract';
-
+import { type SendAutomationRangeSnapshot } from '../events/automationAppActions';
 import { type AutomationLane, type AutomationPoint } from '../models/Automation';
 
 type BuildSendAutomationRangesLaneInput = {
