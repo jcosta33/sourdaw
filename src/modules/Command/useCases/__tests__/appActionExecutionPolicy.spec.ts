@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { undoEntryStoresCommandIdByActionType } from '../../models/UndoEntryCommandIdPolicy';
+import { isExecutableAppActionType } from '../executableAppActionRegistry';
 import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
 import { requiresAppActionConfirmation } from '../requiresAppActionConfirmation';
 
@@ -60,4 +62,135 @@ describe('app action execution policy', () => {
             reason: 'This action has no explicit execution policy and must be reviewed.',
         });
     });
+
+    it('yields the pinned policy for every listed action and the default for the rest', () => {
+        const listedBy: Record<string, string[]> = {
+            readOnlyPolicy: ['analyzeMix', 'copyClip', 'detectKey', 'detectTempo', 'getLatencyReport'],
+            boundedPolicy: [
+                'addAutomationLane',
+                'addDevice',
+                'applyGroove',
+                'arpeggiate',
+                'closeMixer',
+                'createFolder',
+                'disableMpe',
+                'disableTrack',
+                'duplicateClip',
+                'duplicateClipToNextBar',
+                'enableMpe',
+                'extractGroove',
+                'fitClipToBeats',
+                'foldTrack',
+                'hideTrack',
+                'humanizeNotes',
+                'invertNotes',
+                'lockClip',
+                'muteClip',
+                'nudgeClip',
+                'openMixer',
+                'openPreferencesDialog',
+                'pasteClip',
+                'quantizeNoteLengths',
+                'quantizeNotes',
+                'renameClip',
+                'retrogradeNotes',
+                'scaleVelocities',
+                'setAllVelocities',
+                'setClipLoop',
+                'setClipLoopLength',
+                'setClipStretchMode',
+                'setClipStretchRatio',
+                'setSoloSafe',
+                'setWorkspaceMode',
+                'stopPlayback',
+                'toggleChatPanel',
+                'toggleCountIn',
+                'toggleInspector',
+                'toggleLoop',
+                'toggleMetronome',
+                'togglePlayback',
+                'togglePreRoll',
+                'togglePunch',
+                'toggleSidebar',
+                'toggleSoloSafe',
+                'transposeNotes',
+                'zoomToFit',
+                'zoomToSelection',
+            ],
+            broadPolicy: [
+                'copyMidiArticulations',
+                'removeShortMidiOverlaps',
+                'audioToMidi',
+                'autoFixMix',
+                'bounceToNewTrack',
+                'clearSolos',
+                'restoreSoloSafe',
+                'restoreTrackSoloStates',
+                'consolidateAllTracks',
+                'freezeTrack',
+                'generateChordProgression',
+                'generateDrumPattern',
+                'generateMelody',
+                'redo',
+                'undo',
+                'unfreezeTrack',
+            ],
+            destructivePolicy: [
+                'bounceInPlace',
+                'cutClip',
+                'normalizeClip',
+                'removeAllTracks',
+                'removeClip',
+                'removeDevice',
+                'removeTrack',
+                'reverseClip',
+                'stripSilence',
+                'quantizeTransients',
+            ],
+            authoritySensitivePolicy: ['armTrack', 'setMasterGain', 'toggleRecording'],
+            externalEffectPolicy: ['createCollabSession', 'joinCollabSession', 'scanPlugins'],
+        };
+        const riskByType = new Map<string, string>();
+        for (const [policy, types] of Object.entries(listedBy)) {
+            for (const type of types) {
+                riskByType.set(type, policy);
+            }
+        }
+        const policyForName = new Map<string, readonly [string, boolean]>([
+            ['readOnlyPolicy', ['read-only', false]],
+            ['boundedPolicy', ['bounded-reversible', false]],
+            ['broadPolicy', ['broad-reversible', true]],
+            ['destructivePolicy', ['destructive-reversible', true]],
+            ['authoritySensitivePolicy', ['authority-sensitive', true]],
+            ['externalEffectPolicy', ['external-effect', true]],
+        ]);
+        const unclassified = getAppActionExecutionPolicy('futureAction');
+        const tableTypes = Object.keys(undoEntryStoresCommandIdByActionType).filter(
+            (type) => !isExecutableAppActionType(type)
+        );
+
+        expect(tableTypes.length).toBeGreaterThan(0);
+        for (const type of tableTypes) {
+            const expected = policyForName.get(riskByType.get(type) ?? '');
+            const actual = getAppActionExecutionPolicy(type);
+            if (expected === undefined) {
+                expect(actual).toBe(unclassified);
+                continue;
+            }
+            const [risk, requiresConfirmation] = expected;
+            expect(actual).toMatchObject({ classification: 'explicit', risk, requiresConfirmation });
+        }
+    });
+
+    it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+        'treats the inherited name %s as unclassified',
+        (name) => {
+            expect(getAppActionExecutionPolicy(name)).toEqual({
+                classification: 'default',
+                risk: 'unclassified',
+                requiresConfirmation: true,
+                reason: 'This action has no explicit execution policy and must be reviewed.',
+            });
+        }
+    );
 });
