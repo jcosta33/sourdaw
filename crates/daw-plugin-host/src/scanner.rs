@@ -1376,9 +1376,9 @@ unsafe fn plugin_factory(entry_ref: &clap_plugin_entry) -> Result<&clap_plugin_f
 /// one, so walking index 0 alone registers only the first plugin of a
 /// multi-plugin bundle and hides the rest — u-he and other vendors ship
 /// several plugins behind one `.clap` file.
-unsafe fn factory_plugin_descriptors<'a>(
-    factory: &'a clap_plugin_factory,
-) -> Result<Vec<&'a clap_sys::plugin::clap_plugin_descriptor>, String> {
+unsafe fn factory_plugin_descriptors(
+    factory: &clap_plugin_factory,
+) -> Result<Vec<&clap_sys::plugin::clap_plugin_descriptor>, String> {
     let count = match factory.get_plugin_count {
         Some(get_plugin_count) => get_plugin_count(factory),
         None => return Err("CLAP factory has no plugin count".to_string()),

@@ -2261,7 +2261,7 @@ mod tests {
         // same key reuses it, so drive a second key into the same slot instead.
         let ringing = voices_at(&engine, 69);
         assert_eq!(ringing.len(), 1);
-        assert_eq!(ringing[0].1, false, "the released voice is no longer held");
+        assert!(!ringing[0].1, "the released voice is no longer held");
 
         // Expression addressed to that pitch must not revive the released note.
         engine.note_expression(69, 2, 12.0, 0.0, 0.0);

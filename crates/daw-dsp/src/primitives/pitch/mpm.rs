@@ -190,7 +190,7 @@ impl MpmDetector {
             self.nsdf[k]
         };
         let y0 = self.nsdf[k];
-        let y_p = if k + 1 <= max_tau && k + 1 < self.nsdf.len() {
+        let y_p = if k < max_tau && k + 1 < self.nsdf.len() {
             self.nsdf[k + 1]
         } else {
             self.nsdf[k]

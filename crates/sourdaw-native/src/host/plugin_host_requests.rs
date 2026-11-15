@@ -722,7 +722,7 @@ mod tests {
     /// it, where a no-op arm would leave it standing for every later visit.
     #[test]
     fn a_main_thread_callback_ask_is_carried_to_the_plugin_and_consumed_once() {
-        let mut wrapper =
+        let wrapper =
             ClapWrapper::new_engine_owned_command_fixture("Callback Fixture", vec![], false);
         // Arm the ask exactly as the plugin's own callback would.
         wrapper
