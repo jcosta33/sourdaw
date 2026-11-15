@@ -1248,9 +1248,8 @@ describe('WebLLM catalogue admission record', () => {
 
     it('binds each digest and library hash to its own model row, so swapping two models fails both', async () => {
         const prebuiltList = await readPrebuiltList();
-        const [first, second] = ['Qwen3-4B-q4f16_1-MLC', 'Qwen3-8B-q4f16_1-MLC'].map((modelId) =>
-            realInput(modelId, prebuiltList)
-        );
+        const first = realInput('Qwen3-4B-q4f16_1-MLC', prebuiltList);
+        const second = realInput('Qwen3-8B-q4f16_1-MLC', prebuiltList);
         const libraryOf = (input: AdmissionCheckInput): string =>
             input.manifest.artifacts.find((artifact) => artifact.kind === 'model-library')?.sha256 ?? '';
         const text = first.decisionText ?? '';
