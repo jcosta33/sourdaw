@@ -7,7 +7,7 @@ import {
 } from '../../stores/externalPluginActivationStore';
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 
-import { carriedExternalPluginStates } from './carriedExternalPluginStates';
+import { carriedExternalPluginStates, type CarriedExternalPluginState } from './carriedExternalPluginStates';
 import { clearExternalPluginRestoreFailure } from './clearExternalPluginRestoreFailure';
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
@@ -57,7 +57,7 @@ function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 
 }
 
 /** The live state a teardown carried for this instance, when it came from the same plugin. */
-function takeCarriedStateChunk(instanceId: string, pluginId: string): string | undefined {
+function takeCarriedState(instanceId: string, pluginId: string): CarriedExternalPluginState | undefined {
     const carried = carriedExternalPluginStates.get(instanceId);
     if (carried === undefined) {
         return undefined;
@@ -66,37 +66,52 @@ function takeCarriedStateChunk(instanceId: string, pluginId: string): string | u
         carriedExternalPluginStates.delete(instanceId);
         return undefined;
     }
-    return carried.stateChunk;
+    return carried;
 }
 
 /**
- * Restore carried live state into a fresh instance. The carry is consumed only
- * once this activation settles it; one a later teardown overtook keeps it for
- * the next activation.
+ * Restore carried live state into a fresh instance. A rejected carry is
+ * dropped here; a restored one stays until the activation task settles (see
+ * `releaseConsumedCarry`); one a later teardown overtook keeps it for the next
+ * activation.
  */
 async function restoreCarriedState(
     instanceId: string,
     pluginId: string,
-    stateChunk: string,
+    carried: CarriedExternalPluginState,
     activationEpoch: number
 ): Promise<'restored' | 'rejected' | 'superseded'> {
     let rejection: string | null = null;
     try {
-        await restorePluginState(instanceId, stateChunk);
+        await restorePluginState(instanceId, carried.stateChunk);
     } catch (error) {
         rejection = String(error);
     }
     if (activationEpoch !== externalPluginActivationEpoch.current || !loadedExternalInstances.has(instanceId)) {
         return 'superseded';
     }
-    carriedExternalPluginStates.delete(instanceId);
     if (rejection === null) {
         clearExternalPluginRestoreFailure(instanceId);
         return 'restored';
     }
+    carriedExternalPluginStates.delete(instanceId);
     logger.warn(`External plugin ${pluginId} instance ${instanceId} rejected its carried live state: ${rejection}`);
     notifyUser(`Unsaved edits in ${pluginId} could not be restored after the plugin was reloaded.`, 'warning');
     return 'rejected';
+}
+
+/**
+ * Drop the carry a settled activation restored. While the activation task is
+ * registered, a teardown read carries this entry forward instead of reading
+ * the plugin (`readLiveStatesForTeardown`), so the entry outlives the restore
+ * until the task settles. A teardown that landed meanwhile owns whatever the
+ * store now holds, so only the very entry this activation consumed, on an
+ * instance still loaded, is dropped.
+ */
+function releaseConsumedCarry(instanceId: string, consumed: CarriedExternalPluginState): void {
+    if (loadedExternalInstances.has(instanceId) && carriedExternalPluginStates.get(instanceId) === consumed) {
+        carriedExternalPluginStates.delete(instanceId);
+    }
 }
 
 /**
@@ -201,6 +216,7 @@ export function activateExternalPlugin({
         watchExternalPluginLatency();
     }
 
+    let restoredCarry: CarriedExternalPluginState | undefined;
     const activationTask = (async (): Promise<ExternalPluginActivationResult> => {
         let attachment: ExternalPluginActivationResult | null = null;
         try {
@@ -256,9 +272,9 @@ export function activateExternalPlugin({
         // state changes under a live instance only through a `replacement`,
         // offered only while a failed-restore marker stands, and a marked
         // instance is never carried; a capture writes the live state itself.
-        const carriedStateChunk = takeCarriedStateChunk(instanceId, pluginId);
-        if (carriedStateChunk !== undefined) {
-            const carriedRestore = await restoreCarriedState(instanceId, pluginId, carriedStateChunk, activationEpoch);
+        const carried = takeCarriedState(instanceId, pluginId);
+        if (carried !== undefined) {
+            const carriedRestore = await restoreCarriedState(instanceId, pluginId, carried, activationEpoch);
             if (carriedRestore === 'superseded') {
                 return {
                     status: 'failed',
@@ -267,6 +283,7 @@ export function activateExternalPlugin({
                 };
             }
             if (carriedRestore === 'restored') {
+                restoredCarry = carried;
                 return attachment ?? { status: 'active' };
             }
         }
@@ -299,6 +316,9 @@ export function activateExternalPlugin({
         ) {
             externalPluginActivationOutcomes.set(instanceId, outcome);
             externalPluginActivationTasks.delete(instanceId);
+        }
+        if (restoredCarry !== undefined) {
+            releaseConsumedCarry(instanceId, restoredCarry);
         }
         return outcome;
     });

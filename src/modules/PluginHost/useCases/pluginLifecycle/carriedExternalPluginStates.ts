@@ -9,7 +9,9 @@
  * the whole store is dropped by every whole-runtime unload, because the project
  * it belonged to is being replaced or retired.
  */
-export const carriedExternalPluginStates = new Map<string, { pluginId: string; stateChunk: string }>();
+export type CarriedExternalPluginState = { pluginId: string; stateChunk: string };
+
+export const carriedExternalPluginStates = new Map<string, CarriedExternalPluginState>();
 
 let carryGeneration = 0;
 

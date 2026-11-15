@@ -565,6 +565,41 @@ describe('live plugin state across an app-initiated teardown', () => {
             expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
         });
 
+        it('restores the live bytes after a second removal lands while the carried restore is pending', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            await unloadPluginCarryingLiveState(INSTANCE_ID);
+            const heldRestore = Promise.withResolvers<void>();
+            mocks.setPluginState.mockReturnValueOnce(heldRestore.promise);
+            // Release the held restore however the case ends, so it cannot leak into later cases.
+            onTestFinished(() => heldRestore.resolve());
+
+            const reactivation = activate(SAVED_CHUNK);
+            await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledOnce());
+            const secondRemoval = unloadPluginCarryingLiveState(INSTANCE_ID);
+            heldRestore.resolve();
+            await reactivation;
+            await secondRemoval;
+            expect(loadedExternalInstances.has(INSTANCE_ID)).toBe(false);
+            mocks.setPluginState.mockClear();
+            await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
+
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, LIVE_BYTES]]);
+            expect(warnings()).toEqual([]);
+        });
+
+        it('leaves no carry once a carried restore settles, so a later plain unload restores the project chunk', async () => {
+            await activateAndEdit(SAVED_CHUNK);
+            await unloadPluginCarryingLiveState(INSTANCE_ID);
+            await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
+            expect(carriedExternalPluginStates.has(INSTANCE_ID)).toBe(false);
+
+            await unloadPlugin(INSTANCE_ID);
+            mocks.setPluginState.mockClear();
+            await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
+
+            expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+        });
+
         it('drops a carry for a different plugin on the same instance id', async () => {
             await activateAndEdit(SAVED_CHUNK);
             await unloadPluginCarryingLiveState(INSTANCE_ID);

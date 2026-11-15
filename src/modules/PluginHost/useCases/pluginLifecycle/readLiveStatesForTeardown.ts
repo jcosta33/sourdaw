@@ -2,7 +2,7 @@ import { bytesToBase64 } from '#/utils/base64';
 
 import { getPluginState } from '../../repositories/pluginBridge/getPluginState';
 
-import { carriedExternalPluginStateFence } from './carriedExternalPluginStates';
+import { carriedExternalPluginStateFence, carriedExternalPluginStates } from './carriedExternalPluginStates';
 import { externalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { loadedExternalInstancePluginIds } from './loadedExternalInstances';
 import { preservationReason } from './preservationReason';
@@ -21,9 +21,30 @@ type TeardownStateRead =
 
 const NOTHING: TeardownStateRead = { status: 'nothing' };
 
+/**
+ * The carry an activation still in flight is restoring. The activation keeps
+ * the entry until it settles, so a removal landing first carries it forward
+ * rather than leaving it to that settlement, which cannot tell the instance is
+ * already being torn down.
+ */
+function carryBeingRestored(instanceId: string, pluginId: string): TeardownStateRead {
+    const carried = carriedExternalPluginStates.get(instanceId);
+    if (carried === undefined || carried.pluginId !== pluginId) {
+        return NOTHING;
+    }
+    return { status: 'carried', pluginId, stateChunk: carried.stateChunk };
+}
+
 async function readLiveState(instanceId: string): Promise<TeardownStateRead> {
     const pluginId = loadedExternalInstancePluginIds.get(instanceId);
-    if (pluginId === undefined || preservationReason(instanceId) !== null) {
+    if (pluginId === undefined) {
+        return NOTHING;
+    }
+    const reason = preservationReason(instanceId);
+    if (reason === 'restore-pending') {
+        return carryBeingRestored(instanceId, pluginId);
+    }
+    if (reason !== null) {
         return NOTHING;
     }
     let bytes: Uint8Array;
