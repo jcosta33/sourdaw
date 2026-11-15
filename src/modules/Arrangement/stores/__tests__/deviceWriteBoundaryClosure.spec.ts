@@ -1228,6 +1228,11 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Project/useCases/projectTemplates/templateHelpers/createBus.ts': 1,
     },
     static: {
+        // Count provenance: measured 1 — the `expectedBefore.devices` guard type on
+        // the `reorderDevices` payload, moved from `src/utils/handlerContract.ts`
+        // (outside this census) when the device action types joined their module.
+        // Type-only device-data shape: an action payload declaration, not an access.
+        'src/modules/Arrangement/events/arrangementDeviceAppActions.ts': 1,
         // Count provenance: measured 1 each — only neutral footprint and
         // planned-owner type fields; neither file executes a project write.
         'src/modules/Arrangement/models/DevicePatchState.ts': 1,
