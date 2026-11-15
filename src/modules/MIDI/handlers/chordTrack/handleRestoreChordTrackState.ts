@@ -1,7 +1,8 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type ChordTrackActionSnapshot, type HandlerDescribeResult } from '#/utils/handlerContract';
+import { type AppAction, type HandlerDescribeResult } from '#/utils/handlerContract';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
+import { type ChordTrackActionSnapshot } from '../../events/midiAppActions';
 import { CHORD_TYPES, type ChordType } from '../../models/ChordTypes';
 import { chordTrackStore, type ChordTrackState } from '../../stores/chordTrackStore';
 import { moveChordEvent } from '../../useCases/chordTrack/moveChordEvent';
