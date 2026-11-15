@@ -35,7 +35,7 @@ describe('createReverb', () => {
         const secondImpulse = getConvolverBuffer(secondReverb.nodes);
         const otherContextImpulse = getConvolverBuffer(otherContextReverb.nodes);
         expect(ctx.createBuffer).toHaveBeenCalledOnce();
-        expect(ctx.createBuffer).toHaveBeenCalledWith(2, ctx.sampleRate * 2, ctx.sampleRate);
+        expect(ctx.createBuffer).toHaveBeenCalledWith(2, Math.round(ctx.sampleRate * 1.025 ** 28), ctx.sampleRate);
         expect(otherCtx.createBuffer).toHaveBeenCalledOnce();
         expect(firstImpulse).toBe(secondImpulse);
         expect(firstImpulse).not.toBe(otherContextImpulse);
