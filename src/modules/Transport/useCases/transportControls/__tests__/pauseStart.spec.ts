@@ -125,10 +125,11 @@ describe('Pause/Start Playback', () => {
             pausePlayback();
             await vi.waitFor(() => expect(mocks.stopPlayheadScheduler).toHaveBeenCalled());
 
-            startPlayback();
+            const starting = startPlayback();
 
             expect(mocks.updateTransportState).toHaveBeenCalledWith({ isPlaying: true, playheadPosition: 100 });
             expect(mocks.playheadPositionRef.current).toBe(100);
+            await starting;
         });
     });
 
@@ -151,7 +152,7 @@ describe('Pause/Start Playback', () => {
                 preRollEnabled: false,
             };
 
-            startPlayback();
+            await startPlayback();
 
             await vi.waitFor(() => {
                 expect(mocks.resumeEngine).toHaveBeenCalled();
@@ -174,7 +175,7 @@ describe('Pause/Start Playback', () => {
                 timeSignatureDenominator: 4,
             };
 
-            startPlayback();
+            await startPlayback();
 
             // Two 4/4 bars back from beat 16.
             await vi.waitFor(() => {

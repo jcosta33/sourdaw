@@ -124,9 +124,10 @@ describe('startAudioRecording', () => {
         vi.stubGlobal('URL', class {});
     });
 
-    afterEach(() => {
-        stopAudioRecording();
+    afterEach(async () => {
+        const stopped = stopAudioRecording();
         vi.advanceTimersByTime(5_000);
+        await stopped;
         vi.useRealTimers();
         vi.unstubAllGlobals();
     });
@@ -353,7 +354,8 @@ describe('startAudioRecording', () => {
         await expect(first).resolves.toBe(true);
         await expect(second).resolves.toBe(true);
 
-        stopAudioRecording();
+        // Left in flight: the workers never deliver here, so the afterEach flush timeout settles the stop.
+        void stopAudioRecording();
         for (const worklet of worklet_nodes) {
             worklet.emit({ type: 'stopped', publishedSampleCount: 0 });
         }

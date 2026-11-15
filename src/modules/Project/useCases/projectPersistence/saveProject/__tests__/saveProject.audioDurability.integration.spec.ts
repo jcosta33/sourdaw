@@ -303,7 +303,7 @@ describe('saveProject audio durability integration', () => {
         expect(await project.saveProject()).toBe(true);
         expect(projectStore.value?.dirty).toBe(false);
 
-        clearRuntimeCachedAudioBuffers();
+        await clearRuntimeCachedAudioBuffers();
         resetCrdtProjectAuthority('Blank project');
         resetModuleStoresToDefault();
         projectStore.set({
@@ -415,7 +415,7 @@ describe('saveProject audio durability integration', () => {
         }
         expect((JSON.parse(retriedSavedJson) as ProjectData).audioBuffers).toBeUndefined();
 
-        clearRuntimeCachedAudioBuffers();
+        await clearRuntimeCachedAudioBuffers();
         resetCrdtProjectAuthority('Second blank project');
         resetModuleStoresToDefault();
         projectStore.set({
