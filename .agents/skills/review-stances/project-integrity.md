@@ -30,6 +30,14 @@ Split out (a stance matching one carries that file, not this one): replay agains
    import/Save/clear/restore case; collector protection also covers finalized recovery storage. The serializer's
    revision travels with its data and the build is rejected if it changes across a serializer await; repeat the
    retained-buffer case with a held success.
+   Private-handle adoption (#5843, #6514) must not restart incremental export from its captured baseline. Drive
+   the real queue after a full baseline, an unsaved edit and Worker adoption: its payload alone requires the known
+   baseline dependencies, while baseline plus payload restores exact truth and heads. Restoring native-cursor
+   capture must fail `persistCrdtProject.spec.ts`'s omission check even when reconstruction stays green. Worker and
+   fallback capture heads describe their own bytes while live heads advance. Two IDB aborts retry identical bytes;
+   discarding an obsolete failed full bundle after membership returns to its original shape still retains the root
+   edit, and the next edit exports once. Generation/HMR fences invalidate discarded progress; descendant or foreign
+   frontiers outside active history cannot suppress output. Redundant history proves excess export, not data loss.
 2. **Cold-cache consumers rebuild every durable reference and report owner results (#187, #4496).** Failure:
    export, mixdown, stems or recovery use a warm cache or a mocked owner, miss a buffer or swallow a failure.
    Probe: cold project with an ordinary clip and an active frozen print whose PCM has its own ID; both IDs reach
@@ -196,19 +204,6 @@ Split out (a stance matching one carries that file, not this one): replay agains
     behind an older unrelated entry, save, reload, reset projections and hydrate the mirror, then require both
     entries in order and exact state after each Undo and Redo; removing the new contract must fail the case.
     Reviewing a new command, list its inverse types and check each against `getInternalUndoSessionReplayContracts`.
-
-16. **Incremental export progress belongs to retained persistence bytes, not a document handle (#5843, #6514).**
-    Private candidate adoption introduced in #5843 and staged loading in #6514 replaced native handles whose
-    incremental save cursor did not follow the already-captured baseline. A reconstruction-only persistence
-    check missed redundant history: full-history output still reloads correctly. Probe the real queue after a full
-    baseline, an unsaved edit and canonical Worker adoption; apply its next payload to an empty native replica and
-    require missing baseline dependencies, then apply it to the baseline and require exact truth and heads. Retry
-    two aborted IDB writes with identical retained bytes and require the next edit exactly once. Hold a full Worker
-    capture while live heads advance: returned heads describe its bytes, while fallback heads describe the fallback's
-    own capture. Drop an obsolete failed full bundle after membership returns to its original shape; the next save
-    still retains the intervening root edit. Preserve generation/HMR fences and reject descendant or foreign export
-    frontiers outside active history. Restoring handle-cursor capture must fail the queue omission assertion; a
-    duplicate export proves excess serialization, not data loss.
 
 ## Retired lessons
 

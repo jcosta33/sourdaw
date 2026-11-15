@@ -23,7 +23,7 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    the baseline and require exact heads and truth. A native handle replaced by a private candidate can reset its
    save cursor and export everything while a reconstruction-only test stays green. Restoring native-cursor queue
    capture must fail that omission check; pair it with the byte/frontier and abandoned-full probes in
-   `project-integrity.md` probe 16.
+   `project-integrity.md` probe 1.
 
 2. **Final equality hides a write followed by restoration.**
    Probe: count writes from a sentinel placed before the action and observe settled transitions, since
