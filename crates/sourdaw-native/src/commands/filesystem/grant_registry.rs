@@ -760,6 +760,7 @@ mod tests {
             },
         );
     }
+
     fn swap_case(name: &str) -> String {
         name.chars()
             .flat_map(|character| {
