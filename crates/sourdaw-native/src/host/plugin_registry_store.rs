@@ -233,17 +233,28 @@ pub struct PersistedQuarantineEntry {
     pub quarantined_at_ms: u64,
 }
 
-/// One scanned plugin and every registry key it answers to, which is what
-/// [`PluginRegistryStore::persist`] turns into rows.
+/// One scanned plugin, every registry key it answers to, and the fingerprint
+/// of the file it was read from, which is what [`PluginRegistryStore::persist`]
+/// turns into rows.
 ///
 /// The keys travel with the row rather than being derived here, because the
 /// caller knows things this store does not: a scan publishes a plugin under its
 /// path hash and its descriptor id, and an activation rescan additionally
 /// publishes it under the stale key the saved project actually recorded.
+///
+/// The fingerprint travels with it for the same reason. Only the caller saw
+/// the file while its helper read it: a scan fingerprints each candidate
+/// before its descriptor helper runs and again after its last inspection, and
+/// a targeted rescan around its one read. A fingerprint taken later — when the
+/// rows are written, after the whole walk — would describe whatever sits at the
+/// path by then, and record a file no helper ever read as the one that was
+/// scanned. `None` is a file that could not be fingerprinted, and its row is
+/// not written.
 #[derive(Debug, Clone)]
 pub struct ScanRow {
     pub keys: Vec<String>,
     pub plugin: ScannedPlugin,
+    pub(crate) fingerprint: Option<FileFingerprint>,
 }
 
 /// One persisted registry row: what the scan learned, plus the fingerprint of
@@ -523,10 +534,12 @@ impl PluginRegistryStore {
     /// The rows a fresh scan of `path` would only reproduce, or nothing.
     ///
     /// `Some` means the file at `path` is the file the scan that wrote these
-    /// rows recorded, at the size and age it recorded, the policy still authorizes it, and
-    /// every row for it came from an instance inspection that ran and answered.
-    /// A caller holding that may publish the rows instead of spawning the
-    /// helpers again.
+    /// rows recorded, at the size and age it recorded, the policy still
+    /// authorizes it, and every row for it came from an instance inspection
+    /// that ran and answered. A caller holding that may publish the rows, with
+    /// the fingerprint returned beside them, instead of spawning the helpers
+    /// again: the fingerprint is the one the rows recorded, which this check
+    /// has just found the file still carries.
     ///
     /// The inspection condition is what makes the reuse converge rather than
     /// freeze. A row whose inspection was refused, or never ran at all, records
@@ -541,7 +554,7 @@ impl PluginRegistryStore {
         &self,
         path: &Path,
         scan_policy: &PluginScanPolicy,
-    ) -> Option<Vec<ScannedPlugin>> {
+    ) -> Option<(Vec<ScannedPlugin>, FileFingerprint)> {
         let path_as_scanned = path.display().to_string();
         let stored = self.lock_stored();
         let mut rows: Vec<&PersistedPluginEntry> = stored
@@ -566,15 +579,17 @@ impl PluginRegistryStore {
         }
 
         rows.sort_by_key(|entry| entry.bundle_position);
+        let fingerprint = rows[0].recorded_fingerprint()?;
         // One plugin holds a row under each key it answers to, and the scan
         // result carries it once.
         let mut published = BTreeSet::new();
-        Some(
+        Some((
             rows.into_iter()
                 .filter(|entry| published.insert(entry.plugin.id.clone()))
                 .map(|entry| entry.plugin.clone())
                 .collect(),
-        )
+            fingerprint,
+        ))
     }
 
     /// Whether `path` is currently quarantined, and why.
@@ -721,13 +736,19 @@ impl PluginRegistryStore {
     /// [`apply_completed_scan_removals`](Self::apply_completed_scan_removals)
     /// applied, so a merge cannot resurrect a row a scan removed this session.
     ///
-    /// A row whose file cannot be fingerprinted at all is dropped, not kept:
-    /// the scan publisher applies its removals before calling this, so the
-    /// union source no longer holds a previous row for that key either. That is
-    /// the intended outcome for the only case that reaches it — the scanned
-    /// path is not on disk — and it is why [`scanned_file_path`] falls back to
-    /// the scanned path rather than reporting nothing whenever a *binary*
-    /// inside it cannot be resolved.
+    /// Each row is written with the fingerprint it carries, and this function
+    /// never stats the file itself: the caller fingerprinted the file while its
+    /// helper read it, which is the only moment the fingerprint describes the
+    /// file the row's answer came from (see [`ScanRow`]). It is the same value
+    /// the caller published to the in-memory registry, so the two never
+    /// disagree about which file a row describes.
+    ///
+    /// A row carrying no fingerprint is dropped, not kept: the scan publisher
+    /// applies its removals before calling this, so the union source no longer
+    /// holds a previous row for that key either. That is the intended outcome
+    /// for the case that reaches it — the scanned path is not on disk — and it
+    /// is why [`scanned_file_path`] falls back to the scanned path rather than
+    /// reporting nothing whenever a *binary* inside it cannot be resolved.
     ///
     /// `rows` is ordered, and the order is what records each plugin's position
     /// in the file it came from — see [`PersistedPluginEntry::bundle_position`].
@@ -740,15 +761,11 @@ impl PluginRegistryStore {
             return;
         };
 
-        let mut fingerprints: HashMap<&str, Option<FileFingerprint>> = HashMap::new();
         let mut plugins_seen_per_file: HashMap<&str, u32> = HashMap::new();
         let mut scanned_this_session = BTreeMap::new();
         for row in rows {
             let path = row.plugin.path.as_str();
-            let fingerprint = *fingerprints
-                .entry(path)
-                .or_insert_with(|| scanned_file_fingerprint(&row.plugin));
-            let Some(fingerprint) = fingerprint else {
+            let Some(fingerprint) = row.fingerprint else {
                 continue;
             };
             let bundle_position = plugins_seen_per_file.entry(path).or_insert(0);
@@ -876,7 +893,7 @@ pub struct FileIdentity {
 /// fingerprint carrying it would read an untouched plugin as changed and spend
 /// a scan-worker child process on its next load.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) struct FileFingerprint {
+pub struct FileFingerprint {
     pub size_bytes: u64,
     pub modified_ms: u64,
     pub identity: FileIdentity,
@@ -1333,6 +1350,7 @@ mod tests {
             .into_iter()
             .map(|(key, plugin)| ScanRow {
                 keys: vec![key.to_string()],
+                fingerprint: scanned_file_fingerprint(&plugin),
                 plugin,
             })
             .collect()

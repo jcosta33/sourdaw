@@ -3,9 +3,8 @@
 use crate::commands::graph::{self, StripReportPayload};
 use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
 use crate::host::plugin_registry_store::{
-    plugin_file_fingerprint, plugin_file_path, scanned_file_fingerprint, FileFingerprint,
-    PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanAttempt,
-    RescanClaim, ScanRow,
+    plugin_file_fingerprint, plugin_file_path, FileFingerprint, PersistedPluginEntry,
+    PersistedQuarantineEntry, PluginRegistryStore, RescanAttempt, RescanClaim, ScanRow,
 };
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::plugin_scan_worker;
@@ -371,9 +370,24 @@ fn retain_first_plugin_per_identity(plugins: &mut Vec<ScannedPlugin>) {
 /// every launch, a document this build's own scan wrote.
 pub(crate) const SCANNED_PLUGIN_KEY_CAPACITY: usize = 2;
 
+/// The fingerprint a scan took of each file it read, keyed by the path its
+/// plugins were scanned at (`ScannedPlugin::path`).
+///
+/// Taken while the file's helpers ran, never after the walk: see
+/// [`ScanRow`]. A path missing from it is a file the scan could not vouch
+/// for, and its rows carry no fingerprint.
+type ScanFingerprints = HashMap<String, FileFingerprint>;
+
+/// A candidate path as [`ScanFingerprints`] keys it: the spelling
+/// `scanner::scanned_bundle_plugins` writes into `ScannedPlugin::path`.
+fn scanned_path_key(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
 /// The one keying rule, so the in-memory lookup table and the persisted
-/// registry cannot come to disagree about which keys resolve a plugin.
-fn key_scanned_plugins(plugins: &[ScannedPlugin]) -> Vec<ScanRow> {
+/// registry cannot come to disagree about which keys resolve a plugin — or
+/// about which file's fingerprint stands beside them.
+fn key_scanned_plugins(plugins: &[ScannedPlugin], fingerprints: &ScanFingerprints) -> Vec<ScanRow> {
     let claimed_primary_keys: HashSet<&str> =
         plugins.iter().map(|plugin| plugin.id.as_str()).collect();
     let mut claimed_descriptor_keys = HashSet::new();
@@ -397,6 +411,7 @@ fn key_scanned_plugins(plugins: &[ScannedPlugin]) -> Vec<ScanRow> {
             ScanRow {
                 keys,
                 plugin: plugin.clone(),
+                fingerprint: fingerprints.get(&plugin.path).copied(),
             }
         })
         .collect()
@@ -405,18 +420,17 @@ fn key_scanned_plugins(plugins: &[ScannedPlugin]) -> Vec<ScanRow> {
 /// Build the lookup table `load_plugin` resolves against, under
 /// [`key_scanned_plugins`]'s keys.
 ///
-/// Each entry carries its file's fingerprint as the scan publishes it, taken
-/// once per file: the plugins of one bundle are one file, and a load compares
-/// against this fingerprint before it opens anything.
-fn index_scanned_plugins(plugins: &[ScannedPlugin]) -> HashMap<String, PluginRegistryEntry> {
-    let mut fingerprints: HashMap<String, Option<FileFingerprint>> = HashMap::new();
-    key_scanned_plugins(plugins)
+/// Each entry carries the fingerprint the scan took of its file while reading
+/// it — the same value `persist` writes — and a load compares the file against
+/// it before it opens anything.
+fn index_scanned_plugins(
+    plugins: &[ScannedPlugin],
+    fingerprints: &ScanFingerprints,
+) -> HashMap<String, PluginRegistryEntry> {
+    key_scanned_plugins(plugins, fingerprints)
         .into_iter()
         .flat_map(|row| {
-            let fingerprint = *fingerprints
-                .entry(row.plugin.path.clone())
-                .or_insert_with(|| scanned_file_fingerprint(&row.plugin));
-            let entry = PluginRegistryEntry::from_scanned(&row.plugin, fingerprint);
+            let entry = PluginRegistryEntry::from_scanned(&row.plugin, row.fingerprint);
             row.keys.into_iter().map(move |key| (key, entry.clone()))
         })
         .collect()
@@ -443,6 +457,7 @@ fn publish_scan_results_in_registry(
     scanned_paths: &[PathBuf],
     scan_complete: bool,
     plugins: &[ScannedPlugin],
+    fingerprints: &ScanFingerprints,
 ) {
     let survives_this_scan = |path: &Path| {
         if scan_complete {
@@ -453,8 +468,7 @@ fn publish_scan_results_in_registry(
 
     registry_store.apply_completed_scan_removals(survives_this_scan);
 
-    // Indexed before the lock: indexing stats every scanned file.
-    let indexed = index_scanned_plugins(plugins);
+    let indexed = index_scanned_plugins(plugins, fingerprints);
     let mut registry = plugin_registry
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -486,8 +500,12 @@ async fn hydrate_plugin_registry(state: &AppState) {
 /// registry holds only the columns activation reads. Rows this scan did not
 /// produce — another root's, hydrated earlier — are already in the store's
 /// persisted view and survive the union `persist` performs.
-async fn persist_scanned_plugins(state: &AppState, plugins: &[ScannedPlugin]) {
-    let rows = key_scanned_plugins(plugins);
+async fn persist_scanned_plugins(
+    state: &AppState,
+    plugins: &[ScannedPlugin],
+    fingerprints: &ScanFingerprints,
+) {
+    let rows = key_scanned_plugins(plugins, fingerprints);
     let registry_store = Arc::clone(&state.plugin_registry_store);
     if let Err(error) = tokio::task::spawn_blocking(move || registry_store.persist(&rows)).await {
         eprintln!("[Plugin] Could not save the plugin scan registry: {error}");
@@ -643,7 +661,7 @@ async fn scan_plugins_with_backend(
     let registry_store = Arc::clone(&state.plugin_registry_store);
 
     let deadline = start + budget.walk;
-    let (plugins, errors, notices, scanned_paths, scan_complete, authorized_paths) =
+    let (plugins, fingerprints, errors, notices, scanned_paths, scan_complete, authorized_paths) =
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
             // Authorization is filesystem work — an existence check, a symlink
@@ -691,6 +709,7 @@ async fn scan_plugins_with_backend(
                 .map(|candidate| candidate.path.clone())
                 .collect();
             let mut plugins = Vec::new();
+            let mut fingerprints = ScanFingerprints::new();
             let mut scanned_paths = Vec::new();
             for candidate in candidates {
                 if !covers_a_whole_candidate(deadline, budget) {
@@ -722,13 +741,24 @@ async fn scan_plugins_with_backend(
                 // A candidate the user is explicitly retrying is never reused:
                 // asking for the retry is asking for the helper to run.
                 if !retried_from_quarantine {
-                    if let Some(rows) = registry_store.reusable_rows(&candidate.path, &scan_policy)
+                    if let Some((rows, fingerprint)) =
+                        registry_store.reusable_rows(&candidate.path, &scan_policy)
                     {
+                        fingerprints.insert(scanned_path_key(&candidate.path), fingerprint);
                         plugins.extend(rows);
                         continue;
                     }
                 }
 
+                // Fingerprinted before the descriptor helper reads the file and
+                // again once its last inspection has finished, so the
+                // fingerprint recorded is one the file held for every read this
+                // scan made of it. Taken at publish instead, after the walk, it
+                // would describe whatever sits at the path by then — a
+                // replacement no helper ever read, which every later load would
+                // then vet as the scanned file.
+                let wire_name = candidate.format.wire_name();
+                let before = plugin_file_fingerprint(&candidate.path, wire_name);
                 match scan_descriptor(candidate.format, &candidate.path, budget.candidate) {
                     // One bundle may declare several plugins — CLAP's factory is
                     // count/index shaped — and each gets its own inspection and
@@ -762,7 +792,22 @@ async fn scan_plugins_with_backend(
                                 &candidate.path,
                             );
                         }
-                        plugins.extend(scanner::scanned_bundle_plugins(&candidate.path, bundle));
+                        let after = plugin_file_fingerprint(&candidate.path, wire_name);
+                        match before.filter(|before| Some(*before) == after) {
+                            Some(fingerprint) => {
+                                fingerprints.insert(scanned_path_key(&candidate.path), fingerprint);
+                                plugins.extend(scanner::scanned_bundle_plugins(
+                                    &candidate.path,
+                                    bundle,
+                                ));
+                            }
+                            // Not quarantined: nothing about the helper
+                            // failed, and the next scan reads the file afresh.
+                            None => scan_errors.push(format!(
+                                "{}: the file changed while it was being scanned, so none of its plugins were recorded. Scan again once it has finished changing.",
+                                candidate.path.display()
+                            )),
+                        }
                     }
                     Err(error) => {
                         quarantine_if_process_failure(&registry_store, &candidate.path, &error);
@@ -785,6 +830,7 @@ async fn scan_plugins_with_backend(
             });
             (
                 plugins,
+                fingerprints,
                 scan_errors,
                 notices,
                 scanned_paths,
@@ -805,8 +851,9 @@ async fn scan_plugins_with_backend(
         &scanned_paths,
         scan_complete,
         &plugins,
+        &fingerprints,
     );
-    persist_scanned_plugins(state, &plugins).await;
+    persist_scanned_plugins(state, &plugins, &fingerprints).await;
 
     let quarantined: Vec<QuarantinedPlugin> = state
         .plugin_registry_store
@@ -1234,6 +1281,7 @@ fn rescan_and_publish(
     registry_store.persist(&[ScanRow {
         keys,
         plugin: rescanned,
+        fingerprint: Some(fingerprint),
     }]);
 
     Ok(VettedRegistryEntry { entry, fingerprint })
@@ -3259,7 +3307,9 @@ pub async fn set_plugin_bypass(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::plugin_registry_store::{scanned_binary_location, scanned_file_path};
+    use crate::host::plugin_registry_store::{
+        scanned_binary_location, scanned_file_fingerprint, scanned_file_path,
+    };
     use crate::host::plugin_window::testing::DedicatedUiWindowHost;
     use crate::host::plugin_window::PluginEditorWindow;
     use crate::host::ui_thread::{UiThread, UiThreadTask};
@@ -6058,6 +6108,7 @@ mod tests {
                 &[],
                 true,
                 &plugins,
+                &fixture_fingerprints(&plugins),
             );
             plugins
         }
@@ -6091,6 +6142,18 @@ mod tests {
                 );
             path
         }
+    }
+
+    /// The fingerprints a scan would have taken of these plugins' files while
+    /// reading them: for a fixture, the files as they stand now.
+    fn fixture_fingerprints(plugins: &[ScannedPlugin]) -> ScanFingerprints {
+        plugins
+            .iter()
+            .filter_map(|plugin| {
+                scanned_file_fingerprint(plugin)
+                    .map(|fingerprint| (plugin.path.clone(), fingerprint))
+            })
+            .collect()
     }
 
     impl Drop for LoadFixtureRoot {
@@ -6372,9 +6435,10 @@ mod tests {
         };
         let published =
             plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
-        state
-            .plugin_registry_store
-            .persist(&key_scanned_plugins(&published));
+        state.plugin_registry_store.persist(&key_scanned_plugins(
+            &published,
+            &fixture_fingerprints(&published),
+        ));
         std::fs::write(
             &published[0].path,
             "a plugin that no longer declares itself",
@@ -7076,6 +7140,87 @@ mod tests {
         .expect("a scan over an authorized fixture root should succeed")
     }
 
+    /// A candidate replaced after its helper read it, while the walk was still
+    /// running, must not be recorded at all. The fingerprint used to be taken
+    /// after the walk, from whatever sat at the path by then, so the
+    /// replacement was recorded as the scanned file and every later load
+    /// vetted it as unchanged and opened it in process — a file no helper had
+    /// ever read.
+    ///
+    /// Mutation this catches: fingerprinting at publish or persist again, or
+    /// dropping the comparison of the before-and-after fingerprints, which
+    /// publishes and persists the swapped file's rows. Quarantining the change
+    /// fails the last assertion: nothing about the helper failed.
+    #[test]
+    fn a_candidate_swapped_after_its_helper_read_it_is_not_recorded() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("scan-swapped-candidate");
+        let plugin_path = root.join("Swapped.clap");
+        std::fs::write(&plugin_path, b"the plugin the helper reads").expect("fixture written");
+        let state = state_with_registry_file(&root);
+
+        let swapped_path = plugin_path.clone();
+        let scan = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            move |_format, path, _timeout| {
+                // The helper has read the file; now something else replaces it.
+                let replacement = swapped_path.with_extension("replacement");
+                std::fs::write(&replacement, b"a file no helper ever read")
+                    .expect("replacement written");
+                std::fs::rename(&replacement, path).expect("replacement renamed over");
+                Ok(vec![descriptor("com.vendor.swapped")])
+            },
+            fake_successful_instance_scan,
+        ))
+        .expect("the scan itself succeeds");
+
+        let path_text = plugin_path.display().to_string();
+        assert!(
+            scan.plugins.is_empty(),
+            "the swapped file's rows must not be published"
+        );
+        assert!(
+            scan.errors
+                .iter()
+                .any(|error| error.starts_with(&format!("{path_text}:"))
+                    && error.contains("changed while it was being scanned")),
+            "the scan must say which file changed, got: {:?}",
+            scan.errors
+        );
+        assert!(
+            !state
+                .plugin_registry
+                .lock()
+                .expect("registry lock")
+                .values()
+                .any(|entry| entry.path == path_text),
+            "no registry entry may point at the swapped file"
+        );
+        let next_launch = PluginRegistryStore::at(root.join("plugin-registry.json"));
+        next_launch.hydrate_into(
+            &Mutex::new(HashMap::new()),
+            &PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+        );
+        let persisted = next_launch.last_known_entry(&scanner::stable_id(&plugin_path));
+        let quarantined = state.plugin_registry_store.is_quarantined(&plugin_path);
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            persisted.is_none(),
+            "no row may be persisted for the swapped file"
+        );
+        assert!(
+            quarantined.is_none() && scan.quarantined.is_empty(),
+            "a file that changed is not a helper that failed, and is not quarantined"
+        );
+    }
+
     /// The defect (#3505): every scan spawned a descriptor helper and an
     /// instance helper for every candidate, so a settled plugin folder paid the
     /// whole per-candidate cost again on every run and a large one could not
@@ -7687,6 +7832,7 @@ mod tests {
         };
         state.plugin_registry_store.persist(&[ScanRow {
             keys: vec![uninspected.id.clone()],
+            fingerprint: scanned_file_fingerprint(&uninspected),
             plugin: uninspected,
         }]);
 
@@ -9099,25 +9245,27 @@ mod tests {
         }
 
         fn persist(&self, plugin_id: &str, path: &Path) {
+            let plugin = ScannedPlugin {
+                id: plugin_id.to_string(),
+                name: "Vendor Reverb".to_string(),
+                vendor: "Vendor".to_string(),
+                format: "clap".to_string(),
+                category: "effect".to_string(),
+                path: path.display().to_string(),
+                version: "1.0.0".to_string(),
+                descriptor_id: "com.vendor.reverb".to_string(),
+                num_inputs: 2,
+                num_outputs: 2,
+                num_parameters: 0,
+                has_custom_ui: true,
+                parameters: Some(Vec::new()),
+                parameter_metadata_reason: None,
+                capability_metadata_reason: None,
+            };
             self.store().persist(&[ScanRow {
                 keys: vec![plugin_id.to_string()],
-                plugin: ScannedPlugin {
-                    id: plugin_id.to_string(),
-                    name: "Vendor Reverb".to_string(),
-                    vendor: "Vendor".to_string(),
-                    format: "clap".to_string(),
-                    category: "effect".to_string(),
-                    path: path.display().to_string(),
-                    version: "1.0.0".to_string(),
-                    descriptor_id: "com.vendor.reverb".to_string(),
-                    num_inputs: 2,
-                    num_outputs: 2,
-                    num_parameters: 0,
-                    has_custom_ui: true,
-                    parameters: Some(Vec::new()),
-                    parameter_metadata_reason: None,
-                    capability_metadata_reason: None,
-                },
+                fingerprint: scanned_file_fingerprint(&plugin),
+                plugin,
             }]);
         }
     }
@@ -9412,7 +9560,10 @@ mod tests {
 
     #[test]
     fn a_scanned_plugin_resolves_by_its_path_hash() {
-        let registry = index_scanned_plugins(&[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let registry = index_scanned_plugins(
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+            &ScanFingerprints::new(),
+        );
 
         let entry = registry.get("aaaa1111").expect("path hash resolves");
         assert_eq!(entry.path, "/plugins/aaaa1111.clap");
@@ -9429,7 +9580,10 @@ mod tests {
     /// or keying a plugin an extra way without raising the constant.
     #[test]
     fn key_scanned_plugins_fills_the_capacity_the_registry_row_cap_multiplies_by() {
-        let rows = key_scanned_plugins(&[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let rows = key_scanned_plugins(
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+            &ScanFingerprints::new(),
+        );
 
         let [row] = rows.as_slice() else {
             panic!("one scanned plugin is one row, got {}", rows.len());
@@ -9445,7 +9599,10 @@ mod tests {
 
     #[test]
     fn the_same_plugin_also_resolves_by_its_descriptor_id_after_it_moves() {
-        let registry = index_scanned_plugins(&[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let registry = index_scanned_plugins(
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+            &ScanFingerprints::new(),
+        );
 
         // A project that recorded the descriptor id survives the file moving,
         // because the descriptor id does not encode the path.
@@ -9460,10 +9617,13 @@ mod tests {
         // Contrived collision: one plugin's descriptor id equals another's path
         // hash. The path hash is the primary key and must win, or an existing
         // project would silently start resolving to a different plugin.
-        let registry = index_scanned_plugins(&[
-            scanned("collides", "unrelated.id", "clap"),
-            scanned("bbbb2222", "collides", "clap"),
-        ]);
+        let registry = index_scanned_plugins(
+            &[
+                scanned("collides", "unrelated.id", "clap"),
+                scanned("bbbb2222", "collides", "clap"),
+            ],
+            &ScanFingerprints::new(),
+        );
 
         let entry = registry.get("collides").expect("primary key survives");
         assert_eq!(
@@ -9499,6 +9659,7 @@ mod tests {
             &[],
             true,
             &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+            &ScanFingerprints::new(),
         );
 
         let registry = plugin_registry
@@ -9514,10 +9675,13 @@ mod tests {
     fn a_plugin_with_no_descriptor_id_is_indexed_once() {
         // VST3 and AU carry no CLAP descriptor, and an empty id must never
         // become a key that every such plugin fights over.
-        let registry = index_scanned_plugins(&[
-            scanned("cccc3333", "", "vst3"),
-            scanned("dddd4444", "", "au"),
-        ]);
+        let registry = index_scanned_plugins(
+            &[
+                scanned("cccc3333", "", "vst3"),
+                scanned("dddd4444", "", "au"),
+            ],
+            &ScanFingerprints::new(),
+        );
 
         assert_eq!(registry.len(), 2);
         assert!(!registry.contains_key(""));
