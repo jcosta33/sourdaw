@@ -103,9 +103,14 @@ pub fn yin_frame(
         // Fallback: search for global minimum if threshold not reached
         let mut min_val = f32::MAX;
         let mut _best_tau = tau_min;
-        for tau in tau_min..=tau_max {
-            if work_buffer_cmnd[tau] < min_val {
-                min_val = work_buffer_cmnd[tau];
+        for (tau, &value) in work_buffer_cmnd
+            .iter()
+            .enumerate()
+            .take(tau_max + 1)
+            .skip(tau_min)
+        {
+            if value < min_val {
+                min_val = value;
                 _best_tau = tau;
             }
         }

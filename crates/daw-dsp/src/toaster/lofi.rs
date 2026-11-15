@@ -121,6 +121,12 @@ impl LofiProcessor {
     }
 }
 
+impl Default for LofiProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::LofiProcessor;

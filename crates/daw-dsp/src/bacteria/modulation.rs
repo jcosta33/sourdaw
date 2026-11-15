@@ -69,7 +69,7 @@ impl Lfo {
             // Update S&H on phase wrap
             if matches!(self.shape, LfoShape::SampleAndHold) {
                 // Simple pseudo-random using phase fraction
-                self.sh_value = (self.phase * 12345.6789).sin();
+                self.sh_value = (self.phase * 12_345.679).sin();
             }
         }
 

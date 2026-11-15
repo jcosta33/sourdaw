@@ -255,7 +255,7 @@ fn identical(a: &[f32], b: &[f32]) -> bool {
 /// this stimulus, the peak moved from 9.8297787e-1 to 9.9530500e-1 and RMS
 /// from 1.2425283e-1 to 1.2303977e-1.
 const UNTOUCHED_PLATE_SHAPE: RenderShape = RenderShape {
-    peak: 9.9530500e-1,
+    peak: 9.953_05e-1,
     rms: 1.2303977e-1,
     onset: 1,
 };

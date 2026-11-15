@@ -1,6 +1,6 @@
-/// Modulation matrix — flat slot-based architecture.
-/// Phase 1: hardwired routes (env→filter, LFO→pitch).
-/// Future: full user-configurable mod matrix.
+//! Modulation matrix — flat slot-based architecture.
+//! Phase 1: hardwired routes (env→filter, LFO→pitch).
+//! Future: full user-configurable mod matrix.
 
 pub const MAX_MOD_SLOTS: usize = 32;
 
@@ -115,6 +115,12 @@ impl ModMatrix {
         }
 
         out
+    }
+}
+
+impl Default for ModMatrix {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
